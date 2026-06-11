@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JT Wazuh Agent Manager — Web management for Wazuh agents</title>
+<meta name="description" content="A web-based management tool that supplements the Wazuh Dashboard: agents, groups, nodes, rules, API users and logs. English / 繁體中文.">
+<link rel="icon" type="image/png" href="img/logo-1.png">
+<style>
+  :root{
+    --bg:#12121f; --bg2:#16213e; --card:#1a1a2e; --line:#243056;
+    --accent:#4fc3f7; --accent2:#81d4fa; --text:#e9edf5; --muted:#9aa6c0;
+    --ok:#34d399; --warn:#ffc107;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang TC','Noto Sans TC',sans-serif;
+    background:radial-gradient(1200px 600px at 50% -10%,#1d2547 0,var(--bg) 55%) no-repeat,var(--bg);
+    color:var(--text);line-height:1.65;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{color:var(--accent2)}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+  /* nav */
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(10px);
+    background:rgba(18,18,31,.78);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;gap:16px;height:62px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px}
+  .brand img{width:30px;height:30px;border-radius:6px}
+  .nav-links{margin-left:auto;display:flex;gap:22px;align-items:center}
+  .nav-links a{color:var(--muted);font-size:14px}
+  .nav-links a:hover{color:var(--text)}
+  .lang{border:1px solid var(--line);background:var(--card);color:var(--text);
+    border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;font-weight:600}
+  .lang:hover{border-color:var(--accent)}
+  @media(max-width:760px){.nav-links a:not(.gh){display:none}}
+  /* hero */
+  header.hero{padding:74px 0 40px;text-align:center}
+  .badge-row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:22px}
+  .badge-row img{height:22px}
+  h1.title{font-size:clamp(30px,5vw,50px);line-height:1.12;font-weight:800;letter-spacing:-.5px}
+  h1.title .grad{background:linear-gradient(90deg,var(--accent),#a78bfa);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .tag{color:var(--muted);font-size:clamp(15px,2.4vw,19px);margin:18px auto 0;max-width:680px}
+  .cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:30px}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:10px;font-weight:600;font-size:15px;border:1px solid transparent;cursor:pointer}
+  .btn-primary{background:var(--accent);color:#0c1424}
+  .btn-primary:hover{background:var(--accent2);color:#0c1424}
+  .btn-ghost{border-color:var(--line);color:var(--text);background:var(--card)}
+  .btn-ghost:hover{border-color:var(--accent)}
+  .note{color:var(--muted);font-size:13px;margin-top:14px}
+  /* sections */
+  section{padding:52px 0}
+  .sec-head{text-align:center;margin-bottom:34px}
+  .sec-head h2{font-size:clamp(24px,3.6vw,34px);font-weight:800}
+  .sec-head p{color:var(--muted);margin-top:10px}
+  .kicker{color:var(--accent);font-weight:700;font-size:13px;letter-spacing:1.5px;text-transform:uppercase}
+  /* install */
+  .cmd-grid{display:grid;gap:16px}
+  .cmd{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px}
+  .cmd .lbl{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:10px}
+  .cmd .lbl .dot{width:9px;height:9px;border-radius:50%}
+  .cmd-i .dot{background:var(--ok)} .cmd-u .dot{background:var(--accent)} .cmd-x .dot{background:#f87171}
+  .code{position:relative;background:#0c0f1d;border:1px solid var(--line);border-radius:10px;
+    padding:14px 52px 14px 14px;font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
+    font-size:13.5px;color:#cdd6e8;overflow-x:auto;white-space:pre}
+  .copy{position:absolute;top:8px;right:8px;border:1px solid var(--line);background:var(--card);
+    color:var(--muted);border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer}
+  .copy:hover{color:var(--text);border-color:var(--accent)}
+  .copy.done{color:var(--ok);border-color:var(--ok)}
+  .cmd .sub{color:var(--muted);font-size:13px;margin-top:9px}
+  /* features */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
+  .feat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;transition:.18s}
+  .feat:hover{border-color:var(--accent);transform:translateY(-3px)}
+  .feat .ico{font-size:22px;margin-bottom:8px}
+  .feat h3{font-size:16px;margin-bottom:6px}
+  .feat p{color:var(--muted);font-size:14px}
+  /* shots */
+  .shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+  .shot{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}
+  .shot img{width:100%;display:block;cursor:zoom-in;transition:.2s}
+  .shot:hover img{opacity:.9}
+  .shot .cap{padding:9px 12px;font-size:13px;color:var(--muted)}
+  /* lightbox */
+  .lb{position:fixed;inset:0;background:rgba(5,7,14,.92);display:none;align-items:center;justify-content:center;z-index:100;padding:24px}
+  .lb.open{display:flex} .lb img{max-width:96%;max-height:92%;border-radius:8px;border:1px solid var(--line)}
+  .lb .x{position:absolute;top:18px;right:24px;font-size:30px;color:#fff;cursor:pointer;line-height:1}
+  /* req */
+  .req{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px;max-width:720px;margin:0 auto}
+  .req ul{list-style:none;display:grid;gap:10px}
+  .req li{padding-left:26px;position:relative;color:var(--muted)}
+  .req li::before{content:'';position:absolute;left:0;top:9px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .req li b{color:var(--text)}
+  /* footer */
+  footer{border-top:1px solid var(--line);padding:30px 0;text-align:center;color:var(--muted);font-size:14px}
+  footer .links{display:flex;gap:18px;justify-content:center;margin-bottom:12px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<nav>
+  <div class="wrap">
+    <div class="brand"><img src="img/logo-1.png" alt="logo"><span>JT Wazuh Agent Manager</span></div>
+    <div class="nav-links">
+      <a href="#install" data-en="Install" data-zh="安裝">安裝</a>
+      <a href="#features" data-en="Features" data-zh="功能">功能</a>
+      <a href="#screenshots" data-en="Screenshots" data-zh="截圖">截圖</a>
+      <a class="gh" href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener">GitHub</a>
+      <button class="lang" id="langBtn" onclick="toggleLang()">EN</button>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="badge-row">
+      <img src="https://img.shields.io/badge/version-1.4.0-blue" alt="version">
+      <img src="https://img.shields.io/badge/python-3.8+-green" alt="python">
+      <img src="https://img.shields.io/badge/license-Apache--2.0-orange" alt="license">
+      <img src="https://img.shields.io/badge/UI-EN%20%7C%20%E7%B9%81%E4%B8%AD-blueviolet" alt="lang">
+    </div>
+    <h1 class="title"><span data-en="Manage Wazuh agents" data-zh="管理 Wazuh Agent">管理 Wazuh Agent</span><br><span class="grad" data-en="from one clean web UI" data-zh="一個清爽的網頁介面">一個清爽的網頁介面</span></h1>
+    <p class="tag" data-en="A web-based tool that supplements the Wazuh Dashboard — agents, groups, cluster nodes, rules, API users and logs. Not a replacement, a complement." data-zh="補強 Wazuh Dashboard 的網頁工具 — 涵蓋 Agent、群組、叢集節點、規則、API 使用者與記錄。不是取代，而是互補。">補強 Wazuh Dashboard 的網頁工具 — 涵蓋 Agent、群組、叢集節點、規則、API 使用者與記錄。不是取代，而是互補。</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#install" data-en="⚡ Quick Install" data-zh="⚡ 快速安裝">⚡ 快速安裝</a>
+      <a class="btn btn-ghost" href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener" data-en="★ View on GitHub" data-zh="★ 前往 GitHub">★ 前往 GitHub</a>
+    </div>
+    <p class="note" data-en="Runs on your Wazuh Manager · HTTPS by default · English / 繁體中文" data-zh="安裝於 Wazuh Manager · 預設 HTTPS · 英文 / 繁體中文">安裝於 Wazuh Manager · 預設 HTTPS · 英文 / 繁體中文</p>
+  </div>
+</header>
+
+<section id="install">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker" data-en="Get started" data-zh="開始使用">開始使用</div>
+      <h2 data-en="One-line install, upgrade &amp; uninstall" data-zh="一行安裝、升級與移除">一行安裝、升級與移除</h2>
+      <p data-en="Run as root on your Wazuh Manager (Master node in cluster mode). Then open https://YOUR_MANAGER_IP:5000" data-zh="請以 root 在 Wazuh Manager（叢集模式為 Master 節點）執行，接著開啟 https://你的Manager_IP:5000">請以 root 在 Wazuh Manager（叢集模式為 Master 節點）執行，接著開啟 https://你的Manager_IP:5000</p>
+    </div>
+    <div class="cmd-grid">
+      <div class="cmd cmd-i">
+        <div class="lbl"><span class="dot"></span><span data-en="Install" data-zh="安裝">安裝</span></div>
+        <div class="code"><button class="copy" onclick="copyCmd(this)">Copy</button>curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/install.sh | sudo bash</div>
+      </div>
+      <div class="cmd cmd-u">
+        <div class="lbl"><span class="dot"></span><span data-en="Upgrade" data-zh="升級">升級</span></div>
+        <div class="code"><button class="copy" onclick="copyCmd(this)">Copy</button>curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/install.sh | sudo bash</div>
+        <div class="sub" data-en="Same command — re-running updates in place and keeps your config.yaml." data-zh="與安裝相同 — 重新執行即原地更新，並保留你的 config.yaml。">與安裝相同 — 重新執行即原地更新，並保留你的 config.yaml。</div>
+      </div>
+      <div class="cmd cmd-x">
+        <div class="lbl"><span class="dot"></span><span data-en="Uninstall" data-zh="移除">移除</span></div>
+        <div class="code"><button class="copy" onclick="copyCmd(this)">Copy</button>curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/uninstall.sh | sudo bash</div>
+        <div class="sub" data-en="Already installed? Locally: sudo bash /opt/jt-wazuh-mgr/uninstall.sh" data-zh="已安裝？本機執行：sudo bash /opt/jt-wazuh-mgr/uninstall.sh">已安裝？本機執行：sudo bash /opt/jt-wazuh-mgr/uninstall.sh</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features" style="background:linear-gradient(180deg,transparent,rgba(26,26,46,.4),transparent)">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker" data-en="Capabilities" data-zh="能力">能力</div>
+      <h2 data-en="Everything the Dashboard makes hard" data-zh="Dashboard 不好做的，這裡都好做">Dashboard 不好做的，這裡都好做</h2>
+    </div>
+    <div class="grid">
+      <div class="feat"><div class="ico">🖥️</div><h3 data-en="Agent management" data-zh="Agent 管理">Agent 管理</h3><p data-en="Real-time status, advanced filters, multi-select batch restart / reconnect / delete / upgrade." data-zh="即時狀態、進階篩選、多選批次重啟／重連／刪除／升級。">即時狀態、進階篩選、多選批次重啟／重連／刪除／升級。</p></div>
+      <div class="feat"><div class="ico">📊</div><h3 data-en="Distribution bar &amp; stats" data-zh="分布圖與統計">分布圖與統計</h3><p data-en="Visual distribution by status, OS, version, group, node or sync — click to filter. Auto-refreshing." data-zh="依狀態／作業系統／版本／群組／節點／同步視覺化分布，點選即篩選，並自動更新。">依狀態／作業系統／版本／群組／節點／同步視覺化分布，點選即篩選，並自動更新。</p></div>
+      <div class="feat"><div class="ico">🗂️</div><h3 data-en="Group operations" data-zh="群組操作">群組操作</h3><p data-en="Add / remove / merge / rename, import &amp; export via CSV with preview, edit group agent.conf." data-zh="加入／移出／合併／改名，CSV 匯入匯出（含預覽），編輯群組 agent.conf。">加入／移出／合併／改名，CSV 匯入匯出（含預覽），編輯群組 agent.conf。</p></div>
+      <div class="feat"><div class="ico">🧩</div><h3 data-en="Cluster nodes" data-zh="叢集節點">叢集節點</h3><p data-en="Service status, edit ossec.conf, restart services, download cluster.key, WPK files, SSH remote ops." data-zh="服務狀態、編輯 ossec.conf、重啟服務、下載 cluster.key、WPK 檔案、SSH 遠端操作。">服務狀態、編輯 ossec.conf、重啟服務、下載 cluster.key、WPK 檔案、SSH 遠端操作。</p></div>
+      <div class="feat"><div class="ico">🔄</div><h3 data-en="Sync monitoring" data-zh="同步監控">同步監控</h3><p data-en="Master/worker sync for Rules, Decoders, Groups, Keys, Lists, SCA — see exactly which files differ." data-zh="Master/Worker 對 Rules、Decoders、Groups、Keys、Lists、SCA 的同步，清楚看出差異檔案。">Master/Worker 對 Rules、Decoders、Groups、Keys、Lists、SCA 的同步，清楚看出差異檔案。</p></div>
+      <div class="feat"><div class="ico">📧</div><h3 data-en="Email alerts" data-zh="電子郵件警示">電子郵件警示</h3><p data-en="Form-based management of &lt;email_alerts&gt; — no manual XML. One-click sync to all workers, auto-backup." data-zh="以表單管理 &lt;email_alerts&gt;，免手改 XML。一鍵同步到所有 Worker，自動備份。">以表單管理 &lt;email_alerts&gt;，免手改 XML。一鍵同步到所有 Worker，自動備份。</p></div>
+      <div class="feat"><div class="ico">📜</div><h3 data-en="Rules viewer" data-zh="規則檢視器">規則檢視器</h3><p data-en="Browse, search &amp; filter all rules; collapsible parent/child hierarchy; XML with syntax highlighting." data-zh="瀏覽、搜尋、篩選所有規則；可收合的父子階層；XML 語法上色。">瀏覽、搜尋、篩選所有規則；可收合的父子階層；XML 語法上色。</p></div>
+      <div class="feat"><div class="ico">⬆️</div><h3 data-en="Agent upgrade" data-zh="Agent 升級">Agent 升級</h3><p data-en="Upload WPK files and upgrade agents with real-time progress tracking and batch support." data-zh="上傳 WPK 檔升級 Agent，即時追蹤進度並支援批次。">上傳 WPK 檔升級 Agent，即時追蹤進度並支援批次。</p></div>
+      <div class="feat"><div class="ico">🗃️</div><h3 data-en="Queue DB tools" data-zh="Queue DB 工具">Queue DB 工具</h3><p data-en="Check agent queue DB usage across nodes and batch-clean with automatic restart." data-zh="跨節點檢查 Agent queue DB 用量，批次清除並自動重啟。">跨節點檢查 Agent queue DB 用量，批次清除並自動重啟。</p></div>
+      <div class="feat"><div class="ico">👤</div><h3 data-en="API users &amp; logs" data-zh="API 使用者與記錄">API 使用者與記錄</h3><p data-en="Create / manage Wazuh API users and roles; view and download operation logs &amp; audit events." data-zh="建立／管理 Wazuh API 使用者與角色；檢視並下載操作記錄與稽核事件。">建立／管理 Wazuh API 使用者與角色；檢視並下載操作記錄與稽核事件。</p></div>
+      <div class="feat"><div class="ico">🔐</div><h3 data-en="Secure by design" data-zh="內建安全">內建安全</h3><p data-en="Wazuh-API login (JWT), HTTPS, input validation, path-traversal &amp; injection protection, IP lockout." data-zh="Wazuh API 登入（JWT）、HTTPS、輸入驗證、防路徑穿越與注入、IP 鎖定。">Wazuh API 登入（JWT）、HTTPS、輸入驗證、防路徑穿越與注入、IP 鎖定。</p></div>
+      <div class="feat"><div class="ico">🌐</div><h3 data-en="Bilingual UI" data-zh="雙語介面">雙語介面</h3><p data-en="Switch between English and 繁體中文 with one click in the header; remembered per browser." data-zh="標題列一鍵切換英文與繁體中文，偏好依瀏覽器記住。">標題列一鍵切換英文與繁體中文，偏好依瀏覽器記住。</p></div>
+      <div class="feat"><div class="ico">⌨️</div><h3 data-en="CLI included" data-zh="附 CLI">附 CLI</h3><p data-en="agent / group / node / stats subcommands with table, JSON, CSV output and --dry-run." data-zh="agent / group / node / stats 子指令，支援 table、JSON、CSV 輸出與 --dry-run。">agent / group / node / stats 子指令，支援 table、JSON、CSV 輸出與 --dry-run。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="screenshots">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker" data-en="A look inside" data-zh="畫面預覽">畫面預覽</div>
+      <h2 data-en="Screenshots" data-zh="螢幕截圖">螢幕截圖</h2>
+    </div>
+    <div class="shots" id="shots"></div>
+  </div>
+</section>
+
+<section id="requirements" style="background:linear-gradient(180deg,transparent,rgba(26,26,46,.4),transparent)">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker" data-en="Before you start" data-zh="開始之前">開始之前</div>
+      <h2 data-en="Requirements" data-zh="系統需求">系統需求</h2>
+    </div>
+    <div class="req">
+      <ul>
+        <li><b>Python 3.8+</b> <span data-en="(Ubuntu 22.04 ships 3.10)" data-zh="（Ubuntu 22.04 內建 3.10）">（Ubuntu 22.04 內建 3.10）</span></li>
+        <li><b>Wazuh Manager 4.x</b></li>
+        <li data-en="Install on the Wazuh Manager itself — the Master node in cluster mode." data-zh="必須安裝在 Wazuh Manager 上 — 叢集模式安裝在 Master 節點。">必須安裝在 Wazuh Manager 上 — 叢集模式安裝在 Master 節點。</li>
+        <li data-en="Log in with a wazuh / wazuh-wui API account (no passwords stored in Web UI mode)." data-zh="使用 wazuh / wazuh-wui API 帳號登入（Web UI 模式不儲存密碼）。">使用 wazuh / wazuh-wui API 帳號登入（Web UI 模式不儲存密碼）。</li>
+        <li data-en="Keep it on a trusted management network; don't expose port 5000 to the Internet." data-zh="請置於受信任的管理網段，勿將 5000 埠對外暴露於網際網路。">請置於受信任的管理網段，勿將 5000 埠對外暴露於網際網路。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="links">
+      <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr/blob/main/README.md" target="_blank" rel="noopener">README</a>
+      <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr/blob/main/CHANGELOG.md" target="_blank" rel="noopener" data-en="Changelog" data-zh="更新記錄">更新記錄</a>
+      <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr/blob/main/SECURITY.md" target="_blank" rel="noopener" data-en="Security" data-zh="安全">安全</a>
+      <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr/blob/main/LICENSE" target="_blank" rel="noopener">Apache-2.0</a>
+    </div>
+    <div data-en="Built by Jason Cheng (Jason Tools). Supplements the Wazuh Dashboard — not affiliated with Wazuh, Inc." data-zh="由 Jason Cheng (Jason Tools) 製作。用於補強 Wazuh Dashboard，與 Wazuh, Inc. 無隸屬關係。">由 Jason Cheng (Jason Tools) 製作。用於補強 Wazuh Dashboard，與 Wazuh, Inc. 無隸屬關係。</div>
+  </div>
+</footer>
+
+<div class="lb" id="lb" onclick="this.classList.remove('open')"><span class="x">&times;</span><img id="lbimg" src="" alt=""></div>
+
+<script>
+  // ---- screenshots ----
+  var SHOTS = [
+    ['1_login','Login','登入'],
+    ['2_agents','Agent list','Agent 列表'],
+    ['3_selected_action_queuedb','Agent actions &amp; Queue DB','Agent 操作與 Queue DB'],
+    ['4_groups','Groups','群組管理'],
+    ['5_nodes','Cluster nodes','節點管理'],
+    ['6_nodes_wpkfiles','WPK file management','WPK 檔案管理'],
+    ['7_rule','Rules viewer','規則檢視器'],
+    ['8_apiusers','API users','API 使用者'],
+    ['9_logs','Logs viewer','記錄檢視器'],
+    ['10_node_editconfig','Edit ossec.conf','編輯 ossec.conf'],
+    ['11_upgrade_agent_1','Agent upgrade (1)','Agent 升級 (1)'],
+    ['11.5_upgrade_agent_2','Agent upgrade (2)','Agent 升級 (2)'],
+    ['12_upgrade_agent_3','Agent upgrade (3)','Agent 升級 (3)'],
+    ['13_agent_detail','Agent detail','Agent 詳細資訊']
+  ];
+  (function(){
+    var html = SHOTS.map(function(s){
+      return '<div class="shot"><img loading="lazy" src="screenshots/'+s[0]+'.png" alt="'+s[1]+'" '+
+        'onclick="openLb(this.src)"><div class="cap" data-en="'+s[1]+'" data-zh="'+s[2]+'">'+s[2]+'</div></div>';
+    }).join('');
+    document.getElementById('shots').innerHTML = html;
+  })();
+  function openLb(src){var lb=document.getElementById('lb');document.getElementById('lbimg').src=src;lb.classList.add('open');}
+
+  // ---- language ----
+  var LANG_KEY='jtwz_site_lang';
+  function getLang(){var l=localStorage.getItem(LANG_KEY);return (l==='en'||l==='zh-TW')?l:'zh-TW';}
+  function applyLang(lang){
+    document.documentElement.setAttribute('lang', lang==='en'?'en':'zh-TW');
+    var attr = lang==='en' ? 'data-en' : 'data-zh';
+    document.querySelectorAll('[data-en][data-zh]').forEach(function(el){
+      var v = el.getAttribute(attr); if(v!==null) el.innerHTML = v;
+    });
+    var btn=document.getElementById('langBtn');
+    btn.textContent = lang==='en' ? '中文' : 'EN';
+    btn.title = lang==='en' ? '切換為繁體中文' : 'Switch to English';
+  }
+  function toggleLang(){var n=getLang()==='en'?'zh-TW':'en';localStorage.setItem(LANG_KEY,n);applyLang(n);}
+  applyLang(getLang());
+</script>
+</body>
+</html>
