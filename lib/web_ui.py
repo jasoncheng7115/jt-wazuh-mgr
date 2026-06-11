@@ -385,13 +385,13 @@ HTML_TEMPLATE = '''
         .user-info > div { margin-bottom: 6px; }
         .user-info > div:last-child { margin-bottom: 0; }
         .user-info strong { color: #4fc3f7; }
-        .header-buttons { display: flex; flex-direction: column; gap: 8px; }
-        .btn-settings { padding: 6px 12px; background: #0f3460; color: #4fc3f7; border: 1px solid #4fc3f7; border-radius: 4px; cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
+        .header-buttons { display: flex; flex-direction: row; gap: 8px; align-self: stretch; }
+        .btn-settings { box-sizing: border-box; height: 100%; min-width: 62px; padding: 6px 14px; background: #0f3460; color: #4fc3f7; border: 1px solid #4fc3f7; border-radius: 6px; cursor: pointer; font-size: 12px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; text-decoration: none; }
         .btn-settings:hover { background: #1a4a7a; }
-        .btn-settings .icon { width: 14px; height: 14px; }
-        .btn-logout { padding: 6px 12px; background: #e94560; color: #fff; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
-        .btn-logout:hover { background: #ff6b6b; }
-        .btn-logout .icon { width: 14px; height: 14px; }
+        .btn-settings .icon { width: 18px; height: 18px; }
+        .btn-logout { box-sizing: border-box; height: 100%; min-width: 62px; padding: 6px 14px; background: #e94560; color: #fff; border: 1px solid #e94560; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 12px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; }
+        .btn-logout:hover { background: #ff6b6b; border-color: #ff6b6b; }
+        .btn-logout .icon { width: 18px; height: 18px; }
         .stats-bar { display: flex; gap: 20px; }
         .stat-item { background: #0f3460; padding: 10px 20px; border-radius: 6px; text-align: center; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
         .stat-item:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
@@ -6091,12 +6091,12 @@ _I18N_SCRIPT = r"""
       'Logs': '記錄',
       // --- Stat bar ---
       'Total Agents': '代理程式總數',
-      'Active': '在線',
+      'Active': '已連線',
       'Disconnected': '已離線',
       'Pending': '等待中',
       'Never Connected': '從未連線',
       'Show all agents': '顯示所有代理程式',
-      'Show active agents': '顯示在線代理程式',
+      'Show active agents': '顯示已連線代理程式',
       'Show disconnected agents': '顯示已離線代理程式',
       'Show pending agents': '顯示等待中代理程式',
       // --- Agent toolbar / actions ---
@@ -6364,7 +6364,7 @@ _I18N_SCRIPT = r"""
       'Configured Nodes': '已設定的節點',
       'Agent': '代理程式',
       // --- status / sync badge VALUES (lowercase, display only; <option value> is never touched) ---
-      'active': '在線',
+      'active': '已連線',
       'disconnected': '已離線',
       'pending': '等待中',
       'never_connected': '從未連線',
@@ -6601,7 +6601,7 @@ _I18N_SCRIPT = r"""
       [/^Delete user "(.+)"\?$/, function (m) { return '確定刪除使用者「' + m[1] + '」？'; }],
       [/^Delete group "(.+)"\?$/, function (m) { return '確定刪除群組「' + m[1] + '」？'; }],
       // distribution bar segments: "active (34)"
-      [/^active \((\d+)\)$/, function (m) { return '在線 (' + m[1] + ')'; }],
+      [/^active \((\d+)\)$/, function (m) { return '已連線 (' + m[1] + ')'; }],
       [/^disconnected \((\d+)\)$/, function (m) { return '已離線 (' + m[1] + ')'; }],
       [/^pending \((\d+)\)$/, function (m) { return '等待中 (' + m[1] + ')'; }],
       [/^never_connected \((\d+)\)$/, function (m) { return '從未連線 (' + m[1] + ')'; }]
@@ -6692,9 +6692,8 @@ _I18N_SCRIPT = r"""
     var st = document.createElement('style');
     st.id = 'jtwz-i18n-style';
     st.textContent =
-      '.header-buttons{flex-direction:row !important;flex-wrap:wrap;justify-content:flex-end;align-items:center}' +
-      '#langToggle{display:inline-flex;align-items:center;gap:5px}' +
-      '#langToggle svg{flex:0 0 auto}' +
+      '#langToggle svg{width:18px;height:18px;flex:0 0 auto}' +
+      '.jtwz-lang-fab svg{width:16px;height:16px}' +
       '.jtwz-lang-fab{position:fixed;top:14px;right:16px;z-index:9999;display:inline-flex;align-items:center;gap:6px;' +
       'padding:7px 13px;background:#16213e;color:#4fc3f7;border:1px solid #4fc3f7;border-radius:8px;' +
       'font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}' +
