@@ -1,4 +1,4 @@
-# JT Wazuh Agent Manager v1.4.0
+# JT Wazuh Manager v1.4.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md)
 

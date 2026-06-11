@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# JT Wazuh Agent Manager - Installation Script
+# JT Wazuh Manager - Installation Script
 # https://github.com/jasoncheng7115/jt-wazuh-mgr
 #
 
@@ -18,7 +18,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN} JT Wazuh Agent Manager Installer${NC}"
+echo -e "${GREEN} JT Wazuh Manager Installer${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo
 

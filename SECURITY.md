@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Only the latest released version of **JT Wazuh Agent Manager** receives security
+Only the latest released version of **JT Wazuh Manager** receives security
 updates. Please always run the newest version before reporting an issue.
 
 | Version | Supported          |

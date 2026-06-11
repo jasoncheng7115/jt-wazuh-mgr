@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to **JT Wazuh Agent Manager** are documented here.
+All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 

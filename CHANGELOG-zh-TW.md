@@ -1,6 +1,6 @@
 # 更新記錄
 
-本檔案記錄 **JT Wazuh Agent Manager** 的所有重要變更。
+本檔案記錄 **JT Wazuh Manager** 的所有重要變更。
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 

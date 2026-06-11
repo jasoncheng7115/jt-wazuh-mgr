@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# JT Wazuh Agent Manager - Uninstall Script
+# JT Wazuh Manager - Uninstall Script
 # https://github.com/jasoncheng7115/jt-wazuh-mgr
 #
 # One-line uninstall:
@@ -19,7 +19,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN} JT Wazuh Agent Manager Uninstaller${NC}"
+echo -e "${GREEN} JT Wazuh Manager Uninstaller${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo
 
