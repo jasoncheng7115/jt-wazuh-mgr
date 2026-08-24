@@ -4,6 +4,32 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.4.1 (2026-08-24)
+
+Maintenance release. Verified against **Wazuh 4.14.7** — no API or CLI changes were
+required; every endpoint and path the tool uses is still present and non-deprecated.
+
+- **Fixed: rule hierarchy could crash the Rules tab.** `find_children()` recursed
+  without a depth limit, so a long `if_group` / `if_sid` chain raised
+  `RecursionError: maximum recursion depth exceeded` and the request failed with a
+  500. Descent is now capped (and the truncation is logged).
+- **Fixed: requests without a JSON body returned 500.** `request.get_json()` raises
+  a werkzeug `BadRequest` when the caller sends no body or a non-JSON
+  `Content-Type`; the generic handler in each route reported that as a server
+  error. 20 routes now use `get_json(silent=True)`.
+- **Added: input validation on bulk agent actions.** `restart`, `reconnect`,
+  `delete` and `upgrade` now reject a missing or empty `agent_ids`, and validate
+  every ID, instead of calling the Wazuh API with an empty list.
+- **Added: `POST /api/groups` validates the group name** (the `DELETE` route
+  already did), so a malformed or missing name is a 400 rather than a group
+  literally named `None`.
+- **Fixed: version comparison was defined three times**, and the definition that
+  actually won at runtime differed from the one written first. Consolidated into a
+  single numeric comparator, so `4.14.7` correctly ranks above `4.9.0`.
+- **Removed dead code:** the `wazuh-user` CLI fallback for listing roles (Wazuh
+  ships no such binary — RBAC is API-only), plus five unused imports.
+- zh-TW strings added for the new validation messages.
+
 ## v1.4.0 (2026-06-11)
 - **Bilingual UI (English / 繁體中文)**: one-click language toggle in the header; the choice is remembered per browser. Translations are applied entirely on the client side (text nodes + `placeholder`/`title`), with a `MutationObserver` keeping dynamically-rendered content translated. UI strings live in `lib/i18n_engine.js` and are embedded into `lib/web_ui.py` by `tools/build_i18n.py`.
 - **Standalone repository**: project renamed from `jt_wazuh_agent_mgr` to **`jt-wazuh-mgr`** and split out into its own repo `jasoncheng7115/jt-wazuh-mgr`. Install path is now `/opt/jt-wazuh-mgr` and the systemd service is `jt-wazuh-mgr`.

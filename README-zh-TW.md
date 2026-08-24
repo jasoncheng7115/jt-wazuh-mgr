@@ -1,4 +1,4 @@
-# JT Wazuh Manager v1.4.0
+# JT Wazuh Manager v1.4.1
 
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
@@ -8,7 +8,7 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.4.0-blue)
+![Version](https://img.shields.io/badge/version-1.4.1-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
@@ -42,7 +42,13 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 
 ---
 
-## ✨ 1.4.0 新功能
+## ✨ 新功能
+
+### 1.4.1 — 維護版本
+
+- 已對 **Wazuh 4.14.7** 完整驗證；強化請求驗證，並修正規則階層的當機問題。
+
+### 1.4.0
 
 - **雙語介面（English / 繁體中文）**，標題列一鍵切換語言，瀏覽器會記住你的選擇。
 - 專案更名並獨立為單一倉庫：**`jasoncheng7115/jt-wazuh-mgr`**。

@@ -59,11 +59,6 @@ try:
 except ImportError:
     HAS_REQUESTS = False
 
-from .wazuh_cli import WazuhCLI
-from .agent_ops import AgentOperations
-from .group_ops import GroupOperations
-from .node_ops import NodeOperations
-from .stats import StatisticsOperations
 from .config import get_config
 
 import re
@@ -1326,19 +1321,22 @@ HTML_TEMPLATE = '''
             return size + ' ' + units[i];
         }
 
-        // Compare version strings (e.g., "4.14.0" vs "4.13.1")
-        // Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
+        // Parse a version string into numeric parts.
+        // Accepts "4.14.7", "v4.14.7" and "Wazuh v4.14.7"; unparsable -> [0].
+        function parseVersion(ver) {
+            const m = String(ver == null ? '' : ver).match(/(\\d+(?:\\.\\d+)*)/);
+            return m ? m[1].split('.').map(Number) : [0];
+        }
+
+        // Compare version strings (e.g., "4.14.7" vs "4.9.0").
+        // Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2.
+        // Parts are compared as NUMBERS, so 4.14.7 correctly ranks above 4.9.0
+        // (a plain string compare would get this backwards).
         function compareVersions(v1, v2) {
-            if (!v1 || !v2) return 0;
-            // Remove 'v' prefix if present
-            v1 = v1.replace(/^v/i, '');
-            v2 = v2.replace(/^v/i, '');
-            const parts1 = v1.split('.').map(p => parseInt(p) || 0);
-            const parts2 = v2.split('.').map(p => parseInt(p) || 0);
-            const maxLen = Math.max(parts1.length, parts2.length);
-            for (let i = 0; i < maxLen; i++) {
-                const p1 = parts1[i] || 0;
-                const p2 = parts2[i] || 0;
+            const a = parseVersion(v1), b = parseVersion(v2);
+            const len = Math.max(a.length, b.length);
+            for (let i = 0; i < len; i++) {
+                const p1 = a[i] || 0, p2 = b[i] || 0;
                 if (p1 < p2) return -1;
                 if (p1 > p2) return 1;
             }
@@ -2205,18 +2203,8 @@ HTML_TEMPLATE = '''
 
             // Version sort function (high to low)
             const versionSort = (a, b) => {
-                // Extract version numbers (e.g., "Wazuh v4.14.0" -> [4, 14, 0])
-                const parseVersion = (v) => {
-                    const match = v.match(/(\\d+)\\.(\\d+)\\.(\\d+)/);
-                    return match ? [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])] : [0, 0, 0];
-                };
-                const va = parseVersion(a);
-                const vb = parseVersion(b);
-                // Sort descending (high to low)
-                for (let i = 0; i < 3; i++) {
-                    if (vb[i] !== va[i]) return vb[i] - va[i];
-                }
-                return 0;
+                // Sort descending (high to low) via the shared comparator
+                return -compareVersions(a, b);
             };
 
             // Update Group filter
@@ -2578,22 +2566,6 @@ HTML_TEMPLATE = '''
             by_os: { col: 'name', dir: 'asc' },
             by_version: { col: 'name', dir: 'desc' }
         };
-
-        function parseVersion(ver) {
-            const match = (ver || '').match(/(\d+)\.(\d+)\.(\d+)/);
-            if (match) return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
-            return [0, 0, 0];
-        }
-
-        function compareVersions(a, b) {
-            const va = parseVersion(a);
-            const vb = parseVersion(b);
-            for (let i = 0; i < 3; i++) {
-                if (va[i] < vb[i]) return -1;
-                if (va[i] > vb[i]) return 1;
-            }
-            return 0;
-        }
 
         function sortStatsData(data, section, col, dir) {
             const arr = [...data];
@@ -6270,6 +6242,9 @@ _I18N_SCRIPT = r"""
       'Only .wpk files are allowed': '僅允許 .wpk 檔案',
       'Password is required': '密碼為必填',
       'Username is required': '使用者名稱為必填',
+      'Group name is required': '群組名稱為必填',
+      'Invalid group name': '群組名稱格式無效',
+      'agent_ids is required and must be a non-empty list': '必須提供 agent_ids，且不可為空清單',
       'Password must contain: uppercase, lowercase, number, special char, min 8 chars': '密碼必須包含：大寫、小寫、數字、特殊字元，且至少 8 個字元',
       'Please enter a group name': '請輸入群組名稱',
       'Please enter a new group name': '請輸入新的群組名稱',
@@ -6567,6 +6542,7 @@ _I18N_SCRIPT = r"""
       [/^(\d+)\s+agents?\s+selected$/, function (m) { return '已選取 ' + m[1] + ' 個代理程式'; }],
       [/^Found\s+(\d+)\s+agents?$/, function (m) { return '找到 ' + m[1] + ' 個代理程式'; }],
       [/^Error:\s*(.+)$/, function (m) { return '錯誤：' + m[1]; }],
+      [/^Invalid agent ID:\s*(.+)$/, function (m) { return '無效的代理程式 ID：' + m[1]; }],
       [/^Error loading agents:\s*(.+)$/, function (m) { return '載入代理程式錯誤：' + m[1]; }],
       [/^Successfully synced to\s+(.+)$/, function (m) { return '已成功同步到 ' + m[1]; }],
       [/^Services restarted successfully on\s+(.+)$/, function (m) { return '已成功在 ' + m[1] + ' 重新啟動服務'; }],
@@ -7498,6 +7474,21 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         api.token = sess_data.get('token')
         return api
 
+    def require_agent_ids(data):
+        """Extract and validate agent_ids from a request body.
+
+        Returns (agent_ids, None) on success, or (None, error_response) so the
+        caller can `return err`. An absent or empty list is a client error.
+        """
+        agent_ids = data.get('agent_ids')
+        if not isinstance(agent_ids, list) or not agent_ids:
+            return None, (jsonify({'error': 'agent_ids is required and must be a non-empty list'}), 400)
+        agent_ids = [str(a) for a in agent_ids]
+        invalid = [a for a in agent_ids if not validate_agent_id(a)]
+        if invalid:
+            return None, (jsonify({'error': f'Invalid agent ID: {sanitize_for_log(invalid[0])}'}), 400)
+        return agent_ids, None
+
     @app.route('/images/<path:filename>')
     def serve_image(filename):
         """Serve images from the images directory."""
@@ -7868,7 +7859,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         import subprocess
 
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             agent_ids = data.get('agent_ids', [])
             dry_run = data.get('dry_run', False)
 
@@ -7987,8 +7978,10 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     @login_required
     def delete_agents():
         try:
-            data = request.get_json()
-            agent_ids = data.get('agent_ids', [])
+            data = request.get_json(silent=True) or {}
+            agent_ids, err = require_agent_ids(data)
+            if err:
+                return err
             dry_run = data.get('dry_run', False)
 
             user = get_current_user()
@@ -8015,8 +8008,10 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     @login_required
     def restart_agents():
         try:
-            data = request.get_json()
-            agent_ids = data.get('agent_ids', [])
+            data = request.get_json(silent=True) or {}
+            agent_ids, err = require_agent_ids(data)
+            if err:
+                return err
             dry_run = data.get('dry_run', False)
 
             user = get_current_user()
@@ -8043,8 +8038,10 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     @login_required
     def reconnect_agents():
         try:
-            data = request.get_json()
-            agent_ids = data.get('agent_ids', [])
+            data = request.get_json(silent=True) or {}
+            agent_ids, err = require_agent_ids(data)
+            if err:
+                return err
             dry_run = data.get('dry_run', False)
 
             user = get_current_user()
@@ -8072,8 +8069,10 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     def upgrade_agents():
         """Upgrade selected agents to a specified or latest version."""
         try:
-            data = request.get_json()
-            agent_ids = data.get('agent_ids', [])
+            data = request.get_json(silent=True) or {}
+            agent_ids, err = require_agent_ids(data)
+            if err:
+                return err
             version = data.get('version')  # None means use manager version
             force = data.get('force', False)
             dry_run = data.get('dry_run', False)
@@ -8218,8 +8217,12 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     @login_required
     def create_group():
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             name = data.get('name')
+            if not name:
+                return jsonify({'error': 'Group name is required'}), 400
+            if not validate_group_name(name):
+                return jsonify({'error': 'Invalid group name'}), 400
             dry_run = data.get('dry_run', False)
             user = get_current_user()
 
@@ -8245,7 +8248,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         if not validate_group_name(name):
             return jsonify({'error': 'Invalid group name'}), 400
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True) or {}
             dry_run = data.get('dry_run', False)
             user = get_current_user()
 
@@ -8270,7 +8273,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         """Rename a group by creating new, copying config, moving agents, deleting old."""
         import shutil
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             old_name = data.get('old_name', '')
             new_name = data.get('new_name', '')
             dry_run = data.get('dry_run', False)
@@ -8379,7 +8382,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         if not validate_group_name(name):
             return jsonify({'error': 'Invalid group name'}), 400
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             agent_ids = data.get('agent_ids', [])
             dry_run = data.get('dry_run', False)
 
@@ -8436,7 +8439,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         if not validate_group_name(name):
             return jsonify({'error': 'Invalid group name'}), 400
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             agent_ids = data.get('agent_ids', [])
             dry_run = data.get('dry_run', False)
 
@@ -8479,7 +8482,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         if not validate_group_name(name):
             return jsonify({'error': 'Invalid group name'}), 400
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True) or {}
             dry_run = data.get('dry_run', False)
 
             api = get_api_session()
@@ -8518,7 +8521,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         if not validate_group_name(name):
             return jsonify({'error': 'Invalid group name'}), 400
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True) or {}
             dry_run = data.get('dry_run', False)
 
             api = get_api_session()
@@ -8571,7 +8574,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         if not validate_group_name(name):
             return jsonify({'error': 'Invalid group name'}), 400
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True) or {}
             target_group = data.get('target_group')
             dry_run = data.get('dry_run', False)
 
@@ -8620,7 +8623,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         if not validate_group_name(name):
             return jsonify({'error': 'Invalid group name'}), 400
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True) or {}
             agents_data = data.get('agents', [])
             dry_run = data.get('dry_run', False)
 
@@ -8759,7 +8762,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         if not validate_group_name(name):
             return jsonify({'error': 'Invalid group name'}), 400
         try:
-            data = request.get_json()
+            data = request.get_json(silent=True) or {}
             content = data.get('content', '')
             user = get_current_user()
 
@@ -8875,7 +8878,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         if not validate_node_name(name):
             return jsonify({'error': 'Invalid node name'}), 400
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True) or {}
             dry_run = data.get('dry_run', False)
 
             api = get_api_session()
@@ -9430,7 +9433,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             import shutil
             import socket
 
-            data = request.get_json() or {}
+            data = request.get_json(silent=True) or {}
             content = data.get('content', '')
 
             if not content or not content.strip():
@@ -9854,7 +9857,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         if not validate_node_name(name):
             return jsonify({'error': 'Invalid node name'}), 400
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True) or {}
             alerts = data.get('alerts', [])
 
             # Validate input format
@@ -10988,19 +10991,10 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             # Get users
             users = api.get_users()
 
-            # Get roles - try API first, then CLI as fallback
+            # Roles come from the API only. Wazuh ships no `wazuh-user` binary
+            # (RBAC users/roles are API-managed), so there is no CLI fallback.
             roles = api.get_roles()
             roles_source = 'api'
-
-            if not roles:
-                # Fallback to CLI
-                try:
-                    cli = WazuhCLI()
-                    roles = cli.list_roles()
-                    if roles:
-                        roles_source = 'cli'
-                except Exception as cli_err:
-                    print(f"[WebUI] CLI roles fallback failed: {cli_err}")
 
             result = {
                 'users': users,
@@ -11021,7 +11015,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     def create_user():
         """Create a new API user via API."""
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True) or {}
             username = data.get('username')
             password = data.get('password')
             role_names = data.get('role_names', [])
@@ -11096,7 +11090,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         if not validate_username(username):
             return jsonify({'error': 'Invalid username'}), 400
         try:
-            data = request.get_json() or {}
+            data = request.get_json(silent=True) or {}
             role_ids = data.get('role_ids', [])
             operator = get_current_user()
 
@@ -11379,9 +11373,18 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             # Find rules that belong to this group
             group_parent_rules = group_to_rules.get(if_group, [])
 
-        # Find all descendants (children going down)
-        def find_children(parent_id: str, parent_group: str = None) -> list:
+        # Find all descendants (children going down).
+        # `visited` already prevents cycles, but a long if_group chain can still
+        # nest deeper than Python's recursion limit, so cap the depth explicitly.
+        MAX_TREE_DEPTH = 100
+
+        def find_children(parent_id: str, parent_group: str = None, depth: int = 0) -> list:
             children = []
+            if depth >= MAX_TREE_DEPTH:
+                logger.warning(
+                    f"Rule hierarchy for {target_rule_id} truncated at depth {MAX_TREE_DEPTH}"
+                )
+                return children
             for rid, rule in rules_dict.items():
                 if rid in visited:
                     continue
@@ -11394,7 +11397,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                         'description': rule.get('description', ''),
                         'file': rule.get('file', ''),
                         'is_custom': rule.get('is_custom', False),
-                        'children': find_children(rid, rule.get('group'))
+                        'children': find_children(rid, rule.get('group'), depth + 1)
                     })
                 # Check if_group (this rule depends on parent's group)
                 elif parent_group and rule.get('if_group'):
@@ -11410,7 +11413,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                             'file': rule.get('file', ''),
                             'is_custom': rule.get('is_custom', False),
                             'if_group': rule_if_group,
-                            'children': find_children(rid, rule.get('group'))
+                            'children': find_children(rid, rule.get('group'), depth + 1)
                         })
             return children
 
