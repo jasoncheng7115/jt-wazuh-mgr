@@ -1,4 +1,4 @@
-# JT Wazuh Manager v1.4.1
+# JT Wazuh Manager v1.4.2
 
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
@@ -8,7 +8,7 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.4.1-blue)
+![Version](https://img.shields.io/badge/version-1.4.2-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
@@ -43,6 +43,10 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 ---
 
 ## ✨ 新功能
+
+### 1.4.2
+
+- 「規則」分頁會回報無法解析的規則檔，不再默默略過。
 
 ### 1.4.1 — 維護版本
 

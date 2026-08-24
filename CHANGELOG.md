@@ -4,6 +4,17 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.4.2 (2026-08-24)
+
+- **Rules tab now reports unparseable rule files.** `parse_rule_file()` swallowed
+  XML errors, so rules in a malformed file were silently missing from the tab with
+  no indication anything was wrong. `GET /api/rules` now returns a `parse_errors`
+  list, and the tab shows a warning linking to a modal naming each file and the
+  parser's reason. (Wazuh 4.14.7 itself ships one such file:
+  `0910-ms-exchange-proxylogon_rules.xml`, whose `pcre2` regex contains `\<` and
+  `\>`; ElementTree rejects it at line 57, hiding its rules.)
+  Parse failures are also logged at WARNING instead of DEBUG.
+
 ## v1.4.1 (2026-08-24)
 
 Maintenance release. Verified against **Wazuh 4.14.7** — no API or CLI changes were

@@ -975,6 +975,7 @@ HTML_TEMPLATE = '''
                     </div>
                     <button class="btn btn-primary btn-sm" onclick="loadAllRules()" title="Refresh"><svg class="icon"><use href="#icon-refresh"/></svg></button>
                     <span id="rulesAllStatus" style="color:#888;font-size:13px;"></span>
+                    <span id="rulesParseWarn" style="font-size:13px;"></span>
                 </span>
             </div>
             <!-- Hierarchy View -->
@@ -5385,6 +5386,7 @@ HTML_TEMPLATE = '''
         // Rules functions
         let rulesCache = {};
         let allRulesData = [];
+        let allRulesParseErrors = [];
         let allRulesLoaded = false;
         let rulesMode = 'hierarchy';
         let rulesSortColumn = 'id';
@@ -5697,6 +5699,20 @@ HTML_TEMPLATE = '''
 
                 allRulesData = data.rules || [];
                 allRulesLoaded = true;
+                allRulesParseErrors = data.parse_errors || [];
+
+                // Some rule files may be unreadable XML (Wazuh's own ruleset has
+                // shipped such files). Say so instead of silently hiding rules.
+                const warn = document.getElementById('rulesParseWarn');
+                if (allRulesParseErrors.length) {
+                    const n = allRulesParseErrors.length;
+                    warn.innerHTML = '<a href="#" onclick="showRuleParseErrors();return false;" ' +
+                        'style="color:#fd7e14;text-decoration:none;" ' +
+                        'title="Click for details">&#9888; ' + n +
+                        (n === 1 ? ' rule file could not be parsed' : ' rule files could not be parsed') + '</a>';
+                } else {
+                    warn.innerHTML = '';
+                }
 
                 // Populate file filter dropdown
                 const fileFilter = document.getElementById('rulesFileFilter');
@@ -5717,6 +5733,21 @@ HTML_TEMPLATE = '''
             } catch (err) {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#e94560;padding:30px;">Error: ' + escapeHtml(err.message) + '</td></tr>';
             }
+        }
+
+        function showRuleParseErrors() {
+            const rows = allRulesParseErrors.map(e =>
+                '<tr><td style="padding:6px 10px;font-family:monospace;">' + escapeHtml(e.file) +
+                '</td><td style="padding:6px 10px;color:#e94560;">' + escapeHtml(e.error) + '</td></tr>'
+            ).join('');
+            showModal('Rule Files That Could Not Be Parsed',
+                '<p style="margin-bottom:12px;">These rule files contain XML the parser rejected, so their rules are ' +
+                'not listed in this tab. This usually means the file itself is malformed &mdash; check it on the manager.</p>' +
+                '<div style="overflow-x:auto;"><table class="data-table" style="width:100%;font-size:13px;">' +
+                '<thead><tr><th style="text-align:left;padding:6px 10px;">File</th>' +
+                '<th style="text-align:left;padding:6px 10px;">Error</th></tr></thead><tbody>' +
+                rows + '</tbody></table></div>',
+                '<button class="btn" onclick="closeModal()">Close</button>', true);
         }
 
         function getFilteredRulesAll() {
@@ -6243,6 +6274,11 @@ _I18N_SCRIPT = r"""
       'Password is required': '密碼為必填',
       'Username is required': '使用者名稱為必填',
       'Group name is required': '群組名稱為必填',
+      'Rule Files That Could Not Be Parsed': '無法解析的規則檔',
+      'Click for details': '點擊查看詳細資訊',
+      'File': '檔案',
+      'Error': '錯誤',
+      'These rule files contain XML the parser rejected, so their rules are not listed in this tab. This usually means the file itself is malformed — check it on the manager.': '這些規則檔內含解析器無法讀取的 XML，因此其規則不會顯示在此分頁。通常代表該檔案本身格式有誤，請至 Manager 上檢查。',
       'Invalid group name': '群組名稱格式無效',
       'agent_ids is required and must be a non-empty list': '必須提供 agent_ids，且不可為空清單',
       'Password must contain: uppercase, lowercase, number, special char, min 8 chars': '密碼必須包含：大寫、小寫、數字、特殊字元，且至少 8 個字元',
@@ -6543,6 +6579,7 @@ _I18N_SCRIPT = r"""
       [/^Found\s+(\d+)\s+agents?$/, function (m) { return '找到 ' + m[1] + ' 個代理程式'; }],
       [/^Error:\s*(.+)$/, function (m) { return '錯誤：' + m[1]; }],
       [/^Invalid agent ID:\s*(.+)$/, function (m) { return '無效的代理程式 ID：' + m[1]; }],
+      [/^\u26a0\s*(\d+)\s+rule files? could not be parsed$/, function (m) { return '\u26a0 ' + m[1] + ' 個規則檔無法解析'; }],
       [/^Error loading agents:\s*(.+)$/, function (m) { return '載入代理程式錯誤：' + m[1]; }],
       [/^Successfully synced to\s+(.+)$/, function (m) { return '已成功同步到 ' + m[1]; }],
       [/^Services restarted successfully on\s+(.+)$/, function (m) { return '已成功在 ' + m[1] + ' 重新啟動服務'; }],
@@ -9869,7 +9906,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             if alerts:
                 warnings = []
                 try:
-                    rules_dict, group_to_rules = get_all_rules()
+                    rules_dict, group_to_rules, parse_errors = get_all_rules()
                     all_rule_ids = set(rules_dict.keys())
                     all_groups = set(group_to_rules.keys())
                     # Collect all valid levels from existing rules
@@ -11185,8 +11222,15 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     # ============ Rules API ============
 
-    def parse_rule_file(file_path: str, is_custom: bool = False) -> list:
-        """Parse a Wazuh rule XML file and extract rule information."""
+    def parse_rule_file(file_path: str, is_custom: bool = False) -> tuple:
+        """Parse a Wazuh rule XML file and extract rule information.
+
+        Returns:
+            Tuple of (rules, error). `error` is None on success, or a short
+            message when the file could not be parsed -- Wazuh's own ruleset
+            occasionally ships XML that ElementTree rejects, and silently
+            dropping those files hides rules from the Rules tab.
+        """
         import xml.etree.ElementTree as ET
         rules = []
         try:
@@ -11285,17 +11329,20 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     'is_custom': is_custom
                 })
         except Exception as e:
-            logger.debug(f"Error parsing rule file {file_path}: {e}")
-        return rules
+            logger.warning(f"Error parsing rule file {file_path}: {e}")
+            return rules, str(e)
+        return rules, None
 
     def get_all_rules() -> tuple:
         """Get all rules from Wazuh ruleset directories.
 
         Returns:
-            Tuple of (rules_dict, group_to_rules mapping)
+            Tuple of (rules_dict, group_to_rules mapping, parse_errors), where
+            parse_errors lists the rule files that could not be parsed.
         """
         rules_dict = {}
         group_to_rules = {}  # Maps group name to list of rule IDs
+        parse_errors = []
         rule_dirs = [
             ('/var/ossec/ruleset/rules/', False),  # Built-in rules
             ('/var/ossec/etc/rules/', True)         # Custom rules
@@ -11306,7 +11353,9 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 for filename in os.listdir(rule_dir):
                     if filename.endswith('.xml'):
                         file_path = os.path.join(rule_dir, filename)
-                        parsed_rules = parse_rule_file(file_path, is_custom)
+                        parsed_rules, parse_error = parse_rule_file(file_path, is_custom)
+                        if parse_error:
+                            parse_errors.append({'file': filename, 'error': parse_error})
                         for rule in parsed_rules:
                             if rule['id']:
                                 rules_dict[rule['id']] = rule
@@ -11321,7 +11370,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                                                 group_to_rules[g] = []
                                             group_to_rules[g].append(rule['id'])
 
-        return rules_dict, group_to_rules
+        return rules_dict, group_to_rules, parse_errors
 
     def get_rule_content(rule_id: str) -> str:
         """Get the XML content of a specific rule."""
@@ -11497,11 +11546,12 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     def get_all_rules_list():
         """Get all rules as a flat list for browsing."""
         try:
-            rules_dict, group_to_rules = get_all_rules()
+            rules_dict, group_to_rules, parse_errors = get_all_rules()
             rules_list = sorted(rules_dict.values(), key=lambda r: int(r['id']) if r['id'].isdigit() else 0)
             return jsonify({
                 'rules': rules_list,
-                'total': len(rules_list)
+                'total': len(rules_list),
+                'parse_errors': parse_errors
             })
         except Exception as e:
             logger.error(f"Error getting all rules list: {e}")
@@ -11520,7 +11570,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             if not rule_id.isdigit():
                 return jsonify({'error': 'Invalid rule ID format'}), 400
 
-            rules_dict, group_to_rules = get_all_rules()
+            rules_dict, group_to_rules, parse_errors = get_all_rules()
             result = build_hierarchy(rules_dict, group_to_rules, rule_id)
 
             if 'error' in result:
