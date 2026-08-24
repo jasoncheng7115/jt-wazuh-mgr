@@ -4,6 +4,30 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.4.1（2026-08-24）
+
+維護版本。已對 **Wazuh 4.14.7** 完整驗證 —— 不需要任何 API 或 CLI 的配合修改，
+本工具用到的每個 endpoint 與路徑在該版本都存在且未被標記為 deprecated。
+
+- **修正：規則階層會讓「規則」分頁當機。** `find_children()` 遞迴時沒有深度限制，
+  遇到較長的 `if_group` / `if_sid` 鏈會拋出
+  `RecursionError: maximum recursion depth exceeded`，請求以 500 失敗。
+  現已限制遞迴深度（截斷時會寫入記錄）。
+- **修正：沒有 JSON body 的請求會回 500。** 當呼叫端未帶 body 或 `Content-Type`
+  不是 JSON 時，`request.get_json()` 會拋出 werkzeug 的 `BadRequest`，
+  而各路由的通用例外處理把它回報成伺服器錯誤。20 個路由改用
+  `get_json(silent=True)`。
+- **新增：代理程式批次操作的輸入驗證。** `restart`、`reconnect`、`delete`、
+  `upgrade` 現在會拒絕缺少或空的 `agent_ids`，並驗證每個 ID，
+  不再帶著空清單去呼叫 Wazuh API。
+- **新增：`POST /api/groups` 會驗證群組名稱**（`DELETE` 路由原本就有），
+  名稱格式錯誤或缺少時回 400，而不是真的建出一個叫 `None` 的群組。
+- **修正：版本比較函式被定義了三次**，而且實際生效的版本與最先寫的那個行為不同。
+  已整併為單一的數值比較器，`4.14.7` 會正確排在 `4.9.0` 之上。
+- **移除無效程式碼：** 取得角色清單時的 `wazuh-user` CLI 備援
+  （Wazuh 並沒有這支執行檔，RBAC 僅能透過 API 管理），以及五個未使用的 import。
+- 為新增的驗證訊息補上繁體中文翻譯。
+
 ## v1.4.0（2026-06-11）
 - **雙語介面（English / 繁體中文）**：標題列一鍵切換語言，偏好依瀏覽器記住。翻譯完全在前端套用（文字節點 + `placeholder`／`title`），並以 `MutationObserver` 讓動態產生的內容也持續翻譯。UI 字串集中於 `lib/i18n_engine.js`，由 `tools/build_i18n.py` 內嵌進 `lib/web_ui.py`。
 - **獨立倉庫**：專案由 `jt_wazuh_agent_mgr` 更名為 **`jt-wazuh-mgr`**，並獨立為 `jasoncheng7115/jt-wazuh-mgr`。安裝路徑改為 `/opt/jt-wazuh-mgr`，systemd 服務改為 `jt-wazuh-mgr`。
