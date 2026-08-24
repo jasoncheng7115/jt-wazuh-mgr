@@ -4,6 +4,16 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.4.2（2026-08-24）
+
+- **「規則」分頁會回報無法解析的規則檔。** `parse_rule_file()` 原本會吞掉 XML 錯誤，
+  導致格式有誤的檔案中的規則在分頁裡直接消失，而且完全沒有任何提示。
+  `GET /api/rules` 現在會回傳 `parse_errors` 清單，分頁上會顯示警告，
+  點擊後可看到每個檔案與解析器的錯誤原因。
+  （Wazuh 4.14.7 本身就有一個這樣的檔案：`0910-ms-exchange-proxylogon_rules.xml`，
+  其 `pcre2` 正規表示式含有 `\<` 與 `\>`，ElementTree 在第 57 行拒絕解析，
+  使該檔的規則被隱藏。）解析失敗的記錄層級也從 DEBUG 提升為 WARNING。
+
 ## v1.4.1（2026-08-24）
 
 維護版本。已對 **Wazuh 4.14.7** 完整驗證 —— 不需要任何 API 或 CLI 的配合修改，
