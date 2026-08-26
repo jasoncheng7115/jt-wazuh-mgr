@@ -452,10 +452,29 @@ class TestRuleContentSearch(WebUITestCase):
 
 class TestFrontend(unittest.TestCase):
 
+    # The template uses optional chaining, so an old node cannot parse it even
+    # though every current browser can.
+    MIN_NODE_MAJOR = 14
+
     @classmethod
     def setUpClass(cls):
         cls.tpl = web_ui.HTML_TEMPLATE
-        cls.have_node = subprocess.run(['which', 'node'], capture_output=True).returncode == 0
+        cls.have_node = False
+        cls.node_reason = 'node not available'
+        try:
+            probe = subprocess.run(['node', '--version'], capture_output=True, text=True)
+        except (OSError, FileNotFoundError):
+            return
+        if probe.returncode == 0:
+            try:
+                major = int(probe.stdout.strip().lstrip('v').split('.')[0])
+            except ValueError:
+                major = 0
+            if major >= cls.MIN_NODE_MAJOR:
+                cls.have_node = True
+            else:
+                cls.node_reason = ('node %s is too old to parse the template (need >= %d)'
+                                   % (probe.stdout.strip(), cls.MIN_NODE_MAJOR))
 
     def _js(self):
         blocks = re.findall(r'<script[^>]*>(.*?)</script>', self.tpl, re.S)
@@ -465,7 +484,7 @@ class TestFrontend(unittest.TestCase):
 
     def test_javascript_parses(self):
         if not self.have_node:
-            self.skipTest('node not available')
+            self.skipTest(self.node_reason)
         import tempfile
         with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf-8') as fh:
             fh.write(self._js())
@@ -479,7 +498,7 @@ class TestFrontend(unittest.TestCase):
     def test_version_comparator_is_numeric(self):
         """4.14.7 must rank above 4.9.0 -- a string compare gets this backwards."""
         if not self.have_node:
-            self.skipTest('node not available')
+            self.skipTest(self.node_reason)
         start = self.tpl.index('        function parseVersion(ver) {')
         end = self.tpl.index('        // Format agent version with color coding')
         cases = [('4.14.7', '4.9.0', 1), ('4.9.0', '4.14.7', -1),
