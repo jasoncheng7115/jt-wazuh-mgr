@@ -1,4 +1,4 @@
-# JT Wazuh Manager v1.4.3
+# JT Wazuh Manager v1.5.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
@@ -8,7 +8,7 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.4.3-blue)
+![Version](https://img.shields.io/badge/version-1.5.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
@@ -43,6 +43,14 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 ---
 
 ## ✨ 新功能
+
+### 1.5.0
+
+- **新增「資產清單」分頁**：一次跨所有代理程式搜尋套件、開放連接埠、處理程序、服務、使用者、修補程式等 —— 正好是 Dashboard「一次只看一台」的反向操作。
+- **「規則」分頁升級為規則集工作台**：階層、所有規則、**解碼器**、**CDB 清單**、**記錄測試**（貼上一行 log，立刻看到命中的規則與解碼器）。
+- **更安全的設定編輯**：重新啟動前先驗證 `ossec.conf`，並可只重新載入規則集而不重啟。
+- **自訂 WPK 升級**，供無法連外的 Manager 使用。
+- 對選取代理程式執行**主動回應**、**預先註冊代理程式**並取得金鑰、檢視**生效中的設定**與**代理程式金鑰**、各節點 **daemon 健康度**、群組**檔案瀏覽**。
 
 ### 1.4.3
 
