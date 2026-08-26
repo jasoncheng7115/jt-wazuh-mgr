@@ -1,4 +1,4 @@
-# JT Wazuh Manager v1.4.2
+# JT Wazuh Manager v1.4.3
 
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
@@ -8,7 +8,7 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.4.2-blue)
+![Version](https://img.shields.io/badge/version-1.4.3-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
@@ -43,6 +43,13 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 ---
 
 ## ✨ 新功能
+
+### 1.4.3
+
+- 資安強化（CSP 等安全標頭、CDN 資源 SRI、登入 CSRF token），並以 OWASP ZAP baseline 掃描驗證。
+- 規則分頁：可對所有規則的完整 XML 做關鍵字搜尋；階層檢視恢復可捲動。
+- 代理程式分頁：新增「離開選取」按鈕。
+- 大幅補齊繁體中文翻譯，並新增測試套件（`tests/`）。
 
 ### 1.4.2
 

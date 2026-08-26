@@ -4,6 +4,52 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.4.3（2026-08-26）
+
+**資安強化**（已用 OWASP ZAP baseline 掃描驗證：警告從 12 降至 8、0 個 failure；
+剩下的 Medium 是架構上無法避免的 CSP `unsafe-inline`）：
+
+- 所有回應都加上**安全標頭**：`Content-Security-Policy`、`X-Content-Type-Options`、
+  `X-Frame-Options: DENY`、`Referrer-Policy`、`Permissions-Policy`、
+  `Cross-Origin-Opener-Policy`、`Cross-Origin-Resource-Policy`、
+  `Cache-Control: no-store`，以及 HTTPS 模式下的 HSTS。
+- 為 cdnjs 載入的 CodeMirror 資源加上 **Subresource Integrity**。原本沒有任何完整性
+  驗證，若 CDN 回應遭竄改，就會在持有 Wazuh API token 的管理介面中執行任意 JavaScript。
+- **登入表單加上 CSRF token**。JSON API 有 `SameSite=Lax` 保護，但登入表單原本沒有。
+- **WSGI 伺服器不再於 `Server` 標頭洩漏版本資訊**。
+
+**規則分頁**
+
+- **新增：對所有規則的完整 XML 做關鍵字搜尋**（`GET /api/rules/search`），
+  支援以空白分隔的多個關鍵字，並可選擇全部符合或任一符合。原本的表格篩選只看得到
+  id/level/description/file/groups，因此 `<field>`、`<regex>`、`<decoded_as>`、
+  `<options>` 裡的字串完全搜不到。由於改用原始文字比對，連 XML 解析失敗的檔案裡的
+  規則也找得到。
+- **修正：階層檢視無法捲動。** 該區塊本身沒有任何尺寸樣式，導致
+  `.rules-content` 的 `flex:1; overflow:auto` 完全失效，較長的規則樹會被面板切掉
+  且沒有捲軸。
+
+**代理程式分頁**
+
+- **新增：「離開選取」按鈕**，位於已選取數量旁，可一次清除批次選取，
+  不必逐列取消勾選。
+
+**翻譯**
+
+- 大幅補齊繁體中文：以全模板掃描比對所有使用者可見字串與字典後補上缺口，
+  包含完整的代理程式升級流程（對話框、選項、進度表格、狀態值、統計數字）、
+  各種確認對話框，以及帶有變數的視窗標題。新增 40 多個字典項目與 38 條規則式，
+  也包含你回報的「Found N related rules」。
+- 調整「升級至 Manager 版本」標籤結構，讓其文字節點不再夾帶結尾的 `(`
+  ——原本因此無法翻譯。
+
+**測試**
+
+- **專案現在有測試套件了**（`tests/test_web_ui.py`，46 項測試）：
+  以 `python3 -m unittest discover -s tests` 執行。完全離線運作
+  （Wazuh API 以 mock 取代、ruleset 為模擬資料），涵蓋認證、請求驗證、
+  規則相關端點、安全標頭、CSRF、反射型 XSS 的轉義、SRI、版本比較器與翻譯一致性。
+
 ## v1.4.2（2026-08-24）
 
 - **「規則」分頁會回報無法解析的規則檔。** `parse_rule_file()` 原本會吞掉 XML 錯誤，

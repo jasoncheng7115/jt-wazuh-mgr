@@ -4,6 +4,57 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.4.3 (2026-08-26)
+
+**Security hardening** (verified with an OWASP ZAP baseline scan: 12 warnings -> 8,
+0 failures; the remaining Mediums are the inherent `unsafe-inline` CSP entries):
+
+- **Security response headers** on every response: `Content-Security-Policy`,
+  `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`,
+  `Permissions-Policy`, `Cross-Origin-Opener-Policy`,
+  `Cross-Origin-Resource-Policy`, `Cache-Control: no-store`, and HSTS when
+  running over HTTPS.
+- **Subresource Integrity** for the CodeMirror assets loaded from cdnjs. They were
+  fetched with no integrity check, so a compromised CDN response would have run
+  arbitrary JavaScript inside a console that holds a Wazuh API token.
+- **CSRF token on the login form.** The JSON API is covered by `SameSite=Lax`, but
+  the login form itself had no token.
+- **The WSGI server no longer advertises its version** in the `Server` header.
+
+**Rules tab**
+
+- **New: keyword search across the full XML of every rule** (`GET /api/rules/search`),
+  with multiple space-separated keywords and an all/any selector. The table filter
+  only ever saw id/level/description/file/groups, so terms inside `<field>`,
+  `<regex>`, `<decoded_as>` or `<options>` were unfindable. Because it greps raw
+  text it also finds rules in files the XML parser rejects.
+- **Fixed: the hierarchy view could not scroll.** It had no sizing of its own, so
+  `.rules-content`'s `flex:1; overflow:auto` never applied and a tall rule tree was
+  clipped by the panel with no scrollbar.
+
+**Agents tab**
+
+- **New: an Exit Selection button** next to the selection count, to clear a batch
+  selection without unticking each row.
+
+**Translation**
+
+- Much wider zh-TW coverage, found by scanning every user-visible string in the
+  template against the dictionary: the whole agent upgrade flow (dialog, options,
+  progress table, status values, summary counts), the confirmation prompts, and
+  modal titles that carry a value. 40+ dictionary entries and 38 regex patterns
+  added, including "Found N related rules".
+- The "Upgrade to manager version" label was restructured so its text node no
+  longer includes a trailing `(`, which had made it untranslatable.
+
+**Tests**
+
+- **The project now has a test suite** (`tests/test_web_ui.py`, 46 tests): run it with
+  `python3 -m unittest discover -s tests`. It runs fully offline -- the Wazuh API is
+  mocked and the ruleset is faked -- and covers authentication, request validation,
+  the rule endpoints, security headers, CSRF, reflected-XSS escaping, SRI, the
+  version comparator, and translation consistency.
+
 ## v1.4.2 (2026-08-24)
 
 - **Rules tab now reports unparseable rule files.** `parse_rule_file()` swallowed

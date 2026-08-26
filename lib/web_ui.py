@@ -275,6 +275,7 @@ LOGIN_TEMPLATE = '''
         {% endif %}
 
         <form method="POST" action="/login">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token or '' }}">
             <input type="hidden" name="host" value="{{ host or 'localhost' }}">
             <input type="hidden" name="port" value="{{ port or '55000' }}">
             <div class="form-group">
@@ -324,12 +325,12 @@ HTML_TEMPLATE = '''
     <title>JT Wazuh Manager</title>
     <link rel="icon" type="image/png" href="/images/logo-1.png">
     <!-- CodeMirror for config editor -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/simple.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" integrity="sha384-zaeBlB/vwYsDRSlFajnDd7OydJ0cWk+c2OWybl3eSUf6hW2EbhlCsQPqKr3gkznT" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" integrity="sha384-ccdJwIIg/K0Ab6aXF4MPACh7ckk61tvQFTrfkhXZEALgAETURNZIAuQLcS/aPbrM" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js" integrity="sha384-ZYmwuq4n2gOcNxMSiJ6jyTj+BbIrilr7p6dlq6q5nmSWKmsH9UU4K1qqjycMkfmR" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js" integrity="sha384-xPpkMo5nDgD98fIcuRVYhxkZV6/9Y4L8s3p0J5c4MxgJkyKJ8BJr+xfRkq7kn6Tw" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js" integrity="sha384-g0o+WW9mdIxA7LaaCKTkRm0M5TVT+Bb4s9eocxPsI2G0Xm0POG9iD6G6qP1IIsfS" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/simple.min.js" integrity="sha384-5+aYjV0V2W3IwhAYp/9WOrGMv1TaYkCjnkkW7Hv3yJQo28MergRCSRaUIUzDUs2J" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script>
     // Custom Wazuh alerts.log mode
     document.addEventListener('DOMContentLoaded', function() {
@@ -550,6 +551,9 @@ HTML_TEMPLATE = '''
         .rules-toolbar-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
         .rules-toolbar-filters select, .rules-toolbar-filters input[type="number"] { padding: 6px 8px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; font-size: 13px; }
         .rules-toolbar-filters input[type="number"] { width: 60px; }
+        .rules-content-search { display: inline-flex; gap: 6px; align-items: center; }
+        .rules-content-search input { padding: 6px 8px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; font-size: 13px; min-width: 220px; }
+        .rules-content-search select { padding: 6px 8px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; font-size: 13px; }
         .rules-pagination { display: flex; gap: 8px; align-items: center; justify-content: center; padding: 8px 0; flex-shrink: 0; font-size: 13px; color: #888; }
         .rules-pagination button { padding: 4px 10px; background: #0f3460; color: #4fc3f7; border: 1px solid #0f3460; border-radius: 4px; cursor: pointer; font-size: 12px; }
         .rules-pagination button:hover { background: #1a4a7a; }
@@ -843,6 +847,7 @@ HTML_TEMPLATE = '''
                 </div>
                 <div class="action-bar" id="actionBar">
                     <div class="selected-count" id="selectedCount">Selected: <span>0</span></div>
+                    <button class="btn" id="btnClearSelection" onclick="clearSelection()" title="Clear selection"><svg class="icon"><use href="#icon-xmark"/></svg>Exit Selection</button>
                     <button class="btn btn-success" id="btnAddToGroup" onclick="showAddToGroupModal()"><svg class="icon"><use href="#icon-add-group"/></svg>Add to Group</button>
                     <button class="btn btn-warning" id="btnRemoveFromGroup" onclick="showRemoveFromGroupModal()"><svg class="icon"><use href="#icon-remove"/></svg>Remove from Group</button>
                     <button class="btn btn-primary" id="btnMoveToNode" onclick="showMoveToNodeModal()"><svg class="icon"><use href="#icon-move"/></svg>Move to Node</button>
@@ -974,13 +979,21 @@ HTML_TEMPLATE = '''
                         </select>
                     </div>
                     <button class="btn btn-primary btn-sm" onclick="loadAllRules()" title="Refresh"><svg class="icon"><use href="#icon-refresh"/></svg></button>
+                    <span class="rules-content-search">
+                        <input type="text" id="rulesContentSearch" placeholder="Search rule content..." onkeydown="if(event.key==='Enter')searchRulesContent()">
+                        <select id="rulesContentMatch" title="Keyword mode">
+                            <option value="all">Match all</option>
+                            <option value="any">Match any</option>
+                        </select>
+                        <button class="btn btn-primary btn-sm" onclick="searchRulesContent()" title="Search inside every rule's XML"><svg class="icon"><use href="#icon-search"/></svg>Content</button>
+                    </span>
                     <span id="rulesAllStatus" style="color:#888;font-size:13px;"></span>
                     <span id="rulesParseWarn" style="font-size:13px;"></span>
                 </span>
             </div>
             <!-- Hierarchy View -->
-            <div id="rulesHierarchyView">
-                <div style="padding:10px 15px 0 15px;color:#888;font-size:12px;">
+            <div id="rulesHierarchyView" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;">
+                <div style="padding:10px 15px 0 15px;color:#888;font-size:12px;flex-shrink:0;">
                     Search by Rule ID to view the rule hierarchy (parent-child relationships via if_sid/if_matched_sid/if_group). Click on a rule to view its XML content.
                 </div>
                 <div class="rules-content" style="padding:15px;">
@@ -1884,6 +1897,14 @@ HTML_TEMPLATE = '''
                 if (checked) selectedAgents.add(cb.value);
                 else selectedAgents.delete(cb.value);
             });
+            updateSelectedUI();
+        }
+
+        function clearSelection() {
+            selectedAgents.clear();
+            document.querySelectorAll('#agentsBody input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+            const selectAll = document.getElementById('selectAll');
+            if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
             updateSelectedUI();
         }
 
@@ -2985,7 +3006,7 @@ HTML_TEMPLATE = '''
                 </div>
                 <p style="color:#aaa;margin-bottom:5px;">Upgrade Options</p>
                 <div style="background:#1a1a2e;padding:12px;border-radius:4px;margin-bottom:15px;">
-                    <div style="margin-bottom:10px;"><input type="radio" name="upgradeType" value="latest" id="upgradeLatest" checked style="margin-right:8px;"><label for="upgradeLatest" style="cursor:pointer;">Upgrade to manager version${managerVersion ? ' (<span style="color:#4fc3f7;">v' + managerVersion + '</span>)' : ''}</label></div>
+                    <div style="margin-bottom:10px;"><input type="radio" name="upgradeType" value="latest" id="upgradeLatest" checked style="margin-right:8px;"><label for="upgradeLatest" style="cursor:pointer;"><span>Upgrade to manager version</span>${managerVersion ? ' (<span style="color:#4fc3f7;">v' + managerVersion + '</span>)' : ''}</label></div>
                     <div><input type="radio" name="upgradeType" value="custom" id="upgradeCustom" style="margin-right:8px;"><label for="upgradeCustom" style="cursor:pointer;">Specify version:</label> <input type="text" id="customVersion" placeholder="e.g., 4.14.0" style="width:100px;margin-left:5px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;" onfocus="document.getElementById('upgradeCustom').checked=true;"></div>
                 </div>
                 <div><input type="checkbox" id="upgradeForce" style="margin-right:8px;"><label for="upgradeForce" style="cursor:pointer;">Force upgrade (even if same version)</label></div>
@@ -5387,6 +5408,7 @@ HTML_TEMPLATE = '''
         let rulesCache = {};
         let allRulesData = [];
         let allRulesParseErrors = [];
+        let rulesContentQuery = '';
         let allRulesLoaded = false;
         let rulesMode = 'hierarchy';
         let rulesSortColumn = 'id';
@@ -5671,7 +5693,7 @@ HTML_TEMPLATE = '''
                 allBtn.classList.remove('active');
                 hierControls.style.display = 'contents';
                 allControls.style.display = 'none';
-                hierView.style.display = '';
+                hierView.style.display = 'flex';
                 allView.style.display = 'none';
             } else {
                 hierBtn.classList.remove('active');
@@ -5714,18 +5736,9 @@ HTML_TEMPLATE = '''
                     warn.innerHTML = '';
                 }
 
-                // Populate file filter dropdown
-                const fileFilter = document.getElementById('rulesFileFilter');
-                const currentFile = fileFilter.value;
-                const files = [...new Set(allRulesData.map(r => r.file).filter(f => f))].sort();
-                fileFilter.innerHTML = '<option value="">All Files (' + files.length + ')</option>';
-                files.forEach(f => {
-                    const opt = document.createElement('option');
-                    opt.value = f;
-                    opt.textContent = f;
-                    fileFilter.appendChild(opt);
-                });
-                if (currentFile) fileFilter.value = currentFile;
+                // Back to the full list: drop any content-search marker
+                rulesContentQuery = '';
+                populateRulesFileFilter();
 
                 status.textContent = allRulesData.length + ' rules loaded';
                 rulesCurrentPage = 1;
@@ -5748,6 +5761,54 @@ HTML_TEMPLATE = '''
                 '<th style="text-align:left;padding:6px 10px;">Error</th></tr></thead><tbody>' +
                 rows + '</tbody></table></div>',
                 '<button class="btn" onclick="closeModal()">Close</button>', true);
+        }
+
+        // Search the full XML body of every rule via the server (the table filter
+        // above only sees id/level/description/file/groups).
+        async function searchRulesContent() {
+            const input = document.getElementById('rulesContentSearch');
+            const q = (input.value || '').trim();
+            const match = document.getElementById('rulesContentMatch').value;
+            const tbody = document.getElementById('rulesAllBody');
+            const status = document.getElementById('rulesAllStatus');
+            if (!q) {
+                showToast('Enter one or more keywords', 'error');
+                input.focus();
+                return;
+            }
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;"><div class="loading"><div class="spinner"></div>Searching rule content...</div></td></tr>';
+            try {
+                const data = await api('/rules/search?q=' + encodeURIComponent(q) + '&match=' + encodeURIComponent(match));
+                if (!data || data.error) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#e94560;padding:30px;">' + escapeHtml((data && data.error) || 'Search failed') + '</td></tr>';
+                    return;
+                }
+                allRulesData = data.rules || [];
+                allRulesLoaded = true;
+                rulesContentQuery = (data.keywords || []).join(' ');
+                populateRulesFileFilter();
+                rulesCurrentPage = 1;
+                renderAllRules();
+                if (data.truncated) {
+                    showToast('Too many matches, showing first ' + data.max_results, 'warning', 6000);
+                }
+            } catch (err) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#e94560;padding:30px;">Error: ' + escapeHtml(err.message) + '</td></tr>';
+            }
+        }
+
+        function populateRulesFileFilter() {
+            const fileFilter = document.getElementById('rulesFileFilter');
+            const currentFile = fileFilter.value;
+            const files = [...new Set(allRulesData.map(r => r.file).filter(f => f))].sort();
+            fileFilter.innerHTML = '<option value="">All Files (' + files.length + ')</option>';
+            files.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f;
+                opt.textContent = f;
+                fileFilter.appendChild(opt);
+            });
+            if (currentFile && files.includes(currentFile)) fileFilter.value = currentFile;
         }
 
         function getFilteredRulesAll() {
@@ -5832,7 +5893,8 @@ HTML_TEMPLATE = '''
                     html += '<tr>' +
                         '<td><a class="rule-id-link" onclick="browseToRuleHierarchy(\\'' + escapeHtml(r.id) + '\\')">' + escapeHtml(r.id) + '</a></td>' +
                         '<td><span class="rule-level ' + levelClass + '">' + r.level + '</span></td>' +
-                        '<td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(r.description || '') + '">' + escapeHtml(r.description || '') + '</td>' +
+                        '<td style="max-width:400px;" title="' + escapeHtml(r.description || '') + '"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(r.description || '') + '</div>' +
+                            (r.snippet ? '<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#888;font-size:11px;font-family:monospace;margin-top:2px;" title="' + escapeHtml(r.snippet) + '">' + escapeHtml(r.snippet) + '</div>' : '') + '</td>' +
                         '<td>' + groupsHtml + '</td>' +
                         '<td' + fileClass + '>' + escapeHtml(r.file || '') + '</td>' +
                         '<td><span class="rule-type-badge ' + typeClass + '">' + typeLabel + '</span></td>' +
@@ -5847,7 +5909,9 @@ HTML_TEMPLATE = '''
             document.getElementById('rulesPageInput').value = rulesCurrentPage;
             document.getElementById('rulesPageInput').max = rulesTotalPagesNum;
             document.getElementById('rulesTotalPages').textContent = rulesTotalPagesNum;
-            document.getElementById('rulesAllStatus').textContent = total + ' / ' + allRulesData.length + ' rules';
+            document.getElementById('rulesAllStatus').textContent =
+                rulesContentQuery ? total + ' matched: ' + rulesContentQuery
+                                  : total + ' / ' + allRulesData.length + ' rules';
         }
 
         function sortAllRules(column) {
@@ -6274,6 +6338,47 @@ _I18N_SCRIPT = r"""
       'Password is required': '密碼為必填',
       'Username is required': '使用者名稱為必填',
       'Group name is required': '群組名稱為必填',
+      // --- Upgrade modal / progress ---
+      'Upgrade Agents': '升級代理程式',
+      'Upgrade will update agents to the latest available version from Wazuh repository. Make sure the manager has internet access or the WPK files are available locally.': '升級會將代理程式更新為 Wazuh 套件庫中最新的可用版本。請確認 Manager 可連上網際網路，或 WPK 檔案已存放於本機。',
+      'Upgrade to manager version': '升級至 Manager 版本',
+      'Upgrade Failed': '升級失敗',
+      'Updated': '已更新',
+      'Updating': '更新中',
+      'Downloading': '下載中',
+      'In progress': '進行中',
+      'In Progress': '進行中',
+      'Legacy': '舊版',
+      // --- Modal titles ---
+      'Add Agents to Group': '將代理程式加入群組',
+      'Remove Agents from Group': '從群組移除代理程式',
+      'Move Agents to Another Group': '將代理程式移至其他群組',
+      'Move Agents to Node': '將代理程式移至節點',
+      'Clean Queue DB Results': '清除 Queue DB 結果',
+      'Copied!': '已複製！',
+      'This will delete the queue DB files and restart the agents.': '這會刪除 queue DB 檔案並重新啟動代理程式。',
+      'This cannot be undone!': '此動作無法復原！',
+      'DRY-RUN': '模擬執行',
+      // --- Batch selection / rule content search ---
+      'Exit Selection': '離開選取',
+      'Clear selection': '清除選取',
+      'Search rule content...': '搜尋規則內容…',
+      'Keyword mode': '關鍵字模式',
+      'Match all': '全部符合',
+      'Match any': '任一符合',
+      'Content': '內容',
+      "Search inside every rule's XML": '搜尋每條規則的 XML 內容',
+      'Searching rule content...': '搜尋規則內容中…',
+      'Enter one or more keywords': '請輸入一個以上的關鍵字',
+      'Search failed': '搜尋失敗',
+      'Are you sure you want to delete this rule?': '確定要刪除這條規則嗎？',
+      'Sync current email alerts config to the following worker nodes?': '要將目前的電子郵件警示設定同步到下列 Worker 節點嗎？',
+      'Force all agents on this node to reconnect': '強制此節點上的所有代理程式重新連線',
+      'Restart Wazuh Manager services on this node': '重新啟動此節點上的 Wazuh Manager 服務',
+      'SSH is required for remote node config editing and service management.': '遠端編輯節點設定與管理服務需要 SSH。',
+      'This feature will allow you to force agents to reconnect to a specific cluster node.': '此功能可讓你強制代理程式重新連線到指定的叢集節點。',
+      'Will integrate with HAProxy LB to route agents to designated nodes.': '將整合 HAProxy 負載平衡，把代理程式導向指定節點。',
+      'Must contain: uppercase, lowercase, number, special char, min 8 chars': '必須包含：大寫、小寫、數字、特殊字元，且至少 8 個字元',
       'Rule Files That Could Not Be Parsed': '無法解析的規則檔',
       'Click for details': '點擊查看詳細資訊',
       'File': '檔案',
@@ -6579,6 +6684,46 @@ _I18N_SCRIPT = r"""
       [/^Found\s+(\d+)\s+agents?$/, function (m) { return '找到 ' + m[1] + ' 個代理程式'; }],
       [/^Error:\s*(.+)$/, function (m) { return '錯誤：' + m[1]; }],
       [/^Invalid agent ID:\s*(.+)$/, function (m) { return '無效的代理程式 ID：' + m[1]; }],
+      // --- Upgrade modal / progress (interpolated) ---
+      [/^Selected Agents \((\d+)\)$/, function (m) { return '已選取的代理程式（' + m[1] + '）'; }],
+      [/^(\d+) agent\(s\)$/, function (m) { return m[1] + ' 個代理程式'; }],
+      [/^Showing upgrade progress for (\d+) recent agent\(s\)\.$/, function (m) { return '顯示最近 ' + m[1] + ' 個代理程式的升級進度。'; }],
+      [/^Tracking upgrade progress for (\d+) agent\(s\)\. Status updates every 5 seconds\.$/, function (m) { return '正在追蹤 ' + m[1] + ' 個代理程式的升級進度，狀態每 5 秒更新一次。'; }],
+      [/^Upgrade failed for (\d+) agent\(s\)$/, function (m) { return m[1] + ' 個代理程式升級失敗'; }],
+      [/^Total: (\d+)$/, function (m) { return '總計：' + m[1]; }],
+      [/^(\d+) Updated$/, function (m) { return m[1] + ' 個已更新'; }],
+      [/^(\d+) Failed$/, function (m) { return m[1] + ' 個失敗'; }],
+      [/^(\d+) In Progress$/, function (m) { return m[1] + ' 個進行中'; }],
+      [/^Older than manager \((.+)\)$/, function (m) { return '比 Manager 版本舊（' + m[1] + '）'; }],
+      [/^Newer than manager \((.+)\)$/, function (m) { return '比 Manager 版本新（' + m[1] + '）'; }],
+      // --- Confirmation dialogs (interpolated) ---
+      [/^Restart (\d+) agent\(s\)\?$/, function (m) { return '要重新啟動 ' + m[1] + ' 個代理程式嗎？'; }],
+      [/^Reconnect (\d+) agent\(s\)\?$/, function (m) { return '要讓 ' + m[1] + ' 個代理程式重新連線嗎？'; }],
+      [/^DELETE (\d+) agent\(s\)\? This cannot be undone!$/, function (m) { return '要刪除 ' + m[1] + ' 個代理程式嗎？此動作無法復原！'; }],
+      [/^Upgrade (\d+) agent\(s\) to latest version\?$/, function (m) { return '要將 ' + m[1] + ' 個代理程式升級到最新版本嗎？'; }],
+      [/^Upgrade (\d+) agent\(s\) to v(.+)\?$/, function (m) { return '要將 ' + m[1] + ' 個代理程式升級到 v' + m[2] + ' 嗎？'; }],
+      [/^Clean Queue DB for (\d+) agent\(s\)\?([\s\S]*)$/, function (m) { return '要清除 ' + m[1] + ' 個代理程式的 Queue DB 嗎？' + m[2].replace('This will delete the queue DB files and restart the agents.', '這會刪除 queue DB 檔案並重新啟動代理程式。'); }],
+      [/^Remove all (\d+) agent\(s\) from group "(.+)"\?$/, function (m) { return '要將全部 ' + m[1] + ' 個代理程式從群組「' + m[2] + '」移除嗎？'; }],
+      [/^Move (\d+) agent\(s\) from "(.+)" to:$/, function (m) { return '將 ' + m[1] + ' 個代理程式從「' + m[2] + '」移動到：'; }],
+      [/^Will add (\d+) agent\(s\) to the selected group\.$/, function (m) { return '將會把 ' + m[1] + ' 個代理程式加入所選群組。'; }],
+      [/^Will remove (\d+) agent\(s\) from the selected group\.$/, function (m) { return '將會把 ' + m[1] + ' 個代理程式從所選群組移除。'; }],
+      [/^This will: 1\) Create new group, 2\) Move (\d+) agent\(s\) to new group, 3\) Delete old group$/, function (m) { return '這會：1) 建立新群組，2) 將 ' + m[1] + ' 個代理程式移至新群組，3) 刪除舊群組'; }],
+      [/^\u26a0\ufe0f FINAL CONFIRMATION \u26a0\ufe0f([\s\S]*?)permanently delete (\d+) agent\(s\)\?([\s\S]*)$/, function (m) { return '\u26a0\ufe0f 最終確認 \u26a0\ufe0f\n\n你確定要永久刪除 ' + m[2] + ' 個代理程式嗎？\n\n此動作無法復原！'; }],
+      // --- Modal titles carrying a value ---
+      [/^Sync Detail: (.+)$/, function (m) { return '同步詳細資訊：' + m[1]; }],
+      [/^Email Alerts - (.+)$/, function (m) { return '電子郵件警示 - ' + m[1]; }],
+      [/^Agent Upgrade Files - (.+)$/, function (m) { return '代理程式升級檔案 - ' + m[1]; }],
+      [/^SSH Setup Guide - (.+)$/, function (m) { return 'SSH 設定指南 - ' + m[1]; }],
+      [/^Edit Rule #(\d+)$/, function (m) { return '編輯規則 #' + m[1]; }],
+      [/^Download (?!failed)(.+)$/, function (m) { return '下載 ' + m[1]; }],
+      [/^Content refreshed \((\d+) lines\)$/, function (m) { return '內容已更新（' + m[1] + ' 行）'; }],
+      [/^Sync completed: (\d+) succeeded, (\d+) failed$/, function (m) { return '同步完成：' + m[1] + ' 個成功，' + m[2] + ' 個失敗'; }],
+      [/^Found (\d+) related rules?$/, function (m) { return '找到 ' + m[1] + ' 條相關規則'; }],
+      [/^(\d+) matched: (.+)$/, function (m) { return '符合 ' + m[1] + ' 條：' + m[2]; }],
+      [/^Too many matches, showing first (\d+)$/, function (m) { return '符合數量過多，僅顯示前 ' + m[1] + ' 條'; }],
+      [/^(\d+) rules loaded$/, function (m) { return '已載入 ' + m[1] + ' 條規則'; }],
+      [/^Search keywords are required$/, function () { return '請輸入搜尋關鍵字'; }],
+      [/^Search query is too long$/, function () { return '搜尋字串過長'; }],
       [/^\u26a0\s*(\d+)\s+rule files? could not be parsed$/, function (m) { return '\u26a0 ' + m[1] + ' 個規則檔無法解析'; }],
       [/^Error loading agents:\s*(.+)$/, function (m) { return '載入代理程式錯誤：' + m[1]; }],
       [/^Successfully synced to\s+(.+)$/, function (m) { return '已成功同步到 ' + m[1]; }],
@@ -7412,6 +7557,40 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     if ssl_cert and ssl_key:
         app.config['SESSION_COOKIE_SECURE'] = True  # Only send cookie over HTTPS
 
+    # Security response headers. The UI is built from inline <script>/<style>, so
+    # 'unsafe-inline' cannot be dropped without rewriting the template; everything
+    # else is locked down to self plus the one CDN that serves CodeMirror.
+    CSP = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+        "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "
+        "img-src 'self' data:; "
+        "font-src 'self' data:; "
+        "connect-src 'self'; "
+        "form-action 'self'; "
+        "base-uri 'self'; "
+        "object-src 'none'; "
+        "frame-ancestors 'none'"
+    )
+
+    @app.after_request
+    def set_security_headers(response):
+        response.headers.setdefault('Content-Security-Policy', CSP)
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('X-Frame-Options', 'DENY')
+        response.headers.setdefault('Referrer-Policy', 'no-referrer')
+        response.headers.setdefault('Permissions-Policy',
+                                    'geolocation=(), microphone=(), camera=(), payment=(), usb=()')
+        response.headers.setdefault('Cross-Origin-Opener-Policy', 'same-origin')
+        response.headers.setdefault('Cross-Origin-Resource-Policy', 'same-origin')
+        response.headers.setdefault('Cache-Control', 'no-store')
+        if os.environ.get('WEB_SSL_CERT') and os.environ.get('WEB_SSL_KEY'):
+            response.headers.setdefault('Strict-Transport-Security',
+                                        'max-age=31536000; includeSubDomains')
+        # The Server header itself is handled by harden_wsgi_server(); setting it
+        # here too would emit the header twice.
+        return response
+
     # IP lockout tracking: {ip: {'attempts': count, 'locked_until': datetime}}
     ip_lockout = {}
 
@@ -7550,6 +7729,15 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             version=VERSION
         )
 
+    def issue_csrf_token():
+        """Per-session token for the login form (the only cookie-authenticated
+        HTML form in the app; the JSON API is covered by SameSite=Lax)."""
+        token = session.get('csrf_token')
+        if not token:
+            token = secrets.token_urlsafe(32)
+            session['csrf_token'] = token
+        return token
+
     @app.route('/login', methods=['GET', 'POST'])
     def login():
         error = None
@@ -7569,10 +7757,24 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 port=port,
                 username=username,
                 token_timeout_minutes=web_session_timeout,
+                csrf_token=issue_csrf_token(),
                 version=VERSION
             )
 
         if request.method == 'POST':
+            expected = session.get('csrf_token')
+            supplied = request.form.get('csrf_token', '')
+            if not expected or not secrets.compare_digest(str(expected), str(supplied)):
+                logger.warning(f"LOGIN CSRF REJECT: from={sanitize_for_log(client_ip)}")
+                session.pop('csrf_token', None)
+                return render_template_string(
+                    LOGIN_TEMPLATE,
+                    error='Your session expired. Please try again.',
+                    host=host, port=port, username=username,
+                    token_timeout_minutes=web_session_timeout,
+                    csrf_token=issue_csrf_token(),
+                    version=VERSION
+                ), 400
             password = request.form.get('password', '')
             try:
                 port_int = int(port)
@@ -7657,6 +7859,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             port=port,
             username=username,
             token_timeout_minutes=web_session_timeout,
+            csrf_token=issue_csrf_token(),
             version=VERSION
         )
 
@@ -11557,6 +11760,111 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             logger.error(f"Error getting all rules list: {e}")
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/rules/search', methods=['GET'])
+    @login_required
+    def search_rules_content():
+        """Keyword search across the raw XML of every rule.
+
+        Unlike the client-side filter in the All Rules table -- which only sees
+        id/level/description/file/groups -- this searches the full rule body, so
+        terms that appear in <field>, <regex>, <decoded_as>, <options> etc. are
+        found too.
+
+        Query params:
+            q     : whitespace-separated keywords (max 10)
+            match : 'all' (default, every keyword must appear) or 'any'
+        """
+        try:
+            q = (request.args.get('q') or '').strip()
+            if not q:
+                return jsonify({'error': 'Search keywords are required'}), 400
+            if len(q) > 500:
+                return jsonify({'error': 'Search query is too long'}), 400
+            keywords = [k.lower() for k in q.split()][:10]
+            if not keywords:
+                return jsonify({'error': 'Search keywords are required'}), 400
+            match_any = (request.args.get('match') or 'all').lower() == 'any'
+
+            rule_re = re.compile(r'<rule\s[^>]*?\bid="(\d+)"[^>]*>.*?</rule>', re.S)
+            level_re = re.compile(r'\blevel="(\d+)"')
+            desc_re = re.compile(r'<description>(.*?)</description>', re.S)
+            group_re = re.compile(r'<group>(.*?)</group>', re.S)
+
+            MAX_RESULTS = 1000
+            results = []
+            read_errors = []
+            truncated = False
+
+            for rule_dir, is_custom in (('/var/ossec/ruleset/rules/', False),
+                                        ('/var/ossec/etc/rules/', True)):
+                if not os.path.isdir(rule_dir):
+                    continue
+                for filename in sorted(os.listdir(rule_dir)):
+                    if not filename.endswith('.xml'):
+                        continue
+                    try:
+                        with open(os.path.join(rule_dir, filename), 'r',
+                                  encoding='utf-8', errors='ignore') as f:
+                            content = f.read()
+                    except Exception as e:
+                        read_errors.append({'file': filename, 'error': str(e)})
+                        continue
+
+                    for m in rule_re.finditer(content):
+                        block = m.group(0)
+                        low = block.lower()
+                        hits = [k for k in keywords if k in low]
+                        if not hits:
+                            continue
+                        if not match_any and len(hits) < len(keywords):
+                            continue
+                        if len(results) >= MAX_RESULTS:
+                            truncated = True
+                            break
+
+                        lvl = level_re.search(block)
+                        desc = desc_re.search(block)
+                        grp = group_re.search(block)
+                        # the first line carrying a hit, so the user sees why it matched
+                        snippet = ''
+                        for line in block.split('\n'):
+                            ll = line.lower()
+                            if any(k in ll for k in hits):
+                                snippet = line.strip()[:300]
+                                break
+                        results.append({
+                            'id': m.group(1),
+                            'level': int(lvl.group(1)) if lvl else 0,
+                            'description': ' '.join(desc.group(1).split()) if desc else '',
+                            'group': ' '.join(grp.group(1).split()) if grp else '',
+                            'file': filename,
+                            'is_custom': is_custom,
+                            'snippet': snippet,
+                            'matched': hits,
+                        })
+                    if truncated:
+                        break
+                if truncated:
+                    break
+
+            logger.info(
+                f"RULE CONTENT SEARCH: user={get_current_user()} "
+                f"keywords={sanitize_for_log(' '.join(keywords))} match={'any' if match_any else 'all'} "
+                f"hits={len(results)}"
+            )
+            return jsonify({
+                'rules': results,
+                'total': len(results),
+                'keywords': keywords,
+                'match': 'any' if match_any else 'all',
+                'truncated': truncated,
+                'max_results': MAX_RESULTS,
+                'read_errors': read_errors,
+            })
+        except Exception as e:
+            logger.error(f"Error searching rule content: {e}")
+            return jsonify({'error': str(e)}), 500
+
     @app.route('/api/rules/hierarchy', methods=['GET'])
     @login_required
     def get_rules_hierarchy():
@@ -11651,6 +11959,22 @@ def _generate_ssl_cert(cert_path: str, key_path: str, days: int = 365) -> bool:
         return False
 
 
+def harden_wsgi_server() -> bool:
+    """Stop the WSGI server from advertising its own version.
+
+    The `Server:` header is written by werkzeug's request handler, below Flask,
+    so an after_request hook cannot replace it -- it has to be set on the
+    handler class. Returns True when the override was applied.
+    """
+    try:
+        from werkzeug.serving import WSGIRequestHandler
+    except Exception:
+        return False
+    WSGIRequestHandler.server_version = 'jt-wazuh-mgr'
+    WSGIRequestHandler.sys_version = ''
+    return True
+
+
 def run_web_server(host: str = '0.0.0.0', port: int = 5000, debug: bool = False,
                    max_login_attempts: int = 3, lockout_minutes: int = 30,
                    ssl_cert: str = None, ssl_key: str = None, ssl_auto: bool = False):
@@ -11671,6 +11995,7 @@ def run_web_server(host: str = '0.0.0.0', port: int = 5000, debug: bool = False,
         WEB_SSL_KEY: Path to SSL private key file
         WEB_SSL_AUTO: Set to 'true' to enable auto-generation
     """
+    harden_wsgi_server()
     app = create_app(max_login_attempts=max_login_attempts, lockout_minutes=lockout_minutes)
 
     # Check environment variables for SSL (override parameters)

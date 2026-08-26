@@ -1,4 +1,4 @@
-# JT Wazuh Manager v1.4.2
+# JT Wazuh Manager v1.4.3
 
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
@@ -8,7 +8,7 @@ A powerful web-based management tool for Wazuh agents in cluster environments.
 
 > **Recommended**: Use the Web UI as the primary interface — it's the main feature of this tool with full functionality.
 
-![Version](https://img.shields.io/badge/version-1.4.2-blue)
+![Version](https://img.shields.io/badge/version-1.4.3-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
@@ -43,6 +43,13 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 ---
 
 ## ✨ What's New
+
+### 1.4.3
+
+- Security hardening (CSP and other response headers, SRI on CDN assets, login CSRF token), verified with an OWASP ZAP baseline scan.
+- Rules tab: keyword search across the full XML of every rule; the hierarchy view scrolls again.
+- Agents tab: an Exit Selection button.
+- Much wider zh-TW coverage, and the project now ships a test suite (`tests/`).
 
 ### 1.4.2
 
