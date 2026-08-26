@@ -4,6 +4,46 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.5.0 (2026-08-26)
+
+Eleven capabilities the Wazuh Dashboard either lacks or buries, chosen by auditing
+all 150 endpoints of the 4.14.7 API against what this tool already used.
+
+**New Inventory tab**
+- `GET /api/inventory/search` queries one syscollector category across every agent
+  in parallel and returns a single table: packages, open ports, processes,
+  services, local users, hotfixes, network interfaces, OS, browser extensions.
+  Answers "which agents have this package / this port open", which the Dashboard's
+  per-agent inventory cannot. Results export to CSV.
+
+**Rules tab becomes a ruleset workbench**
+- **Log Test** — paste a log line and see the rule and decoder it matches, the
+  extracted fields and analysisd's messages (`PUT /logtest`).
+- **Decoders** — browse and search decoders, view their XML.
+- **CDB Lists** — list, create, edit and delete CDB lists.
+
+**Safer configuration changes**
+- **Validate** `ossec.conf` before restarting a node.
+- **Reload Ruleset** applies rule changes without restarting the manager.
+
+**Agents**
+- **Custom WPK upgrade** — upgrade from a WPK already on the manager, the only
+  path that works on an air-gapped install.
+- **Active Response** — run a command on the selected agents.
+- **Register Agents** — pre-register by name and get IDs and keys back.
+- **Running Config** — the configuration an agent actually applied, so a group
+  `agent.conf` change can be confirmed on the agent itself.
+- **Agent Key** — retrieve an enrollment key for re-registering a broken agent.
+
+**Nodes / Groups**
+- **Health** — analysisd / remoted / wazuh-db counters per node.
+- **Files** — browse and view every file in a group directory, not just agent.conf.
+
+**Also**
+- 127 new zh-TW dictionary entries and 57 new patterns covering all of the above.
+- The test suite grows to 85 tests.
+- OWASP ZAP baseline unchanged from 1.4.3: 0 failures, 8 warnings, 59 passes.
+
 ## v1.4.3 (2026-08-26)
 
 **Security hardening** (verified with an OWASP ZAP baseline scan: 12 warnings -> 8,

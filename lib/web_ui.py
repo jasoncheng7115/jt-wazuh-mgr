@@ -758,6 +758,7 @@ HTML_TEMPLATE = '''
             <button class="tab" data-tab="groups"><svg class="icon"><use href="#icon-folder"/></svg>Groups</button>
             <button class="tab" data-tab="nodes"><svg class="icon"><use href="#icon-server"/></svg>Nodes</button>
             <button class="tab" data-tab="rules"><svg class="icon"><use href="#icon-tree"/></svg>Rules</button>
+            <button class="tab" data-tab="inventory"><svg class="icon"><use href="#icon-server"/></svg>Inventory</button>
             <button class="tab" data-tab="stats"><svg class="icon"><use href="#icon-stats"/></svg>Statistics</button>
             <button class="tab" data-tab="users"><svg class="icon"><use href="#icon-users"/></svg>API Users</button>
             <button class="tab" data-tab="logs"><svg class="icon"><use href="#icon-file"/></svg>Logs</button>
@@ -832,6 +833,7 @@ HTML_TEMPLATE = '''
                     <span class="toggle-slider"></span>
                     <span class="toggle-label">Dry Run</span>
                 </label>
+                <button class="btn btn-sm" onclick="showRegisterAgentsModal()" title="Pre-register agents and get their keys"><svg class="icon"><use href="#icon-add-group"/></svg>Register Agents</button>
             </div>
             <div class="action-bar-container">
                 <div class="distribution-bar" id="distributionBar">
@@ -854,6 +856,7 @@ HTML_TEMPLATE = '''
                     <button class="btn btn-warning" id="btnRestart" onclick="restartSelected()"><svg class="icon"><use href="#icon-restart"/></svg>Restart</button>
                     <button class="btn btn-primary" id="btnReconnect" onclick="reconnectSelected()"><svg class="icon"><use href="#icon-link"/></svg>Reconnect</button>
                     <button class="btn" id="btnUpgrade" style="background:#fd7e14;color:#fff;" onclick="upgradeSelected()"><svg class="icon"><use href="#icon-upload"/></svg>Upgrade</button>
+                    <button class="btn" id="btnActiveResponse" style="background:#00897b;color:#fff;" onclick="showActiveResponseModal()"><svg class="icon"><use href="#icon-bell"/></svg>Active Response</button>
                     <button class="btn" id="btnCleanQueueDB" style="background:#795548;color:#fff;" onclick="cleanQueueDBSelected()"><svg class="icon"><use href="#icon-trash"/></svg>Clean Queue DB</button>
                     <button class="btn btn-danger" id="btnDelete" onclick="deleteSelected()"><svg class="icon"><use href="#icon-trash"/></svg>Delete</button>
                 </div>
@@ -953,6 +956,9 @@ HTML_TEMPLATE = '''
                 <div class="rules-mode-toggle">
                     <button class="active" onclick="switchRulesMode('hierarchy')" id="rulesModeHierarchy"><svg class="icon"><use href="#icon-tree"/></svg>Hierarchy</button>
                     <button onclick="switchRulesMode('all')" id="rulesModeAll"><svg class="icon"><use href="#icon-file-text"/></svg>All Rules</button>
+                    <button onclick="switchRulesMode('decoders')" id="rulesModeDecoders"><svg class="icon"><use href="#icon-file"/></svg>Decoders</button>
+                    <button onclick="switchRulesMode('lists')" id="rulesModeLists"><svg class="icon"><use href="#icon-folder"/></svg>CDB Lists</button>
+                    <button onclick="switchRulesMode('logtest')" id="rulesModeLogtest"><svg class="icon"><use href="#icon-search"/></svg>Log Test</button>
                 </div>
                 <span id="rulesHierarchyControls" style="display:contents;">
                     <div class="search-box" style="flex:1;max-width:400px;">
@@ -990,6 +996,20 @@ HTML_TEMPLATE = '''
                     <span id="rulesAllStatus" style="color:#888;font-size:13px;"></span>
                     <span id="rulesParseWarn" style="font-size:13px;"></span>
                 </span>
+                <span id="rulesDecoderControls" style="display:none;">
+                    <input type="text" id="decoderSearch" placeholder="Search decoders..." style="padding:8px 12px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;min-width:220px;" onkeydown="if(event.key==='Enter')loadDecoders()">
+                    <button class="btn btn-primary btn-sm" onclick="loadDecoders()"><svg class="icon"><use href="#icon-search"/></svg>Search</button>
+                    <button class="btn btn-sm" onclick="document.getElementById('decoderSearch').value='';loadDecoders()"><svg class="icon"><use href="#icon-xmark"/></svg>Clear</button>
+                    <span id="decoderStatus" style="color:#888;font-size:13px;"></span>
+                </span>
+                <span id="rulesListsControls" style="display:none;">
+                    <button class="btn btn-primary btn-sm" onclick="loadCdbLists()" title="Refresh"><svg class="icon"><use href="#icon-refresh"/></svg></button>
+                    <button class="btn btn-success btn-sm" onclick="editCdbList('')"><svg class="icon"><use href="#icon-add-group"/></svg>New List</button>
+                    <span id="cdbStatus" style="color:#888;font-size:13px;"></span>
+                </span>
+                <span id="rulesLogtestControls" style="display:none;">
+                    <span style="color:#888;font-size:12px;">Paste a log line and see which rule and decoder match it.</span>
+                </span>
             </div>
             <!-- Hierarchy View -->
             <div id="rulesHierarchyView" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;">
@@ -1005,6 +1025,66 @@ HTML_TEMPLATE = '''
                         </div>
                     </div>
                 </div>
+            </div>
+            <!-- Decoders View -->
+            <div id="rulesDecoderView" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+                <div class="table-container" style="flex:1;overflow-y:auto;min-height:0;">
+                    <table id="decodersTable">
+                        <thead><tr>
+                            <th style="width:220px;">Name</th>
+                            <th style="width:90px;">Position</th>
+                            <th>Parent</th>
+                            <th style="width:260px;">File</th>
+                            <th style="width:70px;">Type</th>
+                        </tr></thead>
+                        <tbody id="decodersBody">
+                            <tr><td colspan="5" style="text-align:center;color:#888;padding:40px;">Click Decoders to load.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- CDB Lists View -->
+            <div id="rulesListsView" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
+                <div class="table-container" style="flex:1;overflow-y:auto;min-height:0;">
+                    <table id="cdbTable">
+                        <thead><tr>
+                            <th style="width:280px;">List</th>
+                            <th>Path</th>
+                            <th style="width:70px;">Type</th>
+                            <th style="width:170px;">Actions</th>
+                        </tr></thead>
+                        <tbody id="cdbBody">
+                            <tr><td colspan="4" style="text-align:center;color:#888;padding:40px;">Click CDB Lists to load.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- Log Test View -->
+            <div id="rulesLogtestView" style="display:none;flex:1;overflow:auto;min-height:0;flex-direction:column;padding:15px;">
+                <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+                    <label style="color:#888;font-size:13px;">Format</label>
+                    <select id="logtestFormat" style="padding:6px 8px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;">
+                        <option value="syslog" selected>syslog</option>
+                        <option value="json">json</option>
+                        <option value="eventchannel">eventchannel</option>
+                        <option value="audit">audit</option>
+                        <option value="command">command</option>
+                        <option value="full_command">full_command</option>
+                        <option value="multi-line">multi-line</option>
+                        <option value="snort-full">snort-full</option>
+                        <option value="squid">squid</option>
+                        <option value="iis">iis</option>
+                        <option value="mysql_log">mysql_log</option>
+                        <option value="postgresql_log">postgresql_log</option>
+                    </select>
+                    <label style="color:#888;font-size:13px;">Location</label>
+                    <input type="text" id="logtestLocation" value="stdin" style="width:200px;padding:6px 8px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;">
+                    <button class="btn btn-primary btn-sm" onclick="runLogtest()"><svg class="icon"><use href="#icon-search"/></svg>Run Test</button>
+                    <button class="btn btn-sm" onclick="clearLogtest()"><svg class="icon"><use href="#icon-xmark"/></svg>Clear</button>
+                    <span id="logtestStatus" style="color:#888;font-size:12px;"></span>
+                </div>
+                <textarea id="logtestEvent" placeholder="Paste one log line here" style="width:100%;height:110px;background:#0a0a15;color:#eee;border:1px solid #1a3a6e;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;"></textarea>
+                <div id="logtestResult" style="margin-top:12px;"></div>
             </div>
             <!-- All Rules View -->
             <div id="rulesAllView" style="display:none;flex:1;overflow:hidden;flex-direction:column;">
@@ -1043,6 +1123,40 @@ HTML_TEMPLATE = '''
         </div>
 
         <!-- Stats Panel -->
+        <div class="panel" id="inventory-panel">
+            <div class="toolbar" style="gap:8px;">
+                <select id="invType" onchange="onInventoryTypeChange()" style="padding:8px 10px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;">
+                    <option value="packages">Packages</option>
+                    <option value="ports">Open Ports</option>
+                    <option value="processes">Processes</option>
+                    <option value="services">Services</option>
+                    <option value="users">Local Users</option>
+                    <option value="hotfixes">Hotfixes</option>
+                    <option value="netiface">Network Interfaces</option>
+                    <option value="os">Operating System</option>
+                    <option value="browser_extensions">Browser Extensions</option>
+                </select>
+                <input type="text" id="invQuery" placeholder="Search across agents..." style="padding:8px 12px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;min-width:240px;" onkeydown="if(event.key==='Enter')runInventorySearch()">
+                <select id="invScope" style="padding:8px 10px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;">
+                    <option value="active">Active agents</option>
+                    <option value="all">All agents</option>
+                    <option value="selected">Selected agents</option>
+                </select>
+                <button class="btn btn-primary" onclick="runInventorySearch()"><svg class="icon"><use href="#icon-search"/></svg>Search</button>
+                <button class="btn" onclick="exportInventoryCsv()" title="Export results as CSV"><svg class="icon"><use href="#icon-download"/></svg>CSV</button>
+                <span id="invStatus" style="color:#888;font-size:13px;"></span>
+                <span id="invWarn" style="font-size:13px;"></span>
+            </div>
+            <div class="table-container" style="flex:1;overflow:auto;min-height:0;">
+                <table id="invTable">
+                    <thead><tr id="invHead"><th>Agent</th><th>Result</th></tr></thead>
+                    <tbody id="invBody">
+                        <tr><td colspan="2" style="text-align:center;color:#888;padding:40px;">Pick a category and search to see which agents match.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <div class="panel" id="stats-panel">
             <div class="toolbar">
                 <button class="btn btn-primary" onclick="refreshStats()"><svg class="icon"><use href="#icon-refresh"/></svg>Refresh</button>
@@ -1850,10 +1964,67 @@ HTML_TEMPLATE = '''
                 `;
 
                 document.getElementById('modalBody').innerHTML = html;
-                document.getElementById('modalFooter').innerHTML = '';
+                document.getElementById('modalFooter').innerHTML =
+                    '<button class="btn" onclick="showAgentRuntimeConfig(\\'' + escapeHtml(a.id) + '\\')" title="Configuration the agent is actually running"><svg class="icon"><use href="#icon-file"/></svg>Running Config</button>' +
+                    '<button class="btn" onclick="showAgentKey(\\'' + escapeHtml(a.id) + '\\')" title="Enrollment key for re-registering this agent"><svg class="icon"><use href="#icon-link"/></svg>Agent Key</button>' +
+                    '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>';
             } catch (e) {
                 document.getElementById('modalBody').innerHTML = `<div class="alert alert-error">Error: ${e.message}</div>`;
             }
+        }
+
+        // What the agent actually applied, merged group config included. Answers
+        // "did my agent.conf reach this agent" in a way the stored file cannot.
+        const AGENT_CONFIG_SECTIONS = [
+            ['agent', 'client', 'Manager connection'],
+            ['agent', 'buffer', 'Event buffer'],
+            ['agent', 'labels', 'Labels'],
+            ['syscheck', 'syscheck', 'File integrity'],
+            ['rootcheck', 'rootcheck', 'Rootcheck'],
+            ['logcollector', 'localfile', 'Log collection'],
+            ['wmodules', 'wmodules', 'Modules'],
+        ];
+
+        async function showAgentRuntimeConfig(agentId, component, configuration) {
+            const comp = component || 'agent';
+            const conf = configuration || 'client';
+            const options = AGENT_CONFIG_SECTIONS.map(([c, cf, label]) =>
+                '<option value="' + c + '|' + cf + '"' + (c === comp && cf === conf ? ' selected' : '') + '>' + label + '</option>').join('');
+            const header =
+                '<div style="margin-bottom:10px;">Section: <select id="agentConfigSection" style="background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;" ' +
+                'onchange="const v=this.value.split(\\'|\\');showAgentRuntimeConfig(\\'' + agentId + '\\', v[0], v[1]);">' + options + '</select></div>';
+            showModal('Running Config - Agent ' + agentId,
+                header + '<div id="agentRuntimeBody"><div class="loading"><div class="spinner"></div>Loading...</div></div>',
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
+            const result = await api('/agents/' + agentId + '/runtime-config?component=' + encodeURIComponent(comp) + '&configuration=' + encodeURIComponent(conf));
+            const target = document.getElementById('agentRuntimeBody');
+            if (!target) return;
+            if (!result || result.error) {
+                target.innerHTML = '<div class="alert alert-error">' + escapeHtml((result && result.error) || 'Failed to load') +
+                    '<div style="margin-top:6px;color:#888;font-size:12px;">The agent must be active for this to work.</div></div>';
+                return;
+            }
+            const cfg = result.config || {};
+            if (!Object.keys(cfg).length) {
+                target.innerHTML = '<div style="color:#888;padding:20px;text-align:center;">This section is not configured on the agent.</div>';
+                return;
+            }
+            target.innerHTML = '<pre style="background:#0a0a15;padding:15px;border-radius:4px;font-size:12px;max-height:55vh;overflow:auto;">' +
+                escapeHtml(JSON.stringify(cfg, null, 2)) + '</pre>';
+        }
+
+        async function showAgentKey(agentId) {
+            const result = await api('/agents/' + agentId + '/key');
+            if (!result || result.error) {
+                showToast((result && result.error) || 'Failed to load the agent key', 'error');
+                return;
+            }
+            showModal('Agent Key - ' + agentId,
+                '<p style="color:#888;font-size:12px;margin-bottom:10px;">Use this key to re-register the agent with <code>manage_agents</code>. Treat it as a secret.</p>' +
+                '<textarea readonly id="agentKeyText" style="width:100%;height:110px;background:#0a0a15;color:#eee;border:1px solid #1a3a6e;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;">' +
+                escapeHtml(result.key || '') + '</textarea>',
+                '<button class="btn" data-copy="' + escapeHtml(result.key || '') + '" onclick="copyToClipboard(this)"><svg class="icon"><use href="#icon-copy"/></svg>Copy</button>' +
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>');
         }
 
         function getStatusClass(status) {
@@ -2314,6 +2485,7 @@ HTML_TEMPLATE = '''
                     <td style="text-align:center"><a href="#" onclick="showGroupAgents('${jsName}');return false;" style="color:#4fc3f7;text-decoration:none;cursor:pointer;" title="View agents in this group">${g.count || 0}</a></td>
                     <td>
                         <div class="btn-wrap">
+                            <button class="btn btn-sm" style="background:#607d8b;color:#fff;" onclick="showGroupFiles('${jsName}')" title="Files in this group's directory"><svg class="icon"><use href="#icon-file"/></svg>Files</button>
                             <button class="btn btn-sm btn-success" onclick="showImportCsvModal('${jsName}')"><svg class="icon"><use href="#icon-upload"/></svg>Import CSV</button>
                             <button class="btn btn-sm" style="background:#17a2b8;color:#fff;" onclick="exportGroupAgentsCsv('${jsName}')" ${g.count ? '' : 'disabled'}><svg class="icon"><use href="#icon-download"/></svg>Export CSV</button>
                             <button class="btn btn-sm btn-warning" onclick="showMoveGroupAgentsModal('${jsName}')" ${g.count ? '' : 'disabled'}><svg class="icon"><use href="#icon-move"/></svg>Move Agents</button>
@@ -2494,6 +2666,7 @@ HTML_TEMPLATE = '''
                             <button class="btn btn-sm btn-success" onclick="restartNodeServices('${jsName}')" title="Restart Wazuh Manager services on this node"><svg class="icon"><use href="#icon-restart"/></svg>Restart</button>
                             <button class="btn btn-sm btn-warning" onclick="reconnectNodeAgents('${jsName}')" title="Force all agents on this node to reconnect"><svg class="icon"><use href="#icon-link"/></svg>Reconnect</button>
                             <button class="btn btn-sm btn-primary" onclick="showConfigModal('${jsName}')" title="View/Edit ossec.conf configuration file"><svg class="icon"><use href="#icon-file-code"/></svg>ossec.conf</button>
+                            <button class="btn btn-sm" style="background:#00897b;color:#fff;" onclick="showDaemonStats('${jsName}')" title="analysisd / remoted queue counters"><svg class="icon"><use href="#icon-stats"/></svg>Health</button>
                             ${n.type === 'master' ? `<button class="btn btn-sm" style="background:#7b1fa2;color:#fff;" onclick="showEmailAlertsModal('${jsName}')" title="Manage email alert rules"><svg class="icon"><use href="#icon-mail"/></svg>Email Alerts</button>` : ''}
                             ${archivesLogBtn}
                             ${archivesJsonBtn}
@@ -3007,7 +3180,13 @@ HTML_TEMPLATE = '''
                 <p style="color:#aaa;margin-bottom:5px;">Upgrade Options</p>
                 <div style="background:#1a1a2e;padding:12px;border-radius:4px;margin-bottom:15px;">
                     <div style="margin-bottom:10px;"><input type="radio" name="upgradeType" value="latest" id="upgradeLatest" checked style="margin-right:8px;"><label for="upgradeLatest" style="cursor:pointer;"><span>Upgrade to manager version</span>${managerVersion ? ' (<span style="color:#4fc3f7;">v' + managerVersion + '</span>)' : ''}</label></div>
-                    <div><input type="radio" name="upgradeType" value="custom" id="upgradeCustom" style="margin-right:8px;"><label for="upgradeCustom" style="cursor:pointer;">Specify version:</label> <input type="text" id="customVersion" placeholder="e.g., 4.14.0" style="width:100px;margin-left:5px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;" onfocus="document.getElementById('upgradeCustom').checked=true;"></div>
+                    <div style="margin-bottom:10px;"><input type="radio" name="upgradeType" value="custom" id="upgradeCustom" style="margin-right:8px;"><label for="upgradeCustom" style="cursor:pointer;">Specify version:</label> <input type="text" id="customVersion" placeholder="e.g., 4.14.0" style="width:100px;margin-left:5px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;" onfocus="document.getElementById('upgradeCustom').checked=true;"></div>
+                    <div><input type="radio" name="upgradeType" value="wpk" id="upgradeWpk" style="margin-right:8px;"><label for="upgradeWpk" style="cursor:pointer;">WPK file on the manager:</label>
+                        <select id="upgradeWpkFile" style="margin-left:5px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;max-width:340px;" onfocus="document.getElementById('upgradeWpk').checked=true;">
+                            <option value="">Loading...</option>
+                        </select>
+                        <div style="color:#888;font-size:11px;margin-top:4px;">Use this when the manager has no internet access.</div>
+                    </div>
                 </div>
                 <div><input type="checkbox" id="upgradeForce" style="margin-right:8px;"><label for="upgradeForce" style="cursor:pointer;">Force upgrade (even if same version)</label></div>
             `;
@@ -3016,6 +3195,25 @@ HTML_TEMPLATE = '''
                 <button class="btn" style="background:#fd7e14;color:#fff;" onclick="executeUpgrade()"><svg class="icon"><use href="#icon-upload"/></svg>Upgrade</button>
             `;
             showModal('Upgrade Agents', body, footer);
+            loadUpgradeWpkOptions();
+        }
+
+        // Fill the WPK dropdown from the manager's upgrade directory
+        async function loadUpgradeWpkOptions() {
+            const select = document.getElementById('upgradeWpkFile');
+            if (!select) return;
+            const nodesData = await api('/nodes');
+            const nodeList = (nodesData && nodesData.nodes) ? nodesData.nodes : [];
+            const master = nodeList.find(n => n.type === 'master') || nodeList[0];
+            if (!master) { select.innerHTML = '<option value="">No node available</option>'; return; }
+            const node = master.name;
+            const result = await api('/nodes/' + node + '/upgrade-files');
+            const files = (result && result.files) ? result.files.filter(f => (f.name || '').endsWith('.wpk')) : [];
+            if (!files.length) {
+                select.innerHTML = '<option value="">No WPK files uploaded</option>';
+                return;
+            }
+            select.innerHTML = files.map(f => '<option value="' + escapeHtml(f.name) + '">' + escapeHtml(f.name) + '</option>').join('');
         }
 
         async function executeUpgrade() {
@@ -3027,6 +3225,27 @@ HTML_TEMPLATE = '''
 
             if (upgradeType === 'custom' && !customVersion) {
                 showToast('Please enter a version number', 'warning');
+                return;
+            }
+
+            if (upgradeType === 'wpk') {
+                const wpkFile = document.getElementById('upgradeWpkFile').value;
+                if (!wpkFile) {
+                    showToast('Please select a WPK file', 'warning');
+                    return;
+                }
+                closeModal();
+                if (!await showConfirm('Upgrade ' + selectedList.length + ' agent(s) using ' + wpkFile + '?', true)) return;
+                showToast('Starting upgrade for ' + selectedList.length + ' agent(s)...', 'info');
+                const wpkResult = await api('/agents/upgrade-custom', 'POST', {
+                    agent_ids: selectedList, file_path: wpkFile
+                });
+                if (!wpkResult || wpkResult.error) {
+                    showToast((wpkResult && wpkResult.error) || 'Upgrade failed', 'error');
+                    return;
+                }
+                showToast(wpkResult.message || 'Upgrade queued', wpkResult.fail_count ? 'warning' : 'success');
+                showUpgradeProgress(selectedList);
                 return;
             }
 
@@ -3824,6 +4043,8 @@ HTML_TEMPLATE = '''
             `;
             const footer = `
                 <button class="btn" onclick="downloadConfigFromModal()" title="Download ossec.conf"><svg class="icon"><use href="#icon-download"/></svg>Download</button>
+                <button class="btn" onclick="validateNodeConfig()" title="Check the config before restarting"><svg class="icon"><use href="#icon-check"/></svg>Validate</button>
+                <button class="btn" onclick="reloadNodeRuleset()" title="Reload the ruleset without restarting"><svg class="icon"><use href="#icon-refresh"/></svg>Reload Ruleset</button>
                 <button id="configEditBtn" class="btn btn-primary" onclick="toggleConfigEditMode()"><svg class="icon"><use href="#icon-edit"/></svg>Edit</button>
                 <button id="configCancelBtn" class="btn" onclick="cancelConfigEdit()" style="display:none;"><svg class="icon"><use href="#icon-xmark"/></svg>Cancel</button>
                 <button id="configSaveBtn" class="btn btn-success" onclick="saveConfig()" style="display:none;"><svg class="icon"><use href="#icon-save"/></svg>Save</button>
@@ -3861,6 +4082,42 @@ HTML_TEMPLATE = '''
                     }
                 }
             }, 100);
+        }
+
+        async function validateNodeConfig(nodeName) {
+            const node = nodeName || currentConfigNode;
+            if (!node) return;
+            const target = document.getElementById('configSaveResult');
+            if (target) target.innerHTML = '<span style="color:#888;">Validating...</span>';
+            const result = await api('/nodes/' + node + '/config/validate');
+            if (!result || result.error) {
+                const msg = (result && result.error) || 'Validation failed';
+                if (target) target.innerHTML = '<div class="alert alert-error">' + escapeHtml(msg) + '</div>';
+                else showToast(msg, 'error');
+                return false;
+            }
+            if (result.valid) {
+                if (target) target.innerHTML = '<div class="alert alert-success">Configuration is valid</div>';
+                showToast('Configuration is valid', 'success');
+                return true;
+            }
+            const details = (result.details || []).map(d => escapeHtml(d)).join('<br>');
+            const html = '<div class="alert alert-error">Configuration is invalid' +
+                (details ? '<div style="margin-top:6px;font-family:monospace;font-size:12px;">' + details + '</div>' : '') + '</div>';
+            if (target) target.innerHTML = html; else showToast('Configuration is invalid', 'error');
+            return false;
+        }
+
+        async function reloadNodeRuleset(nodeName) {
+            const node = nodeName || currentConfigNode;
+            if (!node) return;
+            if (!await showConfirm('Reload the ruleset on "' + node + '"? Running services are not restarted.')) return;
+            const result = await api('/nodes/' + node + '/reload-ruleset', 'PUT');
+            if (!result || result.error) {
+                showToast((result && result.error) || 'Reload failed', 'error');
+                return;
+            }
+            showToast('Ruleset reloaded on ' + node, 'success');
         }
 
         function toggleConfigEditMode() {
@@ -5409,6 +5666,9 @@ HTML_TEMPLATE = '''
         let allRulesData = [];
         let allRulesParseErrors = [];
         let rulesContentQuery = '';
+        let decodersData = [], decodersLoaded = false;
+        let cdbListsData = [], cdbListsLoaded = false;
+        let logtestToken = '';
         let allRulesLoaded = false;
         let rulesMode = 'hierarchy';
         let rulesSortColumn = 'id';
@@ -5679,31 +5939,29 @@ HTML_TEMPLATE = '''
 
         // ============ All Rules Functions ============
 
-        function switchRulesMode(mode) {
-            rulesMode = mode;
-            const hierBtn = document.getElementById('rulesModeHierarchy');
-            const allBtn = document.getElementById('rulesModeAll');
-            const hierControls = document.getElementById('rulesHierarchyControls');
-            const allControls = document.getElementById('rulesAllControls');
-            const hierView = document.getElementById('rulesHierarchyView');
-            const allView = document.getElementById('rulesAllView');
+        // mode -> [button id, controls id, view id, controls display, loader]
+        const RULES_MODES = {
+            hierarchy: ['rulesModeHierarchy', 'rulesHierarchyControls', 'rulesHierarchyView', 'contents', null],
+            all:       ['rulesModeAll',       'rulesAllControls',       'rulesAllView',       'contents', () => { if (!allRulesLoaded) loadAllRules(); }],
+            decoders:  ['rulesModeDecoders',  'rulesDecoderControls',   'rulesDecoderView',   'contents', () => { if (!decodersLoaded) loadDecoders(); }],
+            lists:     ['rulesModeLists',     'rulesListsControls',     'rulesListsView',     'contents', () => { if (!cdbListsLoaded) loadCdbLists(); }],
+            logtest:   ['rulesModeLogtest',   'rulesLogtestControls',   'rulesLogtestView',   'contents', null],
+        };
 
-            if (mode === 'hierarchy') {
-                hierBtn.classList.add('active');
-                allBtn.classList.remove('active');
-                hierControls.style.display = 'contents';
-                allControls.style.display = 'none';
-                hierView.style.display = 'flex';
-                allView.style.display = 'none';
-            } else {
-                hierBtn.classList.remove('active');
-                allBtn.classList.add('active');
-                hierControls.style.display = 'none';
-                allControls.style.display = 'contents';
-                hierView.style.display = 'none';
-                allView.style.display = 'flex';
-                if (!allRulesLoaded) loadAllRules();
+        function switchRulesMode(mode) {
+            if (!RULES_MODES[mode]) mode = 'hierarchy';
+            rulesMode = mode;
+            for (const [name, [btnId, controlsId, viewId, display]] of Object.entries(RULES_MODES)) {
+                const active = name === mode;
+                const btn = document.getElementById(btnId);
+                const controls = document.getElementById(controlsId);
+                const view = document.getElementById(viewId);
+                if (btn) btn.classList.toggle('active', active);
+                if (controls) controls.style.display = active ? display : 'none';
+                if (view) view.style.display = active ? 'flex' : 'none';
             }
+            const loader = RULES_MODES[mode][4];
+            if (loader) loader();
         }
 
         async function loadAllRules() {
@@ -5746,6 +6004,448 @@ HTML_TEMPLATE = '''
             } catch (err) {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#e94560;padding:30px;">Error: ' + escapeHtml(err.message) + '</td></tr>';
             }
+        }
+
+        // ---------- Decoders ----------
+        async function loadDecoders() {
+            const tbody = document.getElementById('decodersBody');
+            const status = document.getElementById('decoderStatus');
+            const search = (document.getElementById('decoderSearch').value || '').trim();
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:30px;"><div class="loading"><div class="spinner"></div>Loading decoders...</div></td></tr>';
+            const data = await api('/decoders' + (search ? '?search=' + encodeURIComponent(search) : ''));
+            if (!data || data.error) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#e94560;padding:30px;">' + escapeHtml((data && data.error) || 'Failed to load decoders') + '</td></tr>';
+                return;
+            }
+            decodersData = data.decoders || [];
+            decodersLoaded = true;
+            status.textContent = decodersData.length + ' decoders';
+            if (!decodersData.length) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:30px;">No decoders match.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = decodersData.map(d => {
+                const file = d.filename || '';
+                return '<tr>' +
+                    '<td><a class="rule-id-link" onclick="showDecoderFile(\\'' + escapeHtml(file) + '\\')">' + escapeHtml(d.name || '') + '</a></td>' +
+                    '<td>' + escapeHtml(String(d.position !== undefined ? d.position : '')) + '</td>' +
+                    '<td>' + escapeHtml(d.parent || '') + '</td>' +
+                    '<td' + (d.is_custom ? ' style="color:#f39c12;"' : '') + '>' + escapeHtml(file) + '</td>' +
+                    '<td><span class="rule-type-badge ' + (d.is_custom ? 'custom' : 'builtin') + '">' + (d.is_custom ? 'Custom' : 'Built-in') + '</span></td>' +
+                    '</tr>';
+            }).join('');
+        }
+
+        async function showDecoderFile(filename) {
+            if (!filename) return;
+            showModal('Decoder - ' + filename, '<div class="loading"><div class="spinner"></div>Loading...</div>',
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
+            const data = await api('/decoders/file?filename=' + encodeURIComponent(filename));
+            const body = document.getElementById('modalBody');
+            if (!body) return;
+            if (!data || data.error) {
+                body.innerHTML = '<div class="alert alert-error">' + escapeHtml((data && data.error) || 'Failed to load') + '</div>';
+                return;
+            }
+            body.innerHTML = '<pre style="background:#0a0a15;padding:15px;border-radius:4px;font-size:12px;max-height:60vh;overflow:auto;"><code>' +
+                highlightXml(escapeHtml(data.content || '')) + '</code></pre>';
+        }
+
+        // ---------- CDB lists ----------
+        async function loadCdbLists() {
+            const tbody = document.getElementById('cdbBody');
+            const status = document.getElementById('cdbStatus');
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;"><div class="loading"><div class="spinner"></div>Loading lists...</div></td></tr>';
+            const data = await api('/lists');
+            if (!data || data.error) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#e94560;padding:30px;">' + escapeHtml((data && data.error) || 'Failed to load lists') + '</td></tr>';
+                return;
+            }
+            cdbListsData = data.lists || [];
+            cdbListsLoaded = true;
+            status.textContent = cdbListsData.length + ' lists';
+            if (!cdbListsData.length) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#888;padding:30px;">No CDB lists found.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = cdbListsData.map(l => {
+                const name = l.filename || '';
+                return '<tr>' +
+                    '<td><a class="rule-id-link" onclick="editCdbList(\\'' + escapeHtml(name) + '\\')">' + escapeHtml(name) + '</a></td>' +
+                    '<td style="color:#888;">' + escapeHtml(l.relative_dirname || '') + '</td>' +
+                    '<td><span class="rule-type-badge ' + (l.is_custom ? 'custom' : 'builtin') + '">' + (l.is_custom ? 'Custom' : 'Built-in') + '</span></td>' +
+                    '<td><button class="btn btn-sm" onclick="editCdbList(\\'' + escapeHtml(name) + '\\')"><svg class="icon"><use href="#icon-edit"/></svg>Edit</button>' +
+                    '<button class="btn btn-sm btn-danger" style="margin-left:6px;" onclick="deleteCdbList(\\'' + escapeHtml(name) + '\\')"><svg class="icon"><use href="#icon-trash"/></svg>Delete</button></td>' +
+                    '</tr>';
+            }).join('');
+        }
+
+        async function editCdbList(filename) {
+            const isNew = !filename;
+            let content = '';
+            if (!isNew) {
+                const data = await api('/lists/file?filename=' + encodeURIComponent(filename));
+                if (!data || data.error) {
+                    showToast((data && data.error) || 'Failed to load the list', 'error');
+                    return;
+                }
+                content = data.content || '';
+            }
+            const body =
+                '<p style="color:#888;font-size:12px;margin-bottom:10px;">One <code>key:value</code> pair per line. The ruleset must be reloaded before changes take effect.</p>' +
+                '<div style="margin-bottom:10px;">Name <input type="text" id="cdbName" value="' + escapeHtml(filename || '') + '"' +
+                (isNew ? '' : ' readonly') + ' style="width:280px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;"></div>' +
+                '<textarea id="cdbContent" style="width:100%;height:45vh;background:#0a0a15;color:#eee;border:1px solid #1a3a6e;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;">' +
+                escapeHtml(content) + '</textarea>' +
+                '<div id="cdbSaveResult" style="margin-top:10px;"></div>';
+            showModal(isNew ? 'New CDB List' : 'CDB List - ' + filename, body,
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Cancel</button>' +
+                '<button class="btn btn-success" onclick="saveCdbList()"><svg class="icon"><use href="#icon-save"/></svg>Save</button>', true);
+        }
+
+        async function saveCdbList() {
+            const name = (document.getElementById('cdbName').value || '').trim();
+            const content = document.getElementById('cdbContent').value;
+            const target = document.getElementById('cdbSaveResult');
+            if (!name) {
+                target.innerHTML = '<div class="alert alert-error">A list name is required</div>';
+                return;
+            }
+            const result = await api('/lists/file', 'PUT', { filename: name, content: content });
+            if (!result || result.error) {
+                target.innerHTML = '<div class="alert alert-error">' + escapeHtml((result && result.error) || 'Save failed') + '</div>';
+                return;
+            }
+            closeModal();
+            showToast(result.message || 'List saved', 'success', 6000);
+            loadCdbLists();
+        }
+
+        async function deleteCdbList(filename) {
+            if (!await showConfirm('Delete CDB list "' + filename + '"?', true)) return;
+            const result = await api('/lists/file?filename=' + encodeURIComponent(filename), 'DELETE');
+            if (!result || result.error) {
+                showToast((result && result.error) || 'Delete failed', 'error');
+                return;
+            }
+            showToast(result.message || 'List deleted', 'success');
+            loadCdbLists();
+        }
+
+        // ---------- Log test ----------
+        async function runLogtest() {
+            const event = (document.getElementById('logtestEvent').value || '').trim();
+            const target = document.getElementById('logtestResult');
+            const status = document.getElementById('logtestStatus');
+            if (!event) {
+                showToast('Paste a log line first', 'warning');
+                return;
+            }
+            target.innerHTML = '<div class="loading"><div class="spinner"></div>Testing...</div>';
+            const result = await api('/logtest', 'POST', {
+                event: event,
+                log_format: document.getElementById('logtestFormat').value,
+                location: (document.getElementById('logtestLocation').value || 'stdin').trim(),
+                token: logtestToken || undefined
+            });
+            if (!result || result.error) {
+                target.innerHTML = '<div class="alert alert-error">' + escapeHtml((result && result.error) || 'Log test failed') + '</div>';
+                return;
+            }
+            logtestToken = result.token || logtestToken;
+            status.textContent = logtestToken ? 'session ' + logtestToken : '';
+            const out = result.output || {};
+            const rule = out.rule || null;
+            const decoder = out.decoder || {};
+            let html = '';
+            if (rule) {
+                const level = rule.level !== undefined ? rule.level : '-';
+                const levelClass = level === 0 ? 'zero' : (level >= 12 ? 'high' : (level >= 6 ? 'medium' : 'low'));
+                html += '<div style="background:#0a0a15;padding:15px;border-radius:4px;border-left:3px solid #28a745;margin-bottom:12px;">' +
+                    '<div style="margin-bottom:6px;">Matched rule <a class="rule-id-link" onclick="browseToRuleHierarchy(\\'' + escapeHtml(String(rule.id)) + '\\')">' + escapeHtml(String(rule.id)) + '</a> ' +
+                    '<span class="rule-level ' + levelClass + '">' + escapeHtml(String(level)) + '</span></div>' +
+                    '<div style="color:#eee;">' + escapeHtml(rule.description || '') + '</div>' +
+                    (rule.groups && rule.groups.length ? '<div class="rules-group-tags" style="margin-top:8px;">' + rule.groups.map(g => '<span class="rules-group-tag">' + escapeHtml(g) + '</span>').join('') + '</div>' : '') +
+                    '</div>';
+            } else {
+                html += '<div style="background:#0a0a15;padding:15px;border-radius:4px;border-left:3px solid #888;margin-bottom:12px;color:#888;">No rule matched this log line.</div>';
+            }
+            html += '<div style="background:#0a0a15;padding:15px;border-radius:4px;margin-bottom:12px;">' +
+                '<div style="color:#888;font-size:12px;margin-bottom:4px;">Decoder</div>' +
+                '<div>' + escapeHtml(decoder.name || 'none') + (decoder.parent ? ' (parent: ' + escapeHtml(decoder.parent) + ')' : '') + '</div></div>';
+            const fields = out.data || {};
+            if (Object.keys(fields).length) {
+                html += '<div style="background:#0a0a15;padding:15px;border-radius:4px;margin-bottom:12px;">' +
+                    '<div style="color:#888;font-size:12px;margin-bottom:4px;">Extracted fields</div>' +
+                    '<pre style="margin:0;font-size:12px;">' + escapeHtml(JSON.stringify(fields, null, 2)) + '</pre></div>';
+            }
+            if (result.messages && result.messages.length) {
+                html += '<div style="background:#0a0a15;padding:15px;border-radius:4px;">' +
+                    '<div style="color:#888;font-size:12px;margin-bottom:4px;">Messages</div><pre style="margin:0;font-size:12px;">' +
+                    escapeHtml(result.messages.join('\\n')) + '</pre></div>';
+            }
+            target.innerHTML = html;
+        }
+
+        async function clearLogtest() {
+            document.getElementById('logtestEvent').value = '';
+            document.getElementById('logtestResult').innerHTML = '';
+            document.getElementById('logtestStatus').textContent = '';
+            if (logtestToken) {
+                await api('/logtest/session/' + encodeURIComponent(logtestToken), 'DELETE');
+                logtestToken = '';
+            }
+        }
+
+        // ---------- Inventory (cross-agent syscollector) ----------
+        let inventoryRows = [], inventoryColumns = [];
+
+        function onInventoryTypeChange() {
+            document.getElementById('invBody').innerHTML =
+                '<tr><td colspan="2" style="text-align:center;color:#888;padding:40px;">Press Search to query this category.</td></tr>';
+            document.getElementById('invStatus').textContent = '';
+            document.getElementById('invWarn').innerHTML = '';
+        }
+
+        function invCell(row, column) {
+            // columns may be dotted paths such as local.port
+            return column.split('.').reduce((acc, key) => (acc == null ? acc : acc[key]), row);
+        }
+
+        async function runInventorySearch() {
+            const type = document.getElementById('invType').value;
+            const query = (document.getElementById('invQuery').value || '').trim();
+            const scope = document.getElementById('invScope').value;
+            const body = document.getElementById('invBody');
+            const status = document.getElementById('invStatus');
+            const warn = document.getElementById('invWarn');
+            let agents = scope;
+            if (scope === 'selected') {
+                if (!selectedAgents.size) {
+                    showToast('No agents selected on the Agents tab', 'warning');
+                    return;
+                }
+                agents = Array.from(selectedAgents).join(',');
+            }
+            warn.innerHTML = '';
+            status.textContent = '';
+            body.innerHTML = '<tr><td colspan="2" style="text-align:center;padding:30px;"><div class="loading"><div class="spinner"></div>Querying agents...</div></td></tr>';
+            const data = await api('/inventory/search?type=' + encodeURIComponent(type) +
+                '&q=' + encodeURIComponent(query) + '&agents=' + encodeURIComponent(agents));
+            if (!data || data.error) {
+                body.innerHTML = '<tr><td colspan="2" style="text-align:center;color:#e94560;padding:30px;">' +
+                    escapeHtml((data && data.error) || 'Search failed') + '</td></tr>';
+                return;
+            }
+            inventoryRows = data.rows || [];
+            inventoryColumns = data.columns || [];
+            const head = document.getElementById('invHead');
+            head.innerHTML = '<th style="width:170px;">Agent</th>' +
+                inventoryColumns.map(c => '<th>' + escapeHtml(c) + '</th>').join('');
+            status.textContent = data.total + ' results from ' + data.agents_matched + ' of ' +
+                data.agents_queried + ' agents';
+            const notes = [];
+            if (data.truncated) notes.push('results truncated at ' + data.max_rows);
+            if (data.agents_failed && data.agents_failed.length) notes.push(data.agents_failed.length + ' agents returned no data');
+            warn.innerHTML = notes.length ? '<span style="color:#fd7e14;">&#9888; ' + escapeHtml(notes.join('; ')) + '</span>' : '';
+            if (!inventoryRows.length) {
+                body.innerHTML = '<tr><td colspan="' + (inventoryColumns.length + 1) +
+                    '" style="text-align:center;color:#888;padding:30px;">No agent matched.</td></tr>';
+                return;
+            }
+            body.innerHTML = inventoryRows.map(r =>
+                '<tr><td><span style="color:#0dcaf0;">' + escapeHtml(r.agent_id) + '</span> ' +
+                escapeHtml(r.agent_name || '') + '</td>' +
+                inventoryColumns.map(c => {
+                    const v = invCell(r, c);
+                    return '<td>' + escapeHtml(v === undefined || v === null ? '' : String(v)) + '</td>';
+                }).join('') + '</tr>').join('');
+        }
+
+        function exportInventoryCsv() {
+            if (!inventoryRows.length) {
+                showToast('Nothing to export', 'warning');
+                return;
+            }
+            const header = ['agent_id', 'agent_name'].concat(inventoryColumns);
+            const escapeCsv = (v) => '"' + String(v === undefined || v === null ? '' : v).replace(/"/g, '""') + '"';
+            const lines = [header.join(',')];
+            inventoryRows.forEach(r => {
+                lines.push([escapeCsv(r.agent_id), escapeCsv(r.agent_name)]
+                    .concat(inventoryColumns.map(c => escapeCsv(invCell(r, c)))).join(','));
+            });
+            const blob = new Blob([lines.join('\\n')], { type: 'text/csv' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'inventory_' + document.getElementById('invType').value + '.csv';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+        }
+
+        // ---------- Node daemon health ----------
+        async function showDaemonStats(nodeName) {
+            showModal('Health - ' + nodeName, '<div class="loading"><div class="spinner"></div>Loading...</div>',
+                '<button class="btn" onclick="showDaemonStats(\\'' + nodeName + '\\')"><svg class="icon"><use href="#icon-refresh"/></svg>Refresh</button>' +
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
+            const data = await api('/nodes/' + nodeName + '/daemon-stats');
+            const body = document.getElementById('modalBody');
+            if (!body) return;
+            if (!data || data.error) {
+                body.innerHTML = '<div class="alert alert-error">' + escapeHtml((data && data.error) || 'Failed to load') + '</div>';
+                return;
+            }
+            const daemons = data.daemons || [];
+            if (!daemons.length) {
+                body.innerHTML = '<div style="color:#888;padding:20px;text-align:center;">No daemon statistics returned.</div>';
+                return;
+            }
+            body.innerHTML = daemons.map(d => {
+                const name = d.name || d.daemon || 'daemon';
+                const metrics = d.metrics || d;
+                return '<div style="background:#0a0a15;padding:15px;border-radius:4px;margin-bottom:12px;">' +
+                    '<div style="color:#4fc3f7;margin-bottom:8px;">' + escapeHtml(name) + '</div>' +
+                    '<pre style="margin:0;font-size:12px;max-height:40vh;overflow:auto;">' +
+                    escapeHtml(JSON.stringify(metrics, null, 2)) + '</pre></div>';
+            }).join('') +
+            ((data.errors && data.errors.length) ?
+                '<div class="alert alert-error">' + data.errors.map(e => escapeHtml(e)).join('<br>') + '</div>' : '');
+        }
+
+        // ---------- Group files ----------
+        async function showGroupFiles(groupName) {
+            showModal('Group Files - ' + groupName, '<div class="loading"><div class="spinner"></div>Loading...</div>',
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
+            const data = await api('/groups/' + encodeURIComponent(groupName) + '/files');
+            const body = document.getElementById('modalBody');
+            if (!body) return;
+            if (!data || data.error) {
+                body.innerHTML = '<div class="alert alert-error">' + escapeHtml((data && data.error) || 'Failed to load') + '</div>';
+                return;
+            }
+            const files = data.files || [];
+            if (!files.length) {
+                body.innerHTML = '<div style="color:#888;padding:20px;text-align:center;">This group has no files.</div>';
+                return;
+            }
+            body.innerHTML = '<div style="overflow-x:auto;"><table class="data-table" style="width:100%;font-size:13px;">' +
+                '<thead><tr><th style="text-align:left;padding:6px 10px;">File</th><th style="text-align:left;padding:6px 10px;">Hash</th><th style="width:90px;"></th></tr></thead><tbody>' +
+                files.map(f => {
+                    const fn = f.filename || '';
+                    return '<tr><td style="padding:6px 10px;font-family:monospace;">' + escapeHtml(fn) + '</td>' +
+                        '<td style="padding:6px 10px;color:#888;font-family:monospace;font-size:11px;">' + escapeHtml(f.hash || '') + '</td>' +
+                        '<td style="padding:6px 10px;"><button class="btn btn-sm" onclick="showGroupFileContent(\\'' + escapeHtml(groupName) + '\\', \\'' + escapeHtml(fn) + '\\')">View</button></td></tr>';
+                }).join('') + '</tbody></table></div>';
+        }
+
+        async function showGroupFileContent(groupName, filename) {
+            const data = await api('/groups/' + encodeURIComponent(groupName) + '/files/' + encodeURIComponent(filename));
+            if (!data || data.error) {
+                showToast((data && data.error) || 'Failed to load the file', 'error');
+                return;
+            }
+            showModal(filename + ' - ' + groupName,
+                '<pre style="background:#0a0a15;padding:15px;border-radius:4px;font-size:12px;max-height:60vh;overflow:auto;"><code>' +
+                highlightXml(escapeHtml(data.content || '')) + '</code></pre>',
+                '<button class="btn" onclick="showGroupFiles(\\'' + escapeHtml(groupName) + '\\')"><svg class="icon"><use href="#icon-nav-arrow-up"/></svg>Back</button>' +
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
+        }
+
+        // ---------- Active response ----------
+        const AR_PRESETS = [
+            ['firewall-drop', 'Block an IP with the local firewall', true],
+            ['restart-wazuh', 'Restart the Wazuh agent', false],
+            ['host-deny', 'Add the IP to hosts.deny', true],
+            ['disable-account', 'Disable a user account', true],
+        ];
+
+        function showActiveResponseModal() {
+            const count = selectedAgents.size;
+            if (!count) {
+                showToast('Select at least one agent', 'warning');
+                return;
+            }
+            const options = AR_PRESETS.map(([cmd, desc]) =>
+                '<option value="' + cmd + '">' + cmd + ' - ' + desc + '</option>').join('');
+            const body =
+                '<div style="background:#1a1a2e;border-left:3px solid #00897b;padding:10px 15px;margin-bottom:15px;border-radius:4px;">' +
+                '<p style="color:#aaa;font-size:12px;margin:0;">The command must be configured as an active response on the manager. A name starting with ! refers to a script.</p></div>' +
+                '<p style="color:#aaa;margin-bottom:5px;">Target: ' + count + ' agent(s)</p>' +
+                '<div style="margin-bottom:12px;">Command <select id="arCommand" style="margin-left:6px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;min-width:320px;">' +
+                options + '<option value="__custom">Custom...</option></select></div>' +
+                '<div style="margin-bottom:12px;">Custom command <input type="text" id="arCustom" placeholder="!my-script.sh" style="margin-left:6px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;width:260px;"></div>' +
+                '<div>Arguments <input type="text" id="arArgs" placeholder="space separated, e.g. an IP" style="margin-left:6px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;width:320px;"></div>';
+            showModal('Active Response', body,
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Cancel</button>' +
+                '<button class="btn" style="background:#00897b;color:#fff;" onclick="runActiveResponse()"><svg class="icon"><use href="#icon-bell"/></svg>Send</button>');
+        }
+
+        async function runActiveResponse() {
+            const picked = document.getElementById('arCommand').value;
+            const custom = (document.getElementById('arCustom').value || '').trim();
+            const command = picked === '__custom' ? custom : picked;
+            const args = (document.getElementById('arArgs').value || '').trim();
+            if (!command) {
+                showToast('A command is required', 'warning');
+                return;
+            }
+            const selectedList = Array.from(selectedAgents);
+            const dryRun = document.getElementById('dryRunMode').checked;
+            closeModal();
+            if (!await showConfirm('Run "' + command + '" on ' + selectedList.length + ' agent(s)?', true)) return;
+            const result = await api('/active-response', 'POST', {
+                agent_ids: selectedList,
+                command: command,
+                arguments: args ? args.split(/\\s+/) : [],
+                dry_run: dryRun
+            });
+            if (!result || result.error) {
+                showToast((result && result.error) || 'Active response failed', 'error');
+                return;
+            }
+            showToast(result.message || 'Command sent', result.fail_count ? 'warning' : 'success');
+        }
+
+        // ---------- Pre-register agents ----------
+        function showRegisterAgentsModal() {
+            showModal('Register Agents',
+                '<p style="color:#888;font-size:12px;margin-bottom:10px;">One agent name per line. Each gets an ID and key you can use to enrol the machine later.</p>' +
+                '<textarea id="registerNames" placeholder="web-01&#10;web-02" style="width:100%;height:150px;background:#0a0a15;color:#eee;border:1px solid #1a3a6e;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;"></textarea>' +
+                '<div id="registerResult" style="margin-top:12px;"></div>',
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>' +
+                '<button class="btn btn-success" onclick="runRegisterAgents()"><svg class="icon"><use href="#icon-add-group"/></svg>Register</button>', true);
+        }
+
+        async function runRegisterAgents() {
+            const raw = (document.getElementById('registerNames').value || '').trim();
+            const target = document.getElementById('registerResult');
+            const names = raw.split(/\\r?\\n/).map(n => n.trim()).filter(n => n);
+            if (!names.length) {
+                target.innerHTML = '<div class="alert alert-error">Enter at least one name</div>';
+                return;
+            }
+            target.innerHTML = '<div class="loading"><div class="spinner"></div>Registering...</div>';
+            const result = await api('/agents/register', 'POST', { names: names });
+            if (!result || result.error) {
+                target.innerHTML = '<div class="alert alert-error">' + escapeHtml((result && result.error) || 'Registration failed') + '</div>';
+                return;
+            }
+            const created = result.created || [], failed = result.failed || [];
+            let html = '<div class="alert ' + (failed.length ? 'alert-error' : 'alert-success') + '">' + escapeHtml(result.message || '') + '</div>';
+            if (created.length) {
+                html += '<div style="overflow-x:auto;"><table class="data-table" style="width:100%;font-size:12px;">' +
+                    '<thead><tr><th style="text-align:left;padding:6px;">ID</th><th style="text-align:left;padding:6px;">Name</th><th style="text-align:left;padding:6px;">Key</th></tr></thead><tbody>' +
+                    created.map(c => '<tr><td style="padding:6px;">' + escapeHtml(c.id) + '</td><td style="padding:6px;">' + escapeHtml(c.name) +
+                        '</td><td style="padding:6px;font-family:monospace;word-break:break-all;">' + escapeHtml(c.key) + '</td></tr>').join('') +
+                    '</tbody></table></div>';
+            }
+            if (failed.length) {
+                html += '<div style="margin-top:10px;color:#e94560;font-size:12px;">' +
+                    failed.map(f => escapeHtml(f.name) + ': ' + escapeHtml(f.error)).join('<br>') + '</div>';
+            }
+            target.innerHTML = html;
+            refreshAgents();
         }
 
         function showRuleParseErrors() {
@@ -6359,6 +7059,98 @@ _I18N_SCRIPT = r"""
       'This will delete the queue DB files and restart the agents.': '這會刪除 queue DB 檔案並重新啟動代理程式。',
       'This cannot be undone!': '此動作無法復原！',
       'DRY-RUN': '模擬執行',
+      // --- v1.5 features: inventory, decoders, CDB lists, logtest, AR, enrolment ---
+      'Inventory': '資產清單',
+      'Packages': '套件',
+      'Open Ports': '開放連接埠',
+      'Processes': '處理程序',
+      'Services': '服務',
+      'Local Users': '本機使用者',
+      'Hotfixes': '修補程式',
+      'Network Interfaces': '網路介面',
+      'Operating System': '作業系統',
+      'Browser Extensions': '瀏覽器擴充功能',
+      'Search across agents...': '跨代理程式搜尋…',
+      'Active agents': '已連線的代理程式',
+      'All agents': '所有代理程式',
+      'Selected agents': '已選取的代理程式',
+      'Export results as CSV': '將結果匯出為 CSV',
+      'Pick a category and search to see which agents match.': '選擇類別並搜尋，即可看到符合的代理程式。',
+      'Press Search to query this category.': '按「搜尋」查詢此類別。',
+      'Querying agents...': '查詢代理程式中…',
+      'No agent matched.': '沒有代理程式符合。',
+      'Nothing to export': '沒有可匯出的內容',
+      'No agents selected on the Agents tab': '「代理程式」分頁中沒有選取任何項目',
+      'Decoders': '解碼器',
+      'Search decoders...': '搜尋解碼器…',
+      'Loading decoders...': '載入解碼器中…',
+      'No decoders match.': '沒有符合的解碼器。',
+      'Click Decoders to load.': '點擊「解碼器」載入。',
+      'Position': '順序',
+      'Parent': '父項',
+      'CDB Lists': 'CDB 清單',
+      'New List': '新增清單',
+      'New CDB List': '新增 CDB 清單',
+      'Loading lists...': '載入清單中…',
+      'No CDB lists found.': '找不到任何 CDB 清單。',
+      'Click CDB Lists to load.': '點擊「CDB 清單」載入。',
+      'A list name is required': '請輸入清單名稱',
+      'List': '清單',
+      'Path': '路徑',
+      'Hash': '雜湊值',
+      'Log Test': '記錄測試',
+      'Run Test': '執行測試',
+      'Testing...': '測試中…',
+      'Location': '來源位置',
+      'Paste one log line here': '在此貼上一行記錄',
+      'Paste a log line first': '請先貼上一行記錄',
+      'Paste a log line and see which rule and decoder match it.': '貼上一行記錄，查看命中的規則與解碼器。',
+      'Matched rule': '命中規則',
+      'No rule matched this log line.': '沒有規則命中這行記錄。',
+      'Extracted fields': '擷取到的欄位',
+      'Messages': '訊息',
+      'Validate': '驗證',
+      'Validating...': '驗證中…',
+      'Configuration is valid': '設定有效',
+      'Configuration is invalid': '設定無效',
+      'Check the config before restarting': '重新啟動前先檢查設定',
+      'Reload Ruleset': '重新載入規則集',
+      'Reload the ruleset without restarting': '重新載入規則集而不重新啟動服務',
+      'WPK file on the manager:': 'Manager 上的 WPK 檔案：',
+      'Use this when the manager has no internet access.': '當 Manager 無法連上網際網路時使用。',
+      'No WPK files uploaded': '尚未上傳 WPK 檔案',
+      'No node available': '沒有可用的節點',
+      'Please select a WPK file': '請選擇 WPK 檔案',
+      'Running Config': '生效中的設定',
+      'Configuration the agent is actually running': '代理程式實際套用的設定',
+      'This section is not configured on the agent.': '代理程式上沒有設定此區段。',
+      'The agent must be active for this to work.': '代理程式必須在連線狀態才能使用此功能。',
+      'Agent Key': '代理程式金鑰',
+      'Enrollment key for re-registering this agent': '用於重新註冊此代理程式的金鑰',
+      'Health': '健康狀態',
+      'analysisd / remoted queue counters': 'analysisd / remoted 佇列計數',
+      'No daemon statistics returned.': '沒有回傳任何 daemon 統計資訊。',
+      'Files': '檔案',
+      'This group has no files.': '此群組沒有檔案。',
+      'Back': '返回',
+      'Active Response': '主動回應',
+      'Command': '指令',
+      'Custom command': '自訂指令',
+      'Custom...': '自訂…',
+      'Arguments': '參數',
+      'Send': '傳送',
+      'A command is required': '請輸入指令',
+      'Select at least one agent': '請至少選取一個代理程式',
+      'The command must be configured as an active response on the manager. A name starting with ! refers to a script.': '該指令必須已在 Manager 上設定為主動回應。名稱開頭為 ! 代表指令碼。',
+      'space separated, e.g. an IP': '以空白分隔，例如 IP',
+      'Register': '註冊',
+      'Register Agents': '註冊代理程式',
+      'Registering...': '註冊中…',
+      'Pre-register agents and get their keys': '預先註冊代理程式並取得金鑰',
+      'Enter at least one name': '請至少輸入一個名稱',
+      'One agent name per line. Each gets an ID and key you can use to enrol the machine later.': '每行一個代理程式名稱。每個都會取得可供日後註冊該台機器的 ID 與金鑰。',
+      'Result': '結果',
+      'Key': '金鑰',
       // --- Batch selection / rule content search ---
       'Exit Selection': '離開選取',
       'Clear selection': '清除選取',
@@ -6719,6 +7511,27 @@ _I18N_SCRIPT = r"""
       [/^Content refreshed \((\d+) lines\)$/, function (m) { return '內容已更新（' + m[1] + ' 行）'; }],
       [/^Sync completed: (\d+) succeeded, (\d+) failed$/, function (m) { return '同步完成：' + m[1] + ' 個成功，' + m[2] + ' 個失敗'; }],
       [/^Found (\d+) related rules?$/, function (m) { return '找到 ' + m[1] + ' 條相關規則'; }],
+      // --- v1.5 (interpolated) ---
+      [/^Health - (.+)$/, function (m) { return '健康狀態 - ' + m[1]; }],
+      [/^Group Files - (.+)$/, function (m) { return '群組檔案 - ' + m[1]; }],
+      [/^Decoder - (.+)$/, function (m) { return '解碼器 - ' + m[1]; }],
+      [/^CDB List - (.+)$/, function (m) { return 'CDB 清單 - ' + m[1]; }],
+      [/^Agent Key - (.+)$/, function (m) { return '代理程式金鑰 - ' + m[1]; }],
+      [/^Running Config - Agent (.+)$/, function (m) { return '生效中的設定 - 代理程式 ' + m[1]; }],
+      [/^Ruleset reloaded on (.+)$/, function (m) { return '已在 ' + m[1] + ' 重新載入規則集'; }],
+      [/^Reload the ruleset on "(.+)"\? Running services are not restarted\.$/, function (m) { return '要在「' + m[1] + '」重新載入規則集嗎？執行中的服務不會重新啟動。'; }],
+      [/^Command sent to (\d+) agent\(s\)$/, function (m) { return '指令已送出至 ' + m[1] + ' 個代理程式'; }],
+      [/^Run "(.+)" on (\d+) agent\(s\)\?$/, function (m) { return '要在 ' + m[2] + ' 個代理程式上執行「' + m[1] + '」嗎？'; }],
+      [/^Registered (\d+) of (\d+) agent\(s\)$/, function (m) { return '已註冊 ' + m[2] + ' 個中的 ' + m[1] + ' 個代理程式'; }],
+      [/^(\d+) results from (\d+) of (\d+) agents$/, function (m) { return '共 ' + m[1] + ' 筆結果，來自 ' + m[3] + ' 台中的 ' + m[2] + ' 台代理程式'; }],
+      [/^(\d+) decoders$/, function (m) { return m[1] + ' 個解碼器'; }],
+      [/^(\d+) lists$/, function (m) { return m[1] + ' 個清單'; }],
+      [/^Saved (.+)\. Reload the ruleset for it to take effect\.$/, function (m) { return '已儲存 ' + m[1] + '，請重新載入規則集使其生效。'; }],
+      [/^Deleted (.+)$/, function (m) { return '已刪除 ' + m[1]; }],
+      [/^Delete CDB list "(.+)"\?$/, function (m) { return '要刪除 CDB 清單「' + m[1] + '」嗎？'; }],
+      [/^Upgrade (\d+) agent\(s\) using (.+)\?$/, function (m) { return '要用 ' + m[2] + ' 升級 ' + m[1] + ' 個代理程式嗎？'; }],
+      [/^Custom upgrade queued for (\d+) agent\(s\)$/, function (m) { return '已為 ' + m[1] + ' 個代理程式排入自訂升級'; }],
+      [/^Target: (\d+) agent\(s\)$/, function (m) { return '目標：' + m[1] + ' 個代理程式'; }],
       [/^(\d+) matched: (.+)$/, function (m) { return '符合 ' + m[1] + ' 條：' + m[2]; }],
       [/^Too many matches, showing first (\d+)$/, function (m) { return '符合數量過多，僅顯示前 ' + m[1] + ' 條'; }],
       [/^(\d+) rules loaded$/, function (m) { return '已載入 ' + m[1] + ' 條規則'; }],
@@ -6998,6 +7811,43 @@ class WazuhAPISession:
             raise  # Re-raise session expired
         except Exception as e:
             return {'error': str(e)}
+
+    def request_raw(self, method: str, endpoint: str, body: str = None, params=None,
+                    content_type: str = 'application/octet-stream'):
+        """Request that sends/receives a plain body instead of JSON.
+
+        Used for CDB lists, which Wazuh serves as text/plain and accepts as
+        octet-stream. Returns (ok, text_or_error).
+        """
+        if not self.token:
+            raise Exception("Not authenticated")
+        headers = {'Authorization': f'Bearer {self.token}'}
+        if body is not None:
+            headers['Content-Type'] = content_type
+        try:
+            response = http_requests.request(
+                method=method,
+                url=f"{self.base_url}{endpoint}",
+                headers=headers,
+                data=body.encode('utf-8') if isinstance(body, str) else body,
+                params=params,
+                verify=self._verify,
+                timeout=60,
+            )
+            if response.status_code == 401:
+                raise SessionExpiredException("Session expired. Please login again.")
+            if response.status_code >= 400:
+                try:
+                    payload = response.json()
+                    detail = payload.get('detail') or payload.get('title') or payload.get('message')
+                except Exception:
+                    detail = response.text[:300]
+                return False, detail or f'HTTP {response.status_code}'
+            return True, response.text
+        except SessionExpiredException:
+            raise
+        except Exception as e:
+            return False, str(e)
 
     def get_agents(self, status=None, group=None, limit=10000):
         """Get agents list."""
@@ -11109,6 +11959,638 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
         except Exception as e:
             logger.error(f"Delete WPK failed: {str(e)}")
+            return jsonify({'error': str(e)}), 500
+
+    # ---------- Batch A: config safety, custom WPK upgrade, agent runtime config ----------
+
+    @app.route('/api/nodes/<name>/config/validate', methods=['GET'])
+    @login_required
+    def validate_node_config(name):
+        """Ask Wazuh whether the node's current ossec.conf is valid.
+
+        Editing ossec.conf and restarting blindly can leave a manager down; this
+        is the check the CLI performs before a restart.
+        """
+        if not validate_node_name(name):
+            return jsonify({'error': 'Invalid node name'}), 400
+        try:
+            api = get_api_session()
+            local = api.request('GET', '/cluster/local/info')
+            local_name = (local.get('data', {}).get('affected_items') or [{}])[0].get('node')
+            if local_name and name != local_name:
+                result = api.request('GET', f'/cluster/{name}/configuration/validation')
+            else:
+                result = api.request('GET', '/manager/configuration/validation')
+            items = result.get('data', {}).get('affected_items') or []
+            failed = result.get('data', {}).get('failed_items') or []
+            status = (items[0].get('status') if items else None) or ('KO' if failed else 'unknown')
+            details = []
+            for f in failed:
+                err = f.get('error', {})
+                details.append(err.get('message') if isinstance(err, dict) else str(err))
+            for item in items:
+                details.extend(item.get('details') or [])
+            logger.info(f"CONFIG VALIDATE: user={get_current_user()} node={sanitize_for_log(name)} status={status}")
+            return jsonify({'node': name, 'status': status, 'valid': status == 'OK',
+                            'details': details, 'result': result})
+        except Exception as e:
+            logger.error(f"CONFIG VALIDATE ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/nodes/<name>/reload-ruleset', methods=['PUT'])
+    @login_required
+    def reload_node_ruleset(name):
+        """Reload the ruleset in analysisd without restarting the manager."""
+        if not validate_node_name(name):
+            return jsonify({'error': 'Invalid node name'}), 400
+        try:
+            api = get_api_session()
+            local = api.request('GET', '/cluster/local/info')
+            local_name = (local.get('data', {}).get('affected_items') or [{}])[0].get('node')
+            if local_name and name != local_name:
+                result = api.request('PUT', '/cluster/analysisd/reload', params={'nodes_list': name})
+            else:
+                result = api.request('PUT', '/manager/analysisd/reload')
+            failed = result.get('data', {}).get('failed_items') or []
+            logger.info(f"RULESET RELOAD: user={get_current_user()} node={sanitize_for_log(name)} failed={len(failed)}")
+            if failed:
+                err = failed[0].get('error', {})
+                msg = err.get('message') if isinstance(err, dict) else str(err)
+                return jsonify({'error': msg or 'Reload failed', 'result': result}), 400
+            return jsonify({'success': True, 'message': f"Ruleset reloaded on {name}", 'result': result})
+        except Exception as e:
+            logger.error(f"RULESET RELOAD ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/agents/upgrade-custom', methods=['POST'])
+    @login_required
+    def upgrade_agents_custom():
+        """Upgrade agents from a WPK file already present on the manager.
+
+        This is the path that works on an air-gapped manager, where the normal
+        upgrade cannot reach packages.wazuh.com.
+        """
+        try:
+            data = request.get_json(silent=True) or {}
+            agent_ids, err = require_agent_ids(data)
+            if err:
+                return err
+            file_path = (data.get('file_path') or '').strip()
+            if not file_path:
+                return jsonify({'error': 'A WPK file must be selected'}), 400
+            # Accept only a bare WPK name; the path handed to Wazuh is always
+            # rebuilt from it, so nothing the caller sends can escape the dir.
+            filename = os.path.basename(file_path)
+            if not re.match(r'^[A-Za-z0-9._-]+\.wpk$', filename):
+                return jsonify({'error': 'Invalid WPK file name'}), 400
+            installer = (data.get('installer') or '').strip()
+            if installer and not re.match(r'^[A-Za-z0-9._-]+$', installer):
+                return jsonify({'error': 'Invalid installer name'}), 400
+
+            params = {'agents_list': ','.join(agent_ids), 'file_path': f'var/upgrade/{filename}'}
+            if installer:
+                params['installer'] = installer
+            api = get_api_session()
+            result = api.request('PUT', '/agents/upgrade_custom', params=params)
+            failed = result.get('data', {}).get('failed_items') or []
+            affected = result.get('data', {}).get('affected_items') or []
+            logger.info(
+                f"AGENT UPGRADE CUSTOM: user={get_current_user()} agents={agent_ids} "
+                f"wpk={sanitize_for_log(filename)} ok={len(affected)} failed={len(failed)}"
+            )
+            return jsonify({
+                'success_count': len(affected),
+                'fail_count': len(failed),
+                'message': f"Custom upgrade queued for {len(affected)} agent(s)",
+                'result': result,
+            })
+        except Exception as e:
+            logger.error(f"AGENT UPGRADE CUSTOM ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/agents/<agent_id>/runtime-config', methods=['GET'])
+    @login_required
+    def get_agent_runtime_config(agent_id):
+        """Read the configuration an agent is actually running.
+
+        Answers 'did my group agent.conf actually reach this agent', which the
+        stored group file cannot.
+        """
+        if not validate_agent_id(agent_id):
+            return jsonify({'error': 'Invalid agent ID'}), 400
+        component = (request.args.get('component') or 'agent').strip()
+        configuration = (request.args.get('configuration') or 'client').strip()
+        if not re.match(r'^[a-z-]{1,32}$', component) or not re.match(r'^[a-z_-]{1,32}$', configuration):
+            return jsonify({'error': 'Invalid component or configuration'}), 400
+        try:
+            api = get_api_session()
+            result = api.request('GET', f'/agents/{agent_id}/config/{component}/{configuration}')
+            if result.get('error'):
+                msg = result.get('error')
+                if isinstance(msg, dict):
+                    msg = msg.get('message', str(msg))
+                return jsonify({'error': msg}), 400
+            return jsonify({'agent_id': agent_id, 'component': component,
+                            'configuration': configuration,
+                            'config': result.get('data', {})})
+        except Exception as e:
+            logger.error(f"AGENT RUNTIME CONFIG ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/agents/<agent_id>/key', methods=['GET'])
+    @login_required
+    def get_agent_key(agent_id):
+        """Fetch an agent's enrollment key (for re-registering a broken agent)."""
+        if not validate_agent_id(agent_id):
+            return jsonify({'error': 'Invalid agent ID'}), 400
+        try:
+            api = get_api_session()
+            result = api.request('GET', f'/agents/{agent_id}/key')
+            items = result.get('data', {}).get('affected_items') or []
+            if not items:
+                return jsonify({'error': 'Key not available for this agent'}), 404
+            logger.info(f"AGENT KEY VIEWED: user={get_current_user()} agent={agent_id}")
+            return jsonify({'agent_id': agent_id, 'key': items[0].get('key', '')})
+        except Exception as e:
+            logger.error(f"AGENT KEY ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    # ---------- Batch B: logtest, decoders, CDB lists ----------
+
+    LOGTEST_FORMATS = {
+        'syslog', 'json', 'snort-full', 'squid', 'eventlog', 'eventchannel', 'audit',
+        'mysql_log', 'postgresql_log', 'nmapg', 'iis', 'command', 'full_command',
+        'djb-multilog', 'multi-line',
+    }
+
+    @app.route('/api/logtest', methods=['POST'])
+    @login_required
+    def run_logtest():
+        """Run a log line through the ruleset and report what it matched."""
+        try:
+            data = request.get_json(silent=True) or {}
+            event = data.get('event') or ''
+            if not event.strip():
+                return jsonify({'error': 'A log line is required'}), 400
+            if len(event) > 20000:
+                return jsonify({'error': 'Log line is too long'}), 400
+            log_format = (data.get('log_format') or 'syslog').strip()
+            if log_format not in LOGTEST_FORMATS:
+                return jsonify({'error': 'Unsupported log format'}), 400
+            location = (data.get('location') or 'stdin').strip()[:256]
+            token = (data.get('token') or '').strip()
+            if token and not re.match(r'^[A-Za-z0-9]{1,64}$', token):
+                return jsonify({'error': 'Invalid session token'}), 400
+
+            payload = {'event': event, 'log_format': log_format, 'location': location}
+            if token:
+                payload['token'] = token
+            api = get_api_session()
+            result = api.request('PUT', '/logtest', data=payload)
+            if result.get('error') and not result.get('data'):
+                msg = result.get('error')
+                if isinstance(msg, dict):
+                    msg = msg.get('message', str(msg))
+                return jsonify({'error': msg}), 400
+            payload_data = result.get('data', {})
+            logger.info(f"LOGTEST: user={get_current_user()} format={log_format}")
+            return jsonify({
+                'token': payload_data.get('token', ''),
+                'messages': payload_data.get('messages', []),
+                'output': payload_data.get('output', {}),
+                'alert': bool((payload_data.get('output') or {}).get('rule')),
+            })
+        except Exception as e:
+            logger.error(f"LOGTEST ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/logtest/session/<token>', methods=['DELETE'])
+    @login_required
+    def end_logtest_session(token):
+        """Release a logtest session so analysisd frees its resources."""
+        if not re.match(r'^[A-Za-z0-9]{1,64}$', token or ''):
+            return jsonify({'error': 'Invalid session token'}), 400
+        try:
+            api = get_api_session()
+            result = api.request('DELETE', f'/logtest/sessions/{token}')
+            return jsonify({'success': True, 'result': result})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/decoders', methods=['GET'])
+    @login_required
+    def get_decoders():
+        """List decoders, optionally filtered by name / file / free-text search."""
+        try:
+            params = {'limit': 5000}
+            for key, arg in (('search', 'search'), ('filename', 'filename'), ('decoder_name', 'name')):
+                value = (request.args.get(arg) or '').strip()
+                if value:
+                    if len(value) > 128:
+                        return jsonify({'error': f'{arg} is too long'}), 400
+                    params[key] = value
+            api = get_api_session()
+            result = api.request('GET', '/decoders', params=params)
+            items = result.get('data', {}).get('affected_items') or []
+            for item in items:
+                # relative_dirname is relative to /var/ossec: built-ins live under
+                # ruleset/, anything the operator adds lives under etc/.
+                item['is_custom'] = (item.get('relative_dirname') or '').startswith('etc/')
+            return jsonify({'decoders': items, 'total': result.get('data', {}).get('total_affected_items', len(items))})
+        except Exception as e:
+            logger.error(f"DECODERS ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/decoders/file', methods=['GET'])
+    @login_required
+    def get_decoder_file():
+        """Return the XML of one decoder file."""
+        filename = (request.args.get('filename') or '').strip()
+        if not re.match(r'^[A-Za-z0-9._-]+\.xml$', filename):
+            return jsonify({'error': 'Invalid decoder file name'}), 400
+        try:
+            api = get_api_session()
+            ok, content = api.request_raw('GET', f'/decoders/files/{filename}', params={'raw': 'true'})
+            if not ok:
+                return jsonify({'error': content}), 400
+            return jsonify({'filename': filename, 'content': content})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/lists', methods=['GET'])
+    @login_required
+    def get_cdb_lists():
+        """List the CDB lists known to the manager."""
+        try:
+            api = get_api_session()
+            result = api.request('GET', '/lists', params={'limit': 1000})
+            items = result.get('data', {}).get('affected_items') or []
+            for item in items:
+                item['is_custom'] = (item.get('relative_dirname') or '').startswith('etc/')
+            return jsonify({'lists': items, 'total': len(items)})
+        except Exception as e:
+            logger.error(f"CDB LISTS ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    def _cdb_filename_ok(name: str) -> bool:
+        return bool(name) and len(name) <= 128 and bool(re.match(r'^[A-Za-z0-9._-]+$', name))
+
+    @app.route('/api/lists/file', methods=['GET'])
+    @login_required
+    def get_cdb_list_file():
+        """Read one CDB list as plain text."""
+        filename = (request.args.get('filename') or '').strip()
+        if not _cdb_filename_ok(filename):
+            return jsonify({'error': 'Invalid list name'}), 400
+        try:
+            api = get_api_session()
+            ok, content = api.request_raw('GET', f'/lists/files/{filename}', params={'raw': 'true'})
+            if not ok:
+                return jsonify({'error': content}), 400
+            return jsonify({'filename': filename, 'content': content})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/lists/file', methods=['PUT'])
+    @login_required
+    def save_cdb_list_file():
+        """Create or overwrite a CDB list.
+
+        Wazuh needs the ruleset reloaded (or the manager restarted) before a
+        changed list takes effect; the UI says so after a successful save.
+        """
+        data = request.get_json(silent=True) or {}
+        filename = (data.get('filename') or '').strip()
+        if not _cdb_filename_ok(filename):
+            return jsonify({'error': 'Invalid list name'}), 400
+        content = data.get('content')
+        if content is None:
+            return jsonify({'error': 'Content is required'}), 400
+        if len(content) > 5 * 1024 * 1024:
+            return jsonify({'error': 'List is too large'}), 400
+        try:
+            api = get_api_session()
+            ok, response = api.request_raw('PUT', f'/lists/files/{filename}',
+                                           body=content, params={'overwrite': 'true'})
+            if not ok:
+                logger.warning(f"CDB LIST SAVE FAILED: user={get_current_user()} "
+                               f"file={sanitize_for_log(filename)} error={sanitize_for_log(str(response))}")
+                return jsonify({'error': response}), 400
+            logger.info(f"CDB LIST SAVED: user={get_current_user()} file={sanitize_for_log(filename)} "
+                        f"bytes={len(content)}")
+            return jsonify({'success': True,
+                            'message': f"Saved {filename}. Reload the ruleset for it to take effect."})
+        except Exception as e:
+            logger.error(f"CDB LIST SAVE ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/lists/file', methods=['DELETE'])
+    @login_required
+    def delete_cdb_list_file():
+        """Delete a CDB list."""
+        filename = (request.args.get('filename') or '').strip()
+        if not _cdb_filename_ok(filename):
+            return jsonify({'error': 'Invalid list name'}), 400
+        try:
+            api = get_api_session()
+            result = api.request('DELETE', f'/lists/files/{filename}')
+            failed = result.get('data', {}).get('failed_items') or []
+            if failed:
+                err = failed[0].get('error', {})
+                return jsonify({'error': err.get('message') if isinstance(err, dict) else str(err)}), 400
+            logger.info(f"CDB LIST DELETED: user={get_current_user()} file={sanitize_for_log(filename)}")
+            return jsonify({'success': True, 'message': f"Deleted {filename}"})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    # ---------- Batch C: cross-agent inventory search ----------
+
+    # type -> (syscollector path, preferred columns)
+    INVENTORY_TYPES = {
+        'packages':   ('packages',   ['name', 'version', 'architecture', 'vendor', 'format']),
+        'ports':      ('ports',      ['local.port', 'protocol', 'local.ip', 'state', 'process', 'pid']),
+        'processes':  ('processes',  ['name', 'pid', 'ppid', 'state', 'cmd']),
+        'services':   ('services',   ['name', 'state', 'start_type', 'description']),
+        'users':      ('users',      ['user_name', 'user_id', 'user_home', 'user_shell']),
+        'hotfixes':   ('hotfixes',   ['hotfix']),
+        'netiface':   ('netiface',   ['name', 'mac', 'state', 'mtu', 'type']),
+        'os':         ('os',         ['os.name', 'os.version', 'architecture', 'hostname']),
+        'browser_extensions': ('browser_extensions', ['name', 'browser_name', 'version', 'enabled']),
+    }
+
+    @app.route('/api/inventory/types', methods=['GET'])
+    @login_required
+    def get_inventory_types():
+        """Expose the inventory categories and their preferred columns."""
+        return jsonify({'types': {k: {'columns': v[1]} for k, v in INVENTORY_TYPES.items()}})
+
+    @app.route('/api/inventory/search', methods=['GET'])
+    @login_required
+    def search_inventory():
+        """Search one syscollector category across many agents at once.
+
+        The Dashboard shows inventory one agent at a time; the question that
+        actually matters during an incident is the reverse -- which agents have
+        this package / this port open / this process running.
+        """
+        try:
+            inv_type = (request.args.get('type') or 'packages').strip()
+            if inv_type not in INVENTORY_TYPES:
+                return jsonify({'error': 'Unknown inventory type'}), 400
+            query = (request.args.get('q') or '').strip()
+            if len(query) > 128:
+                return jsonify({'error': 'Search text is too long'}), 400
+
+            agents_arg = (request.args.get('agents') or 'active').strip()
+            per_agent_limit = 500
+            MAX_AGENTS = 300
+            MAX_ROWS = 5000
+
+            api = get_api_session()
+
+            # Decide which agents to query, and remember their names for display
+            if agents_arg in ('active', 'all'):
+                status = None if agents_arg == 'all' else 'active'
+                agent_items = api.get_agents(status=status, limit=MAX_AGENTS)
+            else:
+                ids = [a for a in agents_arg.split(',') if a]
+                if not all(validate_agent_id(a) for a in ids):
+                    return jsonify({'error': 'Invalid agent ID in the list'}), 400
+                agent_items = api.get_agents(limit=MAX_AGENTS)
+                agent_items = [a for a in agent_items if a.get('id') in ids]
+
+            # get_agents() already flattens os into a display string
+            targets = [(a.get('id'), a.get('name', ''), a.get('os', ''))
+                       for a in agent_items if a.get('id') and a.get('id') != '000']
+            truncated_agents = len(targets) >= MAX_AGENTS
+            path, columns = INVENTORY_TYPES[inv_type]
+
+            def fetch(target):
+                agent_id, agent_name, agent_os = target
+                params = {'limit': per_agent_limit}
+                if query:
+                    params['search'] = query
+                try:
+                    res = api.request('GET', f'/syscollector/{agent_id}/{path}', params=params)
+                except SessionExpiredException:
+                    raise
+                except Exception as e:
+                    return agent_id, agent_name, agent_os, [], str(e)
+                if res.get('error') and not res.get('data'):
+                    err = res.get('error')
+                    if isinstance(err, dict):
+                        err = err.get('message', str(err))
+                    return agent_id, agent_name, agent_os, [], str(err)
+                return agent_id, agent_name, agent_os, (res.get('data', {}).get('affected_items') or []), None
+
+            rows, errors = [], []
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                for agent_id, agent_name, agent_os, items, error in pool.map(fetch, targets):
+                    if error:
+                        errors.append({'agent_id': agent_id, 'agent_name': agent_name,
+                                       'error': sanitize_for_log(error, 120)})
+                        continue
+                    for item in items:
+                        if len(rows) >= MAX_ROWS:
+                            break
+                        row = {'agent_id': agent_id, 'agent_name': agent_name, 'agent_os': agent_os}
+                        row.update(item if isinstance(item, dict) else {'value': item})
+                        rows.append(row)
+
+            matched_agents = len({r['agent_id'] for r in rows})
+            logger.info(
+                f"INVENTORY SEARCH: user={get_current_user()} type={inv_type} "
+                f"q={sanitize_for_log(query)} agents={len(targets)} rows={len(rows)}"
+            )
+            return jsonify({
+                'type': inv_type,
+                'query': query,
+                'columns': columns,
+                'rows': rows,
+                'total': len(rows),
+                'agents_queried': len(targets),
+                'agents_matched': matched_agents,
+                'agents_failed': errors,
+                'truncated': len(rows) >= MAX_ROWS or truncated_agents,
+                'max_rows': MAX_ROWS,
+            })
+        except SessionExpiredException:
+            raise
+        except Exception as e:
+            logger.error(f"INVENTORY SEARCH ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    # ---------- Batch D: daemon health, group files, active response, quick enrol ----------
+
+    WAZUH_DAEMONS = ['wazuh-analysisd', 'wazuh-remoted', 'wazuh-db']
+
+    @app.route('/api/nodes/<name>/daemon-stats', methods=['GET'])
+    @login_required
+    def get_node_daemon_stats(name):
+        """Live analysisd/remoted/wazuh-db counters for one node.
+
+        Queue usage and dropped events are the first thing to look at when a
+        manager silently stops keeping up, and they are buried in the Dashboard.
+        """
+        if not validate_node_name(name):
+            return jsonify({'error': 'Invalid node name'}), 400
+        try:
+            api = get_api_session()
+            local = api.request('GET', '/cluster/local/info')
+            local_name = (local.get('data', {}).get('affected_items') or [{}])[0].get('node')
+            params = {'daemons_list': ','.join(WAZUH_DAEMONS)}
+            if local_name and name != local_name:
+                result = api.request('GET', f'/cluster/{name}/daemons/stats', params=params)
+            else:
+                result = api.request('GET', '/manager/daemons/stats', params=params)
+            items = result.get('data', {}).get('affected_items') or []
+            failed = result.get('data', {}).get('failed_items') or []
+            errors = []
+            for f in failed:
+                err = f.get('error', {})
+                errors.append(err.get('message') if isinstance(err, dict) else str(err))
+            return jsonify({'node': name, 'daemons': items, 'errors': errors})
+        except Exception as e:
+            logger.error(f"DAEMON STATS ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/groups/<name>/files', methods=['GET'])
+    @login_required
+    def list_group_files(name):
+        """Every file in a group directory, not just agent.conf."""
+        if not validate_group_name(name):
+            return jsonify({'error': 'Invalid group name'}), 400
+        try:
+            api = get_api_session()
+            result = api.request('GET', f'/groups/{name}/files', params={'limit': 500})
+            items = result.get('data', {}).get('affected_items') or []
+            return jsonify({'group': name, 'files': items, 'total': len(items)})
+        except Exception as e:
+            logger.error(f"GROUP FILES ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/groups/<name>/files/<path:filename>', methods=['GET'])
+    @login_required
+    def get_group_file(name, filename):
+        """Contents of one file inside a group directory."""
+        if not validate_group_name(name):
+            return jsonify({'error': 'Invalid group name'}), 400
+        if not re.match(r'^[A-Za-z0-9._-]+$', filename or ''):
+            return jsonify({'error': 'Invalid file name'}), 400
+        try:
+            api = get_api_session()
+            ok, content = api.request_raw('GET', f'/groups/{name}/files/{filename}',
+                                          params={'raw': 'true'})
+            if not ok:
+                return jsonify({'error': content}), 400
+            return jsonify({'group': name, 'filename': filename, 'content': content})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    # Only commands Wazuh ships as active-response scripts, plus the operator's
+    # own (a leading '!' means "a script name, not a binary").
+    AR_COMMAND_PATTERN = re.compile(r'^!?[A-Za-z0-9._-]{1,64}$')
+
+    @app.route('/api/active-response', methods=['POST'])
+    @login_required
+    def run_active_response():
+        """Send an active-response command to selected agents."""
+        try:
+            data = request.get_json(silent=True) or {}
+            command = (data.get('command') or '').strip()
+            if not AR_COMMAND_PATTERN.match(command):
+                return jsonify({'error': 'Invalid active response command'}), 400
+            arguments = data.get('arguments') or []
+            if not isinstance(arguments, list) or len(arguments) > 16:
+                return jsonify({'error': 'Invalid arguments'}), 400
+            clean_args = []
+            for arg in arguments:
+                arg = str(arg)
+                if len(arg) > 128 or not re.match(r'^[A-Za-z0-9 ._:/-]*$', arg):
+                    return jsonify({'error': f'Invalid argument: {sanitize_for_log(arg, 60)}'}), 400
+                if arg:
+                    clean_args.append(arg)
+
+            all_agents = bool(data.get('all_agents'))
+            if all_agents:
+                params = {'agents_list': '*'}
+                agent_ids = ['*']
+            else:
+                agent_ids, err = require_agent_ids(data)
+                if err:
+                    return err
+                params = {'agents_list': ','.join(agent_ids)}
+
+            if data.get('dry_run'):
+                logger.info(f"ACTIVE RESPONSE [DRY-RUN]: user={get_current_user()} "
+                            f"command={sanitize_for_log(command)} agents={agent_ids}")
+                return jsonify({'dry_run': True,
+                                'message': f"[DRY-RUN] Would run '{command}' on {len(agent_ids)} agent(s)"})
+
+            body = {'command': command}
+            if clean_args:
+                body['arguments'] = clean_args
+            api = get_api_session()
+            result = api.request('PUT', '/active-response', data=body, params=params)
+            affected = result.get('data', {}).get('affected_items') or []
+            failed = result.get('data', {}).get('failed_items') or []
+            logger.info(f"ACTIVE RESPONSE: user={get_current_user()} command={sanitize_for_log(command)} "
+                        f"args={clean_args} agents={agent_ids} ok={len(affected)} failed={len(failed)}")
+            return jsonify({'success_count': len(affected), 'fail_count': len(failed),
+                            'message': f"Command sent to {len(affected)} agent(s)", 'result': result})
+        except Exception as e:
+            logger.error(f"ACTIVE RESPONSE ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/agents/register', methods=['POST'])
+    @login_required
+    def register_agents():
+        """Pre-register agents by name and hand back their enrollment keys.
+
+        Lets an operator prepare keys before touching the machines, which the
+        Dashboard's single deploy command cannot do.
+        """
+        try:
+            data = request.get_json(silent=True) or {}
+            names = data.get('names') or []
+            if not isinstance(names, list) or not names:
+                return jsonify({'error': 'At least one agent name is required'}), 400
+            if len(names) > 100:
+                return jsonify({'error': 'At most 100 agents can be registered at once'}), 400
+            clean = []
+            for name in names:
+                name = str(name).strip()
+                if not name:
+                    continue
+                if len(name) > 128 or not re.match(r'^[A-Za-z0-9._-]+$', name):
+                    return jsonify({'error': f'Invalid agent name: {sanitize_for_log(name, 60)}'}), 400
+                clean.append(name)
+            if not clean:
+                return jsonify({'error': 'At least one agent name is required'}), 400
+
+            api = get_api_session()
+            created, failed = [], []
+            for name in clean:
+                result = api.request('POST', '/agents/insert/quick', params={'agent_name': name})
+                items = result.get('data', {}).get('affected_items') or []
+                if items:
+                    created.append({'name': name, 'id': items[0].get('id', ''),
+                                    'key': items[0].get('key', '')})
+                    continue
+                err = result.get('error')
+                detail = result.get('detail') or result.get('message')
+                bad = result.get('data', {}).get('failed_items') or []
+                if bad:
+                    inner = bad[0].get('error', {})
+                    detail = inner.get('message') if isinstance(inner, dict) else str(inner)
+                failed.append({'name': name, 'error': str(detail or err or 'Registration failed')})
+            logger.info(f"AGENT REGISTER: user={get_current_user()} created={[c['name'] for c in created]} "
+                        f"failed={len(failed)}")
+            return jsonify({'created': created, 'failed': failed,
+                            'message': f"Registered {len(created)} of {len(clean)} agent(s)"})
+        except Exception as e:
+            logger.error(f"AGENT REGISTER ERROR: {e}")
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/settings', methods=['GET'])

@@ -447,6 +447,384 @@ class TestRuleContentSearch(WebUITestCase):
 
 
 # --------------------------------------------------------------------------
+# Config safety, custom WPK upgrade, agent runtime config
+# --------------------------------------------------------------------------
+
+class TestConfigSafety(WebUITestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.seen = []
+        outer = self
+
+        def fake_request(_self, method, endpoint, data=None, params=None):
+            outer.seen.append((method, endpoint, params))
+            if endpoint == '/cluster/local/info':
+                return {'error': 0, 'data': {'affected_items': [{'node': 'master-node'}]}}
+            if endpoint.endswith('/configuration/validation'):
+                return {'error': 0, 'data': {'affected_items': [{'status': 'OK'}],
+                                             'failed_items': []}}
+            return {'error': 0, 'data': {'affected_items': ['master-node'], 'failed_items': []}}
+
+        web_ui.WazuhAPISession.request = fake_request
+
+    def test_validation_targets_the_right_endpoint(self):
+        self.assertTrue(self.client.get('/api/nodes/master-node/config/validate').get_json()['valid'])
+        self.assertIn(('GET', '/manager/configuration/validation', None), self.seen)
+        self.seen.clear()
+        self.client.get('/api/nodes/worker-1/config/validate')
+        self.assertIn(('GET', '/cluster/worker-1/configuration/validation', None), self.seen)
+
+    def test_validation_reports_failures(self):
+        def failing(_self, method, endpoint, data=None, params=None):
+            if endpoint == '/cluster/local/info':
+                return {'error': 0, 'data': {'affected_items': [{'node': 'master-node'}]}}
+            return {'error': 0, 'data': {'affected_items': [],
+                                         'failed_items': [{'error': {'message': 'bad XML at line 3'}}]}}
+        web_ui.WazuhAPISession.request = failing
+        data = self.client.get('/api/nodes/master-node/config/validate').get_json()
+        self.assertFalse(data['valid'])
+        self.assertIn('bad XML at line 3', data['details'])
+
+    def test_ruleset_reload_targets_the_right_node(self):
+        self.assertEqual(self.client.put('/api/nodes/master-node/reload-ruleset').status_code, 200)
+        self.assertIn(('PUT', '/manager/analysisd/reload', None), self.seen)
+        self.seen.clear()
+        self.client.put('/api/nodes/worker-1/reload-ruleset')
+        self.assertIn(('PUT', '/cluster/analysisd/reload', {'nodes_list': 'worker-1'}), self.seen)
+
+    def test_node_endpoints_validate_the_node_name(self):
+        self.assertEqual(self.client.get('/api/nodes/bad;name/config/validate').status_code, 400)
+        self.assertEqual(self.client.put('/api/nodes/bad;name/reload-ruleset').status_code, 400)
+
+
+class TestCustomWpkUpgrade(WebUITestCase):
+
+    api_reply = {'error': 0, 'data': {'affected_items': ['001'], 'failed_items': []}}
+
+    def upgrade(self, **payload):
+        return self.client.post('/api/agents/upgrade-custom', json=payload)
+
+    def test_queues_an_upgrade_from_a_local_wpk(self):
+        resp = self.upgrade(agent_ids=['001'], file_path='wazuh_agent_v4.14.7_linux_amd64.deb.wpk')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()['success_count'], 1)
+        method, endpoint, params = self.api_calls[0]
+        self.assertEqual((method, endpoint), ('PUT', '/agents/upgrade_custom'))
+        self.assertEqual(params['file_path'],
+                         'var/upgrade/wazuh_agent_v4.14.7_linux_amd64.deb.wpk')
+
+    def test_rejects_anything_that_is_not_a_wpk_name(self):
+        for bad in ['', 'x.sh', '/var/ossec/etc/ossec.conf', 'a b.wpk', '.wpk']:
+            with self.subTest(file_path=bad):
+                self.assertEqual(self.upgrade(agent_ids=['001'], file_path=bad).status_code, 400)
+
+    def test_path_is_rebuilt_so_traversal_cannot_escape(self):
+        resp = self.upgrade(agent_ids=['001'], file_path='../../../../etc/evil.wpk')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self.api_calls[0][2]['file_path'], 'var/upgrade/evil.wpk')
+
+    def test_still_validates_agent_ids(self):
+        self.assertEqual(self.upgrade(file_path='a.wpk').status_code, 400)
+        self.assertEqual(self.upgrade(agent_ids=['1;id'], file_path='a.wpk').status_code, 400)
+
+
+class TestAgentRuntimeConfig(WebUITestCase):
+
+    api_reply = {'error': 0, 'data': {'client': {'server': [{'address': '10.0.0.1'}]}}}
+
+    def test_reads_the_running_config(self):
+        resp = self.client.get('/api/agents/001/runtime-config?component=agent&configuration=client')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('client', resp.get_json()['config'])
+        self.assertEqual(self.api_calls[0][1], '/agents/001/config/agent/client')
+
+    def test_rejects_injected_component_or_configuration(self):
+        for query in ['component=../etc', 'configuration=../../x', 'component=A" ',
+                      'component=' + 'a' * 40]:
+            with self.subTest(query=query):
+                self.assertEqual(
+                    self.client.get('/api/agents/001/runtime-config?' + query).status_code, 400)
+
+    def test_agent_key_requires_a_valid_id(self):
+        self.assertEqual(self.client.get('/api/agents/abc/key').status_code, 400)
+
+
+# --------------------------------------------------------------------------
+# Logtest, decoders, CDB lists
+# --------------------------------------------------------------------------
+
+class TestLogtest(WebUITestCase):
+
+    api_reply = {'error': 0, 'data': {
+        'token': 'abc123',
+        'messages': ['INFO: Session initialized'],
+        'output': {'rule': {'id': '5715', 'level': 3, 'description': 'sshd auth success'},
+                   'decoder': {'name': 'sshd'}}}}
+
+    def test_reports_the_matching_rule(self):
+        resp = self.client.post('/api/logtest', json={'event': 'sshd: Accepted password',
+                                                      'log_format': 'syslog'})
+        data = resp.get_json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(data['output']['rule']['id'], '5715')
+        self.assertTrue(data['alert'])
+        self.assertEqual(data['token'], 'abc123')
+
+    def test_rejects_bad_input(self):
+        for payload, why in [({}, 'no event'), ({'event': '   '}, 'blank event'),
+                             ({'event': 'x', 'log_format': 'made-up'}, 'unknown format'),
+                             ({'event': 'x', 'token': '../etc'}, 'bad token'),
+                             ({'event': 'x' * 20001}, 'oversized')]:
+            with self.subTest(why=why):
+                self.assertEqual(self.client.post('/api/logtest', json=payload).status_code, 400)
+
+    def test_session_token_is_validated_on_delete(self):
+        self.assertEqual(self.client.delete('/api/logtest/session/abc123').status_code, 200)
+        self.assertEqual(self.client.delete('/api/logtest/session/bad-token').status_code, 400)
+
+
+class TestDecoders(WebUITestCase):
+
+    api_reply = {'error': 0, 'data': {'affected_items': [
+        {'name': 'sshd', 'filename': '0095-sshd_decoders.xml', 'relative_dirname': 'ruleset/decoders'},
+        {'name': 'mine', 'filename': 'local_decoder.xml', 'relative_dirname': 'etc/decoders'},
+    ], 'total_affected_items': 2}}
+
+    def test_flags_custom_decoders_by_relative_path(self):
+        decoders = self.client.get('/api/decoders').get_json()['decoders']
+        self.assertFalse(decoders[0]['is_custom'])
+        self.assertTrue(decoders[1]['is_custom'])
+
+    def test_search_is_forwarded(self):
+        self.client.get('/api/decoders?search=sshd')
+        self.assertEqual(self.api_calls[0][2].get('search'), 'sshd')
+
+    def test_file_name_is_restricted(self):
+        for bad in ['../../etc/passwd', 'x.sh', '', 'a/b.xml']:
+            with self.subTest(filename=bad):
+                self.assertEqual(
+                    self.client.get('/api/decoders/file?filename=' + bad).status_code, 400)
+
+
+class TestCdbLists(WebUITestCase):
+
+    api_reply = {'error': 0, 'data': {
+        'affected_items': [{'filename': 'blacklist', 'relative_dirname': 'etc/lists'}],
+        'failed_items': []}}
+
+    def setUp(self):
+        super().setUp()
+        self.raw_calls = []
+        outer = self
+
+        def fake_raw(_self, method, endpoint, body=None, params=None,
+                     content_type='application/octet-stream'):
+            outer.raw_calls.append((method, endpoint, body, params))
+            return (True, 'key1:value1\n') if method == 'GET' else (True, '')
+
+        self._real_raw = web_ui.WazuhAPISession.request_raw
+        web_ui.WazuhAPISession.request_raw = fake_raw
+
+    def tearDown(self):
+        web_ui.WazuhAPISession.request_raw = self._real_raw
+        super().tearDown()
+
+    def test_lists_are_flagged_custom(self):
+        self.assertTrue(self.client.get('/api/lists').get_json()['lists'][0]['is_custom'])
+
+    def test_read_returns_plain_text(self):
+        data = self.client.get('/api/lists/file?filename=blacklist').get_json()
+        self.assertIn('key1:value1', data['content'])
+        self.assertEqual(self.raw_calls[0][3], {'raw': 'true'})
+
+    def test_save_sends_a_raw_body_and_asks_for_a_reload(self):
+        resp = self.client.put('/api/lists/file', json={'filename': 'blacklist', 'content': 'a:1'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('Reload', resp.get_json()['message'])
+        method, endpoint, body, params = self.raw_calls[0]
+        self.assertEqual((method, endpoint), ('PUT', '/lists/files/blacklist'))
+        self.assertEqual(body, 'a:1')
+        self.assertEqual(params, {'overwrite': 'true'})
+
+    def test_names_are_restricted(self):
+        for bad in ['../etc/passwd', 'a/b', '', 'x' * 200, 'a b']:
+            with self.subTest(name=bad):
+                self.assertEqual(
+                    self.client.get('/api/lists/file?filename=' + bad).status_code, 400)
+                self.assertEqual(
+                    self.client.delete('/api/lists/file?filename=' + bad).status_code, 400)
+
+    def test_save_requires_content(self):
+        self.assertEqual(self.client.put('/api/lists/file', json={'filename': 'x'}).status_code, 400)
+
+    def test_oversized_list_is_rejected(self):
+        resp = self.client.put('/api/lists/file',
+                               json={'filename': 'x', 'content': 'a' * (5 * 1024 * 1024 + 1)})
+        self.assertEqual(resp.status_code, 400)
+
+
+# --------------------------------------------------------------------------
+# Cross-agent inventory search
+# --------------------------------------------------------------------------
+
+class TestInventorySearch(WebUITestCase):
+
+    AGENTS = [
+        {'id': '000', 'name': 'manager'},
+        {'id': '001', 'name': 'web1'},
+        {'id': '002', 'name': 'db1'},
+    ]
+    PACKAGES = {
+        '001': [{'name': 'openssl', 'version': '3.0.2'}],
+        '002': [{'name': 'openssl', 'version': '1.1.1'}],
+    }
+
+    def setUp(self):
+        super().setUp()
+        outer = self
+
+        def fake_request(_self, method, endpoint, data=None, params=None):
+            outer.api_calls.append((method, endpoint, params))
+            if endpoint == '/agents':
+                return {'error': 0, 'data': {'affected_items': [
+                    {'id': a['id'], 'name': a['name'], 'status': 'active',
+                     'os': {'name': 'Ubuntu', 'version': '22.04'},
+                     'version': 'Wazuh v4.14.7', 'group': ['default']}
+                    for a in outer.AGENTS]}}
+            for agent_id, items in outer.PACKAGES.items():
+                if endpoint == '/syscollector/%s/packages' % agent_id:
+                    return {'error': 0, 'data': {'affected_items': items}}
+            return {'error': 0, 'data': {'affected_items': []}}
+
+        web_ui.WazuhAPISession.request = fake_request
+
+    def test_finds_the_same_package_across_agents(self):
+        data = self.client.get('/api/inventory/search?type=packages&q=openssl').get_json()
+        self.assertEqual(data['total'], 2)
+        self.assertEqual(data['agents_matched'], 2)
+        self.assertEqual({r['version'] for r in data['rows']}, {'3.0.2', '1.1.1'})
+        self.assertTrue(all('agent_name' in r for r in data['rows']))
+
+    def test_the_manager_itself_is_skipped(self):
+        data = self.client.get('/api/inventory/search?type=packages').get_json()
+        self.assertNotIn('000', {r['agent_id'] for r in data['rows']})
+
+    def test_scope_can_be_narrowed_to_specific_agents(self):
+        data = self.client.get('/api/inventory/search?type=packages&agents=001').get_json()
+        self.assertEqual(data['agents_queried'], 1)
+        self.assertEqual(data['total'], 1)
+
+    def test_query_is_forwarded_as_a_search(self):
+        self.client.get('/api/inventory/search?type=packages&q=openssl')
+        syscollector = [p for _, e, p in self.api_calls if 'syscollector' in e]
+        self.assertTrue(syscollector)
+        self.assertTrue(all(p.get('search') == 'openssl' for p in syscollector))
+
+    def test_rejects_bad_input(self):
+        self.assertEqual(self.client.get('/api/inventory/search?type=evil').status_code, 400)
+        self.assertEqual(self.client.get('/api/inventory/search?q=' + 'x' * 200).status_code, 400)
+        self.assertEqual(self.client.get('/api/inventory/search?agents=1;id').status_code, 400)
+
+    def test_agent_errors_do_not_fail_the_whole_search(self):
+        def flaky(_self, method, endpoint, data=None, params=None):
+            if endpoint == '/agents':
+                return {'error': 0, 'data': {'affected_items': [
+                    {'id': '001', 'name': 'web1', 'status': 'active', 'os': {}, 'group': []},
+                    {'id': '002', 'name': 'db1', 'status': 'active', 'os': {}, 'group': []}]}}
+            if endpoint.endswith('/002/packages'):
+                raise RuntimeError('agent unreachable')
+            return {'error': 0, 'data': {'affected_items': [{'name': 'openssl'}]}}
+        web_ui.WazuhAPISession.request = flaky
+        data = self.client.get('/api/inventory/search?type=packages').get_json()
+        self.assertEqual(data['total'], 1)
+        self.assertEqual([f['agent_id'] for f in data['agents_failed']], ['002'])
+
+    def test_types_endpoint_lists_columns(self):
+        types = self.client.get('/api/inventory/types').get_json()['types']
+        self.assertIn('packages', types)
+        self.assertIn('name', types['packages']['columns'])
+
+
+# --------------------------------------------------------------------------
+# Daemon health, group files, active response, pre-registration
+# --------------------------------------------------------------------------
+
+class TestBatchDEndpoints(WebUITestCase):
+
+    api_reply = {'error': 0, 'data': {'affected_items': [], 'failed_items': []}}
+
+    def test_daemon_stats_pick_the_right_endpoint(self):
+        def fake(_self, method, endpoint, data=None, params=None):
+            self.api_calls.append((method, endpoint, params))
+            if endpoint == '/cluster/local/info':
+                return {'error': 0, 'data': {'affected_items': [{'node': 'master-node'}]}}
+            return {'error': 0, 'data': {'affected_items': [{'name': 'wazuh-analysisd'}],
+                                         'failed_items': []}}
+        web_ui.WazuhAPISession.request = fake
+        self.assertEqual(self.client.get('/api/nodes/master-node/daemon-stats').status_code, 200)
+        self.assertTrue(any(e == '/manager/daemons/stats' for _, e, _ in self.api_calls))
+        self.api_calls.clear()
+        self.client.get('/api/nodes/worker-1/daemon-stats')
+        self.assertTrue(any(e == '/cluster/worker-1/daemons/stats' for _, e, _ in self.api_calls))
+
+    def test_daemon_stats_validate_the_node(self):
+        self.assertEqual(self.client.get('/api/nodes/bad;name/daemon-stats').status_code, 400)
+
+    def test_group_file_names_are_restricted(self):
+        self.assertEqual(self.client.get('/api/groups/bad;name/files').status_code, 400)
+        self.assertEqual(self.client.get('/api/groups/default/files/..%2F..%2Fetc%2Fpasswd').status_code, 400)
+
+    def test_active_response_validates_the_command(self):
+        for bad in ['', 'rm -rf /', 'a;b', 'x' * 100, '$(id)']:
+            with self.subTest(command=bad):
+                resp = self.client.post('/api/active-response',
+                                        json={'agent_ids': ['001'], 'command': bad})
+                self.assertEqual(resp.status_code, 400)
+        self.assertEqual(self.api_calls, [])
+
+    def test_active_response_validates_arguments(self):
+        resp = self.client.post('/api/active-response',
+                                json={'agent_ids': ['001'], 'command': 'firewall-drop',
+                                      'arguments': ['1.2.3.4; rm -rf /']})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_active_response_sends_command_and_agents(self):
+        resp = self.client.post('/api/active-response',
+                                json={'agent_ids': ['001', '002'], 'command': 'firewall-drop',
+                                      'arguments': ['1.2.3.4']})
+        self.assertEqual(resp.status_code, 200)
+        method, endpoint, params = self.api_calls[0]
+        self.assertEqual((method, endpoint), ('PUT', '/active-response'))
+        self.assertEqual(params['agents_list'], '001,002')
+
+    def test_active_response_dry_run_sends_nothing(self):
+        resp = self.client.post('/api/active-response',
+                                json={'agent_ids': ['001'], 'command': 'restart-wazuh',
+                                      'dry_run': True})
+        self.assertTrue(resp.get_json()['dry_run'])
+        self.assertEqual(self.api_calls, [])
+
+    def test_registration_validates_names(self):
+        for payload in [{}, {'names': []}, {'names': ['bad name']}, {'names': ['a/b']},
+                        {'names': ['x' * 200]}, {'names': ['ok'] * 101}]:
+            with self.subTest(payload=str(payload)[:40]):
+                self.assertEqual(
+                    self.client.post('/api/agents/register', json=payload).status_code, 400)
+
+    def test_registration_returns_ids_and_keys(self):
+        def fake(_self, method, endpoint, data=None, params=None):
+            self.api_calls.append((method, endpoint, params))
+            return {'error': 0, 'data': {'affected_items': [
+                {'id': '099', 'key': 'KEYDATA', 'name': params['agent_name']}]}}
+        web_ui.WazuhAPISession.request = fake
+        data = self.client.post('/api/agents/register', json={'names': ['web-01']}).get_json()
+        self.assertEqual(data['created'][0]['id'], '099')
+        self.assertEqual(data['created'][0]['key'], 'KEYDATA')
+        self.assertEqual(self.api_calls[0][1], '/agents/insert/quick')
+
+
+# --------------------------------------------------------------------------
 # Front-end assets embedded in the template
 # --------------------------------------------------------------------------
 
