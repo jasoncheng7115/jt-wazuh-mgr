@@ -4,6 +4,18 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.5.1（2026-08-29）
+
+- **在「規則」分頁一鍵重新載入整個叢集的規則集。** 在 master 改規則後，worker 並不會
+  自動生效：叢集只同步檔案，每個節點的 `analysisd` 仍使用自己記憶體中的舊規則，
+  直到被明確要求重載。因此修好的規則可能看起來已生效，實際上真正處理那些 agent 的
+  節點還在跑舊規則 —— 這正是正式環境發生過的事：一條已修正的規則因為只有 master
+  重載過，在 worker 上又持續誤報了四個小時。
+  新增 `POST /api/cluster/reload-ruleset`，一次重載所有節點
+  （`PUT /cluster/analysisd/reload` 不帶 `nodes_list`），單機環境則自動改用
+  `PUT /manager/analysisd/reload`，並逐節點回報結果與規則集警告。
+  已直接對 `analysisd` 驗證：這是熱重載，程序不會重新啟動。
+
 ## v1.5.0（2026-08-26）
 
 盤點 Wazuh 4.14.7 API 全部 150 個 endpoint 後，補上 11 項 Dashboard 缺少或藏太深的能力。
