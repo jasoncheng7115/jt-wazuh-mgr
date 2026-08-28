@@ -4,6 +4,21 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.5.1 (2026-08-29)
+
+- **Reload the ruleset across the whole cluster from the Rules tab.** Editing rules
+  on the master does not make them active on the workers: the cluster syncs the
+  files, but each node's `analysisd` keeps its own in-memory ruleset until it is
+  told to reload. A rule fix can therefore look live while the node that actually
+  processes those agents still runs the old rules — which is exactly what happened
+  on a production cluster: a corrected rule kept firing false positives for four
+  hours because only the master had reloaded.
+  `POST /api/cluster/reload-ruleset` now reloads every node in one call
+  (`PUT /cluster/analysisd/reload` with no `nodes_list`), falling back to
+  `PUT /manager/analysisd/reload` on a standalone manager, and reports the result
+  and any ruleset warnings per node. Verified against `analysisd` directly: it is a
+  hot reload, the process is not restarted.
+
 ## v1.5.0 (2026-08-26)
 
 Eleven capabilities the Wazuh Dashboard either lacks or buries, chosen by auditing

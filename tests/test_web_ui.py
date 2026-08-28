@@ -825,6 +825,64 @@ class TestBatchDEndpoints(WebUITestCase):
 
 
 # --------------------------------------------------------------------------
+# Cluster-wide ruleset reload
+# --------------------------------------------------------------------------
+
+class TestClusterRulesetReload(WebUITestCase):
+    """Rule files sync to workers, but each node's analysisd keeps its own
+    in-memory ruleset until reloaded -- a fix can look live while the node that
+    processes those agents still runs the old rules."""
+
+    def _api(self, clustered=True, failed=None):
+        outer = self
+
+        def fake(_self, method, endpoint, data=None, params=None):
+            outer.api_calls.append((method, endpoint, params))
+            if endpoint == '/cluster/status':
+                return {'data': {'enabled': 'yes' if clustered else 'no',
+                                 'running': 'yes' if clustered else 'no'}}
+            return {'error': 0, 'data': {
+                'affected_items': [{'name': 'master-node', 'warnings': []},
+                                   {'name': 'worker-1', 'warnings': ['rule 100170 ignored']}],
+                'failed_items': failed or []}}
+        web_ui.WazuhAPISession.request = fake
+
+    def test_clustered_reload_hits_every_node(self):
+        self._api(clustered=True)
+        data = self.client.post('/api/cluster/reload-ruleset').get_json()
+        self.assertEqual(data['scope'], 'cluster')
+        self.assertEqual(data['ok_count'], 2)
+        self.assertEqual({n['node'] for n in data['nodes']}, {'master-node', 'worker-1'})
+        # no nodes_list -> the API reloads every node
+        self.assertIn(('PUT', '/cluster/analysisd/reload', None), self.api_calls)
+
+    def test_standalone_manager_uses_the_manager_endpoint(self):
+        self._api(clustered=False)
+        data = self.client.post('/api/cluster/reload-ruleset').get_json()
+        self.assertEqual(data['scope'], 'manager')
+        self.assertIn(('PUT', '/manager/analysisd/reload', None), self.api_calls)
+        self.assertNotIn(('PUT', '/cluster/analysisd/reload', None), self.api_calls)
+
+    def test_warnings_are_surfaced_per_node(self):
+        self._api(clustered=True)
+        data = self.client.post('/api/cluster/reload-ruleset').get_json()
+        worker = [n for n in data['nodes'] if n['node'] == 'worker-1'][0]
+        self.assertEqual(worker['warnings'], ['rule 100170 ignored'])
+
+    def test_failed_nodes_are_reported(self):
+        self._api(clustered=True,
+                  failed=[{'id': ['worker-2'], 'error': {'message': 'socket unavailable'}}])
+        data = self.client.post('/api/cluster/reload-ruleset').get_json()
+        self.assertEqual(data['fail_count'], 1)
+        self.assertIn('worker-2: socket unavailable', data['errors'])
+        self.assertFalse([n for n in data['nodes'] if n['node'] == 'worker-2'][0]['ok'])
+
+    def test_requires_authentication(self):
+        anon = web_ui.create_app().test_client()
+        self.assertEqual(anon.post('/api/cluster/reload-ruleset').status_code, 401)
+
+
+# --------------------------------------------------------------------------
 # Front-end assets embedded in the template
 # --------------------------------------------------------------------------
 

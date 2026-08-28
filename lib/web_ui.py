@@ -1007,6 +1007,7 @@ HTML_TEMPLATE = '''
                     <button class="btn btn-success btn-sm" onclick="editCdbList('')"><svg class="icon"><use href="#icon-add-group"/></svg>New List</button>
                     <span id="cdbStatus" style="color:#888;font-size:13px;"></span>
                 </span>
+                <button class="btn btn-sm" style="background:#00897b;color:#fff;margin-left:auto;" onclick="reloadClusterRuleset()" title="Apply rule changes on every cluster node without restarting"><svg class="icon"><use href="#icon-refresh"/></svg>Reload Ruleset</button>
                 <span id="rulesLogtestControls" style="display:none;">
                     <span style="color:#888;font-size:12px;">Paste a log line and see which rule and decoder match it.</span>
                 </span>
@@ -6006,6 +6007,36 @@ HTML_TEMPLATE = '''
             }
         }
 
+        // Rule files are synced to workers by the cluster, but each node keeps its
+        // own in-memory ruleset until told to reload. Reload every node at once.
+        async function reloadClusterRuleset() {
+            if (!await showConfirm('Reload the ruleset on every cluster node? Running services are not restarted.')) return;
+            showToast('Reloading ruleset...', 'info');
+            const result = await api('/cluster/reload-ruleset', 'POST');
+            if (!result || result.error) {
+                showToast((result && result.error) || 'Reload failed', 'error');
+                return;
+            }
+            const rows = (result.nodes || []).map(n =>
+                '<tr><td style="padding:6px 10px;">' + escapeHtml(n.node) + '</td>' +
+                '<td style="padding:6px 10px;color:' + (n.ok ? '#28a745' : '#e94560') + ';">' +
+                (n.ok ? 'reloaded' : 'failed') + '</td>' +
+                '<td style="padding:6px 10px;color:#888;font-size:11px;">' +
+                escapeHtml((n.warnings || []).join('; ')) + '</td></tr>').join('');
+            showModal('Reload Ruleset',
+                '<div class="alert ' + (result.fail_count ? 'alert-error' : 'alert-success') + '">' +
+                escapeHtml(result.message || '') + '</div>' +
+                '<div style="overflow-x:auto;"><table class="data-table" style="width:100%;font-size:13px;">' +
+                '<thead><tr><th style="text-align:left;padding:6px 10px;">Node</th>' +
+                '<th style="text-align:left;padding:6px 10px;">Result</th>' +
+                '<th style="text-align:left;padding:6px 10px;">Warnings</th></tr></thead><tbody>' +
+                rows + '</tbody></table></div>' +
+                ((result.errors && result.errors.length) ?
+                    '<div style="margin-top:10px;color:#e94560;font-size:12px;">' +
+                    result.errors.map(e => escapeHtml(e)).join('<br>') + '</div>' : ''),
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>');
+        }
+
         // ---------- Decoders ----------
         async function loadDecoders() {
             const tbody = document.getElementById('decodersBody');
@@ -7115,6 +7146,15 @@ _I18N_SCRIPT = r"""
       'Configuration is invalid': '設定無效',
       'Check the config before restarting': '重新啟動前先檢查設定',
       'Reload Ruleset': '重新載入規則集',
+      'Apply rule changes on every cluster node without restarting': '套用規則變更到叢集所有節點, 不需重新啟動',
+      'Reload the ruleset on every cluster node? Running services are not restarted.': '要在叢集所有節點重新載入規則集嗎？執行中的服務不會重新啟動。',
+      'Reloading ruleset...': '重新載入規則集中…',
+      'Reload failed': '重新載入失敗',
+      'Node': '節點',
+      'Result': '結果',
+      'Warnings': '警告',
+      'reloaded': '已重新載入',
+      'failed': '失敗',
       'Reload the ruleset without restarting': '重新載入規則集而不重新啟動服務',
       'WPK file on the manager:': 'Manager 上的 WPK 檔案：',
       'Use this when the manager has no internet access.': '當 Manager 無法連上網際網路時使用。',
@@ -7519,6 +7559,7 @@ _I18N_SCRIPT = r"""
       [/^Agent Key - (.+)$/, function (m) { return '代理程式金鑰 - ' + m[1]; }],
       [/^Running Config - Agent (.+)$/, function (m) { return '生效中的設定 - 代理程式 ' + m[1]; }],
       [/^Ruleset reloaded on (.+)$/, function (m) { return '已在 ' + m[1] + ' 重新載入規則集'; }],
+      [/^Ruleset reloaded on (\\d+) node\\(s\\)$/, function (m) { return '已在 ' + m[1] + ' 個節點重新載入規則集'; }],
       [/^Reload the ruleset on "(.+)"\? Running services are not restarted\.$/, function (m) { return '要在「' + m[1] + '」重新載入規則集嗎？執行中的服務不會重新啟動。'; }],
       [/^Command sent to (\d+) agent\(s\)$/, function (m) { return '指令已送出至 ' + m[1] + ' 個代理程式'; }],
       [/^Run "(.+)" on (\d+) agent\(s\)\?$/, function (m) { return '要在 ' + m[2] + ' 個代理程式上執行「' + m[1] + '」嗎？'; }],
@@ -12020,6 +12061,71 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             return jsonify({'success': True, 'message': f"Ruleset reloaded on {name}", 'result': result})
         except Exception as e:
             logger.error(f"RULESET RELOAD ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/cluster/reload-ruleset', methods=['POST'])
+    @login_required
+    def reload_cluster_ruleset():
+        """Reload the ruleset on every node at once.
+
+        Editing rules on the master does not make them active on the workers:
+        the cluster syncs the files but each node's analysisd keeps its own
+        in-memory copy until it is told to reload. Without this, a rule fix can
+        appear to be live while the node that actually processes those agents is
+        still running the old ruleset.
+        """
+        try:
+            api = get_api_session()
+            status = api.request('GET', '/cluster/status')
+            data = status.get('data', {}) or {}
+            clustered = str(data.get('enabled', 'no')).lower() in ('yes', 'true') and \
+                        str(data.get('running', 'no')).lower() in ('yes', 'true')
+
+            if clustered:
+                # no nodes_list -> every node in the cluster
+                result = api.request('PUT', '/cluster/analysisd/reload')
+                scope = 'cluster'
+            else:
+                result = api.request('PUT', '/manager/analysisd/reload')
+                scope = 'manager'
+
+            payload = result.get('data', {}) or {}
+            affected = payload.get('affected_items') or []
+            failed = payload.get('failed_items') or []
+            nodes, warnings = [], []
+            for item in affected:
+                if isinstance(item, dict):
+                    name = item.get('name') or item.get('node') or 'manager'
+                    node_warnings = item.get('warnings') or item.get('msg') or []
+                    if isinstance(node_warnings, str):
+                        node_warnings = [node_warnings]
+                    nodes.append({'node': name, 'ok': True, 'warnings': node_warnings})
+                    warnings.extend(node_warnings)
+                else:
+                    nodes.append({'node': str(item), 'ok': True, 'warnings': []})
+            errors = []
+            for item in failed:
+                err = item.get('error', {})
+                msg = err.get('message') if isinstance(err, dict) else str(err)
+                for name in (item.get('id') or ['unknown']):
+                    nodes.append({'node': str(name), 'ok': False, 'warnings': []})
+                    errors.append(f'{name}: {msg}')
+
+            logger.info(
+                f"RULESET RELOAD ({scope}): user={get_current_user()} "
+                f"ok={len([n for n in nodes if n['ok']])} failed={len(errors)}"
+            )
+            return jsonify({
+                'scope': scope,
+                'nodes': nodes,
+                'ok_count': len([n for n in nodes if n['ok']]),
+                'fail_count': len(errors),
+                'errors': errors,
+                'warnings': warnings[:20],
+                'message': f"Ruleset reloaded on {len([n for n in nodes if n['ok']])} node(s)",
+            })
+        except Exception as e:
+            logger.error(f"CLUSTER RULESET RELOAD ERROR: {e}")
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/agents/upgrade-custom', methods=['POST'])
