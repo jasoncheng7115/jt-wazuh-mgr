@@ -883,6 +883,114 @@ class TestClusterRulesetReload(WebUITestCase):
 
 
 # --------------------------------------------------------------------------
+# Node configuration drift
+# --------------------------------------------------------------------------
+
+class TestNodeConfigDiff(WebUITestCase):
+    """The cluster syncs rules and lists but NOT ossec.conf, so a worker can be
+    missing a <list> declaration and silently ignore every rule that uses it."""
+
+    MASTER_CONF = """<ossec_config>
+  <ruleset>
+    <decoder_dir>ruleset/decoders</decoder_dir>
+    <rule_dir>ruleset/rules</rule_dir>
+    <list>etc/lists/audit-keys</list>
+    <list>etc/lists/jason_tools_blacklist</list>
+    <list>etc/lists/malware_hash</list>
+  </ruleset>
+  <wodle name="osquery"><disabled>no</disabled></wodle>
+  <syscheck><directories>/etc</directories></syscheck>
+</ossec_config>"""
+    WORKER_CONF = """<ossec_config>
+  <ruleset>
+    <decoder_dir>ruleset/decoders</decoder_dir>
+    <rule_dir>ruleset/rules</rule_dir>
+    <list>etc/lists/audit-keys</list>
+  </ruleset>
+  <wodle name="osquery"><disabled>yes</disabled></wodle>
+  <syscheck><directories>/etc</directories><directories>/opt</directories></syscheck>
+</ossec_config>"""
+
+    def setUp(self):
+        super().setUp()
+        outer = self
+
+        def fake(_self, method, endpoint, data=None, params=None):
+            outer.api_calls.append((method, endpoint, params))
+            if endpoint == '/cluster/nodes':
+                return {'data': {'affected_items': [
+                    {'name': 'master-node', 'type': 'master', 'ip': '10.0.0.1', 'version': '4.14.7'},
+                    {'name': 'worker-1', 'type': 'worker', 'ip': '10.0.0.2', 'version': '4.14.7'}]}}
+            return {'error': 0, 'data': {}}
+
+        def fake_raw(_self, method, endpoint, body=None, params=None,
+                     content_type='application/octet-stream'):
+            if '/cluster/master-node/configuration' in endpoint:
+                return True, outer.MASTER_CONF
+            if '/cluster/worker-1/configuration' in endpoint:
+                return True, outer.WORKER_CONF
+            return False, 'not found'
+
+        web_ui.WazuhAPISession.request = fake
+        self._real_raw = web_ui.WazuhAPISession.request_raw
+        web_ui.WazuhAPISession.request_raw = fake_raw
+
+    def tearDown(self):
+        web_ui.WazuhAPISession.request_raw = self._real_raw
+        super().tearDown()
+
+    def diff(self):
+        return self.client.get('/api/nodes/config-diff').get_json()
+
+    def test_master_is_the_reference(self):
+        self.assertEqual(self.diff()['reference'], 'master-node')
+
+    def test_missing_list_declaration_is_reported(self):
+        ruleset = [d for d in self.diff()['differences'] if d['section'] == 'ruleset']
+        self.assertEqual(len(ruleset), 1)
+        missing = ruleset[0]['missing_on_node']
+        self.assertIn('list: etc/lists/jason_tools_blacklist', missing)
+        self.assertIn('list: etc/lists/malware_hash', missing)
+        self.assertEqual(ruleset[0]['node'], 'worker-1')
+
+    def test_disabled_module_is_reported(self):
+        wodle = [d for d in self.diff()['differences'] if d['section'] == 'wodle']
+        self.assertTrue(wodle)
+        self.assertIn('osquery: disabled=yes', wodle[0]['extra_on_node'])
+        self.assertIn('osquery: disabled=no', wodle[0]['missing_on_node'])
+
+    def test_extra_item_on_the_worker_is_reported(self):
+        syscheck = [d for d in self.diff()['differences'] if d['section'] == 'syscheck']
+        self.assertTrue(syscheck)
+        self.assertIn('directories: /opt', syscheck[0]['extra_on_node'])
+
+    def test_identical_nodes_report_no_difference(self):
+        original = TestNodeConfigDiff.WORKER_CONF
+        TestNodeConfigDiff.WORKER_CONF = self.MASTER_CONF
+        try:
+            data = self.diff()
+            self.assertEqual(data['diff_count'], 0)
+            self.assertEqual(data['differences'], [])
+        finally:
+            TestNodeConfigDiff.WORKER_CONF = original
+
+    def test_unreadable_node_is_reported_not_fatal(self):
+        def raw(_self, method, endpoint, body=None, params=None,
+                content_type='application/octet-stream'):
+            if 'master-node' in endpoint:
+                return True, self.MASTER_CONF
+            return False, 'permission denied'
+        web_ui.WazuhAPISession.request_raw = raw
+        data = self.diff()
+        self.assertIn('worker-1', data['errors'])
+        self.assertEqual(data['diff_count'], 0)
+
+    def test_requires_authentication(self):
+        anon = web_ui.create_app().test_client()
+        self.assertEqual(anon.get('/api/nodes/config-diff').status_code, 401)
+
+
+# --------------------------------------------------------------------------
 # Front-end assets embedded in the template
 # --------------------------------------------------------------------------
 

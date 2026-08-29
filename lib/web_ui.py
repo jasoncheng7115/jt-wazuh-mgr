@@ -929,6 +929,7 @@ HTML_TEMPLATE = '''
         <!-- Nodes Panel -->
         <div class="panel" id="nodes-panel">
             <div class="toolbar">
+                <button class="btn" style="background:#607d8b;color:#fff;" onclick="showNodeConfigDiff()" title="Compare each node's ossec.conf against the master"><svg class="icon"><use href="#icon-file-code"/></svg>Config Diff</button>
                 <button class="btn btn-primary" onclick="refreshNodes()"><svg class="icon"><use href="#icon-refresh"/></svg>Refresh</button>
             </div>
             <div class="table-container">
@@ -6315,6 +6316,49 @@ HTML_TEMPLATE = '''
             URL.revokeObjectURL(link.href);
         }
 
+        // ossec.conf is not synced by the cluster, so a worker can silently miss a
+        // list declaration and ignore every rule that uses it. Nothing else surfaces this.
+        async function showNodeConfigDiff() {
+            showModal('Node Config Diff', '<div class="loading"><div class="spinner"></div>Comparing nodes...</div>',
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
+            const data = await api('/nodes/config-diff');
+            const body = document.getElementById('modalBody');
+            if (!body) return;
+            if (!data || data.error) {
+                body.innerHTML = '<div class="alert alert-error">' + escapeHtml((data && data.error) || 'Failed to compare') + '</div>';
+                return;
+            }
+            let html = '<p style="color:#888;font-size:12px;margin-bottom:12px;">ossec.conf is not synchronised by the cluster. ' +
+                'Compared against the master <strong>' + escapeHtml(data.reference) + '</strong>: ' +
+                escapeHtml(data.nodes.join(', ')) + '</p>';
+            if (!data.differences.length) {
+                html += '<div class="alert alert-success">All nodes match the master in the sections that affect detection.</div>';
+            } else {
+                html += '<div class="alert alert-error">' + data.diff_count + ' difference(s) found</div>';
+                for (const d of data.differences) {
+                    html += '<div style="background:#0a0a15;padding:12px;border-radius:4px;margin-bottom:10px;">' +
+                        '<div style="color:#4fc3f7;margin-bottom:6px;">' + escapeHtml(d.node) +
+                        ' &mdash; section <code>' + escapeHtml(d.section) + '</code></div>';
+                    if (d.missing_on_node.length) {
+                        html += '<div style="color:#e94560;font-size:12px;margin-bottom:4px;">Missing on this node (present on master):</div>' +
+                            '<ul style="margin:0 0 8px 18px;font-family:monospace;font-size:12px;color:#eee;">' +
+                            d.missing_on_node.map(i => '<li>' + escapeHtml(i) + '</li>').join('') + '</ul>';
+                    }
+                    if (d.extra_on_node.length) {
+                        html += '<div style="color:#fd7e14;font-size:12px;margin-bottom:4px;">Only on this node:</div>' +
+                            '<ul style="margin:0 0 0 18px;font-family:monospace;font-size:12px;color:#eee;">' +
+                            d.extra_on_node.map(i => '<li>' + escapeHtml(i) + '</li>').join('') + '</ul>';
+                    }
+                    html += '</div>';
+                }
+            }
+            if (data.errors && Object.keys(data.errors).length) {
+                html += '<div class="alert alert-error">' +
+                    Object.entries(data.errors).map(([n, e]) => escapeHtml(n) + ': ' + escapeHtml(e)).join('<br>') + '</div>';
+            }
+            body.innerHTML = html;
+        }
+
         // ---------- Node daemon health ----------
         async function showDaemonStats(nodeName) {
             showModal('Health - ' + nodeName, '<div class="loading"><div class="spinner"></div>Loading...</div>',
@@ -7146,6 +7190,14 @@ _I18N_SCRIPT = r"""
       'Configuration is invalid': '設定無效',
       'Check the config before restarting': '重新啟動前先檢查設定',
       'Reload Ruleset': '重新載入規則集',
+      'Config Diff': '設定差異',
+      'Node Config Diff': '節點設定差異',
+      "Compare each node's ossec.conf against the master": '比對各節點的 ossec.conf 與 master 的差異',
+      'Comparing nodes...': '比對節點中…',
+      'Failed to compare': '比對失敗',
+      'All nodes match the master in the sections that affect detection.': '所有節點在影響偵測的區段上都與 master 一致。',
+      'Missing on this node (present on master):': '此節點缺少（master 上有）：',
+      'Only on this node:': '僅此節點有：',
       'Apply rule changes on every cluster node without restarting': '套用規則變更到叢集所有節點, 不需重新啟動',
       'Reload the ruleset on every cluster node? Running services are not restarted.': '要在叢集所有節點重新載入規則集嗎？執行中的服務不會重新啟動。',
       'Reloading ruleset...': '重新載入規則集中…',
@@ -7560,6 +7612,7 @@ _I18N_SCRIPT = r"""
       [/^Running Config - Agent (.+)$/, function (m) { return '生效中的設定 - 代理程式 ' + m[1]; }],
       [/^Ruleset reloaded on (.+)$/, function (m) { return '已在 ' + m[1] + ' 重新載入規則集'; }],
       [/^Ruleset reloaded on (\\d+) node\\(s\\)$/, function (m) { return '已在 ' + m[1] + ' 個節點重新載入規則集'; }],
+      [/^(\\d+) difference\\(s\\) found$/, function (m) { return '發現 ' + m[1] + ' 處差異'; }],
       [/^Reload the ruleset on "(.+)"\? Running services are not restarted\.$/, function (m) { return '要在「' + m[1] + '」重新載入規則集嗎？執行中的服務不會重新啟動。'; }],
       [/^Command sent to (\d+) agent\(s\)$/, function (m) { return '指令已送出至 ' + m[1] + ' 個代理程式'; }],
       [/^Run "(.+)" on (\d+) agent\(s\)\?$/, function (m) { return '要在 ' + m[2] + ' 個代理程式上執行「' + m[1] + '」嗎？'; }],
@@ -12061,6 +12114,117 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             return jsonify({'success': True, 'message': f"Ruleset reloaded on {name}", 'result': result})
         except Exception as e:
             logger.error(f"RULESET RELOAD ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    # ossec.conf is NOT synchronised by the cluster: each node keeps its own copy.
+    # A node can therefore silently miss a CDB list declaration or have a module
+    # disabled, which quietly kills whole families of rules on that node only.
+    # These are the sections where such a drift actually changes detection.
+    CONFIG_DIFF_SECTIONS = {
+        'ruleset':         ('list', 'rule_dir', 'decoder_dir', 'rule_exclude', 'decoder_exclude'),
+        'syscheck':        ('directories', 'ignore', 'nodiff', 'disabled', 'frequency'),
+        'rootcheck':       ('disabled',),
+        'localfile':       ('location', 'log_format', 'command'),
+        'active-response': ('command', 'location', 'disabled'),
+        'command':         ('name', 'executable'),
+    }
+
+    def _config_fingerprint(raw_xml: str) -> dict:
+        """Reduce an ossec.conf to the comparable items of each relevant section."""
+        import xml.etree.ElementTree as ET
+        result = {name: [] for name in CONFIG_DIFF_SECTIONS}
+        result['wodle'] = []
+        try:
+            root = ET.fromstring('<root>' + raw_xml + '</root>')
+        except Exception:
+            # ossec.conf may hold several <ossec_config> blocks and comments
+            try:
+                cleaned = re.sub(r'<!--.*?-->', '', raw_xml, flags=re.S)
+                root = ET.fromstring('<root>' + cleaned + '</root>')
+            except Exception as e:
+                raise ValueError(f'Unable to parse configuration: {e}')
+
+        for section, tags in CONFIG_DIFF_SECTIONS.items():
+            for node in root.iter(section):
+                for tag in tags:
+                    for child in node.findall(tag):
+                        value = ' '.join((child.text or '').split())
+                        attrs = ' '.join(f'{k}={v}' for k, v in sorted(child.attrib.items()))
+                        item = f'{tag}: {value}' + (f'  [{attrs}]' if attrs else '')
+                        result[section].append(item)
+        for node in root.iter('wodle'):
+            name = node.get('name', '?')
+            disabled = (node.findtext('disabled') or 'no').strip()
+            result['wodle'].append(f'{name}: disabled={disabled}')
+        return {k: sorted(set(v)) for k, v in result.items()}
+
+    @app.route('/api/nodes/config-diff', methods=['GET'])
+    @login_required
+    def get_node_config_diff():
+        """Compare each node's ossec.conf against the master, section by section.
+
+        The cluster synchronises rules and lists but not ossec.conf, so a worker
+        can be missing a <list> declaration and silently ignore every rule that
+        uses it. Nothing in Wazuh surfaces that drift.
+        """
+        try:
+            api = get_api_session()
+            nodes = api.get_nodes() or []
+            if not nodes:
+                return jsonify({'error': 'No cluster nodes available'}), 400
+
+            master = next((n for n in nodes if n.get('type') == 'master'), nodes[0])
+            reference = master.get('name')
+
+            fingerprints, errors = {}, {}
+            for node in nodes:
+                name = node.get('name')
+                if not name or not validate_node_name(name):
+                    continue
+                try:
+                    ok, raw = api.request_raw('GET', f'/cluster/{name}/configuration',
+                                              params={'raw': 'true'})
+                    if not ok:
+                        errors[name] = str(raw)[:200]
+                        continue
+                    fingerprints[name] = _config_fingerprint(raw)
+                except Exception as e:
+                    errors[name] = str(e)[:200]
+
+            if reference not in fingerprints:
+                return jsonify({'error': f"Could not read the master node's configuration ({reference})",
+                                'errors': errors}), 502
+
+            base = fingerprints[reference]
+            differences = []
+            for name, fp in fingerprints.items():
+                if name == reference:
+                    continue
+                for section in sorted(set(base) | set(fp)):
+                    only_master = [i for i in base.get(section, []) if i not in fp.get(section, [])]
+                    only_node = [i for i in fp.get(section, []) if i not in base.get(section, [])]
+                    if only_master or only_node:
+                        differences.append({
+                            'node': name,
+                            'section': section,
+                            'missing_on_node': only_master,
+                            'extra_on_node': only_node,
+                        })
+
+            logger.info(
+                f"NODE CONFIG DIFF: user={get_current_user()} reference={sanitize_for_log(reference)} "
+                f"nodes={len(fingerprints)} differences={len(differences)}"
+            )
+            return jsonify({
+                'reference': reference,
+                'nodes': sorted(fingerprints),
+                'differences': differences,
+                'diff_count': len(differences),
+                'errors': errors,
+                'sections': sorted(set(CONFIG_DIFF_SECTIONS) | {'wodle'}),
+            })
+        except Exception as e:
+            logger.error(f"NODE CONFIG DIFF ERROR: {e}")
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/cluster/reload-ruleset', methods=['POST'])

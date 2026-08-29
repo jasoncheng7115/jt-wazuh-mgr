@@ -4,6 +4,22 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.5.2 (2026-08-29)
+
+- **Node config drift detection.** `ossec.conf` is the one thing a Wazuh cluster
+  does *not* synchronise, so a worker can quietly be missing a `<list>`
+  declaration and ignore every rule that uses it — with nothing in Wazuh
+  surfacing the drift. `GET /api/nodes/config-diff` reads each node's
+  configuration through the API and compares the sections that actually change
+  detection (`ruleset`, `wodle`, `syscheck`, `rootcheck`, `localfile`,
+  `active-response`, `command`) against the master, reporting what is missing on
+  a node and what only exists there. A **Config Diff** button was added to the
+  Nodes tab.
+  The comparison is semantic rather than textual, so comments and formatting do
+  not produce noise. Run against a live cluster it immediately found four real
+  drifts, including a worker missing every active-response command and running
+  FIM without `realtime`.
+
 ## v1.5.1 (2026-08-29)
 
 - **Reload the ruleset across the whole cluster from the Rules tab.** Editing rules
