@@ -4,6 +4,19 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.5.2（2026-08-29）
+
+- **節點設定漂移偵測。** `ossec.conf` 正好是 Wazuh 叢集**不會**同步的東西，
+  因此 worker 可能悄悄少了某個 `<list>` 宣告，於是所有用到該清單的規則全被忽略 ——
+  而 Wazuh 本身沒有任何機制會提醒這件事。新增 `GET /api/nodes/config-diff`，
+  透過 API 讀取各節點設定，就「真正影響偵測」的區段
+  （`ruleset`、`wodle`、`syscheck`、`rootcheck`、`localfile`、`active-response`、`command`）
+  與 master 比對，列出節點上缺少的項目與僅該節點才有的項目。
+  「節點」分頁新增 **設定差異** 按鈕。
+  比對是語意層級而非純文字，因此註解與排版差異不會造成雜訊。
+  在正式叢集上實測，立刻找出四處真實落差，包括 worker 完全缺少主動回應指令、
+  以及 FIM 未啟用 `realtime`。
+
 ## v1.5.1（2026-08-29）
 
 - **在「規則」分頁一鍵重新載入整個叢集的規則集。** 在 master 改規則後，worker 並不會
