@@ -4,6 +4,31 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.0 (2026-08-30)
+
+- **New Rule Packs tab.** A catalogue of the detection rule series maintained by
+  Jason Tools, presented as a package manager rather than another read-only view
+  of the Rules tab — installing and removing rules is a lifecycle operation with
+  its own state, so it lives in its own tab.
+
+  Each pack bundles rules, decoders and CDB lists behind a manifest. You can open
+  a pack to see exactly which files it installs, where they go, which rule IDs it
+  claims, and any notes on what it needs to work. Installing is deliberately
+  cautious: rule-ID conflicts with already-installed rules are detected and
+  refused unless forced, every file that would be overwritten is backed up first,
+  the ruleset is validated with `wazuh-analysisd -t` afterwards, and **any failure
+  rolls the whole install back** — files, list declarations and all. Nothing is
+  left half-applied.
+
+  Removal restores whatever the pack replaced. If you edited an installed file,
+  removal stops and tells you which ones rather than silently discarding your work.
+
+  Four packs ship initially: portable-executable detection (Windows/Linux/macOS),
+  IP threat intelligence, malware hash matching, and a Zimbra detection suite.
+
+- Pack paths honour `wazuh_path` from `config.yaml` instead of assuming `/var/ossec`.
+- `install.sh` now fetches the pack catalogue.
+
 ## v1.5.2 (2026-08-29)
 
 - **Node config drift detection.** `ossec.conf` is the one thing a Wazuh cluster

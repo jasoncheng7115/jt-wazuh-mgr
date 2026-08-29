@@ -1,0 +1,132 @@
+<!--
+  Zimbra 認證偵測規則
+  檔案：/var/ossec/etc/rules/zimbra_auth_rules.xml
+  區段：100840-100859
+  版本：v2.0
+  相依解碼器：zimbra-audit
+
+  設計重點：
+    認證面是唯一能造成「零失敗紀錄的成功入侵」的攻擊面
+    （偽造 JWT、竊取 token、preauth key 外洩）。
+    因此除了失敗事件，成功事件也必須納入行為基準比對。
+
+  ※ 100845 標記 authentication_success 群組、100842 標記
+    authentication_failures 群組後，內建規則 40112
+    （多次失敗後成功）會自動生效，100846 為 Zimbra 專用強化版。
+-->
+<group name="zimbra,authentication,">
+
+  <rule id="100840" level="0">
+    <decoded_as>zimbra-audit</decoded_as>
+    <description>Zimbra 認證紀錄（基礎規則）</description>
+  </rule>
+
+  <!-- ── 認證失敗 ── -->
+  <rule id="100841" level="5">
+    <if_sid>100840</if_sid>
+    <match>authentication failed|AuthFailed|invalid password|account lockout</match>
+    <description>Zimbra 認證失敗：$(user) 來源：$(srcip)</description>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <!-- 暴力破解 -->
+  <rule id="100842" level="10" frequency="12" timeframe="300">
+    <if_matched_sid>100841</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] Zimbra 認證失敗頻繁，疑似暴力破解：$(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,</group>
+  </rule>
+
+  <!-- 密碼噴灑：同來源、多帳號、少量嘗試（比暴力破解更難察覺） -->
+  <rule id="100843" level="12" frequency="8" timeframe="600">
+    <if_matched_sid>100841</if_matched_sid>
+    <same_source_ip />
+    <different_user />
+    <description>[HIGH] 同一來源嘗試多個不同帳號，疑似密碼噴灑：$(srcip)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,</group>
+  </rule>
+
+  <!-- ── 認證成功（基礎，供後續關聯）── -->
+  <rule id="100845" level="3">
+    <if_sid>100840</if_sid>
+    <action>^Auth$|^AdminAuth$</action>
+    <description>Zimbra 認證成功：$(user) 來源：$(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!-- 爆破得手：先大量失敗、隨後成功 —— 憑證外洩的最強訊號
+       採用內建規則 40112 的正規寫法：if_group + if_matched_group -->
+  <rule id="100846" level="14" timeframe="900">
+    <if_group>authentication_success</if_group>
+    <if_matched_group>authentication_failures</if_matched_group>
+    <same_source_ip />
+    <description>[HIGH] Zimbra：同一來源先大量認證失敗、隨後認證成功，研判憑證爆破得手：$(user) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>credential_access,</group>
+  </rule>
+
+  <!-- ── 管理員認證 ── -->
+  <rule id="100847" level="8">
+    <if_sid>100840</if_sid>
+    <action>^AdminAuth$</action>
+    <description>[WARN] Zimbra 管理員登入成功：$(user) 來源：$(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="100848" level="0">
+    <if_sid>100847</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>管理員自內部網段登入（正常）</description>
+  </rule>
+
+  <rule id="100849" level="14">
+    <if_sid>100847</if_sid>
+    <description>[HIGH] Zimbra 管理員自外部來源登入成功：$(user) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!-- preauth 認證：可免密碼登入任意帳號，非 SSO 環境不應出現 -->
+  <rule id="100850" level="13">
+    <if_sid>100840</if_sid>
+    <match>preauth</match>
+    <description>[HIGH] 偵測到 preauth 認證行為，若非 SSO 整合即代表 preauth key 可能外洩：$(user) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1550.001</id>
+    </mitre>
+    <group>credential_access,</group>
+  </rule>
+
+  <!-- 2FA 相關異動（CL-STA-1114 等攻擊會竊取 2FA 備援碼） -->
+  <rule id="100851" level="12">
+    <if_sid>100840</if_sid>
+    <match>TwoFactorAuth|DisableTwoFactorAuth|GenerateScratchCodes</match>
+    <description>[HIGH] 雙因素驗證設定遭異動或備援碼遭產生：$(user) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1556.006</id>
+    </mitre>
+  </rule>
+
+  <!-- 同一帳號短時間內自多個來源 IP 登入成功 -->
+  <rule id="100852" level="13" frequency="3" timeframe="3600">
+    <if_matched_sid>100845</if_matched_sid>
+    <same_user />
+    <different_srcip />
+    <description>[HIGH] 同一帳號短時間內自多個不同來源登入成功，疑似憑證外洩：$(user)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+</group>

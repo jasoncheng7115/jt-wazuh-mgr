@@ -1,0 +1,419 @@
+<!--
+  ╔══════════════════════════════════════════════════════════════════════╗
+  ║  jt-portable-detect ── 可攜式執行檔偵測規則                          ║
+  ║  檔案名稱: 10-906100-jt_portable_rules.xml                           ║
+  ║  版本: v1.1    規則區間: 906100-906199                               ║
+  ║  Jason Tools Co., Ltd.（節省工具箱有限公司）／Apache-2.0             ║
+  ╚══════════════════════════════════════════════════════════════════════╝
+
+  安裝位置：/var/ossec/etc/rules/10-906100-jt_portable_rules.xml
+
+  ── ★ 檔名前綴不可任意更改（實測確認）★ ──
+    規則檔「跨目錄依檔名字母序載入」，而 <if_sid> 只能參照「已載入」的規則。
+    本檔案依賴內建規則 61603／61617（位於 0595-win-sysmon_rules.xml）
+    與 67012／67013（位於 0955-WEF-baseline_rules.xml），
+    因此檔名前綴必須排在所有內建 0xxx- 檔案「之後」。
+
+    ❌ 01-906100-...  → 「01」比「0595」小，會先載入，
+                        導致 (7617) Signature ID '61603' was not found，
+                        A/B 項規則全部被忽略。
+    ✅ 10-906100-...  → 排在 0955- 之後，相依規則皆已載入。
+
+  ── 規則編號說明 ──
+    採 906xxx 區段，與既有的 01-906000-jason_tools_ioc.xml 同一系列。
+    刻意「不」使用 100xxx ── 該區段是 Wazuh 使用者自訂規則的起始編號，
+    公開範例與第三方規則集大量占用，衝突風險高。
+
+  ── 模組對照 ──
+    A  906100-906109  Sysmon Process Create（EID 1）
+    B  906110-906119  AppLocker 稽核（EID 8003／8004）        ※ 可獨立停用
+    C  906120-906129  FIM 檔案落地 ＋ Sysmon EID 15
+    D  906130-906139  定期主動盤點（NDJSON）
+    E  906140-906142  核准清單覆寫（等級壓降）
+       906143-906149  ★ 保留給客戶端自訂的排除規則
+       906150-906159  關聯規則
+       906190-906199  保留給測試鏡像規則（見 tests/run-logtest.sh）
+
+  ── ★ pcre2 反斜線寫法（已於 Wazuh 4.14.5 實測，勿憑推測修改）──
+    XML 中寫  \\   → pcre2 視為「一個字面反斜線」  ✅ 正確
+    XML 中寫  \    → 無效跳脫，analysisd 拒絕載入，Manager 會起不來  ❌
+    XML 中寫  \\\\ → pcre2 視為「兩個字面反斜線」，不會匹配          ❌
+    修改任何路徑比對後，務必執行：/var/ossec/bin/wazuh-analysisd -t
+
+  ── 停用某模組的方式 ──
+    將該區塊整段以 XML 註解包住即可；各模組之間無相依性。
+
+  ── v1.1 變更 ──
+    1. 規則編號由 100600-100699 改為 906100-906199（避免衝突）
+    2. 移除原 100603（未簽章執行偵測）── Sysmon EID 1 無簽章欄位，
+       該規則永遠不會觸發。改由 906131（週期盤點）承接，詳見下方說明。
+    3. 906121 新增子規則 906122，確認 Zone.Identifier 內容
+    4. 906131 補齊 SignatureStatus 列舉的所有異常值
+-->
+
+<group name="windows,jt_portable,">
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   A 項：Sysmon Process Create（EID 1）
+   父規則 61603（Sysmon EID 1，level 0）
+   ══════════════════════════════════════════════════════════════════════
+
+   ★ 關於「未簽章偵測」（原規則 100603 已移除）★
+
+   Sysmon EID 1（ProcessCreate）的事件結構共 23 個欄位：
+     RuleName, UtcTime, ProcessGuid, ProcessId, Image, FileVersion,
+     Description, Product, Company, OriginalFileName, CommandLine,
+     CurrentDirectory, User, LogonGuid, LogonId, TerminalSessionId,
+     IntegrityLevel, Hashes, ParentProcessGuid, ParentProcessId,
+     ParentImage, ParentCommandLine, ParentUser
+
+   其中「完全沒有」Signed／Signature／SignatureStatus 欄位 ──
+   這些欄位只存在於 EID 7（Image Loaded）。
+   因此以 <field name="win.eventdata.signed"> 判定未簽章是無效的，
+   該規則永遠不會觸發，且無法透過 Sysmon 設定檔啟用（欄位根本不存在）。
+
+   未簽章偵測改由 D 項的週期盤點承接（規則 906131），
+   以 PowerShell 的 Get-AuthenticodeSignature 取得真實簽章狀態。
+   代價是偵測時機由「即時」變為「每週一次」。
+
+   若客戶要求即時未簽章偵測，唯一途徑是啟用 Sysmon EID 7 並比對
+   SignatureStatus ── 但 EID 7 事件量極大（每個程序載入數十個 DLL），
+   與「告警量控管優先於偵測涵蓋率」的設計原則衝突，故本專案不採用。
+-->
+
+  <!-- A-1：使用者目錄執行 ── 最常見的可攜式程式落點 -->
+  <rule id="906100" level="6">
+    <if_sid>61603,100110</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+(Downloads|Desktop|Documents|Public)\\+</field>
+    <description>可攜式程式：自使用者目錄執行 ── $(win.eventdata.image) 使用者：$(win.eventdata.user) 雜湊：$(win.eventdata.hashes)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+  <!--
+    A-2：非系統碟執行 ── 視為可移除式儲存裝置
+    ※ 預設涵蓋 E: ～ Z:，已排除 C: 與 D:
+      （D: 常為光碟機或第二硬碟；若客戶環境 D: 為資料碟且需納管，
+        將 [E-Z] 改為 [D-Z] 即可，見 docs/TUNING.md 第 5 節）
+  -->
+  <rule id="906101" level="10">
+    <if_sid>61603,100110</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[E-Z]:\\+</field>
+    <description>[WARN] 可攜式程式：自非系統碟（可能為隨身碟）執行 ── $(win.eventdata.image) 使用者：$(win.eventdata.user) 雜湊：$(win.eventdata.hashes)</description>
+    <mitre>
+      <id>T1204.002</id>
+      <id>T1091</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_removable,</group>
+  </rule>
+
+  <!--
+    A-3：使用者 Temp 目錄執行
+    ※ 刻意「不」涵蓋整個 AppData\Local ── Chrome／Edge／Teams／Slack／
+      Zoom／VS Code 的更新程序均自該處執行，會產生大量誤報。
+      若要擴大範圍，須先收集至少 7 日 baseline，見 docs/TUNING.md 第 2 節。
+  -->
+  <rule id="906102" level="10">
+    <if_sid>61603,100110</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+</field>
+    <description>[WARN] 可攜式程式：自使用者 Temp 目錄執行 ── $(win.eventdata.image) 使用者：$(win.eventdata.user) 雜湊：$(win.eventdata.hashes)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   B 項：AppLocker 稽核模式  ※ 可選模組
+   ══════════════════════════════════════════════════════════════════════
+   前提：
+     1. Windows Enterprise／Education 版（Pro 版功能受限，見 docs/APPLOCKER.md）
+     2. Application Identity（AppIDSvc）服務須設為自動啟動
+     3. 已套用「預設規則」且設定為「僅稽核」模式
+   父規則：67012（EID 8003）／67013（EID 8004）── Wazuh 內建
+   不需要 AppLocker 的環境：整段註解掉即可，A／C／D 項不受影響。
+
+   ★★ 欄位名稱待實機驗證 ★★
+   description 中使用的 win.ruleAndFileData.filePath 與 .targetUser
+   「尚未經實機驗證」。Wazuh 內建的 AppLocker 規則（67011-67013）
+   僅使用了 win.ruleAndFileData.ruleName 一個欄位，其餘欄位名無內建規則佐證。
+
+   部署後請務必依 docs/APPLOCKER.md 第 5 節驗證：
+   若告警訊息中該兩欄位顯示為空白，代表欄位名不正確，
+   請以實際事件的欄位名替換（驗證指令見該文件）。
+   ※ 欄位名錯誤只影響「告警訊息可讀性」，不影響規則是否觸發。
+-->
+
+  <!-- B-1：稽核模式下「本應被封鎖」── 本專案主要的高訊噪比訊號 -->
+  <rule id="906110" level="8">
+    <if_sid>67012</if_sid>
+    <description>[WARN] 可攜式程式：AppLocker 稽核模式偵測到本應封鎖之執行 ── $(win.ruleAndFileData.filePath) 使用者：$(win.ruleAndFileData.targetUser)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_applocker,</group>
+  </rule>
+
+  <!-- B-2：強制模式下實際遭封鎖（本階段不啟用強制模式，保留供日後切換） -->
+  <rule id="906111" level="5">
+    <if_sid>67013</if_sid>
+    <description>可攜式程式：AppLocker 強制模式已封鎖執行 ── $(win.ruleAndFileData.filePath) 使用者：$(win.ruleAndFileData.targetUser)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_applocker,</group>
+  </rule>
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   C 項：FIM 檔案落地 ＋ 下載來源判定
+   ══════════════════════════════════════════════════════════════════════
+   父規則：554（檔案新增，內建 level 5）／61617（Sysmon EID 15，level 0）
+   ※ FIM 規則的欄位名必須用「規則欄位名」而非 JSON 告警欄位名：
+     file／changed_fields／process_name／effective_name／sha256
+     寫成 changed_attributes／audit.process.name 會靜默失效。
+-->
+
+  <!-- C-1：使用者目錄出現可執行檔 -->
+  <rule id="906120" level="5">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">(?i)^[A-Z]:\\+Users\\+.*\.(exe|dll|msi|scr|ps1|jar)$</field>
+    <description>可攜式程式：使用者目錄新增可執行檔 ── $(file)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_file,</group>
+  </rule>
+
+  <!--
+    C-2：Sysmon EID 15（FileCreateStreamHash）── 可執行檔被建立了替代資料流
+
+    ※ EID 15 會在「任何具名檔案資料流（ADS）被建立」時觸發，
+      最常見的來源是瀏覽器下載檔案時附加的 Zone.Identifier，
+      但「不限於」Zone.Identifier ── 因此本規則的描述不宣稱來源必為網路下載。
+      確認為網路下載的情況由子規則 906122 處理。
+  -->
+  <rule id="906121" level="6">
+    <if_sid>61617</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Users\\+.*\.(exe|dll|msi|scr|ps1|jar)$</field>
+    <description>可攜式程式：使用者目錄之可執行檔被建立替代資料流（ADS）── $(win.eventdata.targetFilename) 建立程序：$(win.eventdata.image)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_file,</group>
+  </rule>
+
+  <!--
+    C-3：確認為「自網際網路下載」
+    Zone.Identifier 的 contents 內含 ZoneId=3 即代表來源為網際網路
+    （0=本機 1=內部網路 2=信任網站 3=網際網路 4=限制網站）。
+    ※ 若 Sysmon 設定未輸出 contents 欄位，本規則不會觸發，
+      但父規則 906121 仍會告警，不影響基本偵測能力。
+  -->
+  <rule id="906122" level="7">
+    <if_sid>906121</if_sid>
+    <field name="win.eventdata.contents" type="pcre2">(?i)ZoneId\s*=\s*[34]</field>
+    <description>[WARN] 可攜式程式：自網際網路下載之可執行檔落地 ── $(win.eventdata.targetFilename) 下載程序：$(win.eventdata.image)</description>
+    <mitre>
+      <id>T1204.002</id>
+      <id>T1105</id>
+    </mitre>
+    <group>jt_portable_file,jt_portable_download,</group>
+  </rule>
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   D 項：定期主動盤點
+   ══════════════════════════════════════════════════════════════════════
+   資料來源：jt-portable-inventory.ps1 產出的 NDJSON
+             （Agent 端以 <log_format>json</log_format> 收集）
+   欄位規格見 docs/FIELDS.md
+-->
+
+  <!-- D-0：基礎規則 -->
+  <rule id="906133" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="jt_portable.scan_type" type="pcre2">.+</field>
+    <description>jt-portable 盤點事件（基礎規則）</description>
+  </rule>
+
+  <!-- D-1：一般盤點結果 -->
+  <rule id="906130" level="3">
+    <if_sid>906133</if_sid>
+    <field name="jt_portable.scan_type" type="pcre2">^inventory$</field>
+    <description>可攜式程式盤點：$(jt_portable.path) 產品：$(jt_portable.product) 簽章：$(jt_portable.signed)</description>
+    <group>jt_portable_inventory,</group>
+  </rule>
+
+  <!--
+    D-2：簽章異常且位於使用者目錄 ── 稽核重點，同時承接原 A 項的未簽章偵測
+
+    ★ 值域說明：signed 欄位來自 PowerShell 的 Get-AuthenticodeSignature，
+      其 SignatureStatus 列舉「僅有」下列 7 個成員（Microsoft 官方文件）：
+        Valid                  簽章有效（僅代表語法有效，不代表可信任）
+        UnknownError           簽章無效
+        NotSigned              未簽章
+        HashMismatch           檔案雜湊與簽章不符 ← 檔案可能遭竄改
+        NotTrusted             簽章者不受本系統信任
+        NotSupportedFileFormat 系統不支援此檔案格式的簽章驗證
+        Incompatible           簽章與目前系統不相容
+      本規則比對「Valid 以外的全部」，即以否定方式列舉，
+      避免日後遺漏（原 v1.0 漏掉 NotTrusted 等三個值）。
+  -->
+  <rule id="906131" level="7">
+    <if_sid>906130</if_sid>
+    <field name="jt_portable.signed" type="pcre2">(?i)^(?!Valid$).+</field>
+    <field name="jt_portable.path" type="pcre2">(?i)^[A-Z]:\\Users\\</field>
+    <description>[WARN] 可攜式程式盤點：使用者目錄存在簽章異常之執行檔（$(jt_portable.signed)）── $(jt_portable.path) 公司：$(jt_portable.company) SHA256：$(jt_portable.sha256)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_inventory,jt_portable_unsigned,</group>
+  </rule>
+
+  <!-- D-3：檔案雜湊與簽章不符 ── 檔案遭竄改的直接證據，等級高於一般未簽章 -->
+  <rule id="906134" level="12">
+    <if_sid>906131</if_sid>
+    <field name="jt_portable.signed" type="pcre2">(?i)^HashMismatch$</field>
+    <description>[HIGH] 可攜式程式盤點：執行檔雜湊與數位簽章不符，檔案可能遭竄改 ── $(jt_portable.path) SHA256：$(jt_portable.sha256)</description>
+    <mitre>
+      <id>T1204.002</id>
+      <id>T1565.001</id>
+    </mitre>
+    <group>jt_portable_inventory,jt_portable_unsigned,</group>
+  </rule>
+
+  <!-- D-4：掃描摘要 -->
+  <rule id="906132" level="2">
+    <if_sid>906133</if_sid>
+    <field name="jt_portable.scan_type" type="pcre2">^summary$</field>
+    <description>可攜式程式盤點完成：掃描 $(jt_portable.scanned_count) 個檔案，錯誤 $(jt_portable.error_count) 筆，耗時 $(jt_portable.duration_sec) 秒</description>
+    <group>jt_portable_inventory,</group>
+  </rule>
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   E 項：核准清單覆寫（等級壓降）
+   ══════════════════════════════════════════════════════════════════════
+   ★ 本區塊必須置於被覆寫規則「之後」，Wazuh 只會產生最後命中之規則的告警。
+   ★ CDB 清單修改後必須重啟 wazuh-manager（.cdb 由 analysisd 啟動時重新編譯），
+     Wazuh 4.x 已無 wazuh-makelists 指令。
+   ★ ossec.conf 的 <ruleset> 內必須宣告 <list>，否則相依規則會被整條忽略
+     （此時 ossec.log 會出現 (7616) 警告 ── 這是少數會報錯的情況）。
+
+   比對欄位優先序（以兩條規則實作，不依賴單一規則）：
+     1. win.eventdata.originalFileName ── 內嵌於 PE 標頭，改檔名無法規避
+     2. 完整路徑（適用於核准特定位置的程式）
+-->
+
+  <!-- E-1：以 originalFileName 比對（優先） -->
+  <rule id="906140" level="3">
+    <if_sid>906100,906101,906102</if_sid>
+    <list field="win.eventdata.originalFileName" lookup="match_key">etc/lists/jt-approved-portable</list>
+    <description>可攜式程式（已核准，僅記錄）：$(win.eventdata.originalFileName) ── $(win.eventdata.image) 使用者：$(win.eventdata.user)</description>
+    <group>jt_portable_approved,</group>
+  </rule>
+
+  <!--
+    E-2：以完整路徑比對
+
+    ★★ 兩個實測確認的重點，寫錯會靜默失效 ★★
+
+    1. CDB 的 match_key 是「位元組精確比對」，不是子字串或結尾比對。
+       image 欄位的值是「完整路徑」，因此 key 也必須是完整路徑。
+       寫 putty.exe 是「永遠不會命中」的 ── 這是最容易犯的錯。
+
+    2. Windows 路徑含有 C: 的冒號，而 CDB 會在「第一個未加引號的冒號」
+       切分 key 與 value。因此 Windows 路徑 key 必須整個用雙引號包起來：
+
+         ✅ "C:\Users\jason\Downloads\putty.exe":approved
+         ❌ C:\Users\jason\Downloads\putty.exe:approved
+              （會被解析成 key="C"、value="\Users\...:approved"）
+
+    因此本規則適用於「核准特定位置的特定程式」，例如公司統一放置的
+    C:\Users\Public\Tools\ 目錄。若要以檔名核准，請改用 E-1 或 E-3。
+  -->
+  <rule id="906141" level="3">
+    <if_sid>906100,906101,906102</if_sid>
+    <list field="win.eventdata.image" lookup="match_key">etc/lists/jt-approved-portable</list>
+    <description>可攜式程式（已核准路徑，僅記錄）：$(win.eventdata.image) 使用者：$(win.eventdata.user)</description>
+    <group>jt_portable_approved,</group>
+  </rule>
+
+  <!--
+    E-3：以 SHA-256 比對（高安全等級環境選配）
+    改檔名無法規避。啟用前須先於 ossec.conf 宣告
+    <list>etc/lists/jt-approved-portable-hash</list>
+
+    ★ Sysmon 的 hashes 欄位格式為 "SHA256=ABC..."，並非純雜湊值，
+      因此 CDB 的 key 必須連同 "SHA256=" 前綴一起寫入。
+    ★ 且 Sysmon 必須設定為「僅輸出 SHA256」：
+        <HashAlgorithms>SHA256</HashAlgorithms>
+      若設定為多種雜湊，hashes 會變成逗號分隔的組合字串
+      （如 MD5=...,SHA256=...），精確比對將永遠不會命中。
+  -->
+  <rule id="906142" level="3">
+    <if_sid>906100,906101,906102</if_sid>
+    <list field="win.eventdata.hashes" lookup="match_key">etc/lists/jt-approved-portable-hash</list>
+    <description>可攜式程式（雜湊已核准，僅記錄）：$(win.eventdata.image) 使用者：$(win.eventdata.user)</description>
+    <group>jt_portable_approved,</group>
+  </rule>
+
+  <!--
+    ══════════════════════════════════════════════════════════════════
+     906143-906149：保留給客戶端自訂的排除規則
+    ══════════════════════════════════════════════════════════════════
+     請在此處新增環境專屬的排除規則，不要修改上方 A 項的 pcre2。
+     這樣做的好處：升級本專案時不會覆蓋客戶的調校，
+     且維運人員能清楚看到「排除了什麼、為什麼」。
+
+     範例：
+     <rule id="906143" level="0">
+       <if_sid>906100,906101,906102</if_sid>
+       <field name="win.eventdata.image" type="pcre2">(?i)\\+AppData\\+Local\\+CompanyName\\+Updater\\+</field>
+       <description>排除：CompanyName 更新程序（已核准，變更單 CR-2026-001）</description>
+     </rule>
+  -->
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   關聯規則
+   ══════════════════════════════════════════════════════════════════════
+   ★ frequency 必須搭配 if_matched_*，不可與 if_sid 併用
+     （analysisd 會以 "Invalid use of frequency/context options" 拒絕載入）。
+   ★ 被計數的父規則 level 必須 >= 1，level 0 的規則會在關聯計數前就被丟棄。
+   ★ Wazuh 的 frequency 預設即「僅計數同一 agent 的事件」，
+     因此不需額外條件即可達成「同一主機」的限定。
+   ★ 已實測確認：已列入核准清單的程式（命中 906140-906142）不會被計入，
+     因此重複執行已核准工具「不會」誤觸發本規則。
+-->
+
+  <rule id="906150" level="12" frequency="5" timeframe="600">
+    <if_matched_sid>906100</if_matched_sid>
+    <description>[HIGH] 可攜式程式：同一主機短時間內多次自使用者目錄執行，疑似批次執行可攜式工具集</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_burst,</group>
+  </rule>
+
+  <rule id="906151" level="12" frequency="5" timeframe="600">
+    <if_matched_sid>906101</if_matched_sid>
+    <description>[HIGH] 可攜式程式：同一主機短時間內多次自非系統碟執行，疑似自隨身碟批次執行工具集</description>
+    <mitre>
+      <id>T1204.002</id>
+      <id>T1091</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_burst,</group>
+  </rule>
+
+</group>

@@ -1,0 +1,94 @@
+<!--
+  Zimbra FIM（檔案完整性）偵測規則
+  檔案：/var/ossec/etc/rules/zimbra_fim_rules.xml
+  區段：100800-100819
+  版本：v2.0
+
+  相依：
+    - CDB 清單 etc/lists/zimbra-webfiles（須於 ossec.conf <ruleset> 宣告）
+    - Agent 端 syscheck 須設定 whodata="yes"（需 auditd）
+
+  內建父規則等級（Wazuh 4.14 實測）：
+    550 = 內容異動 level 7 / 553 = 刪除 level 7 / 554 = 新增 level 5
+
+  ※ FIM 規則欄位名稱必須使用「規則欄位名」而非 JSON 輸出名：
+     file / changed_fields / changed_content / process_name /
+     effective_name / audit_name / uname
+     使用 audit.process.name、changed_attributes 等 JSON 名稱會靜默失效。
+-->
+<group name="zimbra,syscheck,">
+
+  <!-- 基礎規則：Zimbra Web 與擴充目錄的任何檔案異動 -->
+  <rule id="100800" level="0">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/opt/zimbra/(jetty_base|jetty)/webapps/|^/opt/zimbra/lib/ext/</field>
+    <description>Zimbra Web／擴充目錄檔案異動（基礎規則）</description>
+  </rule>
+
+  <!-- 原廠檔案：升級時的正常行為，降噪 -->
+  <rule id="100801" level="0">
+    <if_sid>100800</if_sid>
+    <list field="file" lookup="match_key">etc/lists/zimbra-webfiles</list>
+    <description>Zimbra 原廠檔案異動（升級時之正常行為）</description>
+  </rule>
+
+  <!-- 核心規則：非原廠可執行檔案 = 高度疑似 Web Shell -->
+  <rule id="100802" level="14">
+    <if_sid>100800</if_sid>
+    <field name="file" type="pcre2">\.(jsp|jspx|class|war|jar)$</field>
+    <list field="file" lookup="not_match_key">etc/lists/zimbra-webfiles</list>
+    <description>[HIGH] Zimbra Web 目錄出現非原廠可執行檔案，高度疑似 Web Shell：$(file)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>webshell,pci_dss_11.5,gdpr_II_5.1.f,</group>
+  </rule>
+
+  <!-- whodata：補上「誰寫的」—— 釐清入侵管道的唯一依據 -->
+  <rule id="100803" level="15">
+    <if_sid>100802</if_sid>
+    <field name="process_name" type="pcre2">.+</field>
+    <description>[CRITICAL] Web Shell 植入：$(file) 寫入程序：$(process_name) 使用者：$(effective_name)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>webshell,</group>
+  </rule>
+
+  <!-- lib/ext：Java 擴充後門，比 JSP webshell 更危險 -->
+  <rule id="100806" level="15">
+    <if_sid>100800</if_sid>
+    <field name="file" type="pcre2">^/opt/zimbra/lib/ext/</field>
+    <list field="file" lookup="not_match_key">etc/lists/zimbra-webfiles</list>
+    <description>[CRITICAL] Zimbra Java 擴充目錄出現非原廠模組，可挾持認證流程竊取明文密碼：$(file)</description>
+    <mitre>
+      <id>T1505</id>
+    </mitre>
+    <group>webshell,backdoor,</group>
+  </rule>
+
+  <!-- 暫存目錄出現可執行檔案（攻擊者工具落地） -->
+  <rule id="100807" level="12">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm)/.*\.(jsp|jspx|class|jar|war|sh|py|pl|elf|bin)$</field>
+    <description>[HIGH] 暫存目錄出現可執行檔案，疑似攻擊工具：$(file) 程序：$(process_name)</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+    <group>attack_tool,</group>
+  </rule>
+
+  <!-- 原廠檔案「內容」遭竄改（不是新增，是既有檔案被改寫） -->
+  <rule id="100808" level="13">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/opt/zimbra/(jetty_base|jetty)/webapps/</field>
+    <list field="file" lookup="match_key">etc/lists/zimbra-webfiles</list>
+    <field name="changed_fields" type="pcre2">md5|sha1|sha256</field>
+    <description>[HIGH] Zimbra 原廠檔案內容遭竄改：$(file) 程序：$(process_name)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>webshell,</group>
+  </rule>
+
+</group>

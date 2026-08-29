@@ -70,6 +70,20 @@ for file in $LIB_FILES; do
     echo "  - lib/$file"
 done
 
+# Download the Jason Tools rule packs (catalogue for the Rule Packs tab)
+echo -e "${GREEN}Downloading rule packs...${NC}"
+mkdir -p "$INSTALL_DIR/packs"
+if curl -fsSL "$BASE_URL/packs/INDEX" -o "$INSTALL_DIR/packs/INDEX" 2>/dev/null; then
+    while read -r pf; do
+        [ -n "$pf" ] || continue
+        mkdir -p "$INSTALL_DIR/$(dirname "$pf")"
+        curl -fsSL "$BASE_URL/$pf" -o "$INSTALL_DIR/$pf" 2>/dev/null || true
+    done < "$INSTALL_DIR/packs/INDEX"
+    echo "  - packs/ ($(wc -l < "$INSTALL_DIR/packs/INDEX") files)"
+else
+    echo -e "  - packs ${YELLOW}(skipped, index unavailable)${NC}"
+fi
+
 # Download logo / favicon
 curl -fsSL "$BASE_URL/images/logo-1.png" -o "$INSTALL_DIR/images/logo-1.png" 2>/dev/null || true
 echo "  - images/logo-1.png"

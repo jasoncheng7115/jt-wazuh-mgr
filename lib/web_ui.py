@@ -758,6 +758,7 @@ HTML_TEMPLATE = '''
             <button class="tab" data-tab="groups"><svg class="icon"><use href="#icon-folder"/></svg>Groups</button>
             <button class="tab" data-tab="nodes"><svg class="icon"><use href="#icon-server"/></svg>Nodes</button>
             <button class="tab" data-tab="rules"><svg class="icon"><use href="#icon-tree"/></svg>Rules</button>
+            <button class="tab" data-tab="packs"><svg class="icon"><use href="#icon-add-group"/></svg>Rule Packs</button>
             <button class="tab" data-tab="inventory"><svg class="icon"><use href="#icon-server"/></svg>Inventory</button>
             <button class="tab" data-tab="stats"><svg class="icon"><use href="#icon-stats"/></svg>Statistics</button>
             <button class="tab" data-tab="users"><svg class="icon"><use href="#icon-users"/></svg>API Users</button>
@@ -1125,6 +1126,29 @@ HTML_TEMPLATE = '''
         </div>
 
         <!-- Stats Panel -->
+        <div class="panel" id="packs-panel">
+            <div class="toolbar" style="gap:8px;">
+                <span style="color:#888;font-size:12px;">Rule series maintained by Jason Tools. Each pack bundles rules, decoders and CDB lists, and can be removed again.</span>
+                <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="refreshPacks()" title="Refresh"><svg class="icon"><use href="#icon-refresh"/></svg></button>
+                <span id="packsStatus" style="color:#888;font-size:13px;"></span>
+            </div>
+            <div class="table-container" style="flex:1;overflow:auto;min-height:0;">
+                <table id="packsTable">
+                    <thead><tr>
+                        <th style="width:230px;">Pack</th>
+                        <th>Description</th>
+                        <th style="width:120px;">Rule IDs</th>
+                        <th style="width:80px;">Version</th>
+                        <th style="width:110px;">Status</th>
+                        <th style="width:200px;">Actions</th>
+                    </tr></thead>
+                    <tbody id="packsBody">
+                        <tr><td colspan="6" style="text-align:center;color:#888;padding:40px;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <div class="panel" id="inventory-panel">
             <div class="toolbar" style="gap:8px;">
                 <select id="invType" onchange="onInventoryTypeChange()" style="padding:8px 10px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;">
@@ -1509,6 +1533,7 @@ HTML_TEMPLATE = '''
                 else if (tabName === 'groups') refreshGroups();
                 else if (tabName === 'users') refreshUsers();
                 else if (tabName === 'logs') refreshLogs();
+                else if (tabName === 'packs') refreshPacks();
             }
         }
 
@@ -6359,6 +6384,136 @@ HTML_TEMPLATE = '''
             body.innerHTML = html;
         }
 
+        // ---------- Rule packs ----------
+        let packsData = [];
+
+        async function refreshPacks() {
+            const body = document.getElementById('packsBody');
+            const status = document.getElementById('packsStatus');
+            body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;"><div class="loading"><div class="spinner"></div>Loading...</div></td></tr>';
+            const data = await api('/packs');
+            if (!data || data.error) {
+                body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#e94560;padding:30px;">' +
+                    escapeHtml((data && data.error) || 'Failed to load packs') + '</td></tr>';
+                return;
+            }
+            packsData = data.packs || [];
+            const installed = packsData.filter(p => p.installed).length;
+            status.textContent = packsData.length + ' packs, ' + installed + ' installed';
+            if (!packsData.length) {
+                body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;padding:30px;">No packs available.</td></tr>';
+                return;
+            }
+            body.innerHTML = packsData.map(p => {
+                const badge = p.installed
+                    ? '<span class="rule-type-badge custom">Installed</span>'
+                    : '<span class="rule-type-badge builtin">Not installed</span>';
+                const update = p.update_available
+                    ? ' <span style="color:#fd7e14;font-size:11px;">update ' + escapeHtml(p.installed_version || '') + ' &rarr; ' + escapeHtml(p.version) + '</span>'
+                    : '';
+                const actions =
+                    '<button class="btn btn-sm" onclick="showPackDetail(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-file-text"/></svg>Details</button>' +
+                    (p.installed
+                        ? '<button class="btn btn-sm btn-danger" style="margin-left:6px;" onclick="uninstallPack(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-trash"/></svg>Remove</button>'
+                        : '<button class="btn btn-sm btn-success" style="margin-left:6px;" onclick="installPack(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-download"/></svg>Install</button>');
+                return '<tr>' +
+                    '<td><strong>' + escapeHtml(p.name_zh || p.name) + '</strong><br>' +
+                        '<span style="color:#888;font-size:11px;font-family:monospace;">' + escapeHtml(p.id) + '</span></td>' +
+                    '<td style="font-size:12px;color:#ccc;">' + escapeHtml(p.summary_zh || p.summary) + '</td>' +
+                    '<td style="font-family:monospace;font-size:12px;">' + escapeHtml(p.rule_id_range) + '</td>' +
+                    '<td>' + escapeHtml(p.version) + update + '</td>' +
+                    '<td>' + badge + '</td>' +
+                    '<td>' + actions + '</td></tr>';
+            }).join('');
+        }
+
+        async function showPackDetail(packId) {
+            showModal('Pack Details', '<div class="loading"><div class="spinner"></div>Loading...</div>',
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
+            const d = await api('/packs/' + encodeURIComponent(packId));
+            const body = document.getElementById('modalBody');
+            if (!body) return;
+            if (!d || d.error) {
+                body.innerHTML = '<div class="alert alert-error">' + escapeHtml((d && d.error) || 'Failed to load') + '</div>';
+                return;
+            }
+            const m = d.manifest || {};
+            document.getElementById('modalTitle').textContent = (m.name_zh || m.name || packId);
+            let html =
+                '<div style="background:#0a0a15;padding:12px;border-radius:4px;margin-bottom:12px;">' +
+                '<div style="color:#ccc;margin-bottom:6px;">' + escapeHtml(m.summary_zh || m.summary || '') + '</div>' +
+                '<div style="color:#888;font-size:12px;">' +
+                'ID <code>' + escapeHtml(m.id || '') + '</code> &nbsp; version ' + escapeHtml(m.version || '') +
+                ' &nbsp; rules ' + d.rule_count + ' &nbsp; ID range ' + escapeHtml(m.rule_id_range || '') +
+                '<br>' + escapeHtml(m.author || '') + ' &nbsp; ' + escapeHtml(m.license || '') + '</div></div>';
+            if (m.notes_zh && m.notes_zh.length) {
+                html += '<div style="margin-bottom:12px;"><div style="color:#888;font-size:12px;margin-bottom:4px;">Notes</div>' +
+                    '<ul style="margin:0 0 0 18px;font-size:12px;color:#ccc;">' +
+                    m.notes_zh.map(n => '<li style="margin-bottom:3px;">' + escapeHtml(n) + '</li>').join('') + '</ul></div>';
+            }
+            if (d.conflicts && d.conflicts.length) {
+                html += '<div class="alert alert-error">Rule ID conflict with rules already installed: ' +
+                    d.conflicts.slice(0, 10).map(c => escapeHtml(c.rule) + ' (' + escapeHtml(c.file) + ')').join(', ') + '</div>';
+            }
+            html += '<div style="overflow-x:auto;"><table class="data-table" style="width:100%;font-size:12px;">' +
+                '<thead><tr><th style="text-align:left;padding:6px 10px;">Type</th>' +
+                '<th style="text-align:left;padding:6px 10px;">File</th>' +
+                '<th style="text-align:left;padding:6px 10px;">Installs to</th>' +
+                '<th style="text-align:right;padding:6px 10px;">Size</th></tr></thead><tbody>' +
+                (d.files || []).map(f =>
+                    '<tr><td style="padding:6px 10px;">' + escapeHtml(f.type) + '</td>' +
+                    '<td style="padding:6px 10px;font-family:monospace;">' + escapeHtml(f.name) + '</td>' +
+                    '<td style="padding:6px 10px;font-family:monospace;color:#888;">' + escapeHtml(f.dest) + '</td>' +
+                    '<td style="padding:6px 10px;text-align:right;">' + formatFileSize(f.size) + '</td></tr>').join('') +
+                '</tbody></table></div>';
+            body.innerHTML = html;
+            const footer = document.getElementById('modalFooter');
+            if (footer) {
+                footer.innerHTML =
+                    (d.installed
+                        ? '<button class="btn btn-danger" onclick="closeModal();uninstallPack(\\'' + escapeHtml(packId) + '\\')"><svg class="icon"><use href="#icon-trash"/></svg>Remove</button>'
+                        : '<button class="btn btn-success" onclick="closeModal();installPack(\\'' + escapeHtml(packId) + '\\')"><svg class="icon"><use href="#icon-download"/></svg>Install</button>') +
+                    '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>';
+            }
+        }
+
+        async function installPack(packId, force) {
+            if (!force && !await showConfirm('Install pack "' + packId + '"? Files are backed up and rolled back if the ruleset fails to validate.')) return;
+            showToast('Installing...', 'info');
+            const result = await api('/packs/' + encodeURIComponent(packId) + '/install', 'POST', force ? { force: true } : {});
+            if (!result || result.error) {
+                if (result && result.conflicts) {
+                    if (await showConfirm('Rule ID conflict: ' + result.conflicts.slice(0, 8).join(', ') +
+                            '. Install anyway and overwrite?', true)) {
+                        return installPack(packId, true);
+                    }
+                    return;
+                }
+                showToast((result && result.error) || 'Install failed', 'error', 8000);
+                return;
+            }
+            showToast(result.message || 'Installed', 'success', 8000);
+            refreshPacks();
+        }
+
+        async function uninstallPack(packId, force) {
+            if (!force && !await showConfirm('Remove pack "' + packId + '"? Files it replaced are restored.', true)) return;
+            const result = await api('/packs/' + encodeURIComponent(packId), 'DELETE', force ? { force: true } : {});
+            if (!result || result.error) {
+                if (result && result.modified) {
+                    if (await showConfirm('These files were edited after installation: ' +
+                            result.modified.join(', ') + '. Remove them anyway?', true)) {
+                        return uninstallPack(packId, true);
+                    }
+                    return;
+                }
+                showToast((result && result.error) || 'Remove failed', 'error', 8000);
+                return;
+            }
+            showToast(result.message || 'Removed', 'success', 8000);
+            refreshPacks();
+        }
+
         // ---------- Node daemon health ----------
         async function showDaemonStats(nodeName) {
             showModal('Health - ' + nodeName, '<div class="loading"><div class="spinner"></div>Loading...</div>',
@@ -7191,6 +7346,27 @@ _I18N_SCRIPT = r"""
       'Check the config before restarting': '重新啟動前先檢查設定',
       'Reload Ruleset': '重新載入規則集',
       'Config Diff': '設定差異',
+      // --- Rule packs ---
+      'Rule Packs': '規則套件',
+      'Pack Details': '套件詳細資訊',
+      'Rule series maintained by Jason Tools. Each pack bundles rules, decoders and CDB lists, and can be removed again.': 'Jason Tools 維護的規則系列。每個套件包含規則、解碼器與 CDB 清單，安裝後可隨時移除。',
+      'Pack': '套件',
+      'Rule IDs': '規則 ID',
+      'Installs to': '安裝位置',
+      'Installed': '已安裝',
+      'Not installed': '未安裝',
+      'Install': '安裝',
+      'Remove': '移除',
+      'Details': '詳細資訊',
+      'Notes': '注意事項',
+      'Installing...': '安裝中…',
+      'Install failed': '安裝失敗',
+      'Remove failed': '移除失敗',
+      'Failed to load packs': '載入套件失敗',
+      'No packs available.': '沒有可用的套件。',
+      'Version': '版本',
+      'Status': '狀態',
+      'Actions': '操作',
       'Node Config Diff': '節點設定差異',
       "Compare each node's ossec.conf against the master": '比對各節點的 ossec.conf 與 master 的差異',
       'Comparing nodes...': '比對節點中…',
@@ -7613,6 +7789,11 @@ _I18N_SCRIPT = r"""
       [/^Ruleset reloaded on (.+)$/, function (m) { return '已在 ' + m[1] + ' 重新載入規則集'; }],
       [/^Ruleset reloaded on (\\d+) node\\(s\\)$/, function (m) { return '已在 ' + m[1] + ' 個節點重新載入規則集'; }],
       [/^(\\d+) difference\\(s\\) found$/, function (m) { return '發現 ' + m[1] + ' 處差異'; }],
+      [/^(\\d+) packs, (\\d+) installed$/, function (m) { return m[1] + ' 個套件，已安裝 ' + m[2] + ' 個'; }],
+      [/^Install pack "(.+)"\\? Files are backed up and rolled back if the ruleset fails to validate\\.$/, function (m) { return '要安裝套件「' + m[1] + '」嗎？檔案會先備份，規則集驗證失敗時自動回滾。'; }],
+      [/^Remove pack "(.+)"\\? Files it replaced are restored\\.$/, function (m) { return '要移除套件「' + m[1] + '」嗎？被它覆蓋的檔案會還原。'; }],
+      [/^Installed (.+)\\. Reload the ruleset for it to take effect\\.$/, function (m) { return '已安裝 ' + m[1] + '，請重新載入規則集使其生效。'; }],
+      [/^Removed (.+)\\. Reload the ruleset for it to take effect\\.$/, function (m) { return '已移除 ' + m[1] + '，請重新載入規則集使其生效。'; }],
       [/^Reload the ruleset on "(.+)"\? Running services are not restarted\.$/, function (m) { return '要在「' + m[1] + '」重新載入規則集嗎？執行中的服務不會重新啟動。'; }],
       [/^Command sent to (\d+) agent\(s\)$/, function (m) { return '指令已送出至 ' + m[1] + ' 個代理程式'; }],
       [/^Run "(.+)" on (\d+) agent\(s\)\?$/, function (m) { return '要在 ' + m[2] + ' 個代理程式上執行「' + m[1] + '」嗎？'; }],
@@ -12157,6 +12338,349 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             disabled = (node.findtext('disabled') or 'no').strip()
             result['wodle'].append(f'{name}: disabled={disabled}')
         return {k: sorted(set(v)) for k, v in result.items()}
+
+    # ---------- Rule packs (Jason Tools maintained rule series) ----------
+
+    PACKS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'packs')
+
+    def _wazuh_path():
+        """Honour wazuh_path from config.yaml instead of assuming /var/ossec."""
+        try:
+            return get_config().wazuh_path or '/var/ossec'
+        except Exception:
+            return '/var/ossec'
+
+    def _pack_state_dir():
+        return os.path.join(_wazuh_path(), 'etc', 'jt-packs')
+    PACK_ID_PATTERN = re.compile(r'^[a-z0-9][a-z0-9._-]{0,63}$')
+    PACK_DEST_ROOTS = ('etc/rules/', 'etc/lists/', 'etc/decoders/')
+
+    def _pack_dir(pack_id):
+        if not PACK_ID_PATTERN.match(pack_id or ''):
+            return None
+        path = os.path.join(PACKS_DIR, pack_id)
+        # never let an id escape the catalogue directory
+        if os.path.realpath(path) != os.path.join(os.path.realpath(PACKS_DIR), pack_id):
+            return None
+        return path if os.path.isdir(path) else None
+
+    def _read_manifest(pack_id):
+        pdir = _pack_dir(pack_id)
+        if not pdir:
+            return None
+        try:
+            with open(os.path.join(pdir, 'manifest.json'), encoding='utf-8') as fh:
+                return json.load(fh)
+        except Exception:
+            return None
+
+    def _pack_state_path(pack_id):
+        return os.path.join(_pack_state_dir(), pack_id + '.json')
+
+    def _installed_state(pack_id):
+        try:
+            with open(_pack_state_path(pack_id), encoding='utf-8') as fh:
+                return json.load(fh)
+        except Exception:
+            return None
+
+    def _validate_dest(dest):
+        """A manifest may only write into the Wazuh rule/list/decoder directories."""
+        if not dest or '..' in dest or dest.startswith('/'):
+            return False
+        if not any(dest.startswith(root) for root in PACK_DEST_ROOTS):
+            return False
+        return bool(re.match(r'^[A-Za-z0-9._/-]+$', dest))
+
+    def _ruleset_is_valid():
+        """Run the same check the manager does at startup."""
+        import subprocess
+        try:
+            proc = subprocess.run([os.path.join(_wazuh_path(), 'bin', 'wazuh-analysisd'), '-t'],
+                                  capture_output=True, text=True, timeout=120)
+            output = (proc.stdout or '') + (proc.stderr or '')
+            bad = [l for l in output.splitlines()
+                   if re.search(r'\b(ERROR|CRITICAL)\b', l)]
+            return (not bad), bad[:10]
+        except Exception as e:
+            return False, [str(e)]
+
+    def _declare_lists(list_paths, remove=False):
+        """Add or remove <list> entries in ossec.conf. Returns the previous content."""
+        conf_path = os.path.join(_wazuh_path(), 'etc', 'ossec.conf')
+        with open(conf_path, encoding='utf-8') as fh:
+            original = fh.read()
+        content = original
+        for rel in list_paths:
+            tag = '<list>%s</list>' % rel
+            present = tag in content
+            if remove and present:
+                content = re.sub(r'[ \t]*' + re.escape(tag) + r'\n', '', content)
+            elif not remove and not present:
+                block = re.search(r'<ruleset>.*?</ruleset>', content, re.S)
+                if not block:
+                    continue
+                last = None
+                for m in re.finditer(r'[ \t]*<list>[^<]+</list>\n', block.group(0)):
+                    last = m
+                if last:
+                    indent = re.match(r'[ \t]*', last.group(0)).group(0)
+                    pos = block.start() + last.end()
+                else:
+                    indent = '    '
+                    pos = block.start() + block.group(0).rfind('</ruleset>')
+                content = content[:pos] + indent + tag + '\n' + content[pos:]
+        if content != original:
+            with open(conf_path, 'w', encoding='utf-8') as fh:
+                fh.write(content)
+        return original
+
+    def _installed_rule_ids(skip_files=()):
+        """Rule ids already present on the manager, for conflict detection."""
+        import xml.etree.ElementTree as ET
+        ids = {}
+        for path in sorted(glob.glob(os.path.join(_wazuh_path(), 'etc', 'rules', '*.xml'))):
+            if os.path.basename(path) in skip_files:
+                continue
+            try:
+                with open(path, encoding='utf-8', errors='ignore') as fh:
+                    root = ET.fromstring('<rules>' + fh.read() + '</rules>')
+            except Exception:
+                continue
+            for rule in root.iter('rule'):
+                ids[rule.get('id')] = os.path.basename(path)
+        return ids
+
+    def _pack_rule_ids(pdir, manifest):
+        import xml.etree.ElementTree as ET
+        ids = []
+        for entry in manifest.get('files', []):
+            if entry.get('type') != 'rule':
+                continue
+            src = os.path.join(pdir, 'rules', entry['name'])
+            try:
+                with open(src, encoding='utf-8', errors='ignore') as fh:
+                    root = ET.fromstring('<rules>' + fh.read() + '</rules>')
+            except Exception:
+                continue
+            ids.extend(r.get('id') for r in root.iter('rule'))
+        return ids
+
+    @app.route('/api/packs', methods=['GET'])
+    @login_required
+    def list_packs():
+        """The Jason Tools rule catalogue, with the installed state of each pack."""
+        try:
+            packs = []
+            for entry in sorted(os.listdir(PACKS_DIR)) if os.path.isdir(PACKS_DIR) else []:
+                manifest = _read_manifest(entry)
+                if not manifest:
+                    continue
+                state = _installed_state(entry)
+                packs.append({
+                    'id': manifest.get('id', entry),
+                    'name': manifest.get('name', entry),
+                    'name_zh': manifest.get('name_zh', ''),
+                    'version': manifest.get('version', ''),
+                    'summary': manifest.get('summary', ''),
+                    'summary_zh': manifest.get('summary_zh', ''),
+                    'author': manifest.get('author', ''),
+                    'license': manifest.get('license', ''),
+                    'rule_id_range': manifest.get('rule_id_range', ''),
+                    'file_count': len(manifest.get('files', [])),
+                    'installed': bool(state),
+                    'installed_version': (state or {}).get('version'),
+                    'installed_at': (state or {}).get('installed_at'),
+                    'update_available': bool(state) and state.get('version') != manifest.get('version'),
+                })
+            return jsonify({'packs': packs, 'total': len(packs)})
+        except Exception as e:
+            logger.error(f"PACK LIST ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/packs/<pack_id>', methods=['GET'])
+    @login_required
+    def get_pack_detail(pack_id):
+        """Manifest, the rules it contains, and any conflict with what is installed."""
+        manifest = _read_manifest(pack_id)
+        if not manifest:
+            return jsonify({'error': 'Unknown pack'}), 404
+        try:
+            pdir = _pack_dir(pack_id)
+            state = _installed_state(pack_id)
+            own_files = {f['name'] for f in manifest.get('files', []) if f.get('type') == 'rule'}
+            existing = _installed_rule_ids(skip_files=own_files if state else ())
+            rule_ids = _pack_rule_ids(pdir, manifest)
+            conflicts = [{'rule': rid, 'file': existing[rid]} for rid in rule_ids if rid in existing]
+
+            files = []
+            for entry in manifest.get('files', []):
+                sub = 'rules' if entry['type'] == 'rule' else ('lists' if entry['type'] == 'list' else 'decoders')
+                src = os.path.join(pdir, sub, entry['name'])
+                size = os.path.getsize(src) if os.path.isfile(src) else 0
+                files.append({**entry, 'size': size})
+            return jsonify({
+                'manifest': manifest,
+                'files': files,
+                'rule_ids': rule_ids,
+                'rule_count': len(rule_ids),
+                'conflicts': conflicts,
+                'installed': bool(state),
+                'state': state,
+            })
+        except Exception as e:
+            logger.error(f"PACK DETAIL ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/packs/<pack_id>/install', methods=['POST'])
+    @login_required
+    def install_pack(pack_id):
+        """Install a pack, rolling everything back if the ruleset stops validating.
+
+        Nothing is left half-applied: files are backed up before being written and
+        restored on any failure, including a failed ruleset check.
+        """
+        import shutil, time as _time
+        manifest = _read_manifest(pack_id)
+        if not manifest:
+            return jsonify({'error': 'Unknown pack'}), 404
+        pdir = _pack_dir(pack_id)
+        data = request.get_json(silent=True) or {}
+        force = bool(data.get('force'))
+
+        try:
+            state = _installed_state(pack_id)
+            own = {f['name'] for f in manifest.get('files', []) if f.get('type') == 'rule'}
+            existing = _installed_rule_ids(skip_files=own if state else ())
+            conflicts = [rid for rid in _pack_rule_ids(pdir, manifest) if rid in existing]
+            if conflicts and not force:
+                return jsonify({'error': 'Rule ID conflict with rules already installed',
+                                'conflicts': conflicts[:20]}), 409
+
+            backup_dir = os.path.join(_pack_state_dir(), 'backup',
+                                      f'{pack_id}-{int(_time.time())}')
+            os.makedirs(backup_dir, exist_ok=True)
+            os.makedirs(_pack_state_dir(), exist_ok=True)
+
+            written, backed_up, list_paths = [], [], []
+            conf_before = None
+            try:
+                for entry in manifest.get('files', []):
+                    dest_rel = entry.get('dest', '')
+                    if not _validate_dest(dest_rel):
+                        raise ValueError(f'Refusing unsafe destination: {dest_rel}')
+                    sub = 'rules' if entry['type'] == 'rule' else ('lists' if entry['type'] == 'list' else 'decoders')
+                    src = os.path.join(pdir, sub, entry['name'])
+                    dest = os.path.join(_wazuh_path(), dest_rel)
+                    if os.path.exists(dest):
+                        shutil.copy2(dest, os.path.join(backup_dir, os.path.basename(dest)))
+                        backed_up.append(dest)
+                    shutil.copy2(src, dest)
+                    try:
+                        shutil.chown(dest, 'wazuh', 'wazuh')
+                    except Exception:
+                        pass
+                    os.chmod(dest, 0o660)
+                    written.append(dest)
+                    if entry['type'] == 'list' and entry.get('declare'):
+                        list_paths.append(dest_rel)
+
+                if list_paths:
+                    conf_before = _declare_lists(list_paths, remove=False)
+
+                ok, problems = _ruleset_is_valid()
+                if not ok:
+                    raise RuntimeError('Ruleset validation failed: ' + '; '.join(problems[:3]))
+            except Exception as install_error:
+                # roll everything back
+                for dest in written:
+                    backup = os.path.join(backup_dir, os.path.basename(dest))
+                    if os.path.exists(backup):
+                        shutil.copy2(backup, dest)
+                    elif os.path.exists(dest):
+                        os.remove(dest)
+                if conf_before is not None:
+                    with open(os.path.join(_wazuh_path(), 'etc', 'ossec.conf'), 'w', encoding='utf-8') as fh:
+                        fh.write(conf_before)
+                logger.error(f"PACK INSTALL ROLLED BACK: user={get_current_user()} "
+                             f"pack={sanitize_for_log(pack_id)} error={sanitize_for_log(str(install_error))}")
+                return jsonify({'error': str(install_error), 'rolled_back': True}), 400
+
+            state = {
+                'id': pack_id,
+                'version': manifest.get('version', ''),
+                'installed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'installed_by': get_current_user(),
+                'files': [{'dest': e['dest'], 'sha256': e.get('sha256', '')} for e in manifest.get('files', [])],
+                'declared_lists': list_paths,
+                'backup_dir': backup_dir,
+                'replaced': backed_up,
+            }
+            with open(_pack_state_path(pack_id), 'w', encoding='utf-8') as fh:
+                json.dump(state, fh, ensure_ascii=False, indent=2)
+
+            logger.info(f"PACK INSTALLED: user={get_current_user()} pack={sanitize_for_log(pack_id)} "
+                        f"version={manifest.get('version')} files={len(written)}")
+            return jsonify({'success': True, 'pack': pack_id, 'files': len(written),
+                            'declared_lists': list_paths, 'replaced': backed_up,
+                            'message': f"Installed {pack_id} {manifest.get('version','')}. "
+                                       f"Reload the ruleset for it to take effect."})
+        except Exception as e:
+            logger.error(f"PACK INSTALL ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/packs/<pack_id>', methods=['DELETE'])
+    @login_required
+    def uninstall_pack(pack_id):
+        """Remove a pack, restoring anything it replaced."""
+        import shutil
+        if not PACK_ID_PATTERN.match(pack_id or ''):
+            return jsonify({'error': 'Invalid pack id'}), 400
+        state = _installed_state(pack_id)
+        if not state:
+            return jsonify({'error': 'Pack is not installed'}), 404
+        data = request.get_json(silent=True) or {}
+        force = bool(data.get('force'))
+        try:
+            modified = []
+            for entry in state.get('files', []):
+                dest = os.path.join(_wazuh_path(), entry['dest'])
+                if not os.path.exists(dest):
+                    continue
+                if entry.get('sha256'):
+                    import hashlib
+                    with open(dest, 'rb') as fh:
+                        current = hashlib.sha256(fh.read()).hexdigest()
+                    if current != entry['sha256']:
+                        modified.append(entry['dest'])
+            if modified and not force:
+                return jsonify({'error': 'Some files were edited after installation',
+                                'modified': modified,
+                                'hint': 'Re-send with force=true to remove them anyway'}), 409
+
+            removed = []
+            for entry in state.get('files', []):
+                dest = os.path.join(_wazuh_path(), entry['dest'])
+                backup = os.path.join(state.get('backup_dir', ''), os.path.basename(dest))
+                if os.path.isfile(backup):
+                    shutil.copy2(backup, dest)      # restore what the pack replaced
+                elif os.path.exists(dest):
+                    os.remove(dest)
+                    removed.append(entry['dest'])
+
+            if state.get('declared_lists'):
+                _declare_lists(state['declared_lists'], remove=True)
+
+            ok, problems = _ruleset_is_valid()
+            os.remove(_pack_state_path(pack_id))
+            logger.info(f"PACK UNINSTALLED: user={get_current_user()} pack={sanitize_for_log(pack_id)} "
+                        f"removed={len(removed)} ruleset_ok={ok}")
+            return jsonify({'success': True, 'pack': pack_id, 'removed': removed,
+                            'ruleset_valid': ok, 'problems': problems,
+                            'message': f"Removed {pack_id}. Reload the ruleset for it to take effect."})
+        except Exception as e:
+            logger.error(f"PACK UNINSTALL ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
 
     @app.route('/api/nodes/config-diff', methods=['GET'])
     @login_required

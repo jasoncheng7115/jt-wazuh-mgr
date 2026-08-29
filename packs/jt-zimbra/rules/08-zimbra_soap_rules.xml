@@ -1,0 +1,80 @@
+<!--
+  ══════════════════════════════════════════════════════════════════
+   Zimbra SOAP 資料撈取偵測（治本方案）
+   檔案：08-zimbra_soap_rules.xml    區段：100970-100979
+   建立：2026-08-10（取代僅靠 nginx URL 的 100924/100927 舊做法）
+  ══════════════════════════════════════════════════════════════════
+
+  ── 為什麼要改用 mailbox.log ──
+  舊做法（100927/100924）以 nginx access log 的 /service/soap URL 計數，有兩個先天缺陷：
+    1. srcip 是 Z-Push 閘道（push3 .102 / push4 .93），不是真實使用者。
+       same_source_ip 會把全公司手機使用者算成同一來源，門檻必爆。
+    2. SOAP 操作名在 POST body，URL 看不到。實測 98% 是 ActiveSync 的
+       WaitSet 長輪詢心跳，與「撈信」無關。
+
+  本規則改建在 mailbox.log 上，取得：
+    user   = 真實帳號
+    srcip  = oip 的第一個 IP（真實用戶端，非閘道）
+    action = SOAP 操作名
+
+  ── 偵測邏輯 ──
+  只計數「真正在取內容」的操作（Search/GetMsg/ExportContacts 等），
+  排除 WaitSet 長輪詢與 Auth/GetInfo 這類例行呼叫，
+  並以 same_user（帳號）而非 same_source_ip 關聯 —— 因為多人共用閘道 IP。
+
+  ── 門檻說明 ──
+  frequency 依實測環境訂為 30 次/5 分鐘。實測期間全公司 SearchRequest
+  佔比極低（一段取樣中甚至為 0），正常使用者不會在 5 分鐘內搜尋 30 次。
+  導入後請依 §告警量健檢 觀察一週再調整。
+-->
+
+<group name="zimbra,exfiltration,soap,">
+
+  <!-- 基礎：mailbox.log 的 SOAP 事件（level 0，僅作為錨點） -->
+  <rule id="100970" level="0">
+    <decoded_as>zimbra-mailbox-soap</decoded_as>
+    <description>Zimbra mailbox SOAP 呼叫（基礎規則）</description>
+  </rule>
+
+  <!-- 計數用：真正在「取內容」的 SOAP 操作
+       ★ level 必須 >= 1，level 0 的規則會在 frequency 關聯前被丟棄
+       ★ 以 no_log 抑制輸出，避免洗版 -->
+  <rule id="100971" level="1">
+    <if_sid>100970</if_sid>
+    <action type="pcre2">^(SearchRequest|SearchConvRequest|GetMsgRequest|GetConvRequest|ExportContactsRequest|GetContactsRequest|SearchGalRequest)$</action>
+    <options>no_log</options>
+    <description>Zimbra 內容讀取類 SOAP 操作（供關聯計數）：$(action) by $(dstuser)</description>
+  </rule>
+
+  <!-- ★ 治本告警：同一「帳號」短時間大量讀取內容
+       用 same_user 而非 same_source_ip，因為多位使用者共用 Z-Push 閘道 IP -->
+  <rule id="100972" level="12" frequency="30" timeframe="300">
+    <if_matched_sid>100971</if_matched_sid>
+    <same_user />
+    <description>[HIGH] Zimbra 帳號短時間大量讀取信件內容，疑似自動化撈取：$(dstuser) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1114</id>
+    </mitre>
+    <group>exfiltration,</group>
+  </rule>
+
+  <!-- 更高強度：同一帳號極大量讀取（3 倍門檻）-->
+  <rule id="100973" level="14" frequency="90" timeframe="300">
+    <if_matched_sid>100971</if_matched_sid>
+    <same_user />
+    <description>[HIGH] Zimbra 帳號極大量讀取信件內容，高度疑似資料竊取：$(dstuser) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1114</id>
+    </mitre>
+    <group>exfiltration,</group>
+  </rule>
+
+  <!-- 監控帳號排除（checkstatus 是 check_http 探針，會規律呼叫）
+       置於被覆寫規則之後才會生效 -->
+  <rule id="100974" level="0">
+    <if_sid>100972,100973</if_sid>
+    <user type="pcre2">^checkstatus@</user>
+    <description>監控探針帳號的 SOAP 呼叫（排除）</description>
+  </rule>
+
+</group>

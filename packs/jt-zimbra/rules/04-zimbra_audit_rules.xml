@@ -1,0 +1,71 @@
+<!--
+  Zimbra auditd 程序層偵測規則
+  檔案：/var/ossec/etc/rules/zimbra_audit_rules.xml
+  區段：100860-100879
+  版本：v2.0
+
+  相依：Agent 端 /etc/audit/rules.d/zimbra.rules（見 agent/audit/zimbra.rules）
+  父規則：80700（auditd 事件）
+
+  ※ audit.key / audit.exe / audit.uid 為 auditd 解碼器的「動態欄位」，
+    使用 <field name="..."> 正確（與 FIM 的欄位命名規則不同）。
+-->
+<group name="zimbra,audit,">
+
+  <rule id="100860" level="13">
+    <if_sid>80700</if_sid>
+    <field name="audit.key">zimbra_recon</field>
+    <description>[HIGH] zimbra 服務帳號執行系統偵察指令，疑似 Web Shell 操作：$(audit.exe)</description>
+    <mitre>
+      <id>T1033</id>
+    </mitre>
+  </rule>
+
+  <rule id="100861" level="15">
+    <if_sid>80700</if_sid>
+    <field name="audit.key">zimbra_tool</field>
+    <description>[CRITICAL] zimbra 服務帳號執行網路工具，疑似反向 Shell 或資料外傳：$(audit.exe)</description>
+    <mitre>
+      <id>T1059</id>
+    </mitre>
+  </rule>
+
+  <rule id="100862" level="14">
+    <if_sid>80700</if_sid>
+    <field name="audit.key">zimbra_webdir</field>
+    <field name="audit.exe" type="pcre2">^(?!/opt/zimbra/).*</field>
+    <description>[HIGH] 非 Zimbra 程序寫入 Web 目錄：$(audit.exe)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+  </rule>
+
+  <rule id="100863" level="15">
+    <if_sid>80700</if_sid>
+    <field name="audit.key">zimbra_jvm</field>
+    <description>[CRITICAL] 偵測到 JVM 注入工具執行，疑似記憶體馬植入：$(audit.exe)</description>
+    <mitre>
+      <id>T1055</id>
+    </mitre>
+    <group>memory_shell,</group>
+  </rule>
+
+  <rule id="100864" level="14">
+    <if_sid>80700</if_sid>
+    <field name="audit.key">zimbra_antiforensics</field>
+    <description>[HIGH] 偵測到反鑑識行為（時間戳偽造或登入紀錄竄改）：$(audit.exe)</description>
+    <mitre>
+      <id>T1070</id>
+    </mitre>
+  </rule>
+
+  <rule id="100865" level="14">
+    <if_sid>80700</if_sid>
+    <field name="audit.key">zimbra_startup|zimbra_config</field>
+    <description>[HIGH] Zimbra 啟動腳本或核心設定遭修改，疑似持久化：$(audit.exe)</description>
+    <mitre>
+      <id>T1543</id>
+    </mitre>
+  </rule>
+
+</group>
