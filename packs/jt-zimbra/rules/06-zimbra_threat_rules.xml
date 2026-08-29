@@ -1,0 +1,315 @@
+<!--
+  Zimbra 威脅偵測規則（資料外洩／持久化／反鑑識／CVE 利用／IOC）
+  檔案：/var/ossec/etc/rules/zimbra_threat_rules.xml
+  區段：100920-100999
+  版本：v2.0
+
+  相依：
+    - 解碼器 zimbra-proxy-access（100820）
+    - CDB 清單 etc/lists/zimbra-webshell-ioc
+    - CDB 清單 etc/lists/jason_tools_blacklist（既有）
+-->
+
+<!-- ==========================================================
+     資料外洩 100920-100939
+     背景：Zimbra「不記錄郵件的直接下載」，只能從 Proxy 層流量
+           特徵與間接徵兆偵測。
+     ========================================================== -->
+<group name="zimbra,exfiltration,">
+
+  <!-- REST 信箱整包匯出：大量竊信的主要管道 -->
+  <rule id="100920" level="10">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">/service/home/.*fmt=(tgz|zip)</url>
+    <description>[WARN] Zimbra 信箱整包匯出：$(url) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1114.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="100921" level="0">
+    <if_sid>100920</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>信箱匯出自內部網段（正常備份或使用者操作）</description>
+  </rule>
+
+  <rule id="100922" level="14">
+    <if_sid>100920</if_sid>
+    <description>[HIGH] 自外部來源進行信箱整包匯出，疑似資料外洩：$(url) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1114.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="100923" level="15" frequency="3" timeframe="600">
+    <if_matched_sid>100920</if_matched_sid>
+    <same_source_ip />
+    <description>[CRITICAL] 短時間內多次信箱匯出，研判為批次資料竊取：$(srcip)</description>
+    <mitre>
+      <id>T1114.001</id>
+    </mitre>
+  </rule>
+
+  <!-- SOAP／搜尋 API 大量呼叫：XSS 挾持 session 逐日撈信的特徵
+       基礎規則須 level >= 1 才能被 if_matched_sid 計數（level 0 會先被丟棄），
+       以 no_log 抑制輸出 -->
+  <!-- 【已停用 2026-08-10】改由 08-zimbra_soap_rules.xml 的 100971/100972/100973 取代。
+       舊做法以 nginx URL 計數，srcip 是 Z-Push 閘道且無法區分 WaitSet 長輪詢，必然誤報。
+  <rule id="100927" level="1">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">/service/soap|/h/search</url>
+    <options>no_log</options>
+    <description>Zimbra SOAP／搜尋 API 呼叫（供關聯計數）</description>
+  </rule>
+  -->
+
+  <!-- 【已停用 2026-08-10】改由 08-zimbra_soap_rules.xml 的 100971/100972/100973 取代。
+       舊做法以 nginx URL 計數，srcip 是 Z-Push 閘道且無法區分 WaitSet 長輪詢，必然誤報。
+  <rule id="100924" level="12" frequency="30" timeframe="300">
+    <if_matched_sid>100927</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] 短時間大量呼叫搜尋／SOAP API，疑似自動化撈取信件：$(srcip)</description>
+    <mitre>
+      <id>T1114</id>
+    </mitre>
+  </rule>
+  -->
+
+  <!-- 單一帳號大量寄信：帳號遭挾持用於散發或外送資料
+       ※ frequency 必須搭配 if_matched_*，不可與 if_sid 併用（analysisd 會拒絕載入），
+         故需先建立 level>=1 的計數基礎規則（level 0 會在關聯前被丟棄） -->
+  <rule id="100928" level="1">
+    <if_sid>100840</if_sid>
+    <match>SendMsg</match>
+    <options>no_log</options>
+    <description>Zimbra 寄信事件（供關聯計數）</description>
+  </rule>
+
+  <rule id="100925" level="12" frequency="50" timeframe="300">
+    <if_matched_sid>100928</if_matched_sid>
+    <same_user />
+    <description>[HIGH] 單一帳號短時間大量寄信，疑似遭挾持：$(user)</description>
+    <mitre>
+      <id>T1114.002</id>
+    </mitre>
+  </rule>
+
+  <!-- 出向流量遭阻擋（搭配指南 1-3 egress filtering）
+       ※ 不掛 <if_sid>4100</if_sid>：實測該父規則參照會被 analysisd 忽略，
+         導致整條規則失效。ZIMBRA-EGRESS-DENY 這個 log prefix 已足夠獨特，
+         直接以 match 比對即可。 -->
+  <rule id="100926" level="13">
+    <match>ZIMBRA-EGRESS-DENY</match>
+    <description>[HIGH] zimbra 帳號嘗試未授權對外連線，疑似 C2 或資料外傳</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>command_control,</group>
+  </rule>
+
+</group>
+
+<!-- ==========================================================
+     持久化 100940-100959
+     ========================================================== -->
+<group name="zimbra,persistence,">
+
+  <rule id="100940" level="13">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/var/spool/cron/|^/etc/cron\.(d|hourly|daily)/</field>
+    <description>[HIGH] 排程工作遭異動，疑似持久化：$(file) 程序：$(process_name)</description>
+    <mitre>
+      <id>T1053.003</id>
+    </mitre>
+  </rule>
+
+  <rule id="100941" level="13">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/etc/systemd/system/</field>
+    <description>[HIGH] systemd 單元檔遭異動，疑似持久化：$(file)</description>
+    <mitre>
+      <id>T1543.002</id>
+    </mitre>
+  </rule>
+
+  <rule id="100942" level="14">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">authorized_keys</field>
+    <description>[HIGH] SSH authorized_keys 遭寫入，疑似持久化：$(file) 程序：$(process_name)</description>
+    <mitre>
+      <id>T1098.004</id>
+    </mitre>
+  </rule>
+
+  <rule id="100943" level="14">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/opt/zimbra/bin/zm.*ctl$|^/opt/zimbra/conf/localconfig\.xml$</field>
+    <description>[HIGH] Zimbra 啟動腳本或核心設定遭竄改：$(file)</description>
+    <mitre>
+      <id>T1543</id>
+    </mitre>
+  </rule>
+
+</group>
+
+<!-- ==========================================================
+     反鑑識 100960-100974
+     依 SOP 決策點，發現反鑑識行為即為「建議重建」的獨立條件。
+     ========================================================== -->
+<group name="zimbra,defense_evasion,">
+
+  <rule id="100960" level="13">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/opt/zimbra/(jetty_base|jetty)/webapps/|^/opt/zimbra/lib/ext/</field>
+    <field name="changed_fields" type="pcre2">mtime</field>
+    <options>no_full_log</options>
+    <description>[HIGH] Zimbra Web 目錄檔案時間戳遭修改，疑似反鑑識（timestomping）：$(file)</description>
+    <mitre>
+      <id>T1070.006</id>
+    </mitre>
+  </rule>
+
+  <rule id="100961" level="14">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^/opt/zimbra/log/|^/var/log/(auth|secure|wtmp|btmp)</field>
+    <description>[HIGH] 日誌檔案遭刪除，疑似痕跡湮滅：$(file)</description>
+    <mitre>
+      <id>T1070.002</id>
+    </mitre>
+  </rule>
+
+  <rule id="100963" level="14">
+    <if_sid>503,504</if_sid>
+    <description>[HIGH] Wazuh Agent 狀態異常（停止或斷線），偵測能力可能已遭移除</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
+</group>
+
+<!-- ==========================================================
+     已知 CVE 利用特徵 100975-100989
+     完整 CVE 對照見部署指南附錄 D。
+     ========================================================== -->
+<group name="zimbra,exploit_attempt,">
+
+  <!-- CVE-2022-27925 / CVE-2022-37042：mboximport 任意檔案上傳 -->
+  <rule id="100975" level="14">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">/service/extension/backup/mboximport</url>
+    <description>[HIGH] 偵測到 mboximport 端點存取（CVE-2022-27925／37042 利用特徵）：$(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!-- CVE-2025-68645 等：路徑穿越／LFI -->
+  <rule id="100976" level="13">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">(\.\./|%2e%2e|%252e%252e)</url>
+    <description>[HIGH] 偵測到路徑穿越嘗試（LFI／CVE-2025-68645 類）：$(url) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1083</id>
+    </mitre>
+  </rule>
+
+  <!-- CVE-2024-54663 / CVE-2025-27914：/h/rest 端點濫用 -->
+  <rule id="100977" level="12">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">/h/rest\?</url>
+    <description>[HIGH] /h/rest 端點存取（CVE-2024-54663／CVE-2025-27914 相關）：$(url) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!-- CVE-2019-9621：proxyservlet SSRF -->
+  <rule id="100978" level="13">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">/service/proxy\?target=</url>
+    <description>[HIGH] proxyservlet SSRF 嘗試（CVE-2019-9621）：$(url) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!-- ★ CVE-2022-41352 類：郵件觸發寫檔 —— 完全無 HTTP 痕跡的入侵管道
+         此規則可直接回答「入侵管道為何」，前提是 whodata 必須真的啟用 -->
+  <rule id="100979" level="15">
+    <if_sid>100802</if_sid>
+    <field name="process_name" type="pcre2">(?i)(amavis|cpio|unrar|tar|pax|perl|clam)</field>
+    <description>[CRITICAL] Web 目錄檔案由郵件處理程序寫入，研判為郵件觸發之檔案落地（CVE-2022-41352 類）：$(file) 程序：$(process_name)</description>
+    <mitre>
+      <id>T1566.001</id>
+    </mitre>
+    <group>webshell,</group>
+  </rule>
+
+  <!-- 通用：對 Zimbra 端點的密集掃描 -->
+  <rule id="100983" level="1">
+    <if_sid>100820</if_sid>
+    <id>^404$</id>
+    <options>no_log</options>
+    <description>Zimbra 404 回應（供關聯計數）</description>
+  </rule>
+
+  <rule id="100981" level="10" frequency="20" timeframe="120">
+    <if_matched_sid>100983</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] 大量 404，疑似路徑掃描探測：$(srcip)</description>
+    <mitre>
+      <id>T1595.003</id>
+    </mitre>
+  </rule>
+
+  <!-- 掃描後成功：探測轉為得手 -->
+  <rule id="100982" level="14" timeframe="600">
+    <if_sid>100823</if_sid>
+    <if_matched_sid>100981</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] 先密集掃描、隨後成功存取非原廠 JSP，研判掃描已得手：$(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+</group>
+
+<!-- ==========================================================
+     IOC 獵捕 100990-100999
+     ※ FIM 告警不含檔案內容，無法以 <match> 比對字串。
+       改採「雜湊 CDB」與「外部內容掃描輸出」雙軌。
+     ========================================================== -->
+<group name="zimbra,ioc,">
+
+  <rule id="100990" level="15">
+    <if_sid>550,554</if_sid>
+    <list field="sha256" lookup="match_key">etc/lists/zimbra-webshell-ioc</list>
+    <description>[CRITICAL] 偵測到已知 Web Shell 檔案雜湊：$(file)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>webshell,</group>
+  </rule>
+
+  <!-- 沿用既有 jason_tools 惡意 IP 情資，套用於 Zimbra 敏感端點 -->
+  <rule id="100991" level="14">
+    <if_sid>100821,100827,100920</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] 已知惡意 IP 存取 Zimbra 敏感端點：$(srcip) $(url)</description>
+    <group>threat_intelligence,</group>
+  </rule>
+
+  <!-- 內容特徵掃描結果（由 zimbra-content-scan.sh 產生） -->
+  <rule id="100992" level="15">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^webshell_signature$</field>
+    <description>[CRITICAL] 檔案內容含 Web Shell 特徵字串：$(zimbra_audit.object) 特徵：$(zimbra_audit.value)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>webshell,</group>
+  </rule>
+
+</group>

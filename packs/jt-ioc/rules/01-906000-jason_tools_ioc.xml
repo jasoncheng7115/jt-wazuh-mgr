@@ -1,0 +1,398 @@
+<!--
+  Jason Tools IOC 檢測規則
+  檔案名稱: 01-906000-jason_tools_ioc.xml
+  目的: 使用多來源威脅情資進行 IP 黑名單檢測
+  CDB 路徑: etc/lists/jason_tools_blacklist
+  來源: blocklist.de 系列, CINS Army, Maltrail, Matthew Roberts, net_ua
+  專注: 常見的來源和目的 IP 欄位格式比對
+  
+  MITRE ATT&CK 對應：
+  - T1595: 主動掃描 (入站掃描)
+  - T1071: 應用層協定 (應用層協定通訊)
+  - T1071.004: DNS (DNS 通道)
+  - TA0011: 命令與控制 (Command and Control)
+-->
+
+<group name="jason_tools_ioc,">
+  
+  <!-- ===== 來源 IP 檢測 (Source IP) ===== -->
+  
+  <!-- srcip - 最常見的來源 IP 欄位 -->
+  <rule id="906001" level="12">
+    <if_sid>1</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious source IP - $(srcip)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>threat_intelligence,malicious_srcip,inbound_threat,network_threat,</group>
+  </rule>
+
+  <!-- data.srcip - 常見於結構化日誌 -->
+  <rule id="906002" level="12">
+    <if_sid>1</if_sid>
+    <list field="data.srcip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious source IP - $(data.srcip)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>threat_intelligence,malicious_srcip,inbound_threat,network_threat,</group>
+  </rule>
+
+  <!-- src_ip - 常見於 IDS/IPS 和網路設備 -->
+  <rule id="906003" level="12">
+    <if_sid>1</if_sid>
+    <list field="src_ip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious source IP - $(src_ip)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>threat_intelligence,malicious_srcip,inbound_threat,network_threat,ids_detection,</group>
+  </rule>
+
+  <!-- data.src_ip - IDS/Suricata 常用 -->
+  <rule id="906004" level="12">
+    <if_sid>1</if_sid>
+    <list field="data.src_ip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious source IP - $(data.src_ip)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>threat_intelligence,malicious_srcip,inbound_threat,network_threat,ids_detection,</group>
+  </rule>
+
+  <!-- srcaddr / source_address - 防火牆常用 -->
+  <rule id="906005" level="12">
+    <if_sid>1</if_sid>
+    <list field="srcaddr" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious source address - $(srcaddr)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>threat_intelligence,malicious_srcip,inbound_threat,network_threat,firewall_detection,</group>
+  </rule>
+
+  <rule id="906006" level="12">
+    <if_sid>1</if_sid>
+    <list field="source_address" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious source address - $(source_address)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>threat_intelligence,malicious_srcip,inbound_threat,network_threat,firewall_detection,</group>
+  </rule>
+
+  <!-- source_ip - 通用來源 IP -->
+  <rule id="906007" level="12">
+    <if_sid>1</if_sid>
+    <list field="source_ip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious source IP - $(source_ip)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>threat_intelligence,malicious_srcip,inbound_threat,network_threat,</group>
+  </rule>
+
+  <!-- src - 簡化來源 IP 欄位 -->
+  <rule id="906008" level="12">
+    <if_sid>1</if_sid>
+    <list field="src" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious source IP - $(src)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>threat_intelligence,malicious_srcip,inbound_threat,network_threat,</group>
+  </rule>
+
+  <!-- data.src - 結構化簡化來源 IP -->
+  <rule id="906009" level="12">
+    <if_sid>1</if_sid>
+    <list field="data.src" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious source IP - $(data.src)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>threat_intelligence,malicious_srcip,inbound_threat,network_threat,</group>
+  </rule>
+
+
+
+
+
+
+
+  <!-- ===== 目的 IP 檢測 (Destination IP) ===== -->
+  
+  <!-- dstip - 最常見的目的 IP 欄位 -->
+  <rule id="906011" level="13">
+    <if_sid>1</if_sid>
+    <list field="dstip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious destination IP - $(dstip)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,malicious_dstip,outbound_threat,network_threat,command_and_control,</group>
+  </rule>
+
+  <!-- data.dstip - 常見於結構化日誌 -->
+  <rule id="906012" level="12">
+    <if_sid>1</if_sid>
+    <list field="data.dstip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious destination IP - $(data.dstip)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,malicious_dstip,outbound_threat,network_threat,command_and_control,</group>
+  </rule>
+
+  <!-- dst_ip - 常見於 IDS/IPS 和網路設備 -->
+  <rule id="906013" level="12">
+    <if_sid>1</if_sid>
+    <list field="dst_ip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious destination IP - $(dst_ip)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,malicious_dstip,outbound_threat,network_threat,command_and_control,ids_detection,</group>
+  </rule>
+
+  <!-- data.dest_ip - IDS/Suricata 常用 -->
+  <rule id="906014" level="12">
+    <if_sid>1</if_sid>
+    <list field="data.dest_ip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious destination IP - $(data.dest_ip)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,malicious_dstip,outbound_threat,network_threat,command_and_control,ids_detection,</group>
+  </rule>
+
+  <!-- dstaddr / destination_address - 防火牆常用 -->
+  <rule id="906015" level="12">
+    <if_sid>1</if_sid>
+    <list field="dstaddr" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious destination address - $(dstaddr)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,malicious_dstip,outbound_threat,network_threat,command_and_control,firewall_detection,</group>
+  </rule>
+
+  <rule id="906016" level="12">
+    <if_sid>1</if_sid>
+    <list field="destination_address" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious destination address - $(destination_address)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,malicious_dstip,outbound_threat,network_threat,command_and_control,firewall_detection,</group>
+  </rule>
+
+  <!-- destination_ip - 通用目的 IP -->
+  <rule id="906017" level="12">
+    <if_sid>1</if_sid>
+    <list field="destination_ip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious destination IP - $(destination_ip)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,malicious_dstip,outbound_threat,network_threat,command_and_control,</group>
+  </rule>
+
+  <!-- dst - 簡化目的 IP 欄位 -->
+  <rule id="906018" level="12">
+    <if_sid>1</if_sid>
+    <list field="dst" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious destination IP - $(dst)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,malicious_dstip,outbound_threat,network_threat,command_and_control,</group>
+  </rule>
+
+  <!-- data.dst - 結構化簡化目的 IP -->
+  <rule id="906019" level="12">
+    <if_sid>1</if_sid>
+    <list field="data.dst" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious destination IP - $(data.dst)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,malicious_dstip,outbound_threat,network_threat,command_and_control,</group>
+  </rule>
+
+  <!-- ===== 其他常見 IP 欄位 ===== -->
+  
+  <!-- ip - 通用 IP 欄位 -->
+  <rule id="906021" level="12">
+    <if_sid>1</if_sid>
+    <list field="ip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious IP - $(ip)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,malicious_ip,network_threat,</group>
+  </rule>
+
+  <!-- data.ip - 通用結構化 IP -->
+  <rule id="906022" level="12">
+    <if_sid>1</if_sid>
+    <list field="data.ip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious IP - $(data.ip)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,malicious_ip,network_threat,</group>
+  </rule>
+
+  <!-- remote_addr - Web/Proxy 遠端位址 -->
+  <rule id="906023" level="12">
+    <if_sid>1</if_sid>
+    <list field="remote_addr" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious remote address - $(remote_addr)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>threat_intelligence,malicious_ip,network_threat,web_attack,</group>
+  </rule>
+
+  <!-- data.remote_addr -->
+  <rule id="906024" level="12">
+    <if_sid>1</if_sid>
+    <list field="data.remote_addr" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious remote address - $(data.remote_addr)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>threat_intelligence,malicious_ip,network_threat,web_attack,</group>
+  </rule>
+
+  <!-- client_ip - Proxy/Web Gateway 用戶端 IP -->
+  <rule id="906025" level="12">
+    <if_sid>1</if_sid>
+    <list field="client_ip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious client IP - $(client_ip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>threat_intelligence,malicious_ip,network_threat,web_attack,</group>
+  </rule>
+
+  <!-- data.client_ip -->
+  <rule id="906026" level="12">
+    <if_sid>1</if_sid>
+    <list field="data.client_ip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Malicious client IP - $(data.client_ip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>threat_intelligence,malicious_ip,network_threat,web_attack,</group>
+  </rule>
+
+  <!-- ===== Sysmon 網路連線檢測 ===== -->
+  
+  <!-- Sysmon Event ID 3 - 網路連線 -->
+  <!-- SourceIp - Sysmon 來源 IP -->
+  <rule id="906031" level="12">
+    <if_sid>1</if_sid>
+    <list field="data.win.eventdata.sourceIp" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Sysmon detected malicious source IP - $(data.win.eventdata.sourceIp)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,sysmon,windows,endpoint_detection,malicious_srcip,network_connection,</group>
+  </rule>
+
+  <!-- DestinationIp - Sysmon 目的 IP -->
+  <rule id="906032" level="13">
+    <if_sid>1</if_sid>
+    <list field="data.win.eventdata.destinationIp" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Sysmon detected malicious destination IP - $(data.win.eventdata.destinationIp)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,sysmon,windows,endpoint_detection,malicious_dstip,outbound_threat,network_connection,command_and_control,</group>
+  </rule>
+
+  <!-- Sysmon 舊版欄位格式 (小寫) -->
+  <rule id="906033" level="12">
+    <if_sid>1</if_sid>
+    <list field="data.win.eventdata.sourceip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Sysmon detected malicious source IP - $(data.win.eventdata.sourceip)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,sysmon,windows,endpoint_detection,malicious_srcip,network_connection,</group>
+  </rule>
+
+  <rule id="906034" level="13">
+    <if_sid>1</if_sid>
+    <list field="data.win.eventdata.destinationip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Sysmon detected malicious destination IP - $(data.win.eventdata.destinationip)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,sysmon,windows,endpoint_detection,malicious_dstip,outbound_threat,network_connection,command_and_control,</group>
+  </rule>
+
+  <!-- Sysmon Event ID 22 - DNS 查詢 (QueryResults 包含解析後的 IP) -->
+  <rule id="906035" level="12">
+    <if_sid>1</if_sid>
+    <list field="data.win.eventdata.queryResults" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <description>[HIGH] Jason Tools IOC: Sysmon DNS query returned malicious IP - $(data.win.eventdata.queryResults)</description>
+    <mitre>
+      <id>T1071.004</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,sysmon,windows,endpoint_detection,dns_query,malicious_ip,command_and_control,</group>
+  </rule>
+
+  <!-- ===== 高風險場景加重檢測 ===== -->
+  
+  <!-- 出站連線到惡意 IP (更高風險) -->
+  <rule id="906080" level="14">
+    <if_sid>906011,906012,906013,906014,906015,906016,906017</if_sid>
+    <description>[HIGH] Jason Tools IOC: CRITICAL - Outbound connection to malicious IP detected</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,critical_threat,outbound_malicious,outbound_threat,network_threat,command_and_control,</group>
+  </rule>
+
+  <!-- Sysmon 處理程序連線到惡意 IP (特別標註處理程序資訊) -->
+  <rule id="906081" level="14">
+    <if_sid>906032,906034</if_sid>
+    <description>[HIGH] Jason Tools IOC: CRITICAL - Sysmon detected process connecting to malicious IP - $(data.win.eventdata.destinationIp)$(data.win.eventdata.destinationip) | Process: $(data.win.eventdata.image)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,sysmon,windows,endpoint_detection,critical_threat,process_connection,outbound_threat,network_threat,command_and_control,</group>
+  </rule>
+
+  
+  <!-- 多來源確認的高可信度威脅 (IP 出現在 3 個以上來源) -->
+  <!-- 需要搭配 integration 腳本才能運作 -->
+  <!-- 
+  <rule id="906082" level="15">
+    <if_sid>1</if_sid>
+    <if_sid>906001,906002,906003,906004,906011,906012,906013,906014,906032,906034</if_sid>
+    <match>,.*,</match>
+    <description>[CRITICAL] Jason Tools IOC: HIGH CONFIDENCE - IP confirmed by multiple threat intelligence sources</description>
+    <group>threat_intelligence,high_confidence,multiple_sources,network_threat,</group>
+  </rule>
+  -->
+
+</group>

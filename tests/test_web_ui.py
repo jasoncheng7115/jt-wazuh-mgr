@@ -991,6 +991,142 @@ class TestNodeConfigDiff(WebUITestCase):
 
 
 # --------------------------------------------------------------------------
+# Rule packs (install / uninstall)
+# --------------------------------------------------------------------------
+
+class TestRulePacks(WebUITestCase):
+    """Packs write into the manager, so the install path must be all-or-nothing."""
+
+    ANALYSISD_OK = '#!/bin/sh\necho "loaded"\nexit 0\n'
+    ANALYSISD_BAD = '#!/bin/sh\necho "ERROR: bad rule"\nexit 0\n'
+
+    def setUp(self):
+        super().setUp()
+        import tempfile
+        self.tmp = tempfile.mkdtemp(prefix='jtpack-')
+        for sub in ('etc/rules', 'etc/lists', 'etc/decoders', 'bin'):
+            os.makedirs(os.path.join(self.tmp, sub), exist_ok=True)
+        with io.open(os.path.join(self.tmp, 'etc/ossec.conf'), 'w', encoding='utf-8') as fh:
+            fh.write('<ossec_config>\n  <ruleset>\n'
+                     '    <list>etc/lists/audit-keys</list>\n'
+                     '  </ruleset>\n</ossec_config>\n')
+        self._write_analysisd(self.ANALYSISD_OK)
+
+        # wrap the real config so only wazuh_path is redirected; restore even if
+        # setUp fails partway, otherwise the override leaks into every other test
+        self._real_get_config = web_ui.get_config
+        self.addCleanup(setattr, web_ui, 'get_config', self._real_get_config)
+        real_config = self._real_get_config()
+        tmp_path = self.tmp
+
+        class FakeConfig:
+            wazuh_path = tmp_path
+
+            def __getattr__(self, name):
+                return getattr(real_config, name)
+
+        web_ui.get_config = lambda *a, **k: FakeConfig()
+        # the app was built with the real config; rebuild so routes see the fake one
+        self.app = web_ui.create_app()
+        self.app.config['TESTING'] = True
+        self.client = self.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess['api_session'] = {'host': 'h', 'port': 1, 'username': 'tester',
+                                   'token': 't', 'session_exp': int(time.time()) + 3600}
+
+    def _write_analysisd(self, body):
+        path = os.path.join(self.tmp, 'bin', 'wazuh-analysisd')
+        with io.open(path, 'w', encoding='utf-8') as fh:
+            fh.write(body)
+        os.chmod(path, 0o755)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        super().tearDown()
+
+    def conf(self):
+        with io.open(os.path.join(self.tmp, 'etc/ossec.conf'), encoding='utf-8') as fh:
+            return fh.read()
+
+    def test_catalogue_lists_packs_as_not_installed(self):
+        data = self.client.get('/api/packs').get_json()
+        self.assertGreaterEqual(data['total'], 1)
+        self.assertTrue(all(not p['installed'] for p in data['packs']))
+
+    def test_install_copies_files_and_declares_lists(self):
+        resp = self.client.post('/api/packs/jt-portable-detect/install')
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        self.assertTrue(os.path.isfile(
+            os.path.join(self.tmp, 'etc/rules/zz-906100-jt_portable_rules.xml')))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'etc/lists/jt-approved-portable')))
+        self.assertIn('<list>etc/lists/jt-approved-portable</list>', self.conf())
+        listing = self.client.get('/api/packs').get_json()['packs']
+        self.assertTrue([p for p in listing if p['id'] == 'jt-portable-detect'][0]['installed'])
+
+    def test_install_rolls_back_when_the_ruleset_stops_validating(self):
+        self._write_analysisd(self.ANALYSISD_BAD)
+        resp = self.client.post('/api/packs/jt-portable-detect/install')
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(resp.get_json()['rolled_back'])
+        self.assertFalse(os.path.isfile(
+            os.path.join(self.tmp, 'etc/rules/zz-906100-jt_portable_rules.xml')))
+        self.assertNotIn('jt-approved-portable', self.conf())
+        self.assertFalse([p for p in self.client.get('/api/packs').get_json()['packs']
+                          if p['id'] == 'jt-portable-detect'][0]['installed'])
+
+    def test_uninstall_removes_files_and_declaration(self):
+        self.client.post('/api/packs/jt-portable-detect/install')
+        resp = self.client.delete('/api/packs/jt-portable-detect')
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(os.path.isfile(
+            os.path.join(self.tmp, 'etc/rules/zz-906100-jt_portable_rules.xml')))
+        self.assertNotIn('jt-approved-portable', self.conf())
+        self.assertFalse([p for p in self.client.get('/api/packs').get_json()['packs']
+                          if p['id'] == 'jt-portable-detect'][0]['installed'])
+
+    def test_uninstall_refuses_to_discard_local_edits(self):
+        self.client.post('/api/packs/jt-portable-detect/install')
+        target = os.path.join(self.tmp, 'etc/lists/jt-approved-portable')
+        with io.open(target, 'a', encoding='utf-8') as fh:
+            fh.write('MyTool.exe:approved\n')
+        resp = self.client.delete('/api/packs/jt-portable-detect')
+        self.assertEqual(resp.status_code, 409)
+        self.assertIn('etc/lists/jt-approved-portable', resp.get_json()['modified'])
+        self.assertTrue(os.path.isfile(target))
+        forced = self.client.delete('/api/packs/jt-portable-detect', json={'force': True})
+        self.assertEqual(forced.status_code, 200)
+
+    def test_conflicting_rule_ids_block_the_install(self):
+        with io.open(os.path.join(self.tmp, 'etc/rules/other.xml'), 'w', encoding='utf-8') as fh:
+            fh.write('<group name="x,"><rule id="906100" level="3">'
+                     '<description>squatter</description></rule></group>')
+        resp = self.client.post('/api/packs/jt-portable-detect/install')
+        self.assertEqual(resp.status_code, 409)
+        self.assertIn('906100', resp.get_json()['conflicts'])
+        forced = self.client.post('/api/packs/jt-portable-detect/install', json={'force': True})
+        self.assertEqual(forced.status_code, 200)
+
+    def test_uninstalling_something_not_installed_is_404(self):
+        self.assertEqual(self.client.delete('/api/packs/jt-ioc').status_code, 404)
+
+    def test_unknown_pack_is_rejected(self):
+        self.assertEqual(self.client.post('/api/packs/nope/install').status_code, 404)
+        self.assertEqual(self.client.get('/api/packs/nope').status_code, 404)
+
+    def test_pack_ids_cannot_escape_the_catalogue(self):
+        for bad in ['..', '../../etc', 'a b']:
+            with self.subTest(pack=bad):
+                self.assertIn(self.client.get('/api/packs/' + bad).status_code, (400, 404, 301, 308))
+
+    def test_requires_authentication(self):
+        anon = web_ui.create_app().test_client()
+        self.assertEqual(anon.get('/api/packs').status_code, 401)
+        self.assertEqual(anon.post('/api/packs/jt-ioc/install').status_code, 401)
+        self.assertEqual(anon.delete('/api/packs/jt-ioc').status_code, 401)
+
+
+# --------------------------------------------------------------------------
 # Front-end assets embedded in the template
 # --------------------------------------------------------------------------
 

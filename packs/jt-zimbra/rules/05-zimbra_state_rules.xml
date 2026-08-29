@@ -1,0 +1,181 @@
+<!--
+  Zimbra 輪詢式狀態稽核規則
+  檔案：/var/ossec/etc/rules/zimbra_state_rules.xml
+  區段：100880-100919
+  版本：v2.0
+
+  設計理念：
+    轉寄位址、停用本機投遞、Sieve 規則、委派授權、Zimlet 部署、
+    lib/ext 模組 —— 這些變更「不會寫入任何 Zimbra 日誌」。
+    唯一可靠的偵測方式是定期輪詢完整狀態並比對差異。
+
+  資料來源：/var/log/zimbra-state-audit.json
+            （由 agent/bin/zimbra-state-audit.sh 與 zimbra-jvm-audit.sh 產生）
+            Agent 端須以 <log_format>json</log_format> 收集。
+
+  ※ 首次執行僅產生 baseline_created，不告警。
+    基準必須在「確認乾淨」的狀態下建立。
+-->
+<group name="zimbra,state_audit,">
+
+  <rule id="100880" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="zimbra_audit.event" type="pcre2">.+</field>
+    <description>Zimbra 狀態稽核事件（基礎規則）</description>
+  </rule>
+
+  <!-- ── 帳號與郵件流向 ── -->
+
+  <rule id="100881" level="13">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^forwarding_added$</field>
+    <description>[HIGH] Zimbra 帳號新增郵件轉寄位址：$(zimbra_audit.object) → $(zimbra_audit.value)</description>
+    <mitre>
+      <id>T1114.003</id>
+    </mitre>
+    <group>exfiltration,</group>
+  </rule>
+
+  <rule id="100882" level="14">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^nolocaldelivery_added$</field>
+    <description>[HIGH] 帳號停用本機投遞，搭配轉寄即為靜默竊信：$(zimbra_audit.object)</description>
+    <mitre>
+      <id>T1114.003</id>
+    </mitre>
+    <group>exfiltration,</group>
+  </rule>
+
+  <rule id="100883" level="12">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^sieve_added$|^sieve_removed$</field>
+    <description>[HIGH] Zimbra Sieve 過濾規則遭異動：$(zimbra_audit.object)</description>
+    <mitre>
+      <id>T1564.008</id>
+    </mitre>
+  </rule>
+
+  <rule id="100884" level="14">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^sieve_dangerous_action$</field>
+    <description>[HIGH] Sieve 規則含高風險動作（redirect／discard／丟入垃圾桶）：$(zimbra_audit.value)</description>
+    <mitre>
+      <id>T1564.008</id>
+    </mitre>
+    <group>exfiltration,defense_evasion,</group>
+  </rule>
+
+  <rule id="100885" level="14">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^admins_added$</field>
+    <description>[HIGH] 新增 Zimbra 管理員或委派管理員帳號：$(zimbra_audit.object)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>persistence,privilege_escalation,</group>
+  </rule>
+
+  <rule id="100886" level="12">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^delegation_added$</field>
+    <description>[HIGH] 新增帳號委派授權（zimbraACE）：$(zimbra_audit.object) → $(zimbra_audit.value)</description>
+    <mitre>
+      <id>T1098.002</id>
+    </mitre>
+    <group>persistence,</group>
+  </rule>
+
+  <rule id="100887" level="8">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^accounts_added$|^accounts_removed$</field>
+    <description>[WARN] Zimbra 帳號清單異動：$(zimbra_audit.object)（$(zimbra_audit.value)）</description>
+    <group>persistence,</group>
+  </rule>
+
+  <!-- ── 擴充元件 ── -->
+
+  <rule id="100888" level="13">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^zimlets_added$</field>
+    <description>[HIGH] 部署新的 Zimlet，可於所有使用者瀏覽器執行 JavaScript：$(zimbra_audit.object)</description>
+    <mitre>
+      <id>T1505</id>
+    </mitre>
+    <group>persistence,</group>
+  </rule>
+
+  <rule id="100889" level="15">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^libext_added$</field>
+    <description>[CRITICAL] Zimbra Java 擴充模組新增或雜湊變更，可竊取全體使用者明文密碼：$(zimbra_audit.object)</description>
+    <mitre>
+      <id>T1505</id>
+    </mitre>
+    <group>persistence,backdoor,</group>
+  </rule>
+
+  <rule id="100890" level="15">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^javaagent_detected$</field>
+    <description>[CRITICAL] mailboxd 啟動參數含 -javaagent，疑似記憶體馬持久化：$(zimbra_audit.value)</description>
+    <mitre>
+      <id>T1055.001</id>
+    </mitre>
+    <group>memory_shell,persistence,</group>
+  </rule>
+
+  <!-- ── 防線自我監控 ── -->
+
+  <rule id="100891" level="7">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^version_added$</field>
+    <description>[WARN] Zimbra 版本已變更，請重建 FIM 白名單、重新套用 nginx template 並重新鎖定目錄：$(zimbra_audit.value)</description>
+  </rule>
+
+  <rule id="100892" level="12">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^immutable_missing$</field>
+    <description>[HIGH] Zimbra public 目錄已非不可變狀態，預防層防線失效：$(zimbra_audit.object)</description>
+  </rule>
+
+  <rule id="100893" level="10">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^audit_error$</field>
+    <description>[WARN] Zimbra 狀態稽核腳本執行異常：$(zimbra_audit.value)</description>
+  </rule>
+
+  <!-- 心跳：level 0，供 Graylog 斷流偵測使用 -->
+  <rule id="100894" level="0">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^heartbeat$|^jvm_heartbeat$</field>
+    <description>Zimbra 狀態稽核心跳</description>
+  </rule>
+
+  <!-- ── 記憶體馬（JVM 類別比對）── -->
+
+  <rule id="100900" level="13">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^jvm_unknown_class$</field>
+    <description>[HIGH] mailboxd JVM 載入非預期類別，疑似記憶體馬：$(zimbra_audit.object)</description>
+    <mitre>
+      <id>T1055</id>
+    </mitre>
+    <group>memory_shell,</group>
+  </rule>
+
+  <rule id="100901" level="15" frequency="3" timeframe="600">
+    <if_matched_sid>100900</if_matched_sid>
+    <description>[CRITICAL] mailboxd JVM 短時間載入多個非預期類別，高度研判為記憶體馬植入</description>
+    <mitre>
+      <id>T1055</id>
+    </mitre>
+    <group>memory_shell,</group>
+  </rule>
+
+  <rule id="100902" level="10">
+    <if_sid>100880</if_sid>
+    <field name="zimbra_audit.event">^jvm_error$</field>
+    <description>[WARN] JVM 稽核異常，記憶體馬偵測可能已失效：$(zimbra_audit.value)</description>
+  </rule>
+
+</group>

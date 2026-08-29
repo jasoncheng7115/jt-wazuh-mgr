@@ -1,0 +1,233 @@
+<!--
+  ╔══════════════════════════════════════════════════════════════════════╗
+  ║  jt-portable-detect ── Linux／macOS 可攜式執行檔偵測                 ║
+  ║  檔案：zz-906200-jt_portable_nix_rules.xml                           ║
+  ║  版本：v1.2    規則區間：906200-906299                               ║
+  ║  Jason Tools Co., Ltd.／Apache-2.0                                   ║
+  ╚══════════════════════════════════════════════════════════════════════╝
+
+  ── 為什麼 Linux／macOS 要與 Windows 分開設計 ──
+
+  Windows 的「可攜式程式」有明確特徵：.exe 副檔名 + 不寫 Registry。
+  Linux／macOS 沒有副檔名慣例，「可執行」只是一個權限位元，
+  因此「有 u+x 就告警」會產生大量誤報 ——
+  實測環境中 /root 下 21 個帶 u+x 的檔案，大多是 .pem／.key 憑證。
+
+  本規則改用三個更貼近真實的判準：
+
+    1. 【權限變更】既有檔案被 chmod 成可執行  ← 最高價值訊號
+       正常軟體由套件管理器安裝時就帶正確權限，不需要事後 chmod +x。
+       使用者下載可攜式工具後 chmod +x 才執行，這是最典型的行為。
+
+    2. 【高風險位置】/tmp、/var/tmp、/dev/shm 出現可執行檔
+       這些目錄正常不該有常駐執行檔，且是惡意工具最愛的落點。
+
+    3. 【副檔名】.AppImage／.run／.bin／.sh／.py 等明確的可攜式格式
+       AppImage 是 Linux 最主流的「免安裝」格式，等同 Windows 的綠色版。
+
+  ── 檔名前綴 zz- 的原因 ──
+    規則檔依檔名字母序載入，且同層級的兄弟規則中「後載入者勝出」。
+    客戶環境（如 jasontools-malware-rule.xml）可能有掛在 550/553/554
+    之下的規則，zz- 可確保本規則不被遮蔽。
+
+  ── 相依 ──
+    父規則 550（內容異動）／553（刪除）／554（新增）── Wazuh 內建 FIM
+    需 agent 端已設定 syscheck 監控對應目錄（見 agent/ossec.conf.nix.snippet.xml）
+-->
+
+<group name="linux,macos,jt_portable,">
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   基礎規則
+   ══════════════════════════════════════════════════════════════════════
+-->
+
+  <!-- 使用者可寫區域的檔案事件（level 1 + no_log：不告警但不終結規則鏈）
+       ★ 刻意用 level 1 而非 0 ── level 0 會終結規則鏈，
+         導致下游規則與其他內建偵測全部靜默（本專案實測踩過此坑）。 -->
+  <rule id="906200" level="1">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm|home/[^/]+|root|Users/[^/]+)/</field>
+    <options>no_log</options>
+    <description>Linux/macOS 使用者可寫區域檔案事件（基礎規則）</description>
+  </rule>
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   判準 1：權限被改為可執行  ← 最高價值訊號
+   ══════════════════════════════════════════════════════════════════════
+   正常套件安裝的程式一開始就有正確權限，不需事後 chmod +x。
+   「下載檔案 → chmod +x → 執行」是可攜式工具的典型使用流程。
+
+   ※ changed_fields 是「規則用欄位名」，JSON 告警中叫 changed_attributes。
+     寫錯會靜默失效（本專案實測確認）。
+-->
+
+  <rule id="906201" level="8">
+    <if_sid>906200</if_sid>
+    <field name="changed_fields" type="pcre2">permission</field>
+    <field name="perm" type="pcre2">x</field>
+    <description>[WARN] 可攜式程式：使用者區域檔案被賦予執行權限 ── $(file) 權限：$(perm) 擁有者：$(uname)</description>
+    <mitre>
+      <id>T1222.002</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_chmod,</group>
+  </rule>
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   判準 2：高風險位置出現可執行檔
+   ══════════════════════════════════════════════════════════════════════
+   /tmp、/var/tmp、/dev/shm 正常不該有常駐執行檔。
+   /dev/shm 位於記憶體，重開機即消失，是規避鑑識的常見手法。
+
+   ※ 涵蓋子目錄（如 installer 解壓的 /tmp/xxxx/setup）──
+     實測發現只匹配第一層會漏掉這類最常見的落點。
+     子目錄帶來的誤報由下方 906220/906222 的排除規則收斂。
+-->
+
+  <rule id="906202" level="10">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm)/</field>
+    <field name="perm" type="pcre2">x</field>
+    <description>[WARN] 可攜式程式：暫存目錄出現可執行檔 ── $(file) 權限：$(perm)</description>
+    <mitre>
+      <id>T1204.002</id>
+      <id>T1105</id>
+    </mitre>
+    <group>jt_portable_tmpexec,</group>
+  </rule>
+
+  <!-- /dev/shm 風險更高（記憶體、重開即消失） -->
+  <rule id="906203" level="12">
+    <if_sid>906202</if_sid>
+    <field name="file" type="pcre2">^/dev/shm/</field>
+    <description>[HIGH] 可攜式程式：記憶體檔案系統出現可執行檔，疑似規避鑑識 ── $(file)</description>
+    <mitre>
+      <id>T1204.002</id>
+      <id>T1564</id>
+    </mitre>
+    <group>jt_portable_tmpexec,</group>
+  </rule>
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   判準 3：明確的可攜式格式副檔名
+   ══════════════════════════════════════════════════════════════════════
+   AppImage 是 Linux 最主流的免安裝格式（等同 Windows 綠色版）。
+   .run／.bin 多為自解壓安裝包，.dmg／.pkg 為 macOS 安裝映像。
+-->
+
+  <rule id="906204" level="8">
+    <if_sid>906200</if_sid>
+    <field name="file" type="pcre2">(?i)\.(AppImage|run|bin|jar)$</field>
+    <description>[WARN] 可攜式程式：使用者目錄出現免安裝格式檔案 ── $(file)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_file,</group>
+  </rule>
+
+  <!-- macOS：使用者目錄的 .app／.dmg／.pkg
+       ※ .app 是目錄不是檔案，FIM 會看到其內部的 Contents/MacOS/<binary> -->
+  <rule id="906205" level="6">
+    <if_sid>906200</if_sid>
+    <field name="file" type="pcre2">(?i)^/Users/[^/]+/(Downloads|Desktop|Documents)/.*\.(dmg|pkg)$</field>
+    <description>可攜式程式：macOS 使用者目錄出現安裝映像 ── $(file)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_file,</group>
+  </rule>
+
+  <rule id="906206" level="8">
+    <if_sid>906200</if_sid>
+    <field name="file" type="pcre2">(?i)^/Users/[^/]+/(Downloads|Desktop|Documents|Public)/.*\.app/Contents/MacOS/</field>
+    <description>[WARN] 可攜式程式：macOS 使用者目錄出現應用程式套件 ── $(file)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_file,</group>
+  </rule>
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   判準 4：auditd execve 執行偵測  ※ 選配模組
+   ══════════════════════════════════════════════════════════════════════
+   ★ 需要 agent 端啟用 auditd 並套用 agent/audit/jt-portable.rules。
+     未啟用 auditd 的環境，上述 FIM 類規則仍可完整運作。
+
+   ★ 為何列為選配：auditd 在高負載主機會產生可觀的日誌量與效能影響，
+     不應預設對全環境開啟。建議先在少數高價值主機導入。
+
+   父規則 80700（Wazuh 內建 auditd 事件群組）
+-->
+
+  <rule id="906210" level="10">
+    <if_sid>80700</if_sid>
+    <field name="audit.key">jt_portable_exec</field>
+    <description>[WARN] 可攜式程式：自使用者可寫區域執行程式 ── $(audit.exe) 使用者：$(audit.uid)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+  <rule id="906211" level="12">
+    <if_sid>80700</if_sid>
+    <field name="audit.key">jt_portable_tmpexec</field>
+    <description>[HIGH] 可攜式程式：自暫存目錄執行程式 ── $(audit.exe) 使用者：$(audit.uid)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   降噪：排除已知的正常行為
+   ══════════════════════════════════════════════════════════════════════
+   ★ 必須置於被覆寫規則「之後」（Wazuh 取最後匹配者）。
+   ★ 這些排除是依實地觀察設計，客戶可依環境增修。
+-->
+
+  <!-- 套件管理器與設定管理工具的正常操作 -->
+  <rule id="906220" level="0">
+    <if_sid>906201,906202,906204</if_sid>
+    <field name="file" type="pcre2">^/(tmp|var/tmp)/(apt|dpkg|rpm|yum|dnf|snapd?|flatpak|ansible|chef|puppet|salt)[-_.]</field>
+    <description>套件／設定管理工具的暫存檔（正常）</description>
+  </rule>
+
+  <!-- 憑證、金鑰、設定檔即使帶 x 權限也不是可攜式程式
+       （實測： /root/wazuh-certificates/*.pem 帶 u+x） -->
+  <rule id="906221" level="0">
+    <if_sid>906201,906202,906204</if_sid>
+    <field name="file" type="pcre2">(?i)\.(pem|key|crt|cer|csr|conf|cfg|ya?ml|json|xml|log|txt|md)$</field>
+    <description>憑證／設定／文件類檔案（非可攜式程式）</description>
+  </rule>
+
+  <!-- Wazuh 自身與常見監控代理的暫存檔 -->
+  <rule id="906222" level="0">
+    <if_sid>906201,906202,906204</if_sid>
+    <field name="file" type="pcre2">^/(tmp|var/tmp)/(ossec|wazuh|zabbix|nagios|nrpe|telegraf|datadog|newrelic)</field>
+    <description>監控代理的暫存檔（正常）</description>
+  </rule>
+
+  <!--
+    906223-906229：保留給客戶端自訂排除
+    範例：
+    <rule id="906223" level="0">
+      <if_sid>906201,906202,906204</if_sid>
+      <field name="file" type="pcre2">^/tmp/mycompany-deploy-</field>
+      <description>排除：公司部署工具（變更單 CR-xxxx）</description>
+    </rule>
+  -->
+
+</group>

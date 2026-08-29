@@ -1,0 +1,116 @@
+<!--
+  Zimbra Web 存取偵測規則
+  檔案：/var/ossec/etc/rules/zimbra_web_rules.xml
+  區段：100820-100839
+  版本：v2.0
+  相依解碼器：zimbra-proxy-access
+
+  ※ id / url / protocol / srcip / srcport 皆為「靜態欄位」，
+     必須使用專屬標籤，寫成 <field name="id"> 會靜默失效。
+  ※ referer / user_agent 為動態欄位，使用 <field name="...">。
+-->
+<group name="zimbra,web,">
+
+  <!-- 基礎規則 -->
+  <rule id="100820" level="0">
+    <decoded_as>zimbra-proxy-access</decoded_as>
+    <description>Zimbra Proxy 存取紀錄（基礎規則）</description>
+  </rule>
+
+  <!-- 第一段：所有 /public/ 下的 JSP 存取 -->
+  <rule id="100821" level="10">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">/public/[^?\s]*\.jspx?</url>
+    <description>[WARN] 存取 /public/ 下之 JSP：$(url) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+  </rule>
+
+  <!-- 第二段：原廠 JSP 降為 level 0（維運只需維護這一條的清單） -->
+  <rule id="100822" level="0">
+    <if_sid>100821</if_sid>
+    <url type="pcre2">/public/(Boot|Offline|PasswordRecovery|Resources|TwoFactorSetup|addressVerification|error|extuserprov|insecureResponse|launchNewWindow|launchZCS|loadImgData|login|modern|pre-cache|secureRequest|setResourceBundle)\.jsp|/public/jsp/[A-Za-z0-9_]+\.jsp</url>
+    <description>Zimbra 原廠 JSP 正常存取</description>
+  </rule>
+
+  <!-- 非原廠 JSP 回應成功 = 後門確實可用 -->
+  <rule id="100823" level="14">
+    <if_sid>100821</if_sid>
+    <id>^200$|^302$</id>
+    <description>[HIGH] 非原廠 JSP 回應成功，Web Shell 已可用：$(url) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>webshell,</group>
+  </rule>
+
+  <!-- POST 至非原廠 JSP = 互動操作 -->
+  <rule id="100824" level="15">
+    <if_sid>100823</if_sid>
+    <protocol>^POST$</protocol>
+    <description>[CRITICAL] 偵測到 Web Shell 互動操作（POST）：$(url) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>webshell,hands_on_keyboard,</group>
+  </rule>
+
+  <!-- 短時間多次互動 = 攻擊者正在線上 -->
+  <rule id="100825" level="15" frequency="4" timeframe="120">
+    <if_matched_sid>100824</if_matched_sid>
+    <same_source_ip />
+    <description>[CRITICAL] Web Shell 持續互動操作中，攻擊者正在線上：$(srcip)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>webshell,hands_on_keyboard,</group>
+  </rule>
+
+  <!-- keep-alive 長連線：webshell 管理工具（哥斯拉／冰蠍）特徵 -->
+  <rule id="100826" level="12" frequency="4" timeframe="60">
+    <if_matched_sid>100821</if_matched_sid>
+    <same_source_ip />
+    <same_srcport />
+    <description>[HIGH] 同一來源埠短時間多次請求 JSP，疑似 Web Shell 管理工具長連線：$(srcip):$(srcport)</description>
+    <group>webshell,</group>
+  </rule>
+
+  <!-- 管理介面自外部來源存取 -->
+  <rule id="100827" level="12">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">/zimbraAdmin|/service/admin|:7071</url>
+    <description>[HIGH] 管理介面遭存取：$(url) 來源：$(srcip)</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+  </rule>
+
+  <!-- 內部網段存取管理介面屬正常 —— 請依實際網段調整 -->
+  <rule id="100828" level="0">
+    <if_sid>100827</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>管理介面自內部網段存取（正常）</description>
+  </rule>
+
+  <!-- User-Agent 與行為矛盾：偽造 UA 的典型破綻
+       ※ 等級必須 >= 父規則 100824（15），否則命中子規則反而會把嚴重度降級 -->
+  <rule id="100829" level="15">
+    <if_sid>100824</if_sid>
+    <field name="user_agent" type="pcre2">(?i)(iphone|android|ipad|mobile)</field>
+    <description>[CRITICAL] 行動裝置 UA 對 JSP 發出 POST，UA 與行為矛盾（疑似偽造）：$(srcip) UA：$(user_agent)</description>
+    <mitre>
+      <id>T1036</id>
+    </mitre>
+    <group>webshell,</group>
+  </rule>
+
+  <!-- Referer 為空的 POST：以工具直接呼叫而非瀏覽器操作 -->
+  <rule id="100830" level="15">
+    <if_sid>100824</if_sid>
+    <field name="referer">^-$</field>
+    <description>[CRITICAL] 無 Referer 的 JSP POST，疑似工具直接呼叫：$(url) 來源：$(srcip)</description>
+    <group>webshell,</group>
+  </rule>
+
+</group>
