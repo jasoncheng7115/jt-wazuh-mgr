@@ -4,6 +4,23 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.3 (2026-08-30)
+
+- **Rule descriptions are now English across every pack.** 128 of the 179 shipped
+  rules described themselves in Traditional Chinese, which made the alert text
+  unreadable for anyone outside the author's own console — and these packs are
+  published for general use. Every description is now English, with the
+  `$(field)` placeholders and the `[CRITICAL]` / `[HIGH]` / `[WARN]` prefixes
+  unchanged, so existing dashboards and downstream parsers keep working.
+
+  Punctuation is half-width throughout; the full-width colons and em-dashes that
+  had crept in are gone.
+
+- Pack versions bumped accordingly: jt-zimbra 2.1, jt-portable-detect 1.3,
+  jt-zenarmor 1.2. The bilingual `name_zh` / `summary_zh` / `notes_zh` fields in
+  each manifest are unaffected — those are deliberately dual-language, and the UI
+  still shows Chinese pack names and notes.
+
 ## v1.6.2 (2026-08-30)
 
 - **Zenarmor pack reworked against live traffic.** The first version keyed every

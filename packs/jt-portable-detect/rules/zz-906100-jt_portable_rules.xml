@@ -86,7 +86,7 @@
   <rule id="906100" level="6">
     <if_sid>61603,100110</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+(Downloads|Desktop|Documents|Public)\\+</field>
-    <description>可攜式程式：自使用者目錄執行 ── $(win.eventdata.image) 使用者：$(win.eventdata.user) 雜湊：$(win.eventdata.hashes)</description>
+    <description>Portable executable run from a user directory - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -102,7 +102,7 @@
   <rule id="906101" level="10">
     <if_sid>61603,100110</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[E-Z]:\\+</field>
-    <description>[WARN] 可攜式程式：自非系統碟（可能為隨身碟）執行 ── $(win.eventdata.image) 使用者：$(win.eventdata.user) 雜湊：$(win.eventdata.hashes)</description>
+    <description>[WARN] Portable executable run from a non-system drive, possibly removable media - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
       <id>T1204.002</id>
       <id>T1091</id>
@@ -119,7 +119,7 @@
   <rule id="906102" level="10">
     <if_sid>61603,100110</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+</field>
-    <description>[WARN] 可攜式程式：自使用者 Temp 目錄執行 ── $(win.eventdata.image) 使用者：$(win.eventdata.user) 雜湊：$(win.eventdata.hashes)</description>
+    <description>[WARN] Portable executable run from the user Temp directory - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -152,7 +152,7 @@
   <!-- B-1：稽核模式下「本應被封鎖」── 本專案主要的高訊噪比訊號 -->
   <rule id="906110" level="8">
     <if_sid>67012</if_sid>
-    <description>[WARN] 可攜式程式：AppLocker 稽核模式偵測到本應封鎖之執行 ── $(win.ruleAndFileData.filePath) 使用者：$(win.ruleAndFileData.targetUser)</description>
+    <description>[WARN] AppLocker audit mode saw an execution it would have blocked - $(win.ruleAndFileData.filePath) user: $(win.ruleAndFileData.targetUser)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -162,7 +162,7 @@
   <!-- B-2：強制模式下實際遭封鎖（本階段不啟用強制模式，保留供日後切換） -->
   <rule id="906111" level="5">
     <if_sid>67013</if_sid>
-    <description>可攜式程式：AppLocker 強制模式已封鎖執行 ── $(win.ruleAndFileData.filePath) 使用者：$(win.ruleAndFileData.targetUser)</description>
+    <description>AppLocker enforcement blocked an execution - $(win.ruleAndFileData.filePath) user: $(win.ruleAndFileData.targetUser)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -184,7 +184,7 @@
   <rule id="906120" level="5">
     <if_sid>554</if_sid>
     <field name="file" type="pcre2">(?i)^[A-Z]:\\+Users\\+.*\.(exe|dll|msi|scr|ps1|jar)$</field>
-    <description>可攜式程式：使用者目錄新增可執行檔 ── $(file)</description>
+    <description>Executable added to a user directory - $(file)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -202,7 +202,7 @@
   <rule id="906121" level="6">
     <if_sid>61617</if_sid>
     <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Users\\+.*\.(exe|dll|msi|scr|ps1|jar)$</field>
-    <description>可攜式程式：使用者目錄之可執行檔被建立替代資料流（ADS）── $(win.eventdata.targetFilename) 建立程序：$(win.eventdata.image)</description>
+    <description>Alternate data stream created on an executable in a user directory - $(win.eventdata.targetFilename) created by: $(win.eventdata.image)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -219,7 +219,7 @@
   <rule id="906122" level="7">
     <if_sid>906121</if_sid>
     <field name="win.eventdata.contents" type="pcre2">(?i)ZoneId\s*=\s*[34]</field>
-    <description>[WARN] 可攜式程式：自網際網路下載之可執行檔落地 ── $(win.eventdata.targetFilename) 下載程序：$(win.eventdata.image)</description>
+    <description>[WARN] Executable downloaded from the internet written to disk - $(win.eventdata.targetFilename) downloaded by: $(win.eventdata.image)</description>
     <mitre>
       <id>T1204.002</id>
       <id>T1105</id>
@@ -241,14 +241,14 @@
   <rule id="906133" level="0">
     <decoded_as>json</decoded_as>
     <field name="jt_portable.scan_type" type="pcre2">.+</field>
-    <description>jt-portable 盤點事件（基礎規則）</description>
+    <description>jt-portable inventory event (base rule)</description>
   </rule>
 
   <!-- D-1：一般盤點結果 -->
   <rule id="906130" level="3">
     <if_sid>906133</if_sid>
     <field name="jt_portable.scan_type" type="pcre2">^inventory$</field>
-    <description>可攜式程式盤點：$(jt_portable.path) 產品：$(jt_portable.product) 簽章：$(jt_portable.signed)</description>
+    <description>Portable executable inventory: $(jt_portable.path) product: $(jt_portable.product) signed: $(jt_portable.signed)</description>
     <group>jt_portable_inventory,</group>
   </rule>
 
@@ -271,7 +271,7 @@
     <if_sid>906130</if_sid>
     <field name="jt_portable.signed" type="pcre2">(?i)^(?!Valid$).+</field>
     <field name="jt_portable.path" type="pcre2">(?i)^[A-Z]:\\Users\\</field>
-    <description>[WARN] 可攜式程式盤點：使用者目錄存在簽章異常之執行檔（$(jt_portable.signed)）── $(jt_portable.path) 公司：$(jt_portable.company) SHA256：$(jt_portable.sha256)</description>
+    <description>[WARN] Portable executable inventory: executable in a user directory has an abnormal signature ($(jt_portable.signed)) - $(jt_portable.path) company: $(jt_portable.company) SHA256: $(jt_portable.sha256)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -282,7 +282,7 @@
   <rule id="906134" level="12">
     <if_sid>906131</if_sid>
     <field name="jt_portable.signed" type="pcre2">(?i)^HashMismatch$</field>
-    <description>[HIGH] 可攜式程式盤點：執行檔雜湊與數位簽章不符，檔案可能遭竄改 ── $(jt_portable.path) SHA256：$(jt_portable.sha256)</description>
+    <description>[HIGH] Portable executable inventory: file hash does not match its digital signature, the file may have been tampered with - $(jt_portable.path) SHA256: $(jt_portable.sha256)</description>
     <mitre>
       <id>T1204.002</id>
       <id>T1565.001</id>
@@ -294,7 +294,7 @@
   <rule id="906132" level="2">
     <if_sid>906133</if_sid>
     <field name="jt_portable.scan_type" type="pcre2">^summary$</field>
-    <description>可攜式程式盤點完成：掃描 $(jt_portable.scanned_count) 個檔案，錯誤 $(jt_portable.error_count) 筆，耗時 $(jt_portable.duration_sec) 秒</description>
+    <description>Portable executable inventory finished: $(jt_portable.scanned_count) files scanned, $(jt_portable.error_count) errors, $(jt_portable.duration_sec) seconds</description>
     <group>jt_portable_inventory,</group>
   </rule>
 
@@ -318,7 +318,7 @@
   <rule id="906140" level="3">
     <if_sid>906100,906101,906102</if_sid>
     <list field="win.eventdata.originalFileName" lookup="match_key">etc/lists/jt-approved-portable</list>
-    <description>可攜式程式（已核准，僅記錄）：$(win.eventdata.originalFileName) ── $(win.eventdata.image) 使用者：$(win.eventdata.user)</description>
+    <description>Portable executable, approved, logged only: $(win.eventdata.originalFileName) - $(win.eventdata.image) user: $(win.eventdata.user)</description>
     <group>jt_portable_approved,</group>
   </rule>
 
@@ -344,7 +344,7 @@
   <rule id="906141" level="3">
     <if_sid>906100,906101,906102</if_sid>
     <list field="win.eventdata.image" lookup="match_key">etc/lists/jt-approved-portable</list>
-    <description>可攜式程式（已核准路徑，僅記錄）：$(win.eventdata.image) 使用者：$(win.eventdata.user)</description>
+    <description>Portable executable, approved path, logged only: $(win.eventdata.image) user: $(win.eventdata.user)</description>
     <group>jt_portable_approved,</group>
   </rule>
 
@@ -363,7 +363,7 @@
   <rule id="906142" level="3">
     <if_sid>906100,906101,906102</if_sid>
     <list field="win.eventdata.hashes" lookup="match_key">etc/lists/jt-approved-portable-hash</list>
-    <description>可攜式程式（雜湊已核准，僅記錄）：$(win.eventdata.image) 使用者：$(win.eventdata.user)</description>
+    <description>Portable executable, approved hash, logged only: $(win.eventdata.image) user: $(win.eventdata.user)</description>
     <group>jt_portable_approved,</group>
   </rule>
 
@@ -379,7 +379,7 @@
      <rule id="906143" level="0">
        <if_sid>906100,906101,906102</if_sid>
        <field name="win.eventdata.image" type="pcre2">(?i)\\+AppData\\+Local\\+CompanyName\\+Updater\\+</field>
-       <description>排除：CompanyName 更新程序（已核准，變更單 CR-2026-001）</description>
+       <description>Excluded: CompanyName updater, approved under change request CR-2026-001</description>
      </rule>
   -->
 
@@ -399,7 +399,7 @@
 
   <rule id="906150" level="12" frequency="5" timeframe="600">
     <if_matched_sid>906100</if_matched_sid>
-    <description>[HIGH] 可攜式程式：同一主機短時間內多次自使用者目錄執行，疑似批次執行可攜式工具集</description>
+    <description>[HIGH] Repeated execution from user directories on one host, suggesting a portable toolkit being run in bulk</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -408,7 +408,7 @@
 
   <rule id="906151" level="12" frequency="5" timeframe="600">
     <if_matched_sid>906101</if_matched_sid>
-    <description>[HIGH] 可攜式程式：同一主機短時間內多次自非系統碟執行，疑似自隨身碟批次執行工具集</description>
+    <description>[HIGH] Repeated execution from a non-system drive on one host, suggesting a toolkit being run from removable media</description>
     <mitre>
       <id>T1204.002</id>
       <id>T1091</id>

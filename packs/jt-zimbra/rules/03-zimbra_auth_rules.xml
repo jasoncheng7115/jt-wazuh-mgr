@@ -18,14 +18,14 @@
 
   <rule id="100840" level="0">
     <decoded_as>zimbra-audit</decoded_as>
-    <description>Zimbra 認證紀錄（基礎規則）</description>
+    <description>Zimbra authentication log (base rule)</description>
   </rule>
 
   <!-- ── 認證失敗 ── -->
   <rule id="100841" level="5">
     <if_sid>100840</if_sid>
     <match>authentication failed|AuthFailed|invalid password|account lockout</match>
-    <description>Zimbra 認證失敗：$(user) 來源：$(srcip)</description>
+    <description>Zimbra authentication failed: $(user) from: $(srcip)</description>
     <group>authentication_failed,</group>
   </rule>
 
@@ -33,7 +33,7 @@
   <rule id="100842" level="10" frequency="12" timeframe="300">
     <if_matched_sid>100841</if_matched_sid>
     <same_source_ip />
-    <description>[WARN] Zimbra 認證失敗頻繁，疑似暴力破解：$(srcip)</description>
+    <description>[WARN] Repeated Zimbra authentication failures, possible brute force: $(srcip)</description>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -45,7 +45,7 @@
     <if_matched_sid>100841</if_matched_sid>
     <same_source_ip />
     <different_user />
-    <description>[HIGH] 同一來源嘗試多個不同帳號，疑似密碼噴灑：$(srcip)</description>
+    <description>[HIGH] One source tried many different accounts, possible password spraying: $(srcip)</description>
     <mitre>
       <id>T1110.003</id>
     </mitre>
@@ -56,7 +56,7 @@
   <rule id="100845" level="3">
     <if_sid>100840</if_sid>
     <action>^Auth$|^AdminAuth$</action>
-    <description>Zimbra 認證成功：$(user) 來源：$(srcip)</description>
+    <description>Zimbra authentication succeeded: $(user) from: $(srcip)</description>
     <group>authentication_success,</group>
   </rule>
 
@@ -66,7 +66,7 @@
     <if_group>authentication_success</if_group>
     <if_matched_group>authentication_failures</if_matched_group>
     <same_source_ip />
-    <description>[HIGH] Zimbra：同一來源先大量認證失敗、隨後認證成功，研判憑證爆破得手：$(user) 來源：$(srcip)</description>
+    <description>[HIGH] Zimbra: many failures then a success from the same source, the credentials appear to have been cracked: $(user) from: $(srcip)</description>
     <mitre>
       <id>T1110</id>
       <id>T1078</id>
@@ -78,19 +78,19 @@
   <rule id="100847" level="8">
     <if_sid>100840</if_sid>
     <action>^AdminAuth$</action>
-    <description>[WARN] Zimbra 管理員登入成功：$(user) 來源：$(srcip)</description>
+    <description>[WARN] Zimbra admin login succeeded: $(user) from: $(srcip)</description>
     <group>authentication_success,</group>
   </rule>
 
   <rule id="100848" level="0">
     <if_sid>100847</if_sid>
     <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
-    <description>管理員自內部網段登入（正常）</description>
+    <description>Admin logged in from an internal network (normal)</description>
   </rule>
 
   <rule id="100849" level="14">
     <if_sid>100847</if_sid>
-    <description>[HIGH] Zimbra 管理員自外部來源登入成功：$(user) 來源：$(srcip)</description>
+    <description>[HIGH] Zimbra admin login succeeded from an external source: $(user) from: $(srcip)</description>
     <mitre>
       <id>T1078.003</id>
     </mitre>
@@ -101,7 +101,7 @@
   <rule id="100850" level="13">
     <if_sid>100840</if_sid>
     <match>preauth</match>
-    <description>[HIGH] 偵測到 preauth 認證行為，若非 SSO 整合即代表 preauth key 可能外洩：$(user) 來源：$(srcip)</description>
+    <description>[HIGH] preauth authentication seen; unless this is an SSO integration the preauth key may have leaked: $(user) from: $(srcip)</description>
     <mitre>
       <id>T1550.001</id>
     </mitre>
@@ -112,7 +112,7 @@
   <rule id="100851" level="12">
     <if_sid>100840</if_sid>
     <match>TwoFactorAuth|DisableTwoFactorAuth|GenerateScratchCodes</match>
-    <description>[HIGH] 雙因素驗證設定遭異動或備援碼遭產生：$(user) 來源：$(srcip)</description>
+    <description>[HIGH] Two-factor settings changed or backup codes generated: $(user) from: $(srcip)</description>
     <mitre>
       <id>T1556.006</id>
     </mitre>
@@ -123,7 +123,7 @@
     <if_matched_sid>100845</if_matched_sid>
     <same_user />
     <different_srcip />
-    <description>[HIGH] 同一帳號短時間內自多個不同來源登入成功，疑似憑證外洩：$(user)</description>
+    <description>[HIGH] One account logged in successfully from several different sources in a short window, the credentials may have leaked: $(user)</description>
     <mitre>
       <id>T1078</id>
     </mitre>
