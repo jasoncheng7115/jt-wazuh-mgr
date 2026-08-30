@@ -4,6 +4,26 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.4 (2026-08-30)
+
+- **Packs now state what they need in order to work.** Several shipped rules
+  could never fire, and nothing said so: 906121 and 906122 need Sysmon event ID
+  15, 906142 and 100990 match against CDB lists that ship containing only a
+  placeholder line, and 906120 needs syscheck to watch `C:\Users`. A dashboard
+  showing those rules installed looked like coverage that did not exist. Each
+  manifest now marks these as prerequisites.
+
+- **Pack notes are shown in the reader's language.** The detail panel only ever
+  rendered `notes_zh`, so an English-speaking operator saw Chinese or nothing.
+  Every manifest now carries an English `notes` list as well, and the panel picks
+  whichever matches the current UI language.
+
+- **Zenarmor: parked-domain matches drop to level 0.** The category turned out to
+  be badly over-eager — one client produced roughly 2,900 alerts in a day, 88% of
+  the pack's entire volume, all for a CDN-fronted application backend whose apex
+  domain simply has no A record. Real DGA activity is already covered by
+  Zenarmor's own Botnet DGA Domains tag, so nothing is lost.
+
 ## v1.6.3 (2026-08-30)
 
 - **Rule descriptions are now English across every pack.** 128 of the 179 shipped

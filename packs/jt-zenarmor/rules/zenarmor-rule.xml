@@ -139,9 +139,15 @@
     <group>zenarmor,evasion,</group>
   </rule>
 
-  <!-- 寄放網域 (Parked Domains): 過期網域常被重新註冊用於釣魚, 但多數只是廢棄網域.
-       弱訊號, 僅作記錄, 不升級. -->
-  <rule id="130807" level="3">
+  <!-- 寄放網域 (Parked Domains): level 0, 記錄但不告警.
+       2026-08-30 實測: 這個分類的誤判率極高. Zenarmor 似乎以「apex 無 A 記錄」
+       判定寄放, 但 CDN 前置的 App 後端正好符合這個特徵 —— 實例是 rnote.com,
+       apex 無 A 記錄, 子網域 (t2/edith/gslb/apm-native/mediacloud) 全在
+       騰訊 EdgeOne 上正常服務. 單一用戶端一天就產生約 2,900 筆,
+       佔本規則集全部告警量的 88%, 全部是誤判.
+       真正的 DGA 訊號由 Zenarmor 自己的 "Botnet DGA Domains" 標籤涵蓋 (130801/130802),
+       不需要靠寄放網域推論. 明細請查 Zenarmor 自身的 Reporting. -->
+  <rule id="130807" level="0">
     <if_sid>130800</if_sid>
     <field name="security_tags" type="pcre2">(?i)Parked</field>
     <description>Zenarmor: connection to a parked domain - from: $(ip_src_saddr) to: $(dst_hostname) $(ip_dst_saddr)</description>
@@ -149,7 +155,7 @@
     <group>zenarmor,parked,</group>
   </rule>
 
-  <rule id="130808" level="3">
+  <rule id="130808" level="0">
     <if_sid>130800</if_sid>
     <field name="category" type="pcre2">(?i)Parked</field>
     <description>Zenarmor: connection to a parked domain - from: $(ip_src_saddr) to: $(dst_hostname) $(ip_dst_saddr)</description>

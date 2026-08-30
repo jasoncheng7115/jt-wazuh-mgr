@@ -2,7 +2,7 @@
   "id": "jt-zenarmor",
   "name": "Zenarmor (OPNsense) Detection Suite",
   "name_zh": "Zenarmor (OPNsense) 偵測套組",
-  "version": "1.2",
+  "version": "1.3",
   "summary": "Decoder and severity-graded rules for Zenarmor NGFW events forwarded from OPNsense, keyed on the threat tags and content categories the product actually emits.",
   "summary_zh": "OPNsense 上的 Zenarmor NGFW 事件解碼器與分級規則，依實際送出的威脅標籤與內容分類決定告警等級。",
   "rule_id_range": "130800-130899",
@@ -14,7 +14,8 @@
     "DNS 事件的 dst_hostname 是被查詢的網域（ip_dst_port=53），不是已建立連線的目的主機。",
     "本套組不設 catch-all，無威脅標籤與風險分類的連線落在 130800 (level 0) 不告警。",
     "Wazuh 4.14.7 實測：官方指南的 <prematch>zenarmor</prematch> 解碼器不會匹配，本套組改用 <program_name>zenarmor</program_name>。",
-    "同一父規則的子規則評估順序不可預期，故本套組刻意避免條件過寬的規則；短詞比對一律加 \\b 邊界（否則 Tor 會誤中 Torrent）。"
+    "同一父規則的子規則評估順序不可預期，故本套組刻意避免條件過寬的規則；短詞比對一律加 \\b 邊界（否則 Tor 會誤中 Torrent）。",
+    "Parked Domains 為 level 0 不告警：該分類誤判率極高（實測分類器似以 apex 無 A 記錄判定，而 CDN 前置的 App 後端正好符合）。真正的 DGA 由 Zenarmor 自己的 Botnet DGA Domains 標籤涵蓋。"
   ],
   "author": "Jason Tools",
   "license": "Apache-2.0",
@@ -32,7 +33,18 @@
       "type": "rule",
       "name": "zenarmor-rule.xml",
       "dest": "etc/rules/zenarmor-rule.xml",
-      "sha256": "64d463317eb422be23bb07c7806b78326aa615355fa004142f1efe82c8cea1fa"
+      "sha256": "df32a273679c1d679474e8c0c51ef6e4943c1d4da4650e4d67bdd882fc359efc"
     }
+  ],
+  "notes": [
+    "OPNsense must forward Zenarmor logs to the Wazuh manager by syslog, with the program name zenarmor.",
+    "Grading principle: an unblocked malicious connection is the most serious case, because the session was established; a blocked one is graded one step lower.",
+    "security_tags and category appear alternately in practice, so both are matched or events are missed. One connection can arrive several times (conn, tls and dns each send one), and the correlation thresholds already account for the duplicates.",
+    "is_blocked=1 usually means a browsing-policy block rather than a threat. Proxy and Parked Domains are weak signals and stay at level 5 or below.",
+    "On DNS events dst_hostname is the domain being looked up, not an established destination; ip_dst_port=53 marks these.",
+    "Parked Domains is recorded at level 0 and never alerts. The classifier appears to key on the apex having no A record, which also describes any CDN-fronted application backend, so its false-positive rate is very high. Real DGA activity is covered by Zenarmor's own Botnet DGA Domains tag instead.",
+    "The pack ships no catch-all rule; traffic with no threat tag and no risk category stays at rule 130800, level 0, and does not alert.",
+    "Verified on Wazuh 4.14.7: the <prematch>zenarmor</prematch> decoder from the vendor guide does not match. This pack uses <program_name>zenarmor</program_name>.",
+    "Sibling rules under one parent are evaluated in an unpredictable order, so this pack deliberately avoids broad conditions. Short tokens are anchored with \\b, otherwise Tor matches Torrent."
   ]
 }
