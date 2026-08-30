@@ -165,6 +165,9 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 | 編輯 ossec.conf | ![Edit Config](screenshots/10_node_editconfig.png) |
 | Agent 升級 | ![Upgrade 1](screenshots/11_upgrade_agent_1.png) ![Upgrade 2](screenshots/11.5_upgrade_agent_2.png) ![Upgrade 3](screenshots/12_upgrade_agent_3.png) |
 | Agent 詳細資訊 | ![Agent Detail](screenshots/13_agent_detail.png) |
+| 資產清單（跨所有 agent 搜尋） | ![Inventory](screenshots/14_inventory.png) |
+| 規則套件 | ![Rule Packs](screenshots/15_rule_packs.png) |
+| 規則套件詳細 | ![Rule Pack Detail](screenshots/16_rule_pack_detail.png) |
 
 ## 快速開始
 

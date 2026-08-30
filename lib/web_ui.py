@@ -6319,6 +6319,16 @@ HTML_TEMPLATE = '''
                 }).join('') + '</tr>').join('');
         }
 
+        // The manifests are bilingual. Pick the reader's language rather than always
+        // showing Chinese, which left English-speaking operators with a table they
+        // could not read.
+        function packLang(en, zh) {
+            try {
+                if (localStorage.getItem('jtwz_lang') === 'zh-TW' && zh) return zh;
+            } catch (e) { /* localStorage unavailable */ }
+            return en || zh || '';
+        }
+
         function exportInventoryCsv() {
             if (!inventoryRows.length) {
                 showToast('Nothing to export', 'warning');
@@ -6417,9 +6427,9 @@ HTML_TEMPLATE = '''
                         ? '<button class="btn btn-sm btn-danger" style="margin-left:6px;" onclick="uninstallPack(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-trash"/></svg>Remove</button>'
                         : '<button class="btn btn-sm btn-success" style="margin-left:6px;" onclick="installPack(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-download"/></svg>Install</button>');
                 return '<tr>' +
-                    '<td><strong>' + escapeHtml(p.name_zh || p.name) + '</strong><br>' +
+                    '<td><strong>' + escapeHtml(packLang(p.name, p.name_zh)) + '</strong><br>' +
                         '<span style="color:#888;font-size:11px;font-family:monospace;">' + escapeHtml(p.id) + '</span></td>' +
-                    '<td style="font-size:12px;color:#ccc;">' + escapeHtml(p.summary_zh || p.summary) + '</td>' +
+                    '<td style="font-size:12px;color:#ccc;">' + escapeHtml(packLang(p.summary, p.summary_zh)) + '</td>' +
                     '<td style="font-family:monospace;font-size:12px;">' + escapeHtml(p.rule_id_range) + '</td>' +
                     '<td>' + escapeHtml(p.version) + update + '</td>' +
                     '<td>' + badge + '</td>' +
@@ -6438,10 +6448,10 @@ HTML_TEMPLATE = '''
                 return;
             }
             const m = d.manifest || {};
-            document.getElementById('modalTitle').textContent = (m.name_zh || m.name || packId);
+            document.getElementById('modalTitle').textContent = (packLang(m.name, m.name_zh) || packId);
             let html =
                 '<div style="background:#0a0a15;padding:12px;border-radius:4px;margin-bottom:12px;">' +
-                '<div style="color:#ccc;margin-bottom:6px;">' + escapeHtml(m.summary_zh || m.summary || '') + '</div>' +
+                '<div style="color:#ccc;margin-bottom:6px;">' + escapeHtml(packLang(m.summary, m.summary_zh)) + '</div>' +
                 '<div style="color:#888;font-size:12px;">' +
                 'ID <code>' + escapeHtml(m.id || '') + '</code> &nbsp; version ' + escapeHtml(m.version || '') +
                 ' &nbsp; rules ' + d.rule_count + ' &nbsp; ID range ' + escapeHtml(m.rule_id_range || '') +

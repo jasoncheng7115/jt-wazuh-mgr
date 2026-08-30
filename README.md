@@ -165,6 +165,9 @@ See the full [CHANGELOG](CHANGELOG.md) for details.
 | Edit ossec.conf | ![Edit Config](screenshots/10_node_editconfig.png) |
 | Agent Upgrade | ![Upgrade 1](screenshots/11_upgrade_agent_1.png) ![Upgrade 2](screenshots/11.5_upgrade_agent_2.png) ![Upgrade 3](screenshots/12_upgrade_agent_3.png) |
 | Agent Detail | ![Agent Detail](screenshots/13_agent_detail.png) |
+| Inventory (search across every agent) | ![Inventory](screenshots/14_inventory.png) |
+| Rule Packs | ![Rule Packs](screenshots/15_rule_packs.png) |
+| Rule Pack Detail | ![Rule Pack Detail](screenshots/16_rule_pack_detail.png) |
 
 ## Quick Start
 

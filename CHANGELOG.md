@@ -4,6 +4,20 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.7 (2026-08-31)
+
+- **Pack names and descriptions follow the reader's language.** The Rule Packs
+  table and its detail dialog rendered `name_zh` and `summary_zh`
+  unconditionally, so an English-speaking operator opened the tab and found the
+  entire pack catalogue written in Chinese. Both now select by the current UI
+  language, matching the fix already applied to the pack notes. Found by looking
+  at the screenshots rather than the code.
+
+- Screenshots added for the Inventory and Rule Packs tabs, which had shipped
+  undocumented since 1.5.0 and 1.6.0. They are captured against a mocked Wazuh
+  API rather than a live one, so the published images carry demonstration
+  hostnames and addresses instead of anything real.
+
 ## v1.6.6 (2026-08-30)
 
 - **Zimbra baseline rebuilt from live servers.** `zimbra-webfiles` is the list
