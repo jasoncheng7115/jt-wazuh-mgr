@@ -50,7 +50,7 @@
     <if_sid>550,553,554</if_sid>
     <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm|home/[^/]+|root|Users/[^/]+)/</field>
     <options>no_log</options>
-    <description>Linux/macOS 使用者可寫區域檔案事件（基礎規則）</description>
+    <description>File event in a user-writable area on Linux or macOS (base rule)</description>
   </rule>
 
 
@@ -69,7 +69,7 @@
     <if_sid>906200</if_sid>
     <field name="changed_fields" type="pcre2">permission</field>
     <field name="perm" type="pcre2">x</field>
-    <description>[WARN] 可攜式程式：使用者區域檔案被賦予執行權限 ── $(file) 權限：$(perm) 擁有者：$(uname)</description>
+    <description>[WARN] A file in a user area was made executable - $(file) perm: $(perm) owner: $(uname)</description>
     <mitre>
       <id>T1222.002</id>
       <id>T1204.002</id>
@@ -94,7 +94,7 @@
     <if_sid>550,554</if_sid>
     <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm)/</field>
     <field name="perm" type="pcre2">x</field>
-    <description>[WARN] 可攜式程式：暫存目錄出現可執行檔 ── $(file) 權限：$(perm)</description>
+    <description>[WARN] Executable appeared in a temporary directory - $(file) perm: $(perm)</description>
     <mitre>
       <id>T1204.002</id>
       <id>T1105</id>
@@ -106,7 +106,7 @@
   <rule id="906203" level="12">
     <if_sid>906202</if_sid>
     <field name="file" type="pcre2">^/dev/shm/</field>
-    <description>[HIGH] 可攜式程式：記憶體檔案系統出現可執行檔，疑似規避鑑識 ── $(file)</description>
+    <description>[HIGH] Executable appeared on a memory filesystem, suggesting forensic evasion - $(file)</description>
     <mitre>
       <id>T1204.002</id>
       <id>T1564</id>
@@ -126,7 +126,7 @@
   <rule id="906204" level="8">
     <if_sid>906200</if_sid>
     <field name="file" type="pcre2">(?i)\.(AppImage|run|bin|jar)$</field>
-    <description>[WARN] 可攜式程式：使用者目錄出現免安裝格式檔案 ── $(file)</description>
+    <description>[WARN] Portable-format file appeared in a user directory - $(file)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -138,7 +138,7 @@
   <rule id="906205" level="6">
     <if_sid>906200</if_sid>
     <field name="file" type="pcre2">(?i)^/Users/[^/]+/(Downloads|Desktop|Documents)/.*\.(dmg|pkg)$</field>
-    <description>可攜式程式：macOS 使用者目錄出現安裝映像 ── $(file)</description>
+    <description>Disk image appeared in a macOS user directory - $(file)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -148,7 +148,7 @@
   <rule id="906206" level="8">
     <if_sid>906200</if_sid>
     <field name="file" type="pcre2">(?i)^/Users/[^/]+/(Downloads|Desktop|Documents|Public)/.*\.app/Contents/MacOS/</field>
-    <description>[WARN] 可攜式程式：macOS 使用者目錄出現應用程式套件 ── $(file)</description>
+    <description>[WARN] Application bundle appeared in a macOS user directory - $(file)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -172,7 +172,7 @@
   <rule id="906210" level="10">
     <if_sid>80700</if_sid>
     <field name="audit.key">jt_portable_exec</field>
-    <description>[WARN] 可攜式程式：自使用者可寫區域執行程式 ── $(audit.exe) 使用者：$(audit.uid)</description>
+    <description>[WARN] Program executed from a user-writable area - $(audit.exe) uid: $(audit.uid)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -182,7 +182,7 @@
   <rule id="906211" level="12">
     <if_sid>80700</if_sid>
     <field name="audit.key">jt_portable_tmpexec</field>
-    <description>[HIGH] 可攜式程式：自暫存目錄執行程式 ── $(audit.exe) 使用者：$(audit.uid)</description>
+    <description>[HIGH] Program executed from a temporary directory - $(audit.exe) uid: $(audit.uid)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -202,7 +202,7 @@
   <rule id="906220" level="0">
     <if_sid>906201,906202,906204</if_sid>
     <field name="file" type="pcre2">^/(tmp|var/tmp)/(apt|dpkg|rpm|yum|dnf|snapd?|flatpak|ansible|chef|puppet|salt)[-_.]</field>
-    <description>套件／設定管理工具的暫存檔（正常）</description>
+    <description>Temporary file from a package or configuration manager (normal)</description>
   </rule>
 
   <!-- 憑證、金鑰、設定檔即使帶 x 權限也不是可攜式程式
@@ -210,14 +210,14 @@
   <rule id="906221" level="0">
     <if_sid>906201,906202,906204</if_sid>
     <field name="file" type="pcre2">(?i)\.(pem|key|crt|cer|csr|conf|cfg|ya?ml|json|xml|log|txt|md)$</field>
-    <description>憑證／設定／文件類檔案（非可攜式程式）</description>
+    <description>Certificate, configuration or document file, not a portable executable</description>
   </rule>
 
   <!-- Wazuh 自身與常見監控代理的暫存檔 -->
   <rule id="906222" level="0">
     <if_sid>906201,906202,906204</if_sid>
     <field name="file" type="pcre2">^/(tmp|var/tmp)/(ossec|wazuh|zabbix|nagios|nrpe|telegraf|datadog|newrelic)</field>
-    <description>監控代理的暫存檔（正常）</description>
+    <description>Temporary file from a monitoring agent (normal)</description>
   </rule>
 
   <!--
@@ -226,7 +226,7 @@
     <rule id="906223" level="0">
       <if_sid>906201,906202,906204</if_sid>
       <field name="file" type="pcre2">^/tmp/mycompany-deploy-</field>
-      <description>排除：公司部署工具（變更單 CR-xxxx）</description>
+      <description>Excluded: corporate deployment tool, change request CR-xxxx</description>
     </rule>
   -->
 

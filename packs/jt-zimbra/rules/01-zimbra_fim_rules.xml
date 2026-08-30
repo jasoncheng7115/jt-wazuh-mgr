@@ -22,14 +22,14 @@
   <rule id="100800" level="0">
     <if_sid>550,553,554</if_sid>
     <field name="file" type="pcre2">^/opt/zimbra/(jetty_base|jetty)/webapps/|^/opt/zimbra/lib/ext/</field>
-    <description>Zimbra Web／擴充目錄檔案異動（基礎規則）</description>
+    <description>Zimbra web or extension directory file change (base rule)</description>
   </rule>
 
   <!-- 原廠檔案：升級時的正常行為，降噪 -->
   <rule id="100801" level="0">
     <if_sid>100800</if_sid>
     <list field="file" lookup="match_key">etc/lists/zimbra-webfiles</list>
-    <description>Zimbra 原廠檔案異動（升級時之正常行為）</description>
+    <description>Zimbra stock file changed, normal during an upgrade</description>
   </rule>
 
   <!-- 核心規則：非原廠可執行檔案 = 高度疑似 Web Shell -->
@@ -37,7 +37,7 @@
     <if_sid>100800</if_sid>
     <field name="file" type="pcre2">\.(jsp|jspx|class|war|jar)$</field>
     <list field="file" lookup="not_match_key">etc/lists/zimbra-webfiles</list>
-    <description>[HIGH] Zimbra Web 目錄出現非原廠可執行檔案，高度疑似 Web Shell：$(file)</description>
+    <description>[HIGH] Non-stock executable file in the Zimbra web directory, strongly suggests a web shell: $(file)</description>
     <mitre>
       <id>T1505.003</id>
     </mitre>
@@ -48,7 +48,7 @@
   <rule id="100803" level="15">
     <if_sid>100802</if_sid>
     <field name="process_name" type="pcre2">.+</field>
-    <description>[CRITICAL] Web Shell 植入：$(file) 寫入程序：$(process_name) 使用者：$(effective_name)</description>
+    <description>[CRITICAL] Web shell dropped: $(file) written by: $(process_name) user: $(effective_name)</description>
     <mitre>
       <id>T1505.003</id>
     </mitre>
@@ -60,7 +60,7 @@
     <if_sid>100800</if_sid>
     <field name="file" type="pcre2">^/opt/zimbra/lib/ext/</field>
     <list field="file" lookup="not_match_key">etc/lists/zimbra-webfiles</list>
-    <description>[CRITICAL] Zimbra Java 擴充目錄出現非原廠模組，可挾持認證流程竊取明文密碼：$(file)</description>
+    <description>[CRITICAL] Non-stock module in the Zimbra Java extension directory, can hijack authentication and steal cleartext passwords: $(file)</description>
     <mitre>
       <id>T1505</id>
     </mitre>
@@ -71,7 +71,7 @@
   <rule id="100807" level="12">
     <if_sid>550,553,554</if_sid>
     <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm)/.*\.(jsp|jspx|class|jar|war|sh|py|pl|elf|bin)$</field>
-    <description>[HIGH] 暫存目錄出現可執行檔案，疑似攻擊工具：$(file) 程序：$(process_name)</description>
+    <description>[HIGH] Executable in a temporary directory, possible attacker tooling: $(file) process: $(process_name)</description>
     <mitre>
       <id>T1105</id>
     </mitre>
@@ -84,7 +84,7 @@
     <field name="file" type="pcre2">^/opt/zimbra/(jetty_base|jetty)/webapps/</field>
     <list field="file" lookup="match_key">etc/lists/zimbra-webfiles</list>
     <field name="changed_fields" type="pcre2">md5|sha1|sha256</field>
-    <description>[HIGH] Zimbra 原廠檔案內容遭竄改：$(file) 程序：$(process_name)</description>
+    <description>[HIGH] Zimbra stock file contents were tampered with: $(file) process: $(process_name)</description>
     <mitre>
       <id>T1505.003</id>
     </mitre>

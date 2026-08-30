@@ -33,7 +33,7 @@
   <!-- 基礎：mailbox.log 的 SOAP 事件（level 0，僅作為錨點） -->
   <rule id="100970" level="0">
     <decoded_as>zimbra-mailbox-soap</decoded_as>
-    <description>Zimbra mailbox SOAP 呼叫（基礎規則）</description>
+    <description>Zimbra mailbox SOAP call (base rule)</description>
   </rule>
 
   <!-- 計數用：真正在「取內容」的 SOAP 操作
@@ -43,7 +43,7 @@
     <if_sid>100970</if_sid>
     <action type="pcre2">^(SearchRequest|SearchConvRequest|GetMsgRequest|GetConvRequest|ExportContactsRequest|GetContactsRequest|SearchGalRequest)$</action>
     <options>no_log</options>
-    <description>Zimbra 內容讀取類 SOAP 操作（供關聯計數）：$(action) by $(dstuser)</description>
+    <description>Zimbra content-read SOAP operation, counted for correlation: $(action) by $(dstuser)</description>
   </rule>
 
   <!-- ★ 治本告警：同一「帳號」短時間大量讀取內容
@@ -51,7 +51,7 @@
   <rule id="100972" level="12" frequency="30" timeframe="300">
     <if_matched_sid>100971</if_matched_sid>
     <same_user />
-    <description>[HIGH] Zimbra 帳號短時間大量讀取信件內容，疑似自動化撈取：$(dstuser) 來源：$(srcip)</description>
+    <description>[HIGH] Zimbra account read a large volume of message content in a short window, suggesting automated harvesting: $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1114</id>
     </mitre>
@@ -62,7 +62,7 @@
   <rule id="100973" level="14" frequency="90" timeframe="300">
     <if_matched_sid>100971</if_matched_sid>
     <same_user />
-    <description>[HIGH] Zimbra 帳號極大量讀取信件內容，高度疑似資料竊取：$(dstuser) 來源：$(srcip)</description>
+    <description>[HIGH] Zimbra account read an extreme volume of message content, strongly suggesting data theft: $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1114</id>
     </mitre>
@@ -74,7 +74,7 @@
   <rule id="100974" level="0">
     <if_sid>100972,100973</if_sid>
     <user type="pcre2">^checkstatus@</user>
-    <description>監控探針帳號的 SOAP 呼叫（排除）</description>
+    <description>SOAP call from a monitoring probe account (excluded)</description>
   </rule>
 
 </group>

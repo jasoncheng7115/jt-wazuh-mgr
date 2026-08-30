@@ -21,7 +21,7 @@
   <rule id="100880" level="0">
     <decoded_as>json</decoded_as>
     <field name="zimbra_audit.event" type="pcre2">.+</field>
-    <description>Zimbra 狀態稽核事件（基礎規則）</description>
+    <description>Zimbra state audit event (base rule)</description>
   </rule>
 
   <!-- ── 帳號與郵件流向 ── -->
@@ -29,7 +29,7 @@
   <rule id="100881" level="13">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^forwarding_added$</field>
-    <description>[HIGH] Zimbra 帳號新增郵件轉寄位址：$(zimbra_audit.object) → $(zimbra_audit.value)</description>
+    <description>[HIGH] Mail forwarding address added to a Zimbra account: $(zimbra_audit.object) -> $(zimbra_audit.value)</description>
     <mitre>
       <id>T1114.003</id>
     </mitre>
@@ -39,7 +39,7 @@
   <rule id="100882" level="14">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^nolocaldelivery_added$</field>
-    <description>[HIGH] 帳號停用本機投遞，搭配轉寄即為靜默竊信：$(zimbra_audit.object)</description>
+    <description>[HIGH] Account disabled local delivery; combined with forwarding this is silent mail theft: $(zimbra_audit.object)</description>
     <mitre>
       <id>T1114.003</id>
     </mitre>
@@ -49,7 +49,7 @@
   <rule id="100883" level="12">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^sieve_added$|^sieve_removed$</field>
-    <description>[HIGH] Zimbra Sieve 過濾規則遭異動：$(zimbra_audit.object)</description>
+    <description>[HIGH] Zimbra Sieve filter rules changed: $(zimbra_audit.object)</description>
     <mitre>
       <id>T1564.008</id>
     </mitre>
@@ -58,7 +58,7 @@
   <rule id="100884" level="14">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^sieve_dangerous_action$</field>
-    <description>[HIGH] Sieve 規則含高風險動作（redirect／discard／丟入垃圾桶）：$(zimbra_audit.value)</description>
+    <description>[HIGH] Sieve rule contains a high-risk action, redirect, discard or move to trash: $(zimbra_audit.value)</description>
     <mitre>
       <id>T1564.008</id>
     </mitre>
@@ -68,7 +68,7 @@
   <rule id="100885" level="14">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^admins_added$</field>
-    <description>[HIGH] 新增 Zimbra 管理員或委派管理員帳號：$(zimbra_audit.object)</description>
+    <description>[HIGH] New Zimbra admin or delegated admin account created: $(zimbra_audit.object)</description>
     <mitre>
       <id>T1098</id>
     </mitre>
@@ -78,7 +78,7 @@
   <rule id="100886" level="12">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^delegation_added$</field>
-    <description>[HIGH] 新增帳號委派授權（zimbraACE）：$(zimbra_audit.object) → $(zimbra_audit.value)</description>
+    <description>[HIGH] Account delegation granted via zimbraACE: $(zimbra_audit.object) -> $(zimbra_audit.value)</description>
     <mitre>
       <id>T1098.002</id>
     </mitre>
@@ -88,7 +88,7 @@
   <rule id="100887" level="8">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^accounts_added$|^accounts_removed$</field>
-    <description>[WARN] Zimbra 帳號清單異動：$(zimbra_audit.object)（$(zimbra_audit.value)）</description>
+    <description>[WARN] Zimbra account list changed: $(zimbra_audit.object) ($(zimbra_audit.value))</description>
     <group>persistence,</group>
   </rule>
 
@@ -97,7 +97,7 @@
   <rule id="100888" level="13">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^zimlets_added$</field>
-    <description>[HIGH] 部署新的 Zimlet，可於所有使用者瀏覽器執行 JavaScript：$(zimbra_audit.object)</description>
+    <description>[HIGH] New Zimlet deployed, it can run JavaScript in every user browser: $(zimbra_audit.object)</description>
     <mitre>
       <id>T1505</id>
     </mitre>
@@ -107,7 +107,7 @@
   <rule id="100889" level="15">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^libext_added$</field>
-    <description>[CRITICAL] Zimbra Java 擴充模組新增或雜湊變更，可竊取全體使用者明文密碼：$(zimbra_audit.object)</description>
+    <description>[CRITICAL] Zimbra Java extension module added or its hash changed, it can steal every user cleartext password: $(zimbra_audit.object)</description>
     <mitre>
       <id>T1505</id>
     </mitre>
@@ -117,7 +117,7 @@
   <rule id="100890" level="15">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^javaagent_detected$</field>
-    <description>[CRITICAL] mailboxd 啟動參數含 -javaagent，疑似記憶體馬持久化：$(zimbra_audit.value)</description>
+    <description>[CRITICAL] mailboxd started with -javaagent, suggesting in-memory implant persistence: $(zimbra_audit.value)</description>
     <mitre>
       <id>T1055.001</id>
     </mitre>
@@ -129,26 +129,26 @@
   <rule id="100891" level="7">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^version_added$</field>
-    <description>[WARN] Zimbra 版本已變更，請重建 FIM 白名單、重新套用 nginx template 並重新鎖定目錄：$(zimbra_audit.value)</description>
+    <description>[WARN] Zimbra version changed; rebuild the FIM baseline, reapply the nginx template and re-lock the directories: $(zimbra_audit.value)</description>
   </rule>
 
   <rule id="100892" level="12">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^immutable_missing$</field>
-    <description>[HIGH] Zimbra public 目錄已非不可變狀態，預防層防線失效：$(zimbra_audit.object)</description>
+    <description>[HIGH] The Zimbra public directory is no longer immutable, the preventive layer is down: $(zimbra_audit.object)</description>
   </rule>
 
   <rule id="100893" level="10">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^audit_error$</field>
-    <description>[WARN] Zimbra 狀態稽核腳本執行異常：$(zimbra_audit.value)</description>
+    <description>[WARN] Zimbra state audit script failed: $(zimbra_audit.value)</description>
   </rule>
 
   <!-- 心跳：level 0，供 Graylog 斷流偵測使用 -->
   <rule id="100894" level="0">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^heartbeat$|^jvm_heartbeat$</field>
-    <description>Zimbra 狀態稽核心跳</description>
+    <description>Zimbra state audit heartbeat</description>
   </rule>
 
   <!-- ── 記憶體馬（JVM 類別比對）── -->
@@ -156,7 +156,7 @@
   <rule id="100900" level="13">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^jvm_unknown_class$</field>
-    <description>[HIGH] mailboxd JVM 載入非預期類別，疑似記憶體馬：$(zimbra_audit.object)</description>
+    <description>[HIGH] mailboxd JVM loaded an unexpected class, suggesting an in-memory implant: $(zimbra_audit.object)</description>
     <mitre>
       <id>T1055</id>
     </mitre>
@@ -165,7 +165,7 @@
 
   <rule id="100901" level="15" frequency="3" timeframe="600">
     <if_matched_sid>100900</if_matched_sid>
-    <description>[CRITICAL] mailboxd JVM 短時間載入多個非預期類別，高度研判為記憶體馬植入</description>
+    <description>[CRITICAL] mailboxd JVM loaded several unexpected classes in a short window, strongly suggesting an in-memory implant</description>
     <mitre>
       <id>T1055</id>
     </mitre>
@@ -175,7 +175,7 @@
   <rule id="100902" level="10">
     <if_sid>100880</if_sid>
     <field name="zimbra_audit.event">^jvm_error$</field>
-    <description>[WARN] JVM 稽核異常，記憶體馬偵測可能已失效：$(zimbra_audit.value)</description>
+    <description>[WARN] JVM audit failed, in-memory implant detection may no longer be working: $(zimbra_audit.value)</description>
   </rule>
 
 </group>

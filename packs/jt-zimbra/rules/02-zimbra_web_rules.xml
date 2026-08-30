@@ -14,14 +14,14 @@
   <!-- 基礎規則 -->
   <rule id="100820" level="0">
     <decoded_as>zimbra-proxy-access</decoded_as>
-    <description>Zimbra Proxy 存取紀錄（基礎規則）</description>
+    <description>Zimbra proxy access log (base rule)</description>
   </rule>
 
   <!-- 第一段：所有 /public/ 下的 JSP 存取 -->
   <rule id="100821" level="10">
     <if_sid>100820</if_sid>
     <url type="pcre2">/public/[^?\s]*\.jspx?</url>
-    <description>[WARN] 存取 /public/ 下之 JSP：$(url) 來源：$(srcip)</description>
+    <description>[WARN] JSP under /public/ accessed: $(url) from: $(srcip)</description>
     <mitre>
       <id>T1505.003</id>
     </mitre>
@@ -31,14 +31,14 @@
   <rule id="100822" level="0">
     <if_sid>100821</if_sid>
     <url type="pcre2">/public/(Boot|Offline|PasswordRecovery|Resources|TwoFactorSetup|addressVerification|error|extuserprov|insecureResponse|launchNewWindow|launchZCS|loadImgData|login|modern|pre-cache|secureRequest|setResourceBundle)\.jsp|/public/jsp/[A-Za-z0-9_]+\.jsp</url>
-    <description>Zimbra 原廠 JSP 正常存取</description>
+    <description>Normal access to a Zimbra stock JSP</description>
   </rule>
 
   <!-- 非原廠 JSP 回應成功 = 後門確實可用 -->
   <rule id="100823" level="14">
     <if_sid>100821</if_sid>
     <id>^200$|^302$</id>
-    <description>[HIGH] 非原廠 JSP 回應成功，Web Shell 已可用：$(url) 來源：$(srcip)</description>
+    <description>[HIGH] Non-stock JSP returned success, the web shell is live: $(url) from: $(srcip)</description>
     <mitre>
       <id>T1505.003</id>
     </mitre>
@@ -49,7 +49,7 @@
   <rule id="100824" level="15">
     <if_sid>100823</if_sid>
     <protocol>^POST$</protocol>
-    <description>[CRITICAL] 偵測到 Web Shell 互動操作（POST）：$(url) 來源：$(srcip)</description>
+    <description>[CRITICAL] Web shell interaction detected via POST: $(url) from: $(srcip)</description>
     <mitre>
       <id>T1505.003</id>
     </mitre>
@@ -60,7 +60,7 @@
   <rule id="100825" level="15" frequency="4" timeframe="120">
     <if_matched_sid>100824</if_matched_sid>
     <same_source_ip />
-    <description>[CRITICAL] Web Shell 持續互動操作中，攻擊者正在線上：$(srcip)</description>
+    <description>[CRITICAL] Web shell interaction ongoing, the attacker is active right now: $(srcip)</description>
     <mitre>
       <id>T1505.003</id>
     </mitre>
@@ -72,7 +72,7 @@
     <if_matched_sid>100821</if_matched_sid>
     <same_source_ip />
     <same_srcport />
-    <description>[HIGH] 同一來源埠短時間多次請求 JSP，疑似 Web Shell 管理工具長連線：$(srcip):$(srcport)</description>
+    <description>[HIGH] Repeated JSP requests from one source port, suggesting a web shell manager holding a connection: $(srcip):$(srcport)</description>
     <group>webshell,</group>
   </rule>
 
@@ -80,7 +80,7 @@
   <rule id="100827" level="12">
     <if_sid>100820</if_sid>
     <url type="pcre2">/zimbraAdmin|/service/admin|:7071</url>
-    <description>[HIGH] 管理介面遭存取：$(url) 來源：$(srcip)</description>
+    <description>[HIGH] Admin interface accessed: $(url) from: $(srcip)</description>
     <mitre>
       <id>T1078.003</id>
     </mitre>
@@ -90,7 +90,7 @@
   <rule id="100828" level="0">
     <if_sid>100827</if_sid>
     <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
-    <description>管理介面自內部網段存取（正常）</description>
+    <description>Admin interface accessed from an internal network (normal)</description>
   </rule>
 
   <!-- User-Agent 與行為矛盾：偽造 UA 的典型破綻
@@ -98,7 +98,7 @@
   <rule id="100829" level="15">
     <if_sid>100824</if_sid>
     <field name="user_agent" type="pcre2">(?i)(iphone|android|ipad|mobile)</field>
-    <description>[CRITICAL] 行動裝置 UA 對 JSP 發出 POST，UA 與行為矛盾（疑似偽造）：$(srcip) UA：$(user_agent)</description>
+    <description>[CRITICAL] Mobile user agent issued a POST to a JSP, the user agent contradicts the behaviour and is likely forged: $(srcip) UA: $(user_agent)</description>
     <mitre>
       <id>T1036</id>
     </mitre>
@@ -109,7 +109,7 @@
   <rule id="100830" level="15">
     <if_sid>100824</if_sid>
     <field name="referer">^-$</field>
-    <description>[CRITICAL] 無 Referer 的 JSP POST，疑似工具直接呼叫：$(url) 來源：$(srcip)</description>
+    <description>[CRITICAL] JSP POST with no Referer, suggesting a tool calling it directly: $(url) from: $(srcip)</description>
     <group>webshell,</group>
   </rule>
 
