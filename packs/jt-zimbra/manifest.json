@@ -10,7 +10,9 @@
     "zimbra-webfiles 是原廠 JSP 基線，安裝後務必依實際版本重新產生，否則會大量誤報。",
     "產生方式：find /opt/zimbra/jetty_base/webapps -name '*.jsp*'，每行格式 路徑:legit。",
     "zimbra-internal-networks 用於區分內外部來源，請依實際網段調整。",
-    "agent 端 syscheck 需以 whodata=yes 監控 Zimbra 目錄才能取得寫入程序資訊。"
+    "agent 端 syscheck 需以 whodata=yes 監控 Zimbra 目錄才能取得寫入程序資訊。",
+    "前提條件 - 規則 100990 比對 zimbra-webshell-ioc，該清單隨附時只有一行佔位符。未填入真實 Web Shell SHA256 前，這條 level 15 規則永遠不會觸發。",
+    "原廠基線未含 WEB-INF/lib/*.jar 與 lib/ext，這是 100803 / 100806 誤報的主要來源；重建基線可從源頭解決，優於用抑制規則掩蓋。"
   ],
   "author": "Jason Tools",
   "license": "Apache-2.0",
@@ -81,5 +83,13 @@
       "declare": true,
       "sha256": "e751a6d5b95f6602d1a774ca1b79fd64f1a208815966f38bcc6ec654a29c7977"
     }
+  ],
+  "notes": [
+    "zimbra-webfiles is the stock JSP baseline. Regenerate it for your own Zimbra version after installing, or it will produce a lot of false positives.",
+    "Generate it with: find /opt/zimbra/jetty_base/webapps -name '*.jsp*', one path per line in the form path:legit.",
+    "zimbra-internal-networks separates internal from external sources; adjust it to your own subnets.",
+    "The agent's syscheck must monitor the Zimbra directories with whodata=yes for the writing process to be recorded.",
+    "PREREQUISITE - rule 100990 matches against zimbra-webshell-ioc, which ships containing only a placeholder line. Until you add real web shell SHA256 hashes this level 15 rule can never fire.",
+    "The stock baseline does not include WEB-INF/lib/*.jar or lib/ext. Those paths are the usual source of false positives on rules 100803 and 100806; regenerating the baseline fixes it at the source, which is better than suppressing the alerts."
   ]
 }

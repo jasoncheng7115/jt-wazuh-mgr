@@ -6446,10 +6446,18 @@ HTML_TEMPLATE = '''
                 'ID <code>' + escapeHtml(m.id || '') + '</code> &nbsp; version ' + escapeHtml(m.version || '') +
                 ' &nbsp; rules ' + d.rule_count + ' &nbsp; ID range ' + escapeHtml(m.rule_id_range || '') +
                 '<br>' + escapeHtml(m.author || '') + ' &nbsp; ' + escapeHtml(m.license || '') + '</div></div>';
-            if (m.notes_zh && m.notes_zh.length) {
+            // manifests carry both notes (English) and notes_zh; show the reader's own language
+            let packNotes = m.notes || [];
+            try {
+                if (localStorage.getItem('jtwz_lang') === 'zh-TW' && m.notes_zh && m.notes_zh.length) {
+                    packNotes = m.notes_zh;
+                }
+            } catch (e) { /* localStorage unavailable */ }
+            if (!packNotes.length) packNotes = m.notes_zh || [];
+            if (packNotes.length) {
                 html += '<div style="margin-bottom:12px;"><div style="color:#888;font-size:12px;margin-bottom:4px;">Notes</div>' +
                     '<ul style="margin:0 0 0 18px;font-size:12px;color:#ccc;">' +
-                    m.notes_zh.map(n => '<li style="margin-bottom:3px;">' + escapeHtml(n) + '</li>').join('') + '</ul></div>';
+                    packNotes.map(n => '<li style="margin-bottom:3px;">' + escapeHtml(n) + '</li>').join('') + '</ul></div>';
             }
             if (d.conflicts && d.conflicts.length) {
                 html += '<div class="alert alert-error">Rule ID conflict with rules already installed: ' +

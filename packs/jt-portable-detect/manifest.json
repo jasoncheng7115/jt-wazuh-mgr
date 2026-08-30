@@ -10,7 +10,9 @@
     "Windows 端偵測使用者目錄、非系統碟、Temp 目錄的執行，以及 AppLocker 稽核事件。",
     "Linux/macOS 端偵測權限變更為可執行、暫存目錄落地、AppImage/run/bin 等格式。",
     "已核准的工具請加入 jt-approved-portable 清單（格式 key:approved），加入後降為記錄等級。",
-    "Windows 端若要涵蓋『使用者目錄新增執行檔』，agent 的 syscheck 需監控 C:\\Users。"
+    "Windows 端若要涵蓋『使用者目錄新增執行檔』，agent 的 syscheck 需監控 C:\\Users。",
+    "前提條件 - 規則 906121 / 906122 需要 Sysmon 事件 ID 15（FileCreateStreamHash）。Sysmon 設定若未產生 EID 15，這兩條規則永遠不會觸發。",
+    "前提條件 - 規則 906142 比對 jt-approved-portable-hash，該清單隨附時只有一行佔位符。未填入真實 SHA256 前，此規則無法比對到任何東西。"
   ],
   "author": "Jason Tools",
   "license": "Apache-2.0",
@@ -44,5 +46,13 @@
       "declare": true,
       "sha256": "3f485c8954c809b68aa603a37ccaf84aed2396a5ec62e58efbb2c126dbf5a38d"
     }
+  ],
+  "notes": [
+    "On Windows this detects execution from user directories, non-system drives and the Temp directory, plus AppLocker audit events.",
+    "On Linux and macOS it detects files being made executable, executables landing in temporary directories, and AppImage, .run and .bin formats.",
+    "Add approved tools to the jt-approved-portable list, in key:approved form; matches are then demoted to logging level.",
+    "PREREQUISITE - rule 906120 needs the agent's syscheck to monitor C:\\Users. Without it the rule can never fire.",
+    "PREREQUISITE - rules 906121 and 906122 need Sysmon event ID 15 (FileCreateStreamHash). A Sysmon config that does not emit EID 15 leaves both rules permanently inert.",
+    "PREREQUISITE - rule 906142 matches against jt-approved-portable-hash, which ships containing only a placeholder line. Until you add real SHA256 entries the rule cannot match anything."
   ]
 }
