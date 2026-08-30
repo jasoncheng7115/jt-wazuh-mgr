@@ -1,0 +1,35 @@
+{
+  "id": "jt-zenarmor",
+  "name": "Zenarmor (OPNsense) Detection Suite",
+  "name_zh": "Zenarmor (OPNsense) 偵測套組",
+  "version": "1.0",
+  "summary": "Decoder and severity-graded rules for Zenarmor NGFW events forwarded from OPNsense via syslog.",
+  "summary_zh": "OPNsense 上的 Zenarmor NGFW 事件解碼器與分級規則，依威脅分類與是否阻擋決定告警等級。",
+  "rule_id_range": "130800-130899",
+  "notes_zh": [
+    "OPNsense 需將 Zenarmor 記錄以 syslog 轉送至 Wazuh Manager，程式名稱須為 zenarmor。",
+    "分級原則：未被阻擋的惡意連線最嚴重（連線已成立），已阻擋的降一級。",
+    "本套組不設 catch-all 規則，無安全分類的一般連線落在 130800 (level 0) 不告警；政策阻擋記錄請由 Zenarmor 自身 Reporting 查看。",
+    "Wazuh 4.14.7 實測：官方指南的 <prematch>zenarmor</prematch> 解碼器不會匹配，本套組改用 <program_name>zenarmor</program_name>。",
+    "Wazuh 對同一父規則的子規則評估順序不可預期，故本套組刻意避免條件過寬的規則。"
+  ],
+  "author": "Jason Tools",
+  "license": "Apache-2.0",
+  "requires": {
+    "wazuh": ">=4.8"
+  },
+  "files": [
+    {
+      "type": "decoder",
+      "name": "zenarmor-decoder.xml",
+      "dest": "etc/decoders/zenarmor-decoder.xml",
+      "sha256": "d6f4682b8d63db478b40c3f8d0c02e39920adcbb389471aaed60936fc0061066"
+    },
+    {
+      "type": "rule",
+      "name": "zenarmor-rule.xml",
+      "dest": "etc/rules/zenarmor-rule.xml",
+      "sha256": "3b8e3d0b06aa8618499e35237852d1450a9b8f8d9f96e3a300a3e8485d761e1d"
+    }
+  ]
+}

@@ -44,6 +44,23 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 
 ## ✨ What's New
 
+### 1.6.1
+
+- **New rule pack: Zenarmor (OPNsense)** — decoder plus severity-graded rules for Zenarmor NGFW events, where an *unblocked* malicious connection outranks a blocked one. No catch-all rule, so ordinary traffic never floods the console.
+- Packs can now ship **decoders** alongside rules and CDB lists.
+
+### 1.6.0
+
+- **New Rule Packs tab**: a catalogue of installable detection rule series, run as a package manager — conflict detection, backup, ruleset validation and **full rollback on any failure**. Removal restores what it replaced and refuses to discard files you edited.
+
+### 1.5.2
+
+- **Node config drift detection**: `ossec.conf` is exactly what a Wazuh cluster does *not* sync — this compares it across nodes and shows you the difference.
+
+### 1.5.1
+
+- **Cluster-wide ruleset reload**: pushing rules to a worker is not enough, because the cluster does not reload the worker's analysisd. This reloads every node.
+
 ### 1.5.0
 
 - **New Inventory tab**: search packages, open ports, processes, services, users, hotfixes and more *across every agent at once* — the reverse of the Dashboard's one-agent-at-a-time view.
@@ -116,6 +133,13 @@ See the full [CHANGELOG](CHANGELOG.md) for details.
 - **Browse all rules** in a sortable, searchable, paginated table; filter by level range, file, and type (Custom/Built-in)
 - **Rule hierarchy visualization** as a collapsible tree (parent/child via `if_sid`, `if_matched_sid`)
 - Click any Rule ID to jump to its hierarchy view; expand to view full rule XML with syntax highlighting
+
+### Rule Packs
+- **Catalogue of detection rule series** maintained by Jason Tools, installable from the UI
+- Each pack bundles rules, decoders and CDB lists behind a manifest; open one to see the files it installs, where they go, and which rule IDs it claims
+- Install is guarded: **rule-ID conflict detection**, backup of anything overwritten, `wazuh-analysisd -t` validation, and **full rollback if any step fails**
+- Removal restores replaced files and **refuses to discard files you edited** after installing
+- Ships with: portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, Zimbra detection, and Zenarmor (OPNsense)
 
 ### Security
 - Input validation for all parameters; command-injection and path-traversal protection
