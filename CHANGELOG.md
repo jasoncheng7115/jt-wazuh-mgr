@@ -4,6 +4,38 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.6 (2026-08-30)
+
+- **Zimbra baseline rebuilt from live servers.** `zimbra-webfiles` is the list
+  that tells the FIM rules which files are stock. It had drifted: measured
+  against the previous seven days of alerts, 78% of the Zimbra file-integrity
+  false positives are eliminated by the new baseline plus one new suppression.
+
+  Two real gaps were behind them. The baseline held no entries at all for
+  `/opt/zimbra/lib/ext`, where rule 100806 fires at level 15 — so every stock
+  extension jar, 34 of them, was one modification away from a CRITICAL alert
+  claiming the mail server's passwords were being stolen. And the baseline was
+  built from `*.jar` only, while 100806 alerts on *any* file in that directory,
+  so the `.wsdl`, `.xsd` and `.properties` files shipped alongside were
+  unaccounted for.
+
+  Every file added was checked before being trusted: ownership, modification
+  time against the recorded upgrade dates, and for the one JSP, an identical
+  SHA256 on both servers plus a scan for web-shell indicators.
+
+- **Package-manager transient files no longer alert.** dpkg, ucf and rpm write
+  new content to a `.dpkg-new`-style name and rename it into place seconds
+  later. Those names can never appear in a baseline, and the file that actually
+  gets installed still alerts under its final name. Suppressed across the Zimbra
+  FIM rules and the persistence rules, which also settles the level-13
+  "scheduled task modified" alert that `apt-compat.dpkg-new` was raising on
+  every host.
+
+- The Zimbra pack notes now carry the correct regeneration command, and say
+  plainly that the baseline must be rebuilt after every upgrade — a Zimbra
+  upgrade replaces version-stamped jars, and each new filename is unknown to
+  the old baseline.
+
 ## v1.6.5 (2026-08-30)
 
 - **New pack: AdGuard Home.** A decoder and rules for AdGuard's query log,
