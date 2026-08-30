@@ -1279,5 +1279,113 @@ class TestI18n(unittest.TestCase):
                 self.assertIn("'%s':" % key, self.dict_block)
 
 
+class TestShippedPacks(unittest.TestCase):
+    """Validate the real packs/ catalogue, not a fixture.
+
+    The manifest carries a sha256 per file; editing a rule without refreshing it
+    makes uninstall think the file was locally edited and refuse to remove it.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import glob, json
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cls.packs_dir = os.path.join(root, 'packs')
+        cls.packs = []
+        for mf in sorted(glob.glob(os.path.join(cls.packs_dir, '*', 'manifest.json'))):
+            with io.open(mf, encoding='utf-8') as fh:
+                cls.packs.append((os.path.dirname(mf), json.load(fh)))
+        if not cls.packs:
+            raise unittest.SkipTest('no packs/ catalogue in this checkout')
+
+    SUBDIR = {'rule': 'rules', 'list': 'lists', 'decoder': 'decoders'}
+
+    def test_every_manifest_file_exists_and_matches_its_hash(self):
+        import hashlib
+        for pdir, m in self.packs:
+            for entry in m.get('files', []):
+                path = os.path.join(pdir, self.SUBDIR[entry['type']], entry['name'])
+                with self.subTest(pack=m['id'], file=entry['name']):
+                    self.assertTrue(os.path.isfile(path), 'missing %s' % path)
+                    with io.open(path, 'rb') as fh:
+                        digest = hashlib.sha256(fh.read()).hexdigest()
+                    self.assertEqual(digest, entry.get('sha256'),
+                                     'stale sha256 for %s; refresh the manifest' % entry['name'])
+
+    # mirrors _validate_dest() in web_ui.create_app(), which is nested and not
+    # importable; stated here as the contract every shipped manifest must meet
+    ALLOWED_ROOTS = ('etc/rules/', 'etc/lists/', 'etc/decoders/')
+
+    def test_destinations_stay_inside_the_ruleset_directories(self):
+        for _, m in self.packs:
+            for entry in m.get('files', []):
+                dest = entry.get('dest', '')
+                with self.subTest(pack=m['id'], dest=dest):
+                    self.assertTrue(dest, 'missing dest')
+                    self.assertNotIn('..', dest)
+                    self.assertFalse(dest.startswith('/'))
+                    self.assertTrue(any(dest.startswith(r) for r in self.ALLOWED_ROOTS),
+                                    'dest outside the ruleset dirs: %r' % dest)
+                    self.assertRegex(dest, r'^[A-Za-z0-9._/-]+$')
+                    expected = self.SUBDIR[entry['type']].replace('rules', 'rules')
+                    self.assertTrue(dest.startswith('etc/%s/' % expected),
+                                    'type %r should install under etc/%s/'
+                                    % (entry['type'], expected))
+
+    def test_rule_xml_parses_and_ids_are_unique_across_packs(self):
+        import xml.etree.ElementTree as ET
+        seen = {}
+        for pdir, m in self.packs:
+            for entry in m.get('files', []):
+                if entry['type'] != 'rule':
+                    continue
+                path = os.path.join(pdir, 'rules', entry['name'])
+                with io.open(path, encoding='utf-8') as fh:
+                    body = fh.read()
+                with self.subTest(pack=m['id'], file=entry['name']):
+                    root = ET.fromstring('<rules>' + body + '</rules>')
+                    for rule in root.iter('rule'):
+                        rid = rule.get('id')
+                        self.assertNotIn(rid, seen,
+                                         'rule %s duplicated in %s and %s'
+                                         % (rid, seen.get(rid), m['id']))
+                        seen[rid] = m['id']
+
+    def test_decoder_xml_parses(self):
+        import xml.etree.ElementTree as ET
+        for pdir, m in self.packs:
+            for entry in m.get('files', []):
+                if entry['type'] != 'decoder':
+                    continue
+                path = os.path.join(pdir, 'decoders', entry['name'])
+                with io.open(path, encoding='utf-8') as fh:
+                    body = fh.read()
+                with self.subTest(pack=m['id'], file=entry['name']):
+                    ET.fromstring('<decoders>' + body + '</decoders>')
+
+    def test_manifest_has_the_fields_the_catalogue_renders(self):
+        for _, m in self.packs:
+            with self.subTest(pack=m.get('id')):
+                for field in ('id', 'name', 'name_zh', 'version', 'summary',
+                              'summary_zh', 'author', 'license', 'files'):
+                    self.assertIn(field, m)
+                self.assertTrue(m['files'])
+
+    def test_index_matches_the_catalogue_on_disk(self):
+        index_path = os.path.join(self.packs_dir, 'INDEX')
+        if not os.path.isfile(index_path):
+            self.skipTest('no INDEX file')
+        with io.open(index_path, encoding='utf-8') as fh:
+            listed = sorted(l.strip() for l in fh if l.strip())
+        actual = []
+        for dirpath, _, names in os.walk(self.packs_dir):
+            for n in names:
+                if n == 'INDEX':
+                    continue
+                rel = os.path.relpath(os.path.join(dirpath, n), os.path.dirname(self.packs_dir))
+                actual.append(rel)
+        self.assertEqual(listed, sorted(actual))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

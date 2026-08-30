@@ -4,6 +4,32 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.1 (2026-08-30)
+
+- **New pack: Zenarmor (OPNsense).** A decoder and severity-graded rules for
+  Zenarmor NGFW events forwarded by syslog, covering rule IDs 130800-130899.
+
+  Alerting is graded by threat class *and* by whether the firewall actually
+  blocked the connection, with the deliberate choice that **an unblocked malicious
+  connection outranks a blocked one** — if it was not blocked, the session was
+  established and the host may already be compromised. Malware, botnet, C2 and
+  ransomware traffic that got through raises level 12; the same traffic blocked
+  raises level 7. Phishing, cryptomining and DGA follow at 10 and 5. Hacking
+  tools, proxies, Tor and known-compromised hosts sit at 7. Six unblocked
+  malicious connections from one internal host within five minutes raise level 13.
+
+  The pack deliberately ships **no catch-all rule**: unclassified traffic stays at
+  level 0 and does not alert, so normal browsing cannot flood the console. Routine
+  policy blocks are best read in Zenarmor's own reporting rather than duplicated
+  into Wazuh.
+
+- Packs may now ship decoders as a first-class file type, installed to
+  `etc/decoders/` with the same backup, validation and rollback as rules and lists.
+- The shipped pack catalogue is now covered by tests: manifest hashes, install
+  destinations, XML validity, rule-ID uniqueness across packs, and `INDEX`
+  consistency are all verified, so a rule edit that forgets to refresh its
+  manifest hash fails the build instead of surfacing at uninstall time.
+
 ## v1.6.0 (2026-08-30)
 
 - **New Rule Packs tab.** A catalogue of the detection rule series maintained by

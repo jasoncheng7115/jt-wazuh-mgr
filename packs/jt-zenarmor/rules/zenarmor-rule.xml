@@ -1,0 +1,126 @@
+<!--
+  Zenarmor (OPNsense) 偵測規則
+  ID 區間: 130800-130899
+  Wazuh 沒有內建 Zenarmor 的規則或解碼器, 全數自行維護.
+  搭配解碼器: etc/decoders/zenarmor-decoder.xml (program_name=zenarmor, data= 之後為 JSON)
+
+  設計原則:
+    1. 先看「安全分類」, 再依「是否被阻擋」調整等級.
+    2. 方向刻意如此: 被「放行」的惡意連線遠比被「阻擋」的嚴重 ——
+       沒擋下代表連線已經成立, 該主機可能已經被入侵.
+    3. 各條件互斥, 不依賴規則的比對順序 (原因見下).
+    4. 涵蓋 Malware / Botnet / C&C / Ransomware / Phishing / Cryptomining /
+       DGA / Hacking / Proxy / Tor 等分類.
+
+  欄位名稱依官方整合指南:
+    https://www.zenarmor.com/docs/guides/integrating-zenarmor-with-wazuh
+    security_tags / is_blocked / ip_src_saddr / ip_dst_saddr /
+    dst_hostname / src_hostname / app_name / transport_proto
+  官方範例規則全部是 level 3 且一律描述為 "blocked", 無法區分嚴重度,
+  本檔在其基礎上改為依分類與是否阻擋分級.
+
+  2026-08-30 實測記錄 (Wazuh 4.14.7), 修改本檔前務必先讀:
+
+    * 同一父規則的子規則, 評估順序「不可預期」——
+      既不是 rule ID 由小到大, 也不是檔案內的順序.
+      實測一組 if_sid 相同的子規則, 評估順序為
+      130811 -> 130801 -> 130803 -> 130802, 毫無規律.
+      後果: 只要存在一條條件較寬鬆的 catch-all, 它可能先命中並中止評估,
+      讓具體分類規則永遠沒機會. 曾經因此讓「已阻擋的惡意程式連線」
+      只報成 blocked connection, 完全遺失 Malware 分類.
+
+    * 因此本檔「不設 catch-all」: 只有帶 security_tags 的事件會被分級,
+      其餘連線落在 130800 (level 0) 不產生告警.
+      一般政策阻擋的記錄請由 Zenarmor 自身的 Reporting 查看,
+      不重複灌進 Wazuh, 也避免正常上網把主控台灌爆.
+
+    * negate="yes" 不可靠: 欄位不存在時不成立, 且搭配 type="pcre2" 時
+      即使欄位存在且值不符也不會成立 (實測 is_blocked=0 配 negate ^1$ 仍不匹配).
+      一律改用正向比對 (^0$ / ^1$).
+
+  改完請用 wazuh-logtest 逐一情境驗證, 叢集環境下 worker 要另外同步並再驗一次.
+-->
+<group name="zenarmor,">
+
+  <rule id="130800" level="0">
+    <match>daemon=zenarmor</match>
+    <description>Zenarmor event</description>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- ===== 安全分類優先 ===== -->
+
+  <!-- 惡意程式 / 殭屍網路 / C2 / 勒索軟體：未被阻擋 = 連線已成立 -->
+  <rule id="130801" level="12">
+    <if_sid>130800</if_sid>
+    <field name="security_tags" type="pcre2">(?i)(Malware|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan)</field>
+    <field name="is_blocked">^0$</field>
+    <description>[HIGH] Zenarmor: 惡意連線未被阻擋 - $(security_tags) 來源: $(ip_src_saddr) 目標: $(ip_dst_saddr) $(dst_hostname)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,malware,c2,</group>
+  </rule>
+
+  <!-- 同樣的威脅但已被擋下：仍需調查來源主機, 但風險較低 -->
+  <rule id="130802" level="7">
+    <if_sid>130800</if_sid>
+    <field name="security_tags" type="pcre2">(?i)(Malware|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan)</field>
+    <field name="is_blocked">^1$</field>
+    <description>[WARN] Zenarmor: 惡意連線已阻擋 - $(security_tags) 來源: $(ip_src_saddr) 目標: $(ip_dst_saddr)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,malware,blocked,</group>
+  </rule>
+
+  <!-- 釣魚 / 挖礦 / DGA：未被阻擋 -->
+  <rule id="130803" level="10">
+    <if_sid>130800</if_sid>
+    <field name="security_tags" type="pcre2">(?i)(Phishing|Cryptomining|Crypto.?Mining|DGA|Spam)</field>
+    <field name="is_blocked">^0$</field>
+    <description>[WARN] Zenarmor: 釣魚或挖礦連線未被阻擋 - $(security_tags) 來源: $(ip_src_saddr) 目標: $(ip_dst_saddr)</description>
+    <mitre>
+      <id>T1566</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,phishing,</group>
+  </rule>
+
+  <rule id="130804" level="5">
+    <if_sid>130800</if_sid>
+    <field name="security_tags" type="pcre2">(?i)(Phishing|Cryptomining|Crypto.?Mining|DGA|Spam)</field>
+    <field name="is_blocked">^1$</field>
+    <description>Zenarmor: 釣魚或挖礦連線已阻擋 - $(security_tags) 來源: $(ip_src_saddr)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,phishing,blocked,</group>
+  </rule>
+
+  <!-- 駭客工具 / 代理 / 匿名化 / 已遭入侵主機：不分是否阻擋都值得看 -->
+  <rule id="130805" level="7">
+    <if_sid>130800</if_sid>
+    <field name="security_tags" type="pcre2">(?i)(Hacking|Proxy|Anonymizer|Tor|Compromised|Suspicious)</field>
+    <description>[WARN] Zenarmor: 可疑或規避類連線 - $(security_tags) 來源: $(ip_src_saddr) 目標: $(ip_dst_saddr)</description>
+    <mitre>
+      <id>T1090</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,evasion,</group>
+  </rule>
+
+  <!-- ===== 關聯：同一來源反覆觸發惡意連線 ===== -->
+
+  <rule id="130830" level="13" frequency="6" timeframe="300">
+    <if_matched_sid>130801</if_matched_sid>
+    <same_field>ip_src_saddr</same_field>
+    <description>[HIGH] Zenarmor: 同一內部主機短時間內多次惡意連線未被阻擋, 疑似已遭入侵: $(ip_src_saddr)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,malware,c2,</group>
+  </rule>
+
+</group>

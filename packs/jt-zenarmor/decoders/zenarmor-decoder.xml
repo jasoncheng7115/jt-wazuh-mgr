@@ -1,0 +1,24 @@
+<!--
+  Zenarmor (OPNsense) 解碼器
+  參考: https://www.zenarmor.com/docs/guides/integrating-zenarmor-with-wazuh
+
+  實際 syslog 格式:
+    Aug 30 09:00:00 OPNsense.localdomain zenarmor[88886]: daemon=zenarmor, index=conn, data={...}
+
+  2026-08-30 實測（Wazuh 4.14.7）:
+    官方指南給的 <prematch>zenarmor</prematch> 父解碼器「不會匹配」,
+    必須用 <program_name>zenarmor</program_name>。已用 wazuh-logtest 驗證:
+      program_name 寫法 -> 成功解出 ip_src_saddr / security_tags / is_blocked
+      官方 prematch 寫法 -> No decoder matched
+    若日後 syslog 經轉送導致 program_name 被改寫, 需改用其他比對方式並重新驗證。
+-->
+<decoder name="zen-dec">
+  <program_name>zenarmor</program_name>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <use_own_name>yes</use_own_name>
+  <prematch>data=</prematch>
+  <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
+</decoder>
