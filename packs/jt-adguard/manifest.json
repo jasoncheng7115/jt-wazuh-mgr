@@ -1,0 +1,44 @@
+{
+  "id": "jt-adguard",
+  "name": "AdGuard Home DNS Detection",
+  "name_zh": "AdGuard Home DNS 偵測套組",
+  "version": "1.0",
+  "summary": "Decoder and rules for AdGuard Home query logs - the only log that records which client asked for a domain.",
+  "summary_zh": "AdGuard Home 查詢記錄的解碼器與規則。這是唯一記錄「哪一台主機查詢了某網域」的來源。",
+  "rule_id_range": "130900-130999",
+  "notes": [
+    "AdGuard Home must forward its query log by syslog with the program name adguard; each message body is a single JSON object.",
+    "This pack is the attribution layer for DNS detections. A recursive resolver or a firewall only sees the resolver's own address as the query source, so without AdGuard a malicious lookup cannot be traced back to a host.",
+    "Ordinary ad and tracker blocking stays at level 0 and never alerts. Only threat-list blocks (130901) and filter-evasion blocks (130902) surface directly; volume from one client is handled by correlation.",
+    "PREREQUISITE - AdGuard must sit in front of the clients. If clients query a resolver that then forwards to AdGuard, every event carries the resolver's address and attribution is lost.",
+    "The base rule 130900 is level 2, not level 0, on purpose: <if_matched_sid> does not fire against a level 0 rule, so the correlation rules would be dead. Level 2 is still below the default alert threshold, so it writes no alerts.",
+    "Verified on Wazuh 4.14.7 against live traffic from AdGuard Home."
+  ],
+  "notes_zh": [
+    "AdGuard Home 需以 syslog 轉送查詢記錄，程式名稱須為 adguard，訊息本體為單一 JSON 物件。",
+    "本套組是 DNS 偵測的溯源層。遞迴解析器或防火牆只看得到解析器自己的位址，沒有 AdGuard 就無法把惡意查詢追回到哪一台主機。",
+    "一般廣告與追蹤器封鎖停在 level 0 不告警；只有威脅清單封鎖（130901）與規避封鎖（130902）會直接浮現，單一用戶端的量則交給關聯規則處理。",
+    "前提條件 - AdGuard 必須位於用戶端前方。若用戶端查詢的是另一台解析器再轉給 AdGuard，每筆事件都只會帶解析器的位址，溯源能力就沒了。",
+    "基礎規則 130900 刻意設為 level 2 而非 0：`<if_matched_sid>` 對 level 0 的規則不會觸發，設 0 會讓關聯規則失效。level 2 仍低於預設告警門檻，不會產生告警。",
+    "已在 Wazuh 4.14.7 上以 AdGuard Home 的實際流量驗證。"
+  ],
+  "author": "Jason Tools",
+  "license": "Apache-2.0",
+  "requires": {
+    "wazuh": ">=4.8"
+  },
+  "files": [
+    {
+      "type": "decoder",
+      "name": "adguard-decoder.xml",
+      "dest": "etc/decoders/adguard-decoder.xml",
+      "sha256": "9b8234348037d463afff90c1030b651c357aeeb96d2b8ec6f32033e778f3a958"
+    },
+    {
+      "type": "rule",
+      "name": "adguard-rule.xml",
+      "dest": "etc/rules/adguard-rule.xml",
+      "sha256": "dfa1b6f49f48ef65c99dcf632a99d47c10b9d2200689196aadbb7b4c62c4a4bb"
+    }
+  ]
+}

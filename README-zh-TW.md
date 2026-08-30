@@ -139,7 +139,7 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 - 每個套件以 manifest 打包規則、解碼器與 CDB 清單；點入可看到會安裝哪些檔案、裝到哪裡、佔用哪些規則 ID
 - 安裝有保護：**規則 ID 衝突偵測**、覆蓋前先備份、`wazuh-analysisd -t` 驗證，**任一步失敗整包回滾**
 - 移除會還原被覆蓋的原檔，並**拒絕刪除你安裝後修改過的檔案**
-- 內建套件：可攜式程式偵測（Windows/Linux/macOS）、IP 威脅情資、惡意程式雜湊比對、Zimbra 偵測、Zenarmor（OPNsense）
+- 內建套件：可攜式程式偵測（Windows/Linux/macOS）、IP 威脅情資、惡意程式雜湊比對、Zimbra 偵測、Zenarmor（OPNsense）、AdGuard Home
 
 ### 安全性
 - 所有參數皆做輸入驗證；防範指令注入與路徑穿越

@@ -1,0 +1,32 @@
+<!--
+  AdGuard Home decoder
+
+  Observed wire format (syslog, 2026-08-30):
+    <134>2026-08-30T14:38:46+00:00 dnsp1 adguard: {"Elapsed":386962,"IP":"192.168.1.164",
+    "QH":"mask.icloud.com","QT":"A","Upstream":null,"action":"Blocked",
+    "filterlist_id":1720886277,"filterlist_name":"...","filtertext":"||mask.icloud.com^"}
+
+  Field meanings:
+    IP               the CLIENT that asked - this is why the pack exists. A recursive
+                     resolver or firewall only ever sees its own address as the source,
+                     so this is the only place the real requester is recorded.
+    QH / QT          queried host and query type
+    action           what AdGuard did, e.g. "Blocked"
+    filterlist_name  which blocklist matched
+    filtertext       the matching rule text
+    Elapsed          resolution time in nanoseconds
+    Upstream         upstream resolver used, null when the answer was filtered
+
+  The whole message after "adguard: " is a JSON object, so the JSON plugin decoder
+  runs from the start of the message - no prematch offset is needed here, unlike the
+  Zenarmor decoder where the JSON sits after a "data=" prefix.
+-->
+<decoder name="adguard">
+  <program_name>adguard</program_name>
+</decoder>
+
+<decoder name="adguard-json">
+  <parent>adguard</parent>
+  <use_own_name>yes</use_own_name>
+  <plugin_decoder>JSON_Decoder</plugin_decoder>
+</decoder>
