@@ -4,6 +4,20 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.2（2026-08-30）
+
+- **Zenarmor 套件依實際流量重做。** 第一版所有分類都靠 `security_tags`，
+  實測發現這樣會漏掉真正的訊號：Zenarmor 的 `security_tags` 與 `category`
+  是**互斥出現**的（有其一時另一個為 null），因此有一半的風險事件掉進
+  level 0、完全不告警。現在兩個欄位都會比對。
+
+  內容分類被明確定位成弱訊號：Proxy 為 level 5、Parked Domains 為 level 3，
+  因為 `is_blocked` 多半只代表上網政策封鎖而非威脅。真正的威脅標籤維持原本分級，
+  並新增一條關聯規則，用來抓「連線一直被擋、卻仍持續重試」的主機。
+
+- 標籤比對的短詞一律加上 `\b` 邊界。少了它，`Tor` 在不分大小寫的情況下會誤中
+  `Torrent`，把一般 P2P 流量報成使用匿名代理。
+
 ## v1.6.1（2026-08-30）
 
 - **新增套件：Zenarmor（OPNsense）。** 針對以 syslog 轉送進來的 Zenarmor NGFW 事件，

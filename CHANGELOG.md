@@ -4,6 +4,24 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.2 (2026-08-30)
+
+- **Zenarmor pack reworked against live traffic.** The first version keyed every
+  classification on `security_tags`, which turned out to leave real signals on the
+  floor: Zenarmor emits `security_tags` and `category` *alternately* — when one is
+  present the other is null — so half the risk events fell through to level 0 and
+  alerted on nothing. Both fields are now matched.
+
+  Content classifications are graded as the weak signals they are: Proxy and
+  Parked Domains sit at level 5 and 3, because `is_blocked` mostly means a
+  browsing-policy block rather than a threat. Genuine threat tags keep the
+  original grading, and a second correlation rule catches a host that keeps
+  retrying malicious connections even while they are being blocked.
+
+- Short tokens in the tag patterns are now anchored on word boundaries. Without
+  them `Tor` matched `Torrent` under case-insensitive matching, which would have
+  reported ordinary peer-to-peer traffic as anonymiser use.
+
 ## v1.6.1 (2026-08-30)
 
 - **New pack: Zenarmor (OPNsense).** A decoder and severity-graded rules for
