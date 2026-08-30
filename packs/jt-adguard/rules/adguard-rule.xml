@@ -1,0 +1,98 @@
+<!--
+  AdGuard Home detection rules
+  ID range: 130900-130999
+  Wazuh ships no rules or decoder for AdGuard Home; this pack maintains both.
+  Companion decoder: etc/decoders/adguard-decoder.xml
+
+  Why this pack exists:
+    A recursive resolver or a firewall only ever sees the resolver's own address as
+    the source of a DNS query. AdGuard sits in front of the clients, so its log is
+    the only place that records WHICH host asked for a domain. That makes it the
+    attribution layer for every DNS-based detection elsewhere in the ruleset.
+
+  Grading:
+    Ordinary ad and tracker blocking is high volume and carries no security value,
+    so it stays at level 0 and never alerts. Only two things are surfaced directly:
+    a block from a threat-oriented filter list, and a block from a filter-evasion
+    list. Everything else is left to correlation, where volume from one client is
+    the actual signal.
+
+  2026-08-30, verified on Wazuh 4.14.7:
+    * Sibling rules under one parent are evaluated in an unpredictable order -
+      neither by rule ID nor by file order. This file therefore keeps its two
+      specific children mutually exclusive by pattern, and has no catch-all child
+      that could shadow them.
+    * Short tokens are anchored with \b. Without it "TOR" matches "history" and
+      "VPN"-style abbreviations match inside longer words under case-insensitive
+      comparison.
+    * If a future filter list name matches both patterns, either rule may win.
+      130902 is deliberately level 3 rather than level 0 so that such an event
+      still alerts rather than disappearing silently.
+
+    * <if_matched_sid> does NOT work against a level 0 rule. Measured directly:
+      with 130900 at level 0, feeding 45 matching events never fired the
+      frequency rule; changing nothing but the level to 2 fired it on the 41st.
+      Level 0 means "do not process further", not merely "do not alert".
+      The base rule is therefore level 2 - below <log_alert_level> (3), so it
+      still writes no alert, but it does count for correlation. Any silent rule
+      that something correlates on must use level 1 or 2, never 0.
+-->
+<group name="adguard,dns,">
+
+  <rule id="130900" level="2">
+    <decoded_as>adguard</decoded_as>
+    <description>AdGuard Home event</description>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- Blocked by a threat-oriented filter list: the client asked for a domain
+       that a security feed considers malicious. -->
+  <rule id="130901" level="7">
+    <if_sid>130900</if_sid>
+    <field name="filterlist_name" type="pcre2">(?i)(malware|phishing|threat|scam|botnet|\bC2\b|ransom|malicious|abuse|spyware|stalkerware|crypto)</field>
+    <description>[WARN] AdGuard: client looked up a domain on a threat blocklist - $(QH) client: $(IP) list: $(filterlist_name)</description>
+    <mitre>
+      <id>T1071.004</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>adguard,dns,threat,</group>
+  </rule>
+
+  <!-- Blocked by a filter-evasion list: the client tried to route DNS around the
+       resolver, e.g. DoH, iCloud Private Relay, a VPN or Tor bootstrap. Usually a
+       consumer app rather than an attacker, but it defeats DNS-layer controls. -->
+  <rule id="130902" level="3">
+    <if_sid>130900</if_sid>
+    <field name="filterlist_name" type="pcre2">(?i)(bypass|encrypted.?dns|\bDoH\b|\bDoT\b|\bTOR\b|\bVPN\b|proxy|anonymi)</field>
+    <description>AdGuard: client attempted to bypass DNS filtering - $(QH) client: $(IP) list: $(filterlist_name)</description>
+    <mitre>
+      <id>T1090</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>adguard,dns,evasion,</group>
+  </rule>
+
+  <!-- Correlation. Volume from a single client is the real signal: a healthy host
+       makes a handful of blocked lookups a day, an infected or adware-laden one
+       makes hundreds. -->
+
+  <rule id="130910" level="5" frequency="40" timeframe="120">
+    <if_matched_sid>130900</if_matched_sid>
+    <same_field>IP</same_field>
+    <description>AdGuard: one client is generating a high volume of filtered DNS lookups, worth checking the host: $(IP)</description>
+    <options>no_full_log</options>
+    <group>adguard,dns,</group>
+  </rule>
+
+  <rule id="130911" level="10" frequency="5" timeframe="300">
+    <if_matched_sid>130901</if_matched_sid>
+    <same_field>IP</same_field>
+    <description>[WARN] AdGuard: one client repeatedly looked up threat-listed domains, the host may be compromised: $(IP)</description>
+    <mitre>
+      <id>T1071.004</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>adguard,dns,threat,</group>
+  </rule>
+
+</group>

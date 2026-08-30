@@ -4,6 +4,31 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.5 (2026-08-30)
+
+- **New pack: AdGuard Home.** A decoder and rules for AdGuard's query log,
+  covering rule IDs 130900-130999.
+
+  This pack is the attribution layer for every DNS-based detection. A recursive
+  resolver or a firewall only ever sees the resolver's own address as the source
+  of a query, so a malicious lookup cannot be traced back to a host. Measured on
+  a live network: 17% of DNS traffic reached the resolver through AdGuard and was
+  therefore unattributable, including the one client generating the most
+  suspicious activity — it never appeared in the resolver's log at all.
+
+  Ordinary ad and tracker blocking stays silent. Only two things surface
+  directly: a lookup blocked by a threat-oriented filter list, and a lookup
+  blocked by a filter-evasion list such as DoH or Private Relay. Volume from a
+  single client is left to correlation, since one blocked lookup means nothing
+  and four hundred of them means a host worth examining.
+
+- The base rule sits at level 2 rather than level 0, and the pack notes say why:
+  `if_matched_sid` does not fire against a level 0 rule at all. Measured
+  directly — 45 matching events never triggered the frequency rule until the
+  level changed. Level 2 is still below the alert threshold, so it stays silent
+  while remaining available for correlation. Every existing correlation rule in
+  the other packs was audited against this; all 35 were already sound.
+
 ## v1.6.4 (2026-08-30)
 
 - **Packs now state what they need in order to work.** Several shipped rules

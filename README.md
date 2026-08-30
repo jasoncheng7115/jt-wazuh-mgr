@@ -139,7 +139,7 @@ See the full [CHANGELOG](CHANGELOG.md) for details.
 - Each pack bundles rules, decoders and CDB lists behind a manifest; open one to see the files it installs, where they go, and which rule IDs it claims
 - Install is guarded: **rule-ID conflict detection**, backup of anything overwritten, `wazuh-analysisd -t` validation, and **full rollback if any step fails**
 - Removal restores replaced files and **refuses to discard files you edited** after installing
-- Ships with: portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, Zimbra detection, and Zenarmor (OPNsense)
+- Ships with: portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, Zimbra detection, Zenarmor (OPNsense), and AdGuard Home
 
 ### Security
 - Input validation for all parameters; command-injection and path-traversal protection
