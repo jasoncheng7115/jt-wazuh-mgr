@@ -8,7 +8,7 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.6.10-blue)
+![Version](https://img.shields.io/badge/version-1.6.11-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
@@ -168,6 +168,8 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 | 資產清單（跨所有 agent 搜尋） | ![Inventory](screenshots/14_inventory.png) |
 | 規則套件 | ![Rule Packs](screenshots/15_rule_packs.png) |
 | 規則套件詳細 | ![Rule Pack Detail](screenshots/16_rule_pack_detail.png) |
+| 依檔名檢視規則 | ![Rules by file](screenshots/17_rules_by_file.png) |
+| 統計 | ![Statistics](screenshots/18_statistics.png) |
 
 ## 快速開始
 
