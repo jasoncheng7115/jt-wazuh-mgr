@@ -1,0 +1,112 @@
+<!--
+  fail2ban detection rules
+  ID range: 131000-131099
+  Wazuh ships nothing for fail2ban; this pack maintains the decoder and the rules.
+  Companion decoder: etc/decoders/fail2ban-decoder.xml
+
+  What is worth an alert:
+    A ban is a control that fired, and so is the unban that ends it. Both are
+    reported. The pair is what makes an incident readable afterwards: when the
+    block started, and when it lifted.
+
+    A ban of an RFC 1918 address is treated more seriously than a ban of an
+    external one. An outside address failing authentication is the internet
+    being the internet; an inside host doing it is either a client left with a
+    stale password or a machine working through a credential list, and both
+    want looking at. That rule is a child of the ban rule rather than its
+    sibling, because sibling evaluation order under one parent is unpredictable
+    and a sibling would sometimes lose.
+
+    "Found" is a filter match that has not reached the ban threshold. It is high
+    volume and says nothing on its own, so it stays silent and feeds correlation.
+
+  Levels are deliberately below 12: fail2ban has already blocked the source, so
+  nothing here is an emergency. The escalation is a host that keeps earning bans.
+
+  srcip and action are Wazuh static field names. A rule matching them with
+  <field name="..."> is refused at load time ("Field srcip is static"), so the
+  address is matched with the dedicated <srcip> tag. It takes one CIDR each and
+  refuses a comma or pipe separated list, so the ranges are listed as repeated
+  tags, which are evaluated as alternatives. Correlation uses
+  <same_source_ip /> rather than <same_field>. The decoder
+  stores the verb as f2b_action for the same reason.
+-->
+<group name="fail2ban,">
+
+  <rule id="131000" level="0">
+    <decoded_as>fail2ban</decoded_as>
+    <location>fail2ban</location>
+    <description>fail2ban event</description>
+    <options>no_full_log</options>
+  </rule>
+
+  <rule id="131001" level="5">
+    <if_sid>131000</if_sid>
+    <field name="f2b_action">^Ban$|^Restore Ban$</field>
+    <description>fail2ban: $(jail) banned $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+  <!-- An internal address earning a ban is a host to look at, not just traffic
+       to drop. Child of 131001 so it always wins over the general case. -->
+  <rule id="131002" level="7">
+    <if_sid>131001</if_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <description>[WARN] fail2ban: internal host $(srcip) was banned by $(jail), check the host</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+  <rule id="131003" level="3">
+    <if_sid>131000</if_sid>
+    <field name="f2b_action">^Unban$</field>
+    <description>fail2ban: $(jail) unbanned $(srcip)</description>
+    <options>no_full_log</options>
+    <group>fail2ban,</group>
+  </rule>
+
+  <rule id="131004" level="0">
+    <if_sid>131000</if_sid>
+    <field name="f2b_action">^Found$</field>
+    <description>fail2ban: $(jail) matched $(srcip), below the ban threshold</description>
+    <options>no_full_log</options>
+    <group>fail2ban,</group>
+  </rule>
+
+
+  <!-- One source earning repeated bans is no longer a passing scan. -->
+  <rule id="131010" level="10" frequency="4" timeframe="1800">
+    <if_matched_sid>131001</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] fail2ban: $(srcip) has been banned repeatedly, it is working through credentials rather than passing by</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+  <!-- An internal host earning repeated bans is treated as a possible
+       compromise rather than a misconfigured client. -->
+  <rule id="131011" level="12" frequency="3" timeframe="1800">
+    <if_matched_sid>131002</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] fail2ban: internal host $(srcip) keeps earning bans, treat as a possibly compromised host</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+</group>

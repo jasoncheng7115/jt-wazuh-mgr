@@ -153,8 +153,15 @@ def check_no_internal_data():
             if ALLOW_MARKER in line:
                 continue
             m = INTERNAL.search(line)
-            if m and not PLACEHOLDER.search(m.group(0)):
-                fail('privacy', '%s:%d names %s' % (rel, lineno, m.group(0)))
+            if not m:
+                continue
+            if PLACEHOLDER.match(m.group(0)):
+                continue
+            # A CIDR suffix makes it a range definition, not a host. Rules that
+            # classify RFC 1918 sources have to name those ranges to do their job.
+            if re.match(r'/\d{1,2}\b', line[m.end():]):
+                continue
+            fail('privacy', '%s:%d names %s' % (rel, lineno, m.group(0)))
 
 
 ALLOW_MARKER = 'preflight' + ':allow-example'

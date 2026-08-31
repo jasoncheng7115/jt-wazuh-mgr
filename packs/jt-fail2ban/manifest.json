@@ -1,0 +1,46 @@
+{
+  "id": "jt-fail2ban",
+  "name": "fail2ban Detection Suite",
+  "name_zh": "fail2ban 偵測套組",
+  "version": "1.0",
+  "summary": "Decoder and rules for fail2ban, which Wazuh ships no support for at all.",
+  "summary_zh": "fail2ban 的解碼器與規則。Wazuh 完全沒有內建對 fail2ban 的支援。",
+  "rule_id_range": "131000-131099",
+  "notes": [
+    "Wazuh 4.14.7 ships no fail2ban decoder and no fail2ban rules. Verified by feeding real log lines to wazuh-logtest, every one of which returned \"No decoder matched\".",
+    "The agent must collect /var/log/fail2ban.log, fail2ban's own logtarget. It does not write to syslog, so nothing arrives without an explicit localfile entry.",
+    "A ban and the unban that ends it are both reported. The pair is what makes an incident readable afterwards: when the block started and when it lifted.",
+    "A ban of an RFC 1918 address is graded above a ban of an external one. An outside address failing authentication is background noise; an inside host doing it is either a client left with a stale password or a machine working through credentials.",
+    "The address is decoded into srcip, so these events correlate with the rest of the ruleset and are usable by an active response command.",
+    "PREREQUISITE - the base rule requires the event to come from a file named fail2ban. If the log is collected under a different name, adjust <location> in rule 131000.",
+    "\"[jail] address already banned\" is not decoded: its address precedes the verb, which no single <order> can express alongside the other forms, and it adds nothing to the ban that already alerted."
+  ],
+  "notes_zh": [
+    "Wazuh 4.14.7 完全沒有內建 fail2ban 的解碼器與規則。以真實記錄餵給 wazuh-logtest 驗證過，每一種格式都是 No decoder matched。",
+    "agent 必須收集 /var/log/fail2ban.log，那是 fail2ban 自己的 logtarget。它不寫 syslog，沒有明確的 localfile 設定就什麼都收不到。",
+    "封鎖與解除封鎖都會告警。這一對才能讓事後判讀完整：什麼時候擋起來、什麼時候解除。",
+    "封鎖對象若是 RFC 1918 位址，等級高於外部位址。外部位址認證失敗是網路日常；內部主機這樣做，不是用戶端留著舊密碼，就是那台機器在逐一試帳密。",
+    "位址解碼到 srcip 欄位，因此可與規則集其他部分關聯，也能被主動回應指令使用。",
+    "前提條件 - 基礎規則要求事件來自檔名含 fail2ban 的來源。若以其他名稱收集，請調整規則 131000 的 <location>。",
+    "「[jail] 位址 already banned」不做解碼：它的位址在動詞之前，單一 <order> 無法同時表達兩種順序，而且它並未提供封鎖告警以外的資訊。"
+  ],
+  "author": "Jason Tools",
+  "license": "Apache-2.0",
+  "requires": {
+    "wazuh": ">=4.8"
+  },
+  "files": [
+    {
+      "type": "decoder",
+      "name": "fail2ban-decoder.xml",
+      "dest": "etc/decoders/fail2ban-decoder.xml",
+      "sha256": "468af069ad64754fb2262035891faac7638baa26e6bad3134bc066d89bb70a6b"
+    },
+    {
+      "type": "rule",
+      "name": "fail2ban-rule.xml",
+      "dest": "etc/rules/fail2ban-rule.xml",
+      "sha256": "92d25f4fcdde75acf22d279f18fe2f50f2376a0462fe7127d35b242bc3a9f9a9"
+    }
+  ]
+}
