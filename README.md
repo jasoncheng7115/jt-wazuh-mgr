@@ -8,7 +8,7 @@ A powerful web-based management tool for Wazuh agents in cluster environments.
 
 > **Recommended**: Use the Web UI as the primary interface — it's the main feature of this tool with full functionality.
 
-![Version](https://img.shields.io/badge/version-1.6.11-blue)
+![Version](https://img.shields.io/badge/version-1.6.12-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
@@ -139,7 +139,7 @@ See the full [CHANGELOG](CHANGELOG.md) for details.
 - Each pack bundles rules, decoders and CDB lists behind a manifest; open one to see the files it installs, where they go, and which rule IDs it claims
 - Install is guarded: **rule-ID conflict detection**, backup of anything overwritten, `wazuh-analysisd -t` validation, and **full rollback if any step fails**
 - Removal restores replaced files and **refuses to discard files you edited** after installing
-- Ships with: portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, Zimbra detection, Zenarmor (OPNsense), and AdGuard Home
+- Ships with: portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, Zimbra detection, Zenarmor (OPNsense), AdGuard Home, and fail2ban
 
 ### Security
 - Input validation for all parameters; command-injection and path-traversal protection

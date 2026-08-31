@@ -1,0 +1,49 @@
+<!--
+  fail2ban decoder
+
+  Wazuh 4.14.7 ships no decoder and no rules for fail2ban at all. Every line
+  below returns "No decoder matched" out of the box; verified, not assumed.
+
+  Observed format (fail2ban 0.11.1, logtarget = /var/log/fail2ban.log):
+    2026-08-31 21:20:11,500 fail2ban.actions        [2368444]: NOTICE  [zimbra-admin] Ban 203.0.113.45
+    2026-08-31 21:24:32,814 fail2ban.actions        [2368444]: NOTICE  [zimbra-admin] Unban 203.0.113.45
+    2026-08-31 21:03:00,269 fail2ban.filter         [2368444]: INFO    [zimbra-webmail] Found 203.0.113.45 . 2026-08-31 21:03:00
+    2026-08-31 21:25:00,100 fail2ban.actions        [2368444]: WARNING [sshd] 203.0.113.45 already banned
+
+  Pre-decoding eats more of this line than it looks like it should. Measured on
+  4.14.7 by probing one pattern at a time: the string a decoder sees contains
+  neither the date nor the word "fail2ban" nor the severity, so anchoring on any
+  of them matches nothing. Only the tail, from the jail name onward, is visible.
+  The prematch therefore describes the shape of that tail and carries no anchor.
+
+  Because that shape alone could occur in another product log, the base rule
+  additionally requires the event to come from a file named fail2ban. The decoder
+  identifies the format; the rule identifies the source.
+
+  There is one child decoder, not several. Measured: when the first child's regex
+  fails, Wazuh does not go on to try the next one, so a set of siblings only ever
+  works for whichever form happens to be listed first. All four verbs are
+  therefore matched by a single expression.
+
+  "[jail] address already banned" is deliberately not decoded. Its address comes
+  before the verb, which no single <order> can express alongside the other forms,
+  and it carries nothing the original ban alert did not already report. Such
+  lines still match the base rule and stay silent.
+
+  The address is extracted as srcip, the field Wazuh treats as the source of an
+  event. That is what lets these rules correlate with the rest of the ruleset,
+  and what an active response command would read.
+
+  The verb is stored as f2b_action rather than action: action is one of Wazuh
+  static field names, and a rule matching on it is refused at load time with
+  "Field action is static". Renaming avoids the whole class of collision.
+-->
+<decoder name="fail2ban">
+  <prematch type="pcre2">\[[\w.\- ]+\]\s+(?:Ban|Unban|Restore Ban|Found)\s+\S</prematch>
+</decoder>
+
+<decoder name="fail2ban-action">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">\[([^\]]+)\]\s+(Ban|Unban|Restore Ban|Found)\s+(\S+)</regex>
+  <order>jail, f2b_action, srcip</order>
+</decoder>

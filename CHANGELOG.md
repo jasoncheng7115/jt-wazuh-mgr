@@ -4,6 +4,28 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.12 (2026-08-31)
+
+- **New pack: fail2ban.** Wazuh ships no decoder and no rules for fail2ban at
+  all, which was confirmed rather than assumed: every real log line fed to
+  `wazuh-logtest` came back "No decoder matched". Two mail servers had been
+  banning attackers for months with nothing recording it.
+
+  A ban and the unban that ends it are both reported, because the pair is what
+  makes an incident readable afterwards. A ban of an RFC 1918 address is graded
+  above a ban of an external one: an outside address failing authentication is
+  the internet being the internet, an inside host doing it is either a client
+  left with a stale password or a machine working through a credential list.
+  Correlation escalates a source that keeps earning bans, and treats an internal
+  host doing so as a possible compromise.
+
+  The address is decoded into `srcip`, so these events correlate with the rest of
+  the ruleset and are usable by an active response command.
+
+- The pre-release privacy check now recognises CIDR notation. An address with a
+  `/nn` suffix is a range definition, not a host, and a rule that classifies
+  RFC 1918 sources has to name those ranges to do its job.
+
 ## v1.6.11 (2026-08-31)
 
 - **Every screenshot recaptured against a mocked API.** The published images were
