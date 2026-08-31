@@ -364,6 +364,55 @@ class TestRules(WebUITestCase):
             data = self.client.get('/api/rules').get_json()
         self.assertEqual(data['parse_errors'], [])
 
+    def test_hierarchy_search_by_file_name(self):
+        """A non-numeric query is a file name fragment, not a bad rule ID.
+
+        Reviewing a pack means asking what a file contains, which the rule-ID
+        lookup cannot answer.
+        """
+        with fake_ruleset():
+            resp = self.client.get('/api/rules/hierarchy?rule_id=local_rules')
+        data = resp.get_json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(data['mode'], 'file')
+        self.assertEqual(data['matched_files'], ['local_rules.xml'])
+        self.assertEqual(data['hierarchy'][0]['id'], 'local_rules.xml')
+        self.assertTrue(data['hierarchy'][0]['is_file'])
+        self.assertIn('100500', data['all_rules'])
+
+    def test_hierarchy_file_search_accepts_the_extension_and_ignores_case(self):
+        for query in ('local_rules.xml', 'LOCAL_RULES', 'cal_rul'):
+            with self.subTest(query=query):
+                with fake_ruleset():
+                    data = self.client.get(
+                        '/api/rules/hierarchy?rule_id=' + query).get_json()
+                self.assertEqual(data.get('matched_files'), ['local_rules.xml'])
+
+    def test_hierarchy_file_search_nests_children_under_their_parent(self):
+        rules = ('<group name="t,">'
+                 '<rule id="700100" level="0"><description>base</description></rule>'
+                 '<rule id="700101" level="5"><if_sid>700100</if_sid>'
+                 '<description>child</description></rule></group>')
+        with fake_ruleset(builtin={}, custom={'nest_rules.xml': rules}):
+            data = self.client.get('/api/rules/hierarchy?rule_id=nest').get_json()
+        file_node = data['hierarchy'][0]
+        self.assertEqual([r['id'] for r in file_node['children']], ['700100'])
+        self.assertEqual([r['id'] for r in file_node['children'][0]['children']], ['700101'])
+
+    def test_hierarchy_file_search_rejects_path_like_input(self):
+        for bad in ('../../etc/passwd', 'a/b', 'x' * 65, 'rule;name'):
+            with self.subTest(query=bad):
+                with fake_ruleset():
+                    resp = self.client.get(
+                        '/api/rules/hierarchy?rule_id=' + bad)
+                self.assertEqual(resp.status_code, 400)
+
+    def test_hierarchy_file_search_reports_no_match(self):
+        with fake_ruleset():
+            resp = self.client.get('/api/rules/hierarchy?rule_id=no-such-file')
+        self.assertEqual(resp.status_code, 404)
+        self.assertIn('No rule file matches', resp.get_json()['error'])
+
     def test_hierarchy_resolves_parent_and_child(self):
         with fake_ruleset():
             resp = self.client.get('/api/rules/hierarchy?rule_id=91801')
@@ -374,8 +423,14 @@ class TestRules(WebUITestCase):
 
     def test_hierarchy_rejects_bad_input(self):
         self.assertEqual(self.client.get('/api/rules/hierarchy').status_code, 400)
-        self.assertEqual(self.client.get('/api/rules/hierarchy?rule_id=abc').status_code, 400)
         with fake_ruleset():
+            # A plain word is now a file-name query, so it is valid input that
+            # simply matches nothing -- 404, not 400. Only input that could not
+            # be a file name at all is refused outright.
+            self.assertEqual(
+                self.client.get('/api/rules/hierarchy?rule_id=abc').status_code, 404)
+            self.assertEqual(
+                self.client.get('/api/rules/hierarchy?rule_id=a/b').status_code, 400)
             self.assertEqual(self.client.get('/api/rules/hierarchy?rule_id=999999').status_code, 404)
 
     def test_deep_chain_does_not_exhaust_the_stack(self):

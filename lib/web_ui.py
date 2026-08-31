@@ -964,7 +964,7 @@ HTML_TEMPLATE = '''
                 </div>
                 <span id="rulesHierarchyControls" style="display:contents;">
                     <div class="search-box" style="flex:1;max-width:400px;">
-                        <input type="text" id="ruleIdSearch" placeholder="Enter Rule ID (e.g., 100001)" style="width:100%;padding:8px 12px;border:1px solid #333;border-radius:4px;background:#1a1a2e;color:#fff;" onkeydown="if(event.key==='Enter')searchRuleHierarchy()">
+                        <input type="text" id="ruleIdSearch" placeholder="Rule ID (100001) or file name (zenarmor, adguard-rule.xml)" style="width:100%;padding:8px 12px;border:1px solid #333;border-radius:4px;background:#1a1a2e;color:#fff;" onkeydown="if(event.key==='Enter')searchRuleHierarchy()">
                     </div>
                     <button class="btn btn-primary" onclick="searchRuleHierarchy()"><svg class="icon"><use href="#icon-search"/></svg>Search</button>
                     <button class="btn" onclick="clearRuleSearch()"><svg class="icon"><use href="#icon-xmark"/></svg>Clear</button>
@@ -1017,13 +1017,13 @@ HTML_TEMPLATE = '''
             <!-- Hierarchy View -->
             <div id="rulesHierarchyView" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;">
                 <div style="padding:10px 15px 0 15px;color:#888;font-size:12px;flex-shrink:0;">
-                    Search by Rule ID to view the rule hierarchy (parent-child relationships via if_sid/if_matched_sid/if_group). Click on a rule to view its XML content.
+                    Search by Rule ID to view the rule hierarchy (parent-child relationships via if_sid/if_matched_sid/if_group), or by rule file name to see everything that file contains. Click on a rule to view its XML content.
                 </div>
                 <div class="rules-content" style="padding:15px;">
                     <div id="ruleTreeContainer" style="min-height:200px;">
                         <div style="color:#888;text-align:center;padding:40px;">
                             <svg class="icon" style="width:48px;height:48px;opacity:0.5;margin-bottom:15px;"><use href="#icon-tree"/></svg>
-                            <p>Enter a Rule ID to view its hierarchy and relationships.</p>
+                            <p>Enter a Rule ID to view its hierarchy and relationships, or a rule file name to list its rules.</p>
                             <p style="font-size:12px;margin-top:10px;">The tree will show parent rules (if_sid, if_matched_sid) and child rules.</p>
                         </div>
                     </div>
@@ -5708,7 +5708,7 @@ HTML_TEMPLATE = '''
         async function searchRuleHierarchy() {
             const ruleId = document.getElementById('ruleIdSearch').value.trim();
             if (!ruleId) {
-                showToast('Please enter a Rule ID', 'warning');
+                showToast('Enter a rule ID, or part of a rule file name', 'warning');
                 return;
             }
 
@@ -5727,7 +5727,14 @@ HTML_TEMPLATE = '''
 
                 rulesCache = data.all_rules || {};
                 renderRuleTree(data, ruleId);
-                status.textContent = 'Found ' + Object.keys(data.all_rules || {}).length + ' related rules';
+                const ruleCount = Object.keys(data.all_rules || {}).length;
+                if (data.mode === 'file') {
+                    const files = (data.matched_files || []).length;
+                    status.textContent = 'Found ' + ruleCount + ' rules in ' + files + ' file' +
+                        (files === 1 ? '' : 's') + (data.truncated ? ' (more files matched, showing the first 20)' : '');
+                } else {
+                    status.textContent = 'Found ' + ruleCount + ' related rules';
+                }
             } catch (err) {
                 container.innerHTML = '<div style="color:#e94560;text-align:center;padding:20px;">Error: ' +
                     escapeHtml(err.message) + '</div>';
@@ -5738,9 +5745,14 @@ HTML_TEMPLATE = '''
             const container = document.getElementById('ruleTreeContainer');
             const hierarchy = data.hierarchy || [];
             const targetRule = data.target_rule;
+            const byFile = data.mode === 'file';
 
-            if (!targetRule) {
+            if (!byFile && !targetRule) {
                 container.innerHTML = '<div style="color:#e94560;text-align:center;padding:20px;">Rule not found</div>';
+                return;
+            }
+            if (byFile && !hierarchy.length) {
+                container.innerHTML = '<div style="color:#e94560;text-align:center;padding:20px;">No rule file matched</div>';
                 return;
             }
 
@@ -5766,6 +5778,7 @@ HTML_TEMPLATE = '''
                 const hasChildren = node.children && node.children.length > 0;
                 const isGroup = node.is_group === true;
                 const isMore = node.is_more === true;
+                const isFile = node.is_file === true;
                 const levelClass = node.level === 0 ? 'zero' : (node.level >= 12 ? 'high' : (node.level >= 6 ? 'medium' : 'low'));
                 let nodeClass = isTarget ? 'highlight' : (isParent ? 'parent' : 'child');
                 if (isGroup) nodeClass = 'group';
@@ -5773,7 +5786,19 @@ HTML_TEMPLATE = '''
 
                 html += '<li>';
 
-                if (isMore) {
+                if (isFile) {
+                    // File node: the rule file itself, with its rules nested beneath
+                    html += '<div class="rule-node group" style="cursor:pointer;" onclick="toggleRuleExpand(this.parentElement)">';
+                    if (hasChildren) {
+                        html += '<span class="rule-expand"><svg class="icon" style="width:16px;height:16px;"><use href="#icon-nav-arrow-down"/></svg></span>';
+                    }
+                    html += '<span class="rule-id" style="font-family:monospace;">' + escapeHtml(node.id) + '</span>';
+                    html += '<span class="rule-desc">' + escapeHtml(node.description || '') + '</span>';
+                    if (node.is_custom) {
+                        html += '<span class="rule-level low" style="margin-left:8px;">custom</span>';
+                    }
+                    html += '</div>';
+                } else if (isMore) {
                     // Just show text for "more" indicator
                     html += '<div class="rule-node ' + nodeClass + '">';
                     html += '<span class="rule-id">' + escapeHtml(node.id) + '</span>';
@@ -7191,9 +7216,11 @@ _I18N_SCRIPT = r"""
       'Expand All': '全部展開',
       'Collapse All': '全部收合',
       'Add Rule': '新增規則',
-      'Enter Rule ID (e.g., 100001)': '輸入規則 ID（例如 100001）',
+      'No rule file matched': '沒有符合的規則檔',
+      'rules': '條規則',
+      'Rule ID (100001) or file name (zenarmor, adguard-rule.xml)': '規則 ID（100001）或檔名（zenarmor、adguard-rule.xml）',
       'Click "All Rules" to load all rules.': '點選「所有規則」載入全部規則。',
-      'Enter a Rule ID to view its hierarchy and relationships.': '輸入規則 ID 以檢視其階層與關聯。',
+      'Enter a Rule ID to view its hierarchy and relationships, or a rule file name to list its rules.': '輸入規則 ID 以檢視其階層與關聯，或輸入規則檔名以列出該檔的所有規則。',
       'The tree will show parent rules (if_sid, if_matched_sid) and child rules.': '樹狀圖會顯示父規則（if_sid、if_matched_sid）與子規則。',
       // --- Nodes panel ---
       'Services': '服務',
@@ -7467,7 +7494,7 @@ _I18N_SCRIPT = r"""
       'Password must contain: uppercase, lowercase, number, special char, min 8 chars': '密碼必須包含：大寫、小寫、數字、特殊字元，且至少 8 個字元',
       'Please enter a group name': '請輸入群組名稱',
       'Please enter a new group name': '請輸入新的群組名稱',
-      'Please enter a Rule ID': '請輸入規則 ID',
+      'Enter a rule ID, or part of a rule file name': '請輸入規則 ID，或規則檔名的一部分',
       'Please enter a version number': '請輸入版本號',
       'Please select a target group': '請選擇目標群組',
       'Template downloaded': '範本已下載',
@@ -7660,7 +7687,7 @@ _I18N_SCRIPT = r"""
       'Recipient email is required': '收件者電子郵件為必填',
       'Rule ID can only contain numbers and commas': '規則 ID 只能包含數字與逗號',
       'Level must be between 1 and 16': '等級必須介於 1 到 16 之間',
-      'Please enter a Rule ID': '請輸入規則 ID',
+      'Enter a rule ID, or part of a rule file name': '請輸入規則 ID，或規則檔名的一部分',
       // --- API user modal ---
       'Create API User': '建立 API 使用者',
       'Edit User Roles': '編輯使用者角色',
@@ -7745,7 +7772,7 @@ _I18N_SCRIPT = r"""
       '(no node)': '（無節點）',
       '* Agents can belong to multiple groups, so percentages may exceed 100%': '* 代理程式可屬於多個群組，因此百分比總和可能超過 100%',
       // --- Rules tab helper ---
-      'Search by Rule ID to view the rule hierarchy (parent-child relationships via if_sid/if_matched_sid/if_group). Click on a rule to view its XML content.': '輸入規則 ID 以檢視規則階層（透過 if_sid／if_matched_sid／if_group 的父子關係）。點選規則可檢視其 XML 內容。',
+      'Search by Rule ID to view the rule hierarchy (parent-child relationships via if_sid/if_matched_sid/if_group), or by rule file name to see everything that file contains. Click on a rule to view its XML content.': '輸入規則 ID 以檢視規則階層（透過 if_sid／if_matched_sid／if_group 的父子關係），或輸入規則檔名以檢視該檔的完整內容。點選規則可檢視其 XML 內容。',
       'Summary': '摘要',
       'Report': '報表'
     }
@@ -7797,6 +7824,9 @@ _I18N_SCRIPT = r"""
       [/^Content refreshed \((\d+) lines\)$/, function (m) { return '內容已更新（' + m[1] + ' 行）'; }],
       [/^Sync completed: (\d+) succeeded, (\d+) failed$/, function (m) { return '同步完成：' + m[1] + ' 個成功，' + m[2] + ' 個失敗'; }],
       [/^Found (\d+) related rules?$/, function (m) { return '找到 ' + m[1] + ' 條相關規則'; }],
+      [/^Found (\d+) rules? in (\d+) files?$/, function (m) { return '在 ' + m[2] + ' 個檔案中找到 ' + m[1] + ' 條規則'; }],
+      [/^Found (\d+) rules? in (\d+) files? \(more files matched, showing the first 20\)$/, function (m) { return '在 ' + m[2] + ' 個檔案中找到 ' + m[1] + ' 條規則（尚有更多檔案符合，僅顯示前 20 個）'; }],
+      [/^(\d+) rules$/, function (m) { return m[1] + ' 條規則'; }],
       // --- v1.5 (interpolated) ---
       [/^Health - (.+)$/, function (m) { return '健康狀態 - ' + m[1]; }],
       [/^Group Files - (.+)$/, function (m) { return '群組檔案 - ' + m[1]; }],
@@ -14159,20 +14189,100 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             logger.error(f"Error searching rule content: {e}")
             return jsonify({'error': str(e)}), 500
 
+    def build_file_hierarchy(rules_dict, query):
+        """Build a tree of the rules held in the rule files matching a name fragment.
+
+        Searching by rule ID answers "what is related to this rule". Searching by
+        file answers "what does this file actually contain", which is the question
+        being asked when reviewing a pack or a single ruleset file. Roots are the
+        rules whose parent lives outside the file; everything else nests beneath
+        its parent, so the file's internal structure is visible at a glance.
+        """
+        MAX_FILES = 20
+        q = query.strip().lower()
+        if q.endswith('.xml'):
+            q = q[:-4]
+        if not q:
+            return None
+
+        by_file = {}
+        for rid, rule in rules_dict.items():
+            fname = rule.get('file', '') or ''
+            base = fname[:-4] if fname.lower().endswith('.xml') else fname
+            if q in base.lower():
+                by_file.setdefault(fname, []).append(rid)
+        if not by_file:
+            return None
+
+        matched = sorted(by_file)
+        truncated = len(matched) > MAX_FILES
+        matched = matched[:MAX_FILES]
+
+        def node(rid, own_ids, seen):
+            rule = rules_dict[rid]
+            seen.add(rid)
+            kids = []
+            for cid in sorted(own_ids, key=lambda x: (len(x), x)):
+                if cid in seen:
+                    continue
+                if rules_dict[cid].get('parent_id') == rid:
+                    kids.append(node(cid, own_ids, seen))
+            return {
+                'id': rid,
+                'level': rule.get('level', 0),
+                'description': rule.get('description', ''),
+                'file': rule.get('file', ''),
+                'is_custom': rule.get('is_custom', False),
+                'children': kids,
+            }
+
+        hierarchy, all_rules = [], {}
+        for fname in matched:
+            own = set(by_file[fname])
+            seen = set()
+            roots = [r for r in sorted(own, key=lambda x: (len(x), x))
+                     if rules_dict[r].get('parent_id') not in own]
+            file_children = [node(r, own, seen) for r in roots if r not in seen]
+            # anything left over (a cycle, or a parent that was itself nested) still shows
+            file_children += [node(r, own, seen) for r in sorted(own, key=lambda x: (len(x), x))
+                              if r not in seen]
+            for rid in own:
+                all_rules[rid] = rules_dict[rid]
+            hierarchy.append({
+                'id': fname,
+                'is_file': True,
+                'level': None,
+                'description': '%d rules' % len(own),
+                'file': fname,
+                'is_custom': rules_dict[by_file[fname][0]].get('is_custom', False),
+                'children': file_children,
+            })
+
+        return {'mode': 'file', 'matched_files': matched, 'truncated': truncated,
+                'hierarchy': hierarchy, 'all_rules': all_rules, 'target_rule': None}
+
     @app.route('/api/rules/hierarchy', methods=['GET'])
     @login_required
     def get_rules_hierarchy():
-        """Get rule hierarchy for a given rule ID."""
+        """Rule hierarchy, looked up either by rule ID or by rule file name."""
         try:
             rule_id = request.args.get('rule_id', '').strip()
             if not rule_id:
                 return jsonify({'error': 'rule_id parameter is required'}), 400
 
-            # Validate rule_id format (numeric only)
-            if not rule_id.isdigit():
-                return jsonify({'error': 'Invalid rule ID format'}), 400
-
             rules_dict, group_to_rules, parse_errors = get_all_rules()
+
+            if not rule_id.isdigit():
+                # Treat anything non-numeric as a file name fragment. The value is
+                # only ever substring-matched against file names already discovered
+                # on disk, so it never reaches the filesystem itself.
+                if len(rule_id) > 64 or not re.match(r'^[A-Za-z0-9._\- ]+$', rule_id):
+                    return jsonify({'error': 'Enter a rule ID or part of a rule file name'}), 400
+                result = build_file_hierarchy(rules_dict, rule_id)
+                if not result:
+                    return jsonify({'error': 'No rule file matches "%s"' % rule_id}), 404
+                return jsonify(result)
+
             result = build_hierarchy(rules_dict, group_to_rules, rule_id)
 
             if 'error' in result:

@@ -4,6 +4,21 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.9 (2026-08-31)
+
+- **The rule hierarchy search accepts a file name.** Until now it took a rule ID
+  and nothing else, which answers "what is related to this rule" but not "what
+  does this file actually contain" — the question being asked when reviewing a
+  pack or auditing a single ruleset file. Any non-numeric query is now treated as
+  a file-name fragment: `zenarmor`, `ZENARMOR`, `zenarmor-rule` and
+  `zenarmor-rule.xml` all find the same file, and matching files appear as tree
+  roots with their rules nested beneath by parent-child relationship.
+
+  A query that could not be a file name — anything with a path separator, or
+  longer than 64 characters — is refused rather than searched. The value is only
+  ever substring-matched against names already read from disk, so it never
+  reaches the filesystem itself.
+
 ## v1.6.8 (2026-08-31)
 
 - **AdGuard: a filter-evasion block alerts, and persistence is summarised.** The
