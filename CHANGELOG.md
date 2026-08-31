@@ -4,6 +4,32 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.10 (2026-08-31)
+
+- **`tools/preflight.py`: the release checklist now runs itself.** Every check in
+  it exists because something was missed at least once. The version badge in both
+  READMEs and on the Pages site had sat at 1.6.0 for nine releases while the
+  checklist plainly said to update it, and a decoder comment carrying a real
+  hostname and client address had already shipped in a published pack despite a
+  written rule against exactly that. Both are now caught mechanically.
+
+  It verifies version and badge consistency, a changelog entry for the current
+  version, that `github/` has not drifted from the working tree, that nothing
+  published names a private address or internal host, pack manifest hashes and
+  rule-ID ranges, `INDEX` consistency, English-only rule descriptions, that the
+  i18n dictionary is actually embedded, that the template JavaScript parses, that
+  every screenshot the READMEs reference exists, and that no correlation rule
+  hangs off a level-0 parent — which never fires.
+
+- The privacy pattern is pinned by tests, because a check that silently stops
+  matching fails open. Those tests also cover the case that first broke it:
+  a Zimbra jar named `10.1.20.1762506875` is a version, not an address.
+
+- Fixed what the new checks found: stale version badges, a real hostname and
+  client IP in the AdGuard decoder comment, an internal hostname in a source
+  comment, and `install.sh`/`uninstall.sh` still carrying the pre-rename product
+  name in the working tree.
+
 ## v1.6.9 (2026-08-31)
 
 - **The rule hierarchy search accepts a file name.** Until now it took a rule ID
