@@ -8251,7 +8251,7 @@ class WazuhAPISession:
                 if is_local:
                     hostname = local_hostname
                 else:
-                    # Try to get hostname from node name (e.g., "edr2-server" -> try to resolve)
+                    # Try to get hostname from node name (e.g., "worker-01" -> try to resolve)
                     # For now, we'll use the node name as a hint or show the IP
                     hostname = node_name.replace('-server', '') if '-server' in node_name else ''
                 # Clean version string: "Wazuh v4.14.0" -> "v4.14.0"

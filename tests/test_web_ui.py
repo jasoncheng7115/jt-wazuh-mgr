@@ -1442,5 +1442,47 @@ class TestShippedPacks(unittest.TestCase):
         self.assertEqual(listed, sorted(actual))
 
 
+class TestPreflightPrivacyPattern(unittest.TestCase):
+    """The pre-release privacy check is what stops a real address being published.
+
+    A regex that quietly stops matching would fail open, so the pattern is
+    pinned here rather than only being exercised by running the tool.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(root, 'tools', 'preflight.py')
+        if not os.path.isfile(path):
+            raise unittest.SkipTest('tools/preflight.py not present')
+        spec = importlib.util.spec_from_file_location('preflight', path)
+        cls.pf = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.pf)
+
+    def _flags(self, value):
+        m = self.pf.INTERNAL.search(value)
+        return bool(m) and not self.pf.PLACEHOLDER.match(m.group(0))
+
+    def test_flags_real_private_addresses_and_hosts(self):
+        for value in ('192.168.1.164', '10.20.30.40', '172.16.5.9',   # preflight:allow-example
+                      'dnsp1', 'edr1', 'someone@realdomain.tw'):      # preflight:allow-example
+            with self.subTest(value=value):
+                self.assertTrue(self._flags(value), '%s should be flagged' % value)
+
+    def test_leaves_documentation_placeholders_alone(self):
+        for value in ('192.168.1.100', '192.168.1.1', '10.0.0.50',
+                      'you@example.com', 'agent-example'):
+            with self.subTest(value=value):
+                self.assertFalse(self._flags(value), '%s should not be flagged' % value)
+
+    def test_version_strings_are_not_mistaken_for_addresses(self):
+        """Zimbra jars carry names like 10.1.20.1762506875."""
+        for value in ('10.1.20', '10.1.20.1762506875', '10.745.688',
+                      'zm-taglib-10.1.17.1762506875.jar'):
+            with self.subTest(value=value):
+                self.assertFalse(self._flags(value), '%s should not be flagged' % value)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
