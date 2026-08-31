@@ -4,6 +4,15 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.13 (2026-08-31)
+
+- **fail2ban log collection decoupled from the Zimbra group.** The pack was
+  already standalone, but the localfile entry that feeds it had been added to the
+  Zimbra agent group, which quietly made "we monitor fail2ban" mean "we monitor
+  fail2ban on mail servers". fail2ban runs on web servers, jump hosts and
+  anything else facing the internet; collection now lives in a group of its own,
+  to be assigned to any agent running it regardless of what else that host does.
+
 ## v1.6.12 (2026-08-31)
 
 - **New pack: fail2ban.** Wazuh ships no decoder and no rules for fail2ban at

@@ -4,6 +4,14 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.13（2026-08-31）
+
+- **fail2ban 的記錄收集與 Zimbra 群組脫鉤。** 套件本身原本就是獨立的，
+  但餵給它的 localfile 設定當初加在 Zimbra 的 agent 群組底下 ——
+  這讓「我們有監控 fail2ban」實際上變成「我們只監控郵件伺服器上的 fail2ban」。
+  fail2ban 會跑在網頁伺服器、跳板機等任何對外主機上；
+  收集設定現在放在獨立群組，可指派給任何跑 fail2ban 的 agent，與該主機的其他角色無關。
+
 ## v1.6.12（2026-08-31）
 
 - **新增套件：fail2ban。** Wazuh 完全沒有內建 fail2ban 的解碼器與規則 ——
