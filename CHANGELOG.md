@@ -4,6 +4,15 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.8 (2026-08-31)
+
+- **AdGuard: a filter-evasion block alerts, and persistence is summarised.** The
+  bypass rule keeps its level 3 — a block is a control that fired, and the
+  operator wants to see each one. The volume behind it is real, four Apple and
+  Chrome devices produced 152 blocks in a single day for the same five
+  encrypted-DNS endpoints, so a new correlation rule reports once an hour per
+  client instead of leaving that pattern to be spotted by eye.
+
 ## v1.6.7 (2026-08-31)
 
 - **Pack names and descriptions follow the reader's language.** The Rule Packs
