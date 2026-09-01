@@ -4,6 +4,34 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.14 (2026-09-01)
+
+- **Packs now install what they need to actually work.** Until now a pack put
+  rules, decoders and lists on the manager and stopped there, which quietly meant
+  several of them did nothing at all. jt-ioc shipped thirty rules matching a CDB
+  list nobody filled. jt-fail2ban's rules cannot see a log the agent never reads.
+  A pack is now allowed to carry two more things:
+
+  **An updater and its schedule.** jt-ioc and jt-malware-hash each ship a rewritten
+  updater, installed to `etc/jt-packs/bin/` and scheduled through `/etc/cron.d`.
+  Both are standard library only, so a manager needs no pip packages, and both use
+  absolute paths throughout: the job they replace used relative paths, cron ran it
+  without a `cd`, and it failed silently for ten and a half months while the list
+  it feeds sat frozen. Both refuse to install a list that has lost more than half
+  its entries, because a feed changing format looks exactly like the threat
+  landscape improving.
+
+  **An agent group.** jt-fail2ban and jt-zimbra carry the collection their rules
+  depend on. An existing group of the same name is never overwritten -- agents may
+  be assigned to it and it may hold settings the pack knows nothing about.
+
+  Installing an executable that runs as root on a schedule is a privileged act, so
+  it is declared in the manifest, shown in the detail dialog before installing,
+  reported in the result, and removed again on uninstall.
+
+- The dead maltrail feed was dropped rather than left to log a 404 forever, and
+  reserved and well-known public addresses are now excluded whatever a feed says.
+
 ## v1.6.13 (2026-08-31)
 
 - **fail2ban log collection decoupled from the Zimbra group.** The pack was

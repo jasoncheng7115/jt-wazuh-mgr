@@ -13,6 +13,7 @@ directory holding the wheels from offline_packages/.
 
 import builtins
 import io
+import json
 import os
 import re
 import subprocess
@@ -1161,6 +1162,108 @@ class TestRulePacks(WebUITestCase):
         self.assertIn('906100', resp.get_json()['conflicts'])
         forced = self.client.post('/api/packs/jt-portable-detect/install', json={'force': True})
         self.assertEqual(forced.status_code, 200)
+
+    def _fake_pack(self, pack_id, manifest, files=None):
+        """Build a throwaway pack under the real catalogue directory."""
+        import shutil
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        pdir = os.path.join(root, 'packs', pack_id)
+        self.addCleanup(shutil.rmtree, pdir, True)
+        for sub in ('rules', 'scripts', 'agent'):
+            os.makedirs(os.path.join(pdir, sub), exist_ok=True)
+        for rel, body in (files or {}).items():
+            path = os.path.join(pdir, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with io.open(path, 'w', encoding='utf-8') as fh:
+                fh.write(body)
+        import hashlib
+        for group, sub in (('files', None), ('scripts', 'scripts')):
+            for entry in manifest.get(group) or []:
+                d = sub or {'rule': 'rules', 'list': 'lists',
+                            'decoder': 'decoders'}[entry['type']]
+                path = os.path.join(pdir, d, entry['name'])
+                with io.open(path, 'rb') as fh:
+                    entry['sha256'] = hashlib.sha256(fh.read()).hexdigest()
+        with io.open(os.path.join(pdir, 'manifest.json'), 'w', encoding='utf-8') as fh:
+            json.dump(manifest, fh)
+        return pdir
+
+    RULE_XML = ('<group name="t,"><rule id="139500" level="3">'
+                '<description>t</description></rule></group>\n')
+    SCRIPT_BODY = '#!/usr/bin/env python3\nprint("updater")\n'
+
+    def _script_manifest(self, cron='17 */6 * * *'):
+        return {
+            'id': 'jt-testscript', 'name': 'T', 'name_zh': 'T', 'version': '1.0',
+            'summary': 's', 'summary_zh': 's', 'notes': [], 'notes_zh': [],
+            'author': 'a', 'license': 'Apache-2.0', 'rule_id_range': '139500-139599',
+            'files': [{'type': 'rule', 'name': 'r.xml', 'dest': 'etc/rules/r.xml'}],
+            'scripts': [{'name': 'upd.py', 'dest': 'etc/jt-packs/bin/upd.py',
+                         'cron': cron, 'args': '--wazuh-path {wazuh_path}'}],
+        }
+
+    def test_install_writes_the_script_and_schedules_it(self):
+        """A pack whose rules read a CDB list is inert until something fills it."""
+        self._fake_pack('jt-testscript', self._script_manifest(),
+                        {'rules/r.xml': self.RULE_XML, 'scripts/upd.py': self.SCRIPT_BODY})
+        resp = self.client.post('/api/packs/jt-testscript/install')
+        data = resp.get_json()
+        self.assertEqual(resp.status_code, 200, data)
+        script = os.path.join(self.tmp, 'etc/jt-packs/bin/upd.py')
+        self.assertTrue(os.path.isfile(script))
+        self.assertEqual(oct(os.stat(script).st_mode & 0o777), '0o750')
+        self.assertEqual(len(data.get('scheduled') or []), 1)
+        self.assertIn('17 */6 * * *', data['message'])
+
+    def test_uninstall_removes_the_script(self):
+        self._fake_pack('jt-testscript', self._script_manifest(),
+                        {'rules/r.xml': self.RULE_XML, 'scripts/upd.py': self.SCRIPT_BODY})
+        self.client.post('/api/packs/jt-testscript/install')
+        script = os.path.join(self.tmp, 'etc/jt-packs/bin/upd.py')
+        self.assertTrue(os.path.isfile(script))
+        resp = self.client.delete('/api/packs/jt-testscript')
+        self.assertEqual(resp.status_code, 200, resp.get_json())
+        self.assertFalse(os.path.isfile(script),
+                         'a cron entry pointing at a deleted script would fail forever')
+
+    def test_a_malformed_cron_schedule_is_refused_and_rolled_back(self):
+        self._fake_pack('jt-testscript', self._script_manifest(cron='17 */6 * * * ; rm -rf /'),
+                        {'rules/r.xml': self.RULE_XML, 'scripts/upd.py': self.SCRIPT_BODY})
+        resp = self.client.post('/api/packs/jt-testscript/install')
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(resp.get_json().get('rolled_back'))
+        self.assertFalse(os.path.isfile(os.path.join(self.tmp, 'etc/rules/r.xml')),
+                         'a refused install must not leave its rule file behind')
+
+    def test_existing_agent_group_config_is_never_overwritten(self):
+        """Someone else's group config may hold settings this pack knows nothing of."""
+        manifest = self._script_manifest()
+        del manifest['scripts']
+        manifest['agent_group'] = {'name': 'testgrp', 'config': 'agent.conf'}
+        self._fake_pack('jt-testscript', manifest,
+                        {'rules/r.xml': self.RULE_XML,
+                         'agent/agent.conf': '<agent_config><!-- from pack --></agent_config>\n'})
+        gdir = os.path.join(self.tmp, 'etc/shared/testgrp')
+        os.makedirs(gdir, exist_ok=True)
+        with io.open(os.path.join(gdir, 'agent.conf'), 'w', encoding='utf-8') as fh:
+            fh.write('<agent_config><!-- pre-existing --></agent_config>\n')
+        resp = self.client.post('/api/packs/jt-testscript/install')
+        self.assertEqual(resp.status_code, 200, resp.get_json())
+        with io.open(os.path.join(gdir, 'agent.conf'), encoding='utf-8') as fh:
+            self.assertIn('pre-existing', fh.read())
+        self.assertTrue((resp.get_json().get('agent_group') or {}).get('already_present'))
+
+    def test_agent_group_is_created_when_absent(self):
+        manifest = self._script_manifest()
+        del manifest['scripts']
+        manifest['agent_group'] = {'name': 'newgrp', 'config': 'agent.conf'}
+        self._fake_pack('jt-testscript', manifest,
+                        {'rules/r.xml': self.RULE_XML,
+                         'agent/agent.conf': '<agent_config><!-- from pack --></agent_config>\n'})
+        resp = self.client.post('/api/packs/jt-testscript/install')
+        self.assertEqual(resp.status_code, 200, resp.get_json())
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, 'etc/shared/newgrp/agent.conf')))
+        self.assertIn('assign agents', resp.get_json()['message'])
 
     def test_uninstalling_something_not_installed_is_404(self):
         self.assertEqual(self.client.delete('/api/packs/jt-ioc').status_code, 404)
