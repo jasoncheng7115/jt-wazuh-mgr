@@ -14,11 +14,24 @@
     --bg:#12121f; --bg2:#16213e; --card:#1a1a2e; --line:#243056;
     --accent:#4fc3f7; --accent2:#81d4fa; --text:#e9edf5; --muted:#9aa6c0;
     --ok:#34d399; --warn:#ffc107;
+    /* The project mark is blue and orange; the page used only the blue, which
+       is why a wall of identical cards read as one flat colour. These six hues
+       rotate through the card grids so a grid can be scanned rather than read
+       line by line. They are accents -- chip, border, heading -- never fills. */
+    --c1:#4fc3f7;  /* blue    */
+    --c2:#f7941e;  /* orange, from the icon */
+    --c3:#34d399;  /* green   */
+    --c4:#a78bfa;  /* violet  */
+    --c5:#f472b6;  /* pink    */
+    --c6:#fbbf24;  /* amber   */
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang TC','Noto Sans TC',sans-serif;
-    background:radial-gradient(1200px 600px at 50% -10%,#1d2547 0,var(--bg) 55%) no-repeat,var(--bg);
+    background:
+      radial-gradient(760px 420px at 82% 4%,rgba(247,148,30,.10) 0,transparent 62%),
+      radial-gradient(900px 520px at 16% 0%,rgba(79,195,247,.13) 0,transparent 60%),
+      radial-gradient(1200px 600px at 50% -10%,#1d2547 0,var(--bg) 55%) no-repeat,var(--bg);
     color:var(--text);line-height:1.65;-webkit-font-smoothing:antialiased}
   a{color:var(--accent);text-decoration:none}
   a:hover{color:var(--accent2)}
@@ -41,7 +54,8 @@
   .badge-row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:22px}
   .badge-row img{height:22px}
   h1.title{font-size:clamp(30px,5vw,50px);line-height:1.12;font-weight:800;letter-spacing:-.5px}
-  h1.title .grad{background:linear-gradient(90deg,var(--accent),#a78bfa);-webkit-background-clip:text;background-clip:text;color:transparent}
+  h1.title .grad{background:linear-gradient(96deg,var(--c1) 0%,var(--c4) 46%,var(--c2) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
   .tag{color:var(--muted);font-size:clamp(15px,2.4vw,19px);margin:18px auto 0;max-width:680px}
   .cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:30px}
   .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:10px;font-weight:600;font-size:15px;border:1px solid transparent;cursor:pointer}
@@ -57,6 +71,20 @@
   .sec-head h2{font-size:clamp(24px,3.6vw,34px);font-weight:800}
   .sec-head p{color:var(--muted);margin-top:10px}
   .kicker{color:var(--accent);font-weight:700;font-size:13px;letter-spacing:1.5px;text-transform:uppercase}
+  /* one hue per section, so scrolling has a rhythm instead of one flat blue */
+  #features .kicker{color:var(--c1)}
+  #packs    .kicker{color:var(--c2)}
+  #cluster  .kicker{color:var(--c4)}
+  #quality  .kicker{color:var(--c3)}
+  #screenshots .kicker{color:var(--c5)}
+  #requirements .kicker{color:var(--c6)}
+  .sec-head h2{position:relative;display:inline-block;padding-bottom:12px}
+  .sec-head h2::after{content:'';position:absolute;left:50%;bottom:0;transform:translateX(-50%);
+    width:56px;height:3px;border-radius:2px;background:currentColor;opacity:.35}
+  #features .sec-head h2::after{background:var(--c1);opacity:.85}
+  #packs    .sec-head h2::after{background:var(--c2);opacity:.85}
+  #cluster  .sec-head h2::after{background:var(--c4);opacity:.85}
+  #quality  .sec-head h2::after{background:var(--c3);opacity:.85}
   /* install */
   .cmd-grid{display:grid;gap:16px}
   .cmd{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px}
@@ -73,12 +101,37 @@
   .cmd .sub{color:var(--muted);font-size:13px;margin-top:9px}
   /* features */
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
-  .feat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;transition:.18s}
-  .feat:hover{border-color:var(--accent);transform:translateY(-3px)}
-  .feat .ico{margin-bottom:10px;color:var(--accent);line-height:0}
-  .feat .ico svg{width:28px;height:28px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .feat{--hue:var(--c1);background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:20px;transition:.18s;position:relative;overflow:hidden}
+  .feat::before{content:'';position:absolute;inset:0 0 auto 0;height:2px;
+    background:var(--hue);opacity:0;transition:.18s}
+  .feat:hover{border-color:var(--hue);
+    border-color:color-mix(in srgb,var(--hue) 55%,var(--line));transform:translateY(-3px)}
+  .feat:hover::before{opacity:.9}
+  /* the icon sits in a tinted chip of its own hue -- the single biggest reason
+     the grid now reads as a set of things rather than one grey slab */
+  .feat .ico{margin-bottom:12px;color:var(--hue);line-height:0;width:42px;height:42px;
+    display:flex;align-items:center;justify-content:center;border-radius:11px;
+    /* plain values first: a browser without color-mix keeps a visible chip
+       rather than an invisible one */
+    background:rgba(255,255,255,.06);border:1px solid var(--line);
+    background:color-mix(in srgb,var(--hue) 15%,transparent);
+    border:1px solid color-mix(in srgb,var(--hue) 30%,transparent)}
+  .feat .ico svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
   .feat h3{font-size:16px;margin-bottom:6px}
   .feat p{color:var(--muted);font-size:14px}
+  .grid .feat:nth-child(6n+1){--hue:var(--c1)}
+  .grid .feat:nth-child(6n+2){--hue:var(--c2)}
+  .grid .feat:nth-child(6n+3){--hue:var(--c3)}
+  .grid .feat:nth-child(6n+4){--hue:var(--c4)}
+  .grid .feat:nth-child(6n+5){--hue:var(--c5)}
+  .grid .feat:nth-child(6n+6){--hue:var(--c6)}
+  /* packs have no icon, so the hue lands on the edge and on the name, which is
+     a product name and reads better set in mono anyway */
+  #packs .feat{border-left:3px solid var(--hue)}
+  #packs .feat h3{font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
+    font-size:15px;color:var(--hue);letter-spacing:-.2px}
+  #cluster .feat h3,#quality .feat h3{color:var(--hue)}
   /* shots */
   .shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
   .shot{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}
@@ -93,7 +146,11 @@
   .req{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 24px;max-width:720px;margin:0 auto}
   .req ul{list-style:none;display:grid;gap:10px}
   .req li{padding-left:26px;position:relative;color:var(--muted)}
-  .req li::before{content:'';position:absolute;left:0;top:9px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .req li::before{content:'';position:absolute;left:0;top:9px;width:8px;height:8px;border-radius:50%;background:var(--c6)}
+  .req li:nth-child(2)::before{background:var(--c1)}
+  .req li:nth-child(3)::before{background:var(--c3)}
+  .req li:nth-child(4)::before{background:var(--c4)}
+  .req li:nth-child(5)::before{background:var(--c2)}
   .req li b{color:var(--text)}
   /* footer */
   footer{border-top:1px solid var(--line);padding:30px 0;text-align:center;color:var(--muted);font-size:14px}
@@ -178,7 +235,7 @@
   </div>
 </section>
 
-<section id="features" style="background:linear-gradient(180deg,transparent,rgba(26,26,46,.4),transparent)">
+<section id="features" style="background:linear-gradient(180deg,transparent,rgba(79,195,247,.05),transparent)">
   <div class="wrap">
     <div class="sec-head">
       <div class="kicker" data-en="Capabilities" data-zh="能力">能力</div>
@@ -203,7 +260,7 @@
 </section>
 
 
-<section id="packs">
+<section id="packs" style="background:linear-gradient(180deg,transparent,rgba(247,148,30,.05),transparent)">
   <div class="wrap">
     <div class="sec-head">
       <div class="kicker" data-en="Detection content" data-zh="偵測內容">偵測內容</div>
@@ -223,7 +280,7 @@
   </div>
 </section>
 
-<section id="cluster" style="background:linear-gradient(180deg,transparent,rgba(26,26,46,.4),transparent)">
+<section id="cluster" style="background:linear-gradient(180deg,transparent,rgba(167,139,250,.06),transparent)">
   <div class="wrap">
     <div class="sec-head">
       <div class="kicker" data-en="Master and workers" data-zh="Master 與 Worker">Master 與 Worker</div>
@@ -267,7 +324,7 @@
   </div>
 </section>
 
-<section id="requirements" style="background:linear-gradient(180deg,transparent,rgba(26,26,46,.4),transparent)">
+<section id="requirements" style="background:linear-gradient(180deg,transparent,rgba(251,191,36,.05),transparent)">
   <div class="wrap">
     <div class="sec-head">
       <div class="kicker" data-en="Before you start" data-zh="開始之前">開始之前</div>
