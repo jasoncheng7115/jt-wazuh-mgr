@@ -4,6 +4,53 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.19 (2026-09-01)
+
+- **Relicensed to AGPL-3.0.** The project was Apache-2.0, which permits closed
+  derivatives. GPL-3 would stop those being distributed, but this is a hosted
+  admin console, and the GPL's obligations trigger on distribution: running a
+  modified copy as a service for other people is not distribution. AGPL section
+  13 closes that, and the interface now carries the source offer it requires.
+
+- **Browser journeys, automated.** `tests/e2e/run.sh` runs 17 journeys and 65
+  checks in a real browser against a mocked, stateful Wazuh API. The unit tests
+  reach Flask routes and can only check that the front end parses; everything a
+  person does -- switching a tab, ticking rows, confirming a dialog, reading a
+  table -- ran code nothing tested.
+
+  The harness starts the application the way production does. An early version
+  called `app.run()` directly, which skips the header hardening, and a check
+  promptly reported the `Server` header advertising werkzeug's version. That was
+  the harness measuring a different program from the one that ships, and it is
+  the reason the startup path is now shared.
+
+  One finding about the interface came out of writing them: it refreshes on a
+  timer, and a refresh landing between typing into a dialog and pressing its
+  button repaints the modal. The dialog checked out a moment earlier and had no
+  button left when pressed.
+
+- **Five more pre-release checks**, all of which failed the first time they ran:
+
+  The README heading carries the version, and nothing had been looking at it --
+  it still said v1.6.0, nine releases later, while the badge below it was
+  correct. One licence, stated the same way everywhere, rather than AGPL in the
+  badge and Apache in seven pack manifests. The project name is `jt-wazuh-mgr`,
+  lower case, in one form rather than three. The icon set exists and is
+  referenced. The interface offers its source, which under AGPL is a licence
+  term rather than a nicety.
+
+- **A project icon.** The mark until now was the author's company logo. This one
+  is the project's own: a manager holding a cluster of agents, drawn to survive
+  16 pixels, shipped as SVG, PNG at six sizes, and a multi-size `.ico`.
+
+- **The project pages say what the project does.** Rule packs were not mentioned
+  at all, and they are the part of this tool that Wazuh has no answer for.
+  Added: the seven packs and what each detects; what a cluster synchronises and
+  what it leaves to you; and what is verified before a release, including what
+  is not.
+
+- The published name is now `jt-wazuh-mgr` everywhere, including the interface.
+
 ## v1.6.18 (2026-09-01)
 
 - **The ruleset reload now shows what analysisd warned about.** Reloading with a

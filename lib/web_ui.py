@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Web UI for JT Wazuh Manager with login support.
+"""Web UI for jt-wazuh-mgr with login support.
 
 Icons from Iconoir (https://iconoir.com/)
 MIT License - Copyright 2021 Luca Burgio
@@ -171,8 +171,11 @@ LOGIN_TEMPLATE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JT Wazuh Manager - Login</title>
-    <link rel="icon" type="image/png" href="/images/logo-1.png">
+    <title>jt-wazuh-mgr - Login</title>
+    <link rel="icon" type="image/svg+xml" href="/images/icon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/images/icon-32.png">
+    <link rel="alternate icon" href="/images/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/images/icon-180.png">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -273,7 +276,7 @@ LOGIN_TEMPLATE = '''
 <body>
     <div class="login-container">
         <div class="logo">
-            <h1>JT Wazuh Manager</h1>
+            <h1>jt-wazuh-mgr</h1>
             <div style="font-size: 14px; color: #888; margin-top: 5px;">v{{ version }}</div>
             <p style="margin-top: 15px;">Login with your Wazuh credentials</p>
         </div>
@@ -330,8 +333,11 @@ HTML_TEMPLATE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JT Wazuh Manager</title>
-    <link rel="icon" type="image/png" href="/images/logo-1.png">
+    <title>jt-wazuh-mgr</title>
+    <link rel="icon" type="image/svg+xml" href="/images/icon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="/images/icon-32.png">
+    <link rel="alternate icon" href="/images/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/images/icon-180.png">
     <!-- CodeMirror for config editor -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" integrity="sha384-zaeBlB/vwYsDRSlFajnDd7OydJ0cWk+c2OWybl3eSUf6hW2EbhlCsQPqKr3gkznT" crossorigin="anonymous" referrerpolicy="no-referrer">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" integrity="sha384-ccdJwIIg/K0Ab6aXF4MPACh7ckk61tvQFTrfkhXZEALgAETURNZIAuQLcS/aPbrM" crossorigin="anonymous" referrerpolicy="no-referrer">
@@ -741,7 +747,7 @@ HTML_TEMPLATE = '''
     </svg>
     <div class="container">
         <header>
-            <h1>JT Wazuh Manager <span style="font-size: 14px; color: #888; font-weight: normal;">v{{ version }}</span></h1>
+            <h1>jt-wazuh-mgr <span style="font-size: 14px; color: #888; font-weight: normal;">v{{ version }}</span></h1>
             <div class="header-right">
                 <div class="stats-bar" id="statsBar">
                     <div class="stat-item" onclick="filterByStatus('')" title="Show all agents"><div class="stat-value" id="totalAgents"><span>-</span></div><div class="stat-label">Total Agents</div></div>
@@ -1255,8 +1261,15 @@ HTML_TEMPLATE = '''
     </div>
 
     <!-- Footer -->
+    <!--
+      The source link is not decoration. Under AGPL-3.0 section 13, anyone who
+      uses this over a network must be offered the corresponding source, and for
+      a hosted admin console that is the only way most users ever meet it.
+    -->
     <footer style="text-align:center;padding:5px;color:#555;font-size:12px;flex-shrink:0;">
         by <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" style="color:#666;text-decoration:none;">Jason Cheng (Jason Tools)</a>
+    &nbsp;&middot;&nbsp;
+        <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener" style="color:#666;text-decoration:none;">AGPL-3.0 &mdash; source code</a>
     </footer>
 
     <!-- Toast Container -->
@@ -7142,7 +7155,7 @@ HTML_TEMPLATE = '''
 _I18N_SCRIPT = r"""
 <script>
 /* ==========================================================================
- * JT Wazuh Manager - Client-side i18n engine
+ * jt-wazuh-mgr - Client-side i18n engine
  * Source language is English (as authored in the templates). When the user
  * selects Traditional Chinese (zh-TW), visible text nodes and selected
  * attributes are translated in place using the I18N dictionary below.
@@ -7163,7 +7176,7 @@ _I18N_SCRIPT = r"""
   var I18N = {
     'zh-TW': {
       // --- App / header / nav ---
-      // NOTE: the product name "JT Wazuh Manager" is intentionally NOT translated.
+      // NOTE: the product name "jt-wazuh-mgr" is intentionally NOT translated.
       'Login with your Wazuh credentials': '請使用您的 Wazuh 帳號登入',
       'Wazuh API Username': 'Wazuh API 使用者名稱',
       'Username': '使用者名稱',
@@ -7453,6 +7466,7 @@ _I18N_SCRIPT = r"""
       'Pack': '套件',
       'Rule IDs': '規則 ID',
       'Scheduled jobs': '排程工作',
+      'AGPL-3.0 — source code': 'AGPL-3.0 — 原始碼',
       'Incomplete on some nodes': '部分節點未完成',
       'Agent group': 'Agent 群組',
       'This pack installs an updater and runs it as root on a schedule. It is removed again when the pack is removed.': '本套件會安裝一支更新程式，並以 root 身分排程執行。移除套件時會一併刪除。',
@@ -14799,7 +14813,7 @@ def _generate_ssl_cert(cert_path: str, key_path: str, days: int = 365) -> bool:
             '-out', cert_path,
             '-days', str(days),
             '-nodes',  # No passphrase
-            '-subj', f'/CN={hostname}/O=JT Wazuh Manager/C=TW'
+            '-subj', f'/CN={hostname}/O=jt-wazuh-mgr/C=TW'
         ], capture_output=True, text=True)
 
         if result.returncode == 0:
@@ -14904,7 +14918,7 @@ def run_web_server(host: str = '0.0.0.0', port: int = 5000, debug: bool = False,
                 print(f"  - Key not found: {ssl_key}")
 
     logger.info(f"SERVER START: version={VERSION} host={host} port={port} protocol={protocol}")
-    print(f"Starting JT Wazuh Manager Web UI v{VERSION} at {protocol}://{host}:{port}")
+    print(f"Starting jt-wazuh-mgr Web UI v{VERSION} at {protocol}://{host}:{port}")
     print("Login with your Wazuh API credentials to continue.")
     print(f"IP lockout: {max_login_attempts} failed attempts = {lockout_minutes} min lockout")
     print(f"Log file: wazuh_agent_mgr.log")

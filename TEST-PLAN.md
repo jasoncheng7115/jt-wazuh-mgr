@@ -101,7 +101,36 @@ restructuring the template, which is not a release-time change.
 
 ---
 
-## Layer 4 — browser checklist
+## Layer 4 — browser journeys, automated
+
+```bash
+tests/e2e/run.sh          # 17 journeys, 65 checks, needs docker
+```
+
+`tests/e2e/mock_api.py` serves the real application against a mocked, stateful
+Wazuh API, so a journey can act and then assert on the result of its own action.
+It starts the app the way production does — `app.run()` alone skips the header
+hardening, and the tests would then be measuring a different program. It never
+reads the real ruleset: the rules endpoints have their paths hardcoded to
+`/var/ossec`, and the machine running these tests is usually a live manager.
+
+`tests/e2e/journeys.js` drives a real browser: login and refusal of anonymous
+callers, every tab rendering, filtering through the custom multi-select,
+selecting agents, a confirmation dialog, creating a group and seeing it appear,
+both cluster nodes with their daemons, rule search by id and by file name, pack
+detail disclosing its scheduled job, logs, statistics, users with no credential
+on screen, inventory search, translation to zh-TW leaving names and addresses
+alone, security headers on a real response, and a final check that nothing
+failed quietly — uncaught errors and failed requests both, with an allowance for
+the one documented failure (reading a worker log needs the optional SSH setup)
+that must still be present.
+
+One thing the journeys had to work around is worth stating: the interface
+refreshes on a timer, and a refresh landing between typing into a dialog and
+pressing its button repaints the modal. The dialog checked out a moment earlier
+and had no button left by the time it was pressed.
+
+## Layer 4b — browser checklist, by hand
 
 The automated suite drives Flask routes, not the DOM. Everything below needs a
 person and a browser. Run against a manager with at least one agent, in both

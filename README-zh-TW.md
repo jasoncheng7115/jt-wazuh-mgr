@@ -1,4 +1,4 @@
-# JT Wazuh Manager v1.6.0
+# jt-wazuh-mgr v1.6.19
 
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
@@ -8,9 +8,9 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.6.18-blue)
+![Version](https://img.shields.io/badge/version-1.6.19-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
-![License](https://img.shields.io/badge/license-Apache--2.0-orange)
+![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
 
 🌐 **專案網站：** https://jasoncheng7115.github.io/jt-wazuh-mgr/
@@ -89,7 +89,7 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 - **雙語介面（English / 繁體中文）**，標題列一鍵切換語言，瀏覽器會記住你的選擇。
 - 專案更名並獨立為單一倉庫：**`jasoncheng7115/jt-wazuh-mgr`**。
 - 提供一行 **安裝 / 升級 / 移除** 流程。
-- 改採 **Apache-2.0** 授權。
+- 改採 **AGPL-3.0-or-later** 授權。
 
 完整內容請見 [CHANGELOG](CHANGELOG-zh-TW.md)。
 
@@ -325,7 +325,7 @@ python3 tools/build_i18n.py
 
 ## 授權
 
-採用 [Apache License 2.0](LICENSE) 授權。
+採用 [GNU Affero 通用公共授權第三版](LICENSE) 授權。
 
 ## 作者
 
