@@ -238,6 +238,56 @@ def check_packs():
                              % (pack, name, ' '.join(desc.split())[:60]))
                 check_correlation_levels(pack, name, body)
 
+        check_pack_extras(pack, pdir, m)
+
+
+def check_pack_extras(pack, pdir, m):
+    """Scripts and agent groups a pack installs are checked like its files.
+
+    A pack that schedules an executable as root, or that creates an agent group,
+    is doing more than dropping XML into etc/rules. Those parts get the same
+    hash and validity checks as everything else.
+    """
+    import xml.etree.ElementTree as ET
+    for entry in (m.get('scripts') or []):
+        name = entry.get('name', '')
+        path = os.path.join(pdir, 'scripts', name)
+        if not os.path.isfile(path):
+            fail('packs', '%s: script %s is listed but missing' % (pack, name))
+            continue
+        if hashlib.sha256(read(path, True)).hexdigest() != entry.get('sha256'):
+            fail('packs', '%s: script %s has a stale sha256' % (pack, name))
+        dest = entry.get('dest', '')
+        if not dest.startswith('etc/jt-packs/bin/') or '..' in dest:
+            fail('packs', '%s: script installs to %r, outside the pack bin directory'
+                 % (pack, dest))
+        schedule = (entry.get('cron') or '').strip()
+        if schedule and not re.match(r'^[\d*/,\- ]{5,64}$', schedule):
+            fail('packs', '%s: cron schedule %r is not a plain crontab expression'
+                 % (pack, schedule))
+        if schedule and len(schedule.split()) != 5:
+            fail('packs', '%s: cron schedule %r does not have five fields'
+                 % (pack, schedule))
+        body = read(path)
+        if not body.startswith('#!'):
+            fail('packs', '%s: script %s has no shebang' % (pack, name))
+        if re.search(r'[一-鿿]', body):
+            fail('i18n', '%s: script %s contains non-English text' % (pack, name))
+
+    grp = m.get('agent_group')
+    if grp:
+        gname = grp.get('name', '')
+        if not re.match(r'^[A-Za-z0-9_-]{1,64}$', gname):
+            fail('packs', '%s: agent group name %r is not a safe group name' % (pack, gname))
+        cfg = os.path.join(pdir, 'agent', grp.get('config', 'agent.conf'))
+        if not os.path.isfile(cfg):
+            fail('packs', '%s: agent group config is missing' % pack)
+        else:
+            try:
+                ET.fromstring(read(cfg))
+            except Exception as e:
+                fail('packs', '%s: agent group config is not well-formed XML (%s)' % (pack, e))
+
 
 def check_correlation_levels(pack, name, body):
     """<if_matched_sid> does not fire against a level 0 rule.

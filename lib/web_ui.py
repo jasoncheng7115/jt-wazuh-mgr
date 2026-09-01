@@ -6509,6 +6509,29 @@ HTML_TEMPLATE = '''
                     '<td style="padding:6px 10px;font-family:monospace;color:#888;">' + escapeHtml(f.dest) + '</td>' +
                     '<td style="padding:6px 10px;text-align:right;">' + formatFileSize(f.size) + '</td></tr>').join('') +
                 '</tbody></table></div>';
+
+            // Installing a pack can do more than drop files in etc/rules. Anything
+            // that schedules a root process or creates an agent group is stated
+            // before the operator presses Install, not discovered afterwards.
+            const jobs = (d.scripts || []).filter(x => x.cron);
+            if (jobs.length) {
+                html += '<div style="margin-top:14px;"><div style="color:#888;font-size:12px;margin-bottom:4px;">Scheduled jobs</div>' +
+                    '<div class="alert alert-warning" style="font-size:12px;">' +
+                    'This pack installs an updater and runs it as root on a schedule. ' +
+                    'It is removed again when the pack is removed.<ul style="margin:6px 0 0 18px;">' +
+                    jobs.map(j => '<li><code>' + escapeHtml(j.name) + '</code> &nbsp; ' +
+                        '<span style="color:#4fc3f7;">' + escapeHtml(j.cron) + '</span>' +
+                        (j.description ? ' &nbsp; ' + escapeHtml(j.description) : '') + '</li>').join('') +
+                    '</ul></div></div>';
+            }
+            if (d.agent_group && d.agent_group.name) {
+                html += '<div style="margin-top:14px;"><div style="color:#888;font-size:12px;margin-bottom:4px;">Agent group</div>' +
+                    '<div class="alert alert-info" style="font-size:12px;">' +
+                    'Creates the agent group <code>' + escapeHtml(d.agent_group.name) + '</code> ' +
+                    'holding the log collection this pack needs. Manager-side rules cannot see a log the ' +
+                    'agent never reads, so assign your agents to that group after installing. ' +
+                    'An existing group of the same name is never overwritten.</div></div>';
+            }
             body.innerHTML = html;
             const footer = document.getElementById('modalFooter');
             if (footer) {
@@ -7397,6 +7420,9 @@ _I18N_SCRIPT = r"""
       'Rule series maintained by Jason Tools. Each pack bundles rules, decoders and CDB lists, and can be removed again.': 'Jason Tools 維護的規則系列。每個套件包含規則、解碼器與 CDB 清單，安裝後可隨時移除。',
       'Pack': '套件',
       'Rule IDs': '規則 ID',
+      'Scheduled jobs': '排程工作',
+      'Agent group': 'Agent 群組',
+      'This pack installs an updater and runs it as root on a schedule. It is removed again when the pack is removed.': '本套件會安裝一支更新程式，並以 root 身分排程執行。移除套件時會一併刪除。',
       'Installs to': '安裝位置',
       'Installed': '已安裝',
       'Not installed': '未安裝',
@@ -12401,7 +12427,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     def _pack_state_dir():
         return os.path.join(_wazuh_path(), 'etc', 'jt-packs')
     PACK_ID_PATTERN = re.compile(r'^[a-z0-9][a-z0-9._-]{0,63}$')
-    PACK_DEST_ROOTS = ('etc/rules/', 'etc/lists/', 'etc/decoders/')
+    PACK_DEST_ROOTS = ('etc/rules/', 'etc/lists/', 'etc/decoders/', 'etc/jt-packs/bin/')
 
     def _pack_dir(pack_id):
         if not PACK_ID_PATTERN.match(pack_id or ''):
@@ -12482,6 +12508,115 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             with open(conf_path, 'w', encoding='utf-8') as fh:
                 fh.write(content)
         return original
+
+    CRON_DIR = '/etc/cron.d'
+    CRON_SCHEDULE = re.compile(r'^[\d*/,\- ]{5,64}$')
+
+    def _cron_path(pack_id):
+        # cron.d refuses a filename containing a dot, so the pack id is sanitised.
+        return os.path.join(CRON_DIR, 'jt-' + re.sub(r'[^A-Za-z0-9_-]', '-', pack_id))
+
+    def _install_scripts(pdir, manifest, wazuh, written, backed_up, backup_dir):
+        """Install a pack's updater scripts and, if asked, schedule them.
+
+        A pack whose rules match a CDB list is useless without something to fill
+        that list. Shipping the rules and leaving the operator to find an updater
+        is how jt-ioc came to sit with an empty list while thirty rules matched
+        nothing, so the updater travels with the pack.
+
+        This writes an executable that runs as root on a schedule, which is a
+        privileged act. It is therefore explicit in the manifest, shown in the UI
+        before installing, reported in the install result, and removed on
+        uninstall.
+        """
+        import shutil
+        scheduled = []
+        scripts = manifest.get('scripts') or []
+        if not scripts:
+            return scheduled
+        bindir = os.path.join(wazuh, 'etc', 'jt-packs', 'bin')
+        os.makedirs(bindir, exist_ok=True)
+        cron_lines = []
+        for entry in scripts:
+            dest_rel = entry.get('dest', '')
+            if not _validate_dest(dest_rel) or not dest_rel.startswith('etc/jt-packs/bin/'):
+                raise ValueError('Refusing unsafe script destination: %s' % dest_rel)
+            src = os.path.join(pdir, 'scripts', entry['name'])
+            if not os.path.isfile(src):
+                raise ValueError('Script %s is listed but missing from the pack' % entry['name'])
+            dest = os.path.join(wazuh, dest_rel)
+            if os.path.exists(dest):
+                shutil.copy2(dest, os.path.join(backup_dir, os.path.basename(dest)))
+                backed_up.append(dest)
+            shutil.copy2(src, dest)
+            os.chmod(dest, 0o750)
+            written.append(dest)
+
+            schedule = (entry.get('cron') or '').strip()
+            if not schedule:
+                continue
+            if not CRON_SCHEDULE.match(schedule):
+                raise ValueError('Refusing malformed cron schedule: %r' % schedule[:40])
+            args = (entry.get('args') or '').format(wazuh_path=wazuh)
+            if not re.match(r'^[\w\s./=:-]*$', args):
+                raise ValueError('Refusing unsafe script arguments: %r' % args[:40])
+            logfile = os.path.join(wazuh, 'logs', os.path.splitext(entry['name'])[0] + '.log')
+            # cron runs with a minimal environment, so the interpreter is named
+            # outright rather than relying on PATH or on the shebang resolving.
+            import sys as _sys
+            python = _sys.executable if os.path.isabs(_sys.executable or '') else '/usr/bin/python3'
+            cron_lines.append('%s root %s %s %s >> %s 2>&1'
+                              % (schedule, python, dest, args, logfile))
+            scheduled.append({'script': entry['name'], 'schedule': schedule, 'log': logfile})
+
+        if cron_lines and os.path.isdir(CRON_DIR):
+            path = _cron_path(manifest.get('id', 'pack'))
+            body = ('# Installed by jt-wazuh-mgr for pack %s. Removed when the pack is.\n'
+                    'SHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n'
+                    % manifest.get('id', '')) + '\n'.join(cron_lines) + '\n'
+            with open(path, 'w', encoding='utf-8') as fh:
+                fh.write(body)
+            os.chmod(path, 0o644)
+            written.append(path)
+        return scheduled
+
+    def _install_agent_group(pdir, manifest, wazuh, written):
+        """Create the agent group a pack needs, so collection is not left to memory.
+
+        Manager-side rules cannot see a log the agent never reads. Every pack that
+        depends on agent-side collection carries the group that provides it; the
+        operator still assigns agents to it, which is the part that has to stay a
+        human decision.
+        """
+        import shutil
+        spec = manifest.get('agent_group')
+        if not spec:
+            return None
+        name = spec.get('name', '')
+        if not re.match(r'^[A-Za-z0-9_-]{1,64}$', name):
+            raise ValueError('Refusing unsafe agent group name: %r' % name[:40])
+        src = os.path.join(pdir, 'agent', spec.get('config', 'agent.conf'))
+        if not os.path.isfile(src):
+            raise ValueError('Agent group config is missing from the pack')
+        gdir = os.path.join(wazuh, 'etc', 'shared', name)
+        dest = os.path.join(gdir, 'agent.conf')
+        # An existing group config is never overwritten. Agents may already be
+        # assigned to it and it may carry settings this pack knows nothing about;
+        # replacing it would silently discard someone else's configuration.
+        if os.path.isfile(dest):
+            return {'name': name, 'created': False, 'already_present': True,
+                    'note': 'the group already existed and was left untouched; '
+                            'add the pack\'s localfile entries by hand if they are missing'}
+        os.makedirs(gdir, exist_ok=True)
+        shutil.copy2(src, dest)
+        try:
+            shutil.chown(dest, 'wazuh', 'wazuh')
+            shutil.chown(gdir, 'wazuh', 'wazuh')
+        except Exception:
+            pass
+        os.chmod(dest, 0o660)
+        written.append(dest)
+        return {'name': name, 'created': True, 'already_present': False}
 
     def _installed_rule_ids(skip_files=()):
         """Rule ids already present on the manager, for conflict detection."""
@@ -12567,9 +12702,15 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 src = os.path.join(pdir, sub, entry['name'])
                 size = os.path.getsize(src) if os.path.isfile(src) else 0
                 files.append({**entry, 'size': size})
+            for entry in (manifest.get('scripts') or []):
+                src = os.path.join(pdir, 'scripts', entry['name'])
+                files.append({**entry, 'type': 'script',
+                              'size': os.path.getsize(src) if os.path.isfile(src) else 0})
             return jsonify({
                 'manifest': manifest,
                 'files': files,
+                'scripts': manifest.get('scripts') or [],
+                'agent_group': manifest.get('agent_group'),
                 'rule_ids': rule_ids,
                 'rule_count': len(rule_ids),
                 'conflicts': conflicts,
@@ -12636,11 +12777,18 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 if list_paths:
                     conf_before = _declare_lists(list_paths, remove=False)
 
+                scheduled = _install_scripts(pdir, manifest, _wazuh_path(),
+                                             written, backed_up, backup_dir)
+                agent_group = _install_agent_group(pdir, manifest, _wazuh_path(), written)
+
                 ok, problems = _ruleset_is_valid()
                 if not ok:
                     raise RuntimeError('Ruleset validation failed: ' + '; '.join(problems[:3]))
             except Exception as install_error:
-                # roll everything back
+                # roll everything back, including anything scheduled
+                cron_file = _cron_path(pack_id)
+                if os.path.isfile(cron_file) and cron_file in written:
+                    os.remove(cron_file)
                 for dest in written:
                     backup = os.path.join(backup_dir, os.path.basename(dest))
                     if os.path.exists(backup):
@@ -12661,6 +12809,11 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 'installed_by': get_current_user(),
                 'files': [{'dest': e['dest'], 'sha256': e.get('sha256', '')} for e in manifest.get('files', [])],
                 'declared_lists': list_paths,
+                'scripts': [{'dest': e['dest'], 'sha256': e.get('sha256', '')}
+                            for e in (manifest.get('scripts') or [])],
+                'scheduled': scheduled,
+                'cron_file': _cron_path(pack_id) if scheduled else None,
+                'agent_group': agent_group,
                 'backup_dir': backup_dir,
                 'replaced': backed_up,
             }
@@ -12669,10 +12822,24 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
             logger.info(f"PACK INSTALLED: user={get_current_user()} pack={sanitize_for_log(pack_id)} "
                         f"version={manifest.get('version')} files={len(written)}")
+            extra = []
+            if scheduled:
+                extra.append('scheduled %s' % ', '.join(
+                    '%s (%s)' % (j['script'], j['schedule']) for j in scheduled))
+            if agent_group and agent_group.get('created'):
+                extra.append("created agent group '%s' -- assign agents to it for "
+                             'collection to start' % agent_group['name'])
+            elif agent_group:
+                extra.append("agent group '%s' already present, left as it is"
+                             % agent_group['name'])
+            message = ('Installed %s %s. Reload the ruleset for it to take effect.'
+                       % (pack_id, manifest.get('version', '')))
+            if extra:
+                message += ' Also ' + '; '.join(extra) + '.'
             return jsonify({'success': True, 'pack': pack_id, 'files': len(written),
                             'declared_lists': list_paths, 'replaced': backed_up,
-                            'message': f"Installed {pack_id} {manifest.get('version','')}. "
-                                       f"Reload the ruleset for it to take effect."})
+                            'scheduled': scheduled, 'agent_group': agent_group,
+                            'message': message})
         except Exception as e:
             logger.error(f"PACK INSTALL ERROR: {e}")
             return jsonify({'error': str(e)}), 500
@@ -12716,6 +12883,27 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     os.remove(dest)
                     removed.append(entry['dest'])
 
+            # Scripts and their schedule go too. A cron entry pointing at a file
+            # the uninstall just deleted would run and fail every few hours.
+            for entry in state.get('scripts', []):
+                dest = os.path.join(_wazuh_path(), entry['dest'])
+                if os.path.exists(dest):
+                    os.remove(dest)
+                    removed.append(entry['dest'])
+            cron_file = state.get('cron_file')
+            if cron_file and os.path.isfile(cron_file):
+                os.remove(cron_file)
+                removed.append(cron_file)
+
+            # The agent group is left in place on purpose. Agents may have been
+            # assigned to it, and removing a group silently unassigns them --
+            # that is the operator's call, not the uninstaller's.
+            group_note = None
+            grp_state = state.get('agent_group')
+            if grp_state and grp_state.get('name'):
+                group_note = ("agent group '%s' was left in place; remove it yourself "
+                              'if no agent still needs it' % grp_state['name'])
+
             if state.get('declared_lists'):
                 _declare_lists(state['declared_lists'], remove=True)
 
@@ -12723,9 +12911,12 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             os.remove(_pack_state_path(pack_id))
             logger.info(f"PACK UNINSTALLED: user={get_current_user()} pack={sanitize_for_log(pack_id)} "
                         f"removed={len(removed)} ruleset_ok={ok}")
+            message = ('Removed %s. Reload the ruleset for it to take effect.' % pack_id)
+            if group_note:
+                message += ' Note: ' + group_note + '.'
             return jsonify({'success': True, 'pack': pack_id, 'removed': removed,
                             'ruleset_valid': ok, 'problems': problems,
-                            'message': f"Removed {pack_id}. Reload the ruleset for it to take effect."})
+                            'group_note': group_note, 'message': message})
         except Exception as e:
             logger.error(f"PACK UNINSTALL ERROR: {e}")
             return jsonify({'error': str(e)}), 500

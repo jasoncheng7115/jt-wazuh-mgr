@@ -2,14 +2,17 @@
   "id": "jt-ioc",
   "name": "IP Threat Intelligence",
   "name_zh": "IP 威脅情資比對",
-  "version": "1.0",
+  "version": "1.1",
   "summary": "Matches source/destination IP fields against a multi-source threat intel blocklist.",
   "summary_zh": "以多來源威脅情資黑名單比對事件中的來源／目的 IP。",
   "rule_id_range": "906001-906099",
   "notes_zh": [
     "涵蓋 30 種常見的 IP 欄位命名（srcip / src_ip / data.srcip / Sysmon sourceIp 等）。",
-    "清單需由更新腳本定期產生，來源包含 blocklist.de、CINS Army、Maltrail、firehol 等。",
-    "安裝後清單為空，比對不到任何東西；請先設定更新排程再評估告警量。"
+    "套件自帶更新腳本並排程每六小時執行。比對 CDB 清單的規則在清單被填滿前毫無作用，而把「自己去找更新腳本」留給使用者，正是這個套件曾經清單全空、30 條規則什麼都比對不到的原因。",
+    "更新腳本只用標準函式庫，且全程使用絕對路徑。舊版用相對路徑，cron 沒有 cd 就靜默失敗了十個半月。",
+    "若新清單比原本少掉一半以上，會拒絕覆蓋 —— 因為「來源格式改變」和「網路上壞人變少了」看起來一模一樣。",
+    "保留位址與知名公共服務永遠不會被列入，不論來源怎麼說。站台自訂排除寫在 etc/jt-packs/ioc-cache/exclusions.txt，一行一個 IP 或 CIDR。",
+    "安裝此套件會寫入一支以 root 身分排程執行的程式。這是刻意的，移除套件時會一併刪除。"
   ],
   "author": "Jason Tools",
   "license": "Apache-2.0",
@@ -33,7 +36,20 @@
   ],
   "notes": [
     "Covers about 30 different field names used for IP addresses (srcip, src_ip, data.srcip, Sysmon sourceIp and so on).",
-    "The CDB list must be produced by an update job; typical sources are blocklist.de, CINS Army, Maltrail and firehol.",
-    "The list ships empty and matches nothing. Schedule the update job first, then assess the alert volume."
+    "The pack installs its own updater and schedules it every six hours. Rules that match a CDB list are useless until something fills it, and leaving the operator to find an updater is how this pack came to sit with an empty list while thirty rules matched nothing.",
+    "The updater is standard library only and uses absolute paths throughout. The previous job used relative paths, cron ran it without a cd, and it failed silently for ten and a half months.",
+    "It refuses to install a list that has lost more than half its entries, because a feed changing format looks exactly like the internet becoming safe.",
+    "Reserved and well-known addresses are never blocked, whatever a feed claims. Site exclusions go in etc/jt-packs/ioc-cache/exclusions.txt, one IP or CIDR per line.",
+    "Installing this pack writes an executable that runs as root on a schedule. That is deliberate and is removed again on uninstall."
+  ],
+  "scripts": [
+    {
+      "name": "update-ip-blocklist.py",
+      "dest": "etc/jt-packs/bin/update-ip-blocklist.py",
+      "sha256": "f71ae2f53708fe06103902e5c7a77ded524a839fb4a42f8c3da2bfcc1550531c",
+      "cron": "17 */6 * * *",
+      "args": "--wazuh-path {wazuh_path}",
+      "description": "Rebuilds jason_tools_blacklist from 11 public IP threat-intel feeds"
+    }
   ]
 }
