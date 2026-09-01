@@ -4,6 +4,36 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.18 (2026-09-01)
+
+- **The ruleset reload now shows what analysisd warned about.** Reloading with a
+  CDB list a node cannot load returns this:
+
+  ```
+  error: 0   message: "ok"
+  data: ["List 'etc/lists/x' could not be loaded. Rule '199990' will be ignored."]
+  ```
+
+  A successful reload, carrying the news that a rule has just been switched off.
+  The per-node reload read only `failed_items`, so it reported a clean success
+  and dropped the warning. It is now returned and shown in a dialog rather than a
+  toast, because a rule that loads and can never match is worth stopping for.
+
+  This was measured, not assumed: on the production cluster a probe rule reading
+  an undeclared list produced exactly that warning on the worker, matched nothing,
+  and began matching the moment the declaration was added.
+
+- **The cluster-wide reload no longer lists the plain success sentence as a
+  warning.** It showed "Ruleset reload request sent successfully." in the warnings
+  column of every node on every clean reload, which teaches people to skim past
+  the column a real warning would appear in.
+
+- The v1.6.17 note said an undeclared list is ignored "with no error at load and
+  no warning on reload". The first half is right and the second is not: analysisd
+  warns, on an otherwise successful reload. Corrected here, in the test plan and
+  in the code comments. It is the reason this release exists — the information was
+  always there, and the tool was throwing it away.
+
 ## v1.6.17 (2026-09-01)
 
 - **A pack that ships a CDB list is now declared on every cluster node, not just
@@ -11,9 +41,10 @@ All notable changes to **JT Wazuh Manager** are documented here.
   and `etc/lists`, but `ossec.conf` is in its own `excluded_files`, alongside
   `ar.conf`. So the rules and the list arrived on every worker while the `<list>`
   declaration they depend on stayed behind on the master — and a rule whose list
-  is undeclared is ignored **silently**: no error at load, no warning on reload.
-  Workers are where agent events are processed, so on a master-plus-workers
-  cluster the detection simply did not run, and nothing said so.
+  is undeclared loads but can never match. analysisd does say so, but as a warning
+  on an otherwise **successful** reload: never an error, never blocking anything,
+  and easy to miss. Workers are where agent events are processed, so on a
+  master-plus-workers cluster the detection simply did not run.
 
   Four of the seven packs ship a CDB list and were affected: `jt-ioc`,
   `jt-malware-hash`, `jt-portable-detect` and `jt-zimbra`.

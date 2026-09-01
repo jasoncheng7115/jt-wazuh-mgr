@@ -479,5 +479,59 @@ class TestPeerDeclaration(WebUITestCase):
         return fn(paths, remove=remove)
 
 
+class TestReloadWarnings(WebUITestCase):
+    """analysisd reports an unusable rule as a warning on a *successful* reload.
+
+    A list a node cannot load produces
+    "List 'etc/lists/x' could not be loaded. Rule '199990' will be ignored."
+    in the affected item's msg, with error 0. Reading only failed_items shows a
+    clean success for a reload that just switched a rule off.
+    """
+
+    SUCCESS = 'Ruleset reload request sent successfully.'
+    WARNING = ("List 'etc/lists/jt-probe' could not be loaded. "
+               "Rule '199990' will be ignored.")
+
+    def _reload_reply(self, msg):
+        def fake_request(_self, method, endpoint, data=None, params=None):
+            if endpoint == '/cluster/local/info':
+                return {'data': {'affected_items': [{'node': 'node01'}]}, 'error': 0}
+            if endpoint == '/cluster/status':
+                return {'data': {'enabled': 'yes', 'running': 'yes'}, 'error': 0}
+            return {'error': 0, 'data': {
+                'affected_items': [{'name': 'node02', 'msg': msg}],
+                'failed_items': [], 'total_affected_items': 1}}
+        web_ui.WazuhAPISession.request = fake_request
+
+    def test_a_warning_is_reported_rather_than_reading_as_success(self):
+        self._reload_reply(self.WARNING)
+        body = self.client.put('/api/nodes/node02/reload-ruleset').get_json()
+        self.assertTrue(body.get('success'))
+        self.assertTrue(body.get('warnings'), 'the warning was dropped')
+        self.assertIn('will be ignored', body['warnings'][0])
+        self.assertIn('node02', body['warnings'][0])
+
+    def test_a_clean_reload_reports_no_warnings(self):
+        self._reload_reply(self.SUCCESS)
+        body = self.client.put('/api/nodes/node02/reload-ruleset').get_json()
+        self.assertTrue(body.get('success'))
+        self.assertFalse(body.get('warnings'),
+                         'the plain success sentence was reported as a warning')
+
+    def test_the_cluster_reload_does_not_list_success_as_a_warning(self):
+        self._reload_reply(self.SUCCESS)
+        body = self.client.post('/api/cluster/reload-ruleset').get_json()
+        for node in body.get('nodes', []):
+            self.assertEqual(node.get('warnings'), [],
+                             'a clean reload listed the success sentence as a warning')
+
+    def test_the_cluster_reload_keeps_a_real_warning(self):
+        self._reload_reply(self.WARNING)
+        body = self.client.post('/api/cluster/reload-ruleset').get_json()
+        found = [w for n in body.get('nodes', []) for w in (n.get('warnings') or [])]
+        self.assertTrue(found, 'a real warning was filtered out with the success text')
+        self.assertIn('will be ignored', found[0])
+
+
 if __name__ == '__main__':
     unittest.main()

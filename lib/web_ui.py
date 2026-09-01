@@ -4152,6 +4152,18 @@ HTML_TEMPLATE = '''
                 showToast((result && result.error) || 'Reload failed', 'error');
                 return;
             }
+            // A reload that switched a rule off reports success with a warning.
+            // Showing only the success would hide exactly the case worth seeing.
+            if ((result.warnings || []).length) {
+                showModal('Ruleset reloaded, with warnings',
+                    '<div class="alert alert-warning">The ruleset reloaded on ' +
+                    escapeHtml(node) + ', but analysisd reported the following. ' +
+                    'A rule named here is loaded but will never match.</div>' +
+                    '<ul style="margin:8px 0 0 18px;font-size:13px;">' +
+                    result.warnings.map(w => '<li>' + escapeHtml(w) + '</li>').join('') +
+                    '</ul>');
+                return;
+            }
             showToast('Ruleset reloaded on ' + node, 'success');
         }
 
@@ -12387,11 +12399,30 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             else:
                 result = api.request('PUT', '/manager/analysisd/reload')
             failed = result.get('data', {}).get('failed_items') or []
-            logger.info(f"RULESET RELOAD: user={get_current_user()} node={sanitize_for_log(name)} failed={len(failed)}")
+            # analysisd reports a list it could not load as a *warning* on an
+            # otherwise successful reload, and the framework puts it in the
+            # affected item's msg. Reading only failed_items therefore shows a
+            # clean success for a reload that just switched a rule off -- which
+            # is how an undeclared CDB list stays invisible.
+            warnings = []
+            for item in (result.get('data', {}).get('affected_items') or []):
+                if not isinstance(item, dict):
+                    continue          # some endpoints answer with bare strings
+                msg = (item.get('msg') or '').strip()
+                if msg and not msg.startswith('Ruleset reload request sent successfully'):
+                    warnings.append('%s: %s' % (item.get('name') or name, msg))
+            logger.info(f"RULESET RELOAD: user={get_current_user()} node={sanitize_for_log(name)} "
+                        f"failed={len(failed)} warnings={len(warnings)}")
             if failed:
                 err = failed[0].get('error', {})
                 msg = err.get('message') if isinstance(err, dict) else str(err)
                 return jsonify({'error': msg or 'Reload failed', 'result': result}), 400
+            if warnings:
+                for w in warnings:
+                    logger.warning('RULESET RELOAD WARNING: %s', sanitize_for_log(w))
+                return jsonify({'success': True, 'warnings': warnings,
+                                'message': 'Ruleset reloaded on %s, with warnings' % name,
+                                'result': result})
             return jsonify({'success': True, 'message': f"Ruleset reloaded on {name}", 'result': result})
         except Exception as e:
             logger.error(f"RULESET RELOAD ERROR: {e}")
@@ -12550,8 +12581,9 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         ossec.conf is in the cluster's own excluded_files, alongside ar.conf, so
         a <list> declaration written here never reaches a worker. Rules, decoders
         and the list files themselves do sync; the declaration does not. A rule
-        whose CDB list is undeclared is ignored *silently* -- no error at load,
-        no warning on reload -- and workers are where agent events are processed.
+        whose CDB list is undeclared loads but can never match; analysisd says so
+        as a warning on an otherwise successful reload, which is easy to miss.
+        Workers are where agent events are processed.
         """
         import socket
         try:
@@ -13251,6 +13283,12 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     node_warnings = item.get('warnings') or item.get('msg') or []
                     if isinstance(node_warnings, str):
                         node_warnings = [node_warnings]
+                    # On a clean reload msg holds the plain success sentence.
+                    # Listing that as a warning trains people to ignore the
+                    # column, and a real warning then blends into it.
+                    node_warnings = [w for w in node_warnings
+                                     if not str(w).startswith(
+                                         'Ruleset reload request sent successfully')]
                     nodes.append({'node': name, 'ok': True, 'warnings': node_warnings})
                     warnings.extend(node_warnings)
                 else:
