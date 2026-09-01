@@ -4,6 +4,44 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.17 (2026-09-01)
+
+- **A pack that ships a CDB list is now declared on every cluster node, not just
+  the one running the tool.** The cluster synchronises `etc/rules`, `etc/decoders`
+  and `etc/lists`, but `ossec.conf` is in its own `excluded_files`, alongside
+  `ar.conf`. So the rules and the list arrived on every worker while the `<list>`
+  declaration they depend on stayed behind on the master — and a rule whose list
+  is undeclared is ignored **silently**: no error at load, no warning on reload.
+  Workers are where agent events are processed, so on a master-plus-workers
+  cluster the detection simply did not run, and nothing said so.
+
+  Four of the seven packs ship a CDB list and were affected: `jt-ioc`,
+  `jt-malware-hash`, `jt-portable-detect` and `jt-zimbra`.
+
+  The declaration now goes out over the Wazuh API
+  (`PUT /cluster/{node_id}/configuration`), which needs no setup. If that fails,
+  it falls back to SSH using the same optional per-node configuration the node
+  configuration editor already uses. Each write is then **read back**, because a
+  200 means the upload was accepted, not that the file holds what was sent.
+
+- **What happens when a worker cannot be reached is now a decision, not a
+  default.** The install aborts and rolls back, naming the node, its address and
+  the reason, and saying what to do: configure SSH for that node, or add the
+  `<list>` entries to its `ossec.conf` by hand and reload. To install on this
+  node alone, repeat the request with `local_only`.
+
+  Choosing that records the nodes that are short in the pack's installed state,
+  and the pack detail shows it every time it is opened. A warning shown once at
+  install time is gone by the time anyone wonders why the worker is not alerting.
+
+- Removing a pack now withdraws the declaration from the other nodes too, and
+  logs any node it could not reach rather than leaving it silently declared.
+
+- 13 more tests, 159 in total, covering the declaration text itself, the peer
+  write path, a node that accepts a write without applying it, a redundant
+  declaration writing nothing a second time, the abort-and-roll-back path, and
+  `local_only`.
+
 ## v1.6.16 (2026-09-01)
 
 - **Three input-validation gaps, found by writing the tests that were missing.**

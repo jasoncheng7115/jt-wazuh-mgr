@@ -6532,6 +6532,18 @@ HTML_TEMPLATE = '''
                         (j.description ? ' &nbsp; ' + escapeHtml(j.description) : '') + '</li>').join('') +
                     '</ul></div></div>';
             }
+            // An install that could not reach every node stays visible here. A
+            // toast shown once at install time is long gone by the time anyone
+            // wonders why the worker is not alerting.
+            if ((d.undeclared_nodes || []).length) {
+                html += '<div style="margin-top:14px;"><div style="color:#888;font-size:12px;margin-bottom:4px;">Incomplete on some nodes</div>' +
+                    '<div class="alert alert-danger" style="font-size:12px;">' +
+                    'The CDB list is not declared on <code>' +
+                    d.undeclared_nodes.map(escapeHtml).join('</code>, <code>') + '</code>. ' +
+                    'Rules that read the list are ignored there, with no error and no warning. ' +
+                    'Declare the list inside <code>&lt;ruleset&gt;</code> in the ossec.conf on that node ' +
+                    'and reload it, or install this pack again once the node can be reached.</div></div>';
+            }
             if (d.agent_group && d.agent_group.name) {
                 html += '<div style="margin-top:14px;"><div style="color:#888;font-size:12px;margin-bottom:4px;">Agent group</div>' +
                     '<div class="alert alert-info" style="font-size:12px;">' +
@@ -7429,6 +7441,7 @@ _I18N_SCRIPT = r"""
       'Pack': '套件',
       'Rule IDs': '規則 ID',
       'Scheduled jobs': '排程工作',
+      'Incomplete on some nodes': '部分節點未完成',
       'Agent group': 'Agent 群組',
       'This pack installs an updater and runs it as root on a schedule. It is removed again when the pack is removed.': '本套件會安裝一支更新程式，並以 root 身分排程執行。移除套件時會一併刪除。',
       'Installs to': '安裝位置',
@@ -12492,12 +12505,13 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         except Exception as e:
             return False, [str(e)]
 
-    def _declare_lists(list_paths, remove=False):
-        """Add or remove <list> entries in ossec.conf. Returns the previous content."""
-        conf_path = os.path.join(_wazuh_path(), 'etc', 'ossec.conf')
-        with open(conf_path, encoding='utf-8') as fh:
-            original = fh.read()
-        content = original
+    def _apply_list_declarations(content, list_paths, remove=False):
+        """Add or remove <list> entries in an ossec.conf, returning the new text.
+
+        Pure text in, pure text out. The local file and every cluster peer go
+        through this same function, so a declaration cannot end up written one
+        way here and another way there.
+        """
         for rel in list_paths:
             tag = '<list>%s</list>' % rel
             present = tag in content
@@ -12517,10 +12531,169 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     indent = '    '
                     pos = block.start() + block.group(0).rfind('</ruleset>')
                 content = content[:pos] + indent + tag + '\n' + content[pos:]
+        return content
+
+    def _declare_lists(list_paths, remove=False):
+        """Apply the declarations to the local ossec.conf. Returns the previous content."""
+        conf_path = os.path.join(_wazuh_path(), 'etc', 'ossec.conf')
+        with open(conf_path, encoding='utf-8') as fh:
+            original = fh.read()
+        content = _apply_list_declarations(original, list_paths, remove=remove)
         if content != original:
             with open(conf_path, 'w', encoding='utf-8') as fh:
                 fh.write(content)
         return original
+
+    def _cluster_peer_nodes():
+        """Cluster nodes other than the one this tool runs on.
+
+        ossec.conf is in the cluster's own excluded_files, alongside ar.conf, so
+        a <list> declaration written here never reaches a worker. Rules, decoders
+        and the list files themselves do sync; the declaration does not. A rule
+        whose CDB list is undeclared is ignored *silently* -- no error at load,
+        no warning on reload -- and workers are where agent events are processed.
+        """
+        import socket
+        try:
+            nodes = get_api_session().get_nodes() or []
+        except Exception:
+            return []
+        local_hostname = socket.gethostname()
+        peers = []
+        for n in nodes:
+            name = n.get('name') or ''
+            # An entry without a cluster role is not a node. Without this a
+            # malformed or unexpected response turns into writes aimed at
+            # whatever names it happened to contain.
+            if n.get('type') not in ('master', 'worker'):
+                continue
+            if not name or not validate_node_name(name):
+                continue
+            is_local = (n.get('type') == 'master' or
+                        name == local_hostname or
+                        name.replace('-server', '') == local_hostname or
+                        local_hostname.replace('-server', '') == name.replace('-server', ''))
+            if not is_local:
+                peers.append({'name': name, 'ip': n.get('ip', '')})
+        return peers
+
+    def _peer_config_over_ssh(node, content=None):
+        """Read or write a worker's ossec.conf over SSH, if the operator set it up.
+
+        SSH is how the rest of this tool reaches a worker's configuration, and it
+        is optional in exactly the same way -- see the node configuration editor.
+        Returns (text_or_True, error_or_None).
+        """
+        import subprocess
+        conf_path = '/var/ossec/etc/ossec.conf'
+        ssh_cfg = get_config().get_ssh_config_for_node(node)
+        if not ssh_cfg:
+            return None, 'no SSH configuration for this node'
+        base = ['ssh', '-i', ssh_cfg['key_file'], '-o', 'StrictHostKeyChecking=no',
+                '-o', 'ConnectTimeout=10', '-p', str(ssh_cfg['port']),
+                f"{ssh_cfg['user']}@{ssh_cfg['host']}"]
+        try:
+            if content is None:
+                r = subprocess.run(base + [f'cat {conf_path}'],
+                                   capture_output=True, text=True, timeout=30)
+                return (r.stdout, None) if r.returncode == 0 else (
+                    None, r.stderr.strip() or 'SSH read failed')
+            stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            remote = (f'mkdir -p /var/ossec/etc/backup && '
+                      f'cp {conf_path} /var/ossec/etc/backup/ossec.conf.{stamp}.bak 2>/dev/null; '
+                      f'cat > {conf_path}')
+            r = subprocess.run(base + [remote], input=content,
+                               capture_output=True, text=True, timeout=30)
+            return (True, None) if r.returncode == 0 else (
+                None, r.stderr.strip() or 'SSH write failed')
+        except subprocess.TimeoutExpired:
+            return None, 'SSH connection timed out'
+        except Exception as e:
+            return None, f'SSH error: {e}'
+
+    def _declare_on_one_peer(api, node, list_paths, remove):
+        """Declare on a single peer. Returns (original_or_None, error_or_None).
+
+        The API is tried first because it needs no setup at all. SSH is the
+        fallback, using the same node configuration the rest of the tool uses.
+        """
+        current = err_api = None
+        ok, current = api.request_raw(
+            'GET', f'/cluster/{node}/configuration', params={'raw': 'true'})
+        via_ssh = False
+        if not ok:
+            err_api = current
+            current, err_ssh = _peer_config_over_ssh(node)
+            if current is None:
+                return None, f'{err_api}; over SSH: {err_ssh}'
+            via_ssh = True
+
+        updated = _apply_list_declarations(current, list_paths, remove=remove)
+        if updated == current:
+            return None, None            # already in the state we want
+
+        if not via_ssh:
+            ok, detail = api.request_raw(
+                'PUT', f'/cluster/{node}/configuration', body=updated)
+            if not ok:
+                written, err_ssh = _peer_config_over_ssh(node, content=updated)
+                if written is None:
+                    return None, f'{detail}; over SSH: {err_ssh}'
+        else:
+            written, err_ssh = _peer_config_over_ssh(node, content=updated)
+            if written is None:
+                return None, err_ssh
+
+        # A write being accepted is not the same as the file now holding it.
+        ok, after = api.request_raw(
+            'GET', f'/cluster/{node}/configuration', params={'raw': 'true'})
+        if not ok:
+            after, _ = _peer_config_over_ssh(node)
+        if after:
+            for rel in list_paths:
+                if (('<list>%s</list>' % rel) in after) == bool(remove):
+                    return current, ('the write was accepted but the declaration '
+                                     f'for {rel} is still not in place')
+        return current, None
+
+    def _declare_lists_on_peers(list_paths, remove=False):
+        """Apply the same declarations to every other cluster node.
+
+        Returns (originals, failures). `originals` maps a node name to its
+        configuration as it was, so an install that fails later can put it back.
+        A failure is {'node', 'ip', 'error'}; the caller decides how to word it,
+        the same way the rest of the tool reports a worker it could not reach.
+        """
+        originals, failures = {}, []
+        if not list_paths:
+            return originals, failures
+        api = get_api_session()
+        for peer in _cluster_peer_nodes():
+            node, ip = peer['name'], peer['ip']
+            try:
+                original, err = _declare_on_one_peer(api, node, list_paths, remove)
+            except Exception as e:
+                original, err = None, str(e)
+            if original is not None:
+                originals[node] = original
+            if err:
+                failures.append({'node': node, 'ip': ip, 'error': err})
+        return originals, failures
+
+    def _restore_peer_configs(originals):
+        """Undo _declare_lists_on_peers. Best effort: a rollback must not raise."""
+        if not originals:
+            return
+        try:
+            api = get_api_session()
+        except Exception:
+            return
+        for node, content in originals.items():
+            try:
+                api.request_raw('PUT', f'/cluster/{node}/configuration', body=content)
+            except Exception:
+                logger.warning('could not restore ossec.conf on node %s',
+                               sanitize_for_log(node))
 
     CRON_DIR = '/etc/cron.d'
     CRON_SCHEDULE = re.compile(r'^[\d*/,\- ]{5,64}$')
@@ -12728,6 +12901,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 'rule_count': len(rule_ids),
                 'conflicts': conflicts,
                 'installed': bool(state),
+                'undeclared_nodes': (state or {}).get('undeclared_nodes') or [],
                 'state': state,
             })
         except Exception as e:
@@ -12749,6 +12923,9 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         pdir = _pack_dir(pack_id)
         data = request.get_json(silent=True) or {}
         force = bool(data.get('force'))
+        # Installing with a node unreachable is a decision, not a default.
+        local_only = bool(data.get('local_only'))
+        undeclared_nodes = []
 
         try:
             state = _installed_state(pack_id)
@@ -12766,6 +12943,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
             written, backed_up, list_paths = [], [], []
             conf_before = None
+            peer_conf_before = {}
             try:
                 for entry in manifest.get('files', []):
                     dest_rel = entry.get('dest', '')
@@ -12789,6 +12967,28 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
                 if list_paths:
                     conf_before = _declare_lists(list_paths, remove=False)
+                    # The cluster does not synchronise ossec.conf, so declaring
+                    # only here would leave every worker ignoring these rules
+                    # without saying so. Better to fail the install than to
+                    # report success for a pack that half works.
+                    peer_conf_before, peer_failures = _declare_lists_on_peers(list_paths)
+                    if peer_failures and not local_only:
+                        raise RuntimeError(
+                            'Could not declare the CDB list on every cluster node: '
+                            + '; '.join('%s (%s): %s' % (f['node'], f['ip'] or 'no address',
+                                                        f['error'])
+                                        for f in peer_failures[:3])
+                            + '. The rules would load on this node and be ignored on '
+                            'the others, with nothing to say so. The cluster does not '
+                            'synchronise ossec.conf. Either configure SSH for that node '
+                            '(optional, same setting the node configuration editor uses) '
+                            'and install again, or add the <list> entries to its '
+                            'ossec.conf inside <ruleset> by hand and reload it. '
+                            'To install here only, repeat the request with local_only.')
+                    if peer_failures:
+                        # Proceeding was asked for explicitly. Record which nodes
+                        # are short so the pack does not look complete later.
+                        undeclared_nodes = [f['node'] for f in peer_failures]
 
                 scheduled = _install_scripts(pdir, manifest, _wazuh_path(),
                                              written, backed_up, backup_dir)
@@ -12811,6 +13011,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 if conf_before is not None:
                     with open(os.path.join(_wazuh_path(), 'etc', 'ossec.conf'), 'w', encoding='utf-8') as fh:
                         fh.write(conf_before)
+                _restore_peer_configs(peer_conf_before)
                 logger.error(f"PACK INSTALL ROLLED BACK: user={get_current_user()} "
                              f"pack={sanitize_for_log(pack_id)} error={sanitize_for_log(str(install_error))}")
                 return jsonify({'error': str(install_error), 'rolled_back': True}), 400
@@ -12822,6 +13023,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 'installed_by': get_current_user(),
                 'files': [{'dest': e['dest'], 'sha256': e.get('sha256', '')} for e in manifest.get('files', [])],
                 'declared_lists': list_paths,
+                'undeclared_nodes': undeclared_nodes,
                 'scripts': [{'dest': e['dest'], 'sha256': e.get('sha256', '')}
                             for e in (manifest.get('scripts') or [])],
                 'scheduled': scheduled,
@@ -12834,8 +13036,13 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 json.dump(state, fh, ensure_ascii=False, indent=2)
 
             logger.info(f"PACK INSTALLED: user={get_current_user()} pack={sanitize_for_log(pack_id)} "
-                        f"version={manifest.get('version')} files={len(written)}")
+                        f"version={manifest.get('version')} files={len(written)} "
+                        f"undeclared_nodes={undeclared_nodes}")
             extra = []
+            if undeclared_nodes:
+                extra.append('the CDB list could NOT be declared on %s -- rules using '
+                             'it are ignored there until its ossec.conf declares the '
+                             'list inside <ruleset>' % ', '.join(undeclared_nodes))
             if scheduled:
                 extra.append('scheduled %s' % ', '.join(
                     '%s (%s)' % (j['script'], j['schedule']) for j in scheduled))
@@ -12919,6 +13126,11 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
             if state.get('declared_lists'):
                 _declare_lists(state['declared_lists'], remove=True)
+                _, peer_failures = _declare_lists_on_peers(state['declared_lists'], remove=True)
+                for problem in peer_failures:
+                    logger.warning('PACK UNINSTALL: declaration left behind on %s: %s',
+                                   sanitize_for_log(problem['node']),
+                                   sanitize_for_log(problem['error']))
 
             ok, problems = _ruleset_is_valid()
             os.remove(_pack_state_path(pack_id))

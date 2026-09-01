@@ -1068,6 +1068,15 @@ class TestRulePacks(WebUITestCase):
                      '  </ruleset>\n</ossec_config>\n')
         self._write_analysisd(self.ANALYSISD_OK)
 
+        # A single-node cluster. Without this the shared API fixture answers
+        # /cluster/nodes with the agent list, and declaring a CDB list would try
+        # to reach nodes named after agents. Cluster behaviour has its own tests
+        # in test_ui_operations.py.
+        self._real_get_nodes = web_ui.WazuhAPISession.get_nodes
+        web_ui.WazuhAPISession.get_nodes = lambda _self: [
+            {'name': 'node01', 'type': 'master', 'ip': '127.0.0.1'}]
+        self.addCleanup(setattr, web_ui.WazuhAPISession, 'get_nodes', self._real_get_nodes)
+
         # wrap the real config so only wazuh_path is redirected; restore even if
         # setUp fails partway, otherwise the override leaks into every other test
         self._real_get_config = web_ui.get_config
@@ -1119,6 +1128,70 @@ class TestRulePacks(WebUITestCase):
         self.assertIn('<list>etc/lists/jt-approved-portable</list>', self.conf())
         listing = self.client.get('/api/packs').get_json()['packs']
         self.assertTrue([p for p in listing if p['id'] == 'jt-portable-detect'][0]['installed'])
+
+    def _two_node_cluster(self, peer_reachable):
+        """A master plus one worker whose configuration may or may not be writable."""
+        web_ui.WazuhAPISession.get_nodes = lambda _self: [
+            {'name': 'node01', 'type': 'master', 'ip': '127.0.0.1'},
+            {'name': 'node02', 'type': 'worker', 'ip': '10.0.1.11'}]
+        stored = {}
+        # The worker's own copy, captured before the install edits the local one.
+        # Reading self.conf() lazily would hand the peer the master's already
+        # modified file, and the declaration would look like it was in place.
+        baseline = self.conf()
+
+        def fake_raw(_self, method, endpoint, body=None, params=None,
+                     content_type='application/octet-stream'):
+            node = endpoint.split('/')[2]
+            if method == 'GET':
+                if not peer_reachable:
+                    return False, 'node is down'
+                return True, stored.get(node, baseline)
+            if not peer_reachable:
+                return False, 'node is down'
+            stored[node] = body
+            return True, 'ok'
+
+        real = web_ui.WazuhAPISession.request_raw
+        web_ui.WazuhAPISession.request_raw = fake_raw
+        self.addCleanup(setattr, web_ui.WazuhAPISession, 'request_raw', real)
+        # SSH is not configured in this fixture, so the fallback is unavailable
+        # too -- which is the situation an operator without SSH keys is in.
+        return stored
+
+    def test_install_aborts_when_a_worker_cannot_be_declared(self):
+        """A pack whose list is undeclared on a worker is ignored there, silently."""
+        self._two_node_cluster(peer_reachable=False)
+        resp = self.client.post('/api/packs/jt-portable-detect/install', json={})
+        self.assertEqual(resp.status_code, 400, resp.get_data(as_text=True))
+        body = resp.get_json()
+        self.assertTrue(body.get('rolled_back'))
+        self.assertIn('node02', body['error'])
+        self.assertIn('local_only', body['error'], 'the way forward is not stated')
+        # nothing left behind
+        self.assertNotIn('<list>etc/lists/jt-approved-portable</list>', self.conf())
+        self.assertFalse(os.path.isfile(
+            os.path.join(self.tmp, 'etc/rules/zz-906100-jt_portable_rules.xml')))
+
+    def test_local_only_installs_but_records_which_nodes_are_short(self):
+        self._two_node_cluster(peer_reachable=False)
+        resp = self.client.post('/api/packs/jt-portable-detect/install',
+                                json={'local_only': True})
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        self.assertIn('<list>etc/lists/jt-approved-portable</list>', self.conf())
+        detail = self.client.get('/api/packs/jt-portable-detect').get_json()
+        self.assertEqual(detail['undeclared_nodes'], ['node02'],
+                         'the incomplete install is not visible afterwards')
+        self.assertIn('node02', resp.get_json()['message'])
+
+    def test_a_reachable_worker_is_declared_too(self):
+        stored = self._two_node_cluster(peer_reachable=True)
+        resp = self.client.post('/api/packs/jt-portable-detect/install', json={})
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        self.assertIn('node02', stored, 'the worker was never written to')
+        self.assertIn('<list>etc/lists/jt-approved-portable</list>', stored['node02'])
+        detail = self.client.get('/api/packs/jt-portable-detect').get_json()
+        self.assertEqual(detail['undeclared_nodes'], [])
 
     def test_install_rolls_back_when_the_ruleset_stops_validating(self):
         self._write_analysisd(self.ANALYSISD_BAD)
