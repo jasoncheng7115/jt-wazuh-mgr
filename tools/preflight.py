@@ -442,12 +442,117 @@ def check_publish_hygiene():
                 fail('publish', 'github/config.yaml carries a password value')
 
 
+
+def check_heading_version(version):
+    """The README heading carries the version too, and it is not a badge.
+
+    The badge check passed for nine releases while the heading above it still
+    said v1.6.0, because nothing looked at the heading. It is the first thing
+    anyone reads on the GitHub project page.
+    """
+    for rel in ('README.md', 'README-zh-TW.md',
+                'github/README.md', 'github/README-zh-TW.md'):
+        path = os.path.join(ROOT, rel)
+        if not os.path.isfile(path):
+            continue
+        m = re.search(r'^#\s+\S+\s+v([0-9]+\.[0-9]+\.[0-9]+)', read(path), re.M)
+        if not m:
+            fail('heading', '%s has no "# <name> v<version>" heading' % rel)
+        elif m.group(1) != version:
+            fail('heading', '%s heading says v%s, expected v%s'
+                 % (rel, m.group(1), version))
+
+
+def check_licence():
+    """One licence, stated the same way everywhere.
+
+    A project that says AGPL in the badge, GPL in the README and Apache in a
+    pack manifest has told three different people three different things.
+    """
+    lic = os.path.join(GITHUB, 'LICENSE')
+    if not os.path.isfile(lic):
+        fail('licence', 'github/LICENSE is missing')
+        return
+    body = read(lic)
+    if 'GNU AFFERO GENERAL PUBLIC LICENSE' not in body:
+        fail('licence', 'github/LICENSE is not the AGPL text')
+
+    stale = ('Apache-2.0', 'Apache License', 'GPL-3.0-or-later',
+             'license-GPL--3.0', 'license-Apache--2.0')
+    for rel in ('github/README.md', 'github/README-zh-TW.md', 'github/docs/index.html'):
+        path = os.path.join(ROOT, rel)
+        if not os.path.isfile(path):
+            continue
+        text = read(path)
+        for token in stale:
+            # AGPL-3.0-or-later legitimately contains GPL-3.0-or-later.
+            hits = [m.start() for m in re.finditer(re.escape(token), text)]
+            hits = [h for h in hits if not text[max(0, h - 1):h + len(token)].startswith('A')]
+            if hits:
+                fail('licence', '%s still mentions %s' % (rel, token))
+
+    for man in sorted(glob.glob(os.path.join(ROOT, 'packs', '*', 'manifest.json'))):
+        try:
+            data = json.loads(read(man))
+        except Exception:
+            continue
+        if data.get('license') not in (None, 'AGPL-3.0-or-later'):
+            fail('licence', '%s declares %s'
+                 % (os.path.relpath(man, ROOT), data.get('license')))
+
+
+def check_project_name():
+    """The published name is jt-wazuh-mgr, lower case, everywhere.
+
+    It had been written three ways at once -- the repository name, a title-cased
+    product name in the UI, and an older one still carrying the word Agent.
+    """
+    wrong = ('JT Wazuh Agent Manager', 'JT Wazuh Manager', 'Jt-Wazuh-Mgr', 'JT-Wazuh-Mgr')
+    targets = ['github/README.md', 'github/README-zh-TW.md', 'github/docs/index.html',
+               'lib/web_ui.py', 'lib/i18n_engine.js']
+    for rel in targets:
+        path = os.path.join(ROOT, rel)
+        if not os.path.isfile(path):
+            continue
+        text = read(path)
+        for token in wrong:
+            if token in text:
+                fail('name', '%s uses "%s"; the name is jt-wazuh-mgr' % (rel, token))
+
+
+def check_icons():
+    """The icon set has to exist, and the pages have to point at it."""
+    needed = ('icon.svg', 'favicon.ico', 'icon-16.png', 'icon-32.png',
+              'icon-180.png', 'icon-192.png', 'icon-512.png')
+    for name in needed:
+        for base in (os.path.join(ROOT, 'images'), os.path.join(GITHUB, 'images')):
+            if not os.path.isfile(os.path.join(base, name)):
+                fail('icons', '%s is missing from %s'
+                     % (name, os.path.relpath(base, ROOT)))
+    ui = read(os.path.join(ROOT, 'lib', 'web_ui.py'))
+    if 'images/icon.svg' not in ui:
+        fail('icons', 'web_ui.py does not reference the project icon')
+    if 'logo-1.png' in ui:
+        fail('icons', 'web_ui.py still uses the company logo as its icon')
+
+
+def check_agpl_source_offer():
+    """AGPL section 13: a network user must be offered the source.
+
+    For a hosted console that link in the interface is the offer, so losing it
+    is a licence problem, not a cosmetic one.
+    """
+    ui = read(os.path.join(ROOT, 'lib', 'web_ui.py'))
+    if 'AGPL-3.0' not in ui or 'github.com/jasoncheng7115/jt-wazuh-mgr' not in ui:
+        fail('agpl', 'the interface does not offer its source to network users')
+
+
 def main():
     version = current_version()
     if not version:
         print('cannot read __version__ from lib/__init__.py')
         return 2
-    print('JT Wazuh Manager pre-release checks -- v%s\n' % version)
+    print('jt-wazuh-mgr pre-release checks -- v%s\n' % version)
 
     for label, fn in (
             ('version and badges', lambda: check_version_consistency(version)),
@@ -461,6 +566,11 @@ def main():
             ('screenshots referenced by the READMEs', check_screenshots),
             ('CDB lists that are still placeholders', check_placeholder_lists),
             ('publishing hygiene', check_publish_hygiene),
+            ('README heading version', lambda: check_heading_version(version)),
+            ('one licence, stated the same everywhere', check_licence),
+            ('the project name is jt-wazuh-mgr', check_project_name),
+            ('icon set present and referenced', check_icons),
+            ('AGPL source offer in the interface', check_agpl_source_offer),
     ):
         before = len(FAILURES), len(WARNINGS)
         fn()
@@ -479,6 +589,7 @@ def main():
 
     print('\nNot checked here, still required before tagging a release:')
     print('  - python3 -m unittest discover -s tests')
+    print('  - tests/e2e/run.sh   (browser journeys through a real browser)')
     print('  - OWASP ZAP baseline scan, compared against the recorded baseline')
     print('  - deploy, then read the version back from the target path itself')
     print('  - on a cluster, sync rules to the worker and reload both nodes')
