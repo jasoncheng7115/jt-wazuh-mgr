@@ -181,24 +181,105 @@
 -->
 
   <!-- C-1：使用者目錄出現可執行檔 -->
-  <rule id="906120" level="5">
-    <if_sid>554</if_sid>
-    <field name="file" type="pcre2">(?i)^[A-Z]:\\+Users\\+.*\.(exe|dll|msi|scr|ps1|jar)$</field>
-    <description>Executable added to a user directory - $(file)</description>
-    <mitre>
-      <id>T1204.002</id>
-    </mitre>
-    <group>jt_portable_file,</group>
+  <!--
+    ══════════════════════════════════════════════════════════════════════
+     C section: executables landing on disk
+    ══════════════════════════════════════════════════════════════════════
+
+    906120 used to live here, keyed on syscheck event 554 for C:\Users. It had
+    never fired: no agent monitors that path with syscheck. Rewriting it against
+    Sysmon EID 11 did not help either, and the reason is worth recording.
+
+    Wazuh already detects this. Rules 92200 to 92217 cover executables and
+    scripts created under user folders, the Windows root and Users\Public, and
+    they are siblings of anything we add under the same group. Wazuh takes the
+    first sibling that matches, so a rule of ours describing the same event is
+    simply never reached. Verified end to end: a file created in Downloads on a
+    live host produced rule 92203, not ours.
+
+    So this section no longer duplicates that detection. What it does instead is
+    make the built-in detection usable, because measured over seven days on a
+    live estate those rules produced 4,245 alerts and essentially all of them
+    were noise:
+
+      92205  level 9   3,122  PowerShell probing its own execution policy
+      92217  level 6     799  .NET native image generation
+      92200  level 6     278  a Windows pool-tag dump, twice per write
+      92213  level 15     33  browser updaters unpacking their own downloads
+      92207  level 12      5  the Chrome installer writing a Public shortcut
+
+    A level 15 rule that is wrong every time is worse than no rule: it teaches
+    people that level 15 means nothing. The suppressions below are each tied to
+    a specific, verifiable path or filename, never to "this process is trusted".
+  -->
+
+  <rule id="906160" level="0">
+    <if_sid>92205</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+__PSScriptPolicyTest_[a-z0-9]+\.[a-z0-9]+\.ps1$</field>
+    <description>Excluded: PowerShell writing its own execution-policy probe</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <rule id="906161" level="0">
+    <if_sid>92200</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+__PSScriptPolicyTest_[a-z0-9]+\.[a-z0-9]+\.ps1$</field>
+    <description>Excluded: PowerShell writing its own execution-policy probe</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <rule id="906162" level="0">
+    <if_sid>92217</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Windows\\+assembly\\+NativeImages_[\w.]+\\+Temp\\+</field>
+    <description>Excluded: .NET native image generation writing to its own staging directory</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <rule id="906163" level="0">
+    <if_sid>92200</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Windows\\+Temp\\+pool_tags_summary\.json(\.dup)?$</field>
+    <description>Excluded: Windows pool tag summary, written by the operating system</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
   </rule>
 
   <!--
-    C-2：Sysmon EID 15（FileCreateStreamHash）── 可執行檔被建立了替代資料流
-
-    ※ EID 15 會在「任何具名檔案資料流（ADS）被建立」時觸發，
-      最常見的來源是瀏覽器下載檔案時附加的 Zone.Identifier，
-      但「不限於」Zone.Identifier ── 因此本規則的描述不宣稱來源必為網路下載。
-      確認為網路下載的情況由子規則 906122 處理。
+    Chromium-based updaters unpack a signed download into a directory whose name
+    they generate themselves, in a fixed form. Matching that form is specific
+    enough to be safe; "the process was msedge.exe" would not be, because an
+    attacker chooses the process name.
   -->
+  <rule id="906164" level="3">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+(msedge|GoogleUpdater|chrome)_[\w]*Unpacker_BeginUnzipping[\w]*\\+</field>
+    <description>Browser updater unpacking its own download - $(win.eventdata.targetFilename)</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <rule id="906165" level="0">
+    <if_sid>92207</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Users\\+Public\\+Desktop\\+[^\\]+\.lnk$</field>
+    <description>Excluded: installer writing a shortcut to the Public desktop</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <!--
+    Python package managers write executables into their own cache and into
+    virtual environments constantly. Everything observed in a week of user-
+    directory writes came from one of these.
+  -->
+  <rule id="906166" level="0">
+    <if_sid>92203,92204,92213</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+(AppData\\+Local\\+(uv|pip|pipx|poetry|virtualenv|npm-cache|Yarn|pnpm|NuGet)\\+|uv-trampoline-\d+\.exe$|Scripts\\+(activate|deactivate|pydoc|pip[\d.]*|easy_install)[^\\]*$)</field>
+    <description>Excluded: language package manager writing into its own cache or virtual environment</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
   <rule id="906121" level="6">
     <if_sid>61617</if_sid>
     <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Users\\+.*\.(exe|dll|msi|scr|ps1|jar)$</field>
