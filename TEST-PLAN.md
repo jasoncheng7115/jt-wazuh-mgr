@@ -161,8 +161,10 @@ highlighting but must still load, edit and save.
    worker as well. The cluster synchronises `etc/rules` and `etc/lists` but not
    `ossec.conf`, and it does not reload a worker's analysisd.
 4. `wazuh-analysisd -t` must be clean, with no new warnings.
-5. Confirm a rule that should fire still fires — a list rename or a moved file
-   fails silently, with no error at load and no warning on reload.
+5. Confirm a rule that should fire still fires. A list rename or a moved file
+   stops nothing: the rule loads and simply never matches. Read the reload
+   response — analysisd names the list it could not load and the rule it will
+   ignore, as a warning on a reload that otherwise reports success.
 
 ---
 

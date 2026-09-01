@@ -154,8 +154,9 @@ docker run --rm --network host -v /tmp/zap:/zap/wrk:rw ghcr.io/zaproxy/zaproxy:s
    叢集會同步 `etc/rules` 與 `etc/lists`，但**不同步 `ossec.conf`**，
    而且不會重載 worker 的 analysisd。
 4. `wazuh-analysisd -t` 必須乾淨，不能有新的警告。
-5. 確認「應該要觸發的規則」仍然會觸發——清單改名或檔案搬移是**靜默失敗**的，
-   載入時不報錯，重載時也不警告。
+5. 確認「應該要觸發的規則」仍然會觸發。清單改名或檔案搬移不會擋下任何事：
+   規則照樣載入，只是永遠不會命中。要**看重載回應**——analysisd 會指名
+   哪個清單載不進來、哪條規則會被忽略，但那是出現在「成功」回應裡的一則警告。
 
 ---
 
