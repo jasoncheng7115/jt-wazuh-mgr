@@ -4,6 +4,91 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.16 (2026-09-01)
+
+- **Three input-validation gaps, found by writing the tests that were missing.**
+  Of 82 routes, 45 had no test of any kind. Writing them turned up three real
+  faults, all in the routes that change something:
+
+  `..` was a valid group and node name. The pattern behind both validators
+  permits `.`, so a name made only of dots matched it, and those names are
+  interpolated into API URLs and into paths. Both validators now reject `.`,
+  `..`, and any name containing `..`.
+
+  The two group membership routes forwarded whatever agent IDs they were given,
+  without validation, although a correct helper for exactly this had existed and
+  was already used by six other routes.
+
+  Worst of the three: queue DB cleaning iterated `agent_ids` directly. A string
+  is iterable, so `{"agent_ids": "001"}` became `['0', '0', '1']` — three IDs
+  that each pass validation — and the route deletes queue DB files and restarts
+  every ID it is given. Agent `0` is the manager. All four routes now use the
+  shared helper, which requires a non-empty list.
+
+- **A second test module, `tests/test_ui_operations.py`, covering the routes that
+  change something.** 20 tests over group, node, agent, pack and configuration
+  operations: unsafe names, path traversal, non-list bodies, XML external
+  entities, and the file-download route that takes a keyword rather than a path.
+
+  Destructive routes are exercised along the rejection path only. Several of them
+  shell out or delete files once validation passes, and the machine running these
+  tests is usually a live manager. The guard is what is worth asserting.
+
+  The authentication test now derives its route list from the app's own
+  `url_map` rather than a hand-written list of eight, so a route added later is
+  covered without anyone remembering to add a test. The suite is 146 tests.
+
+- **A test plan, in both languages** ([TEST-PLAN.md](TEST-PLAN.md)), covering all
+  five layers — automated suite, mechanical checks, security scan, browser
+  checklist, deployment — and stating plainly what is still not covered: no
+  DOM-level automation, no load testing, no cross-version upgrade testing, and
+  detection rules verified by hand rather than in CI.
+
+- **The IOC pack's IP list is renamed `jason_tools_threat_ip`.** It was
+  `jason_tools_blacklist`. The word carries a racial connotation that has nothing
+  to do with what the file holds, and a list of addresses seen in threat feeds is
+  described perfectly well without it. The updater is renamed to match, and all
+  30 rule references move with it.
+
+  Renaming a CDB list is not a text substitution, because the cluster synchronises
+  `etc/lists` but not `ossec.conf`. Each node needs its own `<list>` declaration,
+  and a rule pointing at an undeclared list is ignored **silently** — no error at
+  load, no warning on reload, just a rule that never fires. Both declarations are
+  deliberately left in place for now; the old list is removed only once the new
+  name has been running long enough to trust.
+
+- **Two threat feeds are back after being dropped by accident.** Rewriting the
+  updater in v1.6.14 silently lost three of the original sources, and the list
+  fell from 259,839 entries to 220,957 — a 15% loss of coverage that nothing
+  reported, because a shorter list is still a valid list. Tor exit nodes and the
+  matthewroberts threat list are restored; the third, maltrail, is genuinely gone
+  upstream. The list is back to 247,383 entries.
+
+  The updater already refuses to install a list that has shrunk by more than
+  half. That threshold was too generous to catch this, and the check only ever
+  compares against the previous run, so a loss that arrives in the same change
+  that rewrites the script cannot be caught by the script. The feeds are now
+  listed one per line with the count each contributes, so a missing one is
+  visible when reading the file rather than only when counting the output.
+
+- **Zimbra rule 100990 is removed rather than repaired.** It matched a hash list
+  that shipped with a single placeholder entry, so a level 15 rule had never
+  fired and never could. Inspecting it turned up two further faults: it read a
+  field named `sha256`, while a file integrity event carries `syscheck.sha256_after`,
+  and the jt-malware-hash pack's rule 100141 already does this exact job against
+  a list of roughly 1.1 million hashes rebuilt nightly. Install that pack for
+  hash matching on file integrity events.
+
+- **The approved-portable-executable allowlist now ships genuinely empty.** It
+  contained one fabricated entry, which made the list look populated while
+  approving nothing. Empty is the correct default for an allowlist. The file now
+  documents the key format instead — the whole `hashes` field including the
+  `SHA256=` prefix, as Sysmon reports it, which is not obvious and was previously
+  conveyed only by the shape of a fake entry.
+
+- A pre-release check now fails on any CDB list that still contains a placeholder,
+  so a rule cannot again be published pointing at a list that cannot match.
+
 ## v1.6.15 (2026-09-01)
 
 - **Portable-executable detection: tuned against a week of live traffic.** The

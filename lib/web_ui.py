@@ -86,6 +86,10 @@ def validate_node_name(name: str) -> bool:
     """Validate node name to prevent injection attacks."""
     if not name or len(name) > 128:
         return False
+    # The pattern permits '.', so '..' and '.' match it. Those are path segments,
+    # not names, and these values are interpolated into API URLs and into paths.
+    if name in ('.', '..') or '..' in name:
+        return False
     return bool(VALID_NODE_NAME_PATTERN.match(name))
 
 
@@ -99,6 +103,10 @@ def validate_agent_id(agent_id: str) -> bool:
 def validate_group_name(name: str) -> bool:
     """Validate group name to prevent injection attacks."""
     if not name or len(name) > 128:
+        return False
+    # See validate_node_name: '.' is a permitted character, which let '..'
+    # through as a group name.
+    if name in ('.', '..') or '..' in name:
         return False
     return bool(VALID_GROUP_NAME_PATTERN.match(name))
 
@@ -8895,6 +8903,8 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         Returns (agent_ids, None) on success, or (None, error_response) so the
         caller can `return err`. An absent or empty list is a client error.
         """
+        if not isinstance(data, dict):
+            return None, (jsonify({'error': 'Request body must be a JSON object'}), 400)
         agent_ids = data.get('agent_ids')
         if not isinstance(agent_ids, list) or not agent_ids:
             return None, (jsonify({'error': 'agent_ids is required and must be a non-empty list'}), 400)
@@ -9299,16 +9309,15 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
         try:
             data = request.get_json(silent=True) or {}
-            agent_ids = data.get('agent_ids', [])
+            agent_ids, err = require_agent_ids(data)
+            if err:
+                return err
             dry_run = data.get('dry_run', False)
 
             # agent_nodes: {agent_id: [node1, node2, ...]} - nodes that have queue DB for each agent
             agent_nodes = data.get('agent_nodes', {})
-
-            # Validate agent IDs
-            for aid in agent_ids:
-                if not validate_agent_id(aid):
-                    return jsonify({'error': f'Invalid agent ID: {aid}'}), 400
+            if not isinstance(agent_nodes, dict):
+                return jsonify({'error': 'agent_nodes must be an object'}), 400
 
             user = get_current_user()
             logger.info(f"QUEUE_DB_CLEAN: user={user} agents={agent_ids} agent_nodes={agent_nodes} dry_run={dry_run}")
@@ -9822,7 +9831,9 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             return jsonify({'error': 'Invalid group name'}), 400
         try:
             data = request.get_json(silent=True) or {}
-            agent_ids = data.get('agent_ids', [])
+            agent_ids, err = require_agent_ids(data)
+            if err:
+                return err
             dry_run = data.get('dry_run', False)
 
             if dry_run:
@@ -9879,7 +9890,9 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             return jsonify({'error': 'Invalid group name'}), 400
         try:
             data = request.get_json(silent=True) or {}
-            agent_ids = data.get('agent_ids', [])
+            agent_ids, err = require_agent_ids(data)
+            if err:
+                return err
             dry_run = data.get('dry_run', False)
 
             if dry_run:

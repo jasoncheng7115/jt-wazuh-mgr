@@ -7,7 +7,7 @@
   相依：
     - 解碼器 zimbra-proxy-access（100820）
     - CDB 清單 etc/lists/zimbra-webshell-ioc
-    - CDB 清單 etc/lists/jason_tools_blacklist（既有）
+    - CDB 清單 etc/lists/jason_tools_threat_ip（既有）
 -->
 
 <!-- ==========================================================
@@ -283,20 +283,22 @@
      ========================================================== -->
 <group name="zimbra,ioc,">
 
-  <rule id="100990" level="15">
-    <if_sid>550,554</if_sid>
-    <list field="sha256" lookup="match_key">etc/lists/zimbra-webshell-ioc</list>
-    <description>[CRITICAL] Known web shell file hash detected: $(file)</description>
-    <mitre>
-      <id>T1505.003</id>
-    </mitre>
-    <group>webshell,</group>
-  </rule>
+  <!--
+    100990 removed 2026-09-01. It matched a CDB list that shipped containing one
+    placeholder hash, so a level 15 rule had never fired and never could. Two
+    further problems came to light on inspection: it read a field named sha256,
+    while a syscheck event carries syscheck.sha256_after, and jt-malware-hash
+    rule 100141 already does exactly this job against a list of about 1.1 million
+    hashes that is rebuilt nightly.
+
+    Install jt-malware-hash for hash matching on file integrity events. A rule
+    that looks like coverage and provides none is worse than no rule at all.
+  -->
 
   <!-- 沿用既有 jason_tools 惡意 IP 情資，套用於 Zimbra 敏感端點 -->
   <rule id="100991" level="14">
     <if_sid>100821,100827,100920</if_sid>
-    <list field="srcip" lookup="address_match_key">etc/lists/jason_tools_blacklist</list>
+    <list field="srcip" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
     <description>[HIGH] Known malicious IP accessed a sensitive Zimbra endpoint: $(srcip) $(url)</description>
     <group>threat_intelligence,</group>
   </rule>
