@@ -293,5 +293,191 @@ class TestReadOnlyOperationalRoutes(WebUITestCase):
                              'the settings response carries a %s field' % leak)
 
 
+def closure_var(func, name, _depth=0):
+    """Find a function defined inside create_app, by name, through the closures.
+
+    The pack helpers are locals of create_app rather than module attributes, so
+    the alternative would be driving them through the install route -- which
+    writes into the real ruleset of whatever machine runs the tests.
+    """
+    while hasattr(func, '__wrapped__'):
+        func = func.__wrapped__
+    if _depth > 3 or not hasattr(func, '__code__'):
+        return None
+    pairs = list(zip(func.__code__.co_freevars, func.__closure__ or ()))
+    for var, cell in pairs:
+        if var == name:
+            try:
+                return cell.cell_contents
+            except ValueError:
+                return None
+    for var, cell in pairs:
+        try:
+            inner = cell.cell_contents
+        except ValueError:
+            continue
+        if callable(inner) and hasattr(inner, '__code__'):
+            found = closure_var(inner, name, _depth + 1)
+            if found is not None:
+                return found
+    return None
+
+
+OSSEC_CONF = """<ossec_config>
+  <ruleset>
+    <decoder_dir>ruleset/decoders</decoder_dir>
+    <rule_dir>ruleset/rules</rule_dir>
+    <list>etc/lists/audit-keys</list>
+    <list>etc/lists/amazon/aws-eventnames</list>
+  </ruleset>
+</ossec_config>
+"""
+
+
+class TestClusterListDeclaration(WebUITestCase):
+    """A CDB list declaration has to reach every node, or the pack half works.
+
+    The cluster synchronises etc/rules, etc/decoders and etc/lists, but ossec.conf
+    is in its excluded_files. A rule pointing at a list the node has not declared
+    is ignored silently, and workers are where agent events are processed.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.apply = closure_var(self.app.view_functions['install_pack'],
+                                 '_apply_list_declarations')
+        self.assertIsNotNone(self.apply, '_apply_list_declarations not reachable')
+
+    def test_declaration_is_added_once_and_is_idempotent(self):
+        out = self.apply(OSSEC_CONF, ['etc/lists/jason_tools_threat_ip'])
+        self.assertIn('<list>etc/lists/jason_tools_threat_ip</list>', out)
+        self.assertEqual(out.count('<list>etc/lists/jason_tools_threat_ip</list>'), 1)
+        again = self.apply(out, ['etc/lists/jason_tools_threat_ip'])
+        self.assertEqual(again, out, 'declaring twice changed the file a second time')
+
+    def test_declaration_keeps_the_indentation_of_its_neighbours(self):
+        out = self.apply(OSSEC_CONF, ['etc/lists/x'])
+        line = [ln for ln in out.split('\n') if 'etc/lists/x' in ln][0]
+        self.assertTrue(line.startswith('    <list>'), repr(line))
+
+    def test_declaration_is_removed_cleanly(self):
+        added = self.apply(OSSEC_CONF, ['etc/lists/x'])
+        removed = self.apply(added, ['etc/lists/x'], remove=True)
+        self.assertEqual(removed, OSSEC_CONF)
+
+    def test_existing_declarations_are_left_alone(self):
+        out = self.apply(OSSEC_CONF, ['etc/lists/audit-keys'])
+        self.assertEqual(out, OSSEC_CONF)
+
+    def test_a_config_without_a_ruleset_block_is_not_mangled(self):
+        plain = '<ossec_config>\n  <global><jsonout_output>yes</jsonout_output></global>\n</ossec_config>\n'
+        self.assertEqual(self.apply(plain, ['etc/lists/x']), plain)
+
+
+class TestPeerDeclaration(WebUITestCase):
+    """The declaration is pushed to peers over the API, not over SSH.
+
+    SSH would require the operator to have configured node keys first, which a
+    pack install cannot assume.
+    """
+
+    NODES = [{'name': 'node-01', 'type': 'master'}, {'name': 'node-02', 'type': 'worker'}]
+
+    def _install_api(self, put_ok=True, writes_take_effect=True):
+        """A cluster whose worker configuration is stateful.
+
+        A fake that always returns the original text would make the read-back
+        check fail for the wrong reason, and would never exercise the case this
+        check exists for: a node that accepts the upload without applying it.
+        """
+        calls = []
+        stored = {}
+
+        def fake_raw(_self, method, endpoint, body=None, params=None,
+                     content_type='application/octet-stream'):
+            calls.append((method, endpoint, body))
+            node = endpoint.split('/')[2]
+            if method == 'GET':
+                return True, stored.get(node, OSSEC_CONF)
+            if not put_ok:
+                return False, 'permission denied'
+            if writes_take_effect:
+                stored[node] = body
+            return True, 'ok'
+
+        self._real_raw = web_ui.WazuhAPISession.request_raw
+        self._real_nodes = web_ui.WazuhAPISession.get_nodes
+        web_ui.WazuhAPISession.request_raw = fake_raw
+        web_ui.WazuhAPISession.get_nodes = lambda _self: self.NODES
+        self.addCleanup(setattr, web_ui.WazuhAPISession, 'request_raw', self._real_raw)
+        self.addCleanup(setattr, web_ui.WazuhAPISession, 'get_nodes', self._real_nodes)
+        return calls
+
+    def _peers_fn(self):
+        fn = closure_var(self.app.view_functions['install_pack'], '_declare_lists_on_peers')
+        self.assertIsNotNone(fn, '_declare_lists_on_peers not reachable')
+        return fn
+
+    def test_the_master_is_not_written_to_over_the_api(self):
+        """The tool runs on the master, whose file it edits directly."""
+        calls = self._install_api()
+        with self.app.test_request_context():
+            with self.client.session_transaction():
+                pass
+            originals, failures = self._run(self._peers_fn(), ['etc/lists/x'])
+        self.assertEqual(failures, [])
+        endpoints = [c[1] for c in calls]
+        self.assertTrue(all('node-01' not in e for e in endpoints),
+                        'the master was written to over the API: %s' % endpoints)
+        self.assertTrue(any('node-02' in e for e in endpoints),
+                        'the worker was never written to: %s' % endpoints)
+        self.assertIn('node-02', originals)
+
+    def test_a_failing_peer_is_reported_rather_than_ignored(self):
+        self._install_api(put_ok=False)
+        with self.app.test_request_context():
+            originals, failures = self._run(self._peers_fn(), ['etc/lists/x'])
+        self.assertTrue(failures, 'a peer that refused the write reported success')
+        self.assertEqual(failures[0]['node'], 'node-02')
+        self.assertIn('permission denied', failures[0]['error'])
+        self.assertIn('over SSH', failures[0]['error'],
+                      'the SSH fallback was not attempted or not reported')
+        self.assertEqual(originals, {}, 'a failed write was recorded as rollback state')
+
+    def test_a_write_that_does_not_take_effect_is_caught(self):
+        """A 200 from the API means accepted, not applied."""
+        self._install_api(writes_take_effect=False)
+        with self.app.test_request_context():
+            originals, failures = self._run(self._peers_fn(), ['etc/lists/x'])
+        self.assertTrue(failures, 'a write that never landed was reported as success')
+        self.assertIn('still not in place', failures[0]['error'])
+        self.assertIn('node-02', originals,
+                      'the node was changed, so it must be restorable')
+
+    def test_declaring_twice_sends_no_second_write(self):
+        calls = self._install_api()
+        with self.app.test_request_context():
+            self._run(self._peers_fn(), ['etc/lists/x'])
+            before = len([c for c in calls if c[0] == 'PUT'])
+            self._run(self._peers_fn(), ['etc/lists/x'])
+            after = len([c for c in calls if c[0] == 'PUT'])
+        self.assertEqual(before, after, 'a redundant declaration was written again')
+
+    def test_nothing_is_sent_when_the_pack_declares_no_list(self):
+        calls = self._install_api()
+        with self.app.test_request_context():
+            originals, failures = self._run(self._peers_fn(), [])
+        self.assertEqual((originals, failures, calls), ({}, [], []))
+
+    def _run(self, fn, paths, remove=False):
+        """Call the helper inside a request context with a logged-in session."""
+        from flask import session as flask_session
+        flask_session['api_session'] = {
+            'host': 'localhost', 'port': 55000, 'username': 'tester',
+            'token': 'fake-token', 'session_exp': 9999999999,
+        }
+        return fn(paths, remove=remove)
+
+
 if __name__ == '__main__':
     unittest.main()

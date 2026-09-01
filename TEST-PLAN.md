@@ -50,7 +50,7 @@ directories are synthetic.
 | Decoders, CDB lists | Listing, reading, and the CDB write path. |
 | Logtest | Request shape and response parsing. |
 | Inventory | Cross-agent package search. |
-| Cluster | Ruleset reload across nodes; node config diff. |
+| Cluster | Ruleset reload across nodes; node config diff. CDB list declaration reaching every node: the declaration text itself, the peer write path, a node that accepts a write without applying it, a redundant declaration writing nothing twice, abort-and-roll-back when a node cannot be reached, and the `local_only` override. |
 | Packs | Manifest integrity, SHA-256 of every shipped file, rule ID uniqueness, `dest` paths, `packs/INDEX` consistency, script/cron/agent-group installation, and that no pack contains an internal host or address. |
 | Front end | The template's JavaScript parses under `node --check`. The i18n dictionary is embedded and internally consistent. |
 | Version comparison | The agent-version comparator, including the pre-release cases. |
@@ -128,7 +128,8 @@ settings; upgrade files list, upload and delete; sync status and detail; logs.
 Search by content and by file name, including a partial name and a name with its
 extension. View a file; delete a rule; create, edit and delete a CDB list.
 
-**Packs** — list; detail showing files, scripts, scheduled jobs and agent group;
+**Packs** — list; detail showing files, scripts, scheduled jobs, agent group and
+any node the CDB list could not be declared on;
 install; install into a rule ID conflict, then force; remove, confirming replaced
 files come back; remove a pack whose files were edited after installation, which
 must be refused.
