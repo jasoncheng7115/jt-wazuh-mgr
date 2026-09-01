@@ -2,7 +2,7 @@
   "id": "jt-portable-detect",
   "name": "Portable Executable Detection",
   "name_zh": "可攜式程式偵測",
-  "version": "1.4",
+  "version": "1.5",
   "summary": "Detects portable/no-install executables being dropped and run on Windows, Linux and macOS.",
   "summary_zh": "偵測免安裝執行檔在 Windows、Linux、macOS 上的落地與執行。",
   "rule_id_range": "906100-906299",
@@ -12,9 +12,9 @@
     "已核准的工具請加入 jt-approved-portable 清單（格式 key:approved），加入後降為記錄等級。",
     "Windows 端若要涵蓋『使用者目錄新增執行檔』，agent 的 syscheck 需監控 C:\\Users。",
     "前提條件 - 規則 906121 / 906122 需要 Sysmon 事件 ID 15（FileCreateStreamHash）。Sysmon 設定若未產生 EID 15，這兩條規則永遠不會觸發。",
-    "前提條件 - 規則 906142 比對 jt-approved-portable-hash，該清單隨附時只有一行佔位符。未填入真實 SHA256 前，此規則無法比對到任何東西。",
     "規則 906160-906166 是調校 Wazuh 自己的 Sysmon EID 11 偵測，而不是重複實作。在正式環境實測七天，那些內建規則產生 4,245 筆告警而幾乎全是噪音：3,122 筆 level 9 來自 PowerShell 探測自己的執行政策、799 筆來自 .NET 原生映像產生、33 筆 level 15 來自瀏覽器更新程式解壓縮自己下載的檔案。一條每次都錯的 level 15 規則，會讓人學會「level 15 不代表什麼」。",
-    "不要在這裡新增「Wazuh 已經偵測得到」的事件規則。92200-92217 與我們加在同一群組下的規則是同層，而 Wazuh 取第一個命中的，所以重複的規則根本到不了。已端對端驗證：在真實主機的 Downloads 建立檔案，命中的是 92203 而不是我們的規則。"
+    "不要在這裡新增「Wazuh 已經偵測得到」的事件規則。92200-92217 與我們加在同一群組下的規則是同層，而 Wazuh 取第一個命中的，所以重複的規則根本到不了。已端對端驗證：在真實主機的 Downloads 建立檔案，命中的是 92203 而不是我們的規則。",
+    "jt-approved-portable-hash 是白名單，隨附時為空，這是正確的預設值。加入一筆會讓規則 906142 對該支程式降為記錄等級；鍵值必須是 Sysmon 回報的完整 hashes 欄位，含 SHA256= 前綴。"
   ],
   "author": "Jason Tools",
   "license": "Apache-2.0",
@@ -46,7 +46,7 @@
       "name": "jt-approved-portable-hash",
       "dest": "etc/lists/jt-approved-portable-hash",
       "declare": true,
-      "sha256": "3f485c8954c809b68aa603a37ccaf84aed2396a5ec62e58efbb2c126dbf5a38d"
+      "sha256": "ac8811889e6c4dd88502f87ca4aa217eb5cdc49b67d5e5d4a64cfe4f87789ce8"
     }
   ],
   "notes": [
@@ -55,8 +55,8 @@
     "Add approved tools to the jt-approved-portable list, in key:approved form; matches are then demoted to logging level.",
     "PREREQUISITE - rule 906120 needs the agent's syscheck to monitor C:\\Users. Without it the rule can never fire.",
     "PREREQUISITE - rules 906121 and 906122 need Sysmon event ID 15 (FileCreateStreamHash). A Sysmon config that does not emit EID 15 leaves both rules permanently inert.",
-    "PREREQUISITE - rule 906142 matches against jt-approved-portable-hash, which ships containing only a placeholder line. Until you add real SHA256 entries the rule cannot match anything.",
     "Rules 906160-906166 tune Wazuh's own Sysmon EID 11 detections rather than duplicating them. Measured over seven days on a live estate those built-in rules produced 4,245 alerts and essentially all were noise: 3,122 at level 9 from PowerShell probing its own execution policy, 799 from .NET native image generation, and 33 at level 15 from browser updaters unpacking their own downloads. A level 15 rule that is wrong every time teaches people that level 15 means nothing.",
-    "Do not add a rule here that describes an event Wazuh already detects. Rules 92200-92217 are siblings of anything added under the same group and Wazuh takes the first match, so a duplicate is simply never reached. Verified end to end: a file created in Downloads on a live host produced rule 92203, not ours."
+    "Do not add a rule here that describes an event Wazuh already detects. Rules 92200-92217 are siblings of anything added under the same group and Wazuh takes the first match, so a duplicate is simply never reached. Verified end to end: a file created in Downloads on a live host produced rule 92203, not ours.",
+    "jt-approved-portable-hash is an allowlist and ships empty, which is the correct default. An entry demotes rule 906142 for that one binary; the key is the whole hashes field including the SHA256= prefix, as Sysmon reports it."
   ]
 }

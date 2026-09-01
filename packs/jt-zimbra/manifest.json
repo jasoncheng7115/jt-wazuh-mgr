@@ -2,7 +2,7 @@
   "id": "jt-zimbra",
   "name": "Zimbra Detection Suite",
   "name_zh": "Zimbra 偵測套組",
-  "version": "2.3",
+  "version": "2.5",
   "summary": "FIM, web, authentication, audit, state, threat and SOAP detection for Zimbra mail servers.",
   "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、稽核、狀態、威脅與 SOAP 偵測。",
   "rule_id_range": "100800-100999",
@@ -11,8 +11,8 @@
     "每次 Zimbra 安裝後**與每次升級後**都要重建基線 —— 升級會替換帶版本號的 jar，新檔名對舊基線來說是未知的。產生方式：{ find /opt/zimbra/jetty_base/webapps -type f \\( -name '*.jsp' -o -name '*.jspx' -o -name '*.jar' -o -name '*.class' -o -name '*.war' -o -name '*.html' \\); find /opt/zimbra/lib/ext -type f; } | sort -u | sed 's/$/:legit/''   注意 lib/ext 要收「所有」檔案型別而非只有 jar：規則 100806 對該目錄下任何檔案都告警，而 .wsdl / .xsd / .properties 都在裡面。",
     "zimbra-internal-networks 用於區分內外部來源，請依實際網段調整。",
     "agent 端 syscheck 需以 whodata=yes 監控 Zimbra 目錄才能取得寫入程序資訊。",
-    "前提條件 - 規則 100990 比對 zimbra-webshell-ioc，該清單隨附時只有一行佔位符。未填入真實 Web Shell SHA256 前，這條 level 15 規則永遠不會觸發。",
-    "原廠基線未含 WEB-INF/lib/*.jar 與 lib/ext，這是 100803 / 100806 誤報的主要來源；重建基線可從源頭解決，優於用抑制規則掩蓋。"
+    "原廠基線未含 WEB-INF/lib/*.jar 與 lib/ext，這是 100803 / 100806 誤報的主要來源；重建基線可從源頭解決，優於用抑制規則掩蓋。",
+    "檔案完整性事件的雜湊比對由 jt-malware-hash 套件的規則 100141 提供，比對的是每晚重建的清單。本套件不再自帶雜湊清單：原本那份只有一個佔位符，讀取它的 level 15 規則從未觸發過。"
   ],
   "author": "Jason Tools",
   "license": "Apache-2.0",
@@ -54,7 +54,7 @@
       "type": "rule",
       "name": "06-zimbra_threat_rules.xml",
       "dest": "etc/rules/06-zimbra_threat_rules.xml",
-      "sha256": "38884171816a472d30e9b661f99f61e2a3531004cb78941f3b24cf519b151f1c"
+      "sha256": "795fdbf6d100d3706cfa73ad7759bd063f27ec8f9df36071d82f50c550e0d8d2"
     },
     {
       "type": "rule",
@@ -75,13 +75,6 @@
       "dest": "etc/lists/zimbra-internal-networks",
       "declare": true,
       "sha256": "7d4269591d76a0a3910a47f7a339ff4a8e96c802af729da8847d6a67a8296513"
-    },
-    {
-      "type": "list",
-      "name": "zimbra-webshell-ioc",
-      "dest": "etc/lists/zimbra-webshell-ioc",
-      "declare": true,
-      "sha256": "e751a6d5b95f6602d1a774ca1b79fd64f1a208815966f38bcc6ec654a29c7977"
     }
   ],
   "notes": [
@@ -89,8 +82,8 @@
     "Regenerate the baseline after every Zimbra install AND after every upgrade - an upgrade replaces version-stamped jars, and each new filename is unknown to the old baseline. Generate with: { find /opt/zimbra/jetty_base/webapps -type f \\( -name '*.jsp' -o -name '*.jspx' -o -name '*.jar' -o -name '*.class' -o -name '*.war' -o -name '*.html' \\); find /opt/zimbra/lib/ext -type f; } | sort -u | sed 's/$/:legit/'   -- note that lib/ext takes ALL file types, not just jars: rule 100806 alerts on any file there, and .wsdl, .xsd and .properties files live in it.",
     "zimbra-internal-networks separates internal from external sources; adjust it to your own subnets.",
     "The agent's syscheck must monitor the Zimbra directories with whodata=yes for the writing process to be recorded.",
-    "PREREQUISITE - rule 100990 matches against zimbra-webshell-ioc, which ships containing only a placeholder line. Until you add real web shell SHA256 hashes this level 15 rule can never fire.",
-    "The stock baseline does not include WEB-INF/lib/*.jar or lib/ext. Those paths are the usual source of false positives on rules 100803 and 100806; regenerating the baseline fixes it at the source, which is better than suppressing the alerts."
+    "The stock baseline does not include WEB-INF/lib/*.jar or lib/ext. Those paths are the usual source of false positives on rules 100803 and 100806; regenerating the baseline fixes it at the source, which is better than suppressing the alerts.",
+    "Hash matching on file integrity events is provided by the jt-malware-hash pack, rule 100141, against a list rebuilt nightly. This pack no longer ships a hash list of its own: the one it had contained a single placeholder, so the level 15 rule reading it had never fired."
   ],
   "agent_group": {
     "name": "zimbra",

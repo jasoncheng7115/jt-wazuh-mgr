@@ -2,7 +2,7 @@
   "id": "jt-ioc",
   "name": "IP Threat Intelligence",
   "name_zh": "IP 威脅情資比對",
-  "version": "1.1",
+  "version": "1.2",
   "summary": "Matches source/destination IP fields against a multi-source threat intel blocklist.",
   "summary_zh": "以多來源威脅情資黑名單比對事件中的來源／目的 IP。",
   "rule_id_range": "906001-906099",
@@ -12,7 +12,8 @@
     "更新腳本只用標準函式庫，且全程使用絕對路徑。舊版用相對路徑，cron 沒有 cd 就靜默失敗了十個半月。",
     "若新清單比原本少掉一半以上，會拒絕覆蓋 —— 因為「來源格式改變」和「網路上壞人變少了」看起來一模一樣。",
     "保留位址與知名公共服務永遠不會被列入，不論來源怎麼說。站台自訂排除寫在 etc/jt-packs/ioc-cache/exclusions.txt，一行一個 IP 或 CIDR。",
-    "安裝此套件會寫入一支以 root 身分排程執行的程式。這是刻意的，移除套件時會一併刪除。"
+    "安裝此套件會寫入一支以 root 身分排程執行的程式。這是刻意的，移除套件時會一併刪除。",
+    "CDB 清單名為 jason_tools_threat_ip。它存放威脅情資回報的位址，也就是規則比對的對象；這不是封鎖決策，本套件不會封鎖任何東西。"
   ],
   "author": "Jason Tools",
   "license": "Apache-2.0",
@@ -24,12 +25,12 @@
       "type": "rule",
       "name": "01-906000-jason_tools_ioc.xml",
       "dest": "etc/rules/01-906000-jason_tools_ioc.xml",
-      "sha256": "21cf6ffa33c18136b9d8480428ebb810acc9868f92e08aad333165c205c0a6f8"
+      "sha256": "ee8e7ef0d4502cade825cc1df2f735625060ee4de08051209305b39c2f75b43d"
     },
     {
       "type": "list",
-      "name": "jason_tools_blacklist",
-      "dest": "etc/lists/jason_tools_blacklist",
+      "name": "jason_tools_threat_ip",
+      "dest": "etc/lists/jason_tools_threat_ip",
       "declare": true,
       "sha256": "11f498d647b9a6fcb91a62a435537381b96274be524827097f6eaebe4586fccb"
     }
@@ -40,16 +41,17 @@
     "The updater is standard library only and uses absolute paths throughout. The previous job used relative paths, cron ran it without a cd, and it failed silently for ten and a half months.",
     "It refuses to install a list that has lost more than half its entries, because a feed changing format looks exactly like the internet becoming safe.",
     "Reserved and well-known addresses are never blocked, whatever a feed claims. Site exclusions go in etc/jt-packs/ioc-cache/exclusions.txt, one IP or CIDR per line.",
-    "Installing this pack writes an executable that runs as root on a schedule. That is deliberate and is removed again on uninstall."
+    "Installing this pack writes an executable that runs as root on a schedule. That is deliberate and is removed again on uninstall.",
+    "The CDB list is named jason_tools_threat_ip. It holds addresses that threat feeds report, which is what the rules match on; it is not a blocking decision and nothing in this pack blocks anything."
   ],
   "scripts": [
     {
-      "name": "update-ip-blocklist.py",
-      "dest": "etc/jt-packs/bin/update-ip-blocklist.py",
-      "sha256": "f71ae2f53708fe06103902e5c7a77ded524a839fb4a42f8c3da2bfcc1550531c",
+      "name": "update-threat-ip-list.py",
+      "dest": "etc/jt-packs/bin/update-threat-ip-list.py",
+      "sha256": "3c13023475f9d96c49377b7147e1d89e27fc9a5a0205ee0abb67656b7970072b",
       "cron": "17 */6 * * *",
       "args": "--wazuh-path {wazuh_path}",
-      "description": "Rebuilds jason_tools_blacklist from 11 public IP threat-intel feeds"
+      "description": "Rebuilds jason_tools_threat_ip from 11 public IP threat-intel feeds"
     }
   ]
 }

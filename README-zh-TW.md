@@ -8,7 +8,7 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.6.15-blue)
+![Version](https://img.shields.io/badge/version-1.6.16-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
@@ -148,6 +148,7 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 - **API 使用者管理**：建立、修改與管理 Wazuh API 使用者與角色
 - 暴力破解防護（IP 鎖定：登入失敗 3 次 = 鎖定 30 分鐘）
 - 安全政策與強化說明請見 [SECURITY.md](SECURITY.md)
+- 發版前驗證什麼、沒驗證什麼，請見 [TEST-PLAN-zh-TW.md](TEST-PLAN-zh-TW.md)
 
 ## 螢幕截圖
 

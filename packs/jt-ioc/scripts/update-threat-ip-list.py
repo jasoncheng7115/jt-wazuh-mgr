@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the jason_tools_blacklist CDB list from public IP threat-intel feeds.
+"""Build the jason_tools_threat_ip CDB list from public IP threat-intel feeds.
 
 Runs from cron. Everything it touches is an absolute path derived from this
 file's own location or from --wazuh-path, and nothing depends on the working
@@ -9,7 +9,7 @@ it feeds sat frozen and thirty rules matched nothing.
 
 Standard library only, so it runs on a manager with no pip packages installed.
 
-  update-ip-blocklist.py [--wazuh-path /var/ossec] [--dry-run] [--force]
+  update-threat-ip-list.py [--wazuh-path /var/ossec] [--dry-run] [--force]
 
 Exit status is 0 only if the list was rebuilt or was already current. Any feed
 failing is reported but does not by itself fail the run; a feed that fails
@@ -66,9 +66,17 @@ FEEDS = {
         'url': 'https://cinsscore.com/list/ci-badguys.txt', 'interval': 86400},
     'darklist_de': {
         'url': 'https://iplists.firehol.org/files/darklist_de.netset', 'interval': 86400},
+    'matthewroberts': {
+        'url': 'https://www.matthewroberts.io/api/threatlist/latest', 'interval': 43200},
+    # Tor exit nodes are a deliberate inclusion, not an oversight. Tor traffic is
+    # not malicious in itself, and a site that expects it should drop this feed
+    # rather than live with the alerts. It is listed last so it is easy to find.
+    'tor_exit_nodes': {
+        'url': 'https://torstatus.rueckgr.at/ip_list_all.php/Tor_ip_list_ALL.csv',
+        'interval': 14400},
 }
 
-LIST_NAME = 'jason_tools_blacklist'
+LIST_NAME = 'jason_tools_threat_ip'
 UA = 'jt-wazuh-mgr/ioc-updater (+https://github.com/jasoncheng7115/jt-wazuh-mgr)'
 
 # Never block these, whatever a feed says. A public feed listing a root DNS
@@ -198,7 +206,10 @@ def main():
     log('feeds: %d downloaded, %d still fresh, %d failed' % (downloaded, skipped, failed))
 
     exclusions = load_exclusions(exclusions_file)
-    nets, per_feed = set(), {}
+    # The value records which feeds listed the address. A constant would fit the
+    # CDB just as well, but knowing an address came from six independent feeds
+    # rather than one changes how an analyst reads the alert.
+    nets, per_feed, sources = set(), {}, {}
     for name in sorted(FEEDS):
         cache = os.path.join(workdir, name + '.txt')
         if not os.path.isfile(cache):
@@ -206,6 +217,8 @@ def main():
         got = parse_feed(cache)
         per_feed[name] = len(got)
         nets |= got
+        for n in got:
+            sources.setdefault(n, []).append(name)
 
     kept = {n for n in nets if not excluded(n, exclusions)}
     dropped = len(nets) - len(kept)
@@ -227,7 +240,12 @@ def main():
                 % (len(kept), previous))
             return 1
 
-    body = ''.join('%s:blacklisted\n' % str(n).replace('/32', '') for n in sorted(kept, key=str))
+    # Keys are quoted and values name the contributing feeds, matching the format
+    # already proven against a live manager. Wazuh strips the quotes when it
+    # compiles the CDB; changing the shape of a list that 31 rules read is not
+    # something to do on the assumption that another shape would also work.
+    body = ''.join('"%s":%s\n' % (str(n).replace('/32', ''), ','.join(sources.get(n, ['threat_feed'])[:4]))
+                   for n in sorted(kept, key=str))
     if args.dry_run:
         log('dry run: would write %d entries to %s' % (len(kept), listfile))
         return 0

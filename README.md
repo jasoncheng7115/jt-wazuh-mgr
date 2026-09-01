@@ -8,7 +8,7 @@ A powerful web-based management tool for Wazuh agents in cluster environments.
 
 > **Recommended**: Use the Web UI as the primary interface — it's the main feature of this tool with full functionality.
 
-![Version](https://img.shields.io/badge/version-1.6.15-blue)
+![Version](https://img.shields.io/badge/version-1.6.16-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-Apache--2.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
@@ -148,6 +148,7 @@ See the full [CHANGELOG](CHANGELOG.md) for details.
 - **API user management**: create, modify, and manage Wazuh API users and roles
 - Brute-force protection (IP lockout: 3 failed logins = 30-minute lockout)
 - See [SECURITY.md](SECURITY.md) for the security policy and hardening notes
+- See [TEST-PLAN.md](TEST-PLAN.md) for what is verified before a release, and what is not
 
 ## Screenshots
 
