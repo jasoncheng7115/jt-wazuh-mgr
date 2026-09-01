@@ -4,6 +4,42 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.15 (2026-09-01)
+
+- **Portable-executable detection: tuned against a week of live traffic.** The
+  pack's own rules turned out to be fine — verified end to end by running a
+  binary from Downloads and from Temp on a real host, which produced rules 906100
+  and 906102 as intended. They had been silent for a week because nothing on that
+  estate runs portable executables, which is a different thing from being broken.
+
+  What was broken, and what was noisy, were both elsewhere. Rules 906120, 906121
+  and 906122 could never fire: the first keyed on a syscheck path no agent
+  monitors, the other two on a Sysmon event the deployed configuration does not
+  emit. And Wazuh's own Sysmon file-creation rules produced 4,245 alerts in seven
+  days, of which essentially all were noise:
+
+  | rule | level | 7 days | what it actually was |
+  |---|---|---|---|
+  | 92205 | 9 | 3,122 | PowerShell probing its own execution policy |
+  | 92217 | 6 | 799 | .NET native image generation |
+  | 92200 | 6 | 278 | a Windows pool-tag dump, written twice each time |
+  | 92213 | **15** | 33 | browser updaters unpacking their own downloads |
+  | 92207 | 12 | 5 | the Chrome installer writing a Public shortcut |
+
+  Rules 906160-906166 suppress exactly those, each tied to a specific path or
+  filename rather than to "this process is trusted", since an attacker chooses
+  the process name. Verified live: eight PowerShell script executions during the
+  measurement window produced no alerts at all, against roughly one every two
+  minutes before.
+
+  A level 15 rule that is wrong every time is worse than no rule, because it
+  teaches people that level 15 means nothing.
+
+- 906120 is gone rather than rewritten. Wazuh's rules 92200-92217 already detect
+  executables landing in user directories, and anything we add under the same
+  group is a sibling that is never reached once one of them matches — confirmed
+  by creating a file on a live host and watching rule 92203 take it.
+
 ## v1.6.14 (2026-09-01)
 
 - **Packs now install what they need to actually work.** Until now a pack put
