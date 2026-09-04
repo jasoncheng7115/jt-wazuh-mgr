@@ -553,6 +553,29 @@ def check_agpl_source_offer():
         fail('agpl', 'the interface does not offer its source to network users')
 
 
+
+def check_readme_has_no_release_notes():
+    """The READMEs must not carry a per-version list of changes.
+
+    They had one. It said 1.6.1 while the badge above it said 1.6.19,
+    because a second place to record releases is a second place to forget.
+    The changelog is the one place; the README links to it.
+    """
+    banned = ("what's new", '新功能', 'release notes', '更新記錄', 'changelog entries')
+    for rel in ('README.md', 'README-zh-TW.md',
+                'github/README.md', 'github/README-zh-TW.md'):
+        path = os.path.join(ROOT, rel)
+        if not os.path.isfile(path):
+            continue
+        for line in read(path).splitlines():
+            if not line.startswith('##'):
+                continue
+            head = line.lstrip('#').strip().lower()
+            if any(b in head for b in banned):
+                fail('readme', '%s has a %r section; release notes belong in the changelog'
+                     % (rel, line.strip()))
+
+
 def main():
     version = current_version()
     if not version:
@@ -573,6 +596,7 @@ def main():
             ('CDB lists that are still placeholders', check_placeholder_lists),
             ('publishing hygiene', check_publish_hygiene),
             ('README heading version', lambda: check_heading_version(version)),
+            ('release notes live only in the changelog', check_readme_has_no_release_notes),
             ('one licence, stated the same everywhere', check_licence),
             ('the project name is jt-wazuh-mgr', check_project_name),
             ('icon set present and referenced', check_icons),

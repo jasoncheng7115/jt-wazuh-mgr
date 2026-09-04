@@ -15,7 +15,7 @@
     "規則 906160-906166 是調校 Wazuh 自己的 Sysmon EID 11 偵測，而不是重複實作。在正式環境實測七天，那些內建規則產生 4,245 筆告警而幾乎全是噪音：3,122 筆 level 9 來自 PowerShell 探測自己的執行政策、799 筆來自 .NET 原生映像產生、33 筆 level 15 來自瀏覽器更新程式解壓縮自己下載的檔案。一條每次都錯的 level 15 規則，會讓人學會「level 15 不代表什麼」。",
     "不要在這裡新增「Wazuh 已經偵測得到」的事件規則。92200-92217 與我們加在同一群組下的規則是同層，而 Wazuh 取第一個命中的，所以重複的規則根本到不了。已端對端驗證：在真實主機的 Downloads 建立檔案，命中的是 92203 而不是我們的規則。",
     "jt-approved-portable-hash 是白名單，隨附時為空，這是正確的預設值。加入一筆會讓規則 906142 對該支程式降為記錄等級；鍵值必須是 Sysmon 回報的完整 hashes 欄位，含 SHA256= 前綴。",
-    "規則 906203 原本是「/dev/shm 出現任何具執行權限的檔案就 level 12」。在正式環境實測一週，它產生的 53 筆告警**全部**是應用程式以 0777 建立的 POSIX 共享記憶體物件。FIM 看不到檔案的 magic bytes，因此分不出 ELF 執行檔與共享記憶體段。現在降為 level 6 並如實描述它知道的事，IPC 命名慣例由規則 906224 排除。",
+    "規則 906203 原本是「/dev/shm 出現任何具執行權限的檔案就 level 12」。在正式環境實測，它在四小時內一次爆出 53 筆告警，**全部**是應用程式以 0777 建立的 POSIX 共享記憶體物件。FIM 看不到檔案的 magic bytes，因此分不出 ELF 執行檔與共享記憶體段。現在降為 level 6 並如實描述它知道的事，IPC 命名慣例由規則 906224 排除。",
     "從這些位置「執行」是規則 906211，維持 level 12——因為 auditd 證明的是程式真的跑了，而不只是檔案出現了。安裝 agent/jt-portable.rules 即可啟用；套件會把它送進 agent 群組，因此會實際送達主機。",
     "套件現在自帶 agent 群組 portable-detect。管理端規則看不到 agent 從未回報的東西，而在此之前，Linux 規則依賴的監控根本沒有人設定過。"
   ],
@@ -35,7 +35,7 @@
       "type": "rule",
       "name": "zz-906200-jt_portable_nix_rules.xml",
       "dest": "etc/rules/zz-906200-jt_portable_nix_rules.xml",
-      "sha256": "82650af2e0161586150827a809746eabd2f0ed9f71a6c64275a5e08967957b0e"
+      "sha256": "58250e84d22fddded2137afbb0841e860e67d31812d4637565b35368d22a47c3"
     },
     {
       "type": "list",
@@ -61,7 +61,7 @@
     "Rules 906160-906166 tune Wazuh's own Sysmon EID 11 detections rather than duplicating them. Measured over seven days on a live estate those built-in rules produced 4,245 alerts and essentially all were noise: 3,122 at level 9 from PowerShell probing its own execution policy, 799 from .NET native image generation, and 33 at level 15 from browser updaters unpacking their own downloads. A level 15 rule that is wrong every time teaches people that level 15 means nothing.",
     "Do not add a rule here that describes an event Wazuh already detects. Rules 92200-92217 are siblings of anything added under the same group and Wazuh takes the first match, so a duplicate is simply never reached. Verified end to end: a file created in Downloads on a live host produced rule 92203, not ours.",
     "jt-approved-portable-hash is an allowlist and ships empty, which is the correct default. An entry demotes rule 906142 for that one binary; the key is the whole hashes field including the SHA256= prefix, as Sysmon reports it.",
-    "Rule 906203 was a level 12 on any execute-mode file appearing under /dev/shm. Measured over a week on a live estate, all 53 of its alerts were POSIX shared memory objects that an application creates at 0777. File integrity monitoring cannot see magic bytes, so it cannot tell an ELF from a shared memory segment. It is now a level 6 that says what it knows, with the IPC naming conventions excluded by rule 906224.",
+    "Rule 906203 was a level 12 on any execute-mode file appearing under /dev/shm. Measured on a live estate, it produced 53 alerts in one four-hour burst and all of them were POSIX shared memory objects that an application creates at 0777. File integrity monitoring cannot see magic bytes, so it cannot tell an ELF from a shared memory segment. It is now a level 6 that says what it knows, with the IPC naming conventions excluded by rule 906224.",
     "Execution from these places is rule 906211 and stays a level 12, because auditd proves a program ran rather than that a file appeared. Install agent/jt-portable.rules to enable it; the pack ships it into the agent group so it reaches the hosts.",
     "The pack now carries its own agent group, portable-detect. Manager rules cannot see what the agent never reports, and before this the Linux rules depended on monitoring nobody had configured."
   ],
