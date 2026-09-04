@@ -4,6 +4,54 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.20 (2026-09-04)
+
+- **The Linux side of portable-executable detection had a level 12 rule that was
+  wrong every time it fired.** Rule 906203 alerted on any file with the execute
+  bit appearing under `/dev/shm`. Over a week on a live estate it produced 53
+  alerts, all from one host, and every one of them was a POSIX shared memory
+  object — segments, mutexes and event objects that a mail application creates
+  at mode 0777, which is normal for `shm_open()`.
+
+  The rule was right about the mode and wrong about what it meant. File
+  integrity monitoring reports a path, a mode, a size and hashes; it never sees
+  the file's magic bytes, so it cannot tell an ELF binary from a shared memory
+  segment. It is now a level 6 that describes what it actually knows, and rule
+  906224 excludes the IPC naming conventions. Verified against all 53 real
+  paths, and against `kdevtmpfsi`, `xmrig` and five other names a dropper
+  would plausibly use, which still alert.
+
+  Execution from `/dev/shm` remains level 12 as rule 906211, because auditd
+  proves a program ran rather than that a file appeared.
+
+- **The pack now ships the agent-side collection its Linux rules depend on.**
+  It had none. The audit rules file referenced in the comments did not exist, so
+  rules 906210 and 906211 could never fire, and the file rules relied on
+  monitoring nobody had configured.
+
+  Added: an agent group `portable-detect` with file integrity monitoring of
+  `/tmp`, `/var/tmp` and `/dev/shm` in real time, the user download directories
+  on the scheduled scan, and the audit log; plus `jt-portable.rules` for auditd,
+  which now rides along in the group directory so it reaches the agents rather
+  than sitting on the manager. `/home` watching ships commented out, with the
+  reason stated: it is accurate and noisy, and that trade is the operator's.
+
+- **Rule 906212**: a program that runs once from `/tmp` may be an installer; one
+  that runs six times in ten minutes is living somewhere nothing should live.
+
+- A pack's agent group can now carry files beyond `agent.conf`, listed under
+  `agent_group.files`. Names are validated, existing files are never
+  overwritten, and a rolled-back install takes them with it.
+
+- The pre-release check for agent configurations was rejecting valid files:
+  `agent.conf` is a fragment and several `<agent_config>` blocks with different
+  `os` attributes is its normal shape. It now parses it as one.
+
+- Verified on a live 4.14.7 cluster: `wazuh-analysisd -t` clean, both nodes
+  reloaded with no warnings and holding the same file, and each scenario checked
+  with `wazuh-logtest` on the master and again on the worker — including a
+  negative case that must not match the pack.
+
 ## v1.6.19 (2026-09-01)
 
 - **Relicensed to AGPL-3.0.** The project was Apache-2.0, which permits closed

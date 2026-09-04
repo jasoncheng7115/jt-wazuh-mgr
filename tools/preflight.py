@@ -284,9 +284,15 @@ def check_pack_extras(pack, pdir, m):
             fail('packs', '%s: agent group config is missing' % pack)
         else:
             try:
-                ET.fromstring(read(cfg))
+                # agent.conf is a fragment, not a document: several
+                # <agent_config> blocks with different os or profile
+                # attributes is the normal shape, so wrap before parsing.
+                ET.fromstring('<root>' + read(cfg) + '</root>')
             except Exception as e:
                 fail('packs', '%s: agent group config is not well-formed XML (%s)' % (pack, e))
+        for extra in (grp.get('files') or []):
+            if not os.path.isfile(os.path.join(pdir, 'agent', str(extra))):
+                fail('packs', '%s: agent group file %r is missing' % (pack, extra))
 
 
 def check_correlation_levels(pack, name, body):
