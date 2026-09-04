@@ -4,14 +4,45 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.6.21 (2026-09-04)
+
+- **The /dev/shm change is now verified end to end, on the live engine.**
+  Temporarily monitoring `/dev/shm` on a manager and creating two files settled
+  it: `jt_probe_kdevtmpfsi` raised rule 906203 at level 6, and
+  `jt_probe_mailbox_0_shm` raised nothing at all, suppressed by 906224 as
+  intended. The configuration was reverted afterwards.
+
+  This mattered because the rule could not be checked any other way.
+  `wazuh-logtest` replays log lines through decoders; a file integrity event is
+  produced inside the manager and never passes through one, so it decodes as
+  generic JSON and reaches no rule. Waiting for the real events to recur would
+  not have proved anything either — see below.
+
+- **A correction to the v1.6.20 note.** It described 53 false alerts "over a
+  week", which reads as a steady drip. They arrived in a single four-hour burst
+  on one host, with nothing in the seven days either side. The fix is unchanged
+  and the reasoning is stronger without the volume argument: every one of the 53
+  was wrong, and file integrity monitoring structurally cannot tell an ELF from
+  a shared memory segment, whatever the rate. The burst shape is what an
+  application restart looks like, so it recurs.
+
+- **The READMEs no longer carry release notes.** The English one had a "What's
+  New" section listing 1.6.1 while the badge above it said 1.6.19 — a second
+  place to record releases is a second place to forget. A pre-release check now
+  fails if such a section comes back. The changelog is the one place, and the
+  READMEs link to it.
+
 ## v1.6.20 (2026-09-04)
 
 - **The Linux side of portable-executable detection had a level 12 rule that was
   wrong every time it fired.** Rule 906203 alerted on any file with the execute
-  bit appearing under `/dev/shm`. Over a week on a live estate it produced 53
-  alerts, all from one host, and every one of them was a POSIX shared memory
-  object — segments, mutexes and event objects that a mail application creates
-  at mode 0777, which is normal for `shm_open()`.
+  bit appearing under `/dev/shm`. On a live estate it produced 53 alerts in a
+  single four-hour burst on one host and nothing in the seven days either side.
+  Every one of the 53 was a POSIX shared memory object — segments, mutexes and
+  event objects that a mail application creates at mode 0777, which is normal
+  for `shm_open()`. The burst shape matters: this is what a host looks like when
+  an application restarts, or when file integrity monitoring first sees the
+  directory, so it recurs rather than being a one-off.
 
   The rule was right about the mode and wrong about what it meant. File
   integrity monitoring reports a path, a mode, a size and hashes; it never sees

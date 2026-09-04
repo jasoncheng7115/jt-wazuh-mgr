@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.6.20
+# jt-wazuh-mgr v1.6.21
 
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
@@ -8,7 +8,7 @@ A powerful web-based management tool for Wazuh agents in cluster environments.
 
 > **Recommended**: Use the Web UI as the primary interface — it's the main feature of this tool with full functionality.
 
-![Version](https://img.shields.io/badge/version-1.6.20-blue)
+![Version](https://img.shields.io/badge/version-1.6.21-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
@@ -41,57 +41,6 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 > ```
 
 ---
-
-## ✨ What's New
-
-### 1.6.1
-
-- **New rule pack: Zenarmor (OPNsense)** — decoder plus severity-graded rules for Zenarmor NGFW events, where an *unblocked* malicious connection outranks a blocked one. No catch-all rule, so ordinary traffic never floods the console.
-- Packs can now ship **decoders** alongside rules and CDB lists.
-
-### 1.6.0
-
-- **New Rule Packs tab**: a catalogue of installable detection rule series, run as a package manager — conflict detection, backup, ruleset validation and **full rollback on any failure**. Removal restores what it replaced and refuses to discard files you edited.
-
-### 1.5.2
-
-- **Node config drift detection**: `ossec.conf` is exactly what a Wazuh cluster does *not* sync — this compares it across nodes and shows you the difference.
-
-### 1.5.1
-
-- **Cluster-wide ruleset reload**: pushing rules to a worker is not enough, because the cluster does not reload the worker's analysisd. This reloads every node.
-
-### 1.5.0
-
-- **New Inventory tab**: search packages, open ports, processes, services, users, hotfixes and more *across every agent at once* — the reverse of the Dashboard's one-agent-at-a-time view.
-- **Rules tab is now a ruleset workbench**: Hierarchy, All Rules, **Decoders**, **CDB Lists** and **Log Test** (paste a log line, see which rule and decoder match).
-- **Safer config editing**: validate `ossec.conf` before restarting, and reload the ruleset without a restart.
-- **Custom WPK upgrades** for managers with no internet access.
-- **Active Response** on selected agents, **agent pre-registration** with keys, **running-config** and **agent key** viewers, per-node **daemon health**, and group **file browser**.
-
-### 1.4.3
-
-- Security hardening (CSP and other response headers, SRI on CDN assets, login CSRF token), verified with an OWASP ZAP baseline scan.
-- Rules tab: keyword search across the full XML of every rule; the hierarchy view scrolls again.
-- Agents tab: an Exit Selection button.
-- Much wider zh-TW coverage, and the project now ships a test suite (`tests/`).
-
-### 1.4.2
-
-- The Rules tab now reports rule files it could not parse, instead of silently omitting them.
-
-### 1.4.1 — maintenance
-
-- Verified against **Wazuh 4.14.7**; hardened request validation and fixed a rule-hierarchy crash.
-
-### 1.4.0
-
-- **Bilingual UI (English / 繁體中文)** with a one-click language toggle in the header. Your choice is remembered in the browser.
-- Project renamed and published as a standalone repository: **`jasoncheng7115/jt-wazuh-mgr`**.
-- One-line **install / upgrade / uninstall** workflow.
-- Now licensed under **AGPL-3.0-or-later**.
-
-See the full [CHANGELOG](CHANGELOG.md) for details.
 
 ## Features
 

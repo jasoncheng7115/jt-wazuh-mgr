@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.6.20
+# jt-wazuh-mgr v1.6.21
 
 [English](README.md) | [繁體中文](README-zh-TW.md)
 
@@ -8,7 +8,7 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.6.20-blue)
+![Version](https://img.shields.io/badge/version-1.6.21-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
@@ -41,57 +41,6 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 > ```
 
 ---
-
-## ✨ 新功能
-
-### 1.6.1
-
-- **新增規則套件：Zenarmor（OPNsense）** —— 解碼器加上分級規則，**未被阻擋的惡意連線比已阻擋的更嚴重**。不設 catch-all 規則，一般連線不會灌爆主控台。
-- 套件現在可以包含**解碼器**，與規則、CDB 清單一併安裝。
-
-### 1.6.0
-
-- **新增「規則套件」分頁**：可安裝的偵測規則系列目錄，以套件管理員的方式運作 —— 衝突偵測、備份、規則集驗證，**任一步失敗整包回滾**。移除會還原被覆蓋的原檔，並拒絕刪除你修改過的檔案。
-
-### 1.5.2
-
-- **節點設定漂移偵測**：`ossec.conf` 正好是 Wazuh 叢集**不會**同步的東西，本功能跨節點比對並標出差異。
-
-### 1.5.1
-
-- **叢集規則集重載**：把規則推到 worker 還不夠，因為叢集不會重載 worker 的 analysisd。本功能會重載每一個節點。
-
-### 1.5.0
-
-- **新增「資產清單」分頁**：一次跨所有代理程式搜尋套件、開放連接埠、處理程序、服務、使用者、修補程式等 —— 正好是 Dashboard「一次只看一台」的反向操作。
-- **「規則」分頁升級為規則集工作台**：階層、所有規則、**解碼器**、**CDB 清單**、**記錄測試**（貼上一行 log，立刻看到命中的規則與解碼器）。
-- **更安全的設定編輯**：重新啟動前先驗證 `ossec.conf`，並可只重新載入規則集而不重啟。
-- **自訂 WPK 升級**，供無法連外的 Manager 使用。
-- 對選取代理程式執行**主動回應**、**預先註冊代理程式**並取得金鑰、檢視**生效中的設定**與**代理程式金鑰**、各節點 **daemon 健康度**、群組**檔案瀏覽**。
-
-### 1.4.3
-
-- 資安強化（CSP 等安全標頭、CDN 資源 SRI、登入 CSRF token），並以 OWASP ZAP baseline 掃描驗證。
-- 規則分頁：可對所有規則的完整 XML 做關鍵字搜尋；階層檢視恢復可捲動。
-- 代理程式分頁：新增「離開選取」按鈕。
-- 大幅補齊繁體中文翻譯，並新增測試套件（`tests/`）。
-
-### 1.4.2
-
-- 「規則」分頁會回報無法解析的規則檔，不再默默略過。
-
-### 1.4.1 — 維護版本
-
-- 已對 **Wazuh 4.14.7** 完整驗證；強化請求驗證，並修正規則階層的當機問題。
-
-### 1.4.0
-
-- **雙語介面（English / 繁體中文）**，標題列一鍵切換語言，瀏覽器會記住你的選擇。
-- 專案更名並獨立為單一倉庫：**`jasoncheng7115/jt-wazuh-mgr`**。
-- 提供一行 **安裝 / 升級 / 移除** 流程。
-- 改採 **AGPL-3.0-or-later** 授權。
-
-完整內容請見 [CHANGELOG](CHANGELOG-zh-TW.md)。
 
 ## 功能特色
 
