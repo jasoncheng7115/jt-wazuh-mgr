@@ -1,0 +1,46 @@
+## jt-portable-detect — auditd rules for execution from user-writable areas
+##
+## These turn on the only part of this pack that proves a program ran rather
+## than that one was prepared. Manager rules 906210 and 906211 read the keys
+## set here; without this file they never fire, and the file-based rules carry
+## on working on their own.
+##
+## Install:
+##
+##     cp jt-portable.rules /etc/audit/rules.d/
+##     augenrules --load          # or: service auditd restart
+##     auditctl -l | grep jt_portable
+##
+## The agent picks the records up from /var/log/audit/audit.log, which the
+## pack's agent.conf already reads.
+##
+## Cost. A -p x watch records an audit event per execution under that path.
+## /tmp, /var/tmp and /dev/shm are quiet on a server, so the three enabled
+## below are close to free. /home is not quiet on a multi-user or developer
+## host -- every tool a person runs from their own directory is a record --
+## so it ships commented out. Turn it on where the answer matters more than
+## the volume, not everywhere by default.
+##
+## Note on ordering: if your /etc/audit/rules.d/ ends with a rule that sets
+## the immutable flag (-e 2), place this file before it. Rules after -e 2 are
+## refused until the next reboot, silently as far as the ruleset is concerned.
+
+## Programs run from a temporary or memory filesystem. A binary here is
+## either an installer doing its job or something that wants to leave no
+## trace on disk, and rule 906211 treats it as the latter.
+-w /tmp -p x -k jt_portable_tmpexec
+-w /var/tmp -p x -k jt_portable_tmpexec
+-w /dev/shm -p x -k jt_portable_tmpexec
+
+## Programs run from removable media. Rare on a server, and the classic way
+## a portable tool arrives on a workstation.
+-w /media -p x -k jt_portable_exec
+-w /mnt -p x -k jt_portable_exec
+-w /run/media -p x -k jt_portable_exec
+
+## Programs run out of the administrator's own directory.
+-w /root -p x -k jt_portable_exec
+
+## Programs run from any user's home directory. Accurate and noisy; see the
+## note on cost above before enabling it.
+# -w /home -p x -k jt_portable_exec

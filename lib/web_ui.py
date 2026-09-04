@@ -12848,7 +12848,31 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             pass
         os.chmod(dest, 0o660)
         written.append(dest)
-        return {'name': name, 'created': True, 'already_present': False}
+
+        # Anything else the pack needs on the agent itself rides along in the
+        # group directory, which the cluster distributes to every assigned
+        # agent. An auditd rules file is no use sitting on the manager.
+        extras = []
+        for entry in (spec.get('files') or []):
+            if not re.match(r'^[A-Za-z0-9._-]{1,64}$', str(entry)):
+                raise ValueError('Refusing unsafe agent group file name: %r' % str(entry)[:40])
+            esrc = os.path.join(pdir, 'agent', entry)
+            if not os.path.isfile(esrc):
+                raise ValueError('Agent group file is missing from the pack: %s' % entry)
+            edest = os.path.join(gdir, entry)
+            if os.path.isfile(edest):
+                continue          # same reasoning as the config: never overwrite
+            shutil.copy2(esrc, edest)
+            try:
+                shutil.chown(edest, 'wazuh', 'wazuh')
+            except Exception:
+                pass
+            os.chmod(edest, 0o660)
+            written.append(edest)
+            extras.append(entry)
+
+        return {'name': name, 'created': True, 'already_present': False,
+                'files': extras}
 
     def _installed_rule_ids(skip_files=()):
         """Rule ids already present on the manager, for conflict detection."""

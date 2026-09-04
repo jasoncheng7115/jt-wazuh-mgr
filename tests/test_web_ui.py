@@ -1193,6 +1193,58 @@ class TestRulePacks(WebUITestCase):
         detail = self.client.get('/api/packs/jt-portable-detect').get_json()
         self.assertEqual(detail['undeclared_nodes'], [])
 
+    def test_agent_group_carries_the_files_the_agent_needs(self):
+        """An auditd rules file is no use sitting on the manager.
+
+        Files listed under agent_group.files ride along in the group
+        directory, which the cluster distributes to every assigned agent.
+        """
+        resp = self.client.post('/api/packs/jt-portable-detect/install', json={})
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        gdir = os.path.join(self.tmp, 'etc', 'shared', 'portable-detect')
+        self.assertTrue(os.path.isfile(os.path.join(gdir, 'agent.conf')))
+        self.assertTrue(os.path.isfile(os.path.join(gdir, 'jt-portable.rules')),
+                        'the auditd rules file never reached the agent group')
+        with io.open(os.path.join(gdir, 'jt-portable.rules'), encoding='utf-8') as fh:
+            body = fh.read()
+        self.assertIn('jt_portable_tmpexec', body,
+                      'the shipped audit rules do not set the key the rules match on')
+
+    def test_removing_the_pack_leaves_the_agent_group_and_says_so(self):
+        """The group is deliberately left behind, and the operator is told.
+
+        Agents may already be assigned to it. Pulling its configuration out
+        from under them would stop collection they still depend on, so the
+        removal reports what it left rather than deciding for them.
+        """
+        self.client.post('/api/packs/jt-portable-detect/install', json={})
+        gdir = os.path.join(self.tmp, 'etc', 'shared', 'portable-detect')
+        self.assertTrue(os.path.isfile(os.path.join(gdir, 'jt-portable.rules')))
+        resp = self.client.delete('/api/packs/jt-portable-detect')
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        self.assertTrue(os.path.isfile(os.path.join(gdir, 'agent.conf')),
+                        'the agent group config was pulled from under assigned agents')
+        self.assertTrue(os.path.isfile(os.path.join(gdir, 'jt-portable.rules')))
+        self.assertIn('portable-detect', resp.get_json().get('message', ''),
+                      'the removal did not say which group it left behind')
+
+    def test_an_unsafe_agent_group_file_name_is_refused(self):
+        view = self.app.view_functions['install_pack']
+        while hasattr(view, '__wrapped__'):
+            view = view.__wrapped__
+        install = None
+        for name, cell in zip(view.__code__.co_freevars, view.__closure__ or ()):
+            if name == '_install_agent_group':
+                install = cell.cell_contents
+        self.assertIsNotNone(install, '_install_agent_group is no longer reachable')
+        for bad in ('../../etc/passwd', 'a/b', '..', 'x' * 80):
+            with self.subTest(name=bad):
+                with self.assertRaises(ValueError):
+                    install(os.path.join(self.tmp, 'nopack'),
+                            {'agent_group': {'name': 'g', 'config': 'agent.conf',
+                                             'files': [bad]}},
+                            self.tmp, [])
+
     def test_install_rolls_back_when_the_ruleset_stops_validating(self):
         self._write_analysisd(self.ANALYSISD_BAD)
         resp = self.client.post('/api/packs/jt-portable-detect/install')

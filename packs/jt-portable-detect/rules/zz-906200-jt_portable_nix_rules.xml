@@ -1,51 +1,64 @@
 <!--
-  ╔══════════════════════════════════════════════════════════════════════╗
-  ║  jt-portable-detect ── Linux／macOS 可攜式執行檔偵測                 ║
-  ║  檔案：zz-906200-jt_portable_nix_rules.xml                           ║
-  ║  版本：v1.2    規則區間：906200-906299                               ║
-  ║  Jason Tools Co., Ltd.／Apache-2.0                                   ║
-  ╚══════════════════════════════════════════════════════════════════════╝
+  jt-portable-detect — portable executable detection for Linux and macOS
+  File:    zz-906200-jt_portable_nix_rules.xml
+  Range:   906200-906299
+  Licence: AGPL-3.0-or-later    Jason Tools Co., Ltd.
 
-  ── 為什麼 Linux／macOS 要與 Windows 分開設計 ──
+  Why this is separate from the Windows rules
+  ──────────────────────────────────────────────────────────────────
+  On Windows a portable program has a shape: a .exe that writes no registry
+  entries. Linux and macOS have neither convention. "Executable" is one
+  permission bit, and alerting on it produces noise — in a measured estate,
+  most of the u+x files under /root were .pem and .key certificates.
 
-  Windows 的「可攜式程式」有明確特徵：.exe 副檔名 + 不寫 Registry。
-  Linux／macOS 沒有副檔名慣例，「可執行」只是一個權限位元，
-  因此「有 u+x 就告警」會產生大量誤報 ——
-  實測環境中 /root 下 21 個帶 u+x 的檔案，大多是 .pem／.key 憑證。
+  So these rules do not ask "is it executable". They ask three narrower
+  questions, in increasing order of how much they prove:
 
-  本規則改用三個更貼近真實的判準：
+    1. Was an existing file *made* executable?  A package manager installs
+       with the right mode already set; a person who downloads a tool and
+       runs chmod +x is doing the portable-executable thing by definition.
 
-    1. 【權限變更】既有檔案被 chmod 成可執行  ← 最高價值訊號
-       正常軟體由套件管理器安裝時就帶正確權限，不需要事後 chmod +x。
-       使用者下載可攜式工具後 chmod +x 才執行，這是最典型的行為。
+    2. Did something with the execute bit appear where programs do not
+       belong — /tmp, /var/tmp, /dev/shm?
 
-    2. 【高風險位置】/tmp、/var/tmp、/dev/shm 出現可執行檔
-       這些目錄正常不該有常駐執行檔，且是惡意工具最愛的落點。
+    3. Did a program actually *run* from one of those places?  This is the
+       only one of the three that is evidence of execution rather than of
+       preparation, and it needs auditd. See the note above rule 906210.
 
-    3. 【副檔名】.AppImage／.run／.bin／.sh／.py 等明確的可攜式格式
-       AppImage 是 Linux 最主流的「免安裝」格式，等同 Windows 的綠色版。
+  What file integrity monitoring cannot tell you
+  ──────────────────────────────────────────────────────────────────
+  A syscheck event carries a path, a mode, a size and hashes. It does not
+  carry the file's magic bytes, so it cannot distinguish an ELF binary from
+  a shared memory segment that happens to be mode 0777. That is not a
+  hypothetical: rule 906203 was raising 53 level-12 alerts a week on one
+  host, every one of them a POSIX IPC object under /dev/shm created by an
+  application at 0777. The rule was right about the mode and wrong about
+  what it meant.
 
-  ── 檔名前綴 zz- 的原因 ──
-    規則檔依檔名字母序載入，且同層級的兄弟規則中「後載入者勝出」。
-    客戶環境（如 jasontools-malware-rule.xml）可能有掛在 550/553/554
-    之下的規則，zz- 可確保本規則不被遮蔽。
+  Levels here therefore follow the strength of the evidence, not how
+  alarming the location sounds. A level 12 alert that is wrong every time
+  teaches people that level 12 means nothing.
 
-  ── 相依 ──
-    父規則 550（內容異動）／553（刪除）／554（新增）── Wazuh 內建 FIM
-    需 agent 端已設定 syscheck 監控對應目錄（見 agent/ossec.conf.nix.snippet.xml）
+  Load order
+  ──────────────────────────────────────────────────────────────────
+  Rule files load in filename order, and among sibling rules the last one
+  loaded wins. The zz- prefix keeps these from being shadowed by a customer
+  file that also hangs off 550/553/554.
+
+  Requires
+  ──────────────────────────────────────────────────────────────────
+  Parent rules 550 (modified), 553 (deleted), 554 (added) — built-in FIM.
+  Agent-side collection: see the pack's agent/agent.conf, installed as the
+  portable-detect agent group. Rules 906210 and 906211 additionally need
+  auditd with agent/jt-portable.rules loaded.
 -->
 
 <group name="linux,macos,jt_portable,">
 
-<!--
-  ══════════════════════════════════════════════════════════════════════
-   基礎規則
-   ══════════════════════════════════════════════════════════════════════
--->
-
-  <!-- 使用者可寫區域的檔案事件（level 1 + no_log：不告警但不終結規則鏈）
-       ★ 刻意用 level 1 而非 0 ── level 0 會終結規則鏈，
-         導致下游規則與其他內建偵測全部靜默（本專案實測踩過此坑）。 -->
+  <!-- Base rule for a file event in an area a user can write to.
+       Level 1, not 0, deliberately: level 0 ends rule evaluation, which
+       would silence every rule below this one as well as unrelated
+       built-in detections. Measured on this project. -->
   <rule id="906200" level="1">
     <if_sid>550,553,554</if_sid>
     <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm|home/[^/]+|root|Users/[^/]+)/</field>
@@ -54,17 +67,12 @@
   </rule>
 
 
-<!--
-  ══════════════════════════════════════════════════════════════════════
-   判準 1：權限被改為可執行  ← 最高價值訊號
-   ══════════════════════════════════════════════════════════════════════
-   正常套件安裝的程式一開始就有正確權限，不需事後 chmod +x。
-   「下載檔案 → chmod +x → 執行」是可攜式工具的典型使用流程。
+  <!-- 1. An existing file was made executable.
+       The strongest of the file-based signals: software installed from a
+       package arrives with its mode already correct and never needs this.
 
-   ※ changed_fields 是「規則用欄位名」，JSON 告警中叫 changed_attributes。
-     寫錯會靜默失效（本專案實測確認）。
--->
-
+       changed_fields is the rule-side name; the JSON alert calls it
+       changed_attributes. Writing the JSON name here fails silently. -->
   <rule id="906201" level="8">
     <if_sid>906200</if_sid>
     <field name="changed_fields" type="pcre2">permission</field>
@@ -78,21 +86,14 @@
   </rule>
 
 
-<!--
-  ══════════════════════════════════════════════════════════════════════
-   判準 2：高風險位置出現可執行檔
-   ══════════════════════════════════════════════════════════════════════
-   /tmp、/var/tmp、/dev/shm 正常不該有常駐執行檔。
-   /dev/shm 位於記憶體，重開機即消失，是規避鑑識的常見手法。
-
-   ※ 涵蓋子目錄（如 installer 解壓的 /tmp/xxxx/setup）──
-     實測發現只匹配第一層會漏掉這類最常見的落點。
-     子目錄帶來的誤報由下方 906220/906222 的排除規則收斂。
--->
-
+  <!-- 2. Something executable appeared where programs do not belong.
+       Subdirectories are included: an installer unpacking to
+       /tmp/xxxx/setup is the common shape, and matching only the first
+       level misses it. The exclusions at the end of this file are what
+       keeps that affordable. -->
   <rule id="906202" level="10">
     <if_sid>550,554</if_sid>
-    <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm)/</field>
+    <field name="file" type="pcre2">^/(tmp|var/tmp)/</field>
     <field name="perm" type="pcre2">x</field>
     <description>[WARN] Executable appeared in a temporary directory - $(file) perm: $(perm)</description>
     <mitre>
@@ -102,27 +103,35 @@
     <group>jt_portable_tmpexec,</group>
   </rule>
 
-  <!-- /dev/shm 風險更高（記憶體、重開即消失） -->
-  <rule id="906203" level="12">
-    <if_sid>906202</if_sid>
+  <!--
+    /dev/shm is its own rule and its own level.
+
+    In principle a binary dropped on a memory filesystem is worse than one
+    in /tmp: it never touches a disk and is gone on reboot. In practice
+    /dev/shm is where every library that uses POSIX shared memory puts its
+    segments, semaphores and mutexes, and those are routinely created 0777.
+    File integrity monitoring cannot tell them apart from a program.
+
+    So this reports at a level that matches what it actually knows: a file
+    with the execute bit appeared on a memory filesystem, which is worth a
+    look. Execution from /dev/shm is rule 906211, which has auditd behind
+    it and is a level 12 because it is evidence rather than a suggestion.
+  -->
+  <rule id="906203" level="6">
+    <if_sid>550,554</if_sid>
     <field name="file" type="pcre2">^/dev/shm/</field>
-    <description>[HIGH] Executable appeared on a memory filesystem, suggesting forensic evasion - $(file)</description>
+    <field name="perm" type="pcre2">x</field>
+    <description>Executable-mode file appeared on a memory filesystem - $(file) size: $(size) owner: $(uname)</description>
     <mitre>
       <id>T1204.002</id>
       <id>T1564</id>
     </mitre>
-    <group>jt_portable_tmpexec,</group>
+    <group>jt_portable_shm,</group>
   </rule>
 
 
-<!--
-  ══════════════════════════════════════════════════════════════════════
-   判準 3：明確的可攜式格式副檔名
-   ══════════════════════════════════════════════════════════════════════
-   AppImage 是 Linux 最主流的免安裝格式（等同 Windows 綠色版）。
-   .run／.bin 多為自解壓安裝包，.dmg／.pkg 為 macOS 安裝映像。
--->
-
+  <!-- 3. File formats that mean "portable" on these platforms.
+       AppImage is the Linux equivalent of a Windows portable build. -->
   <rule id="906204" level="8">
     <if_sid>906200</if_sid>
     <field name="file" type="pcre2">(?i)\.(AppImage|run|bin|jar)$</field>
@@ -133,8 +142,7 @@
     <group>jt_portable_file,</group>
   </rule>
 
-  <!-- macOS：使用者目錄的 .app／.dmg／.pkg
-       ※ .app 是目錄不是檔案，FIM 會看到其內部的 Contents/MacOS/<binary> -->
+  <!-- macOS. A .app is a directory, so FIM reports the binary inside it. -->
   <rule id="906205" level="6">
     <if_sid>906200</if_sid>
     <field name="file" type="pcre2">(?i)^/Users/[^/]+/(Downloads|Desktop|Documents)/.*\.(dmg|pkg)$</field>
@@ -156,19 +164,23 @@
   </rule>
 
 
-<!--
-  ══════════════════════════════════════════════════════════════════════
-   判準 4：auditd execve 執行偵測  ※ 選配模組
-   ══════════════════════════════════════════════════════════════════════
-   ★ 需要 agent 端啟用 auditd 並套用 agent/audit/jt-portable.rules。
-     未啟用 auditd 的環境，上述 FIM 類規則仍可完整運作。
+  <!--
+    4. Execution, via auditd.  Optional, and the only part of this file that
+       proves a program ran rather than that one was prepared.
 
-   ★ 為何列為選配：auditd 在高負載主機會產生可觀的日誌量與效能影響，
-     不應預設對全環境開啟。建議先在少數高價值主機導入。
+       Needs auditd running on the agent with agent/jt-portable.rules
+       loaded, and the agent reading /var/log/audit/audit.log. Without it
+       everything above still works.
 
-   父規則 80700（Wazuh 內建 auditd 事件群組）
--->
+       Worth knowing before switching it on: watching /home for execute
+       access on a busy multi-user host produces a lot of audit records.
+       Start with /tmp, /var/tmp and /dev/shm, which is what the shipped
+       rules file enables by default.
 
+       Parent 80700 is the built-in auditd group and is level 0. That is
+       fine for if_sid; it would not be for if_matched_sid, which is why
+       the correlation rule below hangs off 906210 rather than off 80700.
+  -->
   <rule id="906210" level="10">
     <if_sid>80700</if_sid>
     <field name="audit.key">jt_portable_exec</field>
@@ -182,7 +194,21 @@
   <rule id="906211" level="12">
     <if_sid>80700</if_sid>
     <field name="audit.key">jt_portable_tmpexec</field>
-    <description>[HIGH] Program executed from a temporary directory - $(audit.exe) uid: $(audit.uid)</description>
+    <description>[HIGH] Program executed from a temporary or memory filesystem - $(audit.exe) uid: $(audit.uid)</description>
+    <mitre>
+      <id>T1204.002</id>
+      <id>T1564</id>
+    </mitre>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+  <!-- A program that runs once from /tmp may be an installer. One that runs
+       repeatedly from there is something living in a directory nothing is
+       supposed to live in. -->
+  <rule id="906212" level="12" frequency="6" timeframe="600">
+    <if_matched_sid>906210</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] Repeated execution from user-writable areas on one host - $(audit.exe)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -190,30 +216,27 @@
   </rule>
 
 
-<!--
-  ══════════════════════════════════════════════════════════════════════
-   降噪：排除已知的正常行為
-   ══════════════════════════════════════════════════════════════════════
-   ★ 必須置於被覆寫規則「之後」（Wazuh 取最後匹配者）。
-   ★ 這些排除是依實地觀察設計，客戶可依環境增修。
--->
+  <!--
+    Exclusions. These must come after the rules they override, because
+    Wazuh takes the last sibling that matches.
+  -->
 
-  <!-- 套件管理器與設定管理工具的正常操作 -->
+  <!-- Package and configuration managers doing their normal work. -->
   <rule id="906220" level="0">
     <if_sid>906201,906202,906204</if_sid>
     <field name="file" type="pcre2">^/(tmp|var/tmp)/(apt|dpkg|rpm|yum|dnf|snapd?|flatpak|ansible|chef|puppet|salt)[-_.]</field>
     <description>Temporary file from a package or configuration manager (normal)</description>
   </rule>
 
-  <!-- 憑證、金鑰、設定檔即使帶 x 權限也不是可攜式程式
-       （實測： /root/wazuh-certificates/*.pem 帶 u+x） -->
+  <!-- Certificates, keys and documents are not programs, whatever their
+       mode. Measured: /root/wazuh-certificates/*.pem ships with u+x. -->
   <rule id="906221" level="0">
-    <if_sid>906201,906202,906204</if_sid>
+    <if_sid>906201,906202,906203,906204</if_sid>
     <field name="file" type="pcre2">(?i)\.(pem|key|crt|cer|csr|conf|cfg|ya?ml|json|xml|log|txt|md)$</field>
     <description>Certificate, configuration or document file, not a portable executable</description>
   </rule>
 
-  <!-- Wazuh 自身與常見監控代理的暫存檔 -->
+  <!-- Monitoring agents, including this one. -->
   <rule id="906222" level="0">
     <if_sid>906201,906202,906204</if_sid>
     <field name="file" type="pcre2">^/(tmp|var/tmp)/(ossec|wazuh|zabbix|nagios|nrpe|telegraf|datadog|newrelic)</field>
@@ -221,12 +244,36 @@
   </rule>
 
   <!--
-    906223-906229：保留給客戶端自訂排除
-    範例：
-    <rule id="906223" level="0">
+    POSIX inter-process communication objects under /dev/shm.
+
+    shm_open() and sem_open() create ordinary files here, and applications
+    routinely create them 0777. Every one of the 53 level-12 alerts this
+    pack raised in a week on one host was one of these: shared memory
+    segments, mutexes and event objects belonging to a mail application.
+
+    This matches the naming conventions those objects follow, both the
+    vendor-specific prefixes and the _shm / _mtx / _sem style suffixes.
+
+    Be clear about the trade-off: an attacker who names a dropper
+    something_shm lands in this exclusion. That is accepted here because
+    the alternative — 53 false level-12 alerts a week — trains people to
+    ignore the rule, which defeats it just as thoroughly and more quietly.
+    Execution from /dev/shm is still caught by 906211, which this does not
+    touch, and which auditd backs with evidence a filename cannot forge.
+  -->
+  <rule id="906224" level="0">
+    <if_sid>906203</if_sid>
+    <field name="file" type="pcre2">(?i)^/dev/shm/(sem\.|\.?(com|org|net)\.|pulse-shm-|PostgreSQL\.|mono\.|lttng-|ust-|aio-|\.nvidia|\.io\.)|^/dev/shm/.*_(shm|mtx|sem|evt|lock|mutex|cond|queue)$</field>
+    <description>POSIX shared memory or semaphore object, not a program</description>
+  </rule>
+
+  <!--
+    906225-906229 are left for site-specific exclusions. For example:
+
+    <rule id="906225" level="0">
       <if_sid>906201,906202,906204</if_sid>
       <field name="file" type="pcre2">^/tmp/mycompany-deploy-</field>
-      <description>Excluded: corporate deployment tool, change request CR-xxxx</description>
+      <description>Excluded: corporate deployment tool, change request CR-1234</description>
     </rule>
   -->
 
