@@ -91,14 +91,46 @@ def check_changelog(version):
             fail('changelog', '%s has no entry for v%s' % (rel, version))
 
 
+# Directories that are not expected to match, or are not published at all.
+MIRROR_SKIP_DIRS = {
+    '.git', '.vendor', '__pycache__', 'node_modules',
+    'offline_packages', 'deploy', 'tmp', 'wazuh-rules',
+    'docs', 'screenshots', 'images',   # binary assets, compared by name elsewhere
+}
+MIRROR_SKIP_SUFFIX = ('.pyc', '.pyo', '.log')
+
+
+def _mirror_files(base, exclude=None):
+    """Every publishable file under base, keyed by its path relative to base."""
+    found = {}
+    for dirpath, dirnames, filenames in os.walk(base):
+        dirnames[:] = [d for d in dirnames
+                       if d not in MIRROR_SKIP_DIRS and not d.startswith('.')]
+        if exclude and os.path.abspath(dirpath).startswith(exclude):
+            continue
+        for name in filenames:
+            if name.startswith('.') or name.endswith(MIRROR_SKIP_SUFFIX):
+                continue
+            full = os.path.join(dirpath, name)
+            found[os.path.relpath(full, base)] = full
+    return found
+
+
 def check_github_mirror():
-    """Files that exist in both trees must be identical."""
-    for rel in ('lib/web_ui.py', 'lib/i18n_engine.js', 'lib/__init__.py',
-                'lib/config.py', 'lib/wazuh_api.py', 'lib/wazuh_cli.py',
-                'tests/test_web_ui.py', 'wazuh_agent_mgr.py',
-                'install.sh', 'uninstall.sh', 'README.md', 'README-zh-TW.md'):
-        a, b = os.path.join(ROOT, rel), os.path.join(GITHUB, rel)
-        if os.path.isfile(a) and os.path.isfile(b) and read(a, True) != read(b, True):
+    """Files that exist in both trees must be identical.
+
+    This used to compare a hardcoded list of twelve filenames, which meant it
+    reported "github/ mirrors the working tree" while saying nothing about
+    tools/, tests/test_ui_operations.py, TEST-PLAN.md or half of lib/. An edit
+    to tools/preflight.py sat unmirrored and the check still passed -- a check
+    that claims more coverage than it has is worse than no check, because it
+    stops anyone looking. It now walks both trees and compares everything
+    present in both.
+    """
+    src = _mirror_files(ROOT, exclude=os.path.abspath(GITHUB))
+    dst = _mirror_files(GITHUB)
+    for rel in sorted(set(src) & set(dst)):
+        if read(src[rel], True) != read(dst[rel], True):
             fail('mirror', '%s differs between the working tree and github/' % rel)
 
     src = {os.path.relpath(p, ROOT) for p in glob.glob(os.path.join(ROOT, 'packs', '*', '*', '*'))}
@@ -576,6 +608,132 @@ def check_readme_has_no_release_notes():
                      % (rel, line.strip()))
 
 
+def _count_unittest_tests():
+    total = 0
+    for path in sorted(glob.glob(os.path.join(ROOT, 'tests', 'test_*.py'))):
+        total += len(re.findall(r'^\s+def test_', read(path), re.M))
+    return total
+
+
+def _count_preflight_checks():
+    body = read(os.path.abspath(__file__))
+    block = body[body.index('def main():'):]
+    return len(re.findall(r"^\s+\('.*?',\s*(?:lambda|check_)", block, re.M))
+
+
+def _count_e2e_journeys():
+    path = os.path.join(ROOT, 'tests', 'e2e', 'journeys.js')
+    return len(re.findall(r'await journey\(', read(path))) if os.path.isfile(path) else 0
+
+
+# Each entry: label, how to count it, the unit that must follow the number, and
+# a word that must appear on the line. The unit is what disambiguates -- "17
+# journeys, 65 checks" sits on one line, and only the 17 is a journey count.
+COUNTED = (
+    ('unittest tests', _count_unittest_tests, r'項|tests?\b', ('unittest',)),
+    ('preflight checks', _count_preflight_checks, r'項|checks?\b', ('preflight',)),
+    ('e2e journeys', _count_e2e_journeys, r'條旅程|journeys?\b', ('e2e', 'journey', '旅程')),
+)
+
+COUNT_DOCS = ('CLAUDE.md', 'github/TEST-PLAN.md', 'github/TEST-PLAN-zh-TW.md')
+
+
+def check_documented_counts():
+    """Counts quoted in the documentation must match what actually exists.
+
+    These drift as a family. CLAUDE.md claimed 118 tests in one section and 146
+    in another while 178 existed; the published TEST-PLAN said 146 tests, 11
+    preflight checks and 17 journeys when the real figures were 178, 19 and 19.
+    Nothing compared any of them to the code, so every one of them was wrong at
+    the same time -- and a stale number is worse than no number, because it
+    invites "the suite is fine, it says 146" from someone who never ran it.
+
+    Counted statically, by reading the source. That keeps this script
+    standard-library-only: importing the suite would pull in Flask, which is not
+    installed on the development host. The static count is exact for unittest --
+    a subTest block reports as one test, which is what unittest counts too.
+
+    Numbers that cannot be counted without running something -- the e2e
+    assertion total needs a browser and the docker images -- are deliberately
+    left alone; claiming to verify them would be worse than not checking.
+    """
+    for label, counter, unit, words in COUNTED:
+        try:
+            actual = counter()
+        except (OSError, ValueError):
+            continue
+        if not actual:
+            continue
+        # A few words may sit between the number and its unit --
+        # "11 mechanical pre-release checks" is the English phrasing.
+        pattern = re.compile(r'(\d{2,4})[^\n]{0,24}?(?:%s)' % unit)
+        for rel in COUNT_DOCS:
+            path = os.path.join(ROOT, rel)
+            if not os.path.isfile(path):
+                continue
+            body = read(path)
+            for m in pattern.finditer(body):
+                line = body[body.rfind('\n', 0, m.start()) + 1:
+                            body.find('\n', m.end())].lower()
+                if not any(w in line for w in words):
+                    continue
+                if label != 'e2e journeys' and ('journey' in line or '旅程' in line):
+                    continue
+                if int(m.group(1)) != actual:
+                    fail('counts', '%s claims %s %s on line %r, but there are %d'
+                         % (rel, m.group(1), label, line.strip()[:64], actual))
+
+
+def _version_tuple(v):
+    return tuple(int(p) for p in v.split('.'))
+
+
+# The standalone repo begins at v1.4.0 (commit "Initial release"). Everything
+# older lived in the it-scripts monorepo, so those releases have no commit here
+# and can never be tagged -- do not report them as missing.
+REPO_FIRST_RELEASE = (1, 4, 0)
+
+
+def check_release_tags(version):
+    """Every shipped release should be reachable by tag.
+
+    Twenty-nine were not: v1.4.1 through v1.7.0 had commits but no tags, so
+    `git checkout v1.7.0` failed and GitHub could not offer a single Release.
+    Nothing caught it because tagging was not on the checklist at all.
+
+    The version being prepared is exempt -- it is tagged at the end of the
+    release, after this script runs -- so a missing tag for it is a reminder,
+    not a failure.
+    """
+    changelog = os.path.join(GITHUB, 'CHANGELOG.md')
+    if not os.path.isdir(os.path.join(GITHUB, '.git')) or not os.path.isfile(changelog):
+        return
+    try:
+        out = subprocess.run(['git', '-C', GITHUB, 'tag'],
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        warn('tags', 'could not list tags: %s' % exc)
+        return
+    if out.returncode != 0:
+        warn('tags', 'could not list tags: %s' % out.stderr.strip()[:80])
+        return
+    tags = set(out.stdout.split())
+
+    released = re.findall(r'^##\s+v([0-9]+\.[0-9]+\.[0-9]+)', read(changelog), re.M)
+    missing = [v for v in released
+               if _version_tuple(v) >= REPO_FIRST_RELEASE
+               and v != version
+               and ('v' + v) not in tags]
+    if missing:
+        fail('tags', '%d released version(s) have no tag: %s'
+             % (len(missing), ', '.join('v' + v for v in missing[:6])
+                + (' ...' if len(missing) > 6 else '')))
+    if ('v' + version) not in tags:
+        warn('tags', 'v%s is not tagged yet -- tag it at the end of the release: '
+                     "git -C github tag -a v%s -m 'jt-wazuh-mgr v%s' && "
+                     'git -C github push --tags origin' % (version, version, version))
+
+
 def main():
     version = current_version()
     if not version:
@@ -601,6 +759,8 @@ def main():
             ('the project name is jt-wazuh-mgr', check_project_name),
             ('icon set present and referenced', check_icons),
             ('AGPL source offer in the interface', check_agpl_source_offer),
+            ('documented counts match reality', check_documented_counts),
+            ('every released version is tagged', lambda: check_release_tags(version)),
     ):
         before = len(FAILURES), len(WARNINGS)
         fn()
