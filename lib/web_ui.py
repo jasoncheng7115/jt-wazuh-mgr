@@ -82,6 +82,102 @@ VALID_PATH_COMPONENT_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.\/]+$')
 VALID_USERNAME_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
 
 
+# ---------------------------------------------------------------------------
+# What the server we are talking to can actually do
+#
+# Wazuh 5.0 removes 21 of the 49 API endpoints this tool calls: the whole
+# ruleset side (/rules, /decoders, /lists), /logtest, every /manager/* route
+# and /syscollector/*. Rules move from XML under etc/rules into the engine,
+# and CDB lists become a key-value database.
+#
+# Rather than scatter version checks through the routes, the server version is
+# detected once when the connection is made and turned into a table of
+# features. A route asks whether its feature is available and says so plainly
+# when it is not, instead of failing with a 404 from an endpoint that no longer
+# exists. Adding a future version means adding a bound here, not hunting for
+# the checks.
+# ---------------------------------------------------------------------------
+
+#   removed_in: the first major version that no longer has it
+#   added_in:   the first major version that has it
+SERVER_FEATURES = {
+    'ruleset_api':       {'removed_in': 5, 'what': 'the /rules, /decoders and /lists endpoints'},
+    'ruleset_on_disk':   {'removed_in': 5, 'what': 'the ruleset as XML files under etc/rules'},
+    'cdb_lists':         {'removed_in': 5, 'what': 'CDB lists (5.x uses a key-value database)'},
+    'logtest_api':       {'removed_in': 5, 'what': 'the /logtest endpoint'},
+    'manager_endpoints': {'removed_in': 5, 'what': 'the /manager/* endpoints'},
+    'syscollector_api':  {'removed_in': 5, 'what': 'the /syscollector/* endpoints'},
+    'active_response':   {'removed_in': 5, 'what': 'the /active-response endpoint'},
+    'agent_reconnect':   {'removed_in': 5, 'what': 'the /agents/reconnect endpoint'},
+    'upgrade_result':    {'removed_in': 5, 'what': 'the /agents/upgrade_result endpoint'},
+    'rule_packs':        {'removed_in': 5, 'what': 'rule packs, which install XML rules and CDB lists'},
+    'analysisd_reload':  {'removed_in': 5, 'what': 'the analysisd ruleset reload endpoint'},
+    'group_config_api':  {'added_in': 5, 'what': 'the /groups/{id}/configuration endpoint'},
+}
+
+UNKNOWN_SERVER_VERSION = '0.0.0'
+
+
+def server_major(version: str) -> int:
+    """Major version number of a server, or 0 when it could not be read.
+
+    An unreadable version is treated as 0, which enables everything. A tool
+    that silently disables features because it could not parse a string is
+    worse than one that tries and reports the real error.
+    """
+    try:
+        return int(str(version or '').lstrip('v').split('.')[0])
+    except (ValueError, IndexError):
+        return 0
+
+
+def server_capabilities(version: str) -> dict:
+    """Turn a server version into the feature table for it."""
+    major = server_major(version)
+    caps = {}
+    for name, spec in SERVER_FEATURES.items():
+        if major == 0:
+            caps[name] = True          # unknown: assume the current generation
+            continue
+        ok = True
+        if 'added_in' in spec and major < spec['added_in']:
+            ok = False
+        if 'removed_in' in spec and major >= spec['removed_in']:
+            ok = False
+        caps[name] = ok
+    return caps
+
+
+def detect_server_version(api) -> str:
+    """Read the server version, over endpoints that exist in every version.
+
+    /cluster/nodes and /cluster/local/info are present in 4.x and 5.x alike.
+    /manager/info is 4.x only and is tried last, for a 4.x manager with the
+    cluster disabled.
+    """
+    def _from(result, keys):
+        items = (result or {}).get('data', {}).get('affected_items') or []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for key in keys:
+                value = item.get(key)
+                if value:
+                    return str(value).replace('Wazuh ', '').lstrip('v').strip()
+        return ''
+
+    for endpoint, keys in (('/cluster/nodes', ('version',)),
+                           ('/cluster/local/info', ('version', 'wazuh_version')),
+                           ('/manager/info', ('version',))):
+        try:
+            found = _from(api.request('GET', endpoint), keys)
+        except Exception:
+            continue
+        if found:
+            return found
+    return UNKNOWN_SERVER_VERSION
+
+
 def validate_node_name(name: str) -> bool:
     """Validate node name to prevent injection attacks."""
     if not name or len(name) > 128:
@@ -1555,6 +1651,40 @@ HTML_TEMPLATE = '''
                 else if (tabName === 'users') refreshUsers();
                 else if (tabName === 'logs') refreshLogs();
                 else if (tabName === 'packs') refreshPacks();
+            }
+        }
+
+        // What this server can do. Wazuh 5.0 removes the ruleset API, CDB
+        // lists, logtest and /syscollector, so on a 5.x server those tabs
+        // would only lead to errors. Hiding them beats letting someone click
+        // into a dead end, and the message names the server version as the
+        // reason rather than leaving them wondering where a tab went.
+        let serverCapabilities = null;
+
+        const CAPABILITY_TABS = {
+            rules: 'ruleset_on_disk',
+            packs: 'rule_packs',
+            inventory: 'syscollector_api',
+        };
+
+        async function applyServerCapabilities() {
+            const info = await api('/capabilities');
+            if (!info || info.error) return;
+            serverCapabilities = info.capabilities || {};
+            const hidden = [];
+            for (const tab of Object.keys(CAPABILITY_TABS)) {
+                if (serverCapabilities[CAPABILITY_TABS[tab]] === false) {
+                    const el = document.querySelector('.tab[data-tab="' + tab + '"]');
+                    if (el) { el.style.display = 'none'; hidden.push(tab); }
+                }
+            }
+            if (hidden.length) {
+                const active = document.querySelector('.tab.active');
+                if (active && hidden.indexOf(active.dataset.tab) !== -1) switchToTab('agents');
+                const missing = info.unavailable || {};
+                showToast('This server is Wazuh ' + info.server_version +
+                          ', which does not provide: ' +
+                          Object.keys(missing).map(k => missing[k]).join('; '), 'warning');
             }
         }
 
@@ -7124,7 +7254,9 @@ HTML_TEMPLATE = '''
             renderAgents();
         });
 
-        // Initial load
+        // Initial load. Capabilities first: it decides which tabs exist, and
+        // learning that after they are drawn makes them appear then vanish.
+        applyServerCapabilities();
         initColumnVisibility();
         refreshAgents();
         refreshGroups();
@@ -8936,6 +9068,49 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         api.token = sess_data.get('token')
         return api
 
+    def current_server_version():
+        """Version of the server this session is connected to."""
+        return (session.get('api_session') or {}).get('server_version') or UNKNOWN_SERVER_VERSION
+
+    def current_capabilities():
+        return server_capabilities(current_server_version())
+
+    def require_capability(name):
+        """Refuse a route the connected server cannot serve, and say why.
+
+        Without this a 5.x server answers 404 for an endpoint that was removed,
+        which reads like a bug in this tool rather than a difference between
+        server versions.
+        """
+        def decorator(f):
+            @wraps(f)
+            def wrapper(*args, **kwargs):
+                if not current_capabilities().get(name, True):
+                    what = SERVER_FEATURES.get(name, {}).get('what', name)
+                    return jsonify({
+                        'error': 'Not available on Wazuh %s: this needs %s.'
+                                 % (current_server_version(), what),
+                        'unsupported_feature': name,
+                        'server_version': current_server_version(),
+                    }), 501
+                return f(*args, **kwargs)
+            return wrapper
+        return decorator
+
+    @app.route('/api/capabilities', methods=['GET'])
+    @login_required
+    def get_capabilities():
+        """What the connected server supports, for the interface to adapt to."""
+        version = current_server_version()
+        caps = current_capabilities()
+        return jsonify({
+            'server_version': version,
+            'server_major': server_major(version),
+            'capabilities': caps,
+            'unavailable': {name: SERVER_FEATURES[name].get('what', name)
+                            for name, ok in caps.items() if not ok},
+        })
+
     def require_agent_ids(data):
         """Extract and validate agent_ids from a request body.
 
@@ -9068,7 +9243,11 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                         'token_exp': token_exp,  # Token expiration timestamp from JWT
                         'token_iat': token_iat,  # Token issued at timestamp
                         'session_exp': session_exp,  # Web session expiration timestamp
-                        'credential_id': credential_id  # Reference to server-side credentials
+                        'credential_id': credential_id,  # Reference to server-side credentials
+                        # Detected once, here, rather than per request: it is a
+                        # property of the connection, and every route that has
+                        # to behave differently reads it from the session.
+                        'server_version': detect_server_version(api),
                     }
                     session.permanent = True  # Use permanent session with timeout
                     logger.info(f"LOGIN SUCCESS: user={username} from={client_ip} api={host}:{port_int}")
@@ -9523,6 +9702,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/agents/reconnect', methods=['POST'])
     @login_required
+    @require_capability('agent_reconnect')
     def reconnect_agents():
         try:
             data = request.get_json(silent=True) or {}
@@ -9625,6 +9805,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/agents/upgrade-result', methods=['GET'])
     @login_required
+    @require_capability('upgrade_result')
     def get_upgrade_result():
         """Get upgrade task results for agents."""
         try:
@@ -12400,6 +12581,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/nodes/<name>/reload-ruleset', methods=['PUT'])
     @login_required
+    @require_capability('analysisd_reload')
     def reload_node_ruleset(name):
         """Reload the ruleset in analysisd without restarting the manager."""
         if not validate_node_name(name):
@@ -12907,6 +13089,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/packs', methods=['GET'])
     @login_required
+    @require_capability('rule_packs')
     def list_packs():
         """The Jason Tools rule catalogue, with the installed state of each pack."""
         try:
@@ -12939,6 +13122,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/packs/<pack_id>', methods=['GET'])
     @login_required
+    @require_capability('rule_packs')
     def get_pack_detail(pack_id):
         """Manifest, the rules it contains, and any conflict with what is installed."""
         manifest = _read_manifest(pack_id)
@@ -12980,6 +13164,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/packs/<pack_id>/install', methods=['POST'])
     @login_required
+    @require_capability('rule_packs')
     def install_pack(pack_id):
         """Install a pack, rolling everything back if the ruleset stops validating.
 
@@ -13136,6 +13321,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/packs/<pack_id>', methods=['DELETE'])
     @login_required
+    @require_capability('rule_packs')
     def uninstall_pack(pack_id):
         """Remove a pack, restoring anything it replaced."""
         import shutil
@@ -13287,6 +13473,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/cluster/reload-ruleset', methods=['POST'])
     @login_required
+    @require_capability('analysisd_reload')
     def reload_cluster_ruleset():
         """Reload the ruleset on every node at once.
 
@@ -13459,6 +13646,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/logtest', methods=['POST'])
     @login_required
+    @require_capability('logtest_api')
     def run_logtest():
         """Run a log line through the ruleset and report what it matched."""
         try:
@@ -13500,6 +13688,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/logtest/session/<token>', methods=['DELETE'])
     @login_required
+    @require_capability('logtest_api')
     def end_logtest_session(token):
         """Release a logtest session so analysisd frees its resources."""
         if not re.match(r'^[A-Za-z0-9]{1,64}$', token or ''):
@@ -13513,6 +13702,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/decoders', methods=['GET'])
     @login_required
+    @require_capability('ruleset_on_disk')
     def get_decoders():
         """List decoders, optionally filtered by name / file / free-text search."""
         try:
@@ -13537,6 +13727,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/decoders/file', methods=['GET'])
     @login_required
+    @require_capability('ruleset_on_disk')
     def get_decoder_file():
         """Return the XML of one decoder file."""
         filename = (request.args.get('filename') or '').strip()
@@ -13553,6 +13744,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/lists', methods=['GET'])
     @login_required
+    @require_capability('cdb_lists')
     def get_cdb_lists():
         """List the CDB lists known to the manager."""
         try:
@@ -13571,6 +13763,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/lists/file', methods=['GET'])
     @login_required
+    @require_capability('cdb_lists')
     def get_cdb_list_file():
         """Read one CDB list as plain text."""
         filename = (request.args.get('filename') or '').strip()
@@ -13587,6 +13780,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/lists/file', methods=['PUT'])
     @login_required
+    @require_capability('cdb_lists')
     def save_cdb_list_file():
         """Create or overwrite a CDB list.
 
@@ -13620,6 +13814,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/lists/file', methods=['DELETE'])
     @login_required
+    @require_capability('cdb_lists')
     def delete_cdb_list_file():
         """Delete a CDB list."""
         filename = (request.args.get('filename') or '').strip()
@@ -13654,12 +13849,14 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/inventory/types', methods=['GET'])
     @login_required
+    @require_capability('syscollector_api')
     def get_inventory_types():
         """Expose the inventory categories and their preferred columns."""
         return jsonify({'types': {k: {'columns': v[1]} for k, v in INVENTORY_TYPES.items()}})
 
     @app.route('/api/inventory/search', methods=['GET'])
     @login_required
+    @require_capability('syscollector_api')
     def search_inventory():
         """Search one syscollector category across many agents at once.
 
@@ -13828,6 +14025,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/active-response', methods=['POST'])
     @login_required
+    @require_capability('active_response')
     def run_active_response():
         """Send an active-response command to selected agents."""
         try:
@@ -14562,6 +14760,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/rules', methods=['GET'])
     @login_required
+    @require_capability('ruleset_on_disk')
     def get_all_rules_list():
         """Get all rules as a flat list for browsing."""
         try:
@@ -14578,6 +14777,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/rules/search', methods=['GET'])
     @login_required
+    @require_capability('ruleset_on_disk')
     def search_rules_content():
         """Keyword search across the raw XML of every rule.
 
@@ -14755,6 +14955,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/rules/hierarchy', methods=['GET'])
     @login_required
+    @require_capability('ruleset_on_disk')
     def get_rules_hierarchy():
         """Rule hierarchy, looked up either by rule ID or by rule file name."""
         try:
@@ -14787,6 +14988,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     @app.route('/api/rules/<rule_id>', methods=['GET'])
     @login_required
+    @require_capability('ruleset_on_disk')
     def get_rule_detail(rule_id: str):
         """Get detailed content of a specific rule."""
         try:

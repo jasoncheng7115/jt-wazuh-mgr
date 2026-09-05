@@ -446,6 +446,76 @@ async function run() {
       expectedFailures.length > 0, 'none seen');
   });
 
+
+  await journey('J18 a 5.x server hides the tabs it cannot serve', async () => {
+    const base5 = process.env.E2E_BASE5;
+    if (!base5) { check('a 5.x server was started to test against', false, 'E2E_BASE5 not set'); return; }
+
+    const ctx = await browser.createBrowserContext();
+    const p5 = await ctx.newPage();
+    await p5.goto(base5 + '/login', { waitUntil: 'networkidle2' });
+    await p5.evaluate(() => {
+      const s = (n, v) => { const e = document.querySelector(`input[name="${n}"]`); if (e) e.value = v; };
+      s('host', '127.0.0.1'); s('port', '55000'); s('username', 'soc-analyst'); s('password', 'demo');
+    });
+    await Promise.all([
+      p5.waitForNavigation({ waitUntil: 'networkidle2' }),
+      p5.click('button[type="submit"]'),
+    ]);
+    await wait(3000);
+
+    const caps = await p5.evaluate(async () => {
+      const r = await fetch('/api/capabilities');
+      return r.json();
+    });
+    check('the server version was detected at connection time',
+      caps.server_version === '5.0.0', JSON.stringify(caps.server_version));
+    check('5.x is recognised as a different generation', caps.server_major === 5);
+
+    // The three tabs whose features 5.0 removed.
+    for (const tab of ['rules', 'packs', 'inventory']) {
+      const shown = await p5.evaluate(t => {
+        const el = document.querySelector('.tab[data-tab="' + t + '"]');
+        return el ? el.style.display !== 'none' : false;
+      }, tab);
+      check(`the ${tab} tab is hidden on 5.x`, !shown);
+    }
+    // The ones that survive must still be there.
+    for (const tab of ['agents', 'groups', 'nodes', 'users', 'logs']) {
+      const shown = await p5.evaluate(t => {
+        const el = document.querySelector('.tab[data-tab="' + t + '"]');
+        return el ? el.style.display !== 'none' : false;
+      }, tab);
+      check(`the ${tab} tab is still offered on 5.x`, shown);
+    }
+
+    // And the routes behind the hidden tabs refuse clearly rather than 404.
+    const refusal = await p5.evaluate(async () => {
+      const r = await fetch('/api/packs');
+      return { status: r.status, body: await r.json() };
+    });
+    check('a removed feature answers 501, not a confusing 404',
+      refusal.status === 501, 'status=' + refusal.status);
+    check('the refusal names the server version',
+      /5\.0\.0/.test((refusal.body || {}).error || ''), JSON.stringify(refusal.body));
+
+    await ctx.close();
+  });
+
+  await journey('J19 a 4.x server keeps every tab', async () => {
+    await page.goto(BASE + '/', { waitUntil: 'networkidle2' });
+    await wait(2500);
+    const caps = await page.evaluate(async () => (await fetch('/api/capabilities')).json());
+    check('4.x is detected', caps.server_major === 4, JSON.stringify(caps.server_version));
+    for (const tab of ['rules', 'packs', 'inventory']) {
+      const shown = await page.evaluate(t => {
+        const el = document.querySelector('.tab[data-tab="' + t + '"]');
+        return el ? el.style.display !== 'none' : false;
+      }, tab);
+      check(`the ${tab} tab is offered on 4.x`, shown);
+    }
+  });
+
   await browser.close();
 
   /* ---------- report ---------- */
