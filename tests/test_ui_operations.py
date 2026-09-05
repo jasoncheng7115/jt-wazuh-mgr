@@ -533,5 +533,137 @@ class TestReloadWarnings(WebUITestCase):
         self.assertIn('will be ignored', found[0])
 
 
+class TestServerVersionDetection(unittest.TestCase):
+    """The version is a property of the connection, read once when it is made."""
+
+    def test_version_strings_are_parsed_the_way_wazuh_writes_them(self):
+        for raw, major in [('4.14.7', 4), ('v4.14.7', 4), ('5.0.0', 5),
+                           ('v5.0.0-beta5', 5), ('4.9.0', 4), ('10.1.0', 10)]:
+            with self.subTest(raw=raw):
+                self.assertEqual(web_ui.server_major(raw), major)
+
+    def test_an_unreadable_version_is_zero_and_enables_everything(self):
+        """Refusing to work because a string would not parse is the wrong failure.
+
+        A tool that quietly disables features because it could not read a
+        version is harder to diagnose than one that tries and reports the real
+        error from the server.
+        """
+        for raw in ('', None, 'unknown', 'Wazuh', '??'):
+            with self.subTest(raw=raw):
+                self.assertEqual(web_ui.server_major(raw), 0)
+        caps = web_ui.server_capabilities('unknown')
+        self.assertTrue(all(caps.values()), caps)
+
+    def test_four_x_has_the_ruleset_features_and_five_x_does_not(self):
+        four = web_ui.server_capabilities('4.14.7')
+        five = web_ui.server_capabilities('5.0.0')
+        for name in ('ruleset_api', 'ruleset_on_disk', 'cdb_lists', 'logtest_api',
+                     'manager_endpoints', 'syscollector_api', 'rule_packs',
+                     'analysisd_reload'):
+            with self.subTest(feature=name):
+                self.assertTrue(four[name], '%s should exist on 4.x' % name)
+                self.assertFalse(five[name], '%s should be gone on 5.x' % name)
+
+    def test_a_feature_added_later_is_off_on_older_servers(self):
+        self.assertFalse(web_ui.server_capabilities('4.14.7')['group_config_api'])
+        self.assertTrue(web_ui.server_capabilities('5.0.0')['group_config_api'])
+
+    def test_every_feature_carries_a_description_for_the_error_message(self):
+        for name, spec in web_ui.SERVER_FEATURES.items():
+            with self.subTest(feature=name):
+                self.assertTrue(spec.get('what'), '%s has nothing to tell the user' % name)
+                self.assertTrue('added_in' in spec or 'removed_in' in spec,
+                                '%s has no version bound' % name)
+
+    def test_detection_falls_through_endpoints_that_may_not_exist(self):
+        """/manager/info is 4.x only, so it cannot be the one that is tried first."""
+        tried = []
+
+        class Api:
+            def request(_self, method, endpoint, data=None, params=None):
+                tried.append(endpoint)
+                if endpoint == '/cluster/nodes':
+                    raise Exception('cluster disabled')
+                if endpoint == '/cluster/local/info':
+                    return {'data': {'affected_items': []}}
+                return {'data': {'affected_items': [{'version': 'Wazuh v4.14.7'}]}}
+
+        self.assertEqual(web_ui.detect_server_version(Api()), '4.14.7')
+        self.assertEqual(tried, ['/cluster/nodes', '/cluster/local/info', '/manager/info'])
+
+    def test_detection_reports_unknown_rather_than_guessing(self):
+        class Api:
+            def request(_self, *a, **k):
+                raise Exception('unreachable')
+        self.assertEqual(web_ui.detect_server_version(Api()), web_ui.UNKNOWN_SERVER_VERSION)
+
+
+class TestCapabilityGuardedRoutes(WebUITestCase):
+    """A route the server cannot serve says so, rather than passing on a 404."""
+
+    GUARDED = [
+        ('get', '/api/rules'), ('get', '/api/decoders'), ('get', '/api/lists'),
+        ('post', '/api/logtest'), ('get', '/api/packs'),
+        ('get', '/api/inventory/search?type=packages&q=x'),
+        ('post', '/api/agents/reconnect'), ('post', '/api/cluster/reload-ruleset'),
+    ]
+
+    def _connect_to(self, version):
+        with self.client.session_transaction() as sess:
+            sess['api_session'] = dict(sess['api_session'], server_version=version)
+
+    def test_a_five_x_server_gets_a_clear_refusal(self):
+        self._connect_to('5.0.0')
+        for method, path in self.GUARDED:
+            with self.subTest(path=path):
+                resp = getattr(self.client, method)(path, json={})
+                self.assertEqual(resp.status_code, 501,
+                                 '%s answered %d on a 5.x server' % (path, resp.status_code))
+                body = resp.get_json()
+                self.assertIn('5.0.0', body['error'])
+                self.assertTrue(body.get('unsupported_feature'))
+
+    def test_a_four_x_server_is_not_refused(self):
+        self._connect_to('4.14.7')
+        for method, path in self.GUARDED:
+            with self.subTest(path=path):
+                resp = getattr(self.client, method)(path, json={})
+                self.assertNotEqual(resp.status_code, 501,
+                                    '%s was refused on a 4.x server' % path)
+
+    def test_an_undetected_version_is_not_refused(self):
+        """A session from before this existed must keep working."""
+        for method, path in self.GUARDED:
+            with self.subTest(path=path):
+                self.assertNotEqual(getattr(self.client, method)(path, json={}).status_code, 501)
+
+    def test_capabilities_endpoint_describes_the_connection(self):
+        self._connect_to('5.0.0')
+        body = self.client.get('/api/capabilities').get_json()
+        self.assertEqual(body['server_version'], '5.0.0')
+        self.assertEqual(body['server_major'], 5)
+        self.assertFalse(body['capabilities']['rule_packs'])
+        self.assertIn('rule_packs', body['unavailable'])
+        self.assertTrue(body['unavailable']['rule_packs'],
+                        'the reason shown to the user is empty')
+
+    def test_the_guard_covers_every_route_that_needs_a_removed_endpoint(self):
+        """Derived from the app, so a route added later cannot quietly skip it."""
+        self._connect_to('5.0.0')
+        removed_paths = ('/api/rules', '/api/decoders', '/api/lists', '/api/logtest',
+                         '/api/packs', '/api/inventory', '/api/active-response')
+        missed = []
+        for rule in self.app.url_map.iter_rules():
+            if not any(rule.rule.startswith(p) for p in removed_paths):
+                continue
+            for method in sorted(rule.methods - {'HEAD', 'OPTIONS'}):
+                path = concrete_path(rule)
+                resp = getattr(self.client, method.lower())(path, json={})
+                if resp.status_code != 501:
+                    missed.append('%s %s -> %d' % (method, path, resp.status_code))
+        self.assertEqual(missed, [], 'these routes are not guarded: %s' % missed)
+
+
 if __name__ == '__main__':
     unittest.main()

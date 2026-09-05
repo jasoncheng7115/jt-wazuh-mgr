@@ -236,9 +236,14 @@ STATE = {
     'peer_conf': {},
 }
 
+# The version this mock claims to be. The journeys start a second instance
+# pretending to be 5.x, which is the only way to exercise the capability layer
+# without a 5.x server to point at.
+SERVER_VERSION = os.environ.get('E2E_SERVER_VERSION', '4.14.7')
+
 NODES = [
-    {'name': 'node-01', 'type': 'master', 'version': '4.14.7', 'ip': '10.0.1.10'},
-    {'name': 'node-02', 'type': 'worker', 'version': '4.14.7', 'ip': '10.0.1.11'},
+    {'name': 'node-01', 'type': 'master', 'version': SERVER_VERSION, 'ip': '10.0.1.10'},
+    {'name': 'node-02', 'type': 'worker', 'version': SERVER_VERSION, 'ip': '10.0.1.11'},
 ]
 
 ROLES = [
@@ -383,7 +388,7 @@ def fake_request(self, method, endpoint, data=None, params=None):
             'wazuh-analysisd', 'wazuh-remoted', 'wazuh-db', 'wazuh-modulesd',
             'wazuh-monitord', 'wazuh-logcollector', 'wazuh-execd', 'wazuh-syscheckd')}])
     if ep == '/manager/info':
-        return items([{'version': 'v4.14.7', 'type': 'manager', 'name': 'node-01'}])
+        return items([{'version': 'v' + SERVER_VERSION, 'type': 'manager', 'name': 'node-01'}])
 
     if ep == '/security/users' and method == 'GET':
         return items(STATE['users'])

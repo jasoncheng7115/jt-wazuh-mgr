@@ -16,6 +16,7 @@ PY=${PYTHON:-python3}
 
 cleanup() {
   [ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null || true
+  [ -n "${SERVER5_PID:-}" ] && kill "$SERVER5_PID" 2>/dev/null || true
   rm -f "$LOG"
 }
 trap cleanup EXIT INT TERM
@@ -33,10 +34,25 @@ until curl -sf -o /dev/null "http://127.0.0.1:$PORT/login"; do
   sleep 1
 done
 
+# A second instance claiming to be Wazuh 5.x. The capability layer decides
+# which tabs exist from the server version, and there is no other way to
+# exercise that without a 5.x server to point at.
+PORT5=$((PORT + 1))
+echo "starting a mock 5.x server on 127.0.0.1:$PORT5"
+E2E_PORT="$PORT5" E2E_SERVER_VERSION=5.0.0 "$PY" "$ROOT/tests/e2e/mock_api.py" >>"$LOG" 2>&1 &
+SERVER5_PID=$!
+i=0
+until curl -sf -o /dev/null "http://127.0.0.1:$PORT5/login"; do
+  i=$((i + 1))
+  if [ "$i" -gt 30 ]; then echo "the 5.x server did not come up:"; cat "$LOG"; exit 1; fi
+  sleep 1
+done
+
 # The image keeps puppeteer in its own working directory, which is not on the
 # module path for a script mounted elsewhere.
 docker run --rm --network host \
   -v "$ROOT/tests/e2e:/e2e:ro" \
   -e NODE_PATH=/usr/src/app/node_modules \
   -e E2E_BASE="http://127.0.0.1:$PORT" \
+  -e E2E_BASE5="http://127.0.0.1:$PORT5" \
   "$IMAGE" node /e2e/journeys.js

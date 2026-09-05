@@ -4,6 +4,46 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.7.0 (2026-09-05)
+
+- **The tool now works against Wazuh 4.x and 5.x, and decides which by asking.**
+  The server version is read once when the connection is made — over
+  `/cluster/nodes`, falling back to `/cluster/local/info` and then to
+  `/manager/info`, which is 4.x only and therefore cannot be the one tried
+  first — and turned into a table of features the routes consult.
+
+  This is not a 4-versus-5 switch. Each feature carries the version it was
+  added in or removed in, so a future release means adding a bound rather than
+  hunting for scattered checks.
+
+- **Why it was needed.** Wazuh 5.0-beta5 removes 21 of the 49 API endpoints this
+  tool calls. Checked against the published spec: 150 endpoints become 73, and
+  `/rules`, `/decoders`, `/lists`, `/logtest`, every `/manager/*` route,
+  `/syscollector/*` and `/active-response` are all gone. In the source tree
+  `etc/rules` no longer exists, `analysisd` is replaced by an engine whose
+  ruleset is YAML rather than XML, and CDB lists become a key-value database.
+
+- **What a 5.x server sees.** The rules, rule packs and inventory tabs are
+  hidden, because everything behind them was removed; the agent, group, node,
+  user, statistics and log tabs stay. A route whose feature is gone answers 501
+  naming the server version and what is missing, rather than passing on a 404
+  from an endpoint that no longer exists — which would read as a bug in this
+  tool rather than a difference between server versions.
+
+- **An unreadable version enables everything.** A tool that quietly disables
+  features because it could not parse a string is harder to diagnose than one
+  that tries and reports the real error. Sessions created before this release
+  keep working for the same reason.
+
+- Verified against a live 4.14.7 manager: detected `4.14.7`, eleven features
+  available and one — a 5.x-only endpoint — correctly not. The 5.x behaviour is
+  covered by a second mock server in the browser journeys, which is the only way
+  to exercise it without a 5.x server to point at.
+
+- 178 tests and 81 browser checks across 19 journeys, twelve of the tests
+  covering the version layer, including one derived from the application's own
+  route map so a route added later cannot quietly skip the guard.
+
 ## v1.6.21 (2026-09-04)
 
 - **The /dev/shm change is now verified end to end, on the live engine.**
