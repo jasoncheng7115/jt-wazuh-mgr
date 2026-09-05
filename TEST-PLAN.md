@@ -16,8 +16,8 @@ the screen. None of them substitutes for another.
 ## Running everything
 
 ```bash
-python3 -m unittest discover -s tests     # 146 tests, fully offline
-python3 tools/preflight.py                # 11 mechanical pre-release checks
+python3 -m unittest discover -s tests     # 178 tests, fully offline
+python3 tools/preflight.py                # 19 mechanical pre-release checks
 
 # on a host without a system Flask
 python3 -m pip install --no-index --find-links=offline_packages \
@@ -104,7 +104,7 @@ restructuring the template, which is not a release-time change.
 ## Layer 4 — browser journeys, automated
 
 ```bash
-tests/e2e/run.sh          # 17 journeys, 65 checks, needs docker
+tests/e2e/run.sh          # 19 journeys, 81 checks, needs docker
 ```
 
 `tests/e2e/mock_api.py` serves the real application against a mocked, stateful

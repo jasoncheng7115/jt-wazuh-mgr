@@ -15,8 +15,8 @@
 ## 執行方式
 
 ```bash
-python3 -m unittest discover -s tests     # 146 項，完全離線
-python3 tools/preflight.py                # 11 項發版前機械檢查
+python3 -m unittest discover -s tests     # 178 項，完全離線
+python3 tools/preflight.py                # 19 項發版前機械檢查
 
 # 系統沒有 Flask 的主機
 python3 -m pip install --no-index --find-links=offline_packages \
@@ -101,7 +101,7 @@ docker run --rm --network host -v /tmp/zap:/zap/wrk:rw ghcr.io/zaproxy/zaproxy:s
 ## 第四層——瀏覽器旅程，自動化
 
 ```bash
-tests/e2e/run.sh          # 17 條旅程、65 項檢查，需要 docker
+tests/e2e/run.sh          # 19 條旅程、81 項檢查，需要 docker
 ```
 
 `tests/e2e/mock_api.py` 讓**真正的應用程式**跑在 mock 過且**有狀態**的 Wazuh API 之上，
