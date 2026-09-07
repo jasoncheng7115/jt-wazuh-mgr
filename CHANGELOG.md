@@ -4,6 +4,61 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.7.1 (2026-09-08)
+
+- **Portable-executable detection now asks whether a program ran, not only
+  where a file sits.** Six changes to the pack, each of them fixing something
+  that was measurably wrong rather than adding coverage for its own sake.
+
+- **Windows: five paths a portable program runs from were not being seen.**
+  The rule for user directories listed `Public` as its third path segment,
+  which describes `C:\Users\<user>\Public\` — not a directory Windows has.
+  The real shared folder, `C:\Users\Public\`, sits one segment higher and was
+  therefore missed entirely; the branch had been matching nothing since it was
+  written. Also added: the user profile root, the system Temp directory,
+  ProgramData, and execution straight from a network share. That last one
+  matters most — every rule in the section began `^[A-Z]:`, so a UNC path had
+  no rule that could match it, and running a tool from a share is one of the
+  ordinary ways a portable program arrives.
+
+- **Windows: a new rule reads how the program was launched.** A file sitting in
+  Downloads says nothing about use; a process whose parent is `explorer.exe`
+  was double-clicked by a person. That is the question this pack exists to
+  answer, and until now nothing asked it.
+
+- **Linux: the execution rules had no exclusions at all**, while the
+  file-based rules had four. Ansible stages every module it runs into a
+  temporary directory and executes it there, so one playbook run produced one
+  level 10 alert per task; Salt, Chef, Puppet, cloud-init and RPM post-install
+  scriptlets have the same shape. Two exclusions now cover them, matched on the
+  staging paths those tools generate rather than on a process name an attacker
+  would choose. `/dev/shm` is deliberately left out: no configuration manager
+  stages work there.
+
+- **Linux: scripts run through an interpreter were invisible.** A `-p x` audit
+  watch fires on execute access to a file, so `bash /tmp/tool.sh` never
+  triggered it — the program executed is `/bin/bash`, and the script is only
+  read. A large share of portable tooling is a script. The new rule reads the
+  interpreter's arguments instead of its path.
+
+- **A correlation rule that could never fire has been corrected.** The repeat-
+  execution rule carried `same_source_ip`, which requires a field auditd events
+  do not have: these are local process executions with no network peer. Wazuh's
+  own two auditd rule files use that condition zero times, and this pack's
+  Windows equivalents do not use it either.
+
+- Verified on a live 4.14.7 manager. `wazuh-analysisd -t` loads the ruleset
+  cleanly; `wazuh-logtest` confirms the Linux rules scenario by scenario,
+  including the cases that must *not* match. The Windows patterns were checked
+  against real field values taken from production, which carry two backslashes
+  per separator.
+
+- Recorded while doing this, because it cost a rewrite: `audit.exe` and
+  `audit.execve.*` never appear in the same event. auditd emits a SYSCALL
+  record and an EXECVE record per execution, Wazuh decodes them as two
+  independent events, and nothing joins them — so a rule naming a field from
+  each loads without complaint and never fires.
+
 ## v1.7.0 (2026-09-05)
 
 - **The tool now works against Wazuh 4.x and 5.x, and decides which by asking.**
