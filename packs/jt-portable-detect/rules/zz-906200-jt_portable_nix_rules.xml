@@ -203,12 +203,82 @@
     <group>jt_portable_exec,</group>
   </rule>
 
+  <!--
+    Scripts run through an interpreter.  Added 2026-09-08.
+
+    The blind spot this closes: a `-w /tmp -p x` watch fires on execute
+    access to a file under /tmp. Running `bash /tmp/tool.sh` never triggers
+    it, because the thing being executed is /bin/bash — /tmp/tool.sh is
+    merely opened and read. Rules 906210 and 906211 therefore see nothing,
+    and a large share of portable tooling is exactly this shape: a shell,
+    Python or Perl script rather than a compiled binary.
+
+    This rule reads the interpreter's arguments instead of its path. Wazuh
+    decodes an execve record into audit.execve.a0, a1, a2 ...; when the
+    executed program is an interpreter and one of its arguments points into
+    a temporary or memory filesystem, a script living there just ran.
+
+    It does not overlap 906210/906211, which fire when the *executed image*
+    is under those paths; here the interpreter is the image and the script
+    is an argument.
+
+    ★ Both conditions read audit.execve.*, and that is not a stylistic
+      choice. auditd emits two records per execution and Wazuh decodes them
+      as two separate events: the SYSCALL record carries audit.exe,
+      audit.key and audit.uid, the EXECVE record carries audit.execve.a0,
+      a1, a2. Nothing joins them, so a rule naming a field from each can
+      never match. Measured with wazuh-logtest on 2026-09-08 — the first
+      draft of this rule paired audit.exe with audit.execve.a1 and was
+      exactly that kind of rule, one that loads cleanly and never fires.
+
+    ★ Known limit: this reads a1, the first argument, which covers
+      `bash /tmp/tool.sh`. It does not cover `bash -c ...`, where the path
+      lands in a2 or later. Extending it means one more rule per argument
+      position, which is not obviously worth it — the -c form usually
+      carries an inline command rather than a dropped script.
+
+    Prerequisite, and how to check it. This needs execve records, which the
+    -p x watches alone do not produce. Many hardened estates already audit
+    execve for CIS; run
+
+        auditctl -l | grep execve
+
+    to see. If nothing comes back and you want this rule, add to
+    jt-portable.rules:
+
+        -a always,exit -F arch=b64 -S execve -F path=/bin/bash -k jt_portable_interp
+
+    one line per interpreter you care about — filtering by interpreter
+    keeps the volume far below auditing every execve on the host.
+  -->
+  <rule id="906213" level="10">
+    <if_sid>80700</if_sid>
+    <field name="audit.execve.a0" type="pcre2">^(?:/\S*/)?((ba|da|k|z|tc|c)?sh|python[0-9.]*|perl|ruby|php|node|lua[0-9.]*)$</field>
+    <field name="audit.execve.a1" type="pcre2">^/(tmp|var/tmp|dev/shm)/</field>
+    <description>[WARN] Script executed through an interpreter from a temporary or memory filesystem - $(audit.execve.a1) by $(audit.execve.a0)</description>
+    <mitre>
+      <id>T1204.002</id>
+      <id>T1059.004</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_interp,</group>
+  </rule>
+
+
   <!-- A program that runs once from /tmp may be an installer. One that runs
        repeatedly from there is something living in a directory nothing is
        supposed to live in. -->
+  <!--
+    ★ 2026-09-08：移除了原本的 <same_source_ip />。
+
+    auditd 事件是主機本機的行程執行，沒有網路對端，srcip 欄位並不存在，
+    而 same_source_ip 要求該欄位存在且相等 ── 條件永遠不成立，這條規則
+    等於被自己關掉。佐證：Wazuh 內建的兩個 audit 規則檔
+    （0365-auditd_rules.xml、0850-audit_rules.xml）合計使用 same_source_ip
+    的次數是 0，而本檔案的 Windows 雙胞胎規則（906150／906151）也沒有用，
+    其註解已載明「frequency 預設即限定同一 agent」。
+  -->
   <rule id="906212" level="12" frequency="6" timeframe="600">
     <if_matched_sid>906210</if_matched_sid>
-    <same_source_ip />
     <description>[HIGH] Repeated execution from user-writable areas on one host - $(audit.exe)</description>
     <mitre>
       <id>T1204.002</id>
@@ -266,6 +336,43 @@
     <if_sid>906203</if_sid>
     <field name="file" type="pcre2">(?i)^/dev/shm/(sem\.|\.?(com|org|net)\.|pulse-shm-|PostgreSQL\.|mono\.|lttng-|ust-|aio-|\.nvidia|\.io\.)|^/dev/shm/.*_(shm|mtx|sem|evt|lock|mutex|cond|queue)$</field>
     <description>POSIX shared memory or semaphore object, not a program</description>
+  </rule>
+
+  <!--
+    Execution from a temporary directory that is a configuration manager
+    doing its job.
+
+    Added 2026-09-08. Until then rules 906210 and 906211 carried no
+    exclusions at all, while the file-based rules carried four. That
+    asymmetry is not a small one: Ansible stages every module it runs into
+    a temporary directory and executes it there, so a single playbook run
+    against a host produces one level 10 alert per task. Salt, Chef, Puppet
+    and RPM post-install scriptlets have the same shape.
+
+    These match the staging directory names those tools generate, not the
+    name of the process doing the work — an attacker chooses a process
+    name, but not the path Ansible builds for itself.
+
+    Note this deliberately does not exclude /dev/shm: no configuration
+    manager stages work there, so an execution from a memory filesystem
+    stays at level 12 whatever the path looks like.
+  -->
+  <rule id="906230" level="0">
+    <if_sid>906210,906211</if_sid>
+    <field name="audit.exe" type="pcre2">^/(tmp|var/tmp|home/[^/]+/\.ansible/tmp|root/\.ansible/tmp)/(ansible|salt|chef|puppet|rpm-tmp|dnf|yum|pip|cloud-init)[-_.a-z0-9]*/</field>
+    <description>Execution from a configuration manager's own staging directory (normal)</description>
+  </rule>
+
+  <!--
+    Package manager post-install scriptlets. RPM and dpkg both write a
+    script to a temporary path and execute it as the last step of every
+    package installation, which is exactly the shape rule 906211 is looking
+    for and exactly not what it is meant to catch.
+  -->
+  <rule id="906231" level="0">
+    <if_sid>906210,906211</if_sid>
+    <field name="audit.exe" type="pcre2">^/(tmp|var/tmp)/(rpm-tmp\.|dpkg-|apt-|deb-|tmp\.[A-Za-z0-9]{6,}$)</field>
+    <description>Package manager post-install scriptlet (normal)</description>
   </rule>
 
   <!--

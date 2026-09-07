@@ -82,10 +82,24 @@
    與「告警量控管優先於偵測涵蓋率」的設計原則衝突，故本專案不採用。
 -->
 
-  <!-- A-1：使用者目錄執行 ── 最常見的可攜式程式落點 -->
+  <!--
+    A-1：使用者目錄執行 ── 最常見的可攜式程式落點
+
+    ★ 2026-09-08 修正：原本的 (Downloads|Desktop|Documents|Public) 把 Public
+      放在「第三段」，代表的是 C:\Users\<使用者>\Public\ ── 那不是 Windows
+      實際存在的路徑，因此該分支寫了等於沒寫。真正的共用目錄是
+      C:\Users\Public\，位在第二段，原規則反而漏掉。
+      同時補上「使用者家目錄根層」：C:\Users\<使用者>\tool.exe，
+      也就是把免安裝程式直接丟在家目錄第一層執行的情形。
+
+    三個分支各自對應一種真實路徑：
+      Users\Public\...              共用目錄（第二段就是 Public）
+      Users\<使用者>\(Downloads|Desktop|Documents)\...
+      Users\<使用者>\<檔案>         家目錄根層，後面不再有反斜線
+  -->
   <rule id="906100" level="6">
     <if_sid>61603,100110</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+(Downloads|Desktop|Documents|Public)\\+</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+(Public\\+|[^\\]+\\+(Downloads|Desktop|Documents)\\+|[^\\]+\\+[^\\]+$)</field>
     <description>Portable executable run from a user directory - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
       <id>T1204.002</id>
@@ -124,6 +138,91 @@
       <id>T1204.002</id>
     </mitre>
     <group>jt_portable_exec,</group>
+  </rule>
+
+
+  <!--
+    A-4：自網路共享執行（UNC 路徑）
+
+    2026-09-08 新增。原本 A 項三條規則都以 [A-Z]: 開頭比對，而 UNC 路徑
+    （\\server\share\tool.exe）沒有磁碟機代號，因此「從網路共享直接執行
+    免安裝程式」這個很常見的用法完全不會告警 ── 實測三條規則皆不命中。
+
+    這條的等級高於本機使用者目錄：程式不在本機，換句話說端點上沒有留下
+    可供事後鑑識的檔案，而共享來源可能是另一台已被控制的主機。
+
+    ★ 注意 pcre2 的反斜線層數：Wazuh 解碼後的 image 值每個分隔符都是
+      「兩個」反斜線，UNC 開頭因此是四個。用 \\+（一個以上的字面反斜線）
+      同時涵蓋兩種情形，不要寫死數量。
+  -->
+  <rule id="906103" level="12">
+    <if_sid>61603,100110</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^\\+[^\\]+\\+[^\\]+\\+</field>
+    <description>[HIGH] Portable executable run directly from a network share - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
+    <mitre>
+      <id>T1204.002</id>
+      <id>T1021.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_unc,</group>
+  </rule>
+
+
+  <!--
+    A-5：系統層級的暫存與共用資料目錄執行
+
+    2026-09-08 新增。C:\Windows\Temp 與 C:\ProgramData 都是「任何使用者
+    都寫得進去、但程式不該長住」的地方，也是免安裝工具與惡意程式常見的
+    落腳點，而原本三條規則都沒涵蓋。
+
+    兩者的等級刻意不同：
+      Windows\Temp   ── 正常軟體極少從這裡執行，訊噪比高，給 10。
+      ProgramData     ── 有一批正規軟體（部分防毒、更新程式、驅動安裝）
+                         確實會從這裡執行，所以給 6，先觀察再決定要不要
+                         提高。要提高之前請先收集至少 7 日 baseline。
+  -->
+  <rule id="906104" level="10">
+    <if_sid>61603,100110</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+Temp\\+</field>
+    <description>[WARN] Portable executable run from the system Temp directory - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+  <rule id="906105" level="6">
+    <if_sid>61603,100110</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+ProgramData\\+</field>
+    <description>Portable executable run from ProgramData - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+
+  <!--
+    A-6：使用者親手雙擊執行（父程序為 explorer.exe）
+
+    2026-09-08 新增。這條回答的是本專案真正想問的問題：
+    「有沒有人拿了一個免安裝程式來用？」
+
+    路徑只是代理指標 ── 檔案在 Downloads 不代表被使用。
+    父程序是 explorer.exe，代表是從檔案總管雙擊或右鍵開啟的，
+    也就是有人「真的把它當工具在跑」，而不是某個更新程式的子行程。
+    這是本檔案裡少數不靠位置、而靠行為型態判斷的訊號。
+
+    掛在 906100 之下，所以核准清單（E 項 906140-906142）依然壓得下來 ──
+    那三條是本規則的同層規則且位於檔案後方，Wazuh 取最後命中者。
+  -->
+  <rule id="906106" level="9">
+    <if_sid>906100</if_sid>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\+explorer\.exe$</field>
+    <description>[WARN] Portable executable launched interactively from Explorer - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_interactive,</group>
   </rule>
 
 
@@ -397,7 +496,7 @@
 
   <!-- E-1：以 originalFileName 比對（優先） -->
   <rule id="906140" level="3">
-    <if_sid>906100,906101,906102</if_sid>
+    <if_sid>906100,906101,906102,906103,906104,906105</if_sid>
     <list field="win.eventdata.originalFileName" lookup="match_key">etc/lists/jt-approved-portable</list>
     <description>Portable executable, approved, logged only: $(win.eventdata.originalFileName) - $(win.eventdata.image) user: $(win.eventdata.user)</description>
     <group>jt_portable_approved,</group>
@@ -423,7 +522,7 @@
     C:\Users\Public\Tools\ 目錄。若要以檔名核准，請改用 E-1 或 E-3。
   -->
   <rule id="906141" level="3">
-    <if_sid>906100,906101,906102</if_sid>
+    <if_sid>906100,906101,906102,906103,906104,906105</if_sid>
     <list field="win.eventdata.image" lookup="match_key">etc/lists/jt-approved-portable</list>
     <description>Portable executable, approved path, logged only: $(win.eventdata.image) user: $(win.eventdata.user)</description>
     <group>jt_portable_approved,</group>
@@ -442,7 +541,7 @@
       （如 MD5=...,SHA256=...），精確比對將永遠不會命中。
   -->
   <rule id="906142" level="3">
-    <if_sid>906100,906101,906102</if_sid>
+    <if_sid>906100,906101,906102,906103,906104,906105</if_sid>
     <list field="win.eventdata.hashes" lookup="match_key">etc/lists/jt-approved-portable-hash</list>
     <description>Portable executable, approved hash, logged only: $(win.eventdata.image) user: $(win.eventdata.user)</description>
     <group>jt_portable_approved,</group>
@@ -458,7 +557,7 @@
 
      範例：
      <rule id="906143" level="0">
-       <if_sid>906100,906101,906102</if_sid>
+       <if_sid>906100,906101,906102,906103,906104,906105</if_sid>
        <field name="win.eventdata.image" type="pcre2">(?i)\\+AppData\\+Local\\+CompanyName\\+Updater\\+</field>
        <description>Excluded: CompanyName updater, approved under change request CR-2026-001</description>
      </rule>

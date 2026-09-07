@@ -41,6 +41,30 @@
 ## Programs run out of the administrator's own directory.
 -w /root -p x -k jt_portable_exec
 
+## ── What a -p x watch does NOT catch ────────────────────────────────────
+##
+## A -p x watch fires on execute access to a file under the watched path.
+## Running a script through an interpreter -- `bash /tmp/tool.sh`,
+## `python3 /tmp/tool.py` -- never triggers it, because the program being
+## executed is /bin/bash, and /tmp/tool.sh is only opened and read.
+##
+## That matters here: a lot of portable tooling is a script, not a compiled
+## binary, so the watches above miss it entirely.
+##
+## Manager rule 906213 closes the gap by reading the interpreter's arguments
+## instead of its path, but it needs execve records, which the watches above
+## do not produce. Check whether the host already has them:
+##
+##     auditctl -l | grep execve
+##
+## If it does not, uncomment the interpreters you care about below. Filtering
+## by interpreter is what keeps this affordable -- auditing every execve on a
+## busy host is not the same order of cost at all.
+##
+# -a always,exit -F arch=b64 -S execve -F path=/bin/bash   -k jt_portable_interp
+# -a always,exit -F arch=b64 -S execve -F path=/bin/sh     -k jt_portable_interp
+# -a always,exit -F arch=b64 -S execve -F path=/usr/bin/python3 -k jt_portable_interp
+
 ## Programs run from any user's home directory. Accurate and noisy; see the
 ## note on cost above before enabling it.
 # -w /home -p x -k jt_portable_exec
