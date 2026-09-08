@@ -2,7 +2,7 @@
   "id": "jt-portable-detect",
   "name": "Portable Executable Detection",
   "name_zh": "可攜式程式偵測",
-  "version": "1.9",
+  "version": "2.0",
   "summary": "Detects portable/no-install executables being dropped and run on Windows, Linux and macOS.",
   "summary_zh": "偵測免安裝執行檔在 Windows、Linux、macOS 上的落地與執行。",
   "rule_id_range": "906100-906299",
@@ -20,7 +20,8 @@
     "套件現在自帶 agent 群組 portable-detect。管理端規則看不到 agent 從未回報的東西，而在此之前，Linux 規則依賴的監控根本沒有人設定過。",
     "執行偵測新增涵蓋：網路共享（UNC）、系統 Temp 目錄、ProgramData、共用的 Users\\Public 與使用者家目錄根層；Linux 端另補上「以解譯器執行暫存區腳本」。",
     "依實測抑制三個誤報來源：WinGet 暫存自己的下載、DISM 元件自 Temp 執行，以及語言套件管理器的快取在盤點中被當成未簽章執行檔。",
-    "執行類告警改為指出真正觸發稽核監看的檔案，而不只是執行它的解譯器。"
+    "執行類告警改為指出真正觸發稽核監看的檔案，而不只是執行它的解譯器。",
+    "syscheck 算不出雜湊的檔案不再被當成「暫存目錄出現可執行檔」：符號連結的權限永遠是 0777，在一台建置主機上佔該規則告警的 93%。git hook 範例與資產檔也一併排除。"
   ],
   "author": "Jason Tools",
   "license": "AGPL-3.0-or-later",
@@ -38,7 +39,7 @@
       "type": "rule",
       "name": "zz-906200-jt_portable_nix_rules.xml",
       "dest": "etc/rules/zz-906200-jt_portable_nix_rules.xml",
-      "sha256": "3ea1287760bdf96ee5844c769cb93ddc702dec61543560544b60aa66ff40c6db"
+      "sha256": "0282ef62628aecc7b10cd75ee8b7082f1bc320690c509a09b4087fea43046f7a"
     },
     {
       "type": "list",
@@ -69,7 +70,8 @@
     "The pack now carries its own agent group, portable-detect. Manager rules cannot see what the agent never reports, and before this the Linux rules depended on monitoring nobody had configured.",
     "Execution detection now covers network shares (UNC), the system Temp directory, ProgramData, the shared Users\\Public folder and the user profile root, plus scripts run through an interpreter from a temporary filesystem on Linux.",
     "Suppressed three measured sources of false alerts: WinGet staging its own downloads and the DISM servicing host running from Temp, and language package manager caches appearing as unsigned executables in the inventory.",
-    "Execution alerts now name the file that triggered the audit watch rather than only the interpreter that ran it."
+    "Execution alerts now name the file that triggered the audit watch rather than only the interpreter that ran it.",
+    "A file syscheck could not hash is no longer treated as an executable appearing in a temporary directory: symlinks are always mode 0777 and accounted for 93% of that rule's alerts on a build host. Git hook samples and asset files are excluded too."
   ],
   "agent_group": {
     "name": "portable-detect",

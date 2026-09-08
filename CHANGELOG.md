@@ -4,6 +4,44 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.7.4 (2026-09-09)
+
+- **The pack's own file monitoring was breaking the file integrity monitoring
+  around it, and that turned out to matter more than the alerts it produced.**
+  Measured on a build host: `/tmp` held 104,019 files, against Wazuh's default
+  limit of 100,000 for the whole FIM database. The agent log filled with
+  "Reached maximum files limit monitored" and "Real-time inotify kernel queue is
+  full. Some events may be lost." The consequence is not noise — `/etc`, `/bin`,
+  `/usr/bin` and `/root/.ssh` stop being monitored reliably, and nothing says so
+  except those two warnings.
+
+  The agent configuration now limits recursion to depth 2 under the temporary
+  directories: 104,019 files becomes 2,021, and the shape the pack looks for —
+  an installer unpacking to `/tmp/<something>/setup` — still sits at depth 2.
+  Everything that produced false alerts on that host was at depth 3 or deeper.
+
+- **A file syscheck could not hash is no longer treated as an executable.**
+  The same host produced 3,755 alerts at level 10 in five days, 2,791 of them in
+  one day, and 3,496 of them — 93 per cent — shared one shape: mode `rwxrwxrwx`,
+  a non-zero size, and the SHA-256 of no content at all. That is a symlink. A
+  symlink's mode is always 0777, so every one of them looks executable to a rule
+  that reads the mode, and pytest alone contributed 1,957 by rewriting its
+  `pytest-current` links on each run.
+
+  This is the `/dev/shm` lesson from a different direction: the first time the
+  mode bit was real and meant nothing, this time it belongs to a link rather
+  than to a file. The hash is the honest test — a program has content, and Wazuh
+  could hash it.
+
+- Also excluded: git hook samples, which every repository ships at mode 0755 and
+  which contributed 194 alerts, and asset file types (colour profiles, fonts,
+  web assets) added to the existing non-executable extension list.
+
+- The trade-off is stated in the rule, as it is for `/dev/shm`: a symlink in a
+  temporary directory pointing at a payload kept outside every monitored path
+  lands in this exclusion. Execution is still caught by rule 906211, which
+  auditd backs with evidence a file mode cannot fake.
+
 ## v1.7.3 (2026-09-08)
 
 - **The Linux execution rules have data for the first time, and a claim made in

@@ -318,7 +318,7 @@
        mode. Measured: /root/wazuh-certificates/*.pem ships with u+x. -->
   <rule id="906221" level="0">
     <if_sid>906201,906202,906203,906204</if_sid>
-    <field name="file" type="pcre2">(?i)\.(pem|key|crt|cer|csr|conf|cfg|ya?ml|json|xml|log|txt|md)$</field>
+    <field name="file" type="pcre2">(?i)\.(pem|key|crt|cer|csr|conf|cfg|ya?ml|json|xml|log|txt|md|icc|icm|ttf|otf|woff2?|css|map|png|jpe?g|gif|svg|ico)$</field>
     <description>Certificate, configuration or document file, not a portable executable</description>
   </rule>
 
@@ -388,6 +388,56 @@
     <if_sid>906210,906211</if_sid>
     <field name="audit.exe" type="pcre2">^/(tmp|var/tmp)/(rpm-tmp\.|dpkg-|apt-|deb-|tmp\.[A-Za-z0-9]{6,}$)</field>
     <description>Package manager post-install scriptlet (normal)</description>
+  </rule>
+
+  <!--
+    A file syscheck could not hash is not evidence of a program.
+
+    Added 2026-09-09 after measuring this pack on a build host: rule 906202
+    produced 3,755 alerts at level 10 in five days, 2,791 of them on one day,
+    and 3,496 of the 3,755 — 93 per cent — had this shape:
+
+        perm_after    rwxrwxrwx
+        size_after    30
+        sha256_after  e3b0c442...b855      (the hash of no content at all)
+
+    That combination is a symlink. A symlink's mode is always 0777, so every
+    one of them looks executable to a rule that reads the mode, and syscheck
+    reports the empty-content hash because there is no file content to read.
+    pytest alone accounted for 1,957 of them: it maintains `pytest-current`
+    and a `*current` link per test directory, rewritten on every run.
+
+    This is the /dev/shm lesson again, from a different direction. There the
+    mode bit was real but meant nothing; here the mode bit belongs to a link
+    rather than to a file. Both times the rule was right about the mode and
+    wrong about what it implied.
+
+    The hash is the honest discriminator: a portable executable has content,
+    and Wazuh could hash it. An empty hash means either a symlink or a file
+    the agent could not read, and an empty file is not a program either.
+
+    The trade-off, stated plainly: a symlink in /tmp pointing at a payload
+    kept outside every monitored directory lands in this exclusion. That is
+    accepted for the same reason as the /dev/shm exclusion — 3,496 false
+    level 10 alerts a week teach people to ignore the rule, which defeats it
+    more thoroughly than this gap does — and execution is still caught by
+    906211, which auditd backs with evidence a file mode cannot fake.
+  -->
+  <rule id="906232" level="0">
+    <if_sid>906201,906202,906203,906204</if_sid>
+    <field name="sha256" type="pcre2">^e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855$</field>
+    <description>Symlink or unreadable file, not a program that could be executed</description>
+  </rule>
+
+  <!--
+    Git creates every hook sample at mode 0755 in every repository it
+    initialises or clones. Cloning one repository into a temporary directory
+    produced 194 of the alerts measured above, twelve at a time.
+  -->
+  <rule id="906233" level="0">
+    <if_sid>906201,906202,906204</if_sid>
+    <field name="file" type="pcre2">/\.git/hooks/[^/]+\.sample$</field>
+    <description>Git hook sample shipped with every repository (normal)</description>
   </rule>
 
   <!--
