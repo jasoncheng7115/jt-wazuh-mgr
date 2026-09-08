@@ -226,6 +226,38 @@
   </rule>
 
 
+  <!--
+    A-7／A-8：作業系統與官方套件管理器自 Temp 執行的排除
+
+    2026-09-08 新增，依 47 天正式環境資料。906102（使用者 Temp 執行，level 10）
+    在該期間共 37 筆，拆開後有相當比例是微軟自己的東西：
+
+        4  AppData\Local\Temp\WinGet\...  WinGet 安裝套件時的暫存
+        3  Temp\<GUID>\DismHost.exe        DISM 的作業系統元件
+
+    一條每次都錯的 level 10 規則，會教會維運人員 level 10 不代表什麼 ──
+    這正是本檔案 C 項開頭記錄過的教訓，只是換到執行偵測這一側。
+
+    兩條都比對「路徑形狀」而非程序名稱：WinGet 的暫存目錄名稱與 DISM 的
+    GUID 目錄都是工具自己產生的，攻擊者可以改檔名，改不了這個形狀。
+  -->
+  <rule id="906107" level="0">
+    <if_sid>906102</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+WinGet\\+</field>
+    <description>Excluded: WinGet staging its own package download</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <rule id="906108" level="0">
+    <if_sid>906102</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\+AppData\\+Local\\+Temp\\+[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\\+DismHost\.exe$</field>
+    <description>Excluded: DISM servicing host, a Windows component</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+
 <!--
   ══════════════════════════════════════════════════════════════════════
    B 項：AppLocker 稽核模式  ※ 可選模組
@@ -468,6 +500,32 @@
       <id>T1565.001</id>
     </mitre>
     <group>jt_portable_inventory,jt_portable_unsigned,</group>
+  </rule>
+
+  <!--
+    D-5：語言套件管理器的快取，不是使用者帶進來的免安裝程式
+
+    2026-09-08 新增，依正式環境資料：906131 在觀測期間共 221 筆／129 個
+    不重複檔案，其中 53 筆（約四分之一）來自 uv ──
+    AppData\Roaming\uv\python\cpython-* 的直譯器與
+    AppData\Local\uv\cache\archive-v0\* 的解壓快取。兩者都是未簽章沒錯，
+    但那是 Python 發行版本來就沒有簽章，不是「有人帶了工具進來」。
+
+    ★ 本套件早就有這條排除（906166），但它只掛在 FIM 規則
+      92203／92204／92213 底下，沒有涵蓋盤點規則 ── 排除式存在、
+      卻沒有掛全父規則。同一個形狀的問題這次在 Linux 側也找到一次
+      （執行規則零排除），值得記住：新增排除時要把「所有會產生同一種
+      誤報的父規則」都列上。
+
+    ★ 反斜線只有一層。jt_portable.* 來自純 JSON 的 localfile，解碼後
+      路徑是單反斜線，與 eventchannel 的雙反斜線不同 ── 這裡若寫成
+      \\+ 會永遠不命中。與上方 906131 的寫法一致。
+  -->
+  <rule id="906135" level="0">
+    <if_sid>906131</if_sid>
+    <field name="jt_portable.path" type="pcre2">(?i)^[A-Z]:\\Users\\[^\\]+\\AppData\\(Local|Roaming)\\(uv|pip|pipx|poetry|virtualenv)\\</field>
+    <description>Excluded: language package manager cache or bundled interpreter, not a portable tool</description>
+    <group>jt_portable_inventory,false_positive,</group>
   </rule>
 
   <!-- D-4：掃描摘要 -->
