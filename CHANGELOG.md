@@ -4,6 +4,43 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.7.2 (2026-09-08)
+
+- **Three sources of false alerts, each measured against 47 days of production
+  data rather than guessed at.** Reviewing what the pack had actually produced
+  turned out to be more valuable than the coverage added in v1.7.1, which the
+  same review showed would fire almost never in that estate.
+
+- **Windows: WinGet and DISM were alerting at level 10.** Of 37 alerts for
+  execution from the user Temp directory, four were WinGet staging packages it
+  was installing and three were `DismHost.exe`, a Windows servicing component.
+  A level 10 rule that is wrong about Microsoft's own tooling teaches people
+  that level 10 means nothing — the lesson this pack already recorded for its
+  file rules, reappearing on the execution side. Both exclusions match the path
+  shape those tools generate, never a filename: a binary named `DismHost.exe`
+  outside a servicing GUID directory still alerts.
+
+- **The inventory reported package manager caches as unsigned executables.**
+  A quarter of that rule's volume — 53 of 221 alerts — was `uv`: bundled CPython
+  interpreters and unpacked wheel caches, unsigned because Python distributions
+  are, not because someone brought a tool in. The pack already excluded exactly
+  these paths, but only under the file integrity rules; the inventory rule was
+  never added to that exclusion. The same shape of mistake as the Linux
+  execution rules in v1.7.1, which had no exclusions while the file rules had
+  four: an exclusion that exists but is not attached to every parent that
+  produces the false alert.
+
+- Verified on a live 4.14.7 manager. The inventory exclusion was confirmed with
+  `wazuh-logtest`, including that Ventoy — a genuine portable tool in the same
+  directory tree — still reports, and that a hash-versus-signature mismatch
+  still reports at level 12. The Windows patterns were checked against the exact
+  paths taken from production alerts.
+
+- Worth recording: a child rule keeps working when its parent is replaced by an
+  `overwrite="yes"` rule in a later-loading file. This estate downgrades the
+  inventory rule that way, and the new exclusion attaches to the replacement
+  correctly. Confirmed by test, not assumed.
+
 ## v1.7.1 (2026-09-08)
 
 - **Portable-executable detection now asks whether a program ran, not only
