@@ -182,10 +182,18 @@
        fine for if_sid; it would not be for if_matched_sid, which is why
        the correlation rule below hangs off 906210 rather than off 80700.
   -->
+  <!--
+    ★ 2026-09-08，實機驗證後修正描述欄位。
+
+    `audit.exe` 是被執行的**映像**，而 `-p x` 監看命中的是**路徑**，兩者常常
+    不同：執行 /tmp/tool.sh（帶 shebang）時 exe 是 /usr/bin/dash，告警只會說
+    「dash 從暫存檔案系統執行」，讀的人學不到任何東西。`audit.file.name`
+    才是實際觸發監看的那個檔案。兩個都放進描述，先講檔案再講映像。
+  -->
   <rule id="906210" level="10">
     <if_sid>80700</if_sid>
     <field name="audit.key">jt_portable_exec</field>
-    <description>[WARN] Program executed from a user-writable area - $(audit.exe) uid: $(audit.uid)</description>
+    <description>[WARN] Program executed from a user-writable area - $(audit.file.name) via $(audit.exe) uid: $(audit.uid)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -195,7 +203,7 @@
   <rule id="906211" level="12">
     <if_sid>80700</if_sid>
     <field name="audit.key">jt_portable_tmpexec</field>
-    <description>[HIGH] Program executed from a temporary or memory filesystem - $(audit.exe) uid: $(audit.uid)</description>
+    <description>[HIGH] Program executed from a temporary or memory filesystem - $(audit.file.name) via $(audit.exe) uid: $(audit.uid)</description>
     <mitre>
       <id>T1204.002</id>
       <id>T1564</id>
@@ -222,14 +230,21 @@
     is under those paths; here the interpreter is the image and the script
     is an argument.
 
-    ★ Both conditions read audit.execve.*, and that is not a stylistic
-      choice. auditd emits two records per execution and Wazuh decodes them
-      as two separate events: the SYSCALL record carries audit.exe,
-      audit.key and audit.uid, the EXECVE record carries audit.execve.a0,
-      a1, a2. Nothing joins them, so a rule naming a field from each can
-      never match. Measured with wazuh-logtest on 2026-09-08 — the first
-      draft of this rule paired audit.exe with audit.execve.a1 and was
-      exactly that kind of rule, one that loads cleanly and never fires.
+    ★ Both conditions read audit.execve.*, which is the narrower and safer
+      choice, but the reason first recorded here was wrong and is corrected.
+
+      auditd emits several records per execution — SYSCALL, EXECVE, PATH —
+      and feeding one of them to wazuh-logtest shows only that record's
+      fields. That led to the conclusion that audit.exe and audit.execve.*
+      can never appear together, and this rule was rewritten around it.
+      A real event on a live agent on 2026-09-08 showed otherwise: one
+      alert carried exe, key and uid from SYSCALL, execve.a0 and a1 from
+      EXECVE, and file.name, file.inode and file.mode from PATH. Wazuh
+      assembles them.
+
+      The lesson worth keeping is about the method, not the fields:
+      **do not conclude which fields co-occur from single-line logtest
+      input.** logtest replays one line; the pipeline assembles many.
 
     ★ Known limit: this reads a1, the first argument, which covers
       `bash /tmp/tool.sh`. It does not cover `bash -c ...`, where the path

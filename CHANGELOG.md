@@ -4,6 +4,41 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.7.3 (2026-09-08)
+
+- **The Linux execution rules have data for the first time, and a claim made in
+  v1.7.1 turned out to be wrong.** Both came from the same exercise: putting the
+  pack's audit rules on a host that had auditd, and then watching a real event
+  go through.
+
+- **What was actually missing was one file.** The two hosts in the pack's agent
+  group could not produce execution events — one has been disconnected since
+  February, the other has no audit daemon — while the two hosts that do run
+  auditd were not in that group. They did not need to be: their existing group
+  already ships `/var/log/audit/audit.log`, and the manager rules key on the
+  audit key, not on group membership. Installing the pack's rules file into
+  `/etc/audit/rules.d/` was the whole remedy, and rule 906211 fired at level 12
+  on the next execution from `/tmp`.
+
+- **Correction to v1.7.1.** That release recorded that `audit.exe` and
+  `audit.execve.*` can never appear in the same event, and rewrote a rule around
+  it. The real event disproves it: one alert carried `exe`, `key` and `uid` from
+  the SYSCALL record, `execve.a0` and `a1` from the EXECVE record, and
+  `file.name`, `file.inode` and `file.mode` from the PATH record. Wazuh
+  assembles them. The mistake was the method — `wazuh-logtest` replays a single
+  line, so it can only ever show one record's fields, and no conclusion about
+  which fields co-occur can be drawn from it. The rule itself still works and is
+  unchanged; only its stated reasoning was wrong.
+
+- **Execution alerts now name the file, not the interpreter.** A watch on
+  `/tmp -p x` fires on the path, but `audit.exe` holds the image that ran: a
+  script with a shebang reports `/usr/bin/dash`, so the alert said a shell had
+  executed from a temporary filesystem and told the reader nothing.
+  `audit.file.name` is the file that matched. Both are in the alert now, file
+  first — verified on a live agent, where the same probe went from
+  `- /usr/bin/dash uid: 0` to
+  `- /tmp/jt-portable-probe2.sh via /usr/bin/dash uid: 0`.
+
 ## v1.7.2 (2026-09-08)
 
 - **Three sources of false alerts, each measured against 47 days of production
