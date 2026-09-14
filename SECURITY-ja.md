@@ -1,6 +1,6 @@
 # セキュリティポリシー
 
-[English](SECURITY.md) | [日本語](SECURITY-ja.md)
+[English](SECURITY.md) | [繁體中文](SECURITY-zh-TW.md) | [日本語](SECURITY-ja.md)
 
 ## サポート対象バージョン
 
@@ -9,8 +9,8 @@
 
 | バージョン | サポート |
 |---------|--------------------|
-| 1.7.x   | :white_check_mark: |
-| < 1.7   | :x:                |
+| 1.8.x   | :white_check_mark: |
+| < 1.8   | :x:                |
 
 ## 脆弱性の報告
 
