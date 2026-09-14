@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Install &amp; upgrade troubleshooting — jt-wazuh-mgr</title>
+<meta name="description" content="What to do when installing or upgrading jt-wazuh-mgr fails: download errors, pip and externally-managed-environment, the service not starting, offline installs, and upgrades that appear to do nothing.">
+<link rel="icon" type="image/svg+xml" href="img/icon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png">
+<link rel="alternate icon" href="img/favicon.ico">
+<link rel="apple-touch-icon" sizes="180x180" href="img/icon-180.png">
+<style>
+  :root{
+    --bg:#12121f; --card:#1a1a2e; --card2:#151527; --line:#243056;
+    --accent:#4fc3f7; --accent2:#81d4fa; --text:#e9edf5; --muted:#9aa6c0;
+    --ok:#34d399; --warn:#ffc107; --orange:#f7941e; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang TC','Noto Sans TC',sans-serif;
+    background:radial-gradient(1200px 600px at 50% -10%,#1d2547 0,var(--bg) 55%) no-repeat,var(--bg);
+    color:var(--text);line-height:1.7;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{color:var(--accent2);text-decoration:underline}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em;
+    background:#0e0e1a;border:1px solid var(--line);border-radius:4px;padding:.1em .4em;color:#cfe8ff}
+  pre{background:#0e0e1a;border:1px solid var(--line);border-radius:8px;padding:13px 15px;
+    overflow-x:auto;margin:12px 0;font-size:13.5px;line-height:1.6}
+  pre code{background:none;border:none;padding:0;color:#cfe8ff}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(10px);
+    background:rgba(18,18,31,.82);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;gap:16px;height:62px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:var(--text)}
+  .brand img{width:28px;height:28px;border-radius:6px}
+  .nav-links{margin-left:auto;display:flex;gap:20px;align-items:center}
+  .nav-links a{color:var(--muted);font-size:14px}
+  .nav-links a:hover{color:var(--text);text-decoration:none}
+  .lang{border:1px solid var(--line);background:var(--card);color:var(--text);
+    border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600}
+  .lang:hover{border-color:var(--accent);text-decoration:none}
+  @media(max-width:760px){.nav-links a:not(.lang):not(.gh){display:none}}
+
+  header.top{padding:52px 0 26px}
+  h1{font-size:clamp(26px,4vw,38px);line-height:1.2;font-weight:800;letter-spacing:-.4px}
+  h1 .grad{background:linear-gradient(96deg,var(--accent) 0%,var(--violet) 52%,var(--orange) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{color:var(--muted);margin-top:14px;max-width:70ch;font-size:16px}
+
+  .searchbar{margin:26px 0 8px;position:relative;max-width:560px}
+  .searchbar input{width:100%;padding:13px 15px 13px 42px;border-radius:10px;
+    border:1px solid var(--line);background:var(--card);color:var(--text);font-size:15px;
+    font-family:inherit}
+  .searchbar input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+  .searchbar svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);opacity:.5}
+  .count{color:var(--muted);font-size:13.5px;min-height:20px;margin-bottom:8px}
+
+  .layout{display:grid;grid-template-columns:250px 1fr;gap:38px;align-items:start;padding-bottom:70px}
+  @media(max-width:900px){.layout{grid-template-columns:1fr;gap:22px}}
+
+  aside{position:sticky;top:86px}
+  @media(max-width:900px){aside{position:static}}
+  aside .toc-title{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+    font-weight:700;margin-bottom:12px}
+  aside ol{list-style:none;counter-reset:toc}
+  aside li{counter-increment:toc;margin:2px 0}
+  aside a{display:block;padding:7px 10px 7px 32px;border-radius:7px;color:var(--muted);
+    font-size:14px;position:relative;line-height:1.45}
+  aside a::before{content:counter(toc);position:absolute;left:10px;top:7px;
+    font-size:11.5px;color:var(--line);font-weight:700}
+  aside a:hover{background:var(--card);color:var(--text);text-decoration:none}
+  aside a:hover::before{color:var(--accent)}
+
+  section{margin-bottom:40px;scroll-margin-top:82px}
+  section > h2{font-size:20px;font-weight:700;padding-bottom:10px;border-bottom:1px solid var(--line);
+    margin-bottom:18px;display:flex;align-items:center;gap:10px}
+  section > h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+  section:nth-of-type(3n+2) > h2 .dot{background:var(--orange)}
+  section:nth-of-type(3n) > h2 .dot{background:var(--ok)}
+
+  .qa{background:var(--card2);border:1px solid var(--line);border-radius:10px;
+    padding:18px 20px;margin-bottom:14px}
+  .qa h3{font-size:16px;font-weight:650;line-height:1.45;margin-bottom:8px;color:#fff}
+  .qa p{margin:9px 0;font-size:15px}
+  .qa ul,.qa ol{margin:9px 0 9px 22px;font-size:15px}
+  .qa li{margin:5px 0}
+  .sym{display:block;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:13px;color:#ffb4b4;background:rgba(255,90,90,.07);
+    border-left:3px solid #e5534b;border-radius:0 6px 6px 0;padding:8px 12px;margin:4px 0 12px;
+    overflow-x:auto;white-space:pre-wrap;word-break:break-word}
+  .note{border-left:3px solid var(--warn);background:rgba(255,193,7,.07);
+    border-radius:0 6px 6px 0;padding:10px 13px;margin:12px 0;font-size:14.5px;color:#ffe9b0}
+  .note b{color:var(--warn)}
+  .good{border-left:3px solid var(--ok);background:rgba(52,211,153,.07);
+    border-radius:0 6px 6px 0;padding:10px 13px;margin:12px 0;font-size:14.5px;color:#b8f0da}
+  .good b{color:var(--ok)}
+  .qa.hide,section.hide{display:none}
+  .empty{display:none;text-align:center;color:var(--muted);padding:50px 0;font-size:16px}
+  .empty.show{display:block}
+
+  footer{border-top:1px solid var(--line);padding:26px 0 44px;color:var(--muted);font-size:14px}
+  footer a{color:var(--muted);text-decoration:underline}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="img/icon.svg" alt="" width="28" height="28"><span>jt-wazuh-mgr</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a class="gh" href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener">GitHub</a>
+      <a class="lang" href="troubleshooting-zh-TW.html" hreflang="zh-TW">繁體中文</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+  <header class="top">
+    <h1><span class="grad">Install &amp; upgrade</span><br>troubleshooting</h1>
+    <p class="lede">
+      The installer stops at the first command that fails, so a failure often looks like nothing
+      at all. Find the message you saw below — the answers say what the installer was doing at
+      that moment and what to run instead.
+    </p>
+
+    <div class="searchbar">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>
+      </svg>
+      <input id="q" type="search" placeholder="Search — try &quot;pip&quot;, &quot;offline&quot;, &quot;port 5000&quot;" autocomplete="off" aria-label="Search the questions">
+    </div>
+    <div class="count" id="count"></div>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <div class="toc-title">Contents</div>
+      <ol id="toc"></ol>
+    </aside>
+
+    <main id="main">
+
+      <section id="first">
+        <h2><span class="dot"></span>Start here</h2>
+
+        <div class="qa">
+          <h3>The installer stopped and printed nothing useful</h3>
+          <p>The script runs with <code>set -e</code>: the first command that fails ends the run
+             immediately, and the failing command's own error may have scrolled past. Run it again
+             with a trace, and keep the last lines:</p>
+          <pre><code>curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/install.sh -o /tmp/jt-install.sh
+sudo bash -x /tmp/jt-install.sh 2>&amp;1 | tail -40</code></pre>
+          <p>The last <code>+</code> line before the error is the exact command that failed. Match it
+             against the sections below.</p>
+        </div>
+
+        <div class="qa">
+          <h3>What the installer touches, so you know what to check</h3>
+          <ul>
+            <li><code>/opt/jt-wazuh-mgr/</code> — program files, rule packs, and your <code>config.yaml</code></li>
+            <li><code>/etc/systemd/system/jt-wazuh-mgr.service</code> — the service unit, <b>rewritten on every run</b></li>
+            <li>Python packages from <code>requirements.txt</code>, installed with <code>pip</code></li>
+          </ul>
+          <div class="good"><b>Your configuration is safe.</b> <code>config.yaml</code> is downloaded
+            only when it does not already exist. Upgrading never overwrites it.</div>
+        </div>
+
+        <div class="qa">
+          <h3>Where does it have to be installed?</h3>
+          <p>On the <b>Wazuh Manager itself</b> — and on the <b>master node</b> if you run a cluster.
+             The tool reads the ruleset and the manager's own files from <code>/var/ossec</code>, so it
+             cannot manage a manager from somewhere else.</p>
+          <p>Check you are on a manager, not an agent:</p>
+          <pre><code>/var/ossec/bin/wazuh-control info
+ls /var/ossec/etc/rules/    # managers have this; agents do not</code></pre>
+        </div>
+      </section>
+
+      <section id="download">
+        <h2><span class="dot"></span>Downloads fail</h2>
+
+        <div class="qa">
+          <h3>curl: (6) Could not resolve host / (7) Failed to connect</h3>
+          <span class="sym">curl: (6) Could not resolve host: raw.githubusercontent.com</span>
+          <p>The manager has no route to GitHub. That is normal — plenty of Wazuh managers sit on an
+             isolated network on purpose. Two ways forward:</p>
+          <ul>
+            <li>If a proxy exists, set it before running the installer:
+              <pre><code>export https_proxy=http://proxy.example.com:3128
+export http_proxy=$https_proxy
+curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/install.sh | sudo -E bash</code></pre>
+              <code>sudo -E</code> matters — without it sudo drops the proxy variables.</li>
+            <li>If there is no route at all, use the <a href="#offline">offline install</a> below.</li>
+          </ul>
+        </div>
+
+        <div class="qa">
+          <h3>curl: (60) SSL certificate problem</h3>
+          <span class="sym">curl: (60) SSL certificate problem: unable to get local issuer certificate</span>
+          <p>Usually one of two things: the CA bundle is out of date, or a corporate appliance is
+             intercepting TLS and presenting its own certificate.</p>
+          <pre><code># refresh the CA bundle
+sudo apt update &amp;&amp; sudo apt install --reinstall ca-certificates   # Debian / Ubuntu
+sudo dnf reinstall ca-certificates                                  # RHEL / Rocky</code></pre>
+          <p>If an appliance is inspecting traffic, add its CA to the system store rather than
+             disabling verification. Do not use <code>curl -k</code> for an installer — you would be
+             downloading code you cannot authenticate.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Installed, but the Rule Packs tab is empty</h3>
+          <p>Rule pack files are downloaded on a best-effort basis: if the index or a file cannot be
+             fetched, the installer says so and carries on rather than failing the whole install.</p>
+          <span class="sym">  - packs (skipped, index unavailable)</span>
+          <p>Re-run the installer once connectivity is back. Nothing else needs undoing.</p>
+        </div>
+      </section>
+
+      <section id="python">
+        <h2><span class="dot"></span>Python dependencies</h2>
+
+        <div class="qa">
+          <h3>error: externally-managed-environment</h3>
+          <span class="sym">error: externally-managed-environment
+× This environment is externally managed</span>
+          <p>Debian 12, Ubuntu 23.04 and later refuse <code>pip install</code> into the system Python,
+             to stop pip and the distribution's package manager fighting over the same files. This is
+             the single most common reason an install or upgrade stops on a current OS.</p>
+          <p>Pick one, in this order of preference:</p>
+          <ol>
+            <li><b>Install the dependencies as distribution packages.</b> Cleanest, and it survives
+              OS upgrades:
+              <pre><code>sudo apt install python3-flask python3-requests python3-yaml</code></pre>
+              Then re-run the installer — pip will find everything already present.</li>
+            <li><b>Tell pip you accept the risk</b>, if the distribution packages are too old:
+              <pre><code>sudo pip install --break-system-packages -r /opt/jt-wazuh-mgr/requirements.txt
+sudo systemctl restart jt-wazuh-mgr</code></pre>
+              The flag is named honestly: pip may replace files the package manager owns.</li>
+            <li><b>Use a virtual environment</b> if you want full isolation — see
+              <a href="#venv">running from a virtual environment</a>.</li>
+          </ol>
+        </div>
+
+        <div class="qa">
+          <h3>pip: command not found</h3>
+          <span class="sym">install.sh: line 107: pip: command not found</span>
+          <p>Many systems ship <code>pip3</code> without a <code>pip</code> alias, and some ship
+             neither. Install it, then re-run the installer:</p>
+          <pre><code>sudo apt install python3-pip     # Debian / Ubuntu
+sudo dnf install python3-pip     # RHEL / Rocky / Alma</code></pre>
+          <p>If your policy forbids pip entirely, install the three dependencies as distribution
+             packages instead — see the previous answer.</p>
+        </div>
+
+        <div class="qa">
+          <h3>pip cannot reach PyPI</h3>
+          <span class="sym">WARNING: Retrying ... Connection to pypi.org timed out</span>
+          <p>Same isolation as the download failures above, at a later step. The program files are
+             already in place at this point; only the dependencies are missing. Install them from
+             your distribution's packages, or from wheels you copy in yourself — see
+             <a href="#offline">offline install</a>.</p>
+        </div>
+
+        <div class="qa" id="venv">
+          <h3>Running from a virtual environment</h3>
+          <p>If you prefer to keep everything out of the system Python:</p>
+          <pre><code>sudo python3 -m venv /opt/jt-wazuh-mgr/venv
+sudo /opt/jt-wazuh-mgr/venv/bin/pip install -r /opt/jt-wazuh-mgr/requirements.txt</code></pre>
+          <p>Then point the service at it with a drop-in, which survives future upgrades:</p>
+          <pre><code>sudo mkdir -p /etc/systemd/system/jt-wazuh-mgr.service.d
+sudo tee /etc/systemd/system/jt-wazuh-mgr.service.d/override.conf &lt;&lt;'EOF'
+[Service]
+Environment=PATH=/opt/jt-wazuh-mgr/venv/bin:/usr/bin:/bin
+EOF
+sudo systemctl daemon-reload &amp;&amp; sudo systemctl restart jt-wazuh-mgr</code></pre>
+        </div>
+      </section>
+
+      <section id="service">
+        <h2><span class="dot"></span>The service will not start</h2>
+
+        <div class="qa">
+          <h3>Read the actual reason first</h3>
+          <p>Two commands say what went wrong; almost every answer below comes from them:</p>
+          <pre><code>systemctl status jt-wazuh-mgr --no-pager -l
+journalctl -u jt-wazuh-mgr -n 50 --no-pager</code></pre>
+        </div>
+
+        <div class="qa">
+          <h3>ModuleNotFoundError: No module named 'flask'</h3>
+          <span class="sym">ModuleNotFoundError: No module named 'flask'</span>
+          <p>The files installed but the dependencies did not — the pip step failed earlier, and with
+             <code>set -e</code> you may not have noticed. Go back to
+             <a href="#python">Python dependencies</a>, then:</p>
+          <pre><code>sudo systemctl restart jt-wazuh-mgr</code></pre>
+        </div>
+
+        <div class="qa">
+          <h3>Address already in use / nothing answers on port 5000</h3>
+          <span class="sym">OSError: [Errno 98] Address already in use</span>
+          <p>Something else holds the port. Find it:</p>
+          <pre><code>sudo ss -tlnp | grep :5000</code></pre>
+          <p>Either stop that service, or move this one with a drop-in so an upgrade will not undo it:</p>
+          <pre><code>sudo mkdir -p /etc/systemd/system/jt-wazuh-mgr.service.d
+sudo tee /etc/systemd/system/jt-wazuh-mgr.service.d/override.conf &lt;&lt;'EOF'
+[Service]
+ExecStart=
+ExecStart=/opt/jt-wazuh-mgr/wazuh_agent_mgr.py --web --ssl-auto --port 5443
+EOF
+sudo systemctl daemon-reload &amp;&amp; sudo systemctl restart jt-wazuh-mgr</code></pre>
+          <p>The empty <code>ExecStart=</code> is required: it clears the original line before the new
+             one is added.</p>
+        </div>
+
+        <div class="qa">
+          <h3>The service starts but the browser cannot connect</h3>
+          <p>Work outwards from the machine itself. If the first command answers and the second does
+             not, it is the firewall, not the tool:</p>
+          <pre><code>curl -kIs https://127.0.0.1:5000/ | head -1      # on the manager
+sudo firewall-cmd --add-port=5000/tcp --permanent &amp;&amp; sudo firewall-cmd --reload   # RHEL family
+sudo ufw allow 5000/tcp                                                            # Ubuntu</code></pre>
+          <p>Note the URL is <b>https</b>, and with <code>--ssl-auto</code> the certificate is
+             self-signed, so the browser will warn once.</p>
+        </div>
+      </section>
+
+      <section id="upgrade">
+        <h2><span class="dot"></span>Upgrades</h2>
+
+        <div class="qa">
+          <h3>The upgrade finished but the version did not change</h3>
+          <p>Read the version back from the installed path rather than trusting the installer's
+             summary line:</p>
+          <pre><code>grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py
+systemctl is-active jt-wazuh-mgr</code></pre>
+          <p>If the file says the new version but the interface still shows the old one, clear stale
+             bytecode and restart:</p>
+          <pre><code>sudo rm -rf /opt/jt-wazuh-mgr/lib/__pycache__
+sudo systemctl restart jt-wazuh-mgr</code></pre>
+          <p>Then reload the browser with cache bypassed (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>).</p>
+        </div>
+
+        <div class="qa">
+          <h3>My customised service file was replaced by the upgrade</h3>
+          <div class="note"><b>Known behaviour.</b> Every run copies the shipped unit over
+            <code>/etc/systemd/system/jt-wazuh-mgr.service</code>. Any edit you made directly to that
+            file — a different port, a <code>User=</code>, an <code>Environment=</code> line — is lost
+            on the next upgrade.</div>
+          <p>Restore it once, then make the change survive by moving it into a drop-in, which the
+             installer never touches:</p>
+          <pre><code>sudo mkdir -p /etc/systemd/system/jt-wazuh-mgr.service.d
+sudo tee /etc/systemd/system/jt-wazuh-mgr.service.d/override.conf &lt;&lt;'EOF'
+[Service]
+Environment=PYTHONPATH=/opt/jt-wazuh-mgr/vendor
+EOF
+sudo systemctl daemon-reload &amp;&amp; sudo systemctl restart jt-wazuh-mgr</code></pre>
+          <p>Check what is in effect afterwards with <code>systemctl cat jt-wazuh-mgr</code>.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Will an upgrade touch my configuration or my installed rule packs?</h3>
+          <p><b>No.</b> <code>config.yaml</code> is skipped when it already exists. Rule packs you have
+             installed live in the Wazuh manager's own directories
+             (<code>/var/ossec/etc/rules</code>, <code>etc/lists</code>, <code>etc/decoders</code>) with
+             their state in <code>/var/ossec/etc/jt-packs/</code>; upgrading the tool only refreshes the
+             catalogue it offers you.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Going back to the previous version</h3>
+          <p>Take a copy before upgrading and you can always return to it:</p>
+          <pre><code>sudo tar czf /root/jt-wazuh-mgr-backup-$(date +%F).tar.gz -C /opt jt-wazuh-mgr
+# to roll back
+sudo systemctl stop jt-wazuh-mgr
+sudo tar xzf /root/jt-wazuh-mgr-backup-YYYY-MM-DD.tar.gz -C /opt
+sudo systemctl start jt-wazuh-mgr</code></pre>
+          <div class="note"><b>Use <code>-C</code>.</b> Extracting without it unpacks into the current
+            directory, and a later version check can read the wrong copy and report success while
+            nothing changed.</div>
+        </div>
+      </section>
+
+      <section id="offline">
+        <h2><span class="dot"></span>Offline and air-gapped installs</h2>
+
+        <div class="qa">
+          <h3>Installing where the manager has no internet at all</h3>
+          <p>Do the fetching on a machine that has a connection, then carry the result across.</p>
+          <p><b>On the connected machine:</b></p>
+          <pre><code>git clone --depth 1 https://github.com/jasoncheng7115/jt-wazuh-mgr.git
+tar czf jt-wazuh-mgr.tgz -C jt-wazuh-mgr lib packs images \
+    wazuh_agent_mgr.py create_api_user.py requirements.txt \
+    config.yaml jt-wazuh-mgr.service uninstall.sh
+pip download -r jt-wazuh-mgr/requirements.txt -d wheels
+tar czf wheels.tgz wheels</code></pre>
+          <p><b>On the manager:</b></p>
+          <pre><code>sudo mkdir -p /opt/jt-wazuh-mgr
+sudo tar xzf jt-wazuh-mgr.tgz -C /opt/jt-wazuh-mgr
+tar xzf wheels.tgz
+sudo pip install --no-index --find-links=wheels -r /opt/jt-wazuh-mgr/requirements.txt
+sudo cp /opt/jt-wazuh-mgr/jt-wazuh-mgr.service /etc/systemd/system/
+sudo systemctl daemon-reload &amp;&amp; sudo systemctl enable --now jt-wazuh-mgr</code></pre>
+          <div class="note"><b>Build the wheels on a matching Python.</b> Compiled packages are built
+            for one interpreter version: wheels made for Python 3.10 fail to import on 3.12. Check
+            <code>python3 -V</code> on both machines first.</div>
+        </div>
+
+        <div class="qa">
+          <h3>Upgrading an offline install</h3>
+          <p>Do not run <code>install.sh</code> there — it will try to reach GitHub and PyPI, and it
+             will overwrite a service unit you may have customised for this environment. Replace the
+             program files only:</p>
+          <pre><code>sudo systemctl stop jt-wazuh-mgr
+sudo tar xzf jt-wazuh-mgr.tgz -C /opt/jt-wazuh-mgr
+sudo rm -rf /opt/jt-wazuh-mgr/lib/__pycache__
+sudo systemctl start jt-wazuh-mgr
+grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py</code></pre>
+          <p>Dependencies rarely change between releases; if <code>requirements.txt</code> did change,
+             carry across a fresh set of wheels as well.</p>
+        </div>
+      </section>
+
+      <section id="after">
+        <h2><span class="dot"></span>Installed, but something is wrong</h2>
+
+        <div class="qa">
+          <h3>The login page appears but the credentials are rejected</h3>
+          <p>The username and password are a <b>Wazuh API user</b>, not an operating system account
+             and not your dashboard login. Confirm the API answers first:</p>
+          <pre><code>curl -k -u &lt;user&gt;:&lt;password&gt; https://127.0.0.1:55000/security/user/authenticate</code></pre>
+          <p>The password generated at installation time is inside
+             <code>wazuh-install-files.tar</code>, in whichever directory you ran the Wazuh installer
+             from. To create a dedicated account for this tool:</p>
+          <pre><code>sudo /opt/jt-wazuh-mgr/create_api_user.py</code></pre>
+        </div>
+
+        <div class="qa">
+          <h3>The configuration editor has no syntax highlighting</h3>
+          <p>The editor component is loaded from a CDN, so it is unavailable on an isolated network.
+             Editing still works; only the colouring is missing. Nothing needs fixing.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Removing it completely</h3>
+          <pre><code>sudo bash /opt/jt-wazuh-mgr/uninstall.sh</code></pre>
+          <p>Rule packs you installed into the manager are not removed by this — remove those from
+             the Rule Packs tab first if you want them gone, so that the original files are restored
+             properly.</p>
+        </div>
+      </section>
+
+      <section id="report">
+        <h2><span class="dot"></span>Still stuck</h2>
+
+        <div class="qa">
+          <h3>What to include when you ask</h3>
+          <p>These four make almost any install problem diagnosable at a glance:</p>
+          <pre><code>cat /etc/os-release | head -2
+python3 -V
+grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py
+journalctl -u jt-wazuh-mgr -n 50 --no-pager</code></pre>
+          <p>Plus the last 40 lines of <code>bash -x</code> output from the first answer on this page.
+             Open an issue at
+             <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr/issues" target="_blank" rel="noopener">github.com/jasoncheng7115/jt-wazuh-mgr/issues</a>.</p>
+          <div class="note"><b>Before you paste.</b> Logs from a Wazuh manager carry host names and
+            addresses from your estate. Replace anything you would not put on a public page.</div>
+        </div>
+      </section>
+
+      <div class="empty" id="empty">No answer matches that. Try a word from the error message itself.</div>
+    </main>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    jt-wazuh-mgr — AGPL-3.0 ·
+    <a href="index.html">Project home</a> ·
+    <a href="troubleshooting-zh-TW.html">繁體中文</a> ·
+    <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener">Source</a>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // Build the table of contents from the sections themselves, so it can never
+  // drift from the page.
+  var toc = document.getElementById('toc');
+  var sections = [].slice.call(document.querySelectorAll('#main > section'));
+  sections.forEach(function (s) {
+    var h = s.querySelector('h2');
+    var li = document.createElement('li');
+    var a = document.createElement('a');
+    a.href = '#' + s.id;
+    a.textContent = h.textContent.trim();
+    li.appendChild(a);
+    toc.appendChild(li);
+  });
+
+  var input = document.getElementById('q');
+  var count = document.getElementById('count');
+  var empty = document.getElementById('empty');
+  var items = [].slice.call(document.querySelectorAll('.qa'));
+
+  // Search the whole answer, not just the heading: people paste the error text
+  // they were given, and that text lives in the body.
+  items.forEach(function (el) { el._hay = el.textContent.toLowerCase(); });
+
+  function apply() {
+    var term = input.value.trim().toLowerCase();
+    if (!term) {
+      items.forEach(function (el) { el.classList.remove('hide'); });
+      sections.forEach(function (s) { s.classList.remove('hide'); });
+      empty.classList.remove('show');
+      count.textContent = '';
+      return;
+    }
+    var hits = 0;
+    items.forEach(function (el) {
+      var match = el._hay.indexOf(term) !== -1;
+      el.classList.toggle('hide', !match);
+      if (match) { hits++; }
+    });
+    sections.forEach(function (s) {
+      var any = s.querySelector('.qa:not(.hide)');
+      s.classList.toggle('hide', !any);
+    });
+    empty.classList.toggle('show', hits === 0);
+    count.textContent = hits === 1 ? '1 answer' : hits + ' answers';
+  }
+
+  input.addEventListener('input', apply);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { input.value = ''; apply(); }
+  });
+
+  // Allow linking straight to a search, e.g. troubleshooting.html?q=pip
+  var pre = new URLSearchParams(location.search).get('q');
+  if (pre) { input.value = pre; apply(); }
+})();
+</script>
+</body>
+</html>

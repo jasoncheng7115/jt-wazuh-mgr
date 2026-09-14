@@ -4,6 +4,38 @@ All notable changes to **JT Wazuh Manager** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
 
+## v1.7.5 (2026-09-14)
+
+- **A searchable troubleshooting page for installs and upgrades, and an
+  installer that points at it.** The script runs under `set -e`, so the first
+  command that fails ends the run — often after its own error has scrolled past.
+  What a person saw was a prompt and no explanation.
+
+- The installer now traps that failure, prints the line number and exit code,
+  and gives the address of the page covering it. It also notices the case it
+  could not before: `systemctl start` returns success as soon as the unit is
+  launched, so a service that starts and immediately dies was reported as a
+  finished install. It now waits, checks, and shows the last fifteen log lines.
+
+- **The link is chosen by the machine's language.** A Chinese-language system
+  gets the Chinese page, everything else gets English. Because
+  `curl ... | sudo bash` usually resets the environment, the locale is read from
+  the shell variables first and from `/etc/locale.conf` or `/etc/default/locale`
+  second — the latter is what survives sudo.
+
+- The page answers what the installer actually does and where it actually
+  breaks: `externally-managed-environment` on Debian 12 and Ubuntu 23.04 and
+  later, `pip` missing or unable to reach PyPI, downloads blocked on an isolated
+  manager, the service failing to start, upgrades that appear to change nothing,
+  and a full offline install and upgrade procedure. It has a contents list, a
+  search box that reads whole answers rather than just headings — people paste
+  the error text they were given — and a link to the other language.
+
+- Two answers document behaviour rather than a fault, because knowing is the
+  fix: `config.yaml` is never overwritten, and the service unit is rewritten on
+  every run, so a customised unit belongs in a systemd drop-in that upgrades
+  cannot touch.
+
 ## v1.7.4 (2026-09-09)
 
 - **The pack's own file monitoring was breaking the file integrity monitoring

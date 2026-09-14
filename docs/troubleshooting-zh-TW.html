@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>安裝與升級疑難排解 — jt-wazuh-mgr</title>
+<meta name="description" content="jt-wazuh-mgr 安裝或升級失敗時怎麼辦：下載錯誤、pip 與 externally-managed-environment、服務起不來、離線安裝，以及升級看起來沒有生效。">
+<link rel="icon" type="image/svg+xml" href="img/icon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png">
+<link rel="alternate icon" href="img/favicon.ico">
+<link rel="apple-touch-icon" sizes="180x180" href="img/icon-180.png">
+<style>
+  :root{
+    --bg:#12121f; --card:#1a1a2e; --card2:#151527; --line:#243056;
+    --accent:#4fc3f7; --accent2:#81d4fa; --text:#e9edf5; --muted:#9aa6c0;
+    --ok:#34d399; --warn:#ffc107; --orange:#f7941e; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang TC','Noto Sans TC',sans-serif;
+    background:radial-gradient(1200px 600px at 50% -10%,#1d2547 0,var(--bg) 55%) no-repeat,var(--bg);
+    color:var(--text);line-height:1.8;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{color:var(--accent2);text-decoration:underline}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em;
+    background:#0e0e1a;border:1px solid var(--line);border-radius:4px;padding:.1em .4em;color:#cfe8ff}
+  pre{background:#0e0e1a;border:1px solid var(--line);border-radius:8px;padding:13px 15px;
+    overflow-x:auto;margin:12px 0;font-size:13.5px;line-height:1.6}
+  pre code{background:none;border:none;padding:0;color:#cfe8ff}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(10px);
+    background:rgba(18,18,31,.82);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;gap:16px;height:62px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:var(--text)}
+  .brand img{width:28px;height:28px;border-radius:6px}
+  .nav-links{margin-left:auto;display:flex;gap:20px;align-items:center}
+  .nav-links a{color:var(--muted);font-size:14px}
+  .nav-links a:hover{color:var(--text);text-decoration:none}
+  .lang{border:1px solid var(--line);background:var(--card);color:var(--text);
+    border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600}
+  .lang:hover{border-color:var(--accent);text-decoration:none}
+  @media(max-width:760px){.nav-links a:not(.lang):not(.gh){display:none}}
+
+  header.top{padding:52px 0 26px}
+  h1{font-size:clamp(26px,4vw,38px);line-height:1.28;font-weight:800;letter-spacing:-.2px}
+  h1 .grad{background:linear-gradient(96deg,var(--accent) 0%,var(--violet) 52%,var(--orange) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{color:var(--muted);margin-top:14px;max-width:46em;font-size:16px}
+
+  .searchbar{margin:26px 0 8px;position:relative;max-width:560px}
+  .searchbar input{width:100%;padding:13px 15px 13px 42px;border-radius:10px;
+    border:1px solid var(--line);background:var(--card);color:var(--text);font-size:15px;
+    font-family:inherit}
+  .searchbar input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+  .searchbar svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);opacity:.5}
+  .count{color:var(--muted);font-size:13.5px;min-height:20px;margin-bottom:8px}
+
+  .layout{display:grid;grid-template-columns:250px 1fr;gap:38px;align-items:start;padding-bottom:70px}
+  @media(max-width:900px){.layout{grid-template-columns:1fr;gap:22px}}
+
+  aside{position:sticky;top:86px}
+  @media(max-width:900px){aside{position:static}}
+  aside .toc-title{font-size:12px;letter-spacing:.12em;color:var(--muted);
+    font-weight:700;margin-bottom:12px}
+  aside ol{list-style:none;counter-reset:toc}
+  aside li{counter-increment:toc;margin:2px 0}
+  aside a{display:block;padding:7px 10px 7px 32px;border-radius:7px;color:var(--muted);
+    font-size:14px;position:relative;line-height:1.5}
+  aside a::before{content:counter(toc);position:absolute;left:10px;top:7px;
+    font-size:11.5px;color:var(--line);font-weight:700}
+  aside a:hover{background:var(--card);color:var(--text);text-decoration:none}
+  aside a:hover::before{color:var(--accent)}
+
+  section{margin-bottom:40px;scroll-margin-top:82px}
+  section > h2{font-size:20px;font-weight:700;padding-bottom:10px;border-bottom:1px solid var(--line);
+    margin-bottom:18px;display:flex;align-items:center;gap:10px}
+  section > h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+  section:nth-of-type(3n+2) > h2 .dot{background:var(--orange)}
+  section:nth-of-type(3n) > h2 .dot{background:var(--ok)}
+
+  .qa{background:var(--card2);border:1px solid var(--line);border-radius:10px;
+    padding:18px 20px;margin-bottom:14px}
+  .qa h3{font-size:16px;font-weight:650;line-height:1.55;margin-bottom:8px;color:#fff}
+  .qa p{margin:9px 0;font-size:15px}
+  .qa ul,.qa ol{margin:9px 0 9px 24px;font-size:15px}
+  .qa li{margin:6px 0}
+  .sym{display:block;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:13px;color:#ffb4b4;background:rgba(255,90,90,.07);
+    border-left:3px solid #e5534b;border-radius:0 6px 6px 0;padding:8px 12px;margin:4px 0 12px;
+    overflow-x:auto;white-space:pre-wrap;word-break:break-word}
+  .note{border-left:3px solid var(--warn);background:rgba(255,193,7,.07);
+    border-radius:0 6px 6px 0;padding:10px 13px;margin:12px 0;font-size:14.5px;color:#ffe9b0}
+  .note b{color:var(--warn)}
+  .good{border-left:3px solid var(--ok);background:rgba(52,211,153,.07);
+    border-radius:0 6px 6px 0;padding:10px 13px;margin:12px 0;font-size:14.5px;color:#b8f0da}
+  .good b{color:var(--ok)}
+  .qa.hide,section.hide{display:none}
+  .empty{display:none;text-align:center;color:var(--muted);padding:50px 0;font-size:16px}
+  .empty.show{display:block}
+
+  footer{border-top:1px solid var(--line);padding:26px 0 44px;color:var(--muted);font-size:14px}
+  footer a{color:var(--muted);text-decoration:underline}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="img/icon.svg" alt="" width="28" height="28"><span>jt-wazuh-mgr</span></a>
+    <div class="nav-links">
+      <a href="index.html">首頁</a>
+      <a class="gh" href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener">GitHub</a>
+      <a class="lang" href="troubleshooting.html" hreflang="en">English</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+  <header class="top">
+    <h1><span class="grad">安裝與升級</span><br>疑難排解</h1>
+    <p class="lede">
+      安裝腳本一遇到失敗就立刻中止，所以失敗常常看起來像什麼事都沒發生。
+      在下面找到你看到的訊息 —— 每個答案都會說明腳本當下正在做什麼，以及改成執行什麼。
+    </p>
+
+    <div class="searchbar">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path>
+      </svg>
+      <input id="q" type="search" placeholder="搜尋 —— 試試「pip」「離線」「5000」" autocomplete="off" aria-label="搜尋問題">
+    </div>
+    <div class="count" id="count"></div>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <div class="toc-title">目錄</div>
+      <ol id="toc"></ol>
+    </aside>
+
+    <main id="main">
+
+      <section id="first">
+        <h2><span class="dot"></span>先從這裡開始</h2>
+
+        <div class="qa">
+          <h3>安裝中斷了，但沒有印出有用的訊息</h3>
+          <p>腳本以 <code>set -e</code> 執行：第一個失敗的指令會立刻結束整個流程，
+             而那個指令自己的錯誤訊息可能已經捲過去了。加上追蹤重跑一次，留下最後幾行：</p>
+          <pre><code>curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/install.sh -o /tmp/jt-install.sh
+sudo bash -x /tmp/jt-install.sh 2>&amp;1 | tail -40</code></pre>
+          <p>錯誤之前的最後一行 <code>+</code> 就是真正失敗的指令。拿它對照下面的章節。</p>
+        </div>
+
+        <div class="qa">
+          <h3>安裝腳本會動到哪些地方</h3>
+          <ul>
+            <li><code>/opt/jt-wazuh-mgr/</code> —— 程式檔案、規則套件，以及你的 <code>config.yaml</code></li>
+            <li><code>/etc/systemd/system/jt-wazuh-mgr.service</code> —— 服務設定檔，<b>每次執行都會被重寫</b></li>
+            <li>依 <code>requirements.txt</code> 以 <code>pip</code> 安裝的 Python 套件</li>
+          </ul>
+          <div class="good"><b>你的設定不會被動到。</b><code>config.yaml</code> 只有在不存在時才會下載，
+            升級永遠不會覆蓋它。</div>
+        </div>
+
+        <div class="qa">
+          <h3>應該裝在哪一台？</h3>
+          <p>裝在 <b>Wazuh Manager 本機</b>；叢集環境則要裝在 <b>master 節點</b>。
+             這個工具會從 <code>/var/ossec</code> 讀取規則集與 manager 自己的檔案，
+             所以沒辦法從別台機器管理一台 manager。</p>
+          <p>確認你在 manager 上、而不是 agent：</p>
+          <pre><code>/var/ossec/bin/wazuh-control info
+ls /var/ossec/etc/rules/    # manager 有這個目錄，agent 沒有</code></pre>
+        </div>
+      </section>
+
+      <section id="download">
+        <h2><span class="dot"></span>下載失敗</h2>
+
+        <div class="qa">
+          <h3>curl: (6) Could not resolve host / (7) Failed to connect</h3>
+          <span class="sym">curl: (6) Could not resolve host: raw.githubusercontent.com</span>
+          <p>這台 manager 連不到 GitHub。這很正常 —— 很多 Wazuh Manager 本來就刻意放在隔離網段。
+             兩條路可走：</p>
+          <ul>
+            <li>如果有 proxy，執行前先設定：
+              <pre><code>export https_proxy=http://proxy.example.com:3128
+export http_proxy=$https_proxy
+curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/install.sh | sudo -E bash</code></pre>
+              <code>sudo -E</code> 很重要 —— 少了它，sudo 會把 proxy 變數丟掉。</li>
+            <li>如果完全沒有對外路由，走下面的<a href="#offline">離線安裝</a>。</li>
+          </ul>
+        </div>
+
+        <div class="qa">
+          <h3>curl: (60) SSL certificate problem</h3>
+          <span class="sym">curl: (60) SSL certificate problem: unable to get local issuer certificate</span>
+          <p>通常是兩種情況之一：CA 憑證庫過舊，或是公司的資安設備在中間攔截 TLS、換上自己的憑證。</p>
+          <pre><code># 更新 CA 憑證庫
+sudo apt update &amp;&amp; sudo apt install --reinstall ca-certificates   # Debian / Ubuntu
+sudo dnf reinstall ca-certificates                                  # RHEL / Rocky</code></pre>
+          <p>如果是設備在檢查流量，請把它的 CA 加進系統憑證庫，而不是關掉驗證。
+             <b>不要對安裝腳本用 <code>curl -k</code></b> —— 那等於下載一份你無法驗證來源的程式碼。</p>
+        </div>
+
+        <div class="qa">
+          <h3>裝好了，但「規則套件」分頁是空的</h3>
+          <p>規則套件的檔案是盡力而為地下載：索引或某個檔案抓不到時，安裝腳本會說一聲然後繼續，
+             而不是讓整個安裝失敗。</p>
+          <span class="sym">  - packs (skipped, index unavailable)</span>
+          <p>等網路恢復後重跑一次安裝腳本即可，不需要先還原任何東西。</p>
+        </div>
+      </section>
+
+      <section id="python">
+        <h2><span class="dot"></span>Python 相依套件</h2>
+
+        <div class="qa">
+          <h3>error: externally-managed-environment</h3>
+          <span class="sym">error: externally-managed-environment
+× This environment is externally managed</span>
+          <p>Debian 12、Ubuntu 23.04 以後的版本會拒絕 <code>pip install</code> 寫進系統 Python，
+             以免 pip 與發行版的套件管理程式爭搶同一批檔案。
+             <b>在較新的作業系統上，這是安裝或升級中斷最常見的原因。</b></p>
+          <p>三個做法，建議照這個順序考慮：</p>
+          <ol>
+            <li><b>改用發行版的套件安裝相依套件。</b>最乾淨，而且跟著 OS 升級走：
+              <pre><code>sudo apt install python3-flask python3-requests python3-yaml</code></pre>
+              然後重跑安裝腳本 —— pip 會發現東西都在了。</li>
+            <li><b>明確告訴 pip 你接受風險</b>（發行版套件版本太舊時）：
+              <pre><code>sudo pip install --break-system-packages -r /opt/jt-wazuh-mgr/requirements.txt
+sudo systemctl restart jt-wazuh-mgr</code></pre>
+              這個參數的名字很誠實：pip 可能覆蓋掉套件管理程式擁有的檔案。</li>
+            <li><b>用虛擬環境</b>做完整隔離 —— 見<a href="#venv">以虛擬環境執行</a>。</li>
+          </ol>
+        </div>
+
+        <div class="qa">
+          <h3>pip: command not found</h3>
+          <span class="sym">install.sh: line 107: pip: command not found</span>
+          <p>很多系統只有 <code>pip3</code> 而沒有 <code>pip</code> 這個名稱，有些則兩個都沒有。
+             裝好之後重跑安裝腳本：</p>
+          <pre><code>sudo apt install python3-pip     # Debian / Ubuntu
+sudo dnf install python3-pip     # RHEL / Rocky / Alma</code></pre>
+          <p>如果貴單位的政策完全不允許使用 pip，就改用發行版套件安裝那三個相依套件（見上一則）。</p>
+        </div>
+
+        <div class="qa">
+          <h3>pip 連不到 PyPI</h3>
+          <span class="sym">WARNING: Retrying ... Connection to pypi.org timed out</span>
+          <p>跟前面的下載失敗是同一種隔離，只是發生在比較後面的步驟。
+             此時程式檔案其實已經就位，缺的只有相依套件。
+             改用發行版套件安裝，或自己把 wheel 檔複製進來 —— 見<a href="#offline">離線安裝</a>。</p>
+        </div>
+
+        <div class="qa" id="venv">
+          <h3>以虛擬環境執行</h3>
+          <p>如果你希望完全不碰系統 Python：</p>
+          <pre><code>sudo python3 -m venv /opt/jt-wazuh-mgr/venv
+sudo /opt/jt-wazuh-mgr/venv/bin/pip install -r /opt/jt-wazuh-mgr/requirements.txt</code></pre>
+          <p>再用 drop-in 讓服務指向它 —— drop-in 不會被日後的升級蓋掉：</p>
+          <pre><code>sudo mkdir -p /etc/systemd/system/jt-wazuh-mgr.service.d
+sudo tee /etc/systemd/system/jt-wazuh-mgr.service.d/override.conf &lt;&lt;'EOF'
+[Service]
+Environment=PATH=/opt/jt-wazuh-mgr/venv/bin:/usr/bin:/bin
+EOF
+sudo systemctl daemon-reload &amp;&amp; sudo systemctl restart jt-wazuh-mgr</code></pre>
+        </div>
+      </section>
+
+      <section id="service">
+        <h2><span class="dot"></span>服務起不來</h2>
+
+        <div class="qa">
+          <h3>先把真正的原因讀出來</h3>
+          <p>兩個指令就會說出哪裡出錯，下面幾乎每個答案都是從它們來的：</p>
+          <pre><code>systemctl status jt-wazuh-mgr --no-pager -l
+journalctl -u jt-wazuh-mgr -n 50 --no-pager</code></pre>
+        </div>
+
+        <div class="qa">
+          <h3>ModuleNotFoundError: No module named 'flask'</h3>
+          <span class="sym">ModuleNotFoundError: No module named 'flask'</span>
+          <p>檔案裝好了但相依套件沒有 —— pip 那一步在更早之前就失敗了，
+             而因為 <code>set -e</code> 的關係你可能沒注意到。
+             回到 <a href="#python">Python 相依套件</a> 處理完後：</p>
+          <pre><code>sudo systemctl restart jt-wazuh-mgr</code></pre>
+        </div>
+
+        <div class="qa">
+          <h3>Address already in use／5000 埠沒有回應</h3>
+          <span class="sym">OSError: [Errno 98] Address already in use</span>
+          <p>有別的程式占用了這個埠。先找出是誰：</p>
+          <pre><code>sudo ss -tlnp | grep :5000</code></pre>
+          <p>要嘛停掉那個服務，要嘛用 drop-in 換一個埠 —— 這樣升級時不會被還原：</p>
+          <pre><code>sudo mkdir -p /etc/systemd/system/jt-wazuh-mgr.service.d
+sudo tee /etc/systemd/system/jt-wazuh-mgr.service.d/override.conf &lt;&lt;'EOF'
+[Service]
+ExecStart=
+ExecStart=/opt/jt-wazuh-mgr/wazuh_agent_mgr.py --web --ssl-auto --port 5443
+EOF
+sudo systemctl daemon-reload &amp;&amp; sudo systemctl restart jt-wazuh-mgr</code></pre>
+          <p>那一行空的 <code>ExecStart=</code> 是必要的：它先清掉原本的設定，新的才會生效。</p>
+        </div>
+
+        <div class="qa">
+          <h3>服務有起來，但瀏覽器連不上</h3>
+          <p>從機器本身往外測。如果第一個指令有回應、第二個沒有，那就是防火牆的問題，不是工具的問題：</p>
+          <pre><code>curl -kIs https://127.0.0.1:5000/ | head -1      # 在 manager 上執行
+sudo firewall-cmd --add-port=5000/tcp --permanent &amp;&amp; sudo firewall-cmd --reload   # RHEL 系列
+sudo ufw allow 5000/tcp                                                            # Ubuntu</code></pre>
+          <p>注意網址是 <b>https</b>，而且使用 <code>--ssl-auto</code> 時憑證是自簽的，
+             瀏覽器會警告一次。</p>
+        </div>
+      </section>
+
+      <section id="upgrade">
+        <h2><span class="dot"></span>升級</h2>
+
+        <div class="qa">
+          <h3>升級跑完了，但版本沒有變</h3>
+          <p>不要只看安裝腳本最後那行摘要，直接從安裝路徑本身把版本讀回來：</p>
+          <pre><code>grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py
+systemctl is-active jt-wazuh-mgr</code></pre>
+          <p>如果檔案顯示的是新版、但介面仍是舊的，清掉過期的位元組碼再重啟：</p>
+          <pre><code>sudo rm -rf /opt/jt-wazuh-mgr/lib/__pycache__
+sudo systemctl restart jt-wazuh-mgr</code></pre>
+          <p>然後用略過快取的方式重新整理瀏覽器（<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>）。</p>
+        </div>
+
+        <div class="qa">
+          <h3>我改過的服務設定檔被升級蓋掉了</h3>
+          <div class="note"><b>這是已知行為。</b>每次執行安裝腳本都會把內建的服務設定檔複製到
+            <code>/etc/systemd/system/jt-wazuh-mgr.service</code>。
+            任何你「直接改在那個檔案上」的內容 —— 換埠、<code>User=</code>、<code>Environment=</code>
+            —— 都會在下次升級時消失。</div>
+          <p>先還原一次，然後把設定搬進 drop-in，安裝腳本永遠不會碰它：</p>
+          <pre><code>sudo mkdir -p /etc/systemd/system/jt-wazuh-mgr.service.d
+sudo tee /etc/systemd/system/jt-wazuh-mgr.service.d/override.conf &lt;&lt;'EOF'
+[Service]
+Environment=PYTHONPATH=/opt/jt-wazuh-mgr/vendor
+EOF
+sudo systemctl daemon-reload &amp;&amp; sudo systemctl restart jt-wazuh-mgr</code></pre>
+          <p>改完用 <code>systemctl cat jt-wazuh-mgr</code> 確認實際生效的內容。</p>
+        </div>
+
+        <div class="qa">
+          <h3>升級會動到我的設定或已安裝的規則套件嗎？</h3>
+          <p><b>不會。</b><code>config.yaml</code> 已存在時會直接跳過。
+             你已安裝的規則套件放在 Wazuh manager 自己的目錄裡
+             （<code>/var/ossec/etc/rules</code>、<code>etc/lists</code>、<code>etc/decoders</code>），
+             安裝狀態記在 <code>/var/ossec/etc/jt-packs/</code>；
+             升級工具只會更新它提供給你的套件目錄清單。</p>
+        </div>
+
+        <div class="qa">
+          <h3>退回前一個版本</h3>
+          <p>升級前先備份，隨時可以退回去：</p>
+          <pre><code>sudo tar czf /root/jt-wazuh-mgr-backup-$(date +%F).tar.gz -C /opt jt-wazuh-mgr
+# 退回
+sudo systemctl stop jt-wazuh-mgr
+sudo tar xzf /root/jt-wazuh-mgr-backup-YYYY-MM-DD.tar.gz -C /opt
+sudo systemctl start jt-wazuh-mgr</code></pre>
+          <div class="note"><b>一定要用 <code>-C</code>。</b>少了它會解壓到當前目錄，
+            而之後的版本檢查可能剛好讀到解錯位置的那一份，於是顯示「成功」但其實什麼都沒換。</div>
+        </div>
+      </section>
+
+      <section id="offline">
+        <h2><span class="dot"></span>離線與封閉網路安裝</h2>
+
+        <div class="qa">
+          <h3>manager 完全沒有對外網路時怎麼裝</h3>
+          <p>在有網路的機器上抓好，再把結果搬過去。</p>
+          <p><b>在有網路的機器上：</b></p>
+          <pre><code>git clone --depth 1 https://github.com/jasoncheng7115/jt-wazuh-mgr.git
+tar czf jt-wazuh-mgr.tgz -C jt-wazuh-mgr lib packs images \
+    wazuh_agent_mgr.py create_api_user.py requirements.txt \
+    config.yaml jt-wazuh-mgr.service uninstall.sh
+pip download -r jt-wazuh-mgr/requirements.txt -d wheels
+tar czf wheels.tgz wheels</code></pre>
+          <p><b>在 manager 上：</b></p>
+          <pre><code>sudo mkdir -p /opt/jt-wazuh-mgr
+sudo tar xzf jt-wazuh-mgr.tgz -C /opt/jt-wazuh-mgr
+tar xzf wheels.tgz
+sudo pip install --no-index --find-links=wheels -r /opt/jt-wazuh-mgr/requirements.txt
+sudo cp /opt/jt-wazuh-mgr/jt-wazuh-mgr.service /etc/systemd/system/
+sudo systemctl daemon-reload &amp;&amp; sudo systemctl enable --now jt-wazuh-mgr</code></pre>
+          <div class="note"><b>wheel 要用相同的 Python 版本產生。</b>編譯型套件是綁直譯器版本的：
+            為 Python 3.10 產生的 wheel 在 3.12 上匯入會失敗。
+            動手前先在兩台機器上都確認 <code>python3 -V</code>。</div>
+        </div>
+
+        <div class="qa">
+          <h3>離線環境要怎麼升級</h3>
+          <p><b>不要在那台跑 <code>install.sh</code></b> —— 它會嘗試連 GitHub 與 PyPI，
+             而且會覆蓋掉你可能為了這個環境而客製過的服務設定檔。只換程式檔案就好：</p>
+          <pre><code>sudo systemctl stop jt-wazuh-mgr
+sudo tar xzf jt-wazuh-mgr.tgz -C /opt/jt-wazuh-mgr
+sudo rm -rf /opt/jt-wazuh-mgr/lib/__pycache__
+sudo systemctl start jt-wazuh-mgr
+grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py</code></pre>
+          <p>相依套件很少在版本之間變動；若 <code>requirements.txt</code> 真的改了，
+             再一併把新的 wheel 搬過去。</p>
+        </div>
+      </section>
+
+      <section id="after">
+        <h2><span class="dot"></span>裝好了，但有地方不對</h2>
+
+        <div class="qa">
+          <h3>登入頁出得來，但帳號密碼被拒絕</h3>
+          <p>這裡的帳號密碼是 <b>Wazuh API 使用者</b>，不是作業系統帳號，也不是你的 Dashboard 登入帳號。
+             先確認 API 本身有回應：</p>
+          <pre><code>curl -k -u &lt;帳號&gt;:&lt;密碼&gt; https://127.0.0.1:55000/security/user/authenticate</code></pre>
+          <p>安裝 Wazuh 當時產生的密碼在 <code>wazuh-install-files.tar</code> 裡，
+             通常就在你執行 Wazuh 安裝程式的那個目錄下。
+             要替這個工具另外建一個專用帳號：</p>
+          <pre><code>sudo /opt/jt-wazuh-mgr/create_api_user.py</code></pre>
+        </div>
+
+        <div class="qa">
+          <h3>設定編輯器沒有語法高亮</h3>
+          <p>編輯器元件是從 CDN 載入的，所以在隔離網段取不到。
+             編輯功能仍然正常，只是少了顏色。這個不需要處理。</p>
+        </div>
+
+        <div class="qa">
+          <h3>完整移除</h3>
+          <pre><code>sudo bash /opt/jt-wazuh-mgr/uninstall.sh</code></pre>
+          <p>你安裝到 manager 裡的規則套件不會被這個指令移除 ——
+             如果要一併清掉，請先從「規則套件」分頁移除，這樣被覆蓋的原始檔才會被正確還原。</p>
+        </div>
+      </section>
+
+      <section id="report">
+        <h2><span class="dot"></span>還是不行</h2>
+
+        <div class="qa">
+          <h3>回報時請附上這些</h3>
+          <p>這四項幾乎能讓任何安裝問題一眼看出原因：</p>
+          <pre><code>cat /etc/os-release | head -2
+python3 -V
+grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py
+journalctl -u jt-wazuh-mgr -n 50 --no-pager</code></pre>
+          <p>再加上本頁第一則裡 <code>bash -x</code> 輸出的最後 40 行。到
+             <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr/issues" target="_blank" rel="noopener">github.com/jasoncheng7115/jt-wazuh-mgr/issues</a>
+             開一則 issue。</p>
+          <div class="note"><b>貼上之前請先看過。</b>Wazuh manager 的記錄會帶有你環境中的主機名稱與位址。
+            凡是你不會放到公開頁面上的內容，請先代換掉。</div>
+        </div>
+      </section>
+
+      <div class="empty" id="empty">沒有符合的答案。試試直接用錯誤訊息裡的字詞搜尋。</div>
+    </main>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    jt-wazuh-mgr —— AGPL-3.0 ·
+    <a href="index.html">專案首頁</a> ·
+    <a href="troubleshooting.html">English</a> ·
+    <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener">原始碼</a>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // 目錄由章節本身產生，才不會與內容脫節。
+  var toc = document.getElementById('toc');
+  var sections = [].slice.call(document.querySelectorAll('#main > section'));
+  sections.forEach(function (s) {
+    var h = s.querySelector('h2');
+    var li = document.createElement('li');
+    var a = document.createElement('a');
+    a.href = '#' + s.id;
+    a.textContent = h.textContent.trim();
+    li.appendChild(a);
+    toc.appendChild(li);
+  });
+
+  var input = document.getElementById('q');
+  var count = document.getElementById('count');
+  var empty = document.getElementById('empty');
+  var items = [].slice.call(document.querySelectorAll('.qa'));
+
+  // 搜尋整則答案而不只是標題：使用者多半會直接貼錯誤訊息，
+  // 而那段文字在內文裡。
+  items.forEach(function (el) { el._hay = el.textContent.toLowerCase(); });
+
+  function apply() {
+    var term = input.value.trim().toLowerCase();
+    if (!term) {
+      items.forEach(function (el) { el.classList.remove('hide'); });
+      sections.forEach(function (s) { s.classList.remove('hide'); });
+      empty.classList.remove('show');
+      count.textContent = '';
+      return;
+    }
+    var hits = 0;
+    items.forEach(function (el) {
+      var match = el._hay.indexOf(term) !== -1;
+      el.classList.toggle('hide', !match);
+      if (match) { hits++; }
+    });
+    sections.forEach(function (s) {
+      var any = s.querySelector('.qa:not(.hide)');
+      s.classList.toggle('hide', !any);
+    });
+    empty.classList.toggle('show', hits === 0);
+    count.textContent = '符合 ' + hits + ' 則';
+  }
+
+  input.addEventListener('input', apply);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { input.value = ''; apply(); }
+  });
+
+  // 支援直接連到某個搜尋，例如 troubleshooting-zh-TW.html?q=pip
+  var pre = new URLSearchParams(location.search).get('q');
+  if (pre) { input.value = pre; apply(); }
+})();
+</script>
+</body>
+</html>

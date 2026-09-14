@@ -4,10 +4,14 @@
 # https://github.com/jasoncheng7115/jt-wazuh-mgr
 #
 
-set -e
+# -E so the ERR trap below is inherited by functions and subshells; without it a
+# failure inside one of those exits silently, which is the complaint this whole
+# mechanism exists to answer.
+set -eE
 
 INSTALL_DIR="/opt/jt-wazuh-mgr"
 BASE_URL="https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main"
+DOCS_URL="https://jasoncheng7115.github.io/jt-wazuh-mgr"
 SERVICE_NAME="jt-wazuh-mgr"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
@@ -17,6 +21,52 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Point the reader at the troubleshooting page in the language their system is
+# set to, defaulting to English. Under "curl ... | sudo bash" the environment is
+# usually reset, so the shell variables are checked first and the system-wide
+# locale file second -- that file is what survives sudo.
+detect_help_url() {
+    local loc="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
+    if [ -z "$loc" ] || [ "$loc" = "C" ] || [ "$loc" = "POSIX" ]; then
+        loc=$(cat /etc/locale.conf /etc/default/locale 2>/dev/null \
+              | grep -m1 -E '^(LANG|LC_ALL)=' | cut -d= -f2 | tr -d '"')
+    fi
+    case "$loc" in
+        zh*) echo "$DOCS_URL/troubleshooting-zh-TW.html" ;;
+        *)   echo "$DOCS_URL/troubleshooting.html" ;;
+    esac
+}
+HELP_URL=$(detect_help_url)
+
+show_help_url() {
+    echo
+    echo -e "${YELLOW}----------------------------------------${NC}"
+    case "$HELP_URL" in
+        *zh-TW*)
+            echo -e "${YELLOW} 安裝／升級疑難排解（含搜尋）：${NC}"
+            echo -e "${YELLOW} $HELP_URL${NC}"
+            echo -e " 找不到答案時，請附上上面的錯誤訊息開 issue。" ;;
+        *)
+            echo -e "${YELLOW} Install / upgrade troubleshooting (searchable):${NC}"
+            echo -e "${YELLOW} $HELP_URL${NC}"
+            echo -e " If it is not covered there, open an issue with the error above." ;;
+    esac
+    echo -e "${YELLOW}----------------------------------------${NC}"
+    echo
+}
+
+on_error() {
+    local code=$? line=$1
+    echo
+    case "$HELP_URL" in
+        *zh-TW*) echo -e "${RED}安裝中斷：第 ${line} 行失敗（結束碼 ${code}）${NC}" ;;
+        *)       echo -e "${RED}Failed at line ${line} (exit ${code})${NC}" ;;
+    esac
+    show_help_url
+    exit "$code"
+}
+trap 'on_error $LINENO' ERR
+
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN} JT Wazuh Manager Installer${NC}"
 echo -e "${GREEN}========================================${NC}"
@@ -25,6 +75,7 @@ echo
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}Please run as root${NC}"
+    show_help_url
     exit 1
 fi
 
@@ -129,6 +180,21 @@ else
     echo -e "  - Service enabled and started"
 fi
 
+# systemctl start returns 0 as soon as the unit is launched, so a service that
+# starts and then dies -- a missing dependency, a port already taken -- reports
+# success here. Give it a moment and look again.
+sleep 2
+if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+    echo
+    case "$HELP_URL" in
+        *zh-TW*) echo -e "${RED}服務已安裝但沒有執行中。最後幾行記錄：${NC}" ;;
+        *)       echo -e "${RED}The service was installed but is not running. Last log lines:${NC}" ;;
+    esac
+    journalctl -u "$SERVICE_NAME" -n 15 --no-pager 2>/dev/null || true
+    show_help_url
+    exit 1
+fi
+
 # Get version
 VERSION=$(grep -o '__version__ = "[^"]*"' "$INSTALL_DIR/lib/__init__.py" | cut -d'"' -f2)
 
@@ -148,4 +214,6 @@ echo -e "Open Web UI:    ${YELLOW}https://<this-server-ip>:5000${NC}"
 echo
 echo -e "Upgrade:        ${YELLOW}curl -fsSL $BASE_URL/install.sh | sudo bash${NC}"
 echo -e "Uninstall:      ${YELLOW}sudo bash $INSTALL_DIR/uninstall.sh${NC}"
+echo
+echo -e "Troubleshooting: ${YELLOW}$HELP_URL${NC}"
 echo
