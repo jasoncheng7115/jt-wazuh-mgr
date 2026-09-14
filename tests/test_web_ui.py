@@ -1542,14 +1542,62 @@ class TestI18n(unittest.TestCase):
         self.assertIn(sample, web_ui.HTML_TEMPLATE,
                       'lib/web_ui.py is stale -- run: python3 tools/build_i18n.py')
 
+    @classmethod
+    def _lang_blocks(cls, block):
+        """Split the I18N object into one sub-block per language.
+
+        Duplicate-key checks have to be per language: 'Agents' appears once in
+        each language with a different value, which is correct, while twice in
+        the same language with different values is the bug being looked for.
+        """
+        out = {}
+        for m in re.finditer(r"^\s{4}'([\w-]+)':\s*\{", block, re.M):
+            out[m.group(1)] = cls._block(block[m.start():], "'%s':" % m.group(1))
+        return out
+
     def test_no_duplicate_keys_with_conflicting_values(self):
-        values = {}
-        for m in re.finditer(r"^\s*'((?:[^'\\]|\\.)*)':\s*'((?:[^'\\]|\\.)*)',?\s*$",
-                             self.dict_block, re.M):
-            values.setdefault(m.group(1), []).append(m.group(2))
-        conflicting = {k: v for k, v in values.items() if len(set(v)) > 1}
-        self.assertEqual(conflicting, {},
-                         'a later duplicate key silently overrides the earlier one')
+        for lang, sub in self._lang_blocks(self.dict_block).items():
+            values = {}
+            for m in re.finditer(r"^\s*'((?:[^'\\]|\\.)*)':\s*'((?:[^'\\]|\\.)*)',?\s*$",
+                                 sub, re.M):
+                values.setdefault(m.group(1), []).append(m.group(2))
+            conflicting = {k: v for k, v in values.items() if len(set(v)) > 1}
+            with self.subTest(lang=lang):
+                self.assertEqual(conflicting, {},
+                                 'a later duplicate key silently overrides the earlier one')
+
+    def test_every_language_translates_the_same_keys(self):
+        """A key present in one language and missing from another shows through
+        as untranslated English in the middle of a translated page."""
+        blocks = self._lang_blocks(self.dict_block)
+        self.assertGreaterEqual(len(blocks), 2, 'expected more than one language')
+        keys = {}
+        for lang, sub in blocks.items():
+            keys[lang] = set(re.findall(r"^\s*'((?:[^'\\]|\\.)*)':\s*'", sub, re.M))
+        reference = max(keys, key=lambda k: len(keys[k]))
+        for lang in keys:
+            if lang == reference:
+                continue
+            missing = keys[reference] - keys[lang]
+            with self.subTest(lang=lang):
+                self.assertEqual(sorted(missing)[:10], [],
+                                 '%s is missing keys that %s has' % (lang, reference))
+
+    def test_patterns_are_not_double_escaped(self):
+        """A regex literal written with \\d matches a backslash then 'd'.
+
+        Seven patterns were written that way and could never match anything;
+        they were found only when a third language was added and the block was
+        read line by line. Nothing else catches it -- the file parses, the rule
+        loads, and the string simply stays in English.
+        """
+        offenders = []
+        for line in self.pattern_block.splitlines():
+            m = re.match(r"\s*\[/(.+?)/[a-z]*,", line)
+            if m and '\\\\' in m.group(1):
+                offenders.append(m.group(1)[:70])
+        self.assertEqual(offenders, [],
+                         'double-escaped regex literal: these can never match')
 
     def test_product_name_is_not_translated(self):
         self.assertNotIn("'JT Wazuh Manager':", self.dict_block)

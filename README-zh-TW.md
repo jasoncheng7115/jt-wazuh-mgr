@@ -1,6 +1,6 @@
-# jt-wazuh-mgr v1.7.5
+# jt-wazuh-mgr v1.8.0
 
-[English](README.md) | [繁體中文](README-zh-TW.md)
+[English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
 強大的 Wazuh Agent 網頁管理工具，專為叢集環境設計。
 
@@ -8,10 +8,10 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.7.5-blue)
+![Version](https://img.shields.io/badge/version-1.8.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
-![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
+![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
 
 🌐 **專案網站：** https://jasoncheng7115.github.io/jt-wazuh-mgr/
 
@@ -45,7 +45,7 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 ## 功能特色
 
 ### 語言
-- 標題列可切換 **英文 / 繁體中文**（EN ⇄ 中文），偏好設定依瀏覽器記住。
+- 標題列可切換 **英文 / 繁體中文 / 日本語**（EN ⇄ 中文 ⇄ 日本語），偏好設定依瀏覽器記住。
 
 ### Agent 管理
 - 即時檢視所有 Agent 狀態
@@ -248,7 +248,7 @@ web:
 
 ## 多語系（i18n）
 
-介面以英文撰寫，並在前端完整翻譯為繁體中文。UI 字串集中於
+介面以英文撰寫，並在前端完整翻譯為繁體中文與日本語。UI 字串集中於
 `lib/i18n_engine.js`，再由 `tools/build_i18n.py` 內嵌進 `lib/web_ui.py`。
 要擴充或修改翻譯：
 
@@ -256,6 +256,9 @@ web:
 # 編輯 lib/i18n_engine.js 後，重新內嵌進 web_ui.py
 python3 tools/build_i18n.py
 ```
+
+要新增語言，只需在 `I18N` 與 `I18N_PATTERNS` 加上該語言的鍵，
+並把語言代碼加進 `SUPPORTED`；引擎其餘部分不含任何語言專屬邏輯。
 
 ## 技術架構
 

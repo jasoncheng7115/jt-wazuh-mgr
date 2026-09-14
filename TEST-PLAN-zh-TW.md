@@ -1,6 +1,6 @@
 # 測試計畫
 
-[English](TEST-PLAN.md) | [繁體中文](TEST-PLAN-zh-TW.md)
+[English](TEST-PLAN.md) | [繁體中文](TEST-PLAN-zh-TW.md) | [日本語](TEST-PLAN-ja.md)
 
 發版前要驗證什麼、在哪一層驗證，以及——在能講清楚的範圍內誠實說明——
 哪些至今仍然完全沒有驗證。
@@ -15,8 +15,8 @@
 ## 執行方式
 
 ```bash
-python3 -m unittest discover -s tests     # 178 項，完全離線
-python3 tools/preflight.py                # 19 項發版前機械檢查
+python3 -m unittest discover -s tests     # 180 項，完全離線
+python3 tools/preflight.py                # 20 項發版前機械檢查
 
 # 系統沒有 Flask 的主機
 python3 -m pip install --no-index --find-links=offline_packages \
@@ -65,19 +65,31 @@ PYTHONPATH=/tmp/vendor python3 -m unittest discover -s tests
 `tools/preflight.py`，全部都必須通過：
 
 1. 版本號與各處 badge 與 `lib/__init__.py` 一致
-2. 兩份 CHANGELOG 都有本版本的條目
-3. `github/` 與工作目錄內容一致
-4. 對外發佈的內容不含任何內部主機名、位址或郵件帳號
-5. 套件 manifest：雜湊、規則 ID、`dest` 路徑、描述
-6. `packs/INDEX` 與實際檔案相符
-7. `web_ui.py` 內嵌的 i18n 字典是最新的
-8. 模板的 JavaScript 可正常解析
-9. README 引用的每張截圖都存在
-10. 沒有任何隨附的 CDB 清單仍是佔位符
-11. 發佈衛生——不含 `wazuh-rules/`、不含殘留封存檔、不含機密
+2. 各份 README 標題裡的版本號（那不是 badge）
+3. 各份 CHANGELOG 都有本版本的條目
+4. 發版說明只存在於 CHANGELOG，沒有被複製進 README
+5. 授權條款在各處的寫法一致
+6. 所有對外發佈的內容，專案名稱都是 `jt-wazuh-mgr`
+7. 圖示資產存在且被引用
+8. 介面有提供原始碼連結（AGPL 第 13 條的要求）
+9. `github/` 與工作目錄一致——比對兩邊都有的每一個檔案，而不是一份清單
+10. 對外發佈的內容不含任何內部主機名、位址或郵件帳號
+11. 套件 manifest：雜湊、規則 ID、`dest` 路徑、英文描述，以及 `if_matched_sid` 未指向 level 0 的父規則
+12. `packs/INDEX` 與實際檔案相符
+13. `web_ui.py` 內嵌的 i18n 字典是最新的
+14. 模板的 JavaScript 可正常解析
+15. README 引用的每張截圖都存在
+16. 沒有任何隨附的 CDB 清單仍是佔位符
+17. 文件裡宣稱的數量與原始碼相符——測試數、檢查項數、旅程數
+18. 每個已發佈的版本都有 tag；正在準備的那一版只會警告、不會失敗
+19. 每份文件的各語言版本都互相連結
+20. 發佈衛生——不含 `wazuh-rules/`、不含殘留封存檔、不含機密
 
-第 10 項之所以存在，是因為曾經發佈過一條 level 15 規則，
+第 16 項之所以存在，是因為曾經發佈過一條 level 15 規則，
 它指向的清單裡只有一筆捏造的雜湊。這條規則不可能觸發，而且沒有任何機制說出來。
+
+第 17、18 項是在準備第三種語言時加上的——當時發現**這份檔案裡寫的數字本身**
+已經落後三個版本。
 
 ---
 
@@ -85,16 +97,26 @@ PYTHONPATH=/tmp/vendor python3 -m unittest discover -s tests
 
 ```bash
 PYTHONPATH=/tmp/vendor python3 wazuh_agent_mgr.py --web --host 127.0.0.1 --port 5099 &
-docker run --rm --network host -v /tmp/zap:/zap/wrk:rw ghcr.io/zaproxy/zaproxy:stable \
-  zap-baseline.py -t http://127.0.0.1:5099 -J zap-report.json -I
+/snap/bin/zaproxy -cmd -autorun /絕對路徑/plan.yaml
 ```
 
-基準：**0 FAIL / 8 WARN / 59 PASS**。要**逐項比對**，不能只看總數——
-同樣的數字可能藏著一進一出。出現任何新的 finding 都視為發版阻斷。
+plan 走的是 ZAP 的 Automation Framework：spider、被動掃描，並輸出 HTML 與 JSON 報告。
+**路徑一律用絕對路徑**——相對路徑會被解析到 snap 自己的目錄，
+而 `Cannot access file` 只會出現在 log 裡，回傳碼仍然是 0。
 
-目前僅存的一項 Medium 是 CSP 的 `unsafe-inline`（script 與 style），
-因為整個前端都內嵌在 Python 字串裡。要移除必須重構模板，
-那不是發版當下該做的變更。
+在這個組態下量到的基準：**Medium 2 項、Informational 5 項，High 與 Low 皆為 0。**
+兩項 Medium 都是 CSP 對 script 與 style 的 `unsafe-inline`。
+要**逐 plugin 比對**，不能只看總數——同樣的數字可能藏著一進一出。
+出現任何新的 plugin ID 都視為發版阻斷。
+
+兩項看起來嚇人的 Informational 其實不是問題：「可疑註解」抓到的是 *user* 這個單字，
+「可控的 HTML 屬性」則是登入表單自己的欄位。
+
+先前的基準 **0 FAIL / 8 WARN / 59 PASS** 來自 docker 映像裡的 `zap-baseline.py`，
+它的 PASS 計數在這裡沒有對應物。能沿用的是告警清單本身。
+
+兩項 Medium 會存在，是因為整個前端都內嵌在 Python 字串裡。
+要移除必須重構模板，那不是發版當下該做的變更。
 
 ---
 

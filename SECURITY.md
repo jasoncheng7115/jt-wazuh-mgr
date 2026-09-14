@@ -1,14 +1,16 @@
 # Security Policy
 
+[English](SECURITY.md) | [日本語](SECURITY-ja.md)
+
 ## Supported Versions
 
-Only the latest released version of **JT Wazuh Manager** receives security
+Only the latest released version of **jt-wazuh-mgr** receives security
 updates. Please always run the newest version before reporting an issue.
 
 | Version | Supported          |
 |---------|--------------------|
-| 1.4.x   | :white_check_mark: |
-| < 1.4   | :x:                |
+| 1.7.x   | :white_check_mark: |
+| < 1.7   | :x:                |
 
 ## Reporting a Vulnerability
 

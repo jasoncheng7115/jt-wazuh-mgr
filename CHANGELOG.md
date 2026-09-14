@@ -1,8 +1,43 @@
 # Changelog
 
-All notable changes to **JT Wazuh Manager** are documented here.
+All notable changes to **jt-wazuh-mgr** are documented here.
 
-[English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md)
+[English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
+
+## v1.8.0 (2026-09-14)
+
+- **Japanese, throughout.** The interface, both READMEs' worth of documentation,
+  the security policy, the test plan, the whole changelog, the project pages and
+  the troubleshooting pages are now available in 日本語 alongside English and
+  繁體中文. The installer picks the troubleshooting page by the machine's
+  language, so a Japanese-language system is linked to the Japanese page.
+
+- The interface translates 629 strings and 111 interpolated patterns per
+  language. The engine turned out to need almost no change — `I18N[lang]` was
+  already keyed by language — so what changed is the toggle, which now cycles
+  EN → 中文 → 日本語 and shows the language it will switch to.
+
+- **Seven translation patterns could never have matched anything.** Reading the
+  block line by line to translate it showed seven regex literals written with a
+  doubled backslash: `\\d` in a JavaScript regex matches a backslash followed by
+  the letter d, not a digit. They had been dead since they were written, in the
+  rule-pack and ruleset-reload area. Nothing catches this — the file parses, the
+  entry loads, and the string simply stays in English. A test does now.
+
+- **Two new tests and two new pre-release checks, all of which failed first
+  time.** The languages must translate the same set of keys, or a missing key
+  shows through as English in the middle of a translated page. Documents must
+  link to every translation of themselves, found by looking at what exists rather
+  than from a list someone has to extend.
+
+- **What the new checks found, beyond the seven dead patterns.** The old product
+  name survived in `SECURITY.md` and in both changelog headers, a fortnight after
+  the rename, because the name check named five files rather than looking at
+  everything published; it now looks at everything. `SECURITY.md` still declared
+  1.4.x as the supported version. The project pages claimed 163 tests, 62 browser
+  checks, seventeen journeys and sixteen mechanical checks — all four figures
+  three or more releases out of date. The test plan's own numbered list of those
+  checks stopped at eleven.
 
 ## v1.7.5 (2026-09-14)
 

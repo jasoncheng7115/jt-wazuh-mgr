@@ -1,6 +1,6 @@
 # Test Plan
 
-[English](TEST-PLAN.md) | [繁體中文](TEST-PLAN-zh-TW.md)
+[English](TEST-PLAN.md) | [繁體中文](TEST-PLAN-zh-TW.md) | [日本語](TEST-PLAN-ja.md)
 
 What gets verified before a release, at which layer, and — as honestly as it can
 be stated — what still is not verified at all.
@@ -16,8 +16,8 @@ the screen. None of them substitutes for another.
 ## Running everything
 
 ```bash
-python3 -m unittest discover -s tests     # 178 tests, fully offline
-python3 tools/preflight.py                # 19 mechanical pre-release checks
+python3 -m unittest discover -s tests     # 180 tests, fully offline
+python3 tools/preflight.py                # 20 mechanical pre-release checks
 
 # on a host without a system Flask
 python3 -m pip install --no-index --find-links=offline_packages \
@@ -68,19 +68,31 @@ the part after the guard is verified by hand, on purpose, in Layer 5.
 `tools/preflight.py`, all of which must pass:
 
 1. Version and badges agree with `lib/__init__.py`
-2. Both changelogs carry an entry for this version
-3. `github/` mirrors the working tree
-4. No internal host name, address or mail account appears in anything published
-5. Pack manifests: hashes, rule IDs, `dest` paths, descriptions
-6. `packs/INDEX` matches the files on disk
-7. The i18n dictionary embedded in `web_ui.py` is current
-8. The template's JavaScript parses
-9. Every screenshot the READMEs reference exists
-10. No shipped CDB list is still a placeholder
-11. Publishing hygiene — no `wazuh-rules/`, no stray archives, no secrets
+2. The version in each README's heading, which is not a badge
+3. Both changelogs carry an entry for this version
+4. Release notes live only in the changelog, not duplicated into a README
+5. One licence, stated the same way everywhere
+6. The project name is `jt-wazuh-mgr`, in everything published
+7. The icon set exists and is referenced
+8. The interface offers its source, as AGPL section 13 requires
+9. `github/` mirrors the working tree — every file present in both, not a list
+10. No internal host name, address or mail account appears in anything published
+11. Pack manifests: hashes, rule IDs, `dest` paths, English descriptions, and that no `if_matched_sid` points at a level 0 parent
+12. `packs/INDEX` matches the files on disk
+13. The i18n dictionary embedded in `web_ui.py` is current
+14. The template's JavaScript parses
+15. Every screenshot the READMEs reference exists
+16. No shipped CDB list is still a placeholder
+17. Counts quoted in the documentation match the source — tests, checks, journeys
+18. Every released version has a tag; the one being prepared is a warning, not a failure
+19. Every translation of a document links to all its siblings
+20. Publishing hygiene — no `wazuh-rules/`, no stray archives, no secrets
 
-Check 10 exists because a level 15 rule once shipped pointing at a list holding a
+Check 16 exists because a level 15 rule once shipped pointing at a list holding a
 single fabricated hash. It could never fire, and nothing said so.
+
+Checks 17 and 18 were added after a third language was being prepared and the
+figures quoted in this very file turned out to be three releases out of date.
 
 ---
 
@@ -88,16 +100,30 @@ single fabricated hash. It could never fire, and nothing said so.
 
 ```bash
 PYTHONPATH=/tmp/vendor python3 wazuh_agent_mgr.py --web --host 127.0.0.1 --port 5099 &
-docker run --rm --network host -v /tmp/zap:/zap/wrk:rw ghcr.io/zaproxy/zaproxy:stable \
-  zap-baseline.py -t http://127.0.0.1:5099 -J zap-report.json -I
+/snap/bin/zaproxy -cmd -autorun /absolute/path/to/plan.yaml
 ```
 
-Baseline: **0 FAIL / 8 WARN / 59 PASS**. Compare plugin by plugin, not just the
-totals — the same count can hide a swap. Any new finding blocks the release.
+The plan is ZAP's Automation Framework: a spider, a passive scan, and HTML and
+JSON reports. **Absolute paths throughout** — a relative one resolves inside the
+snap's own directory, and `Cannot access file` appears only in the log while the
+exit code stays 0.
 
-The one Medium that remains is `unsafe-inline` in the CSP for scripts and styles,
-because the whole front end is inline inside a Python string. Removing it means
-restructuring the template, which is not a release-time change.
+Baseline, measured on this configuration: **2 Medium, 5 Informational, no High
+and no Low.** Both Mediums are `unsafe-inline` in the CSP for scripts and styles.
+Compare plugin by plugin, not the totals — the same count can hide a swap. Any
+new plugin ID blocks the release.
+
+The two informational findings that look alarming are not: the "suspicious
+comment" is the word *user*, and the "user controllable HTML element attribute"
+is the login form's own fields.
+
+The earlier baseline of **0 FAIL / 8 WARN / 59 PASS** came from `zap-baseline.py`
+in the docker image, whose PASS count has no equivalent here. The alert list is
+what carries across.
+
+Both Mediums are there because the whole front end is inline inside a Python
+string. Removing them means restructuring the template, which is not a
+release-time change.
 
 ---
 

@@ -1,6 +1,6 @@
-# jt-wazuh-mgr v1.7.5
+# jt-wazuh-mgr v1.8.0
 
-[English](README.md) | [繁體中文](README-zh-TW.md)
+[English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
 A powerful web-based management tool for Wazuh agents in cluster environments.
 
@@ -8,10 +8,10 @@ A powerful web-based management tool for Wazuh agents in cluster environments.
 
 > **Recommended**: Use the Web UI as the primary interface — it's the main feature of this tool with full functionality.
 
-![Version](https://img.shields.io/badge/version-1.7.5-blue)
+![Version](https://img.shields.io/badge/version-1.8.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
-![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87-blueviolet)
+![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
 
 🌐 **Project site:** https://jasoncheng7115.github.io/jt-wazuh-mgr/
 
@@ -45,7 +45,7 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 ## Features
 
 ### Language
-- **English / Traditional Chinese (繁體中文)** switchable from the header (EN ⇄ 中文); the preference is saved per browser.
+- **English / Traditional Chinese (繁體中文) / Japanese (日本語)** switchable from the header (EN ⇄ 中文 ⇄ 日本語); the preference is saved per browser.
 
 ### Agent Management
 - View all agents with real-time status
@@ -248,14 +248,18 @@ web:
 
 ## Internationalization (i18n)
 
-The UI ships in English and translates to Traditional Chinese entirely on the
-client side. UI strings live in `lib/i18n_engine.js`, which is embedded into
-`lib/web_ui.py` by `tools/build_i18n.py`. To extend or edit translations:
+The UI ships in English and translates to Traditional Chinese and Japanese
+entirely on the client side. UI strings live in `lib/i18n_engine.js`, which is
+embedded into `lib/web_ui.py` by `tools/build_i18n.py`. To extend or edit
+translations:
 
 ```bash
 # edit lib/i18n_engine.js, then re-embed into web_ui.py
 python3 tools/build_i18n.py
 ```
+
+Adding a language means adding its key to `I18N` and `I18N_PATTERNS` and a code
+to `SUPPORTED`; nothing else in the engine is language-specific.
 
 ## Tech Stack
 

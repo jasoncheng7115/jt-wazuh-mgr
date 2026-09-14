@@ -33,6 +33,7 @@ detect_help_url() {
     fi
     case "$loc" in
         zh*) echo "$DOCS_URL/troubleshooting-zh-TW.html" ;;
+        ja*) echo "$DOCS_URL/troubleshooting-ja.html" ;;
         *)   echo "$DOCS_URL/troubleshooting.html" ;;
     esac
 }
@@ -46,6 +47,10 @@ show_help_url() {
             echo -e "${YELLOW} 安裝／升級疑難排解（含搜尋）：${NC}"
             echo -e "${YELLOW} $HELP_URL${NC}"
             echo -e " 找不到答案時，請附上上面的錯誤訊息開 issue。" ;;
+        *-ja*)
+            echo -e "${YELLOW} インストール／アップグレードのトラブルシューティング（検索可）：${NC}"
+            echo -e "${YELLOW} $HELP_URL${NC}"
+            echo -e " 該当がない場合は、上のエラーメッセージを添えて issue を作成してください。" ;;
         *)
             echo -e "${YELLOW} Install / upgrade troubleshooting (searchable):${NC}"
             echo -e "${YELLOW} $HELP_URL${NC}"
@@ -60,6 +65,7 @@ on_error() {
     echo
     case "$HELP_URL" in
         *zh-TW*) echo -e "${RED}安裝中斷：第 ${line} 行失敗（結束碼 ${code}）${NC}" ;;
+        *-ja*)   echo -e "${RED}${line} 行目で失敗しました（終了コード ${code}）${NC}" ;;
         *)       echo -e "${RED}Failed at line ${line} (exit ${code})${NC}" ;;
     esac
     show_help_url
@@ -188,6 +194,7 @@ if ! systemctl is-active --quiet "$SERVICE_NAME"; then
     echo
     case "$HELP_URL" in
         *zh-TW*) echo -e "${RED}服務已安裝但沒有執行中。最後幾行記錄：${NC}" ;;
+        *-ja*)   echo -e "${RED}サービスはインストールされましたが起動していません。直近のログ：${NC}" ;;
         *)       echo -e "${RED}The service was installed but is not running. Last log lines:${NC}" ;;
     esac
     journalctl -u "$SERVICE_NAME" -n 15 --no-pager 2>/dev/null || true

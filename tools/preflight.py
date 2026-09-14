@@ -81,14 +81,44 @@ def check_version_consistency(version):
                  % (rel, ', '.join(sorted(stale)), version))
 
 
+# Every translation of a document that exists, found rather than listed, so a
+# language added later is covered without editing this file.
+TRANSLATED_DOCS = ('CHANGELOG', 'README', 'TEST-PLAN', 'SECURITY')
+
+
+def doc_variants(stem):
+    """Every language variant of a document present in github/."""
+    return sorted(os.path.relpath(x, ROOT)
+                  for x in glob.glob(os.path.join(GITHUB, stem + '.md'))
+                  + glob.glob(os.path.join(GITHUB, stem + '-*.md')))
+
+
 def check_changelog(version):
-    for rel in ('github/CHANGELOG.md', 'github/CHANGELOG-zh-TW.md'):
+    variants = doc_variants('CHANGELOG')
+    if not variants:
+        fail('changelog', 'no CHANGELOG in github/')
+        return
+    for rel in variants:
         path = os.path.join(ROOT, rel)
-        if not os.path.isfile(path):
-            fail('changelog', '%s is missing' % rel)
-            continue
         if not re.search(r'^##\s*v' + re.escape(version) + r'\b', read(path), re.M):
             fail('changelog', '%s has no entry for v%s' % (rel, version))
+
+
+def check_translations_link_each_other():
+    """A translation nobody can reach from the others is a translation nobody
+    reads. Each variant must link to every sibling, by file name."""
+    for stem in TRANSLATED_DOCS:
+        variants = doc_variants(stem)
+        if len(variants) < 2:
+            continue
+        names = [os.path.basename(v) for v in variants]
+        for rel in variants:
+            body = read(os.path.join(ROOT, rel))
+            me = os.path.basename(rel)
+            missing = [n for n in names if n != me and ('(%s)' % n) not in body]
+            if missing:
+                fail('i18n-docs', '%s does not link to %s'
+                     % (rel, ', '.join(missing)))
 
 
 # Directories that are not expected to match, or are not published at all.
@@ -546,8 +576,14 @@ def check_project_name():
     product name in the UI, and an older one still carrying the word Agent.
     """
     wrong = ('JT Wazuh Agent Manager', 'JT Wazuh Manager', 'Jt-Wazuh-Mgr', 'JT-Wazuh-Mgr')
-    targets = ['github/README.md', 'github/README-zh-TW.md', 'github/docs/index.html',
-               'lib/web_ui.py', 'lib/i18n_engine.js']
+    # Widened 2026-09-14: this used to name five files, so the old product name
+    # survived in SECURITY.md and in both changelog headers for a fortnight
+    # after the rename. Everything published is checked now, not a list someone
+    # has to remember to extend.
+    targets = ['lib/web_ui.py', 'lib/i18n_engine.js']
+    for pat in ('*.md', 'docs/*.html'):
+        targets += [os.path.relpath(x, ROOT)
+                    for x in sorted(glob.glob(os.path.join(GITHUB, pat)))]
     for rel in targets:
         path = os.path.join(ROOT, rel)
         if not os.path.isfile(path):
@@ -761,6 +797,7 @@ def main():
             ('AGPL source offer in the interface', check_agpl_source_offer),
             ('documented counts match reality', check_documented_counts),
             ('every released version is tagged', lambda: check_release_tags(version)),
+            ('translations link to each other', check_translations_link_each_other),
     ):
         before = len(FAILURES), len(WARNINGS)
         fn()
