@@ -1,0 +1,52 @@
+{
+  "id": "jt-alert-digest",
+  "name": "Readable Alert Digest",
+  "name_zh": "可讀的告警摘要信",
+  "version": "1.0",
+  "summary": "Replaces wazuh-maild's raw notifications with one grouped, readable message per run.",
+  "summary_zh": "把 wazuh-maild 的原始通知換成分組整理過、讀得完的摘要信。",
+  "rule_id_range": "131100-131199",
+  "author": "Jason Tools",
+  "license": "AGPL-3.0-or-later",
+  "requires": {
+    "wazuh": ">=4.8"
+  },
+  "notes": [
+    "The mail channel usually already exists and already works. What stops it being useful is the format: wazuh-maild sends the raw full_log followed by every decoded field printed a second time, and concatenates an hour's alerts into one message. Measured on a live manager, one message ran to seventeen notifications and several thousand lines, and the single genuine detection in it sat underneath fourteen alerts from a build host.",
+    "This pack groups alerts that share a rule and an agent, prints the few fields that identify what happened, and sends one message per run. The same seventeen notifications become about forty lines.",
+    "No configuration of its own. smtp_server, email_from, email_to and email_alert_level are read from the manager's ossec.conf, where they are already set for wazuh-maild, so the two cannot drift apart.",
+    "PREREQUISITE - turn wazuh-maild off once this is delivering, or both will send. Set email_alert_level to 15 or email_notification to no, then restart the manager.",
+    "Group headings quote the part of the rule description that is common to the whole group. Wazuh interpolates $(field) into a description, so taking the first alert's copy would put one alert's address or path into a heading covering a dozen of them.",
+    "A send that fails leaves the read position alone, so the next run retries rather than dropping the alerts. The first run ever records the end of the alert file and sends nothing, because mailing the whole backlog is not a useful way to start.",
+    "Rule 131100 exists because a notifier cannot announce its own failure by mail. The script writes failures into the manager's event queue instead, which puts them in the console where someone is already looking.",
+    "The schedule is every two minutes rather than immediate. That is deliberate: a burst of forty alerts arrives as one message instead of forty, and two minutes is not the part of an incident response that matters."
+  ],
+  "notes_zh": [
+    "郵件管道通常本來就有、也本來就通。讓它沒有用的是格式：wazuh-maild 會把 full_log 原文加上每個解碼欄位再印一次，還把一小時內的告警串成一封。在正式機實測，一封信有 17 則通知、數千行，而其中唯一真正的偵測被壓在 14 則來自建置主機的告警底下。",
+    "這個套件把相同（規則, 主機）的告警折成一組，只留能說明發生什麼事的欄位，每次執行送一封。同樣那 17 則會變成約 40 行。",
+    "沒有自己的設定檔。smtp_server、email_from、email_to 與 email_alert_level 都從 manager 的 ossec.conf 讀 —— 那裡本來就為了 wazuh-maild 設好了，所以兩邊不會走樣。",
+    "前提條件 - 確認摘要信送得到之後要把 wazuh-maild 關掉，否則兩邊都會寄。把 email_alert_level 改成 15 或 email_notification 改成 no，然後重啟 manager。",
+    "分組標題取的是整組描述的共同部分。Wazuh 會把 $(欄位) 內插進 description，所以直接用第一則的描述，會把只屬於某一則的位址或路徑寫在涵蓋十幾則的標題上。",
+    "寄送失敗時不會推進讀取位置，下一輪重試而不是把告警弄丟。第一次執行只記下告警檔的結尾、不寄任何東西 —— 把整個歷史一次寄出來不是個有用的開場。",
+    "規則 131100 存在的理由是：通知程式沒辦法用通知宣告自己壞了。腳本改成把失敗寫進 manager 的事件佇列，讓它出現在使用者本來就會看的主控台，而不是一個沒人開的記錄檔。",
+    "排程是每兩分鐘一次而不是即時。這是刻意的：40 筆的爆量會變成一封信而不是 40 封，而那兩分鐘不是事件應變中要緊的部分。"
+  ],
+  "files": [
+    {
+      "type": "rule",
+      "name": "zz-131100-jt_alert_digest_rules.xml",
+      "dest": "etc/rules/zz-131100-jt_alert_digest_rules.xml",
+      "sha256": "7bf4d35f7427a47eb24e188ca8990099a363e9c549d9ca2083a7a4fa9729af60"
+    }
+  ],
+  "scripts": [
+    {
+      "name": "jt-alert-digest.py",
+      "dest": "etc/jt-packs/bin/jt-alert-digest.py",
+      "sha256": "bfce16bc2a4010e9ecdb84e6695724e31dce0e4814668606471cbb7a4a132001",
+      "cron": "*/2 * * * *",
+      "args": "--wazuh-path {wazuh_path}",
+      "description": "Groups new alerts and sends one readable message, using the mail settings already in ossec.conf"
+    }
+  ]
+}

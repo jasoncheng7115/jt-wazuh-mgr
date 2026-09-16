@@ -15,8 +15,8 @@
 ## 執行方式
 
 ```bash
-python3 -m unittest discover -s tests     # 180 項，完全離線
-python3 tools/preflight.py                # 20 項發版前機械檢查
+python3 -m unittest discover -s tests     # 186 項，完全離線
+python3 tools/preflight.py                # 21 項發版前機械檢查
 
 # 系統沒有 Flask 的主機
 python3 -m pip install --no-index --find-links=offline_packages \
@@ -84,6 +84,7 @@ PYTHONPATH=/tmp/vendor python3 -m unittest discover -s tests
 18. 每個已發佈的版本都有 tag；正在準備的那一版只會警告、不會失敗
 19. 每份文件的各語言版本都互相連結
 20. 發佈衛生——不含 `wazuh-rules/`、不含殘留封存檔、不含機密
+21. 在兩個套件裡各有一份的樣式，兩邊完全一致
 
 第 16 項之所以存在，是因為曾經發佈過一條 level 15 規則，
 它指向的清單裡只有一筆捏造的雜湊。這條規則不可能觸發，而且沒有任何機制說出來。

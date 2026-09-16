@@ -2,7 +2,7 @@
   "id": "jt-zimbra",
   "name": "Zimbra Detection Suite",
   "name_zh": "Zimbra 偵測套組",
-  "version": "2.5",
+  "version": "2.6",
   "summary": "FIM, web, authentication, audit, state, threat and SOAP detection for Zimbra mail servers.",
   "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、稽核、狀態、威脅與 SOAP 偵測。",
   "rule_id_range": "100800-100999",
@@ -12,7 +12,8 @@
     "zimbra-internal-networks 用於區分內外部來源，請依實際網段調整。",
     "agent 端 syscheck 需以 whodata=yes 監控 Zimbra 目錄才能取得寫入程序資訊。",
     "原廠基線未含 WEB-INF/lib/*.jar 與 lib/ext，這是 100803 / 100806 誤報的主要來源；重建基線可從源頭解決，優於用抑制規則掩蓋。",
-    "檔案完整性事件的雜湊比對由 jt-malware-hash 套件的規則 100141 提供，比對的是每晚重建的清單。本套件不再自帶雜湊清單：原本那份只有一個佔位符，讀取它的 level 15 規則從未觸發過。"
+    "檔案完整性事件的雜湊比對由 jt-malware-hash 套件的規則 100141 提供，比對的是每晚重建的清單。本套件不再自帶雜湊清單：原本那份只有一個佔位符，讀取它的 level 15 規則從未觸發過。",
+    "規則 100807 原本是一條涵蓋 jsp 到 elf 全部副檔名、而且不看檔案權限的規則。在一台開發主機上實測 15 天產生 6,133 筆 level 12，其中 5,538 筆是 .py，多數是沒有執行權限位元的原始碼，根本不可能被執行。現在依「這個副檔名要不要 x 位元」拆開：100807 留下由容器載入、不看權限的網頁應用產物，100809 收下腳本與二進位檔並要求執行權限位元。實測：0755 的 .py 命中 100809，同一個檔案 0644 時靜默。規則 100810 再排除建置與測試工具鏈的暫存目錄 —— 在一台建置主機上，那類目錄一天就貢獻了其中 399 筆。"
   ],
   "author": "Jason Tools",
   "license": "AGPL-3.0-or-later",
@@ -24,7 +25,7 @@
       "type": "rule",
       "name": "01-zimbra_fim_rules.xml",
       "dest": "etc/rules/01-zimbra_fim_rules.xml",
-      "sha256": "9f4cffd1df21798a9b2d7471d72f32d4602b91c638f890409efbec6313e215a0"
+      "sha256": "411c8e8e7f13f2ec430d3d91ca2c20f64523f973d1625435bff0a46440abecff"
     },
     {
       "type": "rule",
@@ -83,7 +84,8 @@
     "zimbra-internal-networks separates internal from external sources; adjust it to your own subnets.",
     "The agent's syscheck must monitor the Zimbra directories with whodata=yes for the writing process to be recorded.",
     "The stock baseline does not include WEB-INF/lib/*.jar or lib/ext. Those paths are the usual source of false positives on rules 100803 and 100806; regenerating the baseline fixes it at the source, which is better than suppressing the alerts.",
-    "Hash matching on file integrity events is provided by the jt-malware-hash pack, rule 100141, against a list rebuilt nightly. This pack no longer ships a hash list of its own: the one it had contained a single placeholder, so the level 15 rule reading it had never fired."
+    "Hash matching on file integrity events is provided by the jt-malware-hash pack, rule 100141, against a list rebuilt nightly. This pack no longer ships a hash list of its own: the one it had contained a single placeholder, so the level 15 rule reading it had never fired.",
+    "Rule 100807 was one rule covering every extension from jsp to elf, and it did not look at the file mode. Measured over fifteen days on a development host it produced 6,133 alerts at level 12, of which 5,538 were .py files, most of them source code with no execute bit that could never have been run. It is now split by whether the extension needs that bit: 100807 keeps the web application artefacts, which a container loads regardless of mode, and 100809 takes the scripts and binaries and requires the execute bit. Verified: a .py at 0755 matches 100809, the same file at 0644 is silent. Rule 100810 then excludes build and test toolchain scratch directories, which produced 399 of these alerts in a single day on a build host."
   ],
   "agent_group": {
     "name": "zimbra",

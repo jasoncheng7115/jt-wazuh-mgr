@@ -16,8 +16,8 @@ the screen. None of them substitutes for another.
 ## Running everything
 
 ```bash
-python3 -m unittest discover -s tests     # 180 tests, fully offline
-python3 tools/preflight.py                # 20 mechanical pre-release checks
+python3 -m unittest discover -s tests     # 186 tests, fully offline
+python3 tools/preflight.py                # 21 mechanical pre-release checks
 
 # on a host without a system Flask
 python3 -m pip install --no-index --find-links=offline_packages \
@@ -87,6 +87,7 @@ the part after the guard is verified by hand, on purpose, in Layer 5.
 18. Every released version has a tag; the one being prepared is a warning, not a failure
 19. Every translation of a document links to all its siblings
 20. Publishing hygiene — no `wazuh-rules/`, no stray archives, no secrets
+21. A pattern duplicated across two packs is identical in both
 
 Check 16 exists because a level 15 rule once shipped pointing at a list holding a
 single fabricated hash. It could never fire, and nothing said so.

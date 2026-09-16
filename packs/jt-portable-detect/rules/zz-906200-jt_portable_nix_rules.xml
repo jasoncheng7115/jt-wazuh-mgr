@@ -441,6 +441,52 @@
   </rule>
 
   <!--
+    Build and test toolchain scratch directories.
+
+    Added 2026-09-16 after measuring this pack on a shared build host. In a
+    single day rule 906202 and its site-level equivalent produced 399 alerts
+    at level 12 from that one machine, which was 91 per cent of every alert
+    at level 12 or above across the whole estate. The genuine detections that
+    day, a scanner probing a reverse proxy for exposed configuration files,
+    were 36 alerts sitting underneath them. Nobody reads the 36.
+
+    Every one of the 399 was a build script: mode 0755, owned by the build
+    user, written by a test run into a directory the test run had just made.
+
+    Be honest about what this rule can and cannot do. On that host there were
+    116 such directories holding 131,953 files, and their names were chosen
+    by whoever wrote each CI script. A list of prefixes will never keep up
+    with that, so this rule covers the toolchain conventions that are stable
+    across sites and no more. Two things do the rest, and neither is a rule:
+
+      * Site-specific paths belong in the 906225-906229 range below, in a
+        file of your own so a pack upgrade does not overwrite them.
+
+      * On a build host the better fix is upstream of the rules entirely.
+        An excluded path costs no alert, but it still costs a file integrity
+        entry, and the database has a global limit; on the host measured here
+        the scratch directories held more files than the entire rest of the
+        system. A syscheck ignore on the agent solves a resource problem that
+        no exclusion rule can reach. See the notes in agent.conf.
+
+    The trade-off is the same one rules 906224 and 906232 make: a dropper
+    written into a directory named like a Go build cache lands in this
+    exclusion. That is accepted because 399 false level 12 alerts in a day
+    teach people that level 12 means nothing, which loses more than this gap
+    does. Execution is still caught by 906211, which auditd backs.
+
+    This pattern is duplicated as rule 100810 in the jt-zimbra pack, which
+    carries its own temporary-directory rules. The two packs install
+    independently, so neither can rely on the other's rule being present;
+    preflight's build scratch pattern check fails if the copies drift apart.
+  -->
+  <rule id="906234" level="0">
+    <if_sid>906201,906202,906204</if_sid>
+    <field name="file" type="pcre2">^/(tmp|var/tmp)/(pytest-of-|pytest-|tox-|pip-|virtualenv-|go-build|cargo-|rustc|npm-|yarn--|node-compile-cache|v8-compile-cache|bazel|gradle|maven-|mvn|sbt_|ccache|cmake-|meson-|conan|jenkins|gitlab-runner|actions-runner|buildkite|cabal-|stack-)</field>
+    <description>Build or test toolchain scratch directory (normal)</description>
+  </rule>
+
+  <!--
     906225-906229 are left for site-specific exclusions. For example:
 
     <rule id="906225" level="0">

@@ -1,0 +1,29 @@
+<!--
+  jt-alert-digest — readable alert mail
+  File:    zz-131100-jt_alert_digest_rules.xml
+  Range:   131100-131199
+  Licence: AGPL-3.0-or-later    Jason Tools Co., Ltd.
+
+  這個套件的主體是一支排程腳本，不是規則。這裡只有一條規則，
+  而它守的是那支腳本本身。
+
+  理由是這個套件解決的問題有一個令人不快的性質：**通知管道壞掉的時候，
+  它沒辦法用通知告訴你它壞了**。摘要信寄不出去，就沒有信可以說「寄不出去」。
+  cron 的記錄檔會寫下原因，但記錄檔沒人看 —— 這正是這個套件存在的理由。
+
+  所以腳本把失敗直接寫進 manager 自己的事件佇列
+  （`queue/sockets/queue`，就是整合腳本注入事件的同一條路），
+  由下面這條規則轉成主控台上的一般告警。這樣「通知系統本身故障」
+  就會出現在使用者本來就會看的地方，而不是只留在一個沒人開的檔案裡。
+-->
+
+<group name="jt_alert_digest,">
+
+  <rule id="131100" level="10">
+    <location>jt-alert-digest</location>
+    <match>ERROR</match>
+    <description>Alert digest could not be delivered, so alert mail is reaching nobody</description>
+    <group>jt_alert_digest_failure,</group>
+  </rule>
+
+</group>

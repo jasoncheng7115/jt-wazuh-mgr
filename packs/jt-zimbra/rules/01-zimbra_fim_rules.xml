@@ -67,15 +67,65 @@
     <group>webshell,backdoor,</group>
   </rule>
 
-  <!-- 暫存目錄出現可執行檔案（攻擊者工具落地） -->
+  <!--
+    暫存目錄出現攻擊者工具，依「需不需要執行權限」拆成兩條。
+
+    2026-09-09 實測：原本這是一條規則，涵蓋 jsp 到 elf 全部副檔名且不檢查權限。
+    在一台開發主機上 15 天產生 6,133 筆 level 12，其中 5,538 筆是 .py ——
+    多數是原始碼，根本沒有執行權限位元，永遠不可能被直接執行。
+
+    判別式是「這個副檔名要不要 x 位元才跑得起來」：
+      100807  jsp / jspx / class / jar / war —— 由容器載入，不看檔案權限。
+      100809  sh / py / pl / elf / bin       —— 要有 x 位元才是可執行的東西。
+    實測：0755 的 .py 命中 100809，0644 的同名檔案靜默。
+
+    ★ 這兩條規則雖然放在 Zimbra 的規則檔裡，**卻沒有任何 Zimbra 範圍限制**，
+      對所有 agent 都會生效。而且因為 `01-` 比 `zz-` 早載入，
+      它們會蓋掉 jt-portable-detect 的 906202（同一個事件只會命中先載入的那條）。
+      兩個套件都裝的話，暫存目錄的告警是由這裡發出的，不是 906202。
+  -->
   <rule id="100807" level="12">
     <if_sid>550,553,554</if_sid>
-    <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm)/.*\.(jsp|jspx|class|jar|war|sh|py|pl|elf|bin)$</field>
-    <description>[HIGH] Executable in a temporary directory, possible attacker tooling: $(file) process: $(process_name)</description>
+    <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm)/.*\.(jsp|jspx|class|jar|war)$</field>
+    <description>[HIGH] Web application artefact in a temporary directory, possible attacker tooling: $(file) process: $(process_name)</description>
     <mitre>
       <id>T1105</id>
     </mitre>
     <group>attack_tool,</group>
+  </rule>
+
+  <rule id="100809" level="12">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm)/.*\.(sh|py|pl|elf|bin)$</field>
+    <field name="perm" type="pcre2">x</field>
+    <description>[HIGH] Executable script or binary in a temporary directory, possible attacker tooling: $(file) process: $(process_name)</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+    <group>attack_tool,</group>
+  </rule>
+
+  <!--
+    建置與測試工具鏈的暫存目錄。
+
+    2026-09-16 實測：一台共用建置主機一天之內讓 100809 產生 399 筆 level 12，
+    佔全站 level 12 以上告警的 91%，把同一天真正的偵測（掃描器探測反向代理
+    的組態檔）整個蓋掉。那 399 筆全部是建置腳本：0755、屬於建置帳號、
+    由剛剛才建立那個目錄的測試流程寫進去。
+
+    這條規則涵蓋的是跨站台穩定的工具鏈慣例，不是站台自己的目錄名 ——
+    那台主機上有 116 個這種目錄，名字由寫 CI 腳本的人各自決定，
+    用前綴清單永遠追不完。站台自己的路徑請另外寫一條規則，
+    放在自己的檔案裡，這樣套件升級才不會蓋掉。
+
+    ★ 這個樣式與 jt-portable-detect 的規則 906234 是同一份，必須同步維護。
+      兩個套件可以各自獨立安裝，所以無法共用一條規則；
+      preflight 的 build scratch pattern 檢查會擋住兩邊走樣。
+  -->
+  <rule id="100810" level="0">
+    <if_sid>100807,100809</if_sid>
+    <field name="file" type="pcre2">^/(tmp|var/tmp)/(pytest-of-|pytest-|tox-|pip-|virtualenv-|go-build|cargo-|rustc|npm-|yarn--|node-compile-cache|v8-compile-cache|bazel|gradle|maven-|mvn|sbt_|ccache|cmake-|meson-|conan|jenkins|gitlab-runner|actions-runner|buildkite|cabal-|stack-)</field>
+    <description>Build or test toolchain scratch directory (normal)</description>
   </rule>
 
   <!-- 原廠檔案「內容」遭竄改（不是新增，是既有檔案被改寫） -->

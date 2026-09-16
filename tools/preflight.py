@@ -303,6 +303,44 @@ def check_packs():
         check_pack_extras(pack, pdir, m)
 
 
+# A pattern two packs must agree on. Packs install independently, so neither
+# can rely on the other's rules being present, and the duplication is the price
+# of that. What is not acceptable is the duplication drifting apart silently,
+# which is what this check exists to prevent.
+SHARED_PATTERNS = (
+    ('build scratch directories',
+     (('jt-portable-detect', 'zz-906200-jt_portable_nix_rules.xml', '906234'),
+      ('jt-zimbra', '01-zimbra_fim_rules.xml', '100810'))),
+)
+
+
+def check_shared_patterns():
+    """Rules duplicated across packs must stay identical."""
+    for label, copies in SHARED_PATTERNS:
+        seen = {}
+        for pack, filename, rule_id in copies:
+            path = os.path.join(ROOT, 'packs', pack, 'rules', filename)
+            if not os.path.isfile(path):
+                fail('packs', '%s: %s is missing, so %s cannot be compared'
+                     % (pack, filename, label))
+                continue
+            block = re.search(r'<rule id="%s".*?</rule>' % rule_id, read(path), re.S)
+            if not block:
+                fail('packs', '%s: rule %s is gone, but %s still expects it here'
+                     % (pack, rule_id, label))
+                continue
+            field = re.search(r'<field name="file" type="pcre2">(.*?)</field>',
+                              block.group(0), re.S)
+            if not field:
+                fail('packs', '%s: rule %s has no file pattern to compare'
+                     % (pack, rule_id))
+                continue
+            seen['%s/%s' % (pack, rule_id)] = field.group(1).strip()
+        if len(set(seen.values())) > 1:
+            fail('packs', '%s: the copies have drifted apart: %s'
+                 % (label, ', '.join(sorted(seen))))
+
+
 def check_pack_extras(pack, pdir, m):
     """Scripts and agent groups a pack installs are checked like its files.
 
@@ -798,6 +836,7 @@ def main():
             ('documented counts match reality', check_documented_counts),
             ('every released version is tagged', lambda: check_release_tags(version)),
             ('translations link to each other', check_translations_link_each_other),
+            ('patterns duplicated across packs agree', check_shared_patterns),
     ):
         before = len(FAILURES), len(WARNINGS)
         fn()

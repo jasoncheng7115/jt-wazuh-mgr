@@ -1762,3 +1762,83 @@ class TestPreflightPrivacyPattern(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class TestAlertDigest(unittest.TestCase):
+    """The jt-alert-digest script, which is shipped but is not part of the app.
+
+    Three of its properties are the kind that break silently. A subject line
+    that acquires one non-ASCII character becomes a MIME encoded word, which
+    some clients show to the reader verbatim; that is what the format was
+    replacing. A group heading built from the first alert's description puts
+    one alert's address into a heading covering a dozen. And an alert field is
+    attacker-influenced text going into HTML.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            'packs', 'jt-alert-digest', 'scripts', 'jt-alert-digest.py')
+        if not os.path.isfile(path):
+            raise unittest.SkipTest('jt-alert-digest is not present')
+        spec = importlib.util.spec_from_file_location('jt_alert_digest', path)
+        cls.mod = importlib.util.module_from_spec(spec)
+        # Importing from inside packs/ would leave a __pycache__ directory
+        # there, which packs/INDEX then disagrees with. The pack ships source,
+        # so nothing is gained by caching the bytecode.
+        previous = sys.dont_write_bytecode
+        sys.dont_write_bytecode = True
+        try:
+            spec.loader.exec_module(cls.mod)
+        finally:
+            sys.dont_write_bytecode = previous
+
+    def _group(self, level, descriptions, count=1):
+        return {'level': level, 'descriptions': list(descriptions), 'mitre': [],
+                'count': count, 'first': '2026-01-02T03:04:05.000+0000',
+                'last': '2026-01-02T03:04:09.000+0000', 'samples': []}
+
+    def test_subject_is_plain_ascii(self):
+        groups = {('100973', 'mail2'): self._group(
+            14, ['[HIGH] Account read an extreme volume — café 中文'])}
+        line = self.mod.subject(groups, 1)
+        line.encode('ascii')          # raises if anything non-ASCII survived
+
+    def test_subject_drops_the_severity_marker_the_badge_already_carries(self):
+        groups = {('1', 'h'): self._group(12, ['[HIGH] Something happened'])}
+        self.assertNotIn('[HIGH]', self.mod.subject(groups, 1))
+
+    def test_group_heading_keeps_only_what_the_whole_group_shares(self):
+        # Wazuh interpolates $(field), so every alert's description differs.
+        prefix = self.mod.shared_prefix([
+            '[HIGH] Malicious remote address: 10.0.0.1',
+            '[HIGH] Malicious remote address: 10.0.0.2',
+        ])
+        self.assertIn('Malicious remote address', prefix)
+        self.assertNotIn('10.0.0.1', prefix)
+        self.assertNotIn('10.0.0.2', prefix)
+
+    def test_a_single_alert_keeps_its_whole_description(self):
+        self.assertEqual(self.mod.shared_prefix(['[HIGH] One specific thing']),
+                         'One specific thing')
+
+    def test_alert_content_is_escaped_into_the_html(self):
+        alert = {'rule': {'id': '1', 'level': 12, 'description': 'x'},
+                 'agent': {'name': 'h'}, 'timestamp': '2026-01-02T03:04:05.000+0000',
+                 'full_log': '<script>alert(1)</script>'}
+        group = self._group(12, ['x'])
+        group['samples'] = [alert]
+        html = self.mod.render_html({('1', 'h'): group}, 1, 12, None)
+        self.assertNotIn('<script>', html)
+        self.assertIn('&lt;script&gt;', html)
+
+    def test_plain_text_alternative_does_not_pad_into_columns(self):
+        # Column alignment is what every mail client's rewrapping destroys.
+        alert = {'rule': {'id': '1', 'level': 12, 'description': 'x'},
+                 'agent': {'name': 'h'}, 'timestamp': '2026-01-02T03:04:05.000+0000',
+                 'data': {'srcip': '10.0.0.1'}}
+        group = self._group(12, ['x'])
+        group['samples'] = [alert]
+        text = self.mod.render_text({('1', 'h'): group}, 1, 12, None)
+        self.assertIn('Source: 10.0.0.1', text)

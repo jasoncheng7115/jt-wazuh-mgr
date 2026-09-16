@@ -16,8 +16,8 @@
 ## すべてを実行する
 
 ```bash
-python3 -m unittest discover -s tests     # 180 件のテスト、完全にオフライン
-python3 tools/preflight.py                # 20 項目の機械的なリリース前チェック
+python3 -m unittest discover -s tests     # 186 件のテスト、完全にオフライン
+python3 tools/preflight.py                # 21 項目の機械的なリリース前チェック
 
 # システムに Flask が入っていないホストで
 python3 -m pip install --no-index --find-links=offline_packages \
@@ -87,6 +87,7 @@ PYTHONPATH=/tmp/vendor python3 -m unittest discover -s tests
 18. リリース済みの全バージョンにタグがあること。準備中のバージョンは失敗ではなく警告
 19. 各文書の全言語版が互いにリンクしていること
 20. 公開時の衛生 —— `wazuh-rules/` を含めない、余計な書庫を置かない、秘密情報を含めない
+21. 2 つのパックに重複して存在するパターンが、両方で同一であること
 
 16 番目のチェックが存在するのは、かつて捏造されたハッシュを 1 件だけ持つリストを
 参照するレベル 15 のルールを公開してしまったからです。そのルールは決して発火せず、

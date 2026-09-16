@@ -4,6 +4,64 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.9.0 (2026-09-16)
+
+- **New pack: jt-alert-digest.** The mail channel on a Wazuh manager usually
+  already exists and already works. What stops it being useful is the format:
+  `wazuh-maild` sends the raw `full_log` followed by every decoded field printed
+  a second time, and concatenates an hour's alerts into one message. Measured on
+  a live manager, one message ran to seventeen notifications and several thousand
+  lines, and the single genuine detection in it sat underneath fourteen alerts
+  from a build host. The pack groups alerts that share a rule and an agent,
+  prints the few fields that identify what happened, and sends one message per
+  run; the same seventeen notifications become about forty lines.
+
+- It has no configuration of its own. `smtp_server`, `email_from`, `email_to`
+  and `email_alert_level` are read from the manager's `ossec.conf`, where they
+  are already set for `wazuh-maild`, so the two cannot drift apart.
+
+- The message is HTML with a plain text alternative. That is not decoration: the
+  first version aligned its fields with spaces, every mail client rewrapped the
+  long lines and destroyed the alignment, and it was no easier to read than what
+  it replaced. The subject line is held to plain ASCII for the same class of
+  reason — one non-ASCII character turns it into a MIME encoded word, which some
+  clients show to the reader verbatim.
+
+- Rule 131100 exists because a notifier cannot announce its own failure by mail.
+  Failures are written into the manager's event queue instead, which puts them in
+  the console where someone is already looking.
+
+- **jt-zimbra 2.6 carries a fix that has been live on our own manager since
+  v1.7.2 but was never brought back into the pack.** Rule 100807 was one rule
+  covering every extension from `jsp` to `elf`, and it did not look at the file
+  mode; over fifteen days on a development host it produced 6,133 alerts at level
+  12, of which 5,538 were `.py` files, most of them source code with no execute
+  bit that could never have been run. It is now split by whether the extension
+  needs that bit: 100807 keeps the web application artefacts, which a container
+  loads regardless of mode, and 100809 takes the scripts and binaries and
+  requires the execute bit. Verified: a `.py` at 0755 matches 100809, the same
+  file at 0644 is silent.
+
+- **Build and test toolchain scratch directories are excluded**, by rule 906234
+  in jt-portable-detect and rule 100810 in jt-zimbra. Measured on a shared build
+  host, one day produced 399 alerts at level 12 from that machine alone, 91 per
+  cent of every alert at level 12 or above across the estate, burying the 36
+  genuine detections — a scanner probing a reverse proxy for exposed
+  configuration files — underneath them.
+
+- Be clear about what that rule cannot do. That host had 116 such directories
+  holding 131,953 files, with names chosen by whoever wrote each CI script, so a
+  list of prefixes will never keep up. The rule covers the toolchain conventions
+  that are stable across sites; site paths belong in the reserved 906225-906229
+  range. On a build host the better fix is upstream of the rules entirely: an
+  excluded path costs no alert but still costs a file integrity entry, and that
+  database has a global limit.
+
+- **A twenty-first pre-release check.** The build scratch pattern is duplicated
+  in two packs, because packs install independently and neither can rely on the
+  other's rules being present. The duplication is acceptable; the duplication
+  drifting apart silently is not, so preflight now fails if the copies differ.
+
 ## v1.8.0 (2026-09-14)
 
 - **Japanese, throughout.** The interface, both READMEs' worth of documentation,
