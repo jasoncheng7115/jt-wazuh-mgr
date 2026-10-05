@@ -711,6 +711,10 @@ COUNTED = (
 
 COUNT_DOCS = ('CLAUDE.md', 'github/TEST-PLAN.md', 'github/TEST-PLAN-zh-TW.md')
 
+# Text just before a number that makes it an item number rather than a total:
+# "第 1、2、12 項", "item 12", "#12". The list may run a few numbers long.
+ORDINAL_BEFORE = re.compile(r'(?:第|#|\bitems?|\bno\.)[\s\d、,，]*$', re.I)
+
 
 def check_documented_counts():
     """Counts quoted in the documentation must match what actually exists.
@@ -752,6 +756,9 @@ def check_documented_counts():
                 if not any(w in line for w in words):
                     continue
                 if label != 'e2e journeys' and ('journey' in line or '旅程' in line):
+                    continue
+                # "第 1、2、12 項" / "item 12" names a check, it does not count them.
+                if ORDINAL_BEFORE.search(body[max(0, m.start() - 24):m.start()]):
                     continue
                 if int(m.group(1)) != actual:
                     fail('counts', '%s claims %s %s on line %r, but there are %d'

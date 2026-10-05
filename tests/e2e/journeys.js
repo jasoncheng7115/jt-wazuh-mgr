@@ -401,28 +401,101 @@ async function run() {
     const idCells = () => page.$$eval('#agents-panel tbody tr', rows =>
       rows.slice(0, 4).map(r => [...r.querySelectorAll('td')].slice(2, 5).map(c => c.textContent.trim())));
     const before = await idCells();
-    const switched = await page.evaluate(() => {
-      const b = [...document.querySelectorAll('button, a, select')]
-        .find(x => /中文|zh-TW|語言|Language/i.test(x.textContent || x.value || ''));
-      if (b && b.tagName === 'SELECT') {
-        b.value = 'zh-TW'; b.dispatchEvent(new Event('change', { bubbles: true })); return true;
-      }
-      if (b) { b.click(); return true; }
-      if (window.setLanguage) { setLanguage('zh-TW'); return true; }
-      return false;
+    // The language control is a menu: open it, then pick the language by its
+    // own name. Choosing one reloads the page.
+    const opened = await page.evaluate(() => {
+      const b = document.getElementById('langToggle');
+      if (!b) return false;
+      b.click();
+      return true;
     });
-    check('a language control exists', switched);
+    check('a language control exists', opened);
+    let switched = false;
+    if (opened) {
+      switched = await page.evaluate(() => {
+        const item = document.querySelector('.jtwz-lang-menu [lang="zh-TW"]');
+        if (!item) return false;
+        item.click();
+        return true;
+      });
+      check('the menu offers zh-TW by name', switched);
+    }
     if (switched) {
-      await wait(1800);
+      await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
+      await wait(2200);
       const html = await page.content();
       check('Chinese text appears', /[一-鿿]/.test(html));
       const after = await idCells();
       check('agent names and addresses are not translated',
         JSON.stringify(before) === JSON.stringify(after),
         JSON.stringify({ before, after }).slice(0, 200));
-      await page.evaluate(() => { if (window.setLanguage) setLanguage('en'); });
-      await wait(1200);
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {}),
+        page.evaluate(() => window.jtwzSetLang && jtwzSetLang('en')),
+      ]);
+      await wait(2200);
     }
+  });
+
+  await journey('J20 the language button opens a menu instead of cycling', async () => {
+    await tab('agents', 1200);
+    await page.click('#langToggle');
+    await wait(300);
+    const menu = await page.evaluate(() => {
+      const m = document.querySelector('.jtwz-lang-menu');
+      if (!m) return null;
+      return { hidden: m.hidden, items: [...m.querySelectorAll('button')].map(b => b.textContent.trim()),
+               checked: (m.querySelector('[aria-checked="true"]') || {}).textContent };
+    });
+    check('clicking opens a menu', menu && !menu.hidden, JSON.stringify(menu));
+    check('every language is listed under its own name',
+      menu && ['English', '繁體中文', '日本語'].every(n => menu.items.some(i => i.includes(n))),
+      JSON.stringify(menu && menu.items));
+    check('the current language is marked', menu && /English/.test(menu.checked || ''));
+    check('the page did not switch language on the first click',
+      await page.evaluate(() => localStorage.getItem('jtwz_lang') !== 'zh-TW'));
+    await page.keyboard.press('Escape');
+    await wait(200);
+    check('Escape closes the menu', await page.evaluate(() => document.querySelector('.jtwz-lang-menu').hidden));
+    await page.click('#langToggle');
+    await wait(200);
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {}),
+      page.click('.jtwz-lang-menu [lang="ja"]'),
+    ]);
+    await wait(2200);
+    check('choosing 日本語 shows Japanese', /[぀-ゟ゠-ヿ]/.test(await page.content()));
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {}),
+      page.evaluate(() => window.jtwzSetLang && jtwzSetLang('en')),
+    ]);
+    await wait(2200);
+  });
+
+  await journey('J21 a pack shows its setup guide and the agent files it needs', async () => {
+    await tab('packs', 1800);
+    const hasButton = await page.evaluate(() => [...document.querySelectorAll('#packs-panel button')]
+      .some(b => /Setup guide/.test(b.textContent)));
+    check('packs with agent-side steps offer a setup guide', hasButton);
+    await page.evaluate(() => showPackSetup('jt-portable-detect'));
+    await wait(1800);
+    const body = await page.$eval('#modalBody', e => e.innerText);
+    check('the guide lists numbered steps', /Sysmon/.test(body) && /auditd/.test(body), body.slice(0, 160));
+    check('required and optional steps are marked', /Required/.test(body) && /Optional/.test(body));
+    check('commands are shown as copyable code', (await count('#modalBody .pack-code pre')) >= 3);
+    const fontPx = await page.$eval('#modalBody .pack-detail', e => parseFloat(getComputedStyle(e).fontSize));
+    check('the guide is set at a readable size', fontPx >= 14, 'font-size ' + fontPx);
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll('#modalBody button')].find(x => /View file/.test(x.textContent)
+        && x.closest('.pack-step').textContent.includes('sysmon-jt-portable.xml'));
+      if (b) b.click();
+    });
+    await wait(1500);
+    const shown = await page.$eval('#modalBody', e => e.innerText);
+    check('the Sysmon fragment can be read in place', /FileExecutableDetected/.test(shown));
+    const dl = await page.evaluate(() => (document.querySelector('#modalBody a[href*="download=1"]') || {}).href || '');
+    check('agent files can be downloaded', /\/api\/packs\/jt-portable-detect\/file\?download=1/.test(dl), dl);
+    await closeModal();
   });
 
   await journey('J16 security headers are present on a real response', async () => {

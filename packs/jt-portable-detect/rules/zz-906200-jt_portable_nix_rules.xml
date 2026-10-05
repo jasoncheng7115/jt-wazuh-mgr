@@ -42,9 +42,10 @@
 
   Load order
   ──────────────────────────────────────────────────────────────────
-  Rule files load in filename order, and among sibling rules the last one
-  loaded wins. The zz- prefix keeps these from being shadowed by a customer
-  file that also hangs off 550/553/554.
+  Rule files load in filename order. Among sibling rules the first one that
+  matches wins and the rest are not tried, and in practice that order cannot
+  be relied on — so sibling rules here are written to be mutually exclusive,
+  and overrides are children of what they override, never siblings.
 
   Requires
   ──────────────────────────────────────────────────────────────────
@@ -52,33 +53,56 @@
   Agent-side collection: see the pack's agent/agent.conf, installed as the
   portable-detect agent group. Rules 906210 and 906211 additionally need
   auditd with agent/jt-portable.rules loaded.
+
+  ★ Every rule here hangs directly off 550/553/554 and carries its own path
+    condition. There is deliberately no shared "base" rule, and there must
+    never be one again — see the note where 906200 used to be.
 -->
 
 <group name="linux,macos,jt_portable,">
 
-  <!-- Base rule for a file event in an area a user can write to.
-       Level 1, not 0, deliberately: level 0 ends rule evaluation, which
-       would silence every rule below this one as well as unrelated
-       built-in detections. Measured on this project. -->
-  <rule id="906200" level="1">
-    <if_sid>550,553,554</if_sid>
-    <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm|home/[^/]+|root|Users/[^/]+)/</field>
-    <options>no_log</options>
-    <description>File event in a user-writable area on Linux or macOS (base rule)</description>
-  </rule>
+  <!--
+    906200 is retired. Do not reuse the ID, and do not reintroduce a rule of
+    this shape.
+
+    It was a level 1, no_log child of 550/553/554 matching any path under
+    /tmp, /var/tmp, /dev/shm, /home/<user>, /root and /Users/<user>, meant as
+    a shared parent for the rules below. Its comment claimed that level 1
+    rather than 0 kept it from silencing built-in detections. That is true for
+    if_matched_sid correlation and false for alerting: Wazuh reports the
+    deepest rule that matched, so whenever none of this rule's children
+    matched, the event ended at level 1 — below log_alert_level — and no alert
+    was written at all.
+
+    Measured on 2026-09-28, thirty days after it shipped: no built-in 550/553/
+    554 alert had been written for any of those paths on any agent. A change
+    to /root/.ssh/known_hosts on a production host on 2026-09-05 is in the
+    agent's FIM database and in no alert. Only authorized_keys survived, and
+    only because another pack's rule for it happened to be evaluated first.
+    It also competed with that pack's /tmp webshell rules (jt-zimbra
+    100807/100809) for the same events.
+
+    A broad catch-all under a built-in parent cannot be made safe by choosing
+    its level. Noise that comes from monitoring a path belongs on the agent,
+    as a syscheck <ignore>; see agent/agent.conf.
+  -->
 
 
-  <!-- 1. An existing file was made executable.
+  <!-- 1. An existing file in a home directory was made executable.
        The strongest of the file-based signals: software installed from a
        package arrives with its mode already correct and never needs this.
+
+       Home directories only: a mode change under /tmp is rule 906202, and
+       keeping the two paths apart keeps the siblings from competing.
 
        changed_fields is the rule-side name; the JSON alert calls it
        changed_attributes. Writing the JSON name here fails silently. -->
   <rule id="906201" level="8">
-    <if_sid>906200</if_sid>
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/(home/[^/]+|root|Users/[^/]+)/</field>
     <field name="changed_fields" type="pcre2">permission</field>
     <field name="perm" type="pcre2">x</field>
-    <description>[WARN] A file in a user area was made executable - $(file) perm: $(perm) owner: $(uname)</description>
+    <description>[WARN] A file in a home directory was made executable - $(file) perm: $(perm) owner: $(uname)</description>
     <mitre>
       <id>T1222.002</id>
       <id>T1204.002</id>
@@ -132,11 +156,30 @@
 
 
   <!-- 3. File formats that mean "portable" on these platforms.
-       AppImage is the Linux equivalent of a Windows portable build. -->
+       AppImage is the Linux equivalent of a Windows portable build.
+
+       ★ 2026-09-28: was 3,006 alerts in thirty days on one host, every one of
+         them wrong. It inherited 553 (deleted) from the old base rule, did not
+         ask for the execute bit, and covered /tmp, where a test suite writes
+         speech-audio fixtures named *.bin at mode 0644. Now: a file that was
+         added, in a home directory, with the execute bit. /tmp is 906202's. -->
   <rule id="906204" level="8">
-    <if_sid>906200</if_sid>
-    <field name="file" type="pcre2">(?i)\.(AppImage|run|bin|jar)$</field>
-    <description>[WARN] Portable-format file appeared in a user directory - $(file)</description>
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">(?i)^/(home/[^/]+|root|Users/[^/]+)/.*\.(AppImage|run|bin)$</field>
+    <field name="perm" type="pcre2">x</field>
+    <description>[WARN] Executable portable-format file appeared in a home directory - $(file) perm: $(perm) owner: $(uname)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_file,</group>
+  </rule>
+
+  <!-- A .jar runs through `java -jar` and needs no execute bit, so it gets its
+       own rule, a lower level, and only the places people download to. -->
+  <rule id="906207" level="5">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">(?i)^/(home/[^/]+|root|Users/[^/]+)/(Downloads|Desktop)/.*\.jar$</field>
+    <description>Java archive appeared in a download directory - $(file) owner: $(uname)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
@@ -145,7 +188,7 @@
 
   <!-- macOS. A .app is a directory, so FIM reports the binary inside it. -->
   <rule id="906205" level="6">
-    <if_sid>906200</if_sid>
+    <if_sid>554</if_sid>
     <field name="file" type="pcre2">(?i)^/Users/[^/]+/(Downloads|Desktop|Documents)/.*\.(dmg|pkg)$</field>
     <description>Disk image appeared in a macOS user directory - $(file)</description>
     <mitre>
@@ -155,7 +198,7 @@
   </rule>
 
   <rule id="906206" level="8">
-    <if_sid>906200</if_sid>
+    <if_sid>550,554</if_sid>
     <field name="file" type="pcre2">(?i)^/Users/[^/]+/(Downloads|Desktop|Documents|Public)/.*\.app/Contents/MacOS/</field>
     <description>[WARN] Application bundle appeared in a macOS user directory - $(file)</description>
     <mitre>
@@ -265,9 +308,17 @@
 
     one line per interpreter you care about — filtering by interpreter
     keeps the volume far below auditing every execve on the host.
+
+    ★ 2026-09-28: kept apart from 906211. Running /tmp/tool.sh directly (with a
+      shebang) trips the /tmp watch, key jt_portable_tmpexec, and the kernel
+      also rewrites argv to "/bin/sh /tmp/tool.sh" — so both rules matched the
+      same record and whichever Wazuh tried first won. If this one won, a
+      level 12 became a 10 and skipped 906211's exclusions. A positive
+      lookahead rather than negate="yes", which is unreliable (see CLAUDE.md).
   -->
   <rule id="906213" level="10">
     <if_sid>80700</if_sid>
+    <field name="audit.key" type="pcre2">^(?!jt_portable_tmpexec$).*</field>
     <field name="audit.execve.a0" type="pcre2">^(?:/\S*/)?((ba|da|k|z|tc|c)?sh|python[0-9.]*|perl|ruby|php|node|lua[0-9.]*)$</field>
     <field name="audit.execve.a1" type="pcre2">^/(tmp|var/tmp|dev/shm)/</field>
     <description>[WARN] Script executed through an interpreter from a temporary or memory filesystem - $(audit.execve.a1) by $(audit.execve.a0)</description>
@@ -303,14 +354,15 @@
 
 
   <!--
-    Exclusions. These must come after the rules they override, because
-    Wazuh takes the last sibling that matches.
+    Exclusions. Each is a child of the rules it overrides, so where it sits
+    in the file does not matter. (An earlier version of this comment said
+    Wazuh takes the last matching sibling; it takes the first.)
   -->
 
   <!-- Package and configuration managers doing their normal work. -->
   <rule id="906220" level="0">
     <if_sid>906201,906202,906204</if_sid>
-    <field name="file" type="pcre2">^/(tmp|var/tmp)/(apt|dpkg|rpm|yum|dnf|snapd?|flatpak|ansible|chef|puppet|salt)[-_.]</field>
+    <field name="file" type="pcre2">^/(tmp|var/tmp)/(apt|dpkg|rpm|yum|dnf|snapd?|flatpak|ansible|chef|puppet|salt|mkinitramfs)[-_.]</field>
     <description>Temporary file from a package or configuration manager (normal)</description>
   </rule>
 
@@ -371,10 +423,17 @@
     Note this deliberately does not exclude /dev/shm: no configuration
     manager stages work there, so an execution from a memory filesystem
     stays at level 12 whatever the path looks like.
+
+    ★ 2026-09-28: these two read audit.file.name, not audit.exe. Rule 906210's
+      own note explains the difference — for a script, exe is the interpreter
+      (/usr/bin/dash) and the staged path is in file.name — so as written they
+      could never match a scriptlet, which is most of what they exist for.
+      Without a PATH record file.name is absent and they do not match, which
+      fails toward alerting rather than toward silence.
   -->
   <rule id="906230" level="0">
     <if_sid>906210,906211</if_sid>
-    <field name="audit.exe" type="pcre2">^/(tmp|var/tmp|home/[^/]+/\.ansible/tmp|root/\.ansible/tmp)/(ansible|salt|chef|puppet|rpm-tmp|dnf|yum|pip|cloud-init)[-_.a-z0-9]*/</field>
+    <field name="audit.file.name" type="pcre2">^/(tmp|var/tmp|home/[^/]+/\.ansible/tmp|root/\.ansible/tmp)/(ansible|salt|chef|puppet|rpm-tmp|dnf|yum|pip|cloud-init)[-_.a-z0-9]*/</field>
     <description>Execution from a configuration manager's own staging directory (normal)</description>
   </rule>
 
@@ -386,8 +445,49 @@
   -->
   <rule id="906231" level="0">
     <if_sid>906210,906211</if_sid>
-    <field name="audit.exe" type="pcre2">^/(tmp|var/tmp)/(rpm-tmp\.|dpkg-|apt-|deb-|tmp\.[A-Za-z0-9]{6,}$)</field>
+    <field name="audit.file.name" type="pcre2">^/(tmp|var/tmp)/(rpm-tmp\.|dpkg-|apt-|deb-|tmp\.[A-Za-z0-9]{6,}$)</field>
     <description>Package manager post-install scriptlet (normal)</description>
+  </rule>
+
+  <!--
+    Debconf's package configuration scripts. dpkg-preconfigure, run by apt and
+    by unattended-upgrades, writes /tmp/<package>.config.XXXXXX and executes it.
+    Measured: 7 of the 9 level 12 alerts rule 906211 raised in thirty days.
+
+    Level 3, not 0: the name is easy to imitate, so the event is kept as a
+    record rather than dropped.
+  -->
+  <rule id="906236" level="3">
+    <if_sid>906211</if_sid>
+    <field name="audit.file.name" type="pcre2">^/tmp/[a-z0-9][a-z0-9.+-]*\.config\.[A-Za-z0-9]{6}$</field>
+    <description>Debconf package configuration script run from /tmp by dpkg-preconfigure (normal) - $(audit.file.name)</description>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+  <!--
+    Developer tools that install and update themselves into a versioned
+    directory under the user's home and then run from there. Measured: all 971
+    level 10 alerts rule 906210 raised in thirty days on one host, and through
+    them all 181 of 906212's level 12 correlations, were these:
+
+      ~/.cache/ms-playwright/<browser>-<build>/...   Playwright's browsers
+      ~/.cache/puppeteer/...                          Puppeteer's browsers
+      ~/.local/share/claude/versions/<version>        Claude Code, which also
+                                                      re-executes itself as
+                                                      rg/ugrep via /proc/self/exe
+
+    audit.exe is the resolved path, so the /proc/self/exe re-executions match
+    here too. Level 3 rather than 0 for the same reason as 906236: a path is
+    something an attacker can copy, so the record is kept. 906212 correlates
+    on 906210 as the final rule, so an event that ends here is not counted
+    toward it; verify that on a live host after deploying (the 181 should
+    stop), since the claim is about analysisd internals.
+  -->
+  <rule id="906235" level="3">
+    <if_sid>906210</if_sid>
+    <field name="audit.exe" type="pcre2">^/(root|home/[^/]+)/(\.cache/(ms-playwright|puppeteer)/|\.local/share/claude/versions/)</field>
+    <description>Browser automation runtime or self-updating CLI running from its own versioned install directory - $(audit.exe)</description>
+    <group>jt_portable_exec,</group>
   </rule>
 
   <!--

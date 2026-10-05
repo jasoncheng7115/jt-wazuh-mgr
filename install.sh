@@ -158,10 +158,43 @@ echo "  - uninstall.sh"
 chmod +x "$INSTALL_DIR/wazuh_agent_mgr.py"
 chmod +x "$INSTALL_DIR/create_api_user.py"
 
-# Install Python dependencies
+# Install Python dependencies into $INSTALL_DIR/vendor, never the system Python.
+#  - Ubuntu 24.04 and Debian 12 refuse "pip install" into the system (PEP 668),
+#    so the plain form stopped the installer outright there.
+#  - What pip put in /usr/local/lib/python3.10 is invisible to Python 3.12, so a
+#    22.04 -> 24.04 upgrade left the service unable to start -- and only after
+#    the next reboot, because the running process still had the old Python.
+# "pip --target" sidesteps both, and wazuh_agent_mgr.py puts vendor/ on its own
+# path. Built in a fresh directory and swapped in only once it imports, so a
+# failed download leaves the working copy untouched.
+install_python_deps() {
+    if ! python3 -m pip --version >/dev/null 2>&1; then
+        echo "  - pip not found, installing python3-pip"
+        if command -v apt-get >/dev/null 2>&1; then
+            apt-get install -y -qq python3-pip >/dev/null || { apt-get update -qq && apt-get install -y -qq python3-pip >/dev/null; }
+        elif command -v dnf >/dev/null 2>&1; then
+            dnf install -y -q python3-pip
+        elif command -v yum >/dev/null 2>&1; then
+            yum install -y -q python3-pip
+        fi
+    fi
+    rm -rf "$INSTALL_DIR/vendor.new"
+    PIP_ROOT_USER_ACTION=ignore python3 -m pip install -q --disable-pip-version-check \
+        --no-warn-script-location --target "$INSTALL_DIR/vendor.new" \
+        -r "$INSTALL_DIR/requirements.txt"
+    PYTHONPATH="$INSTALL_DIR/vendor.new" python3 -c 'import flask, yaml, requests, rich, tabulate'
+    rm -rf "$INSTALL_DIR/vendor.old"
+    if [ -d "$INSTALL_DIR/vendor" ]; then
+        mv "$INSTALL_DIR/vendor" "$INSTALL_DIR/vendor.old"
+    fi
+    mv "$INSTALL_DIR/vendor.new" "$INSTALL_DIR/vendor"
+    rm -rf "$INSTALL_DIR/vendor.old"
+    echo "  - $(ls -d "$INSTALL_DIR"/vendor/*.dist-info | wc -l) packages in $INSTALL_DIR/vendor (Python $(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])'))"
+}
+
 echo
 echo -e "${GREEN}Installing Python dependencies...${NC}"
-pip install -q -r "$INSTALL_DIR/requirements.txt"
+install_python_deps
 
 # Install and enable systemd service
 echo

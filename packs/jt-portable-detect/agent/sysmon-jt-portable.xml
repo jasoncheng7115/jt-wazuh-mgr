@@ -1,0 +1,114 @@
+<!--
+  jt-portable-detect — the Sysmon configuration its Windows rules depend on.
+
+  This is not a complete Sysmon configuration. It is the set of filters the
+  pack's rules need, to be merged into whatever configuration the host already
+  runs (sysmon-modular, SwiftOnSecurity, your own). Sysmon reads only one
+  configuration, so this file is never applied on its own.
+
+  How to merge
+  ────────────
+  For each <RuleGroup> below:
+    * If your configuration already has a group for that event with the same
+      onmatch, copy the filters inside it into that group.
+    * If it has none, copy the whole <RuleGroup> into <EventFiltering>.
+  Then apply it from an elevated prompt and check what is loaded:
+
+      Sysmon64.exe -c C:\path\to\your-config.xml
+      Sysmon64.exe -c                       (prints the active configuration)
+
+  What each part feeds
+  ────────────────────
+    ProcessCreate (event 1)          906100-906106, 906170-906176   — most
+                                     configurations already log every
+                                     process; if yours includes rather than
+                                     excludes, make sure these paths are in.
+    FileCreate (event 11)            906124 and the built-in 92200-92217
+    FileCreateStreamHash (event 15)  906121-906123 — the download mark. Sysmon
+                                     records the Zone.Identifier contents
+                                     itself, which is what 906122 reads.
+    FileExecutableDetected (29)      906180-906183. Needs Sysmon 15.0 or
+                                     later and schemaversion 4.90 or later at
+                                     the top of the configuration. Without it
+                                     those four rules stay silent and nothing
+                                     else is affected.
+
+  Optional: approving binaries by hash (rule 906142) matches the whole hashes
+  field as Sysmon prints it. That is only practical with a single algorithm:
+      <HashAlgorithms>SHA256</HashAlgorithms>
+  which also drops MD5, SHA1 and IMPHASH from every event — decide that for
+  the whole estate, not for this pack.
+-->
+<Sysmon schemaversion="4.90">
+  <EventFiltering>
+
+    <RuleGroup name="jt-portable: process creation" groupRelation="or">
+      <ProcessCreate onmatch="include">
+        <Image condition="begin with">C:\Users\</Image>
+        <Image condition="begin with">C:\ProgramData\</Image>
+        <Image condition="begin with">C:\Windows\Temp\</Image>
+        <Image condition="begin with">C:\Windows\SystemTemp\</Image>
+        <Image condition="begin with">\\</Image>
+        <Image condition="excludes">C:\</Image>
+      </ProcessCreate>
+    </RuleGroup>
+
+    <RuleGroup name="jt-portable: executables written to download locations" groupRelation="or">
+      <FileCreate onmatch="include">
+        <Rule groupRelation="and">
+          <TargetFilename condition="contains any">\Downloads\;\Desktop\;\Documents\</TargetFilename>
+          <TargetFilename condition="end with">.exe</TargetFilename>
+        </Rule>
+        <Rule groupRelation="and">
+          <TargetFilename condition="contains any">\Downloads\;\Desktop\;\Documents\</TargetFilename>
+          <TargetFilename condition="end with">.dll</TargetFilename>
+        </Rule>
+        <Rule groupRelation="and">
+          <TargetFilename condition="contains any">\Downloads\;\Desktop\;\Documents\</TargetFilename>
+          <TargetFilename condition="end with">.scr</TargetFilename>
+        </Rule>
+        <Rule groupRelation="and">
+          <TargetFilename condition="contains any">\Downloads\;\Desktop\;\Documents\</TargetFilename>
+          <TargetFilename condition="end with">.com</TargetFilename>
+        </Rule>
+        <Rule groupRelation="and">
+          <TargetFilename condition="contains any">\Downloads\;\Desktop\;\Documents\</TargetFilename>
+          <TargetFilename condition="end with">.msi</TargetFilename>
+        </Rule>
+        <Rule groupRelation="and">
+          <TargetFilename condition="contains any">\Downloads\;\Desktop\;\Documents\</TargetFilename>
+          <TargetFilename condition="end with">.iso</TargetFilename>
+        </Rule>
+        <Rule groupRelation="and">
+          <TargetFilename condition="contains any">\Downloads\;\Desktop\;\Documents\</TargetFilename>
+          <TargetFilename condition="end with">.img</TargetFilename>
+        </Rule>
+        <Rule groupRelation="and">
+          <TargetFilename condition="contains any">\Downloads\;\Desktop\;\Documents\</TargetFilename>
+          <TargetFilename condition="end with">.vhd</TargetFilename>
+        </Rule>
+        <Rule groupRelation="and">
+          <TargetFilename condition="contains any">\Downloads\;\Desktop\;\Documents\</TargetFilename>
+          <TargetFilename condition="end with">.vhdx</TargetFilename>
+        </Rule>
+      </FileCreate>
+    </RuleGroup>
+
+    <RuleGroup name="jt-portable: download marks" groupRelation="or">
+      <FileCreateStreamHash onmatch="include">
+        <TargetFilename condition="end with">:Zone.Identifier</TargetFilename>
+      </FileCreateStreamHash>
+    </RuleGroup>
+
+    <RuleGroup name="jt-portable: executable content detected" groupRelation="or">
+      <FileExecutableDetected onmatch="include">
+        <Rule groupRelation="and">
+          <TargetFilename condition="contains">\Users\</TargetFilename>
+          <TargetFilename condition="excludes">\AppData\</TargetFilename>
+        </Rule>
+        <TargetFilename condition="excludes">C:\</TargetFilename>
+      </FileExecutableDetected>
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>

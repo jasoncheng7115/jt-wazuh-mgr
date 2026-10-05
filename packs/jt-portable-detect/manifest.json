@@ -1,86 +1,146 @@
 {
-  "id": "jt-portable-detect",
-  "name": "Portable Executable Detection",
-  "name_zh": "可攜式程式偵測",
-  "version": "2.1",
-  "summary": "Detects portable/no-install executables being dropped and run on Windows, Linux and macOS.",
-  "summary_zh": "偵測免安裝執行檔在 Windows、Linux、macOS 上的落地與執行。",
-  "rule_id_range": "906100-906299",
-  "notes_zh": [
-    "Windows 端偵測使用者目錄、非系統碟、Temp 目錄的執行，以及 AppLocker 稽核事件。",
-    "Linux/macOS 端偵測權限變更為可執行、暫存目錄落地、AppImage/run/bin 等格式。",
-    "已核准的工具請加入 jt-approved-portable 清單（格式 key:approved），加入後降為記錄等級。",
-    "Windows 端若要涵蓋『使用者目錄新增執行檔』，agent 的 syscheck 需監控 C:\\Users。",
-    "前提條件 - 規則 906121 / 906122 需要 Sysmon 事件 ID 15（FileCreateStreamHash）。Sysmon 設定若未產生 EID 15，這兩條規則永遠不會觸發。",
-    "規則 906160-906166 是調校 Wazuh 自己的 Sysmon EID 11 偵測，而不是重複實作。在正式環境實測七天，那些內建規則產生 4,245 筆告警而幾乎全是噪音：3,122 筆 level 9 來自 PowerShell 探測自己的執行政策、799 筆來自 .NET 原生映像產生、33 筆 level 15 來自瀏覽器更新程式解壓縮自己下載的檔案。一條每次都錯的 level 15 規則，會讓人學會「level 15 不代表什麼」。",
-    "不要在這裡新增「Wazuh 已經偵測得到」的事件規則。92200-92217 與我們加在同一群組下的規則是同層，而 Wazuh 取第一個命中的，所以重複的規則根本到不了。已端對端驗證：在真實主機的 Downloads 建立檔案，命中的是 92203 而不是我們的規則。",
-    "jt-approved-portable-hash 是白名單，隨附時為空，這是正確的預設值。加入一筆會讓規則 906142 對該支程式降為記錄等級；鍵值必須是 Sysmon 回報的完整 hashes 欄位，含 SHA256= 前綴。",
-    "規則 906203 原本是「/dev/shm 出現任何具執行權限的檔案就 level 12」。在正式環境實測，它在四小時內一次爆出 53 筆告警，**全部**是應用程式以 0777 建立的 POSIX 共享記憶體物件。FIM 看不到檔案的 magic bytes，因此分不出 ELF 執行檔與共享記憶體段。現在降為 level 6 並如實描述它知道的事，IPC 命名慣例由規則 906224 排除。",
-    "從這些位置「執行」是規則 906211，維持 level 12——因為 auditd 證明的是程式真的跑了，而不只是檔案出現了。安裝 agent/jt-portable.rules 即可啟用；套件會把它送進 agent 群組，因此會實際送達主機。",
-    "套件現在自帶 agent 群組 portable-detect。管理端規則看不到 agent 從未回報的東西，而在此之前，Linux 規則依賴的監控根本沒有人設定過。",
-    "執行偵測新增涵蓋：網路共享（UNC）、系統 Temp 目錄、ProgramData、共用的 Users\\Public 與使用者家目錄根層；Linux 端另補上「以解譯器執行暫存區腳本」。",
-    "依實測抑制三個誤報來源：WinGet 暫存自己的下載、DISM 元件自 Temp 執行，以及語言套件管理器的快取在盤點中被當成未簽章執行檔。",
-    "執行類告警改為指出真正觸發稽核監看的檔案，而不只是執行它的解譯器。",
-    "syscheck 算不出雜湊的檔案不再被當成「暫存目錄出現可執行檔」：符號連結的權限永遠是 0777，在一台建置主機上佔該規則告警的 93%。git hook 範例與資產檔也一併排除。",
-    "規則 906234 排除建置與測試工具鏈的暫存目錄。在一台共用建置主機上實測，光那一台一天就產生 399 筆 level 12，佔全站 level 12 以上的 91%，把同一天 36 筆真正的偵測整個壓在底下。這條規則涵蓋的是跨站台穩定的工具鏈慣例；那台主機有 116 個這種目錄，名字由寫 CI 腳本的人各自決定，前綴清單不可能是全部的答案。站台自己的路徑請用 906225-906229 的保留號段；而在建置主機上，更好的做法是在 agent 端用 syscheck ignore —— 被規則排除的路徑不會產生告警，卻仍然佔用一個檔案完整性條目，而那個資料庫有全域上限。"
-  ],
-  "author": "Jason Tools",
-  "license": "AGPL-3.0-or-later",
-  "requires": {
-    "wazuh": ">=4.8"
+ "id": "jt-portable-detect",
+ "name": "Portable Executable Detection",
+ "name_zh": "可攜式程式偵測",
+ "version": "3.0",
+ "summary": "Detects portable/no-install executables being dropped and run on Windows, Linux and macOS.",
+ "summary_zh": "偵測免安裝執行檔在 Windows、Linux、macOS 上的落地與執行。",
+ "rule_id_range": "906100-906299",
+ "notes_zh": [
+  "Windows：程式從使用者資料夾、家目錄根層、家目錄底下自建的資料夾、使用者或系統的 Temp、ProgramData、非系統磁碟或網路共享執行時告警；直接在壓縮檔裡雙擊執行也會告警。",
+  "Windows：從上述位置執行的免安裝遠端控制工具（AnyDesk、RustDesk、TeamViewer QuickSupport 等，依檔案內的產品名稱判斷，不看檔名），以及穿隧工具（ngrok、cloudflared、frp、plink、Tor），一律 level 12。",
+  "Windows：非 PowerShell 的程序（sftp、SMB、從 USB 複製）把執行檔寫進下載、桌面、文件；執行檔與壓縮檔的下載標記；搭配 Sysmon 15 時，執行檔內容被存成非執行檔名稱（偽裝）。",
+  "Linux／macOS：家目錄裡的檔案被設成可執行、/tmp、/var/tmp、/dev/shm 出現執行檔、AppImage／.run／.bin 檔案；有 auditd 時，偵測從這些位置實際執行的程式與腳本。",
+  "核准工具：加進 etc/lists/jt-approved-portable（以原始檔名或完整路徑），核准後降為 level 3，遠端控制與穿隧規則也會放過該工具。",
+  "部分規則需要管理端無法代勞的 agent 端設定：Windows 的 Sysmon 過濾條件、Linux 的 auditd、以及把 agent 加入 portable-detect 群組。「部署說明」列出每一步與檢查方式。",
+  "906160-906167 調校 Wazuh 內建的 Sysmon 檔案建立偵測，而不是重複寫一份。906167 修正內建規則 92213：它的副檔名比對沒有結尾錨點，把 .json 當成 .js，30 天內它的 level 15 告警有 82% 根本不是執行檔。",
+  "3.0 起 Linux 規則各自帶路徑條件。舊的共用父規則 906200 會讓沒有子規則命中的事件停在 level 1，等於把 /root、/home、/tmp 的內建檔案完整性告警全部靜音；它已退役，不得再出現。"
+ ],
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "files": [
+  {
+   "type": "rule",
+   "name": "zz-906100-jt_portable_rules.xml",
+   "dest": "etc/rules/zz-906100-jt_portable_rules.xml",
+   "sha256": "91b900a1ed600b4f985c2d417db2ba13b1e36d129e51a689fc343dcdb53dddac"
   },
-  "files": [
-    {
-      "type": "rule",
-      "name": "zz-906100-jt_portable_rules.xml",
-      "dest": "etc/rules/zz-906100-jt_portable_rules.xml",
-      "sha256": "a716026133471548fcb2a9a34d978e86e2a15e7271a082e1a174f72fb3169f0d"
-    },
-    {
-      "type": "rule",
-      "name": "zz-906200-jt_portable_nix_rules.xml",
-      "dest": "etc/rules/zz-906200-jt_portable_nix_rules.xml",
-      "sha256": "2407ca6c432bbd91b7b226ccf1f61959814129bdfdc51594a68eb3d8c84525c5"
-    },
-    {
-      "type": "list",
-      "name": "jt-approved-portable",
-      "dest": "etc/lists/jt-approved-portable",
-      "declare": true,
-      "sha256": "6f37c964df3d17a185a6d74f240ea854f56dc3ffe3854e718949b7b678bfec41"
-    },
-    {
-      "type": "list",
-      "name": "jt-approved-portable-hash",
-      "dest": "etc/lists/jt-approved-portable-hash",
-      "declare": true,
-      "sha256": "ac8811889e6c4dd88502f87ca4aa217eb5cdc49b67d5e5d4a64cfe4f87789ce8"
-    }
-  ],
-  "notes": [
-    "On Windows this detects execution from user directories, non-system drives and the Temp directory, plus AppLocker audit events.",
-    "On Linux and macOS it detects files being made executable, executables landing in temporary directories, and AppImage, .run and .bin formats.",
-    "Add approved tools to the jt-approved-portable list, in key:approved form; matches are then demoted to logging level.",
-    "PREREQUISITE - rule 906120 needs the agent's syscheck to monitor C:\\Users. Without it the rule can never fire.",
-    "PREREQUISITE - rules 906121 and 906122 need Sysmon event ID 15 (FileCreateStreamHash). A Sysmon config that does not emit EID 15 leaves both rules permanently inert.",
-    "Rules 906160-906166 tune Wazuh's own Sysmon EID 11 detections rather than duplicating them. Measured over seven days on a live estate those built-in rules produced 4,245 alerts and essentially all were noise: 3,122 at level 9 from PowerShell probing its own execution policy, 799 from .NET native image generation, and 33 at level 15 from browser updaters unpacking their own downloads. A level 15 rule that is wrong every time teaches people that level 15 means nothing.",
-    "Do not add a rule here that describes an event Wazuh already detects. Rules 92200-92217 are siblings of anything added under the same group and Wazuh takes the first match, so a duplicate is simply never reached. Verified end to end: a file created in Downloads on a live host produced rule 92203, not ours.",
-    "jt-approved-portable-hash is an allowlist and ships empty, which is the correct default. An entry demotes rule 906142 for that one binary; the key is the whole hashes field including the SHA256= prefix, as Sysmon reports it.",
-    "Rule 906203 was a level 12 on any execute-mode file appearing under /dev/shm. Measured on a live estate, it produced 53 alerts in one four-hour burst and all of them were POSIX shared memory objects that an application creates at 0777. File integrity monitoring cannot see magic bytes, so it cannot tell an ELF from a shared memory segment. It is now a level 6 that says what it knows, with the IPC naming conventions excluded by rule 906224.",
-    "Execution from these places is rule 906211 and stays a level 12, because auditd proves a program ran rather than that a file appeared. Install agent/jt-portable.rules to enable it; the pack ships it into the agent group so it reaches the hosts.",
-    "The pack now carries its own agent group, portable-detect. Manager rules cannot see what the agent never reports, and before this the Linux rules depended on monitoring nobody had configured.",
-    "Execution detection now covers network shares (UNC), the system Temp directory, ProgramData, the shared Users\\Public folder and the user profile root, plus scripts run through an interpreter from a temporary filesystem on Linux.",
-    "Suppressed three measured sources of false alerts: WinGet staging its own downloads and the DISM servicing host running from Temp, and language package manager caches appearing as unsigned executables in the inventory.",
-    "Execution alerts now name the file that triggered the audit watch rather than only the interpreter that ran it.",
-    "A file syscheck could not hash is no longer treated as an executable appearing in a temporary directory: symlinks are always mode 0777 and accounted for 93% of that rule's alerts on a build host. Git hook samples and asset files are excluded too.",
-    "Build and test toolchain scratch directories are excluded by rule 906234. Measured on a shared build host, one day produced 399 level 12 alerts from that machine alone, 91 per cent of every alert at level 12 or above across the estate, burying the 36 genuine detections underneath them. The rule covers the toolchain conventions that are stable across sites; that host had 116 such directories with names chosen by whoever wrote each CI script, so a prefix list cannot be the whole answer. Site paths belong in the 906225-906229 range, and on a build host a syscheck ignore on the agent is better still, because an excluded path costs no alert but still costs a file integrity entry against a database that has a global limit."
-  ],
-  "agent_group": {
-    "name": "portable-detect",
-    "config": "agent.conf",
-    "files": [
-      "jt-portable.rules"
-    ],
-    "description": "File integrity monitoring of the places portable programs land, plus the auditd rules that turn execution into evidence"
+  {
+   "type": "rule",
+   "name": "zz-906200-jt_portable_nix_rules.xml",
+   "dest": "etc/rules/zz-906200-jt_portable_nix_rules.xml",
+   "sha256": "8a90b61e3bb5d523e33a3e2a723485fdeb74ed5d4c632bcd95f06a02c326ce97"
+  },
+  {
+   "type": "list",
+   "name": "jt-approved-portable",
+   "dest": "etc/lists/jt-approved-portable",
+   "declare": true,
+   "sha256": "6f37c964df3d17a185a6d74f240ea854f56dc3ffe3854e718949b7b678bfec41"
+  },
+  {
+   "type": "list",
+   "name": "jt-approved-portable-hash",
+   "dest": "etc/lists/jt-approved-portable-hash",
+   "declare": true,
+   "sha256": "d0e2abcc83c7bfb2297f5e60279f0e483e7610bb8d93581cf95b66820df25a1e"
   }
+ ],
+ "notes": [
+  "Windows: alerts when a program runs from a user folder, the user profile root, a custom folder in the profile, the user or system Temp directory, ProgramData, a non-system drive or a network share, and when it is run directly from inside an archive.",
+  "Windows: a portable remote-access tool (AnyDesk, RustDesk, TeamViewer QuickSupport and others, recognised by the product name in the file, not its file name) or a tunnelling tool (ngrok, cloudflared, frp, plink, Tor) run from those places is a level 12.",
+  "Windows: executables written into Downloads, Desktop or Documents by anything other than PowerShell (sftp, SMB, a copy from USB), download marks on executables and archives, and, with Sysmon 15, executable content saved under a non-executable name.",
+  "Linux and macOS: files made executable in a home directory, executables appearing in /tmp, /var/tmp or /dev/shm, AppImage/.run/.bin files, and with auditd, programs and scripts actually run from those places.",
+  "Approve a tool by adding it to etc/lists/jt-approved-portable (by its original file name, or by full path); approved runs drop to level 3. Approval also silences the remote-access and tunnelling rules for that tool.",
+  "Several rules depend on agent-side configuration the manager cannot apply for you: Sysmon filters on Windows, auditd on Linux, and assigning agents to the portable-detect group. The deployment guide lists each step and how to check it.",
+  "Rules 906160-906167 tune Wazuh's own Sysmon file-creation detections instead of duplicating them. 906167 corrects built-in rule 92213, whose extension match has no end anchor and so treats .json as .js: 82 per cent of its level 15 alerts in thirty days were not executables.",
+  "Since 3.0 every Linux rule carries its own path condition. The old shared parent, 906200, ended unmatched events at level 1, which silently suppressed every built-in file-integrity alert under /root, /home and /tmp; it is retired and must not come back."
+ ],
+ "agent_group": {
+  "name": "portable-detect",
+  "config": "agent.conf",
+  "files": [
+   "jt-portable.rules",
+   "sysmon-jt-portable.xml"
+  ],
+  "description": "File integrity monitoring of the places portable programs land, AppLocker collection on Windows, the auditd rules that turn execution into evidence, and the Sysmon filters the Windows rules need"
+ },
+ "tested_with": [
+  "4.14.7",
+  "4.14.8"
+ ],
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset on every node",
+   "title_zh": "安裝套件並在所有節點重新載入規則集",
+   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers, and Windows agents are usually processed on a worker. If the jt-malware-hash pack is installed, update it at the same time: versions before 1.3 contain a rule that hides process-creation events from this pack.",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker，而 Windows agent 通常由 worker 處理。若已安裝 jt-malware-hash，請同時更新：1.3 之前的版本有一條規則會把處理程序建立事件攔在本套件之前。"
+  },
+  {
+   "platform": "all",
+   "required": true,
+   "title": "Assign agents to the portable-detect group",
+   "title_zh": "把 agent 加入 portable-detect 群組",
+   "body": "The pack creates the group but never assigns agents to it: which hosts carry the monitoring cost is your decision. If the group already existed, the installer leaves its agent.conf untouched; compare it with the pack's copy (below) and update it yourself. A group status of 'synced' only means the agent received the file. File-integrity settings apply after the agent restarts, so restart it and check that data actually changes.",
+   "body_zh": "套件會建立群組，但不會替你把 agent 加進去：哪些主機要承擔監控成本由你決定。群組若早已存在，安裝程式不會覆蓋它的 agent.conf，請與下方套件版本比對後自行更新。群組狀態顯示 synced 只代表 agent 收到檔案；檔案完整性的設定要 agent 重啟才生效，請重啟後確認資料確實有變化。",
+   "file": "agent/agent.conf",
+   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g portable-detect\n/var/ossec/bin/agent_control -R -u <agent_id>"
+  },
+  {
+   "platform": "windows",
+   "required": true,
+   "title": "Merge the Sysmon filters",
+   "title_zh": "合併 Sysmon 過濾條件",
+   "body": "Process creation, file creation and download marks come from Sysmon, whose own configuration decides what is recorded. Merge the filters below into the configuration the host already uses. Executable-content detection (906180-906183) needs Sysmon 15.0 or later and schemaversion 4.90 or later at the top of the configuration; without it only those four rules stay silent. The file is also delivered to agents in the group, under the agent's shared directory.",
+   "body_zh": "處理程序建立、檔案建立與下載標記都來自 Sysmon，記錄什麼由 Sysmon 自己的設定檔決定。請把下方的過濾條件合併進主機現用的設定檔。可執行檔內容偵測（906180-906183）需要 Sysmon 15.0 以上，且設定檔開頭的 schemaversion 為 4.90 以上；缺少時只有這四條規則不會觸發。此檔也會隨群組送到 agent 的 shared 目錄。",
+   "file": "agent/sysmon-jt-portable.xml",
+   "code": "Sysmon64.exe -c C:\\path\\to\\your-config.xml\nSysmon64.exe -c",
+   "verify": "Copy C:\\Windows\\System32\\notepad.exe to your Downloads folder as test.pdf. Expect rule 906183 (level 10) on the manager. Delete the file afterwards.",
+   "verify_zh": "把 C:\\Windows\\System32\\notepad.exe 複製到「下載」並命名為 test.pdf，管理端應出現規則 906183（level 10）。測完刪除該檔。"
+  },
+  {
+   "platform": "windows",
+   "required": false,
+   "title": "AppLocker in audit mode (optional)",
+   "title_zh": "AppLocker 稽核模式（選用）",
+   "body": "Rules 906110 and 906111 read AppLocker events, which the group collects. They need an AppLocker policy in audit-only mode with the default rules, and the Application Identity service set to start automatically; Windows Enterprise or Education is required for enforcement. Without a policy the channels stay empty and nothing else is affected.",
+   "body_zh": "906110／906111 讀取 AppLocker 事件，群組設定已會收集。前提是設定 AppLocker 原則為「僅稽核」並套用預設規則，且 Application Identity 服務設為自動啟動；強制模式需要 Windows 企業版或教育版。沒有原則時通道是空的，不影響其他規則。",
+   "code": "sc.exe config AppIDSvc start= auto\nsc.exe start AppIDSvc"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "auditd for execution evidence",
+   "title_zh": "auditd：取得「真的執行了」的證據",
+   "body": "File-integrity rules can only say a file appeared. Rules 906210-906213 prove a program ran, and need auditd with the pack's rules loaded; the rules file is delivered to agents in the group. auditd usually cannot run inside an LXC container; there only the file rules work. To catch scripts run through an interpreter (906213), also uncomment the interpreter lines in the file.",
+   "body_zh": "檔案完整性規則只能說「檔案出現了」。906210-906213 證明程式真的執行了，需要 auditd 並載入套件的規則檔；該檔會隨群組送到 agent。LXC 容器內通常無法執行 auditd，那裡只有檔案類規則有作用。若要抓「用直譯器執行的腳本」（906213），另外把檔案中直譯器那幾行取消註解。",
+   "file": "agent/jt-portable.rules",
+   "code": "apt install auditd        # or: dnf install audit\ncp /var/ossec/etc/shared/jt-portable.rules /etc/audit/rules.d/\naugenrules --load\nauditctl -l | grep jt_portable",
+   "verify": "cp /bin/true /tmp/jt-portable-test && /tmp/jt-portable-test; rm /tmp/jt-portable-test  — expect rule 906211 (level 12).",
+   "verify_zh": "cp /bin/true /tmp/jt-portable-test && /tmp/jt-portable-test; rm /tmp/jt-portable-test —— 應出現規則 906211（level 12）。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Check file-integrity capacity on busy hosts",
+   "title_zh": "在繁忙主機上檢查檔案完整性的容量",
+   "body": "The group monitors /tmp in real time. On a build or developer host, test suites can fill the file-integrity database, whose size is capped, and the agent then stops monitoring other paths with only a log line to say so. Look for the warnings below after assigning such a host, and exclude that site's own scratch directories in the host's local ossec.conf, not in the group.",
+   "body_zh": "群組會即時監控 /tmp。在建置或開發主機上，測試程式可能塞滿有上限的檔案完整性資料庫，agent 隨即停止監控其他路徑，只留下一行記錄。把這類主機加入群組後請檢查下列警告，並把該站台自己的暫存目錄排除在主機本機的 ossec.conf，不要放在群組。",
+   "code": "grep -E 'Reached maximum files limit|inotify kernel queue is full' /var/ossec/logs/ossec.log"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "Approve tools you allow",
+   "title_zh": "核准允許使用的工具",
+   "body": "Add one line per tool to etc/lists/jt-approved-portable, then reload the ruleset. The key is either the original file name from the alert (win.eventdata.originalFileName) or the full image path exactly as the alert shows it, in double quotes because a Windows path contains a colon.",
+   "body_zh": "每個工具一行，加進 etc/lists/jt-approved-portable 後重新載入規則集。鍵值可以是告警中的原始檔名（win.eventdata.originalFileName），或是與告警顯示完全相同的完整路徑；Windows 路徑含冒號，必須用雙引號包起來。",
+   "code": "PuTTY:approved\n\"C:\\\\Users\\\\Public\\\\Tools\\\\putty.exe\":approved"
+  }
+ ]
 }

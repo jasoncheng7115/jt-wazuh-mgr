@@ -64,7 +64,28 @@ from typing import List, Optional
 
 # Add lib to path
 import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _HERE)
+
+# install.sh puts the dependencies in vendor/ beside this file, not in the
+# system Python: Ubuntu 24.04 and Debian 12 refuse pip into the system (PEP 668),
+# and packages pip put under /usr/local/lib/python3.10 are invisible to the 3.12
+# an OS upgrade brings -- the service then fails at the next reboot, long after
+# the upgrade looked fine. Ahead of site-packages, so an older distro Flask
+# cannot shadow the version this was tested with.
+_VENDOR = os.path.join(_HERE, 'vendor')
+if os.path.isdir(_VENDOR):
+    sys.path.insert(1, _VENDOR)
+
+_NEEDED = ['yaml', 'requests'] + (['flask'] if '--web' in sys.argv else [])
+for _mod in _NEEDED:
+    try:
+        __import__(_mod)
+    except ImportError as _exc:
+        sys.exit('Missing Python module for Python %d.%d: %s\n'
+                 'Reinstall the dependencies by running install.sh again; they '
+                 'go into %s and do not touch the system Python.'
+                 % (sys.version_info[0], sys.version_info[1], _exc, _VENDOR))
 
 from lib.config import get_config
 from lib.wazuh_cli import WazuhCLI

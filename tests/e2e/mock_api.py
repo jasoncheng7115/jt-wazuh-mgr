@@ -208,18 +208,18 @@ os.path.isdir, os.path.isfile = fake_isdir, fake_isfile
 # --------------------------------------------------------------------------
 
 AGENTS = [
-    ('000', 'wazuh-manager', '127.0.0.1',  'active',       'Ubuntu', '24.04', 'v4.14.7', [],                  'node-01'),
-    ('001', 'web-01',        '10.0.10.11', 'active',       'Ubuntu', '24.04', 'v4.14.7', ['default', 'web'],  'node-01'),
-    ('002', 'db-01',         '10.0.10.12', 'active',       'Debian', '12',    'v4.14.7', ['default', 'db'],   'node-01'),
-    ('003', 'mail-01',       '10.0.10.13', 'active',       'Ubuntu', '22.04', 'v4.14.7', ['default', 'mail'], 'node-01'),
-    ('004', 'dc-01',         '10.0.20.10', 'active',       'Microsoft Windows Server 2022', '10.0.20348', 'v4.14.7', ['default', 'windows'], 'node-02'),
-    ('005', 'file-01',       '10.0.20.11', 'active',       'Microsoft Windows Server 2019', '10.0.17763', 'v4.14.7', ['default', 'windows'], 'node-02'),
+    ('000', 'wazuh-manager', '127.0.0.1',  'active',       'Ubuntu', '24.04', 'v4.14.8', [],                  'node-01'),
+    ('001', 'web-01',        '10.0.10.11', 'active',       'Ubuntu', '24.04', 'v4.14.8', ['default', 'web'],  'node-01'),
+    ('002', 'db-01',         '10.0.10.12', 'active',       'Debian', '12',    'v4.14.8', ['default', 'db'],   'node-01'),
+    ('003', 'mail-01',       '10.0.10.13', 'active',       'Ubuntu', '22.04', 'v4.14.8', ['default', 'mail'], 'node-01'),
+    ('004', 'dc-01',         '10.0.20.10', 'active',       'Microsoft Windows Server 2022', '10.0.20348', 'v4.14.8', ['default', 'windows'], 'node-02'),
+    ('005', 'file-01',       '10.0.20.11', 'active',       'Microsoft Windows Server 2019', '10.0.17763', 'v4.14.8', ['default', 'windows'], 'node-02'),
     ('006', 'proxy-01',      '10.0.10.14', 'active',       'Alpine', '3.20',  'v4.14.6', ['default'],         'node-01'),
     ('007', 'build-01',      '10.0.10.15', 'disconnected', 'Rocky Linux', '9', 'v4.14.6', ['default'],        'node-01'),
-    ('008', 'laptop-07',     '10.0.30.24', 'active',       'macOS', '15.3',   'v4.14.7', ['default'],         'node-02'),
-    ('009', 'firewall-01',   '10.0.0.1',   'active',       'FreeBSD', '14.3', 'v4.14.7', ['default'],         'node-01'),
+    ('008', 'laptop-07',     '10.0.30.24', 'active',       'macOS', '15.3',   'v4.14.8', ['default'],         'node-02'),
+    ('009', 'firewall-01',   '10.0.0.1',   'active',       'FreeBSD', '14.3', 'v4.14.8', ['default'],         'node-01'),
     ('010', 'kiosk-02',      '10.0.30.31', 'disconnected', 'Microsoft Windows 11', '10.0.22631', 'v4.13.0', ['default', 'windows'], 'node-02'),
-    ('011', 'backup-01',     '10.0.10.16', 'active',       'Debian', '12',    'v4.14.7', ['default'],         'node-01'),
+    ('011', 'backup-01',     '10.0.10.16', 'active',       'Debian', '12',    'v4.14.8', ['default'],         'node-01'),
 ]
 
 STATE = {
@@ -239,7 +239,7 @@ STATE = {
 # The version this mock claims to be. The journeys start a second instance
 # pretending to be 5.x, which is the only way to exercise the capability layer
 # without a 5.x server to point at.
-SERVER_VERSION = os.environ.get('E2E_SERVER_VERSION', '4.14.7')
+SERVER_VERSION = os.environ.get('E2E_SERVER_VERSION', '4.14.8')
 
 NODES = [
     {'name': 'node-01', 'type': 'master', 'version': SERVER_VERSION, 'ip': '10.0.1.10'},

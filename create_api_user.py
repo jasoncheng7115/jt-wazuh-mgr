@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """Quick script to create Wazuh API user."""
 
+import os
 import sys
 import json
 import getpass
 import argparse
+
+# Dependencies live in vendor/ beside this file (see wazuh_agent_mgr.py).
+_VENDOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vendor')
+if os.path.isdir(_VENDOR):
+    sys.path.insert(0, _VENDOR)
 
 try:
     import requests
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 except ImportError:
-    print("Error: requests library required. Install with: pip install requests")
+    print("Error: requests library required. Run install.sh again to install it into " + _VENDOR)
     sys.exit(1)
 
 

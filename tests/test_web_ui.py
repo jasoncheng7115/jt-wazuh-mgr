@@ -1050,8 +1050,8 @@ class TestNodeConfigDiff(WebUITestCase):
 # Rule packs (install / uninstall)
 # --------------------------------------------------------------------------
 
-class TestRulePacks(WebUITestCase):
-    """Packs write into the manager, so the install path must be all-or-nothing."""
+class PackFixture(WebUITestCase):
+    """A throwaway Wazuh tree and a session, shared by the pack test classes."""
 
     ANALYSISD_OK = '#!/bin/sh\necho "loaded"\nexit 0\n'
     ANALYSISD_BAD = '#!/bin/sh\necho "ERROR: bad rule"\nexit 0\n'
@@ -1113,6 +1113,11 @@ class TestRulePacks(WebUITestCase):
     def conf(self):
         with io.open(os.path.join(self.tmp, 'etc/ossec.conf'), encoding='utf-8') as fh:
             return fh.read()
+
+
+
+class TestRulePacks(PackFixture):
+    """Packs write into the manager, so the install path must be all-or-nothing."""
 
     def test_catalogue_lists_packs_as_not_installed(self):
         data = self.client.get('/api/packs').get_json()
@@ -1413,6 +1418,67 @@ class TestRulePacks(WebUITestCase):
 # Front-end assets embedded in the template
 # --------------------------------------------------------------------------
 
+class TestPackDeployment(PackFixture):
+    """The deployment guide and the 'already there, no record' state (1.10.0)."""
+
+    def _copy_pack_files_by_hand(self, pack_id):
+        import shutil
+        m = json.load(open(os.path.join(web_ui.__file__.rsplit('/lib/', 1)[0], 'packs', pack_id,
+                                        'manifest.json'), encoding='utf-8'))
+        pdir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(web_ui.__file__))),
+                            'packs', pack_id)
+        for e in m['files']:
+            sub = {'rule': 'rules', 'list': 'lists'}.get(e['type'], 'decoders')
+            shutil.copy(os.path.join(pdir, sub, e['name']), os.path.join(self.tmp, e['dest']))
+
+    def test_hand_copied_pack_is_reported_untracked_not_in_conflict_with_itself(self):
+        """Our own manager ran all eight packs; the catalogue said none was installed and the
+        detail page listed each pack's own rule IDs as conflicts."""
+        self._copy_pack_files_by_hand('jt-portable-detect')
+        packs = {p['id']: p for p in self.client.get('/api/packs').get_json()['packs']}
+        p = packs['jt-portable-detect']
+        self.assertFalse(p['installed'])
+        self.assertTrue(p['untracked'])
+        self.assertTrue(p['untracked_identical'])
+        d = self.client.get('/api/packs/jt-portable-detect').get_json()
+        self.assertEqual(d['conflicts'], [])
+        self.assertEqual(d['presence']['identical'], d['presence']['total'])
+        # and installing over the hand-copied files is not refused as a conflict
+        resp = self.client.post('/api/packs/jt-portable-detect/install')
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+
+    def test_rules_in_another_file_still_conflict(self):
+        with io.open(os.path.join(self.tmp, 'etc/rules/local_rules.xml'), 'w', encoding='utf-8') as fh:
+            fh.write('<group name="x,"><rule id="906101" level="3"><description>mine</description></rule></group>')
+        d = self.client.get('/api/packs/jt-portable-detect').get_json()
+        self.assertIn({'rule': '906101', 'file': 'local_rules.xml'}, d['conflicts'])
+
+    def test_detail_carries_the_setup_guide_and_agent_files(self):
+        d = self.client.get('/api/packs/jt-portable-detect').get_json()
+        self.assertTrue(d['setup'])
+        self.assertIn('sysmon-jt-portable.xml', d['agent_files'])
+
+    def test_agent_file_can_be_viewed_and_downloaded(self):
+        r = self.client.get('/api/packs/jt-portable-detect/file?path=agent/sysmon-jt-portable.xml')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('FileExecutableDetected', r.get_json()['content'])
+        r = self.client.get('/api/packs/jt-portable-detect/file?path=agent/jt-portable.rules&download=1')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('attachment', r.headers.get('Content-Disposition', ''))
+        self.assertIn('jt_portable_tmpexec', r.get_data(as_text=True))
+
+    def test_file_endpoint_refuses_anything_outside_the_pack_folders(self):
+        for bad in ('manifest.json', '../jt-ioc/manifest.json', 'agent/../manifest.json',
+                    '/etc/passwd', 'agent/.hidden', 'secrets/agent.conf', 'agent/a/b',
+                    'agent/' + 'x' * 200, ''):
+            r = self.client.get('/api/packs/jt-portable-detect/file?path=' + bad)
+            self.assertEqual(r.status_code, 400, bad)
+        r = self.client.get('/api/packs/jt-portable-detect/file?path=agent/missing.xml')
+        self.assertEqual(r.status_code, 404)
+        r = self.client.get('/api/packs/no-such-pack/file?path=agent/agent.conf')
+        self.assertEqual(r.status_code, 404)
+
+
 class TestFrontend(unittest.TestCase):
 
     # The template uses optional chaining, so an old node cannot parse it even
@@ -1498,6 +1564,70 @@ class TestFrontend(unittest.TestCase):
                           or 'stats-content' in body or 'log-container' in body
                           or re.search(r'overflow[-a-z]*\s*:\s*(auto|scroll)', body))
             self.assertTrue(scrollable, '%s has no scrollable container' % name)
+
+    def test_template_has_no_backspace_characters(self):
+        """A JS regex written as /\\b.../ inside the non-raw template reaches the
+        browser as a backspace, not a word boundary. That silently broke the JSON
+        and alert-log highlighters until 1.10.0."""
+        for name in ('HTML_TEMPLATE', 'LOGIN_TEMPLATE'):
+            self.assertNotIn('\x08', getattr(web_ui, name), name)
+
+    def test_json_highlighter_marks_literals(self):
+        if not self.have_node:
+            self.skipTest(self.node_reason)
+        start = self.tpl.index('function highlightJson(json) {')
+        end = self.tpl.index('\n        }', self.tpl.index('return json.replace(', start)) + 10
+        script = ('const escapeHtml = s => String(s);\n' + self.tpl[start:end] + '\n'
+                  'const out = highlightJson(JSON.stringify({a: true, b: null, c: -1.5, d: String.fromCharCode(120, 34, 121)}));\n'
+                  'for (const cls of ["json-key", "json-boolean", "json-null", "json-number", "json-string"])\n'
+                  '  if (!out.includes(cls)) { console.log("missing " + cls + " in " + out); process.exit(1); }\n')
+        result = subprocess.run(['node', '-e', script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+class TestPythonCompatibility(unittest.TestCase):
+    """The managers this runs on move between Python versions with the OS."""
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def _sources(self):
+        for top in ('.', 'lib', 'tools', 'tests', 'packs'):
+            base = os.path.join(self.ROOT, top)
+            for dirpath, dirnames, filenames in os.walk(base):
+                dirnames[:] = [d for d in dirnames if d not in ('.vendor', 'vendor', '__pycache__', 'github', 'node_modules')]
+                for f in filenames:
+                    if f.endswith('.py'):
+                        yield os.path.join(dirpath, f)
+                if top == '.':
+                    break
+
+    def test_sources_compile_with_warnings_as_errors(self):
+        """Python 3.12 warns on an unknown escape such as '\\d' in a normal string
+        and a later release makes it a SyntaxError -- the service would then not
+        start at all after an OS upgrade."""
+        import warnings
+        for path in self._sources():
+            with open(path, encoding='utf-8') as fh:
+                src = fh.read()
+            with warnings.catch_warnings():
+                warnings.simplefilter('error')
+                try:
+                    compile(src, path, 'exec')
+                except SyntaxError as exc:
+                    self.fail('%s: %s' % (os.path.relpath(path, self.ROOT), exc))
+
+    def test_installer_does_not_pip_into_the_system(self):
+        """PEP 668 refuses that on Ubuntu 24.04 / Debian 12, and packages pip put
+        under one Python version are gone after the OS moves to the next."""
+        with open(os.path.join(self.ROOT, 'install.sh'), encoding='utf-8') as fh:
+            body = fh.read()
+        self.assertNotRegex(body, r'(?m)^\s*pip3? install')
+        self.assertIn('--target "$INSTALL_DIR/vendor.new"', body)
+
+    def test_entry_points_load_the_vendor_directory(self):
+        for name in ('wazuh_agent_mgr.py', 'create_api_user.py'):
+            with open(os.path.join(self.ROOT, name), encoding='utf-8') as fh:
+                self.assertIn("'vendor')", fh.read(), name)
 
 
 # --------------------------------------------------------------------------
@@ -1701,6 +1831,153 @@ class TestShippedPacks(unittest.TestCase):
                               'summary_zh', 'author', 'license', 'files'):
                     self.assertIn(field, m)
                 self.assertTrue(m['files'])
+
+    def _pack_dir_of(self, m):
+        return os.path.join(self.packs_dir, m['id'])
+
+    def test_setup_steps_are_complete_in_both_languages(self):
+        for _, m in self.packs:
+            for i, st in enumerate(m.get('setup') or []):
+                with self.subTest(pack=m['id'], step=i):
+                    for field in ('title', 'title_zh', 'body', 'body_zh', 'platform'):
+                        self.assertTrue(st.get(field), field)
+                    self.assertIn(st['platform'], ('manager', 'all', 'windows', 'linux', 'macos', 'network'))
+                    if st.get('verify'):
+                        self.assertTrue(st.get('verify_zh'))
+                    if st.get('file'):
+                        sub, name = st['file'].split('/')
+                        self.assertIn(sub, ('agent', 'rules', 'lists', 'decoders', 'scripts'))
+                        self.assertTrue(os.path.isfile(os.path.join(self._pack_dir_of(m), sub, name)),
+                                        st['file'])
+
+    def test_custom_parent_rules_are_defined_in_the_same_pack(self):
+        """jt-portable-detect hung its Windows rules off 100110, a rule in another
+        pack. Installed alone, the parent was missing; with an old copy of the other
+        pack it silenced them. A pack may only depend on built-in rules and itself."""
+        import xml.etree.ElementTree as ET
+        for _, m in self.packs:
+            defined, used = set(), set()
+            for e in m['files']:
+                if e['type'] != 'rule':
+                    continue
+                with io.open(os.path.join(self._pack_dir_of(m), 'rules', e['name']), encoding='utf-8') as fh:
+                    root = ET.fromstring('<r>' + fh.read() + '</r>')
+                for rule in root.iter('rule'):
+                    defined.add(int(rule.get('id')))
+                    for tag in ('if_sid', 'if_matched_sid'):
+                        for el in rule.iter(tag):
+                            used.update(int(x) for x in re.split(r'[,\s]+', el.text.strip()) if x)
+            with self.subTest(pack=m['id']):
+                self.assertEqual(sorted(x for x in used if x >= 100000 and x not in defined), [])
+
+    def test_no_broad_level_one_parent_under_builtin_fim_or_sysmon(self):
+        """A level 0/1 rule that matches nearly every event of its kind silences
+        the built-in detections it sits beside: 906200 did it to FIM for a month."""
+        import xml.etree.ElementTree as ET
+        broad_parents = {'550', '553', '554', '61603', '61607', '61613', '61615', '61617'}
+        for _, m in self.packs:
+            for e in m['files']:
+                if e['type'] != 'rule':
+                    continue
+                with io.open(os.path.join(self._pack_dir_of(m), 'rules', e['name']), encoding='utf-8') as fh:
+                    root = ET.fromstring('<r>' + fh.read() + '</r>')
+                for rule in root.iter('rule'):
+                    sids = {s.strip() for el in rule.iter('if_sid') for s in el.text.split(',')}
+                    if int(rule.get('level')) <= 1 and sids & broad_parents:
+                        conds = [c for c in rule if c.tag in ('field', 'list', 'match', 'regex')]
+                        with self.subTest(rule=rule.get('id')):
+                            # an exclusion must at least name a concrete path or value,
+                            # not merely require that a field exists
+                            self.assertTrue(conds)
+                            for c in conds:
+                                self.assertNotIn((c.text or '').strip(), ('.+', '\\.+', '.*'))
+
+    def test_windows_portable_rules_against_decoded_eventchannel_values(self):
+        """wazuh-logtest cannot replay an eventchannel event on 4.14 (it decodes it
+        as plain JSON), so the Windows rule chains are checked here against values
+        shaped exactly as analysisd decodes them: two backslashes per separator.
+        This found 906102 and 906170 both matching an archive run, through a
+        lookahead that a backtracking \\\\+ could step past."""
+        import xml.etree.ElementTree as ET
+        path = os.path.join(self.packs_dir, 'jt-portable-detect', 'rules', 'zz-906100-jt_portable_rules.xml')
+        with io.open(path, encoding='utf-8') as fh:
+            root = ET.fromstring('<r>' + fh.read() + '</r>')
+        rules = {}
+        for r in root.iter('rule'):
+            rules[r.get('id')] = {
+                'fields': [(f.get('name').split('.')[-1], f.text, f.get('type')) for f in r.findall('field')],
+                'lists': [(l.get('field').split('.')[-1], l.get('lookup')) for l in r.findall('list')],
+                'parents': [s.strip() for el in r.findall('if_sid') for s in el.text.split(',')]}
+        approved = {'PuTTY', 'WinSCP.exe'}
+
+        def matches(rid, ev):
+            r = rules[rid]
+            for key, pat, typ in r['fields']:
+                if ev.get(key) is None or not re.search(pat if typ == 'pcre2' else pat.replace('\\.', '.'), ev[key]):
+                    return False
+            for key, lookup in r['lists']:
+                hit = key == 'originalFileName' and ev.get(key) in approved
+                if (lookup == 'match_key') != hit:
+                    return False
+            return True
+
+        def finals(parent, ev):
+            out = []
+            for rid in rules:
+                if parent in rules[rid]['parents'] and matches(rid, ev):
+                    out += finals(rid, ev) or [rid]
+            return sorted(set(out))
+
+        b = '\\\\'
+        u = b.join(['C:', 'Users', 'user'])
+
+        def p(*a):
+            return b.join((u,) + a)
+        cases = [
+            ('61603', {'image': p('Downloads', 't.exe'), 'parentImage': 'cmd.exe'}, ['906100']),
+            ('61603', {'image': p('Downloads', 't.exe'), 'parentImage': b.join(['C:', 'Windows', 'explorer.exe'])}, ['906106']),
+            ('61603', {'image': p('AppData', 'Local', 'Temp', 'Temp1_t.zip', 't.exe'), 'parentImage': 'x'}, ['906170']),
+            ('61603', {'image': p('AppData', 'Local', 'Temp', 'Rar$EXa12.3', 't.exe'), 'parentImage': 'x'}, ['906170']),
+            ('61603', {'image': p('AppData', 'Local', 'Temp', 'abc', 't.exe'), 'parentImage': 'x'}, ['906102']),
+            ('61603', {'image': p('Tools', 'nc.exe'), 'parentImage': 'x'}, ['906171']),
+            ('61603', {'image': p('proj', 'target', 'debug', 'a.exe'), 'parentImage': 'x'}, ['906172']),
+            ('61603', {'image': p('.cargo', 'bin', 'rustup.exe'), 'parentImage': 'x'}, []),
+            ('61603', {'image': p('Downloads', 'a.exe'), 'parentImage': 'x', 'originalFileName': 'AnyDesk.exe', 'product': 'AnyDesk'}, ['906175']),
+            ('61603', {'image': p('Downloads', 'a.exe'), 'parentImage': 'x', 'originalFileName': 'WinSCP.exe', 'product': 'AnyDesk'}, ['906140']),
+            ('61603', {'image': p('Downloads', 'ngrok.exe'), 'parentImage': 'x'}, ['906176']),
+            ('61603', {'image': b.join(['C:', 'Windows', 'SystemTemp', 'x', 't.exe']), 'parentImage': 'x'}, ['906104']),
+            ('61603', {'image': p('OneDrive - Corp', 'Desktop', 't.exe'), 'parentImage': 'x'}, ['906100']),
+            ('61617', {'targetFilename': p('Downloads', 'x.zip') + ':Zone.Identifier', 'contents': 'ZoneId=3'}, ['906122']),
+            ('61617', {'targetFilename': p('AppData', 'Local', 'Temp', 'WinGet', 'x.exe') + ':Zone.Identifier', 'contents': 'ZoneId=3'}, ['906123']),
+            ('61617', {'targetFilename': p('Downloads', 'x.exe'), 'contents': ''}, []),
+            ('61613', {'image': b.join(['C:', 'Windows', 'System32', 'OpenSSH', 'sftp-server.exe']), 'targetFilename': p('Downloads', 'x.exe')}, ['906124']),
+            ('61613', {'image': b.join(['C:', 'Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe']), 'targetFilename': p('Downloads', 'x.exe')}, []),
+            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'cfg.json')}, ['906167']),
+            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'drop.exe')}, []),
+            ('61600', {'eventID': '29', 'image': 'explorer.exe', 'targetFilename': p('Downloads', 'test.pdf')}, ['906183']),
+            ('61600', {'eventID': '29', 'image': b.join(['C:', 'Windows', 'System32', 'OpenSSH', 'sftp-server.exe']), 'targetFilename': p('Downloads', 'x.exe')}, ['906181']),
+            ('61600', {'eventID': '29', 'image': 'explorer.exe', 'targetFilename': b.join(['E:', 'x.exe'])}, ['906182']),
+            ('61600', {'eventID': '29', 'image': 'chrome.exe', 'targetFilename': p('Downloads', 'Unconfirmed 1.crdownload')}, ['906180']),
+        ]
+        for parent, ev, want in cases:
+            with self.subTest(parent=parent, event=ev):
+                got = finals(parent, ev)
+                if parent == '61600' and not got and matches('906180', ev):
+                    got = ['906180']
+                self.assertEqual(got, want)
+
+    def test_agent_ignore_patterns_are_plain_os_match(self):
+        """syscheck <ignore type="sregex"> is OS_Match: only ^ $ | ! are special.
+        Brackets, parentheses or backslashes there are matched literally."""
+        for dirpath, _, names in os.walk(self.packs_dir):
+            for n in names:
+                if not n.endswith('.conf'):
+                    continue
+                with io.open(os.path.join(dirpath, n), encoding='utf-8') as fh:
+                    body = re.sub(r'<!--.*?-->', '', fh.read(), flags=re.S)
+                for pat in re.findall(r'<ignore type="sregex">([^<]*)</ignore>', body):
+                    with self.subTest(file=n, pattern=pat):
+                        self.assertNotRegex(pat, r'[\\()\[\]]')
 
     def test_index_matches_the_catalogue_on_disk(self):
         index_path = os.path.join(self.packs_dir, 'INDEX')

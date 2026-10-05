@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.9.0
+# jt-wazuh-mgr v1.10.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.9.0-blue)
+![Version](https://img.shields.io/badge/version-1.10.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -45,7 +45,7 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 ## 功能特色
 
 ### 語言
-- 標題列可切換 **英文 / 繁體中文 / 日本語**（EN ⇄ 中文 ⇄ 日本語），偏好設定依瀏覽器記住。
+- **英文 / 繁體中文 / 日本語**，從標題列的語言選單選擇，每種語言都以它自己的文字列出；偏好設定依瀏覽器記住。
 
 ### Agent 管理
 - 即時檢視所有 Agent 狀態
@@ -88,7 +88,9 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 - 每個套件以 manifest 打包規則、解碼器與 CDB 清單；點入可看到會安裝哪些檔案、裝到哪裡、佔用哪些規則 ID
 - 安裝有保護：**規則 ID 衝突偵測**、覆蓋前先備份、`wazuh-analysisd -t` 驗證，**任一步失敗整包回滾**
 - 移除會還原被覆蓋的原檔，並**拒絕刪除你安裝後修改過的檔案**
-- 內建套件：可攜式程式偵測（Windows/Linux/macOS）、IP 威脅情資、惡意程式雜湊比對、Zimbra 偵測、Zenarmor（OPNsense）、AdGuard Home、fail2ban
+- 需要管理端以外設定（Sysmon 過濾條件、auditd、agent 群組、syslog 轉送）的套件附**部署說明**：逐步編號、可複製的指令、每一步的確認方式，以及可檢視或下載的 agent 端檔案
+- 檔案是手動複製進去的套件會顯示為**已安裝（未登記）**，不再被判成和自己衝突
+- 內建套件：可攜式程式偵測（Windows/Linux/macOS）、IP 威脅情資、惡意程式雜湊比對、Zimbra 偵測、Zenarmor（OPNsense）、AdGuard Home、fail2ban、可讀的告警摘要信
 
 ### 安全性
 - 所有參數皆做輸入驗證；防範指令注入與路徑穿越
@@ -125,7 +127,8 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 
 ### 系統需求
 - Python 3.8+
-- Wazuh Manager 4.x
+- Wazuh Manager 4.x（已測試 4.14.7 與 4.14.8）
+- 安裝程式把 Python 相依套件裝在 `/opt/jt-wazuh-mgr/vendor`，不裝進系統 Python。因此在禁止 pip 寫入系統的發行版（Ubuntu 24.04、Debian 12）也能安裝，作業系統升級改變 Python 版本後也不會失效
 - **必須安裝在 Wazuh Manager 上**（叢集模式安裝在 Master 節點）
 
 ### 安裝
@@ -133,6 +136,7 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 使用上方的[一行安裝指令](#-一行安裝--升級--移除)，或手動執行：
 
 ```bash
+python3 -m pip install --target vendor -r requirements.txt
 ./wazuh_agent_mgr.py --web --ssl-auto
 ```
 

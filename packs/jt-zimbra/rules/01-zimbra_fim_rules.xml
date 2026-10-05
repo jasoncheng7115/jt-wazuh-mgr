@@ -25,11 +25,19 @@
     <description>Zimbra web or extension directory file change (base rule)</description>
   </rule>
 
-  <!-- 原廠檔案：升級時的正常行為，降噪 -->
+  <!-- 原廠檔案的屬性變動（權限、擁有者、時間）：降噪
+
+       ★ 2026-10-05：只收「內容沒變」的變動。原本它收下所有原廠檔案的變動，
+         而 100808（內容被改寫，level 13）是 100800 的同層規則 ── 100800 先命中、
+         這條把事件停在 level 0，100808 從來不可能觸發。現在內容有變的事件
+         交給 100808（同為 100800 的子規則），兩條以 changed_fields 互斥。
+         新增與刪除沒有 changed_fields，兩條都不收，停在 100800 的 level 0，
+         與原本相同。 -->
   <rule id="100801" level="0">
     <if_sid>100800</if_sid>
     <list field="file" lookup="match_key">etc/lists/zimbra-webfiles</list>
-    <description>Zimbra stock file changed, normal during an upgrade</description>
+    <field name="changed_fields" type="pcre2">^(?!.*(md5|sha1|sha256)).*$</field>
+    <description>Zimbra stock file attributes changed (contents unchanged)</description>
   </rule>
 
   <!-- 核心規則：非原廠可執行檔案 = 高度疑似 Web Shell -->
@@ -128,10 +136,14 @@
     <description>Build or test toolchain scratch directory (normal)</description>
   </rule>
 
-  <!-- 原廠檔案「內容」遭竄改（不是新增，是既有檔案被改寫） -->
+  <!-- 原廠檔案「內容」遭竄改（不是新增，是既有檔案被改寫）
+
+       ★ 2026-10-05 起才真正會觸發，原因見 100801。同時涵蓋 lib/ext：
+         原廠擴充模組被改寫，就是植入後門的典型手法。
+         代價：Zimbra 升級會改寫原廠檔案，每次升級都會有一批這條告警 ——
+         升級後請重新產生 zimbra-webfiles 基準，並把那一批當作升級紀錄確認。 -->
   <rule id="100808" level="13">
-    <if_sid>550</if_sid>
-    <field name="file" type="pcre2">^/opt/zimbra/(jetty_base|jetty)/webapps/</field>
+    <if_sid>100800</if_sid>
     <list field="file" lookup="match_key">etc/lists/zimbra-webfiles</list>
     <field name="changed_fields" type="pcre2">md5|sha1|sha256</field>
     <description>[HIGH] Zimbra stock file contents were tampered with: $(file) process: $(process_name)</description>

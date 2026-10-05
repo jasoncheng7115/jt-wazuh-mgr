@@ -1,46 +1,76 @@
 {
-  "id": "jt-adguard",
-  "name": "AdGuard Home DNS Detection",
-  "name_zh": "AdGuard Home DNS 偵測套組",
-  "version": "1.1",
-  "summary": "Decoder and rules for AdGuard Home query logs - the only log that records which client asked for a domain.",
-  "summary_zh": "AdGuard Home 查詢記錄的解碼器與規則。這是唯一記錄「哪一台主機查詢了某網域」的來源。",
-  "rule_id_range": "130900-130999",
-  "notes": [
-    "AdGuard Home must forward its query log by syslog with the program name adguard; each message body is a single JSON object.",
-    "This pack is the attribution layer for DNS detections. A recursive resolver or a firewall only sees the resolver's own address as the query source, so without AdGuard a malicious lookup cannot be traced back to a host.",
-    "Ordinary ad and tracker blocking stays at level 0 and never alerts. Only threat-list blocks (130901) and filter-evasion blocks (130902) surface directly; volume from one client is handled by correlation.",
-    "PREREQUISITE - AdGuard must sit in front of the clients. If clients query a resolver that then forwards to AdGuard, every event carries the resolver's address and attribution is lost.",
-    "The base rule 130900 is level 2, not level 0, on purpose: <if_matched_sid> does not fire against a level 0 rule, so the correlation rules would be dead. Level 2 is still below the default alert threshold, so it writes no alerts.",
-    "Verified on Wazuh 4.14.7 against live traffic from AdGuard Home.",
-    "A block is a control that fired, so 130902 alerts at level 3 rather than staying silent. Volume is real - four Apple and Chrome devices produced 152 of these in a single day, all for the same five encrypted-DNS endpoints - so 130912 adds a once-per-hour summary per client for the case that needs chasing: a device that keeps trying."
-  ],
-  "notes_zh": [
-    "AdGuard Home 需以 syslog 轉送查詢記錄，程式名稱須為 adguard，訊息本體為單一 JSON 物件。",
-    "本套組是 DNS 偵測的溯源層。遞迴解析器或防火牆只看得到解析器自己的位址，沒有 AdGuard 就無法把惡意查詢追回到哪一台主機。",
-    "一般廣告與追蹤器封鎖停在 level 0 不告警；只有威脅清單封鎖（130901）與規避封鎖（130902）會直接浮現，單一用戶端的量則交給關聯規則處理。",
-    "前提條件 - AdGuard 必須位於用戶端前方。若用戶端查詢的是另一台解析器再轉給 AdGuard，每筆事件都只會帶解析器的位址，溯源能力就沒了。",
-    "基礎規則 130900 刻意設為 level 2 而非 0：`<if_matched_sid>` 對 level 0 的規則不會觸發，設 0 會讓關聯規則失效。level 2 仍低於預設告警門檻，不會產生告警。",
-    "已在 Wazuh 4.14.7 上以 AdGuard Home 的實際流量驗證。",
-    "擋下來就是控制生效了，所以 130902 以 level 3 告警而非靜默。量確實不小 —— 實測四台 Apple 與 Chrome 裝置一天產生 152 筆，全部指向同樣五個加密 DNS 端點 —— 因此 130912 另外以「每台每小時一次」的形式補上真正需要追的情況：持續嘗試的裝置。"
-  ],
-  "author": "Jason Tools",
-  "license": "AGPL-3.0-or-later",
-  "requires": {
-    "wazuh": ">=4.8"
+ "id": "jt-adguard",
+ "name": "AdGuard Home DNS Detection",
+ "name_zh": "AdGuard Home DNS 偵測套組",
+ "version": "1.1",
+ "summary": "Decoder and rules for AdGuard Home query logs - the only log that records which client asked for a domain.",
+ "summary_zh": "AdGuard Home 查詢記錄的解碼器與規則。這是唯一記錄「哪一台主機查詢了某網域」的來源。",
+ "rule_id_range": "130900-130999",
+ "notes": [
+  "AdGuard Home must forward its query log by syslog with the program name adguard; each message body is a single JSON object.",
+  "This pack is the attribution layer for DNS detections. A recursive resolver or a firewall only sees the resolver's own address as the query source, so without AdGuard a malicious lookup cannot be traced back to a host.",
+  "Ordinary ad and tracker blocking stays at level 0 and never alerts. Only threat-list blocks (130901) and filter-evasion blocks (130902) surface directly; volume from one client is handled by correlation.",
+  "PREREQUISITE - AdGuard must sit in front of the clients. If clients query a resolver that then forwards to AdGuard, every event carries the resolver's address and attribution is lost.",
+  "The base rule 130900 is level 2, not level 0, on purpose: <if_matched_sid> does not fire against a level 0 rule, so the correlation rules would be dead. Level 2 is still below the default alert threshold, so it writes no alerts.",
+  "Verified on Wazuh 4.14.7 against live traffic from AdGuard Home.",
+  "A block is a control that fired, so 130902 alerts at level 3 rather than staying silent. Volume is real - four Apple and Chrome devices produced 152 of these in a single day, all for the same five encrypted-DNS endpoints - so 130912 adds a once-per-hour summary per client for the case that needs chasing: a device that keeps trying."
+ ],
+ "notes_zh": [
+  "AdGuard Home 需以 syslog 轉送查詢記錄，程式名稱須為 adguard，訊息本體為單一 JSON 物件。",
+  "本套組是 DNS 偵測的溯源層。遞迴解析器或防火牆只看得到解析器自己的位址，沒有 AdGuard 就無法把惡意查詢追回到哪一台主機。",
+  "一般廣告與追蹤器封鎖停在 level 0 不告警；只有威脅清單封鎖（130901）與規避封鎖（130902）會直接浮現，單一用戶端的量則交給關聯規則處理。",
+  "前提條件 - AdGuard 必須位於用戶端前方。若用戶端查詢的是另一台解析器再轉給 AdGuard，每筆事件都只會帶解析器的位址，溯源能力就沒了。",
+  "基礎規則 130900 刻意設為 level 2 而非 0：`<if_matched_sid>` 對 level 0 的規則不會觸發，設 0 會讓關聯規則失效。level 2 仍低於預設告警門檻，不會產生告警。",
+  "已在 Wazuh 4.14.7 上以 AdGuard Home 的實際流量驗證。",
+  "擋下來就是控制生效了，所以 130902 以 level 3 告警而非靜默。量確實不小 —— 實測四台 Apple 與 Chrome 裝置一天產生 152 筆，全部指向同樣五個加密 DNS 端點 —— 因此 130912 另外以「每台每小時一次」的形式補上真正需要追的情況：持續嘗試的裝置。"
+ ],
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "files": [
+  {
+   "type": "decoder",
+   "name": "adguard-decoder.xml",
+   "dest": "etc/decoders/adguard-decoder.xml",
+   "sha256": "6bf0afda1dcb5db6a51279580e0fa214dd16f81ce3cf9ba229fa970d1bb36182"
   },
-  "files": [
-    {
-      "type": "decoder",
-      "name": "adguard-decoder.xml",
-      "dest": "etc/decoders/adguard-decoder.xml",
-      "sha256": "6bf0afda1dcb5db6a51279580e0fa214dd16f81ce3cf9ba229fa970d1bb36182"
-    },
-    {
-      "type": "rule",
-      "name": "adguard-rule.xml",
-      "dest": "etc/rules/adguard-rule.xml",
-      "sha256": "a1c2d3d2d346d6555ca0cb524f8f8630e453b37573e09a5dbf82e5e6ccfe5aa2"
-    }
-  ]
+  {
+   "type": "rule",
+   "name": "adguard-rule.xml",
+   "dest": "etc/rules/adguard-rule.xml",
+   "sha256": "a1c2d3d2d346d6555ca0cb524f8f8630e453b37573e09a5dbf82e5e6ccfe5aa2"
+  }
+ ],
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset on every node",
+   "title_zh": "安裝套件並在所有節點重新載入規則集",
+   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+  },
+  {
+   "platform": "network",
+   "required": true,
+   "title": "Forward the AdGuard Home query log by syslog",
+   "title_zh": "以 syslog 轉送 AdGuard Home 查詢記錄",
+   "body": "Send the query log to the Wazuh manager by syslog with the program name adguard, one JSON object per message, and allow the AdGuard host in the manager's syslog <remote> block.",
+   "body_zh": "把查詢記錄以 syslog 送到 Wazuh 管理端，program name 為 adguard，每則訊息一個 JSON 物件；並在管理端 syslog 的 <remote> 允許 AdGuard 主機。"
+  },
+  {
+   "platform": "network",
+   "required": true,
+   "title": "Put AdGuard in front of the clients",
+   "title_zh": "讓 AdGuard 直接面對用戶端",
+   "body": "Clients must query AdGuard directly. If they query another resolver that forwards to AdGuard, every event carries that resolver's address and a lookup can no longer be traced to a host.",
+   "body_zh": "用戶端必須直接查詢 AdGuard。若用戶端先查另一台解析器再轉給 AdGuard，每筆事件都只會是那台解析器的位址，無法追到發出查詢的主機。"
+  }
+ ],
+ "tested_with": [
+  "4.14.7",
+  "4.14.8"
+ ]
 }

@@ -4,6 +4,119 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.10.0 (2026-10-05)
+
+- **The installer no longer pip-installs into the system Python.** On Ubuntu
+  24.04 and Debian 12, `pip install` into the system is refused outright
+  (PEP 668), so the one-line installer stopped halfway there. Where it did
+  work, it put Flask under `/usr/local/lib/python3.10`, which Python 3.12 does
+  not read: upgrading the OS from 22.04 to 24.04 left the service unable to
+  start, and only after the next reboot, because the running process still had
+  the old interpreter. Dependencies now go into `/opt/jt-wazuh-mgr/vendor` with
+  `pip --target`, built in a fresh directory and swapped in only once it
+  imports, and the program puts that directory on its own path. Verified that
+  packages built for 3.10 still load under 3.12, each falling back to its pure
+  Python code.
+
+- **Two syntax highlighters in the interface had never worked.** Their regular
+  expressions sat in a normal (not raw) Python string, so `\b` reached the
+  browser as a backspace rather than a word boundary, and `\\[^u]` as a literal
+  bracket. The JSON viewer never coloured `true`, `false` or `null`, and the log
+  viewer never coloured addresses. Python 3.12 also warns about the other
+  escapes in those lines and a later release makes them errors, which would
+  have stopped the service from starting. A test now compiles every source file
+  with warnings as errors, and another checks that the page contains no
+  backspace characters.
+
+- **The language button is a menu.** It used to step to the next language on
+  each click, so reaching your own meant passing through one you might not
+  read. It now lists English, 繁體中文 and 日本語, each under its own name.
+
+- **Rule packs carry a setup guide.** Several packs depend on configuration the
+  manager cannot apply: Sysmon filters, auditd, assigning agents to a group,
+  syslog forwarding from a firewall. Each step now says where it happens,
+  whether it is required, the commands to run, how to check it worked, and
+  shows the agent-side file it needs, to read in place or download. The pack
+  detail is set at a size meant to be read, and the long notes are shorter.
+
+- **A pack whose files were copied in by hand is recognised.** Our own manager
+  ran all eight packs, installed before the tool kept install records; the
+  catalogue reported none installed and listed each pack's own rule IDs as
+  conflicts with itself. A pack's own files are no longer conflicts, and a
+  pack whose files are in place without a record is shown as installed but
+  untracked; installing it records it.
+
+- **jt-portable-detect 3.0. Rule 906200 silenced built-in file integrity alerts
+  for a month.** It was a level 1, no_log child of the built-in rules 550, 553
+  and 554, matching any path under `/tmp`, `/home`, `/root` and a few more, and
+  its comment said level 1 rather than 0 kept it from hiding anything. That
+  holds for correlation and not for alerting: Wazuh reports the deepest rule
+  that matched, so every event none of its children claimed ended at level 1
+  and was never written. Measured thirty days after it shipped, no built-in
+  file integrity alert had been written for any of those paths on any agent; a
+  change to `/root/.ssh/known_hosts` on a production host was in the agent's
+  database and in no alert. The rule is retired, every Linux rule now carries
+  its own path condition, and noise that came from monitoring a path is ignored
+  on the agent, which also keeps it out of the size-capped database.
+
+- Also in 3.0, on Linux: 906204 (3,006 alerts in thirty days, all wrong) asks
+  for an added file with the execute bit in a home directory; 906230 and 906231
+  read the staged script's path rather than the interpreter's, so they can
+  finally match a scriptlet; 906213 no longer competes with 906211 for the same
+  record; Playwright's and Puppeteer's browsers and self-updating CLIs running
+  from their own versioned directories are recorded at level 3 (971 level 10
+  alerts and 181 level 12 correlations in thirty days, all of them these); and
+  debconf's configuration scripts in `/tmp` are level 3 too.
+
+- On Windows: running a program directly from inside an archive; programs run
+  from a folder of one's own in the profile, from OneDrive's redirected
+  Desktop, Documents and Downloads, and from `C:\Windows\SystemTemp`;
+  executables written into a download location by anything other than
+  PowerShell — sftp, SMB, a copy from USB, the delivery path actually used in
+  our estate, and silent until now; portable remote-access tools (recognised by
+  the product name inside the file) and tunnelling tools run from those
+  places, at level 12; and, with Sysmon 15, executable content saved under a
+  name that is not an executable's. The download-mark rules matched the wrong
+  one of the two events Sysmon writes, so 906122 could never fire; they now
+  read the `Zone.Identifier` record. AppLocker events are collected by the
+  pack's group, and rules 906110 and 906111 had never seen one.
+
+- Rule 906167 corrects the built-in rule 92213, whose extension match has no
+  end anchor: `.json` counts as `.js`. 82 per cent of its level 15 alerts over
+  thirty days were not executables.
+
+- **jt-malware-hash 1.3.** Its level 1 "base" rules matched almost every event
+  of their kind and could silence the built-in detections beside them, the
+  same mistake as 906200. The file integrity lookup read a field name that does
+  not exist on the rule side, so it had never run; it now hangs directly off
+  the built-in rules. The Sysmon lookups are removed: two hung off the wrong
+  events, and Sysmon prints its hashes as one combined string that a CDB lookup
+  cannot match. jt-portable-detect no longer depends on a rule in this pack;
+  update both together.
+
+- **jt-zimbra 2.7: rule 100808 can finally fire.** It reports a stock Zimbra
+  file whose contents were rewritten, at level 13, and it never had: its sibling
+  100800 claimed every event in the web directories first, and 100800's child
+  100801 settled every stock-file change at level 0. 100801 now takes only
+  changes that leave the contents alone; 100808, now a child of 100800, takes
+  the rest, in `lib/ext` as well. Verified with a real file-integrity event: a
+  permission change is silent, a content change raises 100808. Every Zimbra
+  upgrade rewrites stock files, so expect a batch of these afterwards and
+  regenerate the baseline.
+
+- syscheck `<ignore type="sregex">` takes OS_Match, whose only special
+  characters are `^ $ | !`. Patterns in the packs' agent configuration that
+  used brackets, parentheses or backslashes looked for those characters
+  literally. They are rewritten, and a test keeps them that way.
+
+- Tested with Wazuh 4.14.8: its API is identical to 4.14.7's, operation for
+  operation, and none of the packs' rule IDs collide with the 4,515 rules it
+  ships. The browser tests now run against a mocked 4.14.8 and cover the
+  language menu and the setup guide (21 journeys).
+
+- preflight's documented-count check read "check 1, 2 and 12" as a claim that
+  there are 12 checks. Item numbers are no longer counted.
+
 ## v1.9.0 (2026-09-16)
 
 - **New pack: jt-alert-digest.** The mail channel on a Wazuh manager usually

@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.9.0
+# jt-wazuh-mgr v1.10.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@
 
 > **推奨**: Web UI を主なインターフェースとしてお使いください。本ツールの中心となる機能であり、すべての機能が利用できます。
 
-![Version](https://img.shields.io/badge/version-1.9.0-blue)
+![Version](https://img.shields.io/badge/version-1.10.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -47,7 +47,7 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 ## 機能
 
 ### 表示言語
-- **English / 繁體中文 / 日本語** をヘッダーから切り替えられます（EN ⇄ 中文 ⇄ 日本語）。選択した言語はブラウザーごとに保存されます。
+- **English / 繁體中文 / 日本語** をヘッダーの言語メニューから選べます。各言語はその言語自身の表記で並びます。選択した言語はブラウザーごとに保存されます。
 
 ### エージェント管理
 - すべてのエージェントの状態をリアルタイムで表示
@@ -90,7 +90,9 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 - 各パックはマニフェストのもとにルール・デコーダー・CDB リストをまとめています。開くとインストールされるファイル、その配置先、使用するルール ID を確認できます
 - インストールは保護されています: **ルール ID の重複検出**、上書きされるファイルのバックアップ、`wazuh-analysisd -t` による検証、そして**いずれかの手順が失敗した場合の完全なロールバック**
 - 削除時は置き換えられたファイルを復元し、**インストール後に編集されたファイルは破棄を拒否**します
-- 同梱パック: 可搬実行ファイルの検知（Windows／Linux／macOS）、IP 脅威インテリジェンス、マルウェアのハッシュ照合、Zimbra 検知、Zenarmor（OPNsense）、AdGuard Home、fail2ban
+- マネージャー以外での設定（Sysmon のフィルター、auditd、エージェントグループ、syslog 転送）が必要なパックには**セットアップガイド**を同梱：番号付きの手順、コピーできるコマンド、各手順の確認方法、表示・ダウンロードできるエージェント側ファイル
+- 手作業でファイルを配置したパックは**インストール済み（未登録）**として認識し、自分自身との競合とは報告しません
+- 同梱パック: 可搬実行ファイルの検知（Windows／Linux／macOS）、IP 脅威インテリジェンス、マルウェアのハッシュ照合、Zimbra 検知、Zenarmor（OPNsense）、AdGuard Home、fail2ban、読みやすいアラート要約メール
 
 ### セキュリティ
 - すべてのパラメーターに対する入力検証。コマンドインジェクションとパストラバーサルへの対策
@@ -127,7 +129,8 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 
 ### 動作要件
 - Python 3.8 以上
-- Wazuh Manager 4.x
+- Wazuh Manager 4.x（4.14.7 と 4.14.8 で動作確認）
+- インストーラーは Python の依存パッケージをシステムの Python ではなく `/opt/jt-wazuh-mgr/vendor` に入れます。システムへの pip を拒否するディストリビューション（Ubuntu 24.04、Debian 12）でも動作し、OS アップグレードで Python のバージョンが変わっても動き続けます
 - **Wazuh Manager 上にインストールすること**（クラスタ構成ではマスターノード）
 
 ### インストール
@@ -135,6 +138,7 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 上記の[ワンライナーインストーラー](#-ワンライナーでのインストール--アップグレード--アンインストール)を使うか、クローン後に手動で実行します:
 
 ```bash
+python3 -m pip install --target vendor -r requirements.txt
 ./wazuh_agent_mgr.py --web --ssl-auto
 ```
 

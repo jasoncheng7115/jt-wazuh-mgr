@@ -1,12 +1,12 @@
 <!--
   ╔══════════════════════════════════════════════════════════════════════╗
   ║  jt-portable-detect ── 可攜式執行檔偵測規則                          ║
-  ║  檔案名稱: 10-906100-jt_portable_rules.xml                           ║
-  ║  版本: v1.1    規則區間: 906100-906199                               ║
-  ║  Jason Tools Co., Ltd.（節省工具箱有限公司）／Apache-2.0             ║
+  ║  檔案名稱: zz-906100-jt_portable_rules.xml                           ║
+  ║  套件版本見 manifest.json    規則區間: 906100-906199                 ║
+  ║  Jason Tools Co., Ltd.（節省工具箱有限公司）／AGPL-3.0-or-later      ║
   ╚══════════════════════════════════════════════════════════════════════╝
 
-  安裝位置：/var/ossec/etc/rules/10-906100-jt_portable_rules.xml
+  安裝位置：/var/ossec/etc/rules/zz-906100-jt_portable_rules.xml
 
   ── ★ 檔名前綴不可任意更改（實測確認）★ ──
     規則檔「跨目錄依檔名字母序載入」，而 <if_sid> 只能參照「已載入」的規則。
@@ -25,14 +25,25 @@
     公開範例與第三方規則集大量占用，衝突風險高。
 
   ── 模組對照 ──
-    A  906100-906109  Sysmon Process Create（EID 1）
+    A  906100-906109  Sysmon Process Create（EID 1）── 位置
+       906168-906173  A 項的排除與延伸（壓縮檔內執行、家目錄自建資料夾）
     B  906110-906119  AppLocker 稽核（EID 8003／8004）        ※ 可獨立停用
     C  906120-906129  FIM 檔案落地 ＋ Sysmon EID 15
     D  906130-906139  定期主動盤點（NDJSON）
     E  906140-906142  核准清單覆寫（等級壓降）
        906143-906149  ★ 保留給客戶端自訂的排除規則
        906150-906159  關聯規則
+       906160-906167  內建 Sysmon 事件 11 偵測（92200-92217）的調校
+       906175-906179  G 項：遠端控制與穿隧工具
+       906180-906189  F 項：Sysmon 事件 29（偵測到可執行檔）
        906190-906199  保留給測試鏡像規則（見 tests/run-logtest.sh）
+
+  ── ★ 同層規則的評估順序 ──
+    Wazuh 依序嘗試同一父規則下的子規則，第一個命中的勝出並往下走，其餘同層規則
+    不再評估；順序實務上無法依賴。因此本檔案的原則是：
+      ‧ 同層的告警規則，條件必須互斥（例如 906102 與 906170 以路徑區分）。
+      ‧ 要「蓋過」別條規則的覆寫（核准清單、排除），寫成那條規則的子規則；
+        若可能有多條規則先命中，就把它們全部列進 if_sid。
 
   ── ★ pcre2 反斜線寫法（已於 Wazuh 4.14.5 實測，勿憑推測修改）──
     XML 中寫  \\   → pcre2 視為「一個字面反斜線」  ✅ 正確
@@ -96,10 +107,14 @@
       Users\Public\...              共用目錄（第二段就是 Public）
       Users\<使用者>\(Downloads|Desktop|Documents)\...
       Users\<使用者>\<檔案>         家目錄根層，後面不再有反斜線
+
+    ★ 2026-09-28：Downloads／Desktop／Documents 前面可以多一段 OneDrive…
+      ── OneDrive 的「已知資料夾移動」會把這三個資料夾搬到
+      Users\<使用者>\OneDrive - <公司>\Desktop，原本的寫法在這些電腦上完全不命中。
   -->
   <rule id="906100" level="6">
-    <if_sid>61603,100110</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+(Public\\+|[^\\]+\\+(Downloads|Desktop|Documents)\\+|[^\\]+\\+[^\\]+$)</field>
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+(Public\\+|[^\\]+\\+(OneDrive[^\\]*\\+)?(Downloads|Desktop|Documents)\\+|[^\\]+\\+[^\\]+$)</field>
     <description>Portable executable run from a user directory - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
       <id>T1204.002</id>
@@ -114,7 +129,7 @@
         將 [E-Z] 改為 [D-Z] 即可，見 docs/TUNING.md 第 5 節）
   -->
   <rule id="906101" level="10">
-    <if_sid>61603,100110</if_sid>
+    <if_sid>61603</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[E-Z]:\\+</field>
     <description>[WARN] Portable executable run from a non-system drive, possibly removable media - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
@@ -129,10 +144,17 @@
     ※ 刻意「不」涵蓋整個 AppData\Local ── Chrome／Edge／Teams／Slack／
       Zoom／VS Code 的更新程序均自該處執行，會產生大量誤報。
       若要擴大範圍，須先收集至少 7 日 baseline，見 docs/TUNING.md 第 2 節。
+
+    ★ 2026-09-28：壓縮工具解壓到 Temp 再執行的目錄（Rar$EX…、7z…、
+      Temp1_<名稱>.zip、wz…）排除在外，改由 906170 負責 ── 兩條是同層規則，
+      路徑必須互斥，否則誰先被評估就由誰決定告警。
+      ★ lookahead 開頭的 (?!\\| …) 不可省：eventchannel 的分隔符是兩個反斜線，
+        \\+ 可以回溯成只吃一個，留下的那個反斜線會讓排除條件看不到後面的
+        Temp1_x.zip，結果兩條同時成立。離線比對時抓到，2026-10-05。
   -->
   <rule id="906102" level="10">
-    <if_sid>61603,100110</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+</field>
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+(?!\\|(Rar\$EX[a-z]{1,3}[0-9.]+|7z[A-Z0-9]{3,}|Temp[0-9]+_[^\\]+\.zip|wz[0-9A-F]{3,})\\)</field>
     <description>[WARN] Portable executable run from the user Temp directory - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
       <id>T1204.002</id>
@@ -156,7 +178,7 @@
       同時涵蓋兩種情形，不要寫死數量。
   -->
   <rule id="906103" level="12">
-    <if_sid>61603,100110</if_sid>
+    <if_sid>61603</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^\\+[^\\]+\\+[^\\]+\\+</field>
     <description>[HIGH] Portable executable run directly from a network share - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
@@ -174,6 +196,9 @@
     都寫得進去、但程式不該長住」的地方，也是免安裝工具與惡意程式常見的
     落腳點，而原本三條規則都沒涵蓋。
 
+    ★ 2026-09-28：906104 加入 C:\Windows\SystemTemp ── 新版 Windows 給 SYSTEM
+      程序用的暫存目錄。30 天內 Chrome 的更新程式從這裡執行約 7 次，原規則完全沒看到。
+
     兩者的等級刻意不同：
       Windows\Temp   ── 正常軟體極少從這裡執行，訊噪比高，給 10。
       ProgramData     ── 有一批正規軟體（部分防毒、更新程式、驅動安裝）
@@ -181,8 +206,8 @@
                          提高。要提高之前請先收集至少 7 日 baseline。
   -->
   <rule id="906104" level="10">
-    <if_sid>61603,100110</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+Temp\\+</field>
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+(System)?Temp\\+</field>
     <description>[WARN] Portable executable run from the system Temp directory - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
       <id>T1204.002</id>
@@ -191,7 +216,7 @@
   </rule>
 
   <rule id="906105" level="6">
-    <if_sid>61603,100110</if_sid>
+    <if_sid>61603</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+ProgramData\\+</field>
     <description>Portable executable run from ProgramData - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
@@ -212,8 +237,9 @@
     也就是有人「真的把它當工具在跑」，而不是某個更新程式的子行程。
     這是本檔案裡少數不靠位置、而靠行為型態判斷的訊號。
 
-    掛在 906100 之下，所以核准清單（E 項 906140-906142）依然壓得下來 ──
-    那三條是本規則的同層規則且位於檔案後方，Wazuh 取最後命中者。
+    掛在 906100 之下。核准清單（E 項 906140-906142）同時把 906100 與本規則
+    列在 if_sid ── 不論 Wazuh 先走 906106 還是先走核准規則，已核准的工具都會
+    落在 level 3。（舊註解說「同層取最後命中者」，那是錯的：同層是第一個命中者勝出。）
   -->
   <rule id="906106" level="9">
     <if_sid>906100</if_sid>
@@ -255,6 +281,145 @@
     <description>Excluded: DISM servicing host, a Windows component</description>
     <options>no_full_log</options>
     <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <!--
+    A-9：系統暫存目錄裡，作業系統與瀏覽器更新程式自己的形狀（2026-09-28，依 30 天資料）
+
+    906104 在 9/18 有 2 筆 level 10 是 Defender 平台更新（Windows\Temp\<GUID>\
+    MpSigStub.exe／MpRecovery.exe），而 SystemTemp 納入之後，Chrome 更新程式每次
+    更新會從那裡跑 3～4 個程序。同 906107／906108：比對工具自己產生的路徑形狀。
+  -->
+  <rule id="906109" level="0">
+    <if_sid>906104</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+(System)?Temp\\+(GoogleUpdater|msedge|MicrosoftEdgeUpdate|chrome)_\w*Unpacker_BeginUnzipping\d+_\d+\\+</field>
+    <description>Excluded: Chromium-based updater running its own unpacked installer</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <rule id="906168" level="0">
+    <if_sid>906104</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+Temp\\+[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\\+(MpSigStub|MpRecovery)\.exe$</field>
+    <description>Excluded: Microsoft Defender platform update staging</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <!-- WiX Burn 安裝程式會把自己複製到 Windows\Temp\{GUID}\.cr\ 或 .be\ 再執行；
+       外層安裝程式本身已由其他規則看到，這份複本降為記錄。 -->
+  <rule id="906173" level="3">
+    <if_sid>906104</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+Temp\\+\{[0-9A-F-]{36}\}\\+\.(cr|be)\\+[^\\]+\.exe$</field>
+    <description>WiX Burn installer running its clean-room copy - $(win.eventdata.image)</description>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+  <!-- Defender 本體就住在 ProgramData；其他站台的 Sysmon 設定不一定會濾掉它。 -->
+  <rule id="906169" level="0">
+    <if_sid>906105</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+ProgramData\\+Microsoft\\+Windows Defender\\+Platform\\+[0-9.-]+\\+[^\\]+\.exe$</field>
+    <description>Excluded: Microsoft Defender platform binary</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+
+  <!--
+    A-10：直接從壓縮檔裡執行（2026-09-28 新增）
+
+    在檔案總管或解壓縮工具裡「雙擊壓縮檔內的 .exe」，工具會先把檔案解到 Temp 底下
+    一個自己命名的目錄再執行：
+        WinRAR    Temp\Rar$EXa1234.5678\
+        7-Zip     Temp\7zO1A2B3C4\
+        Windows   Temp\Temp1_<壓縮檔名>.zip\
+        WinZip    Temp\wz1A2B\
+    這是免安裝工具最典型的「沒解壓、直接跑」用法，而且執行完臨時目錄就消失，
+    事後在磁碟上找不到。與 906102 互斥（906102 以 lookahead 排除這些目錄）。
+  -->
+  <rule id="906170" level="10">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+(Rar\$EX[a-z]{1,3}[0-9.]+|7z[A-Z0-9]{3,}|Temp[0-9]+_[^\\]+\.zip|wz[0-9A-F]{3,})\\+</field>
+    <description>[WARN] Program run directly from inside an archive - $(win.eventdata.image) user: $(win.eventdata.user) parent: $(win.eventdata.parentImage)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_archive,</group>
+  </rule>
+
+  <!--
+    A-11：使用者家目錄底下自建的資料夾（2026-09-28 新增）
+
+    C:\Users\bob\Tools\putty.exe、C:\Users\bob\bin\nc.exe 這類「自己開一個資料夾放
+    工具」的用法，A-1 的三個分支都不涵蓋。排除：
+      AppData        各家軟體的每使用者安裝與更新程式，會非常吵（見 A-3 的說明）
+      OneDrive…、Downloads、Desktop、Documents  已由 906100 負責，保持互斥
+      .開頭的資料夾   .cargo、.rustup、.dotnet 這類工具鏈自己的目錄
+    level 5：先觀察，這個位置在開發工作站上常有合理用途。
+  -->
+  <rule id="906171" level="5">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+(?!Public\\)[^\\]+\\+(?!(AppData|OneDrive[^\\]*|Downloads|Desktop|Documents)\\)(?!\.)[^\\]+\\+</field>
+    <description>Program run from a custom folder in a user profile - $(win.eventdata.image) user: $(win.eventdata.user)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+  <!-- 編譯器與套件管理器自己的輸出目錄：cargo 的 target\debug、.NET 的 bin\Debug、
+       node_modules\.bin、Python 虛擬環境。30 天內 906131 的 142 筆裡有 134 筆是
+       Rust 建置產物，同一批程式執行時也會落在 906171。 -->
+  <rule id="906172" level="0">
+    <if_sid>906171</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\+(target\\+(debug|release)|bin\\+(Debug|Release)|obj\\+(Debug|Release)|node_modules|\.?venv\\+Scripts)\\+</field>
+    <description>Excluded: compiler or package manager output in a project directory</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+
+  <!--
+    ══════════════════════════════════════════════════════════════════════
+     G 項：從免安裝位置執行的「遠端控制」與「穿隧」工具（2026-09-28 新增）
+     ══════════════════════════════════════════════════════════════════════
+     免安裝程式裡風險最高的一類：免安裝版的遠端控制軟體（AnyDesk、RustDesk、
+     TeamViewer QuickSupport…）與穿隧工具（ngrok、cloudflared、frp、plink…）。
+     兩者都讓外部的人直接連進這台電腦，而且不經過防火牆的入站規則。
+
+     判斷依據：
+       遠端控制  win.eventdata.product ── PE 版本資訊裡的產品名稱，改檔名改不掉
+       穿隧工具  映像檔名稱 ── 這類多為 Go 寫的單一執行檔，常沒有版本資訊，
+                 只能看檔名；改了名就看不到，這是已知的限制
+
+     掛在 A 項所有「位置」規則之下（含 906106），所以不論 Wazuh 先評估哪一條同層
+     規則，都還會往下走到這裡。已核准的工具以 not_match_key 排除，與 E 項互斥 ──
+     公司若正式使用 RustDesk 這類工具，把它加進 jt-approved-portable 即可。
+  -->
+  <rule id="906175" level="12">
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171</if_sid>
+    <field name="win.eventdata.product" type="pcre2">(?i)\b(AnyDesk|TeamViewer|RustDesk|ScreenConnect|Splashtop|NetSupport|UltraViewer|Supremo|Ammyy|Radmin|Remote Utilities|DWAgent|MeshCentral|Mesh Agent|Tactical RMM|RemotePC|Zoho Assist|LogMeIn|Atera|Chrome Remote Desktop|Parsec)\b</field>
+    <list field="win.eventdata.originalFileName" lookup="not_match_key">etc/lists/jt-approved-portable</list>
+    <list field="win.eventdata.image" lookup="not_match_key">etc/lists/jt-approved-portable</list>
+    <description>[HIGH] Portable remote access tool run from a user-writable location - $(win.eventdata.product) $(win.eventdata.image) user: $(win.eventdata.user)</description>
+    <mitre>
+      <id>T1219</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_remote_access,</group>
+  </rule>
+
+  <rule id="906176" level="12">
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)(\\+(ngrok|cloudflared|frpc|frps|chisel|plink|ligolo[^\\]*|bore|localtonet|zrok|tor)\.exe$|\\+Tor Browser\\+)</field>
+    <list field="win.eventdata.originalFileName" lookup="not_match_key">etc/lists/jt-approved-portable</list>
+    <list field="win.eventdata.image" lookup="not_match_key">etc/lists/jt-approved-portable</list>
+    <description>[HIGH] Tunnelling or anonymising tool run from a user-writable location - $(win.eventdata.image) user: $(win.eventdata.user)</description>
+    <mitre>
+      <id>T1572</id>
+      <id>T1090</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_tunnel,</group>
   </rule>
 
 
@@ -346,7 +511,7 @@
 
   <rule id="906160" level="0">
     <if_sid>92205</if_sid>
-    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+__PSScriptPolicyTest_[a-z0-9]+\.[a-z0-9]+\.ps1$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+__PSScriptPolicyTest_[a-z0-9]+\.[a-z0-9]+\.psm?1$</field>
     <description>Excluded: PowerShell writing its own execution-policy probe</description>
     <options>no_full_log</options>
     <group>jt_portable,false_positive,</group>
@@ -354,7 +519,7 @@
 
   <rule id="906161" level="0">
     <if_sid>92200</if_sid>
-    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+__PSScriptPolicyTest_[a-z0-9]+\.[a-z0-9]+\.ps1$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+__PSScriptPolicyTest_[a-z0-9]+\.[a-z0-9]+\.psm?1$</field>
     <description>Excluded: PowerShell writing its own execution-policy probe</description>
     <options>no_full_log</options>
     <group>jt_portable,false_positive,</group>
@@ -384,7 +549,7 @@
   -->
   <rule id="906164" level="3">
     <if_sid>92213</if_sid>
-    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+(msedge|GoogleUpdater|chrome)_[\w]*Unpacker_BeginUnzipping[\w]*\\+</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+((msedge|GoogleUpdater|chrome|chromiumcrx)_\w*Unpacker_BeginUnzipping\w*|scoped_dir\d+_\d+\\+CRX_INSTALL)\\+</field>
     <description>Browser updater unpacking its own download - $(win.eventdata.targetFilename)</description>
     <options>no_full_log</options>
     <group>jt_portable,false_positive,</group>
@@ -411,32 +576,92 @@
     <group>jt_portable,false_positive,</group>
   </rule>
 
-  <rule id="906121" level="6">
+  <!--
+    92213 的副檔名比對沒有結尾錨點（2026-09-28）
+
+    內建 92213（level 15）寫的是 \.(exe|com|dll|…|js|…)，後面沒有 $，所以
+    .json 被當成 .js、com.sun.star.comp… 被當成 .com、.dll.a 被當成 .dll。
+    30 天 28,486 筆 level 15 裡有 23,479 筆（82%）最後的副檔名根本不是可執行檔，
+    大宗是 LibreOffice 無頭轉檔時建立的設定檔。
+    這裡只排除「最後的副檔名不在 92213 自己那份清單裡」的情形；.tmp 刻意保留，
+    Inno Setup 與投放程式常把 PE 檔命名成 .tmp。
+  -->
+  <rule id="906167" level="0">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^(?!.*\.(exe|com|dll|vbs|js|bat|cmd|pif|wsh|ps1|msi|vbe|tmp)$).+</field>
+    <description>Excluded: rule 92213 matched an executable extension as a substring; the file itself is not executable</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <!--
+    C-2／C-3：下載標記（Mark-of-the-Web）
+
+    ★ 2026-09-28 修正：Sysmon 對同一個檔案會產生兩筆事件 15 ──
+        …\foo.exe                     主檔案本身，沒有 contents
+        …\foo.exe:Zone.Identifier     下載標記，contents 是 [ZoneTransfer] ZoneId=3
+      舊的 906121 以 \.(exe|…)$ 結尾，只命中第一筆；906122 要求 contents，而
+      contents 只在第二筆，所以 906122 從來不可能觸發。現在兩條都比對第二筆。
+      30 天實測：帶 contents 的 47 筆事件 15 全部是 :Zone.Identifier 那一筆。
+
+    906121 本身降為 level 3：大部分下載標記是 ZoneId=3（網際網路），會往下走到
+    906122；留在 906121 的只剩本機、內部網路與信任網站來源。
+  -->
+  <rule id="906121" level="3">
     <if_sid>61617</if_sid>
-    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Users\\+.*\.(exe|dll|msi|scr|ps1|jar)$</field>
-    <description>Alternate data stream created on an executable in a user directory - $(win.eventdata.targetFilename) created by: $(win.eventdata.image)</description>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Users\\+.+\.(exe|dll|msi|scr|ps1|jar|bat|cmd|vbs|js|hta|lnk|iso|img|vhdx?|zip|7z|rar):Zone\.Identifier$</field>
+    <description>Download mark written for an executable or archive in a user directory - $(win.eventdata.targetFilename) by: $(win.eventdata.image)</description>
     <mitre>
       <id>T1204.002</id>
     </mitre>
     <group>jt_portable_file,</group>
   </rule>
 
-  <!--
-    C-3：確認為「自網際網路下載」
-    Zone.Identifier 的 contents 內含 ZoneId=3 即代表來源為網際網路
-    （0=本機 1=內部網路 2=信任網站 3=網際網路 4=限制網站）。
-    ※ 若 Sysmon 設定未輸出 contents 欄位，本規則不會觸發，
-      但父規則 906121 仍會告警，不影響基本偵測能力。
-  -->
+  <!-- 0=本機 1=內部網路 2=信任網站 3=網際網路 4=限制網站 -->
   <rule id="906122" level="7">
     <if_sid>906121</if_sid>
     <field name="win.eventdata.contents" type="pcre2">(?i)ZoneId\s*=\s*[34]</field>
-    <description>[WARN] Executable downloaded from the internet written to disk - $(win.eventdata.targetFilename) downloaded by: $(win.eventdata.image)</description>
+    <description>[WARN] Executable or archive downloaded from the internet - $(win.eventdata.targetFilename) by: $(win.eventdata.image) $(win.eventdata.contents)</description>
     <mitre>
       <id>T1204.002</id>
       <id>T1105</id>
     </mitre>
     <group>jt_portable_file,jt_portable_download,</group>
+  </rule>
+
+  <!-- WinGet 下載套件時會替暫存檔寫下載標記。同時掛在 906121 與 906122 底下：
+       不論 Wazuh 先走到哪一條，都會被排除。 -->
+  <rule id="906123" level="0">
+    <if_sid>906121,906122</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+WinGet\\+</field>
+    <description>Excluded: WinGet staging its own package download</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <!--
+    C-4：不是 PowerShell 的程序把執行檔寫進使用者的下載位置（2026-09-28 新增）
+
+    內建 92203 只抓「由 PowerShell 建立」的執行檔，套件舊註解說的「Wazuh 已經偵測
+    得到」只對 PowerShell 成立。這個環境實際的交付路徑是 OpenSSH 的
+    sftp-server.exe：30 天內約 21 個 exe／dll 被寫進 Downloads／Desktop，全部沒有
+    告警，其中包括後來真的被執行的程式。SMB 複製、USB 複製也不帶下載標記，
+    所以 C-2／C-3 看不到它們。
+
+    排除 PowerShell 建立者，與 92203 互斥；不含 .ps1，與 92200 互斥。
+    瀏覽器下載在事件 11 只看得到 .crdownload，改名不會產生事件 11，
+    那條路由 C-2／C-3 的下載標記負責。
+  -->
+  <rule id="906124" level="5">
+    <if_sid>61613</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+(OneDrive[^\\]*\\+)?(Downloads|Desktop|Documents)\\+.+\.(exe|dll|scr|com|msi|iso|img|vhdx?)$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)^(?!.*\\+(powershell|pwsh)\.exe$).+</field>
+    <description>Executable or disk image written to a user download location by $(win.eventdata.image) - $(win.eventdata.targetFilename)</description>
+    <mitre>
+      <id>T1105</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_file,</group>
   </rule>
 
 
@@ -541,8 +766,9 @@
   ══════════════════════════════════════════════════════════════════════
    E 項：核准清單覆寫（等級壓降）
    ══════════════════════════════════════════════════════════════════════
-   ★ 本區塊必須置於被覆寫規則「之後」，Wazuh 只會產生最後命中之規則的告警。
-   ★ CDB 清單修改後必須重啟 wazuh-manager（.cdb 由 analysisd 啟動時重新編譯），
+   ★ 這三條同時是 A／G 位置規則的同層與 906106 的子規則（見檔頭「評估順序」）。
+   ★ CDB 清單修改後要重新載入規則集（工具的「重新載入規則集」或重啟），
+     .cdb 在 analysisd 載入時重新編譯；叢集要兩個節點都重載。
      Wazuh 4.x 已無 wazuh-makelists 指令。
    ★ ossec.conf 的 <ruleset> 內必須宣告 <list>，否則相依規則會被整條忽略
      （此時 ossec.log 會出現 (7616) 警告 ── 這是少數會報錯的情況）。
@@ -554,7 +780,7 @@
 
   <!-- E-1：以 originalFileName 比對（優先） -->
   <rule id="906140" level="3">
-    <if_sid>906100,906101,906102,906103,906104,906105</if_sid>
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171</if_sid>
     <list field="win.eventdata.originalFileName" lookup="match_key">etc/lists/jt-approved-portable</list>
     <description>Portable executable, approved, logged only: $(win.eventdata.originalFileName) - $(win.eventdata.image) user: $(win.eventdata.user)</description>
     <group>jt_portable_approved,</group>
@@ -580,7 +806,7 @@
     C:\Users\Public\Tools\ 目錄。若要以檔名核准，請改用 E-1 或 E-3。
   -->
   <rule id="906141" level="3">
-    <if_sid>906100,906101,906102,906103,906104,906105</if_sid>
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171</if_sid>
     <list field="win.eventdata.image" lookup="match_key">etc/lists/jt-approved-portable</list>
     <description>Portable executable, approved path, logged only: $(win.eventdata.image) user: $(win.eventdata.user)</description>
     <group>jt_portable_approved,</group>
@@ -599,7 +825,7 @@
       （如 MD5=...,SHA256=...），精確比對將永遠不會命中。
   -->
   <rule id="906142" level="3">
-    <if_sid>906100,906101,906102,906103,906104,906105</if_sid>
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171</if_sid>
     <list field="win.eventdata.hashes" lookup="match_key">etc/lists/jt-approved-portable-hash</list>
     <description>Portable executable, approved hash, logged only: $(win.eventdata.image) user: $(win.eventdata.user)</description>
     <group>jt_portable_approved,</group>
@@ -620,6 +846,73 @@
        <description>Excluded: CompanyName updater, approved under change request CR-2026-001</description>
      </rule>
   -->
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   F 項：Sysmon 事件 29 ── 偵測到可執行檔（2026-09-28 新增）
+   ══════════════════════════════════════════════════════════════════════
+   Sysmon 15 起，檔案寫入完成時若內容是 PE 執行檔，會產生事件 29
+   （FileExecutableDetected）。它看的是檔頭，不是副檔名，所以能回答 C 項回答不了的：
+     ‧ 執行檔被取了不是執行檔的名字（invoice.pdf、update.jpg）
+     ‧ 由 sftp／scp／SMB 寫進來的執行檔，不論檔名
+     ‧ 寫到 USB 等非系統磁碟的執行檔
+   Wazuh 4.14 沒有事件 29 的內建規則，906180 就是基礎規則。
+
+   前提：Sysmon 15.0 以上、設定檔 schemaversion 4.90 以上，並含有
+   <FileExecutableDetected onmatch="include"> 的規則群組 ──
+   見套件的 agent/sysmon-jt-portable.xml 與「部署說明」。
+   沒有這些設定時本區塊安靜無聲，其他區塊不受影響。
+
+   三條子規則刻意互斥，避免同層競爭：
+     906183  名稱不是執行檔 ── 不論是誰、寫到哪裡
+     906181  名稱是執行檔，寫入者是遠端檔案傳輸
+     906182  名稱是執行檔，寫到 E:～Z:，寫入者不是遠端檔案傳輸
+-->
+
+  <rule id="906180" level="0">
+    <if_sid>61600</if_sid>
+    <field name="win.system.eventID">^29$</field>
+    <description>Sysmon - Event 29: executable file detected (base rule)</description>
+  </rule>
+
+  <rule id="906181" level="10">
+    <if_sid>906180</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)(\\+OpenSSH\\+(sftp-server|scp)\.exe$|^System$)</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\.(exe|dll|sys|scr|com|cpl|ocx|msi|msp|mui|drv|efi|ax|tlb|winmd|pyd|node|xll|ime|acm|tsp|tmp|crdownload|part|partial|download|opdownload)$</field>
+    <description>[WARN] Executable written over a remote file transfer - $(win.eventdata.targetFilename) by: $(win.eventdata.image) user: $(win.eventdata.user)</description>
+    <mitre>
+      <id>T1105</id>
+      <id>T1570</id>
+    </mitre>
+    <group>jt_portable_file,jt_portable_transfer,</group>
+  </rule>
+
+  <rule id="906182" level="8">
+    <if_sid>906180</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[E-Z]:\\+.*\.(exe|dll|sys|scr|com|cpl|ocx|msi|msp|mui|drv|efi|ax|tlb|winmd|pyd|node|xll|ime|acm|tsp|tmp|crdownload|part|partial|download|opdownload)$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)^(?!.*\\+OpenSSH\\+(sftp-server|scp)\.exe$)(?!System$).+</field>
+    <description>[WARN] Executable written to a non-system drive, possibly removable media - $(win.eventdata.targetFilename) by: $(win.eventdata.image) user: $(win.eventdata.user)</description>
+    <mitre>
+      <id>T1091</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_file,jt_portable_removable,</group>
+  </rule>
+
+  <!-- 偽裝：內容是 PE，名稱卻不是任何執行檔或下載暫存檔的副檔名。
+       排除清單裡含 .tmp 與瀏覽器的下載暫存副檔名（.crdownload 等）──
+       瀏覽器下載途中寫的就是 PE 內容。 -->
+  <rule id="906183" level="10">
+    <if_sid>906180</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^(?!.*\.(exe|dll|sys|scr|com|cpl|ocx|msi|msp|mui|drv|efi|ax|tlb|winmd|pyd|node|xll|ime|acm|tsp|tmp|crdownload|part|partial|download|opdownload)$).+</field>
+    <description>[WARN] Executable content saved under a non-executable name - $(win.eventdata.targetFilename) by: $(win.eventdata.image) user: $(win.eventdata.user)</description>
+    <mitre>
+      <id>T1036.008</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_file,jt_portable_masquerade,</group>
+  </rule>
 
 
 <!--

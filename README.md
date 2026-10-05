@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.9.0
+# jt-wazuh-mgr v1.10.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@ A powerful web-based management tool for Wazuh agents in cluster environments.
 
 > **Recommended**: Use the Web UI as the primary interface — it's the main feature of this tool with full functionality.
 
-![Version](https://img.shields.io/badge/version-1.9.0-blue)
+![Version](https://img.shields.io/badge/version-1.10.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -45,7 +45,7 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 ## Features
 
 ### Language
-- **English / Traditional Chinese (繁體中文) / Japanese (日本語)** switchable from the header (EN ⇄ 中文 ⇄ 日本語); the preference is saved per browser.
+- **English / Traditional Chinese (繁體中文) / Japanese (日本語)**, chosen from the language menu in the header, where each language is listed under its own name; the preference is saved per browser.
 
 ### Agent Management
 - View all agents with real-time status
@@ -88,7 +88,9 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 - Each pack bundles rules, decoders and CDB lists behind a manifest; open one to see the files it installs, where they go, and which rule IDs it claims
 - Install is guarded: **rule-ID conflict detection**, backup of anything overwritten, `wazuh-analysisd -t` validation, and **full rollback if any step fails**
 - Removal restores replaced files and **refuses to discard files you edited** after installing
-- Ships with: portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, Zimbra detection, Zenarmor (OPNsense), AdGuard Home, and fail2ban
+- **Setup guide** for packs that depend on configuration the manager cannot apply (Sysmon filters, auditd, agent groups, syslog forwarding): numbered steps, copyable commands, a way to check each one, and the agent-side files to view or download
+- A pack whose files were copied in by hand is recognised as **installed but untracked**, instead of being reported as conflicting with itself
+- Ships with: portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, Zimbra detection, Zenarmor (OPNsense), AdGuard Home, fail2ban, and a readable alert digest by mail
 
 ### Security
 - Input validation for all parameters; command-injection and path-traversal protection
@@ -125,7 +127,8 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 
 ### Requirements
 - Python 3.8+
-- Wazuh Manager 4.x
+- Wazuh Manager 4.x (tested with 4.14.7 and 4.14.8)
+- The installer puts the Python dependencies in `/opt/jt-wazuh-mgr/vendor`, not in the system Python. That works where pip into the system is refused (Ubuntu 24.04, Debian 12) and survives an OS upgrade that changes the Python version
 - **Must be installed on the Wazuh Manager** (for cluster mode, install on the Master node)
 
 ### Install
@@ -133,6 +136,7 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 Use the [one-line installer](#-one-line-install--upgrade--uninstall) above, or run manually after cloning:
 
 ```bash
+python3 -m pip install --target vendor -r requirements.txt
 ./wazuh_agent_mgr.py --web --ssl-auto
 ```
 

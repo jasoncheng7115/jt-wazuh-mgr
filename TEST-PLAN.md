@@ -16,7 +16,7 @@ the screen. None of them substitutes for another.
 ## Running everything
 
 ```bash
-python3 -m unittest discover -s tests     # 186 tests, fully offline
+python3 -m unittest discover -s tests     # 201 tests, fully offline
 python3 tools/preflight.py                # 21 mechanical pre-release checks
 
 # on a host without a system Flask
@@ -52,6 +52,9 @@ directories are synthetic.
 | Inventory | Cross-agent package search. |
 | Cluster | Ruleset reload across nodes; node config diff. CDB list declaration reaching every node: the declaration text itself, the peer write path, a node that accepts a write without applying it, a redundant declaration writing nothing twice, abort-and-roll-back when a node cannot be reached, and the `local_only` override. |
 | Packs | Manifest integrity, SHA-256 of every shipped file, rule ID uniqueness, `dest` paths, `packs/INDEX` consistency, script/cron/agent-group installation, and that no pack contains an internal host or address. |
+| Pack structure | No pack depends on a rule defined in another pack; no level 0/1 rule under a built-in FIM or Sysmon parent with only "the field exists" as its condition; agent-side `<ignore type="sregex">` patterns use only OS_Match syntax; every setup step is complete in both languages and names a file the pack ships; the Windows portable-detect chains, evaluated against values shaped as analysisd decodes them, end on the expected rule and never on two siblings at once. |
+| Pack deployment | A pack whose files were copied in by hand is reported as untracked, not as conflicting with itself; rules in another file still conflict; the pack file viewer refuses anything outside the pack's own folders. |
+| Python compatibility | Every source file compiles with warnings as errors (an unknown escape becomes a SyntaxError in a later Python); the page contains no backspace character; the installer never pip-installs into the system Python and both entry points load `vendor/`. |
 | Front end | The template's JavaScript parses under `node --check`. The i18n dictionary is embedded and internally consistent. |
 | Version comparison | The agent-version comparator, including the pre-release cases. |
 
@@ -131,7 +134,7 @@ release-time change.
 ## Layer 4 — browser journeys, automated
 
 ```bash
-tests/e2e/run.sh          # 19 journeys, 81 checks, needs docker
+tests/e2e/run.sh          # 21 journeys, 95 checks, needs docker
 ```
 
 `tests/e2e/mock_api.py` serves the real application against a mocked, stateful
@@ -147,10 +150,15 @@ selecting agents, a confirmation dialog, creating a group and seeing it appear,
 both cluster nodes with their daemons, rule search by id and by file name, pack
 detail disclosing its scheduled job, logs, statistics, users with no credential
 on screen, inventory search, translation to zh-TW leaving names and addresses
-alone, security headers on a real response, and a final check that nothing
+alone, the language menu (it must open rather than switch, list every language
+under its own name and close on Escape), a pack's setup guide with its
+agent-side files readable in place, security headers on a real response, and a
+final check that nothing
 failed quietly — uncaught errors and failed requests both, with an allowance for
 the one documented failure (reading a worker log needs the optional SSH setup)
-that must still be present.
+that must still be present. The mocked API reports Wazuh 4.14.8 unless
+`E2E_SERVER_VERSION` says otherwise; J18 and J19 run against a 5.x and a 4.x
+server.
 
 One thing the journeys had to work around is worth stating: the interface
 refreshes on a timer, and a refresh landing between typing into a dialog and
@@ -188,7 +196,10 @@ extension. View a file; delete a rule; create, edit and delete a CDB list.
 any node the CDB list could not be declared on;
 install; install into a rule ID conflict, then force; remove, confirming replaced
 files come back; remove a pack whose files were edited after installation, which
-must be refused.
+must be refused. Open the setup guide of every pack that has one: each step
+readable at a normal size, commands copy, agent files open in place and
+download. A pack whose files were copied in by hand shows as installed
+(untracked) and installs without a conflict prompt.
 
 **Inventory** — cross-agent package search.
 
@@ -201,6 +212,15 @@ must be refused.
 **Both languages** — switch to zh-TW on every tab. Watch for English left behind
 in JavaScript-generated content, and for over-eager translation of a word that
 should have stayed English. `value` and `<option value>` must never change.
+
+**Language menu** — the button opens a menu; each language is listed under its
+own name with the current one marked; arrow keys move, Escape closes, a click
+outside closes; the login page has the same menu.
+
+**Installer** — on a fresh Ubuntu 24.04 or Debian 12 manager the one-line
+installer completes and the service runs; on an existing install the update
+keeps `config.yaml`; dependencies are in `/opt/jt-wazuh-mgr/vendor` and nothing
+was added to the system Python.
 
 **Offline** — with no route to cdnjs, the configuration editor loses syntax
 highlighting but must still load, edit and save.
@@ -224,15 +244,53 @@ highlighting but must still load, edit and save.
 
 ---
 
+## Layer 6 — detection rules, on a live manager
+
+The suite checks that pack rules are well formed: they parse, their IDs are
+unique, no pack depends on another pack's rules, no level 0 or 1 rule sits under
+a built-in parent with nothing but "the field exists" as its condition, and the
+agent-side ignore patterns use only the syntax syscheck understands. It cannot
+check that a rule fires. That needs a manager, and for file-integrity, auditd and
+Sysmon event 29 rules it needs a real event, because `wazuh-logtest` replays one
+log line through the decoders and those events never pass through one.
+
+`wazuh-logtest` on 4.14 cannot replay a Windows eventchannel event at all: it
+decodes the JSON as plain `json`, so no Windows rule is ever reached, whatever
+`log_format` and location are given. The Windows chains are therefore checked
+in the suite, against values shaped exactly as analysisd decodes them (two
+backslashes per separator), and on a host with a real event.
+
+Check both sides of every scenario: the rule that should fire, and the near miss
+that should not. On a cluster, repeat the Windows scenarios on the worker, which
+is usually the node processing Windows agents.
+
+| Pack | Scenario | Expect | How |
+|---|---|---|---|
+| portable-detect | a program run from `Downloads` | 906100 (6); launched from Explorer 906106 (9) | suite, then a real event |
+| portable-detect | a program run from inside a zip opened in Explorer (`Temp\Temp1_x.zip\`) | 906170 (10), **not** 906102 | suite, then a real event |
+| portable-detect | a program run from `C:\Users\<u>\Tools\` / from `…\target\debug\` | 906171 (5) / 906172 (0) | suite, then a real event |
+| portable-detect | a remote-access product (AnyDesk) run from `Downloads`; the same with its original file name approved | 906175 (12); approved 906140 (3) | suite, then a real event |
+| portable-detect | `ngrok.exe` run from `Downloads` | 906176 (12) | suite, then a real event |
+| portable-detect | `x.zip:Zone.Identifier` with `ZoneId=3`; the same under `Temp\WinGet\` | 906122 (7); 906123 (0) | suite, then a real event |
+| portable-detect | `sftp-server.exe` writes `x.exe` to `Downloads`; PowerShell writes it | 906124 (5); built-in 92203 | suite, then a real event |
+| portable-detect | `notepad.exe` copied to `Downloads\test.pdf` | 906183 (10) | real event, Sysmon 15 with the pack's filters |
+| portable-detect | a `.json` written to the user Temp; an `.exe` written there | 906167 (0); 92213 (15) still | suite, then a real event |
+| portable-detect | a file created in `/root/.ssh` | built-in 554 is written (the 906200 regression) | real event |
+| portable-detect | `chmod +x` on a file in a home directory; a 0755 file in `/tmp`; a 0644 `.bin` in `/tmp` | 906201 (8); 906202 (10); nothing from 906204 | real event |
+| portable-detect | a binary run from `/tmp`; `bash /tmp/x.sh` with the interpreter rules on | 906211 (12); 906213 (10), not both | real event, auditd |
+| malware-hash | a file whose SHA-256 is in the list lands in a monitored directory | 100141 (12) | real event, with a test hash added to the list and the ruleset reloaded |
+| zimbra | a listed stock file has its permissions changed; then its contents | nothing; 100808 (13) | real event, a temporary directory and list entry, reverted afterwards |
+| any pack with a list | the list after the nightly update | `.cdb` newer than the text on every node | `ls -l etc/lists` on each node |
+
+---
+
 ## What is not covered
 
 Stated plainly, because a test plan that implies more coverage than exists is
 worse than a short one.
 
-- **No DOM-level automation.** The front end is checked for parse validity and
-  translation consistency only. Every interaction in Layer 4 is manual. The
-  screenshot harness renders real pages against a mocked API and would be the
-  natural place to grow into this.
+- **Browser automation covers the main journeys only.** Layer 4 drives a real
+  browser through 21 journeys; everything in Layer 4b is still checked by hand.
 - **The success paths of destructive routes are not exercised in CI**, for the
   reason given in Layer 1.
 - **No load or concurrency testing.** Behaviour with thousands of agents, or with
@@ -240,6 +298,6 @@ worse than a short one.
 - **No upgrade testing across versions.** Installing over an older release is
   verified by hand.
 - **The packs' detection rules are not tested against sample logs in CI.** They
-  are verified with `wazuh-logtest` on a manager, by hand, per scenario. Sibling
+  are verified on a manager, by hand, per scenario, as listed in Layer 6. Sibling
   rules under one parent evaluate in an unpredictable order, so a rule that
   passes in isolation can still be shadowed in place.

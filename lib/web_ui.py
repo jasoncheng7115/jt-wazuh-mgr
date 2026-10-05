@@ -447,15 +447,15 @@ HTML_TEMPLATE = '''
         if (typeof CodeMirror !== 'undefined' && CodeMirror.defineSimpleMode) {
             CodeMirror.defineSimpleMode('wazuh-alerts', {
                 start: [
-                    {regex: /^\*\* Alert \d+\.\d+:/, token: 'keyword'},
-                    {regex: /^Rule: \d+ \(level \d+\)/, token: 'def'},
+                    {regex: /^\\*\\* Alert \\d+\\.\\d+:/, token: 'keyword'},
+                    {regex: /^Rule: \\d+ \\(level \\d+\\)/, token: 'def'},
                     {regex: /-> '[^']*'/, token: 'string'},
                     {regex: /- [a-zA-Z0-9_,]+,$/, token: 'tag'},
-                    {regex: /^\d{4} [A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2}/, token: 'number'},
-                    {regex: /[a-zA-Z0-9_-]+->(?:journald|\/var\/log\/[^\s]+)/, token: 'variable-2'},
+                    {regex: /^\\d{4} [A-Z][a-z]{2} \\d{2} \\d{2}:\\d{2}:\\d{2}/, token: 'number'},
+                    {regex: /[a-zA-Z0-9_-]+->(?:journald|\\/var\\/log\\/[^\\s]+)/, token: 'variable-2'},
                     {regex: /(?:Src IP|Src Port|User|uid|Dst IP|Dst Port|Protocol|Action):/, token: 'attribute'},
-                    {regex: /\b(?:\d{1,3}\.){3}\d{1,3}\b/, token: 'number'},
-                    {regex: /\b\d+\b/, token: 'number'}
+                    {regex: /\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b/, token: 'number'},
+                    {regex: /\\b\\d+\\b/, token: 'number'}
                 ]
             });
         }
@@ -654,6 +654,34 @@ HTML_TEMPLATE = '''
         #rulesAllTable .rule-id-link { color: #4fc3f7; cursor: pointer; text-decoration: none; font-weight: 600; }
         #rulesAllTable .rule-id-link:hover { text-decoration: underline; color: #81d4fa; }
         .rule-type-badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: bold; }
+        /* Rule pack detail and setup guide: read as prose, at a size that can be read. */
+        .pack-detail { font-size: 14px; line-height: 1.6; color: #d8dde6; }
+        .pack-detail .alert { font-size: 14px; }
+        .pack-summary { background: #0a0a15; padding: 14px 16px; border-radius: 6px; margin-bottom: 14px; }
+        .pack-summary-text { font-size: 16px; color: #eef; margin-bottom: 6px; }
+        .pack-meta { color: #9aa3b5; font-size: 13px; }
+        .pack-lead { color: #9aa3b5; margin: 0 0 12px; }
+        .pack-h { color: #4fc3f7; font-size: 15px; margin: 18px 0 8px; }
+        .pack-notes { margin: 0 0 0 20px; padding: 0; }
+        .pack-notes li { margin-bottom: 6px; }
+        .pack-step { background: #0f1525; border: 1px solid #23304d; border-radius: 6px; padding: 12px 14px; margin-bottom: 10px; }
+        .pack-step-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+        .pack-step-no { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: #1a4a7a; color: #fff; font-size: 13px; font-weight: bold; }
+        .pack-step-title { font-weight: bold; color: #fff; font-size: 15px; }
+        .pack-chip { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid #3a4a6a; color: #9aa3b5; }
+        .pack-chip-req { border-color: #fd7e14; color: #fd7e14; }
+        .pack-step-body { margin: 4px 0 8px; }
+        .pack-code { position: relative; margin: 8px 0; }
+        .pack-code pre { background: #060a14; border: 1px solid #23304d; border-radius: 4px; padding: 10px 12px; margin: 0; overflow-x: auto; font-size: 13px; line-height: 1.5; color: #cfe3ff; white-space: pre; }
+        .pack-code .pack-copy { position: absolute; top: 6px; right: 6px; z-index: 1; }
+        .pack-file-view { max-height: 420px; overflow: auto; }
+        .pack-file-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+        .pack-file-row code { color: #4fc3f7; }
+        .pack-verify { background: #0d2018; border-left: 3px solid #28a745; padding: 8px 12px; border-radius: 4px; margin-top: 8px; }
+        .pack-verify-label { display: block; color: #28a745; font-size: 12px; font-weight: bold; margin-bottom: 2px; }
+        .pack-files { margin-top: 16px; }
+        .pack-files summary { cursor: pointer; color: #4fc3f7; font-size: 15px; font-weight: bold; }
+        .pack-files table { font-size: 13px; }
         .rule-type-badge.custom { background: #f39c12; color: #000; }
         .rule-type-badge.builtin { background: #555; color: #ccc; }
         .rules-group-tags { display: flex; flex-wrap: wrap; gap: 2px; max-width: 250px; }
@@ -4593,7 +4621,7 @@ HTML_TEMPLATE = '''
             }
 
             const emailTo = emailToStr.split(',').map(e => e.trim()).filter(e => e);
-            const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            const emailPattern = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
             for (const e of emailTo) {
                 if (!emailPattern.test(e)) {
                     resultDiv.innerHTML = '<span style="color:#e94560;">Invalid email format: ' + escapeHtml(e) + '</span>';
@@ -4602,7 +4630,7 @@ HTML_TEMPLATE = '''
             }
 
             const ruleId = document.getElementById('eaRuleId').value.trim();
-            if (ruleId && !/^[0-9,\s]+$/.test(ruleId)) {
+            if (ruleId && !/^[0-9,\\s]+$/.test(ruleId)) {
                 resultDiv.innerHTML = '<span style="color:#e94560;">Rule ID can only contain numbers and commas</span>';
                 return;
             }
@@ -4838,7 +4866,7 @@ HTML_TEMPLATE = '''
         }
 
         function highlightJson(json) {
-            return json.replace(/("(?:\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*")(\s*:)?|(\b(?:true|false)\b)|(\bnull\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|([{}\[\],:])/g,
+            return json.replace(/("(?:\\\\u[\\da-fA-F]{4}|\\\\[^u]|[^\\\\"])*")(\\s*:)?|(\\b(?:true|false)\\b)|(\\bnull\\b)|(-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)|([{}\\[\\],:])/g,
                 function(match, str, colon, bool, nil, num, bracket) {
                     if (str) {
                         if (colon) {
@@ -5431,7 +5459,7 @@ HTML_TEMPLATE = '''
 
             // Parse and store files data
             upgradeFilesData = files.map(f => {
-                const match = f.name.match(/wazuh_agent_v([\d.]+)_(\w+)/);
+                const match = f.name.match(/wazuh_agent_v([\\d.]+)_(\\w+)/);
                 return {
                     name: f.name,
                     version: match ? match[1] : '-',
@@ -6117,12 +6145,12 @@ HTML_TEMPLATE = '''
             // Escape HTML first
             let escaped = escapeHtml(xml);
             // Highlight comments
-            escaped = escaped.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="xml-comment">$1</span>');
+            escaped = escaped.replace(/(&lt;!--[\\s\\S]*?--&gt;)/g, '<span class="xml-comment">$1</span>');
             // Highlight tags (including < and </ as part of tag color)
-            escaped = escaped.replace(/(&lt;\/?)([\w:-]+)/g, '<span class="xml-tag">$1$2</span>');
-            escaped = escaped.replace(/([\w:-]+)(=)(&quot;[^&]*&quot;)/g, '<span class="xml-attr">$1</span>$2<span class="xml-value">$3</span>');
+            escaped = escaped.replace(/(&lt;\\/?)([\\w:-]+)/g, '<span class="xml-tag">$1$2</span>');
+            escaped = escaped.replace(/([\\w:-]+)(=)(&quot;[^&]*&quot;)/g, '<span class="xml-attr">$1</span>$2<span class="xml-value">$3</span>');
             // Highlight closing bracket
-            escaped = escaped.replace(/(\/?&gt;)/g, '<span class="xml-tag">$1</span>');
+            escaped = escaped.replace(/(\\/?&gt;)/g, '<span class="xml-tag">$1</span>');
             return escaped;
         }
 
@@ -6605,12 +6633,17 @@ HTML_TEMPLATE = '''
             body.innerHTML = packsData.map(p => {
                 const badge = p.installed
                     ? '<span class="rule-type-badge custom">Installed</span>'
-                    : '<span class="rule-type-badge builtin">Not installed</span>';
+                    : (p.untracked
+                        ? '<span class="rule-type-badge custom" title="Files are in place but there is no install record"><span>Installed (untracked)</span></span>'
+                        : '<span class="rule-type-badge builtin">Not installed</span>');
                 const update = p.update_available
                     ? ' <span style="color:#fd7e14;font-size:11px;">update ' + escapeHtml(p.installed_version || '') + ' &rarr; ' + escapeHtml(p.version) + '</span>'
                     : '';
                 const actions =
                     '<button class="btn btn-sm" onclick="showPackDetail(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-file-text"/></svg>Details</button>' +
+                    (p.has_setup
+                        ? '<button class="btn btn-sm" style="margin-left:6px;" onclick="showPackSetup(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-settings"/></svg>Setup guide</button>'
+                        : '') +
                     (p.installed
                         ? '<button class="btn btn-sm btn-danger" style="margin-left:6px;" onclick="uninstallPack(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-trash"/></svg>Remove</button>'
                         : '<button class="btn btn-sm btn-success" style="margin-left:6px;" onclick="installPack(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-download"/></svg>Install</button>');
@@ -6625,6 +6658,92 @@ HTML_TEMPLATE = '''
             }).join('');
         }
 
+        const PACK_PLATFORM_LABEL = { manager: 'Manager', all: 'All agents', windows: 'Windows', linux: 'Linux', macos: 'macOS', network: 'Network device' };
+
+        // The deployment guide: what has to happen outside the manager for the
+        // pack's rules to see anything. Agent-side files are shown verbatim,
+        // because they have to be copied onto hosts the manager does not configure.
+        function renderPackSetup(packId, steps) {
+            if (!steps || !steps.length) return '';
+            let html = '<div class="pack-setup">';
+            steps.forEach((st, i) => {
+                const fid = 'packfile-' + i;
+                html += '<div class="pack-step">' +
+                    '<div class="pack-step-head"><span class="pack-step-no">' + (i + 1) + '</span>' +
+                    '<span class="pack-step-title">' + escapeHtml(packLang(st.title, st.title_zh)) + '</span>' +
+                    '<span class="pack-chip">' + escapeHtml(PACK_PLATFORM_LABEL[st.platform] || st.platform || '') + '</span>' +
+                    (st.required ? '<span class="pack-chip pack-chip-req">Required</span>' : '<span class="pack-chip">Optional</span>') +
+                    '</div>' +
+                    '<div class="pack-step-body">' + escapeHtml(packLang(st.body, st.body_zh)) + '</div>';
+                if (st.code) {
+                    html += '<div class="pack-code"><button class="btn btn-sm pack-copy" onclick="copyPackCode(this)">' +
+                        '<svg class="icon"><use href="#icon-copy"/></svg><span>Copy</span></button><pre><code>' + escapeHtml(st.code) + '</code></pre></div>';
+                }
+                if (st.file) {
+                    html += '<div class="pack-file-row"><code>' + escapeHtml(st.file) + '</code>' +
+                        '<button class="btn btn-sm" onclick="togglePackFile(\\'' + escapeHtml(packId) + '\\', \\'' + escapeHtml(st.file) + '\\', \\'' + fid + '\\')">' +
+                        '<svg class="icon"><use href="#icon-eye"/></svg><span>View file</span></button>' +
+                        '<a class="btn btn-sm" href="/api/packs/' + encodeURIComponent(packId) + '/file?download=1&path=' + encodeURIComponent(st.file) + '">' +
+                        '<svg class="icon"><use href="#icon-download"/></svg><span>Download</span></a></div>' +
+                        '<div class="pack-code" id="' + fid + '" style="display:none;"></div>';
+                }
+                if (st.verify) {
+                    html += '<div class="pack-verify"><span class="pack-verify-label">How to check</span>' +
+                        '<div>' + escapeHtml(packLang(st.verify, st.verify_zh)) + '</div></div>';
+                }
+                html += '</div>';
+            });
+            return html + '</div>';
+        }
+
+        async function togglePackFile(packId, path, targetId) {
+            const box = document.getElementById(targetId);
+            if (!box) return;
+            if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+            box.style.display = 'block';
+            box.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
+            const r = await api('/packs/' + encodeURIComponent(packId) + '/file?path=' + encodeURIComponent(path));
+            if (!r || r.error) {
+                box.innerHTML = '<div class="alert alert-error">' + escapeHtml((r && r.error) || 'Failed to load') + '</div>';
+                return;
+            }
+            box.innerHTML = '<button class="btn btn-sm pack-copy" onclick="copyPackCode(this)"><svg class="icon"><use href="#icon-copy"/></svg><span>Copy</span></button>' +
+                '<pre class="pack-file-view"><code>' + escapeHtml(r.content) + '</code></pre>';
+        }
+
+        async function copyPackCode(btn) {
+            const code = btn.parentNode.querySelector('code');
+            if (!code) return;
+            const text = code.textContent;
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch (e) {
+                // plain http, or a browser that refuses the clipboard API
+                const ta = document.createElement('textarea');
+                ta.value = text; document.body.appendChild(ta); ta.select();
+                try { document.execCommand('copy'); } catch (e2) { /* nothing more to try */ }
+                document.body.removeChild(ta);
+            }
+            showToast('Copied', 'success');
+        }
+
+        async function showPackSetup(packId) {
+            showModal('Setup guide', '<div class="loading"><div class="spinner"></div>Loading...</div>',
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
+            const d = await api('/packs/' + encodeURIComponent(packId));
+            const body = document.getElementById('modalBody');
+            if (!body) return;
+            if (!d || d.error) {
+                body.innerHTML = '<div class="alert alert-error">' + escapeHtml((d && d.error) || 'Failed to load') + '</div>';
+                return;
+            }
+            const m = d.manifest || {};
+            document.getElementById('modalTitle').textContent = packLang(m.name, m.name_zh) || packId;
+            body.innerHTML = '<div class="pack-detail">' +
+                '<p class="pack-lead">Steps outside the manager that this pack depends on. Rules cannot see what an agent never collects.</p>' +
+                renderPackSetup(packId, d.setup) + '</div>';
+        }
+
         async function showPackDetail(packId) {
             showModal('Pack Details', '<div class="loading"><div class="spinner"></div>Loading...</div>',
                 '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
@@ -6637,13 +6756,34 @@ HTML_TEMPLATE = '''
             }
             const m = d.manifest || {};
             document.getElementById('modalTitle').textContent = (packLang(m.name, m.name_zh) || packId);
-            let html =
-                '<div style="background:#0a0a15;padding:12px;border-radius:4px;margin-bottom:12px;">' +
-                '<div style="color:#ccc;margin-bottom:6px;">' + escapeHtml(packLang(m.summary, m.summary_zh)) + '</div>' +
-                '<div style="color:#888;font-size:12px;">' +
+            const tested = (m.tested_with || []).join(', ');
+            let html = '<div class="pack-detail">' +
+                '<div class="pack-summary">' +
+                '<div class="pack-summary-text">' + escapeHtml(packLang(m.summary, m.summary_zh)) + '</div>' +
+                '<div class="pack-meta">' +
                 'ID <code>' + escapeHtml(m.id || '') + '</code> &nbsp; version ' + escapeHtml(m.version || '') +
                 ' &nbsp; rules ' + d.rule_count + ' &nbsp; ID range ' + escapeHtml(m.rule_id_range || '') +
+                (tested ? ' &nbsp; <span>Tested with Wazuh</span> ' + escapeHtml(tested) : '') +
                 '<br>' + escapeHtml(m.author || '') + ' &nbsp; ' + escapeHtml(m.license || '') + '</div></div>';
+
+            const pres = d.presence || {};
+            if (!d.installed && pres.present) {
+                html += '<div class="alert alert-info">' +
+                    '<div>The files of this pack are already on the manager, but it was not installed through this tool, so there is no install record.</div>' +
+                    '<div>' + (pres.identical === pres.total
+                        ? '<span>They match this version exactly. Installing records them; nothing changes on disk.</span>'
+                        : '<span>They differ from this version. Installing backs them up and replaces them.</span>') + '</div></div>';
+            }
+            if (d.conflicts && d.conflicts.length) {
+                html += '<div class="alert alert-error"><div>Rule ID conflict with rules in other files:</div>' +
+                    '<div style="font-family:monospace;">' +
+                    d.conflicts.slice(0, 10).map(c => escapeHtml(c.rule) + ' (' + escapeHtml(c.file) + ')').join(', ') + '</div></div>';
+            }
+
+            if ((d.setup || []).length) {
+                html += '<h4 class="pack-h">Setup guide</h4>' + renderPackSetup(packId, d.setup);
+            }
+
             // manifests carry both notes (English) and notes_zh; show the reader's own language
             let packNotes = m.notes || [];
             try {
@@ -6653,15 +6793,11 @@ HTML_TEMPLATE = '''
             } catch (e) { /* localStorage unavailable */ }
             if (!packNotes.length) packNotes = m.notes_zh || [];
             if (packNotes.length) {
-                html += '<div style="margin-bottom:12px;"><div style="color:#888;font-size:12px;margin-bottom:4px;">Notes</div>' +
-                    '<ul style="margin:0 0 0 18px;font-size:12px;color:#ccc;">' +
-                    packNotes.map(n => '<li style="margin-bottom:3px;">' + escapeHtml(n) + '</li>').join('') + '</ul></div>';
+                html += '<h4 class="pack-h">Notes</h4><ul class="pack-notes">' +
+                    packNotes.map(n => '<li>' + escapeHtml(n) + '</li>').join('') + '</ul>';
             }
-            if (d.conflicts && d.conflicts.length) {
-                html += '<div class="alert alert-error">Rule ID conflict with rules already installed: ' +
-                    d.conflicts.slice(0, 10).map(c => escapeHtml(c.rule) + ' (' + escapeHtml(c.file) + ')').join(', ') + '</div>';
-            }
-            html += '<div style="overflow-x:auto;"><table class="data-table" style="width:100%;font-size:12px;">' +
+
+            html += '<details class="pack-files"><summary>Files</summary><div style="overflow-x:auto;"><table class="data-table" style="width:100%;">' +
                 '<thead><tr><th style="text-align:left;padding:6px 10px;">Type</th>' +
                 '<th style="text-align:left;padding:6px 10px;">File</th>' +
                 '<th style="text-align:left;padding:6px 10px;">Installs to</th>' +
@@ -6669,45 +6805,45 @@ HTML_TEMPLATE = '''
                 (d.files || []).map(f =>
                     '<tr><td style="padding:6px 10px;">' + escapeHtml(f.type) + '</td>' +
                     '<td style="padding:6px 10px;font-family:monospace;">' + escapeHtml(f.name) + '</td>' +
-                    '<td style="padding:6px 10px;font-family:monospace;color:#888;">' + escapeHtml(f.dest) + '</td>' +
+                    '<td style="padding:6px 10px;font-family:monospace;color:#9aa;">' + escapeHtml(f.dest) + '</td>' +
                     '<td style="padding:6px 10px;text-align:right;">' + formatFileSize(f.size) + '</td></tr>').join('') +
-                '</tbody></table></div>';
+                '</tbody></table></div></details>';
 
             // Installing a pack can do more than drop files in etc/rules. Anything
             // that schedules a root process or creates an agent group is stated
             // before the operator presses Install, not discovered afterwards.
             const jobs = (d.scripts || []).filter(x => x.cron);
             if (jobs.length) {
-                html += '<div style="margin-top:14px;"><div style="color:#888;font-size:12px;margin-bottom:4px;">Scheduled jobs</div>' +
-                    '<div class="alert alert-warning" style="font-size:12px;">' +
+                html += '<h4 class="pack-h">Scheduled jobs</h4>' +
+                    '<div class="alert alert-warning">' +
                     'This pack installs an updater and runs it as root on a schedule. ' +
                     'It is removed again when the pack is removed.<ul style="margin:6px 0 0 18px;">' +
                     jobs.map(j => '<li><code>' + escapeHtml(j.name) + '</code> &nbsp; ' +
                         '<span style="color:#4fc3f7;">' + escapeHtml(j.cron) + '</span>' +
                         (j.description ? ' &nbsp; ' + escapeHtml(j.description) : '') + '</li>').join('') +
-                    '</ul></div></div>';
+                    '</ul></div>';
             }
             // An install that could not reach every node stays visible here. A
             // toast shown once at install time is long gone by the time anyone
             // wonders why the worker is not alerting.
             if ((d.undeclared_nodes || []).length) {
-                html += '<div style="margin-top:14px;"><div style="color:#888;font-size:12px;margin-bottom:4px;">Incomplete on some nodes</div>' +
-                    '<div class="alert alert-danger" style="font-size:12px;">' +
+                html += '<h4 class="pack-h">Incomplete on some nodes</h4>' +
+                    '<div class="alert alert-danger">' +
                     'The CDB list is not declared on <code>' +
                     d.undeclared_nodes.map(escapeHtml).join('</code>, <code>') + '</code>. ' +
                     'Rules that read the list are ignored there, with no error and no warning. ' +
                     'Declare the list inside <code>&lt;ruleset&gt;</code> in the ossec.conf on that node ' +
-                    'and reload it, or install this pack again once the node can be reached.</div></div>';
+                    'and reload it, or install this pack again once the node can be reached.</div>';
             }
             if (d.agent_group && d.agent_group.name) {
-                html += '<div style="margin-top:14px;"><div style="color:#888;font-size:12px;margin-bottom:4px;">Agent group</div>' +
-                    '<div class="alert alert-info" style="font-size:12px;">' +
+                html += '<h4 class="pack-h">Agent group</h4>' +
+                    '<div class="alert alert-info">' +
                     'Creates the agent group <code>' + escapeHtml(d.agent_group.name) + '</code> ' +
                     'holding the log collection this pack needs. Manager-side rules cannot see a log the ' +
                     'agent never reads, so assign your agents to that group after installing. ' +
-                    'An existing group of the same name is never overwritten.</div></div>';
+                    'An existing group of the same name is never overwritten.</div>';
             }
-            body.innerHTML = html;
+            body.innerHTML = html + '</div>';
             const footer = document.getElementById('modalFooter');
             if (footer) {
                 footer.innerHTML =
@@ -7607,6 +7743,21 @@ _I18N_SCRIPT = r"""
       'Installs to': '安裝位置',
       'Installed': '已安裝',
       'Not installed': '未安裝',
+      'Installed (untracked)': '已安裝（未登記）',
+      'Network device': '網路設備',
+      'Files are in place but there is no install record': '檔案已在位置上，但沒有安裝紀錄',
+      'Setup guide': '部署說明',
+      'Required': '必要',
+      'Optional': '選用',
+      'Copied': '已複製',
+      'View file': '檢視檔案',
+      'How to check': '如何確認',
+      'Tested with Wazuh': '已測試的 Wazuh 版本',
+      'Steps outside the manager that this pack depends on. Rules cannot see what an agent never collects.': '本套件依賴、但必須在管理端以外完成的步驟。agent 沒收集的東西，規則看不到。',
+      'The files of this pack are already on the manager, but it was not installed through this tool, so there is no install record.': '這個套件的檔案已經在管理端上，但不是透過本工具安裝的，所以沒有安裝紀錄。',
+      'They match this version exactly. Installing records them; nothing changes on disk.': '內容與此版本完全相同。按「安裝」只會登記，磁碟上的檔案不會改變。',
+      'They differ from this version. Installing backs them up and replaces them.': '內容與此版本不同。按「安裝」會先備份再取代。',
+      'Rule ID conflict with rules in other files:': '與其他檔案中的規則 ID 衝突：',
       'Install': '安裝',
       'Remove': '移除',
       'Details': '詳細資訊',
@@ -8280,6 +8431,21 @@ _I18N_SCRIPT = r"""
       'Installs to': 'インストール先',
       'Installed': 'インストール済み',
       'Not installed': '未インストール',
+      'Installed (untracked)': 'インストール済み（未登録）',
+      'Network device': 'ネットワーク機器',
+      'Files are in place but there is no install record': 'ファイルは配置済みですが、インストール記録がありません',
+      'Setup guide': 'セットアップガイド',
+      'Required': '必須',
+      'Optional': '任意',
+      'Copied': 'コピーしました',
+      'View file': 'ファイルを表示',
+      'How to check': '確認方法',
+      'Tested with Wazuh': '動作確認済みの Wazuh',
+      'Steps outside the manager that this pack depends on. Rules cannot see what an agent never collects.': 'このパックが依存する、マネージャー以外で行う手順です。エージェントが収集しないものはルールから見えません。',
+      'The files of this pack are already on the manager, but it was not installed through this tool, so there is no install record.': 'このパックのファイルはすでにマネージャー上にありますが、このツールでインストールされていないため、インストール記録がありません。',
+      'They match this version exactly. Installing records them; nothing changes on disk.': 'このバージョンと完全に一致しています。インストールすると記録されるだけで、ディスク上のファイルは変わりません。',
+      'They differ from this version. Installing backs them up and replaces them.': 'このバージョンとは内容が異なります。インストールするとバックアップしてから置き換えます。',
+      'Rule ID conflict with rules in other files:': '他のファイルのルール ID と競合しています：',
       'Install': 'インストール',
       'Remove': '削除',
       'Details': '詳細',
@@ -8886,15 +9052,12 @@ _I18N_SCRIPT = r"""
   };
 
   var LANG_KEY = 'jtwz_lang';
-  // Order matters: the toggle cycles through this list, and the button shows
-  // the language it will switch TO.
+  // The order is the order of the language menu. Each language is listed under
+  // its own name, so a reader who cannot read the current one still finds theirs.
   var SUPPORTED = ['en', 'zh-TW', 'ja'];
-  var LANG_LABEL = { 'en': 'EN', 'zh-TW': '中文', 'ja': '日本語' };
-  var LANG_TITLE = {
-    'en': 'Switch to English',
-    'zh-TW': '切換為繁體中文',
-    'ja': '日本語に切り替える'
-  };
+  var LANG_LABEL = { 'en': 'English', 'zh-TW': '繁體中文', 'ja': '日本語' };
+  var LANG_SHORT = { 'en': 'EN', 'zh-TW': '中文', 'ja': '日本語' };
+  var MENU_TITLE = { 'en': 'Language', 'zh-TW': '語言', 'ja': '言語' };
   var SKIP_TAGS = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, CODE: 1, PRE: 1, svg: 1, SVG: 1 };
 
   function getLang() {
@@ -8982,7 +9145,19 @@ _I18N_SCRIPT = r"""
       '.jtwz-lang-fab{position:fixed;top:14px;right:16px;z-index:9999;display:inline-flex;align-items:center;gap:6px;' +
       'padding:7px 13px;background:#16213e;color:#4fc3f7;border:1px solid #4fc3f7;border-radius:8px;' +
       'font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}' +
-      '.jtwz-lang-fab:hover{background:#1a4a7a;color:#81d4fa}';
+      '.jtwz-lang-fab:hover{background:#1a4a7a;color:#81d4fa}' +
+      '.jtwz-lang-wrap{position:relative;display:inline-flex}' +
+      '.jtwz-lang-wrap.fab{position:fixed;top:14px;right:16px;z-index:9999}' +
+      '.jtwz-lang-wrap.fab .jtwz-lang-fab{position:static}' +
+      '#langToggle .jtwz-caret{font-size:10px;opacity:.8}' +
+      '.jtwz-lang-menu{position:absolute;top:calc(100% + 6px);right:0;min-width:160px;z-index:10000;' +
+      'background:#16213e;border:1px solid #4fc3f7;border-radius:8px;padding:6px 0;margin:0;list-style:none;' +
+      'box-shadow:0 8px 24px rgba(0,0,0,.45)}' +
+      '.jtwz-lang-menu[hidden]{display:none}' +
+      '.jtwz-lang-menu button{display:flex;width:100%;align-items:center;gap:10px;padding:9px 16px;' +
+      'background:none;border:0;color:#e0e0e0;font-size:15px;font-family:inherit;cursor:pointer;text-align:left}' +
+      '.jtwz-lang-menu button:hover,.jtwz-lang-menu button:focus{background:#1a4a7a;color:#fff;outline:none}' +
+      '.jtwz-lang-menu .jtwz-check{width:14px;color:#4fc3f7}';
     (document.head || document.documentElement).appendChild(st);
   }
 
@@ -8991,24 +9166,60 @@ _I18N_SCRIPT = r"""
     '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>' +
     '<path d="M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg>';
 
-  function nextLang(lang) {
-    var i = SUPPORTED.indexOf(lang);
-    return SUPPORTED[(i < 0 ? 0 : i + 1) % SUPPORTED.length];
-  }
-
+  // A menu, not a toggle: with three languages a button that steps to "the next
+  // one" made people click through a language they cannot read to reach theirs.
   function buildToggle() {
     injectStyle();
     var lang = getLang();
-    var next = nextLang(lang);
+    var wrap = document.createElement('div');
+    wrap.className = 'jtwz-lang-wrap';
+    wrap.setAttribute('data-noi18n', '');
     var btn = document.createElement('button');
     btn.id = 'langToggle';
     btn.type = 'button';
-    btn.title = LANG_TITLE[next];
-    btn.innerHTML = GLOBE + '<span>' + LANG_LABEL[next] + '</span>';
-    btn.onclick = function () { setLang(next); };
+    btn.title = MENU_TITLE[lang] || MENU_TITLE.en;
+    btn.setAttribute('aria-haspopup', 'menu');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.innerHTML = GLOBE + '<span>' + LANG_SHORT[lang] + '</span><span class="jtwz-caret">&#9662;</span>';
+    var menu = document.createElement('div');
+    menu.className = 'jtwz-lang-menu';
+    menu.setAttribute('role', 'menu');
+    menu.hidden = true;
+    SUPPORTED.forEach(function (code) {
+      var item = document.createElement('button');
+      item.type = 'button';
+      item.setAttribute('role', 'menuitemradio');
+      item.setAttribute('aria-checked', code === lang ? 'true' : 'false');
+      item.setAttribute('lang', code);
+      item.innerHTML = '<span class="jtwz-check">' + (code === lang ? '&#10003;' : '') + '</span>' + LANG_LABEL[code];
+      item.onclick = function () { if (code !== lang) setLang(code); else close(); };
+      menu.appendChild(item);
+    });
+    function open() {
+      menu.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+      var cur = menu.querySelector('[aria-checked="true"]');
+      if (cur) cur.focus();
+    }
+    function close() {
+      menu.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    }
+    btn.onclick = function (e) { e.stopPropagation(); if (menu.hidden) open(); else close(); };
+    menu.addEventListener('keydown', function (e) {
+      var items = Array.prototype.slice.call(menu.querySelectorAll('button'));
+      var i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+      else if (e.key === 'Escape') { close(); btn.focus(); }
+    });
+    document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) close(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !menu.hidden) close(); });
+    wrap.appendChild(btn);
+    wrap.appendChild(menu);
     var hb = document.querySelector('.header-buttons');
-    if (hb) { btn.className = 'btn-settings'; hb.insertBefore(btn, hb.firstChild); }
-    else { btn.className = 'jtwz-lang-fab'; document.body.appendChild(btn); }
+    if (hb) { btn.className = 'btn-settings'; hb.insertBefore(wrap, hb.firstChild); }
+    else { btn.className = 'jtwz-lang-fab'; wrap.className += ' fab'; document.body.appendChild(wrap); }
   }
 
   function init() {
@@ -13502,6 +13713,46 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         except Exception:
             return None
 
+    def _pack_presence(manifest):
+        """Which of a pack's files are already at their destination, and unchanged.
+
+        A pack copied in by hand, or installed before the tool kept install
+        records, has its files in place and no state file. Treating those files
+        as somebody else's rules turned every rule ID into a "conflict" with the
+        pack itself, and the catalogue reported nothing installed on a manager
+        running all eight.
+        """
+        import hashlib
+        present = identical = 0
+        total = len(manifest.get('files', []))
+        for entry in manifest.get('files', []):
+            dest_rel = entry.get('dest', '')
+            if not _validate_dest(dest_rel):
+                continue
+            dest = os.path.join(_wazuh_path(), dest_rel)
+            if not os.path.isfile(dest):
+                continue
+            present += 1
+            try:
+                with open(dest, 'rb') as fh:
+                    if hashlib.sha256(fh.read()).hexdigest() == entry.get('sha256'):
+                        identical += 1
+            except OSError:
+                pass
+        return {'present': present, 'identical': identical, 'total': total}
+
+    def _own_rule_files(manifest):
+        """Rule files the pack itself installs. Its own copy is never a conflict."""
+        return {os.path.basename(f.get('dest', '')) for f in manifest.get('files', [])
+                if f.get('type') == 'rule'} | {f['name'] for f in manifest.get('files', [])
+                                               if f.get('type') == 'rule'}
+
+    # What the deployment guide may show from a pack. Agent-side files are the
+    # point; rules and lists are listed for completeness. Nothing outside these
+    # directories, and nothing large.
+    PACK_VIEWABLE_DIRS = ('agent', 'rules', 'lists', 'decoders', 'scripts')
+    PACK_VIEW_MAX = 512 * 1024
+
     def _validate_dest(dest):
         """A manifest may only write into the Wazuh rule/list/decoder directories."""
         if not dest or '..' in dest or dest.startswith('/'):
@@ -13890,6 +14141,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 if not manifest:
                     continue
                 state = _installed_state(entry)
+                presence = _pack_presence(manifest) if not state else None
                 packs.append({
                     'id': manifest.get('id', entry),
                     'name': manifest.get('name', entry),
@@ -13905,6 +14157,12 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     'installed_version': (state or {}).get('version'),
                     'installed_at': (state or {}).get('installed_at'),
                     'update_available': bool(state) and state.get('version') != manifest.get('version'),
+                    # files in place but no install record: copied by hand, or
+                    # installed before the tool kept records
+                    'untracked': bool(presence and presence['present']),
+                    'untracked_identical': bool(presence and presence['total']
+                                                and presence['identical'] == presence['total']),
+                    'has_setup': bool(manifest.get('setup')),
                 })
             return jsonify({'packs': packs, 'total': len(packs)})
         except Exception as e:
@@ -13922,8 +14180,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         try:
             pdir = _pack_dir(pack_id)
             state = _installed_state(pack_id)
-            own_files = {f['name'] for f in manifest.get('files', []) if f.get('type') == 'rule'}
-            existing = _installed_rule_ids(skip_files=own_files if state else ())
+            existing = _installed_rule_ids(skip_files=_own_rule_files(manifest))
             rule_ids = _pack_rule_ids(pdir, manifest)
             conflicts = [{'rule': rid, 'file': existing[rid]} for rid in rule_ids if rid in existing]
 
@@ -13948,10 +14205,48 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 'installed': bool(state),
                 'undeclared_nodes': (state or {}).get('undeclared_nodes') or [],
                 'state': state,
+                'presence': _pack_presence(manifest),
+                'setup': manifest.get('setup') or [],
+                'agent_files': sorted(
+                    f for f in (os.listdir(os.path.join(pdir, 'agent'))
+                                if os.path.isdir(os.path.join(pdir, 'agent')) else [])
+                    if os.path.isfile(os.path.join(pdir, 'agent', f))),
             })
         except Exception as e:
             logger.error(f"PACK DETAIL ERROR: {e}")
             return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/packs/<pack_id>/file', methods=['GET'])
+    @login_required
+    @require_capability('rule_packs')
+    def get_pack_file(pack_id):
+        """One file from a pack, for the deployment guide to show or hand over.
+
+        Agent-side files (a Sysmon fragment, auditd rules, agent.conf) have to be
+        copied onto hosts the manager does not configure, so the operator needs
+        their exact text, not a description of it.
+        """
+        pdir = _pack_dir(pack_id)
+        if not pdir:
+            return jsonify({'error': 'Unknown pack'}), 404
+        rel = request.args.get('path', '')
+        parts = rel.split('/')
+        if (len(parts) != 2 or parts[0] not in PACK_VIEWABLE_DIRS
+                or not re.match(r'^[A-Za-z0-9._-]{1,128}$', parts[1]) or parts[1].startswith('.')):
+            return jsonify({'error': 'Invalid file path'}), 400
+        path = os.path.join(pdir, parts[0], parts[1])
+        if os.path.realpath(path) != os.path.join(os.path.realpath(pdir), parts[0], parts[1]) \
+                or not os.path.isfile(path):
+            return jsonify({'error': 'File not found'}), 404
+        if os.path.getsize(path) > PACK_VIEW_MAX:
+            return jsonify({'error': 'File too large to display'}), 413
+        with open(path, encoding='utf-8', errors='replace') as fh:
+            content = fh.read()
+        if request.args.get('download') == '1':
+            from flask import Response
+            return Response(content, mimetype='text/plain', headers={
+                'Content-Disposition': 'attachment; filename="%s"' % parts[1]})
+        return jsonify({'path': rel, 'name': parts[1], 'content': content})
 
     @app.route('/api/packs/<pack_id>/install', methods=['POST'])
     @login_required
@@ -13975,8 +14270,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
         try:
             state = _installed_state(pack_id)
-            own = {f['name'] for f in manifest.get('files', []) if f.get('type') == 'rule'}
-            existing = _installed_rule_ids(skip_files=own if state else ())
+            existing = _installed_rule_ids(skip_files=_own_rule_files(manifest))
             conflicts = [rid for rid in _pack_rule_ids(pdir, manifest) if rid in existing]
             if conflicts and not force:
                 return jsonify({'error': 'Rule ID conflict with rules already installed',
