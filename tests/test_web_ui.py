@@ -1068,6 +1068,13 @@ class PackFixture(WebUITestCase):
                      '  </ruleset>\n</ossec_config>\n')
         self._write_analysisd(self.ANALYSISD_OK)
 
+        # Scheduled updaters go to a scratch cron.d, never the real /etc/cron.d
+        # of the machine running the suite.
+        self._cron_dir = os.path.join(self.tmp, 'cron.d')
+        os.makedirs(self._cron_dir)
+        self.addCleanup(setattr, web_ui, 'PACK_CRON_DIR', web_ui.PACK_CRON_DIR)
+        web_ui.PACK_CRON_DIR = self._cron_dir
+
         # A single-node cluster. Without this the shared API fixture answers
         # /cluster/nodes with the agent list, and declaring a CDB list would try
         # to reach nodes named after agents. Cluster behaviour has its own tests
@@ -1344,6 +1351,9 @@ class TestRulePacks(PackFixture):
         self.assertEqual(oct(os.stat(script).st_mode & 0o777), '0o750')
         self.assertEqual(len(data.get('scheduled') or []), 1)
         self.assertIn('17 */6 * * *', data['message'])
+        # the schedule landed in the fixture, not in the host's /etc/cron.d
+        self.assertTrue(os.path.isfile(os.path.join(self._cron_dir, 'jt-jt-testscript')))
+        self.assertFalse(os.path.exists('/etc/cron.d/jt-jt-testscript'))
 
     def test_uninstall_removes_the_script(self):
         self._fake_pack('jt-testscript', self._script_manifest(),
@@ -2109,6 +2119,29 @@ class TestAlertDigest(unittest.TestCase):
         html = self.mod.render_html({('1', 'h'): group}, 1, 12, None)
         self.assertNotIn('<script>', html)
         self.assertIn('&lt;script&gt;', html)
+
+    def test_every_group_names_its_host_with_address_and_agent_id(self):
+        """A reader asked which machine a message was about: the agent name sat in
+        small grey capitals inside the level line, with no address at all."""
+        import tempfile
+        alert = {'rule': {'id': '100807', 'level': 12, 'description': 'Web artefact'},
+                 'agent': {'id': '047', 'name': 'dev1', 'ip': '192.0.2.86'},
+                 'timestamp': '2026-10-05T14:59:34.000+0800'}
+        with tempfile.TemporaryDirectory() as d:
+            alerts, state = os.path.join(d, 'alerts.json'), os.path.join(d, 'state')
+            with io.open(alerts, 'w', encoding='utf-8') as fh:
+                fh.write(json.dumps(alert) + '\n')
+            with io.open(state, 'w', encoding='utf-8') as fh:
+                fh.write('0')
+            groups, total, _ = self.mod.collect(alerts, state, 12)
+        html = self.mod.render_html(groups, total, 12, None)
+        text = self.mod.render_text(groups, total, 12, None)
+        for out in (html, text):
+            self.assertIn('dev1', out)
+            self.assertIn('192.0.2.86', out)
+            self.assertIn('agent 047', out)
+        self.assertIn('Host: dev1 (192.0.2.86, agent 047)', text)
+        self.assertIn('hosts: dev1', text)
 
     def test_plain_text_alternative_does_not_pad_into_columns(self):
         # Column alignment is what every mail client's rewrapping destroys.

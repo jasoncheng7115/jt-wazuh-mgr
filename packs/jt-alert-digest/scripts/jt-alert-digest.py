@@ -168,9 +168,12 @@ def collect(alerts_path, state, min_level):
             if level < min_level:
                 continue
 
-            key = (rule.get("id", "?"), (alert.get("agent") or {}).get("name", "?"))
+            agent = alert.get("agent") or {}
+            key = (rule.get("id", "?"), agent.get("name", "?"))
             group = groups.setdefault(key, {
                 "level": level,
+                "agent_id": agent.get("id", ""),
+                "agent_ip": agent.get("ip", ""),
                 "descriptions": [],
                 "mitre": (rule.get("mitre") or {}).get("id", []),
                 "count": 0,
@@ -331,6 +334,26 @@ def headline(group):
     return "%s %s" % (day(group["first"]), span)
 
 
+def host_detail(group):
+    """Address and agent ID, the part a reader needs to find the machine.
+
+    The first version showed only the agent name, in small grey capitals inside
+    the level line, and a reader could not tell which host a message was about.
+    """
+    parts = []
+    if group.get("agent_ip") and group["agent_ip"] not in ("any", "127.0.0.1"):
+        parts.append(group["agent_ip"])
+    if group.get("agent_id"):
+        parts.append("agent " + group["agent_id"])
+    return ", ".join(parts)
+
+
+def host_names(groups, limit=5):
+    names = sorted({k[1] for k in groups})
+    shown = ", ".join(names[:limit])
+    return shown + (" +%d" % (len(names) - limit) if len(names) > limit else "")
+
+
 def render_text(groups, total, min_level, dashboard):
     """The plain text alternative.
 
@@ -339,17 +362,19 @@ def render_text(groups, total, min_level, dashboard):
     by the first mail client that rewraps a long line. Here the label ends in
     a colon and the value follows, so a rewrap costs nothing.
     """
-    lines = ["%d alerts at level %d or above, %d rules, %d hosts"
-             % (total, min_level, len(groups), len({k[1] for k in groups})), ""]
+    lines = ["%d alerts at level %d or above, %d rules, hosts: %s"
+             % (total, min_level, len(groups), host_names(groups)), ""]
     items = ordered_groups(groups)
     for index, ((rule_id, agent), group) in enumerate(items):
         if index >= MAX_GROUPS:
             lines.append("(%d more groups not listed)" % (len(items) - MAX_GROUPS))
             break
         count = "  x%d" % group["count"] if group["count"] > 1 else ""
-        lines.append("%s L%d  %s  rule %s%s"
+        lines.append("%s L%d  rule %s%s"
                      % (SEVERITY.get(group["level"], "[HIGH]"),
-                        group["level"], agent, rule_id, count))
+                        group["level"], rule_id, count))
+        detail = host_detail(group)
+        lines.append("  Host: %s%s" % (agent, " (%s)" % detail if detail else ""))
         lines.append("  " + shared_prefix(group["descriptions"]))
         stamp = "  " + headline(group)
         if group["mitre"]:
@@ -386,8 +411,8 @@ def render_html(groups, total, min_level, dashboard):
         'font-size:13px;color:%s;">' % (LINE, MUTED),
         '<span style="color:%s;font-weight:600;">Wazuh</span>'
         '&nbsp;&nbsp;%d alerts at level %d or above'
-        '&nbsp;&middot;&nbsp;%d rules&nbsp;&middot;&nbsp;%d hosts'
-        % (INK, total, min_level, len(groups), len({k[1] for k in groups})),
+        '&nbsp;&middot;&nbsp;%d rules&nbsp;&middot;&nbsp;hosts: %s'
+        % (INK, total, min_level, len(groups), esc(host_names(groups))),
         '</div>',
     ]
 
@@ -408,8 +433,19 @@ def render_html(groups, total, min_level, dashboard):
             '<div style="font-size:12px;letter-spacing:.04em;'
             'text-transform:uppercase;color:%s;font-weight:700;">'
             'Level %d<span style="color:%s;font-weight:600;">'
-            '&nbsp;&middot;&nbsp;%s&nbsp;&middot;&nbsp;rule %s</span>%s</div>'
-            % (band, group["level"], MUTED, esc(agent), esc(rule_id), count))
+            '&nbsp;&middot;&nbsp;rule %s</span>%s</div>'
+            % (band, group["level"], MUTED, esc(rule_id), count))
+        detail = host_detail(group)
+        out.append(
+            '<div style="margin:8px 0 2px;font-size:14px;">'
+            '<span style="color:%s;font-size:12px;">Host</span>&nbsp;&nbsp;'
+            '<span style="display:inline-block;font-family:%s;font-weight:700;font-size:15px;'
+            'color:%s;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:4px;'
+            'padding:1px 8px;">%s</span>'
+            '%s</div>'
+            % (MUTED, MONO, INK, esc(agent),
+               ('&nbsp;&nbsp;<span style="font-family:%s;font-size:13px;color:%s;">%s</span>'
+                % (MONO, MUTED, esc(detail))) if detail else ''))
 
         out.append('<div style="margin:6px 0 2px;font-size:15px;line-height:1.45;'
                    'font-weight:600;">%s</div>'

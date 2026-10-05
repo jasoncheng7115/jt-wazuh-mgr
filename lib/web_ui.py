@@ -117,6 +117,13 @@ SERVER_FEATURES = {
 
 UNKNOWN_SERVER_VERSION = '0.0.0'
 
+# Where a pack's scheduled updaters are written. Module level so the test suite
+# can point it at a scratch directory: while it sat inside create_app, every run
+# of the suite wrote a real root cron entry into /etc/cron.d on whatever machine
+# ran it, and removed it a second later -- which the host's own file integrity
+# monitoring then reported as level 13 persistence.
+PACK_CRON_DIR = '/etc/cron.d'
+
 
 def server_major(version: str) -> int:
     """Major version number of a server, or 0 when it could not be read.
@@ -13965,12 +13972,11 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 logger.warning('could not restore ossec.conf on node %s',
                                sanitize_for_log(node))
 
-    CRON_DIR = '/etc/cron.d'
     CRON_SCHEDULE = re.compile(r'^[\d*/,\- ]{5,64}$')
 
     def _cron_path(pack_id):
         # cron.d refuses a filename containing a dot, so the pack id is sanitised.
-        return os.path.join(CRON_DIR, 'jt-' + re.sub(r'[^A-Za-z0-9_-]', '-', pack_id))
+        return os.path.join(PACK_CRON_DIR, 'jt-' + re.sub(r'[^A-Za-z0-9_-]', '-', pack_id))
 
     def _install_scripts(pdir, manifest, wazuh, written, backed_up, backup_dir):
         """Install a pack's updater scripts and, if asked, schedule them.
@@ -14025,7 +14031,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                               % (schedule, python, dest, args, logfile))
             scheduled.append({'script': entry['name'], 'schedule': schedule, 'log': logfile})
 
-        if cron_lines and os.path.isdir(CRON_DIR):
+        if cron_lines and os.path.isdir(PACK_CRON_DIR):
             path = _cron_path(manifest.get('id', 'pack'))
             body = ('# Installed by jt-wazuh-mgr for pack %s. Removed when the pack is.\n'
                     'SHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n'

@@ -91,9 +91,13 @@
       對所有 agent 都會生效。而且因為 `01-` 比 `zz-` 早載入，
       它們會蓋掉 jt-portable-detect 的 906202（同一個事件只會命中先載入的那條）。
       兩個套件都裝的話，暫存目錄的告警是由這裡發出的，不是 906202。
+
+    ★ 2026-10-05：兩條都不再看刪除事件（553）。規則問的是「攻擊工具出現在暫存目錄」，
+      檔案消失不是這個訊號；實測一個測試腳本結束時刪掉自己的暫存檔，產生兩封 level 12
+      的信。刪除事件改由內建 553（level 7）照常記錄。
   -->
   <rule id="100807" level="12">
-    <if_sid>550,553,554</if_sid>
+    <if_sid>550,554</if_sid>
     <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm)/.*\.(jsp|jspx|class|jar|war)$</field>
     <description>[HIGH] Web application artefact in a temporary directory, possible attacker tooling: $(file) process: $(process_name)</description>
     <mitre>
@@ -103,7 +107,7 @@
   </rule>
 
   <rule id="100809" level="12">
-    <if_sid>550,553,554</if_sid>
+    <if_sid>550,554</if_sid>
     <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm)/.*\.(sh|py|pl|elf|bin)$</field>
     <field name="perm" type="pcre2">x</field>
     <description>[HIGH] Executable script or binary in a temporary directory, possible attacker tooling: $(file) process: $(process_name)</description>

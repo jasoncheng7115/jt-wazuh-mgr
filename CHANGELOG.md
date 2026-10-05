@@ -4,6 +4,28 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.10.1 (2026-10-05)
+
+- **The alert digest says which host each group is about.** The agent name sat
+  in small grey capitals inside the level line, with no address, and a reader
+  could not tell which machine a message concerned. Each group now carries a
+  Host line with the agent name set apart, its address and its agent ID, and
+  the summary at the top lists the hosts by name. jt-alert-digest 1.1.
+
+- **jt-zimbra 2.8: 100807 and 100809 no longer alert on a deletion.** They ask
+  whether attacker tooling appeared in a temporary directory, and a file going
+  away is not that. Measured: a test script deleting its own scratch files at
+  the end produced two level 12 messages. The deletion is still recorded by the
+  built-in rule 553 at level 7.
+
+- **The test suite no longer writes into /etc/cron.d.** The pack installer's
+  cron directory was fixed inside the application, so every run of the suite
+  wrote a real root cron entry on the machine running it and removed it a
+  second later — which that machine's own file integrity monitoring reported,
+  correctly, as level 13 persistence. The directory is now a module setting the
+  tests point at a scratch directory, and a test asserts the host's
+  `/etc/cron.d` is left alone.
+
 ## v1.10.0 (2026-10-05)
 
 - **The installer no longer pip-installs into the system Python.** On Ubuntu
