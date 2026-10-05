@@ -2143,6 +2143,34 @@ class TestAlertDigest(unittest.TestCase):
         self.assertIn('Host: dev1 (192.0.2.86, agent 047)', text)
         self.assertIn('hosts: dev1', text)
 
+    def test_ids_alerts_are_summarised_not_dumped(self):
+        """A Suricata alert printed its whole EVE JSON line as the only field."""
+        alert = {'rule': {'id': '100621', 'level': 12, 'description': 'Suricata x'},
+                 'agent': {'id': '044', 'name': 'fw', 'ip': '192.0.2.1'},
+                 'timestamp': '2026-10-05T16:11:36.000+0800',
+                 'full_log': '{"event_type":"alert","src_ip":"198.51.100.19"}',
+                 'data': {'src_ip': '198.51.100.19', 'dest_ip': '203.0.113.251', 'proto': 'TCP',
+                          'src_port': '4444', 'dest_port': '443', 'in_iface': 'igb2',
+                          'alert': {'signature': 'ET EXPLOIT Something', 'action': 'allowed',
+                                    'category': 'Attempted Administrator Privilege Gain'}}}
+        fields = dict(self.mod.interesting_fields(alert))
+        self.assertEqual(fields['Signature'], 'ET EXPLOIT Something')
+        self.assertEqual(fields['Flow'], '198.51.100.19:4444  ->  203.0.113.251:443  TCP')
+        self.assertIn('allowed', fields['Action'])
+        self.assertNotIn('Log', fields)
+
+    def test_long_values_wrap_inside_the_card(self):
+        """An unbroken JSON log widened the table past the card: word-break in a
+        cell is ignored under the automatic table layout."""
+        alert = {'rule': {'id': '1', 'level': 12, 'description': 'x'},
+                 'agent': {'name': 'h'}, 'timestamp': '2026-01-02T03:04:05.000+0000',
+                 'full_log': '{"k":"' + 'v' * 400 + '"}'}
+        group = self._group(12, ['x'])
+        group['samples'] = [alert]
+        html = self.mod.render_html({('1', 'h'): group}, 1, 12, None)
+        self.assertIn('table-layout:fixed', html)
+        self.assertIn('overflow-wrap:anywhere', html)
+
     def test_plain_text_alternative_does_not_pad_into_columns(self):
         # Column alignment is what every mail client's rewrapping destroys.
         alert = {'rule': {'id': '1', 'level': 12, 'description': 'x'},

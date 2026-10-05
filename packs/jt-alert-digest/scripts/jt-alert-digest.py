@@ -299,6 +299,27 @@ def interesting_fields(alert):
             out.append(("Client", trim(data["user_agent"], 70)))
         return out
 
+    # IDS events (Suricata via its EVE JSON). The raw log is one long JSON line
+    # that says less than these five fields and, unbroken, overflowed the card.
+    ids = data.get("alert") if isinstance(data.get("alert"), dict) else None
+    if ids and (data.get("src_ip") or data.get("dest_ip")):
+        if ids.get("signature"):
+            out.append(("Signature", ids["signature"]))
+
+        def endpoint(ip, port):
+            return "%s:%s" % (ip, port) if port else str(ip or "?")
+        flow = "%s  ->  %s" % (endpoint(data.get("src_ip"), data.get("src_port")),
+                               endpoint(data.get("dest_ip"), data.get("dest_port")))
+        if data.get("proto"):
+            flow += "  " + str(data["proto"])
+        out.append(("Flow", flow))
+        verdict = ", ".join(str(v) for v in (ids.get("action"), ids.get("category")) if v)
+        if verdict:
+            out.append(("Action", verdict))
+        if data.get("in_iface"):
+            out.append(("Interface", str(data["in_iface"])))
+        return out
+
     audit = data.get("audit") or {}
     if audit:
         name = (audit.get("file") or {}).get("name")
@@ -461,20 +482,26 @@ def render_html(groups, total, min_level, dashboard):
             if position:
                 out.append('<div style="height:1px;background:%s;margin:10px 0;"></div>'
                            % LINE)
+            # table-layout:fixed is what makes the value column wrap. With the
+            # default automatic layout an unbroken token -- a JSON log line, a
+            # long path -- widens the column past the card, and word-break in a
+            # table cell is ignored.
             out.append('<table cellpadding="0" cellspacing="0" border="0" '
-                       'style="width:100%;border-collapse:collapse;font-size:13px;">')
+                       'style="width:100%;border-collapse:collapse;font-size:13px;'
+                       'table-layout:fixed;">')
             for label, value in interesting_fields(sample):
-                long_value = label in ("Log", "Request", "File", "Exec", "Client")
-                style = ('font-family:%s;font-size:12px;background:%s;'
+                long_value = label in ("Log", "Request", "File", "Exec", "Client", "Signature")
+                style = ('display:block;font-family:%s;font-size:12px;background:%s;'
                          'padding:4px 6px;border-radius:4px;' % (MONO, PANEL)
                          if long_value else 'font-family:%s;font-size:12.5px;' % MONO)
                 out.append(
                     '<tr>'
                     '<td style="padding:3px 10px 3px 0;color:%s;font-size:12px;'
-                    'white-space:nowrap;vertical-align:top;width:1%%;">%s</td>'
+                    'white-space:nowrap;vertical-align:top;width:76px;">%s</td>'
                     '<td style="padding:3px 0;vertical-align:top;'
                     'word-break:break-word;overflow-wrap:anywhere;">'
-                    '<span style="%s">%s</span></td></tr>'
+                    '<span style="%sword-break:break-word;overflow-wrap:anywhere;'
+                    'white-space:pre-wrap;">%s</span></td></tr>'
                     % (MUTED, esc(label), style, esc(value)))
             out.append('</table>')
 

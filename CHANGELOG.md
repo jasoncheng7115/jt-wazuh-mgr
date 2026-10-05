@@ -4,6 +4,16 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.10.2 (2026-10-05)
+
+- **Long values in the alert digest wrap inside the card.** A Suricata alert's
+  only field was its whole EVE JSON line, and with the table's automatic layout
+  an unbroken token widens the column past the card: `word-break` in a cell is
+  ignored there. The field table now uses a fixed layout, so any value wraps.
+- **IDS alerts are summarised instead of dumped**: signature, source and
+  destination with ports and protocol, action and category, and the interface.
+  jt-alert-digest 1.2.
+
 ## v1.10.1 (2026-10-05)
 
 - **The alert digest says which host each group is about.** The agent name sat
