@@ -4,6 +4,51 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.11.0 (2026-10-06)
+
+- **jt-ioc 1.3: threat intelligence now checks the events where it matters.**
+  Every rule hung off built-in rule 1, the generic syslog template, so only
+  events that happened to pass through it were compared with the list: sshd
+  and Windows events never were. In practice the pack matched one thing, web
+  requests by remote_addr, and that produced 29,845 level 12 alerts in a week
+  on one reverse proxy — 98.5 per cent of every logged public address, nearly
+  all scanners getting a 404, because the list's 261,000 addresses are mostly
+  whole scanner ranges. Now:
+  - a **successful login** from a listed address is level 14 (906050/906051,
+    attached to every `authentication_success` rule);
+  - a **Windows process connecting out** to a listed address is level 13 (906032,
+    attached to Sysmon event 3; its old version named fields that do not exist);
+  - a web request from a listed address that was **refused** is level 5 and does
+    not mail (906040); static content is level 6 (906041); thirty refusals from
+    one address in ten minutes raise 906043 at level 10; dynamic content served
+    to a listed address stays level 12.
+  Verified with wazuh-logtest, nine cases including the near misses.
+
+- **Network entries in the list can finally match.** `address_match_key` looks an
+  address up whole and then at its octet-boundary prefixes (`203.0.113.`); it
+  never looks up a CIDR key, so the 1,276 networks the list held were dead. The
+  updater now expands each one to the keys Wazuh does look up. Verified live: an
+  address present only through the prefix `106.12.` matches.
+
+- **The lists are recompiled when they change.** Both updaters (jt-ioc, jt-malware-
+  hash) now reload the ruleset after writing, which recompiles the CDB; before,
+  the compiled list lagged the text by most of a day. A cluster worker receives
+  the list but is not reloaded by the master, so the IOC updater gains a
+  `--reload-if-stale` mode for workers: it reloads once when any list's text has
+  changed since its last reload. (Comparing text with `.cdb` does not work: the
+  cluster copies the compiled file too, and an undeclared list is never compiled,
+  which would reload every five minutes.)
+
+- Group-attached rules live in `zz-906050-jason_tools_ioc_late.xml`: `<if_group>`
+  only attaches to rules already loaded, and `01-906000-...` sorts before the
+  built-in Windows files ("Group 'sysmon_event3' was not found ... will be
+  ignored"). A new test requires any pack file using `<if_group>` to load after
+  the built-in ruleset, unless the group comes from the pack's own earlier rules.
+
+- Cloudflare's edge ranges are never listed: a request through the CDN carries
+  the edge's address in the proxy field, and a feed listing an edge flagged every
+  visitor behind it.
+
 ## v1.10.2 (2026-10-05)
 
 - **Long values in the alert digest wrap inside the card.** A Suricata alert's

@@ -88,7 +88,19 @@ ALWAYS_EXCLUDE = [
     '198.18.0.0/15', '198.51.100.0/24', '203.0.113.0/24', '224.0.0.0/4',
     '240.0.0.0/4', '255.255.255.255/32',
     '1.1.1.1/32', '8.8.8.8/32', '8.8.4.4/32', '9.9.9.9/32',
+] + [
+    # Cloudflare's published edge ranges. A request that arrives through the CDN
+    # carries the edge's address in the proxy field and the visitor's in another;
+    # a feed listing an edge address flagged every visitor behind it.
+    '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+    '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+    '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+    '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
 ]
+
+# One feed entry may not expand into more keys than this. A /8 is one key; a /12
+# is sixteen; nothing legitimate in a threat feed needs more.
+MAX_EXPANSION = 65536
 
 IPV4_RE = re.compile(r'^(\d{1,3}\.){3}\d{1,3}(/\d{1,2})?$')
 
@@ -121,6 +133,86 @@ def load_exclusions(path):
 
 def excluded(net, exclusions):
     return any(net.subnet_of(e) if net.version == e.version else False for e in exclusions)
+
+
+def cdb_keys(net):
+    """The keys a CDB list needs so that address_match_key finds this network.
+
+    address_match_key looks the address up whole, then cut back to each octet
+    boundary: 203.0.113.7, then 203.0.113., 203.0., 203. -- and nothing else. A
+    key written as a CIDR, "203.0.113.0/24", is therefore never found. Until 1.3
+    the list held 1,276 of those, each one a network the rules could not see.
+
+    Networks on an octet boundary become one prefix key; others are expanded to
+    the next boundary down; /25 to /31 become their individual addresses.
+    Returns None when a single entry would expand past MAX_EXPANSION.
+    """
+    if net.version != 4:
+        return [str(net.network_address)] if net.prefixlen == 128 else []
+    plen = net.prefixlen
+    if plen == 32:
+        return [str(net.network_address)]
+    target = 8 if plen <= 8 else 16 if plen <= 16 else 24 if plen <= 24 else 32
+    if (1 << (target - plen)) > MAX_EXPANSION:
+        return None
+    if target == 32:
+        return [str(a) for a in net]
+    keep = target // 8
+    return ['.'.join(str(sub.network_address).split('.')[:keep]) + '.'
+            for sub in net.subnets(new_prefix=target)]
+
+
+def reload_ruleset(wazuh):
+    """Ask this node's analysisd to reload, which recompiles every CDB list.
+
+    Writing the text file changes nothing by itself: analysisd reads the compiled
+    .cdb, rebuilt only on a reload. Before 1.3 the list was rewritten every six
+    hours and compiled once a night, and the cluster's nodes ran different lists.
+    This is the same call the API's reload makes, sent to the local socket.
+    """
+    python = os.path.join(wazuh, 'framework', 'python', 'bin', 'python3')
+    if not os.path.isfile(python):
+        log('cannot reload: %s not found (not a manager?)' % python)
+        return False
+    code = ('import asyncio\n'
+            'from wazuh.core.analysis import send_reload_ruleset_msg as s\n'
+            'r = asyncio.run(s({"module": "api"}))\n'
+            'print("ok" if r.success else "failed", "; ".join(r.warnings or r.errors or []))\n')
+    import subprocess
+    try:
+        out = subprocess.run([python, '-c', code], capture_output=True, text=True, timeout=180)
+    except Exception as e:
+        log('ruleset reload failed: %s' % e)
+        return False
+    result = (out.stdout or '').strip().splitlines()
+    result = result[-1] if result else (out.stderr or '').strip()[-200:]
+    log('ruleset reload: %s' % result)
+    return result.startswith('ok')
+
+
+def changed_lists(wazuh, since):
+    """Files under etc/lists modified after `since`, and the newest mtime seen.
+
+    Comparing a list's text with its .cdb is not enough on a worker: the cluster
+    copies the master's compiled .cdb along with the text, so the two arrive
+    with the same timestamp while analysisd still holds the old list in memory.
+    And a list that is not declared in ossec.conf is never compiled at all, so
+    a text-newer-than-cdb test would reload every five minutes, forever.
+    What matters is whether anything changed since this node last reloaded.
+    """
+    lists = os.path.join(wazuh, 'etc', 'lists')
+    changed, newest = [], 0.0
+    for name in sorted(os.listdir(lists)) if os.path.isdir(lists) else []:
+        path = os.path.join(lists, name)
+        # Only the text. A reload recompiles every .cdb and so moves its mtime;
+        # counting those would make each reload trigger the next.
+        if name.endswith(('.tmp', '.cdb')) or not os.path.isfile(path):
+            continue
+        mtime = os.path.getmtime(path)
+        newest = max(newest, mtime)
+        if mtime > since + 0.001:
+            changed.append(name)
+    return changed, newest
 
 
 def fetch(url, dest, timeout=60):
@@ -162,9 +254,34 @@ def main():
                     help='build the list but do not replace the installed one')
     ap.add_argument('--force', action='store_true',
                     help='ignore the per-feed interval and download everything')
+    ap.add_argument('--reload-if-stale', action='store_true',
+                    help='download nothing; reload this node if any file under etc/lists '
+                         'changed since the last reload this mode made. For cluster workers, '
+                         'which receive the lists from the master but are not reloaded by it')
+    ap.add_argument('--no-reload', action='store_true',
+                    help='write the list but leave the reload to someone else')
     args = ap.parse_args()
 
     wazuh = os.path.abspath(args.wazuh_path)
+    if args.reload_if_stale:
+        marker = os.path.join(wazuh, 'etc', 'jt-packs', 'ioc-cache', 'last-list-reload')
+        try:
+            with open(marker, encoding='utf-8') as fh:
+                since = float(fh.read().strip() or 0)
+        except (OSError, ValueError):
+            since = 0.0          # first run: reload once to start from a known state
+        changed, newest = changed_lists(wazuh, since)
+        if not changed:
+            return 0
+        log('lists changed since the last reload: %s' % ', '.join(changed[:6])
+            + (' (+%d more)' % (len(changed) - 6) if len(changed) > 6 else ''))
+        if not reload_ruleset(wazuh):
+            return 1
+        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        with open(marker, 'w', encoding='utf-8') as fh:
+            fh.write(repr(newest) + '\n')
+        return 0
+
     listfile = os.path.join(wazuh, 'etc', 'lists', LIST_NAME)
     workdir = os.path.join(wazuh, 'etc', 'jt-packs', 'ioc-cache')
     statefile = os.path.join(workdir, 'feed-state.json')
@@ -244,8 +361,21 @@ def main():
     # already proven against a live manager. Wazuh strips the quotes when it
     # compiles the CDB; changing the shape of a list that 31 rules read is not
     # something to do on the assumption that another shape would also work.
-    body = ''.join('"%s":%s\n' % (str(n).replace('/32', ''), ','.join(sources.get(n, ['threat_feed'])[:4]))
-                   for n in sorted(kept, key=str))
+    keys, oversized = {}, 0
+    for n in kept:
+        expanded = cdb_keys(n)
+        if expanded is None:
+            oversized += 1
+            continue
+        for key in expanded:
+            merged = keys.setdefault(key, [])
+            for feed in sources.get(n, ['threat_feed']):
+                if feed not in merged:
+                    merged.append(feed)
+    if oversized:
+        log('skipped %d entries that would expand past %d keys each' % (oversized, MAX_EXPANSION))
+    log('%d feed entries became %d list keys' % (len(kept), len(keys)))
+    body = ''.join('"%s":%s\n' % (k, ','.join(v[:4])) for k, v in sorted(keys.items()))
     if args.dry_run:
         log('dry run: would write %d entries to %s' % (len(kept), listfile))
         return 0
@@ -261,9 +391,11 @@ def main():
     except Exception:
         pass
     os.chmod(listfile, 0o660)
-    log('wrote %d entries to %s' % (len(kept), listfile))
-    log('the manager compiles the CDB on the next ruleset reload')
-    return 0
+    log('wrote %d keys to %s' % (len(keys), listfile))
+    if args.no_reload:
+        log('--no-reload: the manager compiles the CDB on the next ruleset reload')
+        return 0
+    return 0 if reload_ruleset(wazuh) else 1
 
 
 if __name__ == '__main__':

@@ -16,7 +16,7 @@ the screen. None of them substitutes for another.
 ## Running everything
 
 ```bash
-python3 -m unittest discover -s tests     # 204 tests, fully offline
+python3 -m unittest discover -s tests     # 205 tests, fully offline
 python3 tools/preflight.py                # 21 mechanical pre-release checks
 
 # on a host without a system Flask
@@ -280,6 +280,9 @@ is usually the node processing Windows agents.
 | portable-detect | a binary run from `/tmp`; `bash /tmp/x.sh` with the interpreter rules on | 906211 (12); 906213 (10), not both | real event, auditd |
 | malware-hash | a file whose SHA-256 is in the list lands in a monitored directory | 100141 (12) | real event, with a test hash added to the list and the ruleset reloaded |
 | zimbra | a listed stock file has its permissions changed; then its contents | nothing; 100808 (13) | real event, a temporary directory and list entry, reverted afterwards |
+| ioc | a listed address gets a 404; a POST served 200; static content; an address listed only by a `/16` prefix; an unlisted address | 906040 (5); 906023 (12); 906041 (6); 906040; nothing | wazuh-logtest with a real JSON access line |
+| ioc | sshd login success from a listed address; from an unlisted one; a failure from a listed one | 906050 (14); 5715; 5760 | wazuh-logtest |
+| ioc | on a worker, the master rewrites the list | one reload within five minutes, then silence | `--reload-if-stale` run by hand three times |
 | any pack with a list | the list after the nightly update | `.cdb` newer than the text on every node | `ls -l etc/lists` on each node |
 
 ---

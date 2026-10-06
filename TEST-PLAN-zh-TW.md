@@ -15,7 +15,7 @@
 ## 執行方式
 
 ```bash
-python3 -m unittest discover -s tests     # 204 項，完全離線
+python3 -m unittest discover -s tests     # 205 項，完全離線
 python3 tools/preflight.py                # 21 項發版前機械檢查
 
 # 系統沒有 Flask 的主機
@@ -249,6 +249,9 @@ Windows 的情境要在 worker 上再驗一次，Windows agent 通常由 worker 
 | portable-detect | 從 `/tmp` 執行程式；開啟直譯器規則後 `bash /tmp/x.sh` | 906211（12）；906213（10），不會兩條都中 | 真實事件，auditd |
 | malware-hash | SHA-256 在清單內的檔案落在受監控目錄 | 100141（12） | 真實事件；先在清單加一筆測試雜湊並重新載入規則集 |
 | zimbra | 清單內的原廠檔案只改權限；再改內容 | 不告警；100808（13） | 真實事件，暫時的目錄與清單項目，測完還原 |
+| ioc | 清單位址拿到 404；POST 拿到 200；只拿靜態內容；只靠 `/16` 前綴列入的位址；沒列入的位址 | 906040（5）；906023（12）；906041（6）；906040；不觸發 | wazuh-logtest，用真實的 JSON 存取記錄 |
+| ioc | 清單位址 sshd 登入成功；沒列入的位址登入成功；清單位址登入失敗 | 906050（14）；5715；5760 | wazuh-logtest |
+| ioc | worker 上，master 改寫了清單 | 5 分鐘內重載一次，之後不再重載 | 手動執行 `--reload-if-stale` 三次 |
 | 有清單的套件 | 每晚更新後的清單 | 每個節點的 `.cdb` 都比文字檔新 | 在各節點 `ls -l etc/lists` |
 
 ---

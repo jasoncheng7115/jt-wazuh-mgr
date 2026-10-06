@@ -1,0 +1,74 @@
+<!--
+  Jason Tools IOC — rules that attach to built-in rule groups
+  File:    zz-906050-jason_tools_ioc_late.xml
+  Licence: AGPL-3.0-or-later    Jason Tools Co., Ltd.
+
+  ★ Why a separate file with a zz- prefix.
+    <if_group> attaches a rule as a child of the rules that carry that group
+    *and are already loaded*. Rule files load in filename order across the
+    built-in and custom directories, and 01-906000-… sorts before the built-in
+    0580-win-security and 0595-win-sysmon files. In that file these rules
+    either failed outright ("Group 'sysmon_event3' was not found ... will be
+    ignored", measured on 4.14.7 on 2026-10-06) or attached only to the
+    authentication_success rules that happened to load earlier, missing the
+    Windows logon rules. zz- loads after every built-in file.
+-->
+
+<group name="jason_tools_ioc,">
+
+  <!--
+    清單裡的位址「成功登入」。這才是 IOC 比對最有價值的時刻：失敗的嘗試每個對外
+    服務每天都有，成功的才代表對方進來了。以 if_group 掛在所有 authentication_success
+    規則底下（sshd 5715、Windows 登入 60106、PAM 等）。
+    ★ 這兩條自己的 <group> 不能含 authentication_success，否則會成為彼此
+      （以及自己）的子規則。
+  -->
+  <rule id="906050" level="14">
+    <if_group>authentication_success</if_group>
+    <list field="srcip" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
+    <description>[CRITICAL] Jason Tools IOC: successful login from a threat-listed address - $(srcip) user: $(dstuser)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>threat_intelligence,ioc_login,</group>
+  </rule>
+
+  <rule id="906051" level="14">
+    <if_group>authentication_success</if_group>
+    <list field="win.eventdata.ipAddress" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
+    <description>[CRITICAL] Jason Tools IOC: successful Windows logon from a threat-listed address - $(win.eventdata.ipAddress) user: $(win.eventdata.targetUserName)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>threat_intelligence,ioc_login,</group>
+  </rule>
+
+  <!--
+    Windows 主機與清單位址的連線（Sysmon 事件 3）。主動連出去的是 C2 的典型跡象；
+    連進來的多半是掃描。欄位名稱是 win.eventdata.*（不是 data.win.eventdata.*），
+    以 initiated 區分方向，兩條互斥。
+  -->
+  <rule id="906031" level="8">
+    <if_group>sysmon_event3</if_group>
+    <field name="win.eventdata.initiated" type="pcre2">(?i)^false$</field>
+    <list field="win.eventdata.sourceIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
+    <description>Jason Tools IOC: inbound connection from a threat-listed address - $(win.eventdata.sourceIp) to $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>threat_intelligence,sysmon,network_connection,</group>
+  </rule>
+
+  <rule id="906032" level="13">
+    <if_group>sysmon_event3</if_group>
+    <field name="win.eventdata.initiated" type="pcre2">(?i)^true$</field>
+    <list field="win.eventdata.destinationIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
+    <description>[HIGH] Jason Tools IOC: process connected out to a threat-listed address - $(win.eventdata.destinationIp):$(win.eventdata.destinationPort) by $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1071</id>
+      <id>TA0011</id>
+    </mitre>
+    <group>threat_intelligence,sysmon,command_and_control,outbound_threat,</group>
+  </rule>
+
+</group>

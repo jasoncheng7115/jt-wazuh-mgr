@@ -1976,6 +1976,31 @@ class TestShippedPacks(unittest.TestCase):
                     got = ['906180']
                 self.assertEqual(got, want)
 
+    def test_rules_using_if_group_load_after_the_builtin_ruleset(self):
+        """<if_group> only attaches to rules already loaded, and rule files load in
+        filename order across the built-in and custom directories. jt-ioc's
+        01-906000-... sorts before 0595-win-sysmon, and analysisd answered "Group
+        'sysmon_event3' was not found ... will be ignored"."""
+        import xml.etree.ElementTree as ET
+        for _, m in self.packs:
+            provided = set()        # groups the pack's own earlier rules carry
+            rule_files = sorted((os.path.basename(e['dest']), e['name']) for e in m['files']
+                                if e['type'] == 'rule')
+            for dest, name in rule_files:
+                with io.open(os.path.join(self._pack_dir_of(m), 'rules', name), encoding='utf-8') as fh:
+                    root = ET.fromstring('<r>' + fh.read() + '</r>')
+                for rule in root.iter('rule'):
+                    for el in rule.iter('if_group'):
+                        group = el.text.strip()
+                        if group in provided:
+                            continue    # attaches to this pack's own rules, loaded earlier
+                        with self.subTest(file=name, group=group):
+                            # every built-in file is named 0NNN-...; anything
+                            # sorting after '0999' loads after all of them
+                            self.assertGreater(dest, '0999')
+                    for el in rule.iter('group'):
+                        provided.update(g for g in el.text.split(',') if g)
+
     def test_agent_ignore_patterns_are_plain_os_match(self):
         """syscheck <ignore type="sregex"> is OS_Match: only ^ $ | ! are special.
         Brackets, parentheses or backslashes there are matched literally."""

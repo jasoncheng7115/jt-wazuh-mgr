@@ -301,62 +301,10 @@
   <!-- ===== Sysmon 網路連線檢測 ===== -->
   
   <!-- Sysmon Event ID 3 - 網路連線 -->
-  <!-- SourceIp - Sysmon 來源 IP -->
-  <rule id="906031" level="12">
-    <if_sid>1</if_sid>
-    <list field="data.win.eventdata.sourceIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
-    <description>[HIGH] Jason Tools IOC: Sysmon detected malicious source IP - $(data.win.eventdata.sourceIp)</description>
-    <mitre>
-      <id>T1071</id>
-    </mitre>
-    <group>threat_intelligence,sysmon,windows,endpoint_detection,malicious_srcip,network_connection,</group>
-  </rule>
 
-  <!-- DestinationIp - Sysmon 目的 IP -->
-  <rule id="906032" level="13">
-    <if_sid>1</if_sid>
-    <list field="data.win.eventdata.destinationIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
-    <description>[HIGH] Jason Tools IOC: Sysmon detected malicious destination IP - $(data.win.eventdata.destinationIp)</description>
-    <mitre>
-      <id>T1071</id>
-      <id>TA0011</id>
-    </mitre>
-    <group>threat_intelligence,sysmon,windows,endpoint_detection,malicious_dstip,outbound_threat,network_connection,command_and_control,</group>
-  </rule>
 
-  <!-- Sysmon 舊版欄位格式 (小寫) -->
-  <rule id="906033" level="12">
-    <if_sid>1</if_sid>
-    <list field="data.win.eventdata.sourceip" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
-    <description>[HIGH] Jason Tools IOC: Sysmon detected malicious source IP - $(data.win.eventdata.sourceip)</description>
-    <mitre>
-      <id>T1071</id>
-    </mitre>
-    <group>threat_intelligence,sysmon,windows,endpoint_detection,malicious_srcip,network_connection,</group>
-  </rule>
 
-  <rule id="906034" level="13">
-    <if_sid>1</if_sid>
-    <list field="data.win.eventdata.destinationip" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
-    <description>[HIGH] Jason Tools IOC: Sysmon detected malicious destination IP - $(data.win.eventdata.destinationip)</description>
-    <mitre>
-      <id>T1071</id>
-      <id>TA0011</id>
-    </mitre>
-    <group>threat_intelligence,sysmon,windows,endpoint_detection,malicious_dstip,outbound_threat,network_connection,command_and_control,</group>
-  </rule>
 
-  <!-- Sysmon Event ID 22 - DNS 查詢 (QueryResults 包含解析後的 IP) -->
-  <rule id="906035" level="12">
-    <if_sid>1</if_sid>
-    <list field="data.win.eventdata.queryResults" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
-    <description>[HIGH] Jason Tools IOC: Sysmon DNS query returned malicious IP - $(data.win.eventdata.queryResults)</description>
-    <mitre>
-      <id>T1071.004</id>
-      <id>TA0011</id>
-    </mitre>
-    <group>threat_intelligence,sysmon,windows,endpoint_detection,dns_query,malicious_ip,command_and_control,</group>
-  </rule>
 
   <!-- ===== 高風險場景加重檢測 ===== -->
   
@@ -371,18 +319,62 @@
     <group>threat_intelligence,critical_threat,outbound_malicious,outbound_threat,network_threat,command_and_control,</group>
   </rule>
 
-  <!-- Sysmon 處理程序連線到惡意 IP (特別標註處理程序資訊) -->
-  <rule id="906081" level="14">
-    <if_sid>906032,906034</if_sid>
-    <description>[HIGH] Jason Tools IOC: CRITICAL - Sysmon detected process connecting to malicious IP - $(data.win.eventdata.destinationIp)$(data.win.eventdata.destinationip) | Process: $(data.win.eventdata.image)</description>
-    <mitre>
-      <id>T1071</id>
-      <id>TA0011</id>
-    </mitre>
-    <group>threat_intelligence,sysmon,windows,endpoint_detection,critical_threat,process_connection,outbound_threat,network_threat,command_and_control,</group>
-  </rule>
 
   
+
+  <!--
+    ══════════════════════════════════════════════════════════════════════
+     2026-10-06（套件 1.3）：以下為重新設計的部分
+    ══════════════════════════════════════════════════════════════════════
+
+    上方以 if_sid 1 掛載的規則，只在事件剛好走到內建規則 1（syslog 通用範本）
+    底下時才會比對。實測 30 天：sshd 等有自己規則鏈的事件不會到這裡，Windows
+    事件也不會，整個套件實際上只有網站存取記錄的 remote_addr（906023）在觸發。
+    而那一條在一週內觸發近三萬次 —— 清單有 26 萬個位址，以整批掃描器網段為主，
+    「清單裡的位址來連網站」幾乎就是「網路上的任何掃描」，本身不是訊號。
+
+    所以這一段把比對掛到真正有意義的地方：
+      906040-906043  網站請求依結果分級（被拒的不寄信，大量掃描才關聯告警）
+      906050-906051  清單裡的位址「成功登入」── 掛在 authentication_success 群組
+      906031-906032  Windows 主機與清單位址的連線 ── 掛在 Sysmon 事件 3
+      （後兩組在另一個檔案 zz-906050-…，必須晚於內建規則載入）
+    原本的 906031-906035、906081 從未觸發過（欄位名稱多了 data.、父規則是規則 1），
+    已移除或改寫。
+  -->
+
+  <!-- 網站請求：被拒、被導向或沒找到 —— 對方什麼都沒拿到。記錄但不寄信。 -->
+  <rule id="906040" level="5">
+    <if_sid>906023,906024,906025,906026</if_sid>
+    <field name="http_status" type="pcre2">^(30[0-8]|4\d\d)$</field>
+    <description>Jason Tools IOC: threat-listed address was refused by the web server ($(http_status))</description>
+    <group>threat_intelligence,web_scan,</group>
+  </rule>
+
+  <!-- 只抓了靜態內容（爬蟲型）：同樣不寄信。 -->
+  <rule id="906041" level="6">
+    <if_sid>906023,906024,906025,906026</if_sid>
+    <field name="http_status" type="pcre2">^2\d\d$</field>
+    <field name="method" type="pcre2">^(GET|HEAD)$</field>
+    <field name="path" type="pcre2">(?i)(^/$|\.(html?|webp|png|jpe?g|gif|svg|css|js|ico|woff2?|xml|txt)(\?|$))</field>
+    <description>Jason Tools IOC: threat-listed address fetched static content only</description>
+    <group>threat_intelligence,</group>
+  </rule>
+
+  <!-- 保留「正在掃描」的訊號：同一位址 10 分鐘內被拒 30 次。父規則是 level 5，
+       不會碰到 level 0 不能做關聯的問題。 -->
+  <rule id="906043" level="10" frequency="30" timeframe="600" ignore="1800">
+    <if_matched_sid>906040</if_matched_sid>
+    <same_field>remote_addr</same_field>
+    <description>[WARN] Jason Tools IOC: threat-listed address is actively scanning the web server</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>threat_intelligence,web_scan,</group>
+  </rule>
+
+  <!-- 906050/906051（成功登入）與 906031/906032（Windows 連線）在
+       zz-906050-jason_tools_ioc_late.xml，原因見該檔檔頭。 -->
+
   <!-- 多來源確認的高可信度威脅 (IP 出現在 3 個以上來源) -->
   <!-- 需要搭配 integration 腳本才能運作 -->
   <!-- 

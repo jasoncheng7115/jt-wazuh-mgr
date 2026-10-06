@@ -1,57 +1,104 @@
 {
-  "id": "jt-ioc",
-  "name": "IP Threat Intelligence",
-  "name_zh": "IP 威脅情資比對",
-  "version": "1.2",
-  "summary": "Matches source/destination IP fields against a multi-source threat intel blocklist.",
-  "summary_zh": "以多來源威脅情資黑名單比對事件中的來源／目的 IP。",
-  "rule_id_range": "906001-906099",
-  "notes_zh": [
-    "涵蓋 30 種常見的 IP 欄位命名（srcip / src_ip / data.srcip / Sysmon sourceIp 等）。",
-    "套件自帶更新腳本並排程每六小時執行。比對 CDB 清單的規則在清單被填滿前毫無作用，而把「自己去找更新腳本」留給使用者，正是這個套件曾經清單全空、30 條規則什麼都比對不到的原因。",
-    "更新腳本只用標準函式庫，且全程使用絕對路徑。舊版用相對路徑，cron 沒有 cd 就靜默失敗了十個半月。",
-    "若新清單比原本少掉一半以上，會拒絕覆蓋 —— 因為「來源格式改變」和「網路上壞人變少了」看起來一模一樣。",
-    "保留位址與知名公共服務永遠不會被列入，不論來源怎麼說。站台自訂排除寫在 etc/jt-packs/ioc-cache/exclusions.txt，一行一個 IP 或 CIDR。",
-    "安裝此套件會寫入一支以 root 身分排程執行的程式。這是刻意的，移除套件時會一併刪除。",
-    "CDB 清單名為 jason_tools_threat_ip。它存放威脅情資回報的位址，也就是規則比對的對象；這不是封鎖決策，本套件不會封鎖任何東西。"
-  ],
-  "author": "Jason Tools",
-  "license": "AGPL-3.0-or-later",
-  "requires": {
-    "wazuh": ">=4.8"
+ "id": "jt-ioc",
+ "name": "IP Threat Intelligence",
+ "name_zh": "IP 威脅情資比對",
+ "version": "1.3",
+ "summary": "Matches addresses in logins, outbound connections and web requests against a multi-source threat intelligence list.",
+ "summary_zh": "以多來源威脅情資比對登入、對外連線與網站請求中的位址。",
+ "rule_id_range": "906001-906099",
+ "notes_zh": [
+  "會告警的情況：清單中的位址成功登入（906050／906051，level 14）、Windows 處理程序主動連往清單位址（906032，level 13）、清單位址的網站請求拿到動態內容（906023-906026，level 12）。",
+  "清單位址的網站請求若被拒、被導向或找不到，記為 level 5（906040）不寄信；同一位址 10 分鐘內 30 次才觸發 906043（level 10）。1.3 之前實測：一台反向代理一週 29,845 筆 level 12，佔所有記錄到的公網位址的 98.5%，幾乎全是拿到 404 的掃描器。",
+  "1.3 之前所有規則都掛在內建規則 1（syslog 通用範本）底下，只有剛好經過它的事件才會比對：sshd 與 Windows 事件從來沒有被比對過。Windows 規則的欄位又寫成規則端不存在的 data.win.eventdata.*。已全部改寫。",
+  "網站分級讀取 http_status、method、path 三個欄位（JSON 存取記錄的常見命名）。若你的記錄用的是別的名稱，清單位址的每個請求仍會以 level 12 告警；請在解碼器改名，或照 906040 的寫法改用你的欄位名稱。",
+  "清單每六小時由 11 個公開來源重建。網段會展開成 Wazuh 查得到的鍵值：address_match_key 只比對完整位址與以八位元組為界的前綴（203.0.113.），從不比對 CIDR 寫法的鍵 —— 1.3 之前清單裡的 1,276 筆網段從來沒被比對到。",
+  "寫完清單後，更新程式會重新載入本節點的規則集（重新編譯清單）。叢集的 worker 會收到清單，但 master 不會替它重載：請在每台 worker 排程 --reload-if-stale（見部署說明）。",
+  "保留位址、幾個公共 DNS 與 Cloudflare 的節點網段永遠不會列入。站台自訂排除寫在 etc/jt-packs/ioc-cache/exclusions.txt，一行一個 IP 或 CIDR。",
+  "新清單比原本少一半以上時拒絕覆蓋 —— 來源改格式和「網路變安全了」看起來一模一樣。",
+  "安裝本套件會寫入一支以 root 身分排程執行的程式。這是刻意的，移除套件時會一併刪除。"
+ ],
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "files": [
+  {
+   "type": "rule",
+   "name": "01-906000-jason_tools_ioc.xml",
+   "dest": "etc/rules/01-906000-jason_tools_ioc.xml",
+   "sha256": "f9efd0040f52666e5c44a1f557384652176796badb694e7e0f20a83e3f2b0537"
   },
-  "files": [
-    {
-      "type": "rule",
-      "name": "01-906000-jason_tools_ioc.xml",
-      "dest": "etc/rules/01-906000-jason_tools_ioc.xml",
-      "sha256": "ee8e7ef0d4502cade825cc1df2f735625060ee4de08051209305b39c2f75b43d"
-    },
-    {
-      "type": "list",
-      "name": "jason_tools_threat_ip",
-      "dest": "etc/lists/jason_tools_threat_ip",
-      "declare": true,
-      "sha256": "11f498d647b9a6fcb91a62a435537381b96274be524827097f6eaebe4586fccb"
-    }
-  ],
-  "notes": [
-    "Covers about 30 different field names used for IP addresses (srcip, src_ip, data.srcip, Sysmon sourceIp and so on).",
-    "The pack installs its own updater and schedules it every six hours. Rules that match a CDB list are useless until something fills it, and leaving the operator to find an updater is how this pack came to sit with an empty list while thirty rules matched nothing.",
-    "The updater is standard library only and uses absolute paths throughout. The previous job used relative paths, cron ran it without a cd, and it failed silently for ten and a half months.",
-    "It refuses to install a list that has lost more than half its entries, because a feed changing format looks exactly like the internet becoming safe.",
-    "Reserved and well-known addresses are never blocked, whatever a feed claims. Site exclusions go in etc/jt-packs/ioc-cache/exclusions.txt, one IP or CIDR per line.",
-    "Installing this pack writes an executable that runs as root on a schedule. That is deliberate and is removed again on uninstall.",
-    "The CDB list is named jason_tools_threat_ip. It holds addresses that threat feeds report, which is what the rules match on; it is not a blocking decision and nothing in this pack blocks anything."
-  ],
-  "scripts": [
-    {
-      "name": "update-threat-ip-list.py",
-      "dest": "etc/jt-packs/bin/update-threat-ip-list.py",
-      "sha256": "3c13023475f9d96c49377b7147e1d89e27fc9a5a0205ee0abb67656b7970072b",
-      "cron": "17 */6 * * *",
-      "args": "--wazuh-path {wazuh_path}",
-      "description": "Rebuilds jason_tools_threat_ip from 11 public IP threat-intel feeds"
-    }
-  ]
+  {
+   "type": "rule",
+   "name": "zz-906050-jason_tools_ioc_late.xml",
+   "dest": "etc/rules/zz-906050-jason_tools_ioc_late.xml",
+   "sha256": "8a5c607954cf8c5242f78faedae04886eaa72cf184ad22483edcdbe06c0e4704"
+  },
+  {
+   "type": "list",
+   "name": "jason_tools_threat_ip",
+   "dest": "etc/lists/jason_tools_threat_ip",
+   "declare": true,
+   "sha256": "11f498d647b9a6fcb91a62a435537381b96274be524827097f6eaebe4586fccb"
+  }
+ ],
+ "notes": [
+  "What alerts: a successful login from a listed address (906050/906051, level 14), a Windows process connecting out to one (906032, level 13), and a web request from one that got dynamic content (906023-906026, level 12).",
+  "A web request from a listed address that was refused, redirected or not found is recorded at level 5 (906040) and does not mail; thirty from one address in ten minutes raise 906043 at level 10. Measured before 1.3: a week of 29,845 level 12 alerts on one reverse proxy, 98.5 per cent of every logged public address, nearly all of them scanners getting a 404.",
+  "Until 1.3 every rule hung off built-in rule 1, the generic syslog template, so only events that happened to pass through it were checked: sshd and Windows events never were. The Windows rules also named their fields data.win.eventdata.*, which does not exist on the rule side. They are rewritten.",
+  "The web grading reads the fields http_status, method and path, as a JSON access log usually names them. A log that names them differently still alerts at level 12 on every request from a listed address; rename the fields in your decoder, or copy rule 906040 under your own names.",
+  "The list is rebuilt every six hours from 11 public feeds. Network entries are expanded to the keys Wazuh can look up: address_match_key matches an address and its octet-boundary prefixes (203.0.113.), never a CIDR key, so the 1,276 networks the list held before 1.3 were never matched.",
+  "After writing the list the updater reloads the ruleset on this node, which recompiles it. A cluster worker receives the list but is not reloaded by the master: schedule the updater with --reload-if-stale on every worker (setup guide).",
+  "Reserved ranges, a few public resolvers and Cloudflare's edge ranges are never listed. Site exclusions go in etc/jt-packs/ioc-cache/exclusions.txt, one IP or CIDR per line.",
+  "It refuses to install a list that has lost more than half its entries, because a feed changing format looks exactly like the internet becoming safe.",
+  "Installing this pack writes an executable that runs as root on a schedule. That is deliberate and is removed again on uninstall."
+ ],
+ "scripts": [
+  {
+   "name": "update-threat-ip-list.py",
+   "dest": "etc/jt-packs/bin/update-threat-ip-list.py",
+   "sha256": "98e02318bf9e98ec69bcdfe3a511fc5c3d1028d65e2dfb8401a9d385d64c5325",
+   "cron": "17 */6 * * *",
+   "args": "--wazuh-path {wazuh_path}",
+   "description": "Rebuilds jason_tools_threat_ip from 11 public IP threat-intel feeds"
+  }
+ ],
+ "tested_with": [
+  "4.14.7",
+  "4.14.8"
+ ],
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and run the updater once",
+   "title_zh": "安裝套件並先執行一次更新程式",
+   "body": "Install from this page. The list ships empty and the rules match nothing until the updater has filled it; run it once by hand rather than waiting up to six hours. It reloads the ruleset on this node when it finishes.",
+   "body_zh": "在本頁安裝。清單出貨時是空的，更新程式填入前規則不會比對到任何東西；請手動先跑一次，不必等最多六小時。完成時它會重新載入本節點的規則集。",
+   "code": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py --wazuh-path /var/ossec --force",
+   "verify": "ls -l /var/ossec/etc/lists/jason_tools_threat_ip*  — the .cdb must be newer than the text file.",
+   "verify_zh": "ls -l /var/ossec/etc/lists/jason_tools_threat_ip* —— .cdb 必須比文字檔新。"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "On every cluster worker: reload when the list arrives",
+   "title_zh": "每台叢集 worker：清單送到後重新載入",
+   "body": "The cluster copies the list to the workers but does not reload them, so a worker keeps matching the old compiled list. Copy the updater to each worker and schedule it in --reload-if-stale mode, which downloads nothing and reloads only when a list's text is newer than its compiled copy.",
+   "body_zh": "叢集會把清單複製到 worker，但不會替它重載，worker 會繼續用舊的編譯版本比對。請把更新程式複製到每台 worker，並以 --reload-if-stale 模式排程：它不下載任何東西，只在某份清單的文字檔比編譯版新時才重新載入。",
+   "code": "scp /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py <worker>:/var/ossec/etc/jt-packs/bin/\necho '*/5 * * * * root /usr/bin/python3 /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py --wazuh-path /var/ossec --reload-if-stale >> /var/ossec/logs/jt-ioc-reload.log 2>&1' > /etc/cron.d/jt-wazuh-mgr-ioc-reload   # on the worker",
+   "verify": "On the worker, a few minutes after the master's update: ls -l /var/ossec/etc/lists/jason_tools_threat_ip*  — the .cdb is newer than the text.",
+   "verify_zh": "在 worker 上，master 更新幾分鐘後：ls -l /var/ossec/etc/lists/jason_tools_threat_ip* —— .cdb 比文字檔新。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "Exclude your own addresses",
+   "title_zh": "排除自己的位址",
+   "body": "If a feed lists an address you use — a partner, a monitoring service, your own egress — add it to the exclusions file. It takes effect at the next update.",
+   "body_zh": "若來源列入了你會用到的位址（合作夥伴、監控服務、自己的對外位址），把它加進排除檔，下次更新生效。",
+   "code": "echo '198.51.100.20' >> /var/ossec/etc/jt-packs/ioc-cache/exclusions.txt"
+  }
+ ]
 }
