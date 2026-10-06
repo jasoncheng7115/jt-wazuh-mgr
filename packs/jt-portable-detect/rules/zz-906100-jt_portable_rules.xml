@@ -595,6 +595,29 @@
   </rule>
 
   <!--
+    92213 底下另外兩種固定形狀（2026-10-06，依一天的正式資料）：
+      NSIS 安裝程式    每個 NSIS 包裝的安裝程式都會把外掛解到 Temp\nsXXXX.tmp\ 再載入
+      PowerShell Add-Type  csc.exe 把即時編譯的 C# 寫成 Temp\<8 碼亂數>.dll
+    兩者都比對工具自己產生的路徑形狀。Add-Type 給 level 6 而不是更低：惡意的
+    PowerShell 也會用它，留下看得到的紀錄，只是不寄信。
+  -->
+  <rule id="906125" level="3">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+AppData\\+Local\\+Temp\\+ns[a-z0-9]{3,6}\.tmp\\+(System|nsDialogs|nsExec|nsisdl|INetC|NSISdl|StartMenu|UserInfo|LangDLL|Banner|BgImage|InstallOptions|AdvSplash|Splash|Math|nsProcess|registry|ExecDos|nsArray|ShellExecAsUser|UAC)\.dll$</field>
+    <description>NSIS installer unpacking its own plug-in into Temp - $(win.eventdata.targetFilename)</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <rule id="906126" level="6">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\+(csc|powershell|pwsh)\.exe$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+AppData\\+Local\\+Temp\\+[a-z0-9]{8}\.dll$</field>
+    <description>PowerShell Add-Type compiling to a temporary DLL - $(win.eventdata.targetFilename) by $(win.eventdata.image)</description>
+    <group>jt_portable,</group>
+  </rule>
+
+  <!--
     C-2／C-3：下載標記（Mark-of-the-Web）
 
     ★ 2026-09-28 修正：Sysmon 對同一個檔案會產生兩筆事件 15 ──

@@ -2,7 +2,7 @@
  "id": "jt-portable-detect",
  "name": "Portable Executable Detection",
  "name_zh": "可攜式程式偵測",
- "version": "3.0",
+ "version": "3.1",
  "summary": "Detects portable/no-install executables being dropped and run on Windows, Linux and macOS.",
  "summary_zh": "偵測免安裝執行檔在 Windows、Linux、macOS 上的落地與執行。",
  "rule_id_range": "906100-906299",
@@ -14,7 +14,8 @@
   "核准工具：加進 etc/lists/jt-approved-portable（以原始檔名或完整路徑），核准後降為 level 3，遠端控制與穿隧規則也會放過該工具。",
   "部分規則需要管理端無法代勞的 agent 端設定：Windows 的 Sysmon 過濾條件、Linux 的 auditd、以及把 agent 加入 portable-detect 群組。「部署說明」列出每一步與檢查方式。",
   "906160-906167 調校 Wazuh 內建的 Sysmon 檔案建立偵測，而不是重複寫一份。906167 修正內建規則 92213：它的副檔名比對沒有結尾錨點，把 .json 當成 .js，30 天內它的 level 15 告警有 82% 根本不是執行檔。",
-  "3.0 起 Linux 規則各自帶路徑條件。舊的共用父規則 906200 會讓沒有子規則命中的事件停在 level 1，等於把 /root、/home、/tmp 的內建檔案完整性告警全部靜音；它已退役，不得再出現。"
+  "3.0 起 Linux 規則各自帶路徑條件。舊的共用父規則 906200 會讓沒有子規則命中的事件停在 level 1，等於把 /root、/home、/tmp 的內建檔案完整性告警全部靜音；它已退役，不得再出現。",
+  "內建規則 92213（level 15）底下再處理兩種固定形狀：NSIS 安裝程式把外掛解到 Temp\\nsXXXX.tmp 降為 level 3（906125）；PowerShell Add-Type 在 Temp 編譯 8 碼檔名的 DLL 降為 level 6（906126）—— 看得到但不寄信，因為惡意的 PowerShell 也會用 Add-Type。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -26,7 +27,7 @@
    "type": "rule",
    "name": "zz-906100-jt_portable_rules.xml",
    "dest": "etc/rules/zz-906100-jt_portable_rules.xml",
-   "sha256": "91b900a1ed600b4f985c2d417db2ba13b1e36d129e51a689fc343dcdb53dddac"
+   "sha256": "f5a206a543ddda6b207f997ebf9596d3f8132f302d95350a1a8d5085d5475358"
   },
   {
    "type": "rule",
@@ -57,7 +58,8 @@
   "Approve a tool by adding it to etc/lists/jt-approved-portable (by its original file name, or by full path); approved runs drop to level 3. Approval also silences the remote-access and tunnelling rules for that tool.",
   "Several rules depend on agent-side configuration the manager cannot apply for you: Sysmon filters on Windows, auditd on Linux, and assigning agents to the portable-detect group. The deployment guide lists each step and how to check it.",
   "Rules 906160-906167 tune Wazuh's own Sysmon file-creation detections instead of duplicating them. 906167 corrects built-in rule 92213, whose extension match has no end anchor and so treats .json as .js: 82 per cent of its level 15 alerts in thirty days were not executables.",
-  "Since 3.0 every Linux rule carries its own path condition. The old shared parent, 906200, ended unmatched events at level 1, which silently suppressed every built-in file-integrity alert under /root, /home and /tmp; it is retired and must not come back."
+  "Since 3.0 every Linux rule carries its own path condition. The old shared parent, 906200, ended unmatched events at level 1, which silently suppressed every built-in file-integrity alert under /root, /home and /tmp; it is retired and must not come back.",
+  "Two more fixed shapes under the built-in rule 92213 (level 15): an NSIS installer unpacking its plug-ins into Temp\\nsXXXX.tmp is level 3 (906125), and PowerShell Add-Type compiling an 8-character DLL into Temp is level 6 (906126) — visible, not mailed, because malicious PowerShell uses Add-Type too."
  ],
  "agent_group": {
   "name": "portable-detect",

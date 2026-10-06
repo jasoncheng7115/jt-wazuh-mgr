@@ -4,6 +4,22 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.11.1 (2026-10-06)
+
+- **jt-ioc 1.4**: 906032 (a Windows process connecting out to a listed address,
+  level 13) now requires TCP. Its first night produced seven alerts, all from a
+  Taiwanese earthquake early-warning client exchanging UDP with peers on home
+  connections that the feeds had listed. UDP to a listed address is recorded by
+  906036 at level 6.
+- **jt-portable-detect 3.1**: two more fixed shapes under the built-in rule 92213
+  (level 15). An NSIS installer unpacking its plug-ins into `Temp\nsXXXX.tmp`
+  is level 3 (906125); PowerShell Add-Type compiling an eight-character DLL into
+  Temp is level 6 (906126), visible but not mailed, since malicious PowerShell
+  uses Add-Type too.
+- **jt-zimbra 2.9**: 100940 and 100941 (a cron entry or systemd unit changed,
+  level 13) no longer alert on a deletion. About half of their level 13s were
+  deletions; the built-in rule 553 still records them at level 7.
+
 ## v1.11.0 (2026-10-06)
 
 - **jt-ioc 1.3: threat intelligence now checks the events where it matters.**

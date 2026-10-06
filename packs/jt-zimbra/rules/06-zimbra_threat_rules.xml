@@ -114,8 +114,10 @@
      ========================================================== -->
 <group name="zimbra,persistence,">
 
+  <!-- ★ 2026-10-06：100940／100941 不再看刪除（553）。刪掉一個排程或 systemd 單元
+       不是植入持久化；實測約一半的 L13 是刪除事件。刪除仍由內建 553 以 level 7 記錄。 -->
   <rule id="100940" level="13">
-    <if_sid>550,553,554</if_sid>
+    <if_sid>550,554</if_sid>
     <field name="file" type="pcre2">^/var/spool/cron/|^/etc/cron\.(d|hourly|daily)/</field>
     <description>[HIGH] Scheduled task modified, suggesting persistence: $(file) process: $(process_name)</description>
     <mitre>
@@ -124,7 +126,7 @@
   </rule>
 
   <rule id="100941" level="13">
-    <if_sid>550,553,554</if_sid>
+    <if_sid>550,554</if_sid>
     <field name="file" type="pcre2">^/etc/systemd/system/</field>
     <description>[HIGH] systemd unit file modified, suggesting persistence: $(file)</description>
     <mitre>

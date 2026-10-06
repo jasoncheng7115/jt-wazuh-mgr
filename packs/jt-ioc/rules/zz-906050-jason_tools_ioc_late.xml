@@ -59,9 +59,13 @@
     <group>threat_intelligence,sysmon,network_connection,</group>
   </rule>
 
+  <!-- ★ 2026-10-06：只看 TCP。上線第一晚 7 筆全是台灣地震預警軟體 OXWU 的 P2P UDP 流量，
+       對象是被列入清單的家用 IP（那些家用電腦本身中毒、掃過別人）。C2 幾乎都走 TCP；
+       UDP 改由 906036 以 level 6 記錄。 -->
   <rule id="906032" level="13">
     <if_group>sysmon_event3</if_group>
     <field name="win.eventdata.initiated" type="pcre2">(?i)^true$</field>
+    <field name="win.eventdata.protocol" type="pcre2">(?i)^tcp$</field>
     <list field="win.eventdata.destinationIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
     <description>[HIGH] Jason Tools IOC: process connected out to a threat-listed address - $(win.eventdata.destinationIp):$(win.eventdata.destinationPort) by $(win.eventdata.image)</description>
     <mitre>
@@ -69,6 +73,15 @@
       <id>TA0011</id>
     </mitre>
     <group>threat_intelligence,sysmon,command_and_control,outbound_threat,</group>
+  </rule>
+
+  <rule id="906036" level="6">
+    <if_group>sysmon_event3</if_group>
+    <field name="win.eventdata.initiated" type="pcre2">(?i)^true$</field>
+    <field name="win.eventdata.protocol" type="pcre2">(?i)^udp$</field>
+    <list field="win.eventdata.destinationIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
+    <description>Jason Tools IOC: UDP traffic to a threat-listed address, often peer-to-peer - $(win.eventdata.destinationIp):$(win.eventdata.destinationPort) by $(win.eventdata.image)</description>
+    <group>threat_intelligence,sysmon,</group>
   </rule>
 
 </group>

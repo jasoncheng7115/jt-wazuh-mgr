@@ -2,7 +2,7 @@
  "id": "jt-zimbra",
  "name": "Zimbra Detection Suite",
  "name_zh": "Zimbra 偵測套組",
- "version": "2.8",
+ "version": "2.9",
  "summary": "FIM, web, authentication, audit, state, threat and SOAP detection for Zimbra mail servers.",
  "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、稽核、狀態、威脅與 SOAP 偵測。",
  "rule_id_range": "100800-100999",
@@ -14,7 +14,8 @@
   "原廠基線未含 WEB-INF/lib/*.jar 與 lib/ext，這是 100803 / 100806 誤報的主要來源；重建基線可從源頭解決，優於用抑制規則掩蓋。",
   "檔案完整性事件的雜湊比對由 jt-malware-hash 套件的規則 100141 提供，比對的是每晚重建的清單。本套件不再自帶雜湊清單：原本那份只有一個佔位符，讀取它的 level 15 規則從未觸發過。",
   "規則 100807 原本是一條涵蓋 jsp 到 elf 全部副檔名、而且不看檔案權限的規則。在一台開發主機上實測 15 天產生 6,133 筆 level 12，其中 5,538 筆是 .py，多數是沒有執行權限位元的原始碼，根本不可能被執行。現在依「這個副檔名要不要 x 位元」拆開：100807 留下由容器載入、不看權限的網頁應用產物，100809 收下腳本與二進位檔並要求執行權限位元。實測：0755 的 .py 命中 100809，同一個檔案 0644 時靜默。規則 100810 再排除建置與測試工具鏈的暫存目錄 —— 在一台建置主機上，那類目錄一天就貢獻了其中 399 筆。",
-  "規則 100808（原廠檔案內容被改寫，level 13）在 2.7 之前不可能觸發：同層的 100800 先接走事件，其子規則 100801 又把所有原廠檔案變更定為 level 0。現在 100801 只收內容沒變的變動，其餘交給 100808，網站目錄與 lib/ext 都適用。Zimbra 每次升級都會改寫原廠檔案，會出現一批這條告警；升級後請重新產生基準清單。"
+  "規則 100808（原廠檔案內容被改寫，level 13）在 2.7 之前不可能觸發：同層的 100800 先接走事件，其子規則 100801 又把所有原廠檔案變更定為 level 0。現在 100801 只收內容沒變的變動，其餘交給 100808，網站目錄與 lib/ext 都適用。Zimbra 每次升級都會改寫原廠檔案，會出現一批這條告警；升級後請重新產生基準清單。",
+  "100940／100941（排程或 systemd 單元被修改，level 13）不再對刪除告警：刪掉排程不是持久化。原本約一半的 level 13 是刪除事件。刪除仍由內建 553 以 level 7 記錄。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -56,7 +57,7 @@
    "type": "rule",
    "name": "06-zimbra_threat_rules.xml",
    "dest": "etc/rules/06-zimbra_threat_rules.xml",
-   "sha256": "795fdbf6d100d3706cfa73ad7759bd063f27ec8f9df36071d82f50c550e0d8d2"
+   "sha256": "0e1ed400f7e01e720b36072d5485bea0224a4b846632bafe6ef9b26e8504441a"
   },
   {
    "type": "rule",
@@ -87,7 +88,8 @@
   "The stock baseline does not include WEB-INF/lib/*.jar or lib/ext. Those paths are the usual source of false positives on rules 100803 and 100806; regenerating the baseline fixes it at the source, which is better than suppressing the alerts.",
   "Hash matching on file integrity events is provided by the jt-malware-hash pack, rule 100141, against a list rebuilt nightly. This pack no longer ships a hash list of its own: the one it had contained a single placeholder, so the level 15 rule reading it had never fired.",
   "Rule 100807 was one rule covering every extension from jsp to elf, and it did not look at the file mode. Measured over fifteen days on a development host it produced 6,133 alerts at level 12, of which 5,538 were .py files, most of them source code with no execute bit that could never have been run. It is now split by whether the extension needs that bit: 100807 keeps the web application artefacts, which a container loads regardless of mode, and 100809 takes the scripts and binaries and requires the execute bit. Verified: a .py at 0755 matches 100809, the same file at 0644 is silent. Rule 100810 then excludes build and test toolchain scratch directories, which produced 399 of these alerts in a single day on a build host.",
-  "Rule 100808 (a stock file's contents rewritten, level 13) could never fire before 2.7: its sibling 100800 claimed the event first and 100801 settled every stock-file change at level 0. 100801 now takes only changes that leave the contents alone, and 100808 takes the rest, in the web directories and lib/ext alike. Expect a batch of these on every Zimbra upgrade, which rewrites stock files; regenerate the baseline afterwards."
+  "Rule 100808 (a stock file's contents rewritten, level 13) could never fire before 2.7: its sibling 100800 claimed the event first and 100801 settled every stock-file change at level 0. 100801 now takes only changes that leave the contents alone, and 100808 takes the rest, in the web directories and lib/ext alike. Expect a batch of these on every Zimbra upgrade, which rewrites stock files; regenerate the baseline afterwards.",
+  "100940 and 100941 (a cron entry or systemd unit changed, level 13) no longer alert on a deletion: removing a scheduled task is not persistence. About half of their level 13s were deletions. The built-in rule 553 still records them at level 7."
  ],
  "agent_group": {
   "name": "zimbra",

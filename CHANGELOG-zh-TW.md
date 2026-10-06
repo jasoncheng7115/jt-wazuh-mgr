@@ -4,6 +4,17 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.11.1（2026-10-06）
+
+- **jt-ioc 1.4**：906032（Windows 處理程序主動連往清單位址，level 13）現在只看 TCP。上線第一晚的
+  7 筆全是台灣地震預警軟體與家用網路 P2P 節點之間的 UDP 流量，那些家用 IP 被來源列入。
+  連往清單位址的 UDP 改由 906036 以 level 6 記錄。
+- **jt-portable-detect 3.1**：內建規則 92213（level 15）底下再處理兩種固定形狀。NSIS 安裝程式把外掛
+  解到 `Temp\nsXXXX.tmp` 降為 level 3（906125）；PowerShell Add-Type 在 Temp 編譯 8 碼檔名的 DLL
+  降為 level 6（906126）—— 看得到但不寄信，因為惡意的 PowerShell 也會用 Add-Type。
+- **jt-zimbra 2.9**：100940／100941（排程或 systemd 單元被修改，level 13）不再對刪除告警。原本約一半
+  的 level 13 是刪除事件，刪除仍由內建 553 以 level 7 記錄。
+
 ## v1.11.0（2026-10-06）
 
 - **jt-ioc 1.3：威脅情資改在真正有意義的事件上比對。** 原本每條規則都掛在內建規則 1（syslog
