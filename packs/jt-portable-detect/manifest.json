@@ -2,7 +2,7 @@
  "id": "jt-portable-detect",
  "name": "Portable Executable Detection",
  "name_zh": "可攜式程式偵測",
- "version": "3.1",
+ "version": "3.2",
  "summary": "Detects portable/no-install executables being dropped and run on Windows, Linux and macOS.",
  "summary_zh": "偵測免安裝執行檔在 Windows、Linux、macOS 上的落地與執行。",
  "rule_id_range": "906100-906299",
@@ -15,7 +15,8 @@
   "部分規則需要管理端無法代勞的 agent 端設定：Windows 的 Sysmon 過濾條件、Linux 的 auditd、以及把 agent 加入 portable-detect 群組。「部署說明」列出每一步與檢查方式。",
   "906160-906167 調校 Wazuh 內建的 Sysmon 檔案建立偵測，而不是重複寫一份。906167 修正內建規則 92213：它的副檔名比對沒有結尾錨點，把 .json 當成 .js，30 天內它的 level 15 告警有 82% 根本不是執行檔。",
   "3.0 起 Linux 規則各自帶路徑條件。舊的共用父規則 906200 會讓沒有子規則命中的事件停在 level 1，等於把 /root、/home、/tmp 的內建檔案完整性告警全部靜音；它已退役，不得再出現。",
-  "內建規則 92213（level 15）底下再處理兩種固定形狀：NSIS 安裝程式把外掛解到 Temp\\nsXXXX.tmp 降為 level 3（906125）；PowerShell Add-Type 在 Temp 編譯 8 碼檔名的 DLL 降為 level 6（906126）—— 看得到但不寄信，因為惡意的 PowerShell 也會用 Add-Type。"
+  "內建規則 92213（level 15）底下再處理兩種固定形狀：NSIS 安裝程式把外掛解到 Temp\\nsXXXX.tmp 降為 level 3（906125）；PowerShell Add-Type 在 Temp 編譯 8 碼檔名的 DLL 降為 level 6（906126）—— 看得到但不寄信，因為惡意的 PowerShell 也會用 Add-Type。",
+  "Windows：Wazuh agent 只在啟動時訂閱一次事件通道。Microsoft Defender 每次開機與平台更新都會重建自己的通道，Sysmon 升級時也一樣，之後這些事件就默默地不再送到 manager。套件附有一支監看腳本，遇到這種情形會重啟 agent 並以規則 906190 回報；安裝方式見部署指南。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -27,7 +28,7 @@
    "type": "rule",
    "name": "zz-906100-jt_portable_rules.xml",
    "dest": "etc/rules/zz-906100-jt_portable_rules.xml",
-   "sha256": "f5a206a543ddda6b207f997ebf9596d3f8132f302d95350a1a8d5085d5475358"
+   "sha256": "91489f9969bb97cf35943902b79f1df7b1a0ef7952a4341b34df061408300560"
   },
   {
    "type": "rule",
@@ -59,16 +60,18 @@
   "Several rules depend on agent-side configuration the manager cannot apply for you: Sysmon filters on Windows, auditd on Linux, and assigning agents to the portable-detect group. The deployment guide lists each step and how to check it.",
   "Rules 906160-906167 tune Wazuh's own Sysmon file-creation detections instead of duplicating them. 906167 corrects built-in rule 92213, whose extension match has no end anchor and so treats .json as .js: 82 per cent of its level 15 alerts in thirty days were not executables.",
   "Since 3.0 every Linux rule carries its own path condition. The old shared parent, 906200, ended unmatched events at level 1, which silently suppressed every built-in file-integrity alert under /root, /home and /tmp; it is retired and must not come back.",
-  "Two more fixed shapes under the built-in rule 92213 (level 15): an NSIS installer unpacking its plug-ins into Temp\\nsXXXX.tmp is level 3 (906125), and PowerShell Add-Type compiling an 8-character DLL into Temp is level 6 (906126) — visible, not mailed, because malicious PowerShell uses Add-Type too."
+  "Two more fixed shapes under the built-in rule 92213 (level 15): an NSIS installer unpacking its plug-ins into Temp\\nsXXXX.tmp is level 3 (906125), and PowerShell Add-Type compiling an 8-character DLL into Temp is level 6 (906126) — visible, not mailed, because malicious PowerShell uses Add-Type too.",
+  "Windows: the Wazuh agent subscribes to an event channel only once, when it starts. Microsoft Defender re-creates its channel at every boot and platform update, and Sysmon does the same when upgraded, after which their events silently stop reaching the manager. The pack ships a watchdog script that restarts the agent when that happens and reports it as rule 906190; the deployment guide shows how to install it."
  ],
  "agent_group": {
   "name": "portable-detect",
   "config": "agent.conf",
   "files": [
    "jt-portable.rules",
-   "sysmon-jt-portable.xml"
+   "sysmon-jt-portable.xml",
+   "jt-channel-watchdog.ps1"
   ],
-  "description": "File integrity monitoring of the places portable programs land, AppLocker collection on Windows, the auditd rules that turn execution into evidence, and the Sysmon filters the Windows rules need"
+  "description": "File integrity monitoring of the places portable programs land, AppLocker collection on Windows, the auditd rules that turn execution into evidence, and the Sysmon filters the Windows rules need, and a watchdog that keeps Windows event channel subscriptions alive"
  },
  "tested_with": [
   "4.14.7",
@@ -104,6 +107,18 @@
    "code": "Sysmon64.exe -c C:\\path\\to\\your-config.xml\nSysmon64.exe -c",
    "verify": "Copy C:\\Windows\\System32\\notepad.exe to your Downloads folder as test.pdf. Expect rule 906183 (level 10) on the manager. Delete the file afterwards.",
    "verify_zh": "把 C:\\Windows\\System32\\notepad.exe 複製到「下載」並命名為 test.pdf，管理端應出現規則 906183（level 10）。測完刪除該檔。"
+  },
+  {
+   "platform": "windows",
+   "required": false,
+   "title": "Keep Defender and Sysmon events flowing",
+   "title_zh": "讓 Defender 與 Sysmon 事件持續送達",
+   "body": "The Wazuh agent subscribes to each event channel once, when it starts, and never again. Microsoft Defender deletes and re-creates its channel every time its engine starts, at boot and at every platform update, and Sysmon does the same when it is upgraded. From then on the agent collects nothing from that channel and the manager shows no error. The watchdog below restarts the agent when Defender or Sysmon started after it, and each restart appears as rule 906190 (906191 if the restart failed). Run it from a local copy, as below: a scheduled task that runs a file the manager can replace would let the manager run code on the host. Run in an elevated PowerShell.",
+   "body_zh": "Wazuh agent 只在啟動時訂閱一次事件通道，之後不會再訂閱。Microsoft Defender 每次引擎啟動（開機、每次平台更新）都會刪除並重建自己的通道，Sysmon 升級時也一樣；從那之後 agent 從該通道收不到任何事件，manager 端也不會出現錯誤。下方的監看腳本會在 Defender 或 Sysmon 比 agent 晚啟動時重啟 agent，每次重啟都會出現規則 906190（重啟失敗為 906191）。請照下方做法從本機副本執行：讓排程去跑一個 manager 能替換的檔案，等於讓 manager 能在主機上執行程式。請在系統管理員身分的 PowerShell 中執行。",
+   "file": "agent/jt-channel-watchdog.ps1",
+   "code": "$dir = \"$env:ProgramFiles\\jt-wazuh-mgr\"\nNew-Item -ItemType Directory -Force $dir | Out-Null\nCopy-Item \"${env:ProgramFiles(x86)}\\ossec-agent\\shared\\jt-channel-watchdog.ps1\" $dir -Force\n$run   = New-ScheduledTaskAction -Execute powershell.exe -Argument \"-NoProfile -ExecutionPolicy Bypass -File `\"$dir\\jt-channel-watchdog.ps1`\"\"\n$boot  = New-ScheduledTaskTrigger -AtStartup; $boot.Delay = 'PT3M'\n$every = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 15)\nRegister-ScheduledTask -TaskPath '\\jt-wazuh-mgr\\' -TaskName channel-watchdog -Action $run -Trigger $boot, $every -User SYSTEM -RunLevel Highest -Force | Out-Null",
+   "verify": "Get-ScheduledTaskInfo -TaskPath '\\jt-wazuh-mgr\\' -TaskName channel-watchdog shows LastTaskResult 0 within 15 minutes. After the next reboot, rule 906190 (level 3) appears on the manager a few minutes after the agent connects. To see whether a host is affected now, look for 'Could not EvtSubscribe' in the agent's ossec.log; a silent subscription leaves no line at all.",
+   "verify_zh": "15 分鐘內 Get-ScheduledTaskInfo -TaskPath '\\jt-wazuh-mgr\\' -TaskName channel-watchdog 的 LastTaskResult 應為 0。下次重新開機後，agent 連上幾分鐘內 manager 會出現規則 906190（level 3）。要看主機現在是否受影響，可在 agent 的 ossec.log 找 'Could not EvtSubscribe'；但訂閱「無聲失效」時不會留下任何一行。"
   },
   {
    "platform": "windows",

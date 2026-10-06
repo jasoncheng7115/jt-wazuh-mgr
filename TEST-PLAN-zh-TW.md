@@ -15,7 +15,7 @@
 ## 執行方式
 
 ```bash
-python3 -m unittest discover -s tests     # 205 項，完全離線
+python3 -m unittest discover -s tests     # 206 項，完全離線
 python3 tools/preflight.py                # 21 項發版前機械檢查
 
 # 系統沒有 Flask 的主機
@@ -243,6 +243,8 @@ Windows 的情境要在 worker 上再驗一次，Windows agent 通常由 worker 
 | portable-detect | `x.zip:Zone.Identifier` 內容 `ZoneId=3`；同樣在 `Temp\WinGet\` 底下 | 906122（7）；906123（0） | 自動化測試，再以真實事件確認 |
 | portable-detect | `sftp-server.exe` 把 `x.exe` 寫進 `Downloads`；改由 PowerShell 寫入 | 906124（5）；內建 92203 | 自動化測試，再以真實事件確認 |
 | portable-detect | 把 `notepad.exe` 複製成 `Downloads\test.pdf` | 906183（10） | 真實事件，Sysmon 15 加套件的過濾條件 |
+| portable-detect | 沒有任何程序比 agent 晚啟動時執行通道監看腳本；啟動記事本後立刻以 `-Owners notepad.exe` 執行 | 沒有動作，也沒有 PowerShell 4100 警告；agent 重啟並出現 906190（3） | 真實事件；排程的 `LastTaskResult` 為 0 |
+| portable-detect | 來源為 `jt-channel-watchdog`、類型 ERROR 的 Application 事件 | 906191（9） | 真實事件，`eventcreate` |
 | portable-detect | 使用者 Temp 寫入 `.json`；寫入 `.exe` | 906167（0）；仍是 92213（15） | 自動化測試，再以真實事件確認 |
 | portable-detect | 在 `/root/.ssh` 建立檔案 | 會寫出內建 554（906200 的回歸測試） | 真實事件 |
 | portable-detect | 家目錄裡的檔案 `chmod +x`；`/tmp` 出現 0755 檔案；`/tmp` 出現 0644 的 `.bin` | 906201（8）；906202（10）；906204 不觸發 | 真實事件 |

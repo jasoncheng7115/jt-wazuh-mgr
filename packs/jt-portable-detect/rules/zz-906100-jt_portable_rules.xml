@@ -36,7 +36,7 @@
        906160-906167  內建 Sysmon 事件 11 偵測（92200-92217）的調校
        906175-906179  G 項：遠端控制與穿隧工具
        906180-906189  F 項：Sysmon 事件 29（偵測到可執行檔）
-       906190-906199  保留給測試鏡像規則（見 tests/run-logtest.sh）
+       906190-906199  H 項：收集健康度（事件通道訂閱失效後重啟 agent）
 
   ── ★ 同層規則的評估順序 ──
     Wazuh 依序嘗試同一父規則下的子規則，第一個命中的勝出並往下走，其餘同層規則
@@ -935,6 +935,41 @@
       <id>T1204.002</id>
     </mitre>
     <group>jt_portable_file,jt_portable_masquerade,</group>
+  </rule>
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   H 項：收集健康度（906190-906199）
+   ══════════════════════════════════════════════════════════════════════
+   Wazuh agent 只在啟動時訂閱一次事件通道，之後不會重新訂閱。
+   Defender 每次引擎啟動（開機、平台更新）都會用 wevtutil 刪除並重建自己的通道，
+   agent 隨即不是記下一行 EvtSubscribe() ... (15007)，就是握著一個
+   再也不送事件的訂閱 ── manager 端完全看不出來。Sysmon 重裝或升級時也一樣。
+   （2026-10 實測：兩台 Windows 的 Defender 事件分別從開機與平台更新那一刻起
+     停了兩週以上，本機記錄每天照常寫入約 60 筆。）
+
+   agent/jt-channel-watchdog.ps1 以排程每 15 分鐘比對啟動時間，
+   Defender／Sysmon 比 agent 晚啟動就重啟 agent，並寫一筆 Application 事件
+   （來源 jt-channel-watchdog）。60601／60602 是內建的 Application
+   警告／錯誤分類規則（0585-win-application_rules.xml）。
+-->
+
+  <rule id="906190" level="3">
+    <if_sid>60601</if_sid>
+    <field name="win.system.providerName">^jt-channel-watchdog$</field>
+    <field name="win.system.eventID">^100$</field>
+    <options>no_full_log</options>
+    <description>Channel watchdog restarted the Wazuh agent: $(win.eventdata.data)</description>
+    <group>jt_portable_health,</group>
+  </rule>
+
+  <rule id="906191" level="9">
+    <if_sid>60602</if_sid>
+    <field name="win.system.providerName">^jt-channel-watchdog$</field>
+    <options>no_full_log</options>
+    <description>Channel watchdog could not restart the Wazuh agent; Defender or Sysmon events may not be collected: $(win.eventdata.data)</description>
+    <group>jt_portable_health,</group>
   </rule>
 
 

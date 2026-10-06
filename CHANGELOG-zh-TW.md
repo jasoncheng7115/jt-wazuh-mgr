@@ -4,6 +4,21 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.11.2（2026-10-07）
+
+- **jt-portable-detect 3.2：Windows 事件通道無聲中斷。** Wazuh agent 只在啟動時訂閱一次事件通道，
+  之後不會再訂閱。Microsoft Defender 每次引擎啟動都會用 `wevtutil` 刪除並重建自己的通道：
+  開機時（比 agent 晚幾秒）與每次平台更新時都會。從那一刻起，agent 不是記下一行
+  `Could not EvtSubscribe() ... returned (15007)`，就是握著一個再也不送事件的訂閱，
+  manager 端完全沒有錯誤。兩台 Windows 主機的 Defender 事件已經兩週以上沒送到 manager，
+  而本機每天照常寫入約 60 筆。套件新增 `agent/jt-channel-watchdog.ps1`，以排程在開機時與
+  每 15 分鐘執行：Defender 或 Sysmon 比 agent 晚啟動時就重啟 agent，並以規則 906190 回報
+  （重啟失敗為 906191）。Sysmon 升級時也會以同樣方式重建通道。部署指南附有指令。
+  排程執行的是本機副本而非 agent shared 目錄裡的檔案，因為 manager 能替換那個檔案。
+  上游已有同樣「無聲中斷」的回報（wazuh/wazuh-agent#11），以 not planned 結案。
+- 測試：套件附帶的 PowerShell 腳本必須是純 ASCII。Windows PowerShell 5.1 以系統字碼頁讀取
+  沒有 BOM 的腳本，非 ASCII 字元在中文與英文 Windows 上會被解成不同的內容。
+
 ## v1.11.1（2026-10-06）
 
 - **jt-ioc 1.4**：906032（Windows 處理程序主動連往清單位址，level 13）現在只看 TCP。上線第一晚的

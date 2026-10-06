@@ -4,6 +4,29 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.11.2 (2026-10-07)
+
+- **jt-portable-detect 3.2: Windows event channels that stop without a word.**
+  The Wazuh agent subscribes to each event channel once, when it starts, and
+  never again. Microsoft Defender deletes and re-creates its channel with
+  `wevtutil` every time its engine starts: at boot, seconds after the agent, and
+  at every platform update. From then on the agent has either logged
+  `Could not EvtSubscribe() ... returned (15007)` or holds a subscription that
+  delivers nothing, and the manager shows no error. On two Windows hosts,
+  Defender events had stopped reaching the manager for more than two weeks
+  while each host kept writing about 60 a day locally. The pack now ships
+  `agent/jt-channel-watchdog.ps1`, a scheduled task that runs at startup and
+  every 15 minutes. When Defender or Sysmon started after the agent, it
+  restarts the agent and reports the restart as rule 906190 (906191 if the
+  restart failed). Sysmon re-creates its channel the same way when it is
+  upgraded. The deployment guide has the commands. The task runs a local copy
+  of the script, not the file in the agent's shared directory, because the
+  manager can replace that file. An upstream report of the same silent stop
+  (wazuh/wazuh-agent#11) was closed as not planned.
+- Tests: shipped PowerShell scripts must be ASCII. Windows PowerShell 5.1 reads
+  a script without a byte-order mark in the system code page, so a non-ASCII
+  character would decode differently on Chinese and English Windows.
+
 ## v1.11.1 (2026-10-06)
 
 - **jt-ioc 1.4**: 906032 (a Windows process connecting out to a listed address,

@@ -16,7 +16,7 @@
 ## すべてを実行する
 
 ```bash
-python3 -m unittest discover -s tests     # 205 件のテスト、完全にオフライン
+python3 -m unittest discover -s tests     # 206 件のテスト、完全にオフライン
 python3 tools/preflight.py                # 21 項目の機械的なリリース前チェック
 
 # システムに Flask が入っていないホストで
@@ -271,6 +271,8 @@ location に何を与えても JSON を通常の `json` としてデコードし
 | portable-detect | `ZoneId=3` を持つ `x.zip:Zone.Identifier`；同じものが `Temp\WinGet\` の下 | 906122（7）；906123（0） | 自動テスト、その後に実イベント |
 | portable-detect | `sftp-server.exe` が `Downloads` に `x.exe` を書く；PowerShell が書く | 906124（5）；組み込み 92203 | 自動テスト、その後に実イベント |
 | portable-detect | `notepad.exe` を `Downloads\test.pdf` としてコピー | 906183（10） | 実イベント、Sysmon 15 とパックのフィルター |
+| portable-detect | agent より後に起動したプロセスがない状態でチャネル監視スクリプトを実行；メモ帳を起動した直後に `-Owners notepad.exe` で実行 | 何も起きず、PowerShell 4100 の警告もない；agent が再起動して 906190（3） | 実イベント；タスクの `LastTaskResult` が 0 |
+| portable-detect | ソースが `jt-channel-watchdog`、種類 ERROR の Application イベント | 906191（9） | 実イベント、`eventcreate` |
 | portable-detect | ユーザーの Temp に `.json` を書く；`.exe` を書く | 906167（0）；92213（15）のまま | 自動テスト、その後に実イベント |
 | portable-detect | `/root/.ssh` にファイルを作成 | 組み込みの 554 が書き出される（906200 の回帰確認） | 実イベント |
 | portable-detect | ホームディレクトリのファイルに `chmod +x`；`/tmp` に 0755 のファイル；`/tmp` に 0644 の `.bin` | 906201（8）；906202（10）；906204 は発火しない | 実イベント |

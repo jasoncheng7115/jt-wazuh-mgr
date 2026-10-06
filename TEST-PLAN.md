@@ -16,7 +16,7 @@ the screen. None of them substitutes for another.
 ## Running everything
 
 ```bash
-python3 -m unittest discover -s tests     # 205 tests, fully offline
+python3 -m unittest discover -s tests     # 206 tests, fully offline
 python3 tools/preflight.py                # 21 mechanical pre-release checks
 
 # on a host without a system Flask
@@ -274,6 +274,8 @@ is usually the node processing Windows agents.
 | portable-detect | `x.zip:Zone.Identifier` with `ZoneId=3`; the same under `Temp\WinGet\` | 906122 (7); 906123 (0) | suite, then a real event |
 | portable-detect | `sftp-server.exe` writes `x.exe` to `Downloads`; PowerShell writes it | 906124 (5); built-in 92203 | suite, then a real event |
 | portable-detect | `notepad.exe` copied to `Downloads\test.pdf` | 906183 (10) | real event, Sysmon 15 with the pack's filters |
+| portable-detect | the channel watchdog run while nothing started after the agent; run with `-Owners notepad.exe` just after starting Notepad | nothing, and no PowerShell 4100 warning; the agent restarts and 906190 (3) arrives | real event; the task's `LastTaskResult` is 0 |
+| portable-detect | an Application event from `jt-channel-watchdog` with type ERROR | 906191 (9) | real event, `eventcreate` |
 | portable-detect | a `.json` written to the user Temp; an `.exe` written there | 906167 (0); 92213 (15) still | suite, then a real event |
 | portable-detect | a file created in `/root/.ssh` | built-in 554 is written (the 906200 regression) | real event |
 | portable-detect | `chmod +x` on a file in a home directory; a 0755 file in `/tmp`; a 0644 `.bin` in `/tmp` | 906201 (8); 906202 (10); nothing from 906204 | real event |

@@ -4,6 +4,25 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.11.2（2026-10-07）
+
+- **jt-portable-detect 3.2：何も言わずに止まる Windows のイベントチャネル。** Wazuh agent は
+  起動時に一度だけイベントチャネルを購読し、その後は二度と購読し直しません。Microsoft Defender は
+  エンジンが起動するたびに `wevtutil` で自身のチャネルを削除・再作成します。起動時（agent の数秒後）と、
+  プラットフォーム更新のたびです。それ以降 agent は `Could not EvtSubscribe() ... returned (15007)` を
+  記録するか、何も届かない購読を持ち続けるだけで、manager 側にはエラーが一切出ません。2 台の
+  Windows ホストでは、ローカルには毎日約 60 件が書き込まれていたのに、Defender のイベントが 2 週間以上
+  manager に届いていませんでした。パックに `agent/jt-channel-watchdog.ps1` を追加しました。起動時と
+  15 分ごとにスケジュールタスクとして実行され、Defender か Sysmon が agent より後に起動していれば
+  agent を再起動し、ルール 906190（再起動に失敗した場合は 906191）で報告します。Sysmon もアップグレード時に
+  同じようにチャネルを作り直します。コマンドはデプロイガイドにあります。タスクが実行するのはローカルの
+  コピーで、agent の shared ディレクトリのファイルではありません。manager がそのファイルを置き換えられる
+  からです。同じ「何も言わずに止まる」現象は上流にも報告されていますが（wazuh/wazuh-agent#11）、
+  not planned としてクローズされています。
+- テスト：同梱する PowerShell スクリプトは ASCII のみとしました。Windows PowerShell 5.1 は BOM のない
+  スクリプトをシステムのコードページで読むため、非 ASCII 文字は中国語版と英語版の Windows で
+  異なる内容に解釈されます。
+
 ## v1.11.1（2026-10-06）
 
 - **jt-ioc 1.4**：906032（Windows のプロセスがリスト上のアドレスへ接続、level 13）は TCP のみを

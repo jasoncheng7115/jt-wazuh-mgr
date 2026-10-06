@@ -1973,6 +1973,9 @@ class TestShippedPacks(unittest.TestCase):
             ('61600', {'eventID': '29', 'image': b.join(['C:', 'Windows', 'System32', 'OpenSSH', 'sftp-server.exe']), 'targetFilename': p('Downloads', 'x.exe')}, ['906181']),
             ('61600', {'eventID': '29', 'image': 'explorer.exe', 'targetFilename': b.join(['E:', 'x.exe'])}, ['906182']),
             ('61600', {'eventID': '29', 'image': 'chrome.exe', 'targetFilename': p('Downloads', 'Unconfirmed 1.crdownload')}, ['906180']),
+            ('60601', {'providerName': 'jt-channel-watchdog', 'eventID': '100'}, ['906190']),
+            ('60601', {'providerName': 'SomeApp', 'eventID': '100'}, []),
+            ('60602', {'providerName': 'jt-channel-watchdog', 'eventID': '101'}, ['906191']),
         ]
         for parent, ev, want in cases:
             with self.subTest(parent=parent, event=ev):
@@ -2018,6 +2021,18 @@ class TestShippedPacks(unittest.TestCase):
                 for pat in re.findall(r'<ignore type="sregex">([^<]*)</ignore>', body):
                     with self.subTest(file=n, pattern=pat):
                         self.assertNotRegex(pat, r'[\\()\[\]]')
+
+    def test_powershell_scripts_are_ascii(self):
+        """Windows PowerShell 5.1 reads a script without a byte-order mark in the
+        system code page, so one non-ASCII character in a shipped .ps1 is decoded
+        differently on a Chinese or Japanese Windows than on an English one."""
+        for dirpath, _, names in os.walk(self.packs_dir):
+            for n in names:
+                if n.endswith('.ps1'):
+                    with self.subTest(file=n):
+                        with io.open(os.path.join(dirpath, n), 'rb') as fh:
+                            data = fh.read()
+                        self.assertTrue(all(b < 0x80 for b in data))
 
     def test_index_matches_the_catalogue_on_disk(self):
         index_path = os.path.join(self.packs_dir, 'INDEX')
