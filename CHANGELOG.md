@@ -4,6 +4,39 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.11.3 (2026-10-08)
+
+- **"Connection Lost" right after opening the Wazuh dashboard.** Chrome and
+  Edge keep "proceed anyway" for a self-signed certificate per host, not per
+  port, and drop it as soon as they see a valid certificate on that host
+  (Chromium `content/browser/ssl/ssl_manager.cc`). With the dashboard on the
+  same manager, signed by a CA the browser trusts, opening it cancelled the
+  exception this tool depended on. From then on every request failed in the
+  TLS handshake and the page showed *Connection Lost*. The tool's log stayed
+  empty, because no request arrived. `--ssl-auto` now serves the dashboard's
+  own certificate when the dashboard runs on the same host. It reads the path
+  from `opensearch_dashboards.yml`, since the file names differ between Wazuh
+  versions, and checks that the certificate and key load. Otherwise it
+  generates a self-signed certificate as before. Explicit `--ssl-cert` /
+  `--ssl-key` still take precedence.
+- **Security: the session cookie was not marked Secure under `--ssl-auto`.**
+  Secure depended on `WEB_SSL_CERT` being set in the environment, so the
+  documented way to run served HTTPS with a cookie that the browser would also
+  send over plain HTTP. That cookie carries the Wazuh API token, signed but not
+  encrypted, and a browser sends it to every port of the host. Whenever HTTPS
+  is on, the cookie is now Secure and named `__Host-jtwm_session`, so nothing
+  else on the host can set or widen it. Over HTTP it is `jtwm_session`, no
+  longer Flask's shared default `session`. Everyone logs in again once after
+  the upgrade.
+- Generated certificates now name the host in subjectAltName. Browsers ignore
+  the CN, so the earlier ones failed the name check even after being accepted.
+  An existing generated certificate without one is replaced at startup. The key
+  is written with mode 0600.
+- Docs: a troubleshooting entry for this symptom in three languages. The
+  README now recommends logging in with an API user of the tool's own rather
+  than the dashboard's `wazuh-wui`. SECURITY no longer claims the token is kept
+  server-side.
+
 ## v1.11.2 (2026-10-07)
 
 - **jt-portable-detect 3.2: Windows event channels that stop without a word.**

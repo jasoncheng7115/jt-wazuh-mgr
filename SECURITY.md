@@ -40,11 +40,15 @@ treat it as a privileged administrative application:
 - **Run it on a trusted management network only.** Do not expose port `5000`
   directly to the public Internet. Place it behind a VPN, firewall, or reverse
   proxy with access control.
-- **Always use HTTPS.** The bundled `--ssl-auto` generates a self-signed
-  certificate; for production use a certificate from your own CA.
+- **Always use HTTPS.** The bundled `--ssl-auto` serves the Wazuh dashboard's
+  certificate when the dashboard runs on the same host, and otherwise generates
+  a self-signed one; for production use a certificate your browsers trust.
 - **Authentication** is delegated to the Wazuh API — users log in with their
-  Wazuh API credentials, and a JWT is stored in the server-side session. No
-  Wazuh passwords are written to `config.yaml` in Web UI mode.
+  Wazuh API credentials. The resulting JWT travels in the session cookie, which
+  is signed but not encrypted, so it is HttpOnly, SameSite=Lax and, over HTTPS,
+  Secure with the `__Host-` prefix: a browser sends a cookie to every port of a
+  host, and the dashboard usually shares this one. No Wazuh passwords are
+  written to `config.yaml` in Web UI mode.
 - **Brute-force protection:** repeated failed logins from an IP trigger a
   temporary lockout (default: 3 failures = 30 minutes).
 - **Least privilege:** create a dedicated Wazuh API user/role with only the

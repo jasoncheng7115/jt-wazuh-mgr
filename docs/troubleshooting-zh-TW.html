@@ -311,8 +311,24 @@ sudo systemctl daemon-reload &amp;&amp; sudo systemctl restart jt-wazuh-mgr</cod
           <pre><code>curl -kIs https://127.0.0.1:5000/ | head -1      # 在 manager 上執行
 sudo firewall-cmd --add-port=5000/tcp --permanent &amp;&amp; sudo firewall-cmd --reload   # RHEL 系列
 sudo ufw allow 5000/tcp                                                            # Ubuntu</code></pre>
-          <p>注意網址是 <b>https</b>，而且使用 <code>--ssl-auto</code> 時憑證是自簽的，
-             瀏覽器會警告一次。</p>
+          <p>注意網址是 <b>https</b>。使用 <code>--ssl-auto</code> 時，若 Wazuh Dashboard 在同一台主機，
+             工具會直接使用 Dashboard 的憑證（1.11.3 起）；否則是自簽憑證，瀏覽器會警告一次。</p>
+        </div>
+
+        <div class="qa" id="dashboard">
+          <h3>一打開 Wazuh Dashboard，這邊就出現「連線中斷」</h3>
+          <p>Chrome 與 Edge 對自簽憑證按下的「繼續前往」是以<b>主機</b>為單位記住的，不分 port；
+             而且只要在同一台主機看到有效的憑證，就會把這些例外全部收回。Dashboard 若與本工具在同一台主機、
+             憑證又是瀏覽器信任的，一打開它，本工具用的例外就被取消：之後每個請求都在 TLS 握手失敗，
+             畫面顯示「連線中斷」，而工具的記錄什麼都沒有，因為請求根本沒送到。按 F5 會重新看到憑證警告。
+             Firefox 不受影響。</p>
+          <p>升級到 1.11.3 以上並維持 <code>--ssl-auto</code>：工具會改用 Dashboard 的憑證，
+             也就沒有例外可以被收回。若使用自己的憑證，請用瀏覽器信任的那一張：</p>
+          <pre><code>./wazuh_agent_mgr.py --web --ssl-cert /path/to/cert.pem --ssl-key /path/to/key.pem</code></pre>
+          <p>若畫面顯示的是「Session 已過期」並回到登入頁，那是 Wazuh API 撤銷了 token。
+             請在 <code>/var/ossec/logs/api.log</code> 找當下是否有 <code>DELETE /security/user/authenticate</code>
+             或 <code>PUT /security/user/revoke</code>，並讓本工具使用自己專屬的 API 帳號登入，
+             不要與 Dashboard 共用 <code>wazuh-wui</code>。</p>
         </div>
       </section>
 

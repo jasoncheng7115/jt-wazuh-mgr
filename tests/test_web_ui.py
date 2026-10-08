@@ -21,7 +21,7 @@ import sys
 import textwrap
 import time
 import unittest
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout as _redirect_stdout
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -260,6 +260,8 @@ class TestSecurityHardening(WebUITestCase):
         app = web_ui.create_app()
         self.assertTrue(app.config['SESSION_COOKIE_HTTPONLY'])
         self.assertEqual(app.config['SESSION_COOKIE_SAMESITE'], 'Lax')
+        # Not Flask's default name, which any other app on the host may use too
+        self.assertNotEqual(app.config['SESSION_COOKIE_NAME'], 'session')
 
     def test_third_party_scripts_pin_a_subresource_integrity_hash(self):
         """A CDN asset without SRI is an unverified dependency in a privileged UI."""
@@ -277,6 +279,120 @@ class TestSecurityHardening(WebUITestCase):
 # --------------------------------------------------------------------------
 # Request body handling  (regression: werkzeug BadRequest surfaced as 500)
 # --------------------------------------------------------------------------
+
+class TestTransportSecurity(unittest.TestCase):
+    """HTTPS as it is actually started: --ssl-auto, explicit files, or the
+    Wazuh dashboard's certificate. The session cookie carries the Wazuh API
+    token, and a browser sends a cookie to every port of the host it came from."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        if not shutil.which('openssl'):
+            self.skipTest('openssl not available')
+        self.tmp = tempfile.mkdtemp(prefix='jtwm-tls-')
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        for var in ('WEB_SSL_CERT', 'WEB_SSL_KEY', 'WEB_SSL_AUTO'):
+            if var in os.environ:
+                self.addCleanup(os.environ.__setitem__, var, os.environ.pop(var))
+
+    def _pair(self, name, san=True):
+        cert, key = os.path.join(self.tmp, name + '.pem'), os.path.join(self.tmp, name + '-key.pem')
+        cmd = ['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '2',
+               '-keyout', key, '-out', cert, '-subj', '/CN=test']
+        if san:
+            cmd += ['-addext', 'subjectAltName=IP:127.0.0.1']
+        subprocess.run(cmd, check=True, capture_output=True)
+        return cert, key
+
+    def _conf(self, body):
+        path = os.path.join(self.tmp, 'opensearch_dashboards.yml')
+        with open(path, 'w') as fh:
+            fh.write(body)
+        return path
+
+    def _started(self, **kwargs):
+        """run_web_server up to the point of listening: the app and its TLS files."""
+        seen = {}
+
+        def fake_run(app_self, **kw):
+            seen['app'], seen['ssl_context'] = app_self, kw.get('ssl_context')
+        from flask import Flask
+        original = Flask.run
+        Flask.run = fake_run
+        try:
+            with open(os.devnull, 'w') as quiet, _redirect_stdout(quiet):
+                web_ui.run_web_server(**kwargs)
+        finally:
+            Flask.run = original
+        return seen
+
+    def test_cookie_over_https_is_secure_and_host_only(self):
+        app = web_ui.create_app()
+        web_ui.configure_session_cookie(app, tls=True)
+        header = app.test_client().get('/login', base_url='https://localhost').headers.get('Set-Cookie', '')
+        self.assertTrue(header.startswith('__Host-jtwm_session='), header)
+        self.assertIn('Secure', header)
+        self.assertIn('Path=/', header)
+        self.assertNotIn('Domain=', header)
+
+    def test_cookie_over_plain_http_is_not_prefixed(self):
+        header = web_ui.create_app().test_client().get('/login').headers.get('Set-Cookie', '')
+        self.assertTrue(header.startswith('jtwm_session='), header)
+        self.assertNotIn('Secure', header)
+
+    def test_serving_https_from_certificate_files_makes_the_cookie_secure(self):
+        """Regression: only WEB_SSL_CERT in the environment used to set Secure,
+        so the service as installed (--ssl-auto) sent the token-bearing cookie
+        to every port of the host, plain HTTP included."""
+        cert, key = self._pair('given')
+        seen = self._started(ssl_cert=cert, ssl_key=key)
+        self.assertEqual(seen['ssl_context'], (cert, key))
+        self.assertTrue(seen['app'].config['SESSION_COOKIE_SECURE'])
+        self.assertEqual(seen['app'].config['SESSION_COOKIE_NAME'], '__Host-jtwm_session')
+
+    def test_ssl_auto_serves_the_dashboard_certificate(self):
+        cert, key = self._pair('dashboard')
+        conf = self._conf('server.ssl.enabled: true\nserver.ssl.key: "%s"\nserver.ssl.certificate: "%s"\n' % (key, cert))
+        original = web_ui.DASHBOARD_CONF
+        web_ui.DASHBOARD_CONF = conf
+        try:
+            seen = self._started(ssl_auto=True)
+        finally:
+            web_ui.DASHBOARD_CONF = original
+        self.assertEqual(seen['ssl_context'], (cert, key))
+        self.assertTrue(seen['app'].config['SESSION_COOKIE_SECURE'])
+
+    def test_dashboard_certificate_is_read_from_either_yaml_spelling(self):
+        cert, key = self._pair('dashboard')
+        dotted = self._conf('server.ssl.key: %s\nserver.ssl.certificate: %s\n' % (key, cert))
+        self.assertEqual(web_ui._dashboard_certificate(dotted), (cert, key))
+        nested = self._conf('server:\n  ssl:\n    key: %s\n    certificate: %s\n' % (key, cert))
+        self.assertEqual(web_ui._dashboard_certificate(nested), (cert, key))
+
+    def test_dashboard_certificate_that_would_break_startup_is_not_used(self):
+        cert, _ = self._pair('one')
+        _, other_key = self._pair('two')
+        cases = {
+            'missing configuration': os.path.join(self.tmp, 'absent.yml'),
+            'key of another certificate': self._conf('server.ssl.key: %s\nserver.ssl.certificate: %s\n' % (other_key, cert)),
+            'relative paths': self._conf('server.ssl.key: k.pem\nserver.ssl.certificate: c.pem\n'),
+            'not a mapping': self._conf('- just\n- a list\n'),
+        }
+        for label, conf in cases.items():
+            with self.subTest(label):
+                self.assertIsNone(web_ui._dashboard_certificate(conf))
+
+    def test_generated_certificate_names_the_host(self):
+        """Browsers check subjectAltName and ignore the CN; the certificates made
+        before 1.11.3 had none and failed the name check even once accepted."""
+        cert, key = os.path.join(self.tmp, 'auto.pem'), os.path.join(self.tmp, 'auto-key.pem')
+        with open(os.devnull, 'w') as quiet, _redirect_stdout(quiet):
+            self.assertTrue(web_ui._generate_ssl_cert(cert, key, days=1))
+        self.assertTrue(web_ui._cert_has_san(cert))
+        self.assertEqual(os.stat(key).st_mode & 0o077, 0)
+        self.assertFalse(web_ui._cert_has_san(self._pair('old', san=False)[0]))
+
 
 class TestRequestBodyHandling(WebUITestCase):
 

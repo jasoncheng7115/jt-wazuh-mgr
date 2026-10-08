@@ -321,8 +321,28 @@ sudo systemctl daemon-reload &amp;&amp; sudo systemctl restart jt-wazuh-mgr</cod
           <pre><code>curl -kIs https://127.0.0.1:5000/ | head -1      # マネージャー上で実行
 sudo firewall-cmd --add-port=5000/tcp --permanent &amp;&amp; sudo firewall-cmd --reload   # RHEL 系
 sudo ufw allow 5000/tcp                                                            # Ubuntu</code></pre>
-          <p>URL が <b>https</b> であること、また <code>--ssl-auto</code> では証明書が自己署名のため
-             ブラウザーが一度警告を出すことに注意してください。</p>
+          <p>URL が <b>https</b> であることに注意してください。<code>--ssl-auto</code> では、Wazuh Dashboard が
+             同じホストにある場合は Dashboard の証明書をそのまま使います（1.11.3 以降）。それ以外は自己署名
+             証明書のため、ブラウザーが一度警告を出します。</p>
+        </div>
+
+        <div class="qa" id="dashboard">
+          <h3>Wazuh Dashboard を開いた直後に「接続が切断されました」と表示される</h3>
+          <p>Chrome と Edge は、自己署名証明書に対する「続行」を port ではなく<b>ホスト</b>単位で記憶し、
+             そのホストで有効な証明書を一度でも見ると、それらの例外をすべて取り消します。Dashboard が
+             同じマシンで動いていて、その証明書をブラウザーが信頼している場合、Dashboard を開いた時点で
+             本ツールが使っていた例外が消えます。以降のリクエストはすべて TLS ハンドシェイクで失敗し、
+             画面には「接続が切断されました」と出ますが、リクエストが届いていないためツールのログには
+             何も残りません。F5 を押すと証明書の警告が再び表示されます。Firefox では起きません。</p>
+          <p>1.11.3 以降にアップグレードし、<code>--ssl-auto</code> のままにしてください。ツールが Dashboard の
+             証明書を使うため、取り消される例外そのものがなくなります。独自の証明書を使う場合は、
+             ブラウザーが信頼するものを指定してください:</p>
+          <pre><code>./wazuh_agent_mgr.py --web --ssl-cert /path/to/cert.pem --ssl-key /path/to/key.pem</code></pre>
+          <p>画面に「セッションの有効期限が切れました」と出てログイン画面に戻る場合は、Wazuh API が
+             トークンを取り消しています。その時刻の <code>/var/ossec/logs/api.log</code> に
+             <code>DELETE /security/user/authenticate</code> または <code>PUT /security/user/revoke</code> が
+             ないか確認し、ツールには Dashboard の <code>wazuh-wui</code> ではなく専用の API ユーザーで
+             ログインしてください。</p>
         </div>
       </section>
 

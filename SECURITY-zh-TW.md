@@ -37,10 +37,12 @@
 
 - **只在受信任的管理網段上運作。** 不要把連接埠 `5000` 直接暴露到網際網路。
   請將它放在 VPN、防火牆，或具備存取控制的反向代理之後。
-- **一律使用 HTTPS。** 內建的 `--ssl-auto` 會產生自簽憑證；
-  正式環境請改用你自己 CA 簽發的憑證。
+- **一律使用 HTTPS。** 內建的 `--ssl-auto` 在 Wazuh Dashboard 位於同一台主機時使用
+  Dashboard 的憑證，否則產生自簽憑證；正式環境請改用瀏覽器信任的憑證。
 - **認證委派給 Wazuh API** —— 使用者以 Wazuh API 的帳號登入，
-  JWT 存放在伺服器端的 session。Web UI 模式下，
+  取得的 JWT 放在 session cookie 裡；該 cookie 有簽章但未加密，因此設為 HttpOnly、
+  SameSite=Lax，並在 HTTPS 下加上 Secure 與 `__Host-` 前綴：瀏覽器會把 cookie
+  送往同一主機的每個 port，而 Dashboard 通常就在同一台主機。Web UI 模式下，
   Wazuh 的密碼不會被寫進 `config.yaml`。
 - **暴力破解防護：** 同一 IP 連續登入失敗會觸發暫時鎖定
   （預設：3 次失敗鎖 30 分鐘）。

@@ -47,7 +47,8 @@ Options:
     --web               Start web interface
     --host=<host>       Web server host [default: 0.0.0.0]
     --port=<port>       Web server port [default: 5000]
-    --ssl-auto          Auto-generate self-signed certificate (1 year validity)
+    --ssl-auto          Serve the Wazuh dashboard's certificate on this host, or a
+                        generated self-signed one (1 year validity)
     --ssl-cert=<cert>   SSL certificate file for HTTPS
     --ssl-key=<key>     SSL private key file for HTTPS
     --config=<path>     Path to config file
@@ -402,7 +403,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument('--port', type=int, default=5000, help='Web server port (default: 5000)')
     parser.add_argument('--ssl-cert', help='SSL certificate file path for HTTPS')
     parser.add_argument('--ssl-key', help='SSL private key file path for HTTPS')
-    parser.add_argument('--ssl-auto', action='store_true', help='Auto-generate self-signed certificate if missing or expired')
+    parser.add_argument('--ssl-auto', action='store_true', help="Serve the Wazuh dashboard's certificate on this host, else generate a self-signed one")
     parser.add_argument('--max-login-attempts', type=int, default=3, help='Max login attempts before IP lockout (default: 3)')
     parser.add_argument('--lockout-minutes', type=int, default=30, help='IP lockout duration in minutes (default: 30)')
 

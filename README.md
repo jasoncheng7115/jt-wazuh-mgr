@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.11.2
+# jt-wazuh-mgr v1.11.3
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@ A powerful web-based management tool for Wazuh agents in cluster environments.
 
 > **Recommended**: Use the Web UI as the primary interface — it's the main feature of this tool with full functionality.
 
-![Version](https://img.shields.io/badge/version-1.11.2-blue)
+![Version](https://img.shields.io/badge/version-1.11.3-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -142,7 +142,9 @@ python3 -m pip install --target vendor -r requirements.txt
 
 Open **https://YOUR_WAZUH_MANAGER_IP:5000** and log in with your Wazuh API credentials.
 
-> **Note**: Use the `wazuh` or `wazuh-wui` account. The password can be found in `wazuh-install-files.tar` (created during installation) or in your installation records.
+> **Note**: Log in with an API user of the tool's own (log in once as `wazuh` and create one on the **API Users** tab, or use `create_api_user.py`), or with `wazuh`. Avoid `wazuh-wui`: it is the dashboard's account, and when its tokens are revoked on the dashboard's side this tool is logged out too. The passwords of the default accounts are in `wazuh-install-files.tar` (created during installation) or in your installation records.
+>
+> `--ssl-auto` serves the Wazuh dashboard's certificate when the dashboard runs on the same host, and otherwise generates a self-signed one.
 
 ### Other Options
 

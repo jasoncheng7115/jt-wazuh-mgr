@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.11.2
+# jt-wazuh-mgr v1.11.3
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@
 
 > **推奨**: Web UI を主なインターフェースとしてお使いください。本ツールの中心となる機能であり、すべての機能が利用できます。
 
-![Version](https://img.shields.io/badge/version-1.11.2-blue)
+![Version](https://img.shields.io/badge/version-1.11.3-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -144,7 +144,9 @@ python3 -m pip install --target vendor -r requirements.txt
 
 **https://お使いの_WAZUH_MANAGER_の_IP:5000** を開き、Wazuh API の認証情報でログインします。
 
-> **補足**: `wazuh` または `wazuh-wui` アカウントを使用します。パスワードはインストール時に生成される `wazuh-install-files.tar` の中、またはインストール記録に記載されています。
+> **補足**: 本ツール専用の API ユーザー（一度 `wazuh` でログインして「API ユーザー」タブで作成するか、`create_api_user.py` を使用）、または `wazuh` でログインしてください。`wazuh-wui` は Dashboard 自身のアカウントのため避けてください。Dashboard 側でそのトークンが取り消されると、本ツールも一緒にログアウトされます。既定アカウントのパスワードはインストール時に生成される `wazuh-install-files.tar` の中、またはインストール記録に記載されています。
+>
+> `--ssl-auto` は、Wazuh Dashboard が同じホストにある場合は Dashboard の証明書を使い、それ以外は自己署名証明書を生成します。
 
 ### その他のオプション
 

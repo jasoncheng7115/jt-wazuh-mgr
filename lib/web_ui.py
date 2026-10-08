@@ -124,6 +124,32 @@ UNKNOWN_SERVER_VERSION = '0.0.0'
 # monitoring then reported as level 13 persistence.
 PACK_CRON_DIR = '/etc/cron.d'
 
+# Session cookie names. Over HTTPS the __Host- prefix makes the browser refuse
+# the cookie unless it is Secure, host-only and Path=/, so nothing else on the
+# manager can set or widen it. It needs TLS, hence the plain name for HTTP.
+SESSION_COOKIE_PLAIN = 'jtwm_session'
+SESSION_COOKIE_TLS = '__Host-jtwm_session'
+
+# The Wazuh dashboard's configuration, read by --ssl-auto to find the
+# certificate it serves (the file names differ between Wazuh versions).
+DASHBOARD_CONF = '/etc/wazuh-dashboard/opensearch_dashboards.yml'
+
+
+def configure_session_cookie(app, tls: bool) -> None:
+    """Make the session cookie match the transport.
+
+    Without Secure, the browser sends the cookie, which carries the Wazuh API
+    token, to every port on this host, over plain HTTP too: cookies are scoped
+    by host, not by port. That used to depend on WEB_SSL_CERT being set, so
+    --ssl-auto, the documented way to run, served HTTPS with an insecure cookie.
+    """
+    if tls:
+        app.config['SESSION_COOKIE_SECURE'] = True
+        app.config['SESSION_COOKIE_NAME'] = SESSION_COOKIE_TLS
+    else:
+        app.config['SESSION_COOKIE_SECURE'] = False
+        app.config['SESSION_COOKIE_NAME'] = SESSION_COOKIE_PLAIN
+
 
 def server_major(version: str) -> int:
     """Major version number of a server, or 0 when it could not be read.
@@ -9938,11 +9964,12 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
     web_session_timeout = get_config().web_session_timeout
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=web_session_timeout)  # Session timeout
-    # Enable secure cookies if SSL is configured
-    ssl_cert = os.environ.get('WEB_SSL_CERT')
-    ssl_key = os.environ.get('WEB_SSL_KEY')
-    if ssl_cert and ssl_key:
-        app.config['SESSION_COOKIE_SECURE'] = True  # Only send cookie over HTTPS
+    # Not Flask's default "session": a browser keeps cookies per host, not per
+    # port, so any other app on the manager using that name would overwrite ours.
+    # run_web_server() tightens this further once it knows TLS is on.
+    app.config['SESSION_COOKIE_NAME'] = SESSION_COOKIE_PLAIN
+    if os.environ.get('WEB_SSL_CERT') and os.environ.get('WEB_SSL_KEY'):
+        configure_session_cookie(app, tls=True)
 
     # Security response headers. The UI is built from inline <script>/<style>, so
     # 'unsafe-inline' cannot be dropped without rewriting the template; everything
@@ -16114,28 +16141,75 @@ def _check_cert_valid(cert_path: str) -> bool:
         return False
 
 
+def _cert_has_san(cert_path: str) -> bool:
+    """Whether a certificate names its host in subjectAltName.
+
+    Browsers ignore the CN: a certificate without a SAN fails the name check
+    even after the user accepts it as self-signed. The ones --ssl-auto made
+    before 1.11.3 had none, so they are replaced rather than kept for a year.
+    """
+    try:
+        import subprocess
+        result = subprocess.run(['openssl', 'x509', '-noout', '-text', '-in', cert_path],
+                                capture_output=True, text=True)
+        return result.returncode == 0 and 'Subject Alternative Name' in result.stdout
+    except Exception:
+        return False
+
+
+def _local_names_and_addresses():
+    """Names and IPv4 addresses this host is likely to be reached by."""
+    import socket
+    names, addrs = set(), {'127.0.0.1'}
+    for name in (socket.gethostname(), socket.getfqdn(), 'localhost'):
+        if name and re.match(r'^[A-Za-z0-9.-]{1,253}$', name):
+            names.add(name)
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addrs.add(info[4][0])
+    except Exception:
+        pass
+    try:
+        # The address of the default route. A UDP connect sends nothing.
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect(('192.0.2.1', 9))
+            addrs.add(probe.getsockname()[0])
+        finally:
+            probe.close()
+    except Exception:
+        pass
+    return sorted(names), sorted(a for a in addrs if not a.startswith('127.') or a == '127.0.0.1')
+
+
 def _generate_ssl_cert(cert_path: str, key_path: str, days: int = 365) -> bool:
-    """Generate self-signed SSL certificate using openssl."""
+    """Generate a self-signed certificate that names this host in subjectAltName."""
     import subprocess
     import socket
 
     hostname = socket.gethostname()
+    names, addrs = _local_names_and_addresses()
+    san = ','.join(['DNS:' + n for n in names] + ['IP:' + a for a in addrs])
     print(f"Generating self-signed SSL certificate (valid for {days} days)...")
 
-    try:
-        # Generate private key and certificate in one command
-        result = subprocess.run([
-            'openssl', 'req', '-x509', '-newkey', 'rsa:4096',
-            '-keyout', key_path,
-            '-out', cert_path,
+    base = ['openssl', 'req', '-x509', '-newkey', 'rsa:4096',
+            '-keyout', key_path, '-out', cert_path,
             '-days', str(days),
             '-nodes',  # No passphrase
-            '-subj', f'/CN={hostname}/O=jt-wazuh-mgr/C=TW'
-        ], capture_output=True, text=True)
+            '-subj', f'/CN={hostname}/O=jt-wazuh-mgr/C=TW']
+    try:
+        result = subprocess.run(base + ['-addext', 'subjectAltName=' + san],
+                                capture_output=True, text=True)
+        if result.returncode != 0:
+            # OpenSSL older than 1.1.1 has no -addext; a certificate without a
+            # SAN is still better than falling back to plain HTTP.
+            result = subprocess.run(base, capture_output=True, text=True)
 
         if result.returncode == 0:
+            os.chmod(key_path, 0o600)
             print(f"  Certificate generated: {cert_path}")
             print(f"  Private key generated: {key_path}")
+            print(f"  Names: {san}")
             return True
         else:
             print(f"  ERROR: Failed to generate certificate: {result.stderr}")
@@ -16146,6 +16220,48 @@ def _generate_ssl_cert(cert_path: str, key_path: str, days: int = 365) -> bool:
     except Exception as e:
         print(f"  ERROR: {e}")
         return False
+
+
+def _dashboard_certificate(conf_path: str = None):
+    """The certificate the Wazuh dashboard on this host serves, if usable here.
+
+    A browser keeps "proceed anyway" for a bad certificate per host, not per
+    port, and Chromium drops every such exception for a host the moment it sees
+    a valid certificate there (content/browser/ssl/ssl_manager.cc). With the
+    dashboard on the same host, signed by a CA the browser trusts, opening the
+    dashboard therefore cut off this app's self-signed HTTPS: every request
+    failed in the TLS handshake and the page showed "Connection Lost", while the
+    server saw nothing. Serving the dashboard's own certificate removes the
+    exception altogether. Returns (cert, key) or None.
+    """
+    import ssl
+    conf_path = conf_path or DASHBOARD_CONF
+    try:
+        import yaml
+        with open(conf_path, encoding='utf-8') as fh:
+            conf = yaml.safe_load(fh) or {}
+    except Exception:
+        return None
+    if not isinstance(conf, dict):
+        return None
+    # Both spellings are valid YAML for the dashboard: dotted keys, or nested.
+    server = conf.get('server') if isinstance(conf.get('server'), dict) else {}
+    nested = server.get('ssl') if isinstance(server.get('ssl'), dict) else {}
+    cert = conf.get('server.ssl.certificate') or nested.get('certificate')
+    key = conf.get('server.ssl.key') or nested.get('key')
+    if not (isinstance(cert, str) and isinstance(key, str)
+            and os.path.isabs(cert) and os.path.isabs(key)
+            and os.path.isfile(cert) and os.path.isfile(key)):
+        return None
+    if not _check_cert_valid(cert):
+        return None
+    try:
+        # Readable, unencrypted and a matching pair -- or the server would
+        # fail at startup instead of falling back.
+        ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(cert, key)
+    except Exception:
+        return None
+    return cert, key
 
 
 def harden_wsgi_server() -> bool:
@@ -16197,8 +16313,13 @@ def run_web_server(host: str = '0.0.0.0', port: int = 5000, debug: bool = False,
     default_cert = os.path.join(script_dir, 'ssl_cert.pem')
     default_key = os.path.join(script_dir, 'ssl_key.pem')
 
-    # Handle ssl_auto: auto-generate certificates if needed
-    if ssl_auto:
+    # Handle ssl_auto: the dashboard's certificate if this host has one,
+    # otherwise a self-signed one, generated when missing, expired or nameless
+    dashboard = _dashboard_certificate() if ssl_auto and not (ssl_cert or ssl_key) else None
+    if dashboard:
+        ssl_cert, ssl_key = dashboard
+        print(f"Using the Wazuh dashboard's certificate on this host: {ssl_cert}")
+    elif ssl_auto:
         # Use provided paths or defaults
         ssl_cert = ssl_cert or default_cert
         ssl_key = ssl_key or default_key
@@ -16206,9 +16327,14 @@ def run_web_server(host: str = '0.0.0.0', port: int = 5000, debug: bool = False,
         # Check if certificates exist and are valid
         cert_valid = _check_cert_valid(ssl_cert)
         key_exists = os.path.exists(ssl_key)
+        # Only our own generated file is replaced for lacking a name; a
+        # certificate someone pointed us at is theirs to manage.
+        nameless = cert_valid and ssl_cert == default_cert and not _cert_has_san(ssl_cert)
 
-        if not cert_valid or not key_exists:
-            if not cert_valid and os.path.exists(ssl_cert):
+        if not cert_valid or not key_exists or nameless:
+            if nameless:
+                print(f"SSL certificate has no subjectAltName, replacing: {ssl_cert}")
+            elif not cert_valid and os.path.exists(ssl_cert):
                 print(f"SSL certificate expired or invalid: {ssl_cert}")
             elif not os.path.exists(ssl_cert):
                 print(f"SSL certificate not found: {ssl_cert}")
@@ -16226,6 +16352,7 @@ def run_web_server(host: str = '0.0.0.0', port: int = 5000, debug: bool = False,
         if os.path.exists(ssl_cert) and os.path.exists(ssl_key):
             ssl_context = (ssl_cert, ssl_key)
             protocol = 'https'
+            configure_session_cookie(app, tls=True)
             print(f"SSL enabled: cert={ssl_cert}, key={ssl_key}")
         else:
             print(f"WARNING: SSL cert/key files not found, falling back to HTTP")

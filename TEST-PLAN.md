@@ -16,7 +16,7 @@ the screen. None of them substitutes for another.
 ## Running everything
 
 ```bash
-python3 -m unittest discover -s tests     # 206 tests, fully offline
+python3 -m unittest discover -s tests     # 213 tests, fully offline
 python3 tools/preflight.py                # 21 mechanical pre-release checks
 
 # on a host without a system Flask
@@ -55,6 +55,7 @@ directories are synthetic.
 | Pack structure | No pack depends on a rule defined in another pack; no level 0/1 rule under a built-in FIM or Sysmon parent with only "the field exists" as its condition; agent-side `<ignore type="sregex">` patterns use only OS_Match syntax; every setup step is complete in both languages and names a file the pack ships; the Windows portable-detect chains, evaluated against values shaped as analysisd decodes them, end on the expected rule and never on two siblings at once. |
 | Pack deployment | A pack whose files were copied in by hand is reported as untracked, not as conflicting with itself; rules in another file still conflict; the pack file viewer refuses anything outside the pack's own folders. |
 | Python compatibility | Every source file compiles with warnings as errors (an unknown escape becomes a SyntaxError in a later Python); the page contains no backspace character; the installer never pip-installs into the system Python and both entry points load `vendor/`. |
+| Transport security | Over HTTPS the session cookie is `__Host-jtwm_session`, Secure, host-only and Path=/, whichever way HTTPS was started (files, `--ssl-auto`, the dashboard's certificate) -- checked by starting the server up to the point of listening; over HTTP it is `jtwm_session`, never Flask's shared default name. `--ssl-auto` uses the dashboard's certificate from either YAML spelling and refuses one that would break startup (missing, relative path, key of another certificate); a generated certificate names the host in subjectAltName and its key is private to its owner. |
 | Front end | The template's JavaScript parses under `node --check`. The i18n dictionary is embedded and internally consistent. |
 | Version comparison | The agent-version comparator, including the pre-release cases. |
 

@@ -15,7 +15,7 @@
 ## 執行方式
 
 ```bash
-python3 -m unittest discover -s tests     # 206 項，完全離線
+python3 -m unittest discover -s tests     # 213 項，完全離線
 python3 tools/preflight.py                # 21 項發版前機械檢查
 
 # 系統沒有 Flask 的主機
@@ -53,6 +53,7 @@ PYTHONPATH=/tmp/vendor python3 -m unittest discover -s tests
 | 套件結構 | 套件不依賴其他套件定義的規則；內建 FIM 或 Sysmon 父規則底下沒有「只要求欄位存在」的 level 0／1 規則；agent 端 `<ignore type="sregex">` 只用 OS_Match 語法；每個部署步驟中英文齊全，引用的檔案確實隨套件附上；Windows 的 portable-detect 規則鏈以 analysisd 解碼後的實際格式評估，必須落在預期的規則上，且不得同時命中兩條同層規則。 |
 | 套件部署 | 手動複製進去的套件顯示為「未登記」，而不是和自己衝突；其他檔案中的規則仍判為衝突；套件檔案檢視端點拒絕套件資料夾以外的任何路徑。 |
 | Python 相容性 | 所有原始檔都能以「警告即錯誤」編譯（未知的跳脫在之後的 Python 版本會變成語法錯誤）；頁面不含退格字元；安裝程式不以 pip 寫入系統 Python，兩個入口程式都會載入 `vendor/`。 |
+| 傳輸安全 | HTTPS 下 session cookie 一律是 `__Host-jtwm_session`、Secure、僅限本主機、Path=/，不論 HTTPS 是怎麼啟用的（憑證檔、`--ssl-auto`、Dashboard 的憑證）—— 以「把伺服器啟動到開始監聽之前」的方式檢查；HTTP 下是 `jtwm_session`，絕不用 Flask 共用的預設名稱。`--ssl-auto` 能從兩種 YAML 寫法讀到 Dashboard 的憑證，並拒絕會讓啟動失敗的設定（檔案不存在、相對路徑、金鑰不屬於該憑證）；產生的憑證在 subjectAltName 寫明主機，私鑰只有擁有者可讀。 |
 | 前端 | 模板的 JavaScript 能通過 `node --check`。i18n 字典已嵌入且內部一致。 |
 | 版本比較 | 代理程式版本比較器，含預先發行版本的情況。 |
 

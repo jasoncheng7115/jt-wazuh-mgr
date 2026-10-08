@@ -322,8 +322,29 @@ sudo systemctl daemon-reload &amp;&amp; sudo systemctl restart jt-wazuh-mgr</cod
           <pre><code>curl -kIs https://127.0.0.1:5000/ | head -1      # on the manager
 sudo firewall-cmd --add-port=5000/tcp --permanent &amp;&amp; sudo firewall-cmd --reload   # RHEL family
 sudo ufw allow 5000/tcp                                                            # Ubuntu</code></pre>
-          <p>Note the URL is <b>https</b>, and with <code>--ssl-auto</code> the certificate is
-             self-signed, so the browser will warn once.</p>
+          <p>Note the URL is <b>https</b>. With <code>--ssl-auto</code> the tool serves the Wazuh
+             dashboard's own certificate when the dashboard runs on the same host (1.11.3 and later);
+             otherwise the certificate is self-signed and the browser warns once.</p>
+        </div>
+
+        <div class="qa" id="dashboard">
+          <h3>"Connection Lost" right after opening the Wazuh dashboard</h3>
+          <p>Chrome and Edge keep your "proceed anyway" for a self-signed certificate per
+             <b>host</b>, not per port, and drop it the moment they see a valid certificate on that
+             host. When the dashboard runs on the same machine with a certificate your browser
+             trusts, opening it cancels the exception the tool was using: every request then fails in
+             the TLS handshake, the page shows <i>Connection Lost</i>, and the tool's log shows
+             nothing, because nothing arrives. Pressing F5 brings the certificate warning back.
+             Firefox is not affected.</p>
+          <p>Upgrade to 1.11.3 or later and keep <code>--ssl-auto</code>: the tool then serves the
+             dashboard's certificate, so there is no exception to lose. With your own certificate,
+             use one your browsers trust:</p>
+          <pre><code>./wazuh_agent_mgr.py --web --ssl-cert /path/to/cert.pem --ssl-key /path/to/key.pem</code></pre>
+          <p>If instead the page says <i>Session expired</i> and returns to the login page, the Wazuh
+             API revoked the token. Look for <code>DELETE /security/user/authenticate</code> or
+             <code>PUT /security/user/revoke</code> in <code>/var/ossec/logs/api.log</code> at that
+             moment, and log in to the tool with an API user of its own rather than the
+             dashboard's <code>wazuh-wui</code>.</p>
         </div>
       </section>
 

@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.11.2
+# jt-wazuh-mgr v1.11.3
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.11.2-blue)
+![Version](https://img.shields.io/badge/version-1.11.3-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -142,7 +142,9 @@ python3 -m pip install --target vendor -r requirements.txt
 
 開啟 **https://你的WazuhManager_IP:5000**，使用 Wazuh API 帳號登入。
 
-> **提示**：使用 `wazuh` 或 `wazuh-wui` 帳號。密碼可於 `wazuh-install-files.tar`（安裝時產生）或你的安裝記錄中找到。
+> **提示**：建議使用本工具專屬的 API 帳號（先以 `wazuh` 登入，在「API 使用者」分頁建立；或用 `create_api_user.py`），也可以直接用 `wazuh`。請避免 `wazuh-wui`：那是 Dashboard 自己的帳號，Dashboard 那邊撤銷它的 token 時，本工具也會一起被登出。預設帳號的密碼可於 `wazuh-install-files.tar`（安裝時產生）或你的安裝記錄中找到。
+>
+> `--ssl-auto` 在 Wazuh Dashboard 位於同一台主機時會直接使用 Dashboard 的憑證，否則產生自簽憑證。
 
 ### 其他選項
 

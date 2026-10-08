@@ -4,6 +4,27 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.11.3（2026-10-08）
+
+- **一打開 Wazuh Dashboard，這邊就出現「連線中斷」。** Chrome 與 Edge 對自簽憑證按下的「繼續前往」
+  是以主機為單位記住的，不分 port；而且只要在該主機看到有效憑證，就會把這些例外收回
+  （Chromium `content/browser/ssl/ssl_manager.cc`）。Dashboard 在同一台 manager 上、憑證又由瀏覽器
+  信任的 CA 簽發時，一打開它，本工具依賴的例外就被取消。之後每個請求都在 TLS 握手失敗，畫面顯示
+  「連線中斷」；工具的記錄則什麼都沒有，因為請求根本沒送到。現在 `--ssl-auto` 在 Dashboard
+  位於同一台主機時直接使用 Dashboard 的憑證。路徑從 `opensearch_dashboards.yml` 讀取（各版 Wazuh
+  的檔名不同），並先確認憑證與金鑰能載入；否則照舊產生自簽憑證。明確指定的
+  `--ssl-cert`／`--ssl-key` 仍然優先。
+- **資安：`--ssl-auto` 下 session cookie 沒有 Secure 旗標。** Secure 原本只在環境變數設了
+  `WEB_SSL_CERT` 時才打開，所以照文件的方式執行，服務雖是 HTTPS，cookie 卻也會被瀏覽器以純 HTTP 送出。
+  這顆 cookie 帶著 Wazuh API token（有簽章、未加密），而瀏覽器會把它送往同一主機的每個 port。
+  現在只要啟用 HTTPS，cookie 一律是 Secure，並命名為 `__Host-jtwm_session`，同主機上的其他程式
+  無法設定或放寬它。HTTP 下則是 `jtwm_session`，不再使用 Flask 共用的預設名稱 `session`。
+  升級後每個人需要重新登入一次。
+- 產生的憑證現在會在 subjectAltName 寫明主機。瀏覽器不看 CN，所以先前的憑證即使按了「繼續」
+  也通不過名稱檢查。既有、沒有 SAN 的自產憑證會在啟動時換掉；私鑰以 0600 寫入。
+- 文件：疑難排解頁新增這個症狀的條目（三語）。README 改為建議使用本工具專屬的 API 帳號，
+  不要與 Dashboard 共用 `wazuh-wui`。SECURITY 不再宣稱 token 存放在伺服器端。
+
 ## v1.11.2（2026-10-07）
 
 - **jt-portable-detect 3.2：Windows 事件通道無聲中斷。** Wazuh agent 只在啟動時訂閱一次事件通道，
