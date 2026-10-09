@@ -1872,6 +1872,21 @@ class TestPackDeployment(PackFixture):
         d = self.client.get('/api/packs/jt-portable-detect').get_json()
         self.assertIn({'rule': '906101', 'file': 'local_rules.xml'}, d['conflicts'])
 
+    def test_a_site_override_of_a_pack_rule_is_not_a_conflict(self):
+        """overwrite="yes" is Wazuh's way to re-level a rule defined elsewhere;
+        a site tuning a pack rule that way could not install or update it."""
+        with io.open(os.path.join(self.tmp, 'etc/rules/zzz-tuning.xml'), 'w', encoding='utf-8') as fh:
+            fh.write('<group name="x,"><rule id="906101" level="3" overwrite="yes">'
+                     '<if_sid>61603</if_sid><description>tuned</description></rule></group>')
+        d = self.client.get('/api/packs/jt-portable-detect').get_json()
+        self.assertEqual(d['conflicts'], [])
+        self.assertIn({'rule': '906101', 'file': 'zzz-tuning.xml'}, d['overrides'])
+        r = self.client.post('/api/packs/jt-portable-detect/install', json={})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        plan = self.client.get('/api/packs/jt-portable-detect/update').get_json()
+        self.assertEqual(plan['conflicts'], [])
+        self.assertIn({'rule': '906101', 'file': 'zzz-tuning.xml'}, plan['overrides'])
+
     def test_detail_carries_the_setup_guide_and_agent_files(self):
         d = self.client.get('/api/packs/jt-portable-detect').get_json()
         self.assertTrue(d['setup'])

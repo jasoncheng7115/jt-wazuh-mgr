@@ -6821,6 +6821,11 @@ HTML_TEMPLATE = '''
                         ? '<span>They match this version exactly. Installing records them; nothing changes on disk.</span>'
                         : '<span>They differ from this version. Installing backs them up and replaces them.</span>') + '</div></div>';
             }
+            if ((d.overrides || []).length) {
+                html += '<div class="alert alert-info"><div>Rules of this pack that this manager overrides (overwrite=&quot;yes&quot;), which stays in effect:</div>' +
+                    '<div style="font-family:monospace;">' +
+                    d.overrides.slice(0, 10).map(c => escapeHtml(c.rule) + ' (' + escapeHtml(c.file) + ')').join(', ') + '</div></div>';
+            }
             if (d.conflicts && d.conflicts.length) {
                 html += '<div class="alert alert-error"><div>Rule ID conflict with rules in other files:</div>' +
                     '<div style="font-family:monospace;">' +
@@ -6966,6 +6971,10 @@ HTML_TEMPLATE = '''
             if ((plan.conflicts || []).length) {
                 html += '<div class="alert alert-error"><div>Rule ID conflict with rules in other files:</div><div style="font-family:monospace;">' +
                     plan.conflicts.slice(0, 10).map(c => escapeHtml(c.rule) + ' (' + escapeHtml(c.file) + ')').join(', ') + '</div></div>';
+            }
+            if ((plan.overrides || []).length) {
+                html += '<div class="alert alert-info"><div>Rules of this pack that this manager overrides (overwrite=&quot;yes&quot;), which stays in effect:</div><div style="font-family:monospace;">' +
+                    plan.overrides.slice(0, 10).map(c => escapeHtml(c.rule) + ' (' + escapeHtml(c.file) + ')').join(', ') + '</div></div>';
             }
             const changes = (plan.files || []).filter(f => f.action !== 'same');
             const unchanged = (plan.files || []).length - changes.length;
@@ -7944,6 +7953,7 @@ _I18N_SCRIPT = r"""
       'Rule ID conflict with rules in other files:': '與其他檔案中的規則 ID 衝突：',
       'Update': '更新',
       'Update pack': '更新套件',
+      'Rules of this pack that this manager overrides (overwrite="yes"), which stays in effect:': '這台 manager 以 overwrite="yes" 改寫了本套件的這些規則，改寫會繼續有效：',
       'Files on the manager': 'Manager 上的檔案',
       'Will be updated': '將更新',
       'Replaces a file of the same name (backed up)': '取代同名檔案（會先備份）',
@@ -8664,6 +8674,7 @@ _I18N_SCRIPT = r"""
       'Rule ID conflict with rules in other files:': '他のファイルのルール ID と競合しています：',
       'Update': '更新',
       'Update pack': 'パックを更新',
+      'Rules of this pack that this manager overrides (overwrite="yes"), which stays in effect:': 'このマネージャーが overwrite="yes" で上書きしているこのパックのルール（上書きは引き続き有効です）：',
       'Files on the manager': 'マネージャー上のファイル',
       'Will be updated': '更新されます',
       'Replaces a file of the same name (backed up)': '同名のファイルを置き換えます（バックアップあり）',
@@ -14395,8 +14406,14 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         return {'name': name, 'created': True, 'already_present': False,
                 'files': extras, 'hashes': hashes}
 
-    def _installed_rule_ids(skip_files=()):
-        """Rule ids already present on the manager, for conflict detection."""
+    def _installed_rule_ids(skip_files=(), overrides=False):
+        """Rule ids already present on the manager, for conflict detection.
+
+        A rule carrying overwrite="yes" is not a collision: it is how Wazuh lets
+        a site re-level or rephrase a rule defined elsewhere, a pack's included.
+        Counting those as conflicts blocked installing or updating any pack the
+        site had tuned that way. With overrides=True only those are returned.
+        """
         import xml.etree.ElementTree as ET
         ids = {}
         for path in sorted(glob.glob(os.path.join(_wazuh_path(), 'etc', 'rules', '*.xml'))):
@@ -14408,6 +14425,8 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             except Exception:
                 continue
             for rule in root.iter('rule'):
+                if (rule.get('overwrite') == 'yes') != overrides:
+                    continue
                 ids[rule.get('id')] = os.path.basename(path)
         return ids
 
@@ -14480,6 +14499,8 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             existing = _installed_rule_ids(skip_files=_own_rule_files(manifest))
             rule_ids = _pack_rule_ids(pdir, manifest)
             conflicts = [{'rule': rid, 'file': existing[rid]} for rid in rule_ids if rid in existing]
+            tuned = _installed_rule_ids(skip_files=_own_rule_files(manifest), overrides=True)
+            overrides = [{'rule': rid, 'file': tuned[rid]} for rid in rule_ids if rid in tuned]
 
             files = []
             for entry in manifest.get('files', []):
@@ -14499,6 +14520,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 'rule_ids': rule_ids,
                 'rule_count': len(rule_ids),
                 'conflicts': conflicts,
+                'overrides': overrides,
                 'installed': bool(state),
                 'undeclared_nodes': (state or {}).get('undeclared_nodes') or [],
                 'state': state,
@@ -14840,8 +14862,10 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         skip = _own_rule_files(manifest) | {os.path.basename(d) for d in recorded
                                             if d.startswith('etc/rules/')}
         existing = _installed_rule_ids(skip_files=skip)
-        conflicts = [{'rule': rid, 'file': existing[rid]}
-                     for rid in _pack_rule_ids(pdir, manifest) if rid in existing]
+        pack_ids = _pack_rule_ids(pdir, manifest)
+        conflicts = [{'rule': rid, 'file': existing[rid]} for rid in pack_ids if rid in existing]
+        tuned = _installed_rule_ids(skip_files=skip, overrides=True)
+        overrides = [{'rule': rid, 'file': tuned[rid]} for rid in pack_ids if rid in tuned]
         from_v, to_v = state.get('version', ''), manifest.get('version', '')
         setup_new = [dict(st, number=i + 1) for i, st in enumerate(manifest.get('setup') or [])
                      if st.get('since') and _version_key(st['since']) > _version_key(from_v)]
@@ -14858,7 +14882,8 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                       'undeclare': [p for p in old_decl if p not in new_decl]},
             'schedule': [{'script': e['name'], 'schedule': e['cron']}
                          for e in (manifest.get('scripts') or []) if e.get('cron')],
-            'conflicts': conflicts, 'setup_new': setup_new, 'needs_choice': choices,
+            'conflicts': conflicts, 'overrides': overrides,
+            'setup_new': setup_new, 'needs_choice': choices,
         }
 
     @app.route('/api/packs/<pack_id>/update', methods=['GET', 'POST'])

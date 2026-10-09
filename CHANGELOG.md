@@ -4,6 +4,18 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.12.2 (2026-10-10)
+
+- **A site override of a pack rule is no longer a conflict.** `overwrite="yes"`
+  is how Wazuh lets a site change the level or wording of a rule defined in
+  another file, and it is how a site is expected to tune a pack. Rule ID
+  conflict detection counted those overrides as collisions, so installing or
+  updating a pack the site had tuned that way was refused. Overrides are now
+  left out of the conflicts. The pack detail and the update plan list them
+  separately: they stay in effect, because the overriding file loads later.
+  Found while recording a manager whose tuning file re-levels a rule of
+  jt-zimbra.
+
 ## v1.12.1 (2026-10-10)
 
 Found while recording our own manager's hand-copied packs through Install, so
