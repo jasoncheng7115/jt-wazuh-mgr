@@ -15,7 +15,7 @@
 ## 執行方式
 
 ```bash
-python3 -m unittest discover -s tests     # 213 項，完全離線
+python3 -m unittest discover -s tests     # 214 項，完全離線
 python3 tools/preflight.py                # 21 項發版前機械檢查
 
 # 系統沒有 Flask 的主機
@@ -255,6 +255,11 @@ Windows 的情境要在 worker 上再驗一次，Windows agent 通常由 worker 
 | ioc | 清單位址拿到 404；POST 拿到 200；只拿靜態內容；只靠 `/16` 前綴列入的位址；沒列入的位址 | 906040（5）；906023（12）；906041（6）；906040；不觸發 | wazuh-logtest，用真實的 JSON 存取記錄 |
 | ioc | 清單位址 sshd 登入成功；沒列入的位址登入成功；清單位址登入失敗 | 906050（14）；5715；5760 | wazuh-logtest |
 | ioc | worker 上，master 改寫了清單 | 5 分鐘內重載一次，之後不再重載 | 手動執行 `--reload-if-stale` 三次 |
+| portable-detect | Defender 的更新程式以 SYSTEM 從 `C:\Windows\SystemTemp\<GUID>\` 執行；同檔名以 Medium 完整性執行 | 906168（0）；906104（10） | 單元測試，使用正式事件的值 |
+| portable-detect | 從 `C:\Windows\Tasks\` 執行程式；從 `spool\drivers\color\` 執行 | 906174（12）；後者 Defender 自己就擋下（62123） | 真實事件 |
+| portable-detect | 以使用者身分 SSH 登入：上傳腳本到 Temp、在那裡 clone repository、Add-Type；再以 SYSTEM 執行 Add-Type | 906128（10）；906127（3）；906126（6）；906129（6）—— 且沒有 92213（15） | 真實事件 |
+| portable-detect | 從 `/tmp/pytest-of-root/...` 執行 pytest 的測試替身；同一事件把路徑改成 `/tmp/x9/` | 906237（3）；906211（12） | wazuh-logtest，使用真實的合併 audit 事件 |
+| portable-detect | 在 `/tmp/tmpXXXX/bin/` 建立 234 bytes 的 `pip` 與 27 KB 的 `wheel` | 906238（3）；906202（10） | 真實事件（FIM） |
 | 有清單的套件 | 每晚更新後的清單 | 每個節點的 `.cdb` 都比文字檔新 | 在各節點 `ls -l etc/lists` |
 
 ---

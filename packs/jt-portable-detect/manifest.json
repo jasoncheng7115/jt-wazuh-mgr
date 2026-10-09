@@ -2,20 +2,22 @@
  "id": "jt-portable-detect",
  "name": "Portable Executable Detection",
  "name_zh": "可攜式程式偵測",
- "version": "3.2",
+ "version": "3.3",
  "summary": "Detects portable/no-install executables being dropped and run on Windows, Linux and macOS.",
  "summary_zh": "偵測免安裝執行檔在 Windows、Linux、macOS 上的落地與執行。",
  "rule_id_range": "906100-906299",
  "notes_zh": [
   "Windows：程式從使用者資料夾、家目錄根層、家目錄底下自建的資料夾、使用者或系統的 Temp、ProgramData、非系統磁碟或網路共享執行時告警；直接在壓縮檔裡雙擊執行也會告警。",
+  "Windows：從 C:\\Windows 底下一般使用者可寫入的資料夾執行程式（Tasks、tracing、spool\\drivers\\color 等公開的 AppLocker 繞過清單）為 level 12（906174）。正常軟體不會從這些地方執行，在這裡核准清單也不會降級。",
   "Windows：從上述位置執行的免安裝遠端控制工具（AnyDesk、RustDesk、TeamViewer QuickSupport 等，依檔案內的產品名稱判斷，不看檔名），以及穿隧工具（ngrok、cloudflared、frp、plink、Tor），一律 level 12。",
   "Windows：非 PowerShell 的程序（sftp、SMB、從 USB 複製）把執行檔寫進下載、桌面、文件；執行檔與壓縮檔的下載標記；搭配 Sysmon 15 時，執行檔內容被存成非執行檔名稱（偽裝）。",
   "Linux／macOS：家目錄裡的檔案被設成可執行、/tmp、/var/tmp、/dev/shm 出現執行檔、AppImage／.run／.bin 檔案；有 auditd 時，偵測從這些位置實際執行的程式與腳本。",
+  "Linux：從建置或測試工具自己的暫存目錄執行程式（pytest、go-build、cargo 等，與 906234 對檔案列出的相同）降為 level 3（906237）；在暫存目錄建立的 Python 虛擬環境中，數百 bytes 的 pip／wheel 入口腳本降為 level 3（906238），同名但體積正常的真實程式維持 level 10。",
   "核准工具：加進 etc/lists/jt-approved-portable（以原始檔名或完整路徑），核准後降為 level 3，遠端控制與穿隧規則也會放過該工具。",
   "部分規則需要管理端無法代勞的 agent 端設定：Windows 的 Sysmon 過濾條件、Linux 的 auditd、以及把 agent 加入 portable-detect 群組。「部署說明」列出每一步與檢查方式。",
   "906160-906167 調校 Wazuh 內建的 Sysmon 檔案建立偵測，而不是重複寫一份。906167 修正內建規則 92213：它的副檔名比對沒有結尾錨點，把 .json 當成 .js，30 天內它的 level 15 告警有 82% 根本不是執行檔。",
   "3.0 起 Linux 規則各自帶路徑條件。舊的共用父規則 906200 會讓沒有子規則命中的事件停在 level 1，等於把 /root、/home、/tmp 的內建檔案完整性告警全部靜音；它已退役，不得再出現。",
-  "內建規則 92213（level 15）底下再處理兩種固定形狀：NSIS 安裝程式把外掛解到 Temp\\nsXXXX.tmp 降為 level 3（906125）；PowerShell Add-Type 在 Temp 編譯 8 碼檔名的 DLL 降為 level 6（906126）—— 看得到但不寄信，因為惡意的 PowerShell 也會用 Add-Type。",
+  "內建規則 92213（level 15）底下的固定形狀：NSIS 安裝程式把外掛解到 Temp\\nsXXXX.tmp 降為 level 3（906125）；PowerShell Add-Type 在 Temp 編譯 8 碼檔名的 DLL 降為 level 6（906126；以 SYSTEM 執行的同一件事為 906129）—— 看得到但不寄信，因為惡意的 PowerShell 也會用 Add-Type；git 把 repository 簽出到 Temp 為 level 3（906127），從裡面執行任何東西都會被 906102 抓到；透過 SSH 上傳到 Temp 的腳本或執行檔為 level 10（906128）。",
   "Windows：Wazuh agent 只在啟動時訂閱一次事件通道。Microsoft Defender 每次開機與平台更新都會重建自己的通道，Sysmon 升級時也一樣，之後這些事件就默默地不再送到 manager。套件附有一支監看腳本，遇到這種情形會重啟 agent 並以規則 906190 回報；安裝方式見部署指南。"
  ],
  "author": "Jason Tools",
@@ -28,13 +30,13 @@
    "type": "rule",
    "name": "zz-906100-jt_portable_rules.xml",
    "dest": "etc/rules/zz-906100-jt_portable_rules.xml",
-   "sha256": "91489f9969bb97cf35943902b79f1df7b1a0ef7952a4341b34df061408300560"
+   "sha256": "74ab0d6808085e5b07d65c82c400662e25a6512c00e2d988100cb90a66b0353e"
   },
   {
    "type": "rule",
    "name": "zz-906200-jt_portable_nix_rules.xml",
    "dest": "etc/rules/zz-906200-jt_portable_nix_rules.xml",
-   "sha256": "8a90b61e3bb5d523e33a3e2a723485fdeb74ed5d4c632bcd95f06a02c326ce97"
+   "sha256": "bb9834b8298bc4ae641bbf0eb45cccf24eac86e1757d0b61439d8b185a3a1069"
   },
   {
    "type": "list",
@@ -53,14 +55,16 @@
  ],
  "notes": [
   "Windows: alerts when a program runs from a user folder, the user profile root, a custom folder in the profile, the user or system Temp directory, ProgramData, a non-system drive or a network share, and when it is run directly from inside an archive.",
+  "Windows: a program run from a folder inside C:\\Windows that ordinary users can write to (Tasks, tracing, spool\\drivers\\color and the rest of the published AppLocker-bypass list) is a level 12 (906174). Nothing legitimate runs from those folders, and approving a tool does not lower it there.",
   "Windows: a portable remote-access tool (AnyDesk, RustDesk, TeamViewer QuickSupport and others, recognised by the product name in the file, not its file name) or a tunnelling tool (ngrok, cloudflared, frp, plink, Tor) run from those places is a level 12.",
   "Windows: executables written into Downloads, Desktop or Documents by anything other than PowerShell (sftp, SMB, a copy from USB), download marks on executables and archives, and, with Sysmon 15, executable content saved under a non-executable name.",
   "Linux and macOS: files made executable in a home directory, executables appearing in /tmp, /var/tmp or /dev/shm, AppImage/.run/.bin files, and with auditd, programs and scripts actually run from those places.",
+  "Linux: programs run from a build or test tool's own temporary directory (pytest, go-build, cargo and the others 906234 already lists for files) drop to level 3 (906237), and a Python virtual environment's pip and wheel entry points created in a temporary directory drop to level 3 when they are a few hundred bytes (906238); a real program under those names stays level 10.",
   "Approve a tool by adding it to etc/lists/jt-approved-portable (by its original file name, or by full path); approved runs drop to level 3. Approval also silences the remote-access and tunnelling rules for that tool.",
   "Several rules depend on agent-side configuration the manager cannot apply for you: Sysmon filters on Windows, auditd on Linux, and assigning agents to the portable-detect group. The deployment guide lists each step and how to check it.",
   "Rules 906160-906167 tune Wazuh's own Sysmon file-creation detections instead of duplicating them. 906167 corrects built-in rule 92213, whose extension match has no end anchor and so treats .json as .js: 82 per cent of its level 15 alerts in thirty days were not executables.",
   "Since 3.0 every Linux rule carries its own path condition. The old shared parent, 906200, ended unmatched events at level 1, which silently suppressed every built-in file-integrity alert under /root, /home and /tmp; it is retired and must not come back.",
-  "Two more fixed shapes under the built-in rule 92213 (level 15): an NSIS installer unpacking its plug-ins into Temp\\nsXXXX.tmp is level 3 (906125), and PowerShell Add-Type compiling an 8-character DLL into Temp is level 6 (906126) — visible, not mailed, because malicious PowerShell uses Add-Type too.",
+  "Fixed shapes under the built-in rule 92213 (level 15): an NSIS installer unpacking its plug-ins into Temp\\nsXXXX.tmp is level 3 (906125); PowerShell Add-Type compiling an eight-character DLL into Temp is level 6 (906126, and 906129 for the same compile running as SYSTEM) — visible, not mailed, because malicious PowerShell uses Add-Type too; git checking out a repository into Temp is level 3 (906127), since running anything from it is caught by 906102; a script or executable uploaded over SSH into Temp is level 10 (906128).",
   "Windows: the Wazuh agent subscribes to an event channel only once, when it starts. Microsoft Defender re-creates its channel at every boot and platform update, and Sysmon does the same when upgraded, after which their events silently stop reaching the manager. The pack ships a watchdog script that restarts the agent when that happens and reports it as rule 906190; the deployment guide shows how to install it."
  ],
  "agent_group": {

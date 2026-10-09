@@ -26,7 +26,7 @@
 
   ── 模組對照 ──
     A  906100-906109  Sysmon Process Create（EID 1）── 位置
-       906168-906173  A 項的排除與延伸（壓縮檔內執行、家目錄自建資料夾）
+       906168-906174  A 項的排除與延伸（壓縮檔內執行、家目錄自建資料夾、C:\Windows 內可寫入的資料夾）
     B  906110-906119  AppLocker 稽核（EID 8003／8004）        ※ 可獨立停用
     C  906120-906129  FIM 檔案落地 ＋ Sysmon EID 15
     D  906130-906139  定期主動盤點（NDJSON）
@@ -298,10 +298,19 @@
     <group>jt_portable,false_positive,</group>
   </rule>
 
+  <!--
+    Defender 平台／特徵碼更新的暫存執行檔。2026-10-09 依正式資料補齊三種漏掉的形狀
+    （一週 5 筆 level 10）：Windows 11 改用 C:\Windows\SystemTemp；GUID 後面直接接
+    MpCommU（沒有分隔符號）；mpam-d.exe／mpam-fe.exe 這類更新包本身。
+    同時加上 integrityLevel=System：C:\Windows\Temp 一般使用者可以寫入，原本只看路徑，
+    放一個同名檔就能落在 level 0。更新程式一律以 SYSTEM 執行；integrityLevel 的值
+    不隨語系改變，帳號名稱（NT AUTHORITY\SYSTEM）會。
+  -->
   <rule id="906168" level="0">
     <if_sid>906104</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+Temp\\+[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\\+(MpSigStub|MpRecovery)\.exe$</field>
-    <description>Excluded: Microsoft Defender platform update staging</description>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+(System)?Temp\\+[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}(MpCommU)?\\+(MpSigStub|MpRecovery|mpam-d|mpam-fe|mpam-fex64|mpas-d|mpas-fe|mpav-d|mpav-fe)\.exe$</field>
+    <field name="win.eventdata.integrityLevel" type="pcre2">^System$</field>
+    <description>Excluded: Microsoft Defender platform or signature update staging</description>
     <options>no_full_log</options>
     <group>jt_portable,false_positive,</group>
   </rule>
@@ -312,6 +321,25 @@
     <if_sid>906104</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+Temp\\+\{[0-9A-F-]{36}\}\\+\.(cr|be)\\+[^\\]+\.exe$</field>
     <description>WiX Burn installer running its clean-room copy - $(win.eventdata.image)</description>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+  <!--
+    C:\Windows 底下一般使用者可以寫入的資料夾（2026-10-09 新增）。
+    它們在 Windows 目錄之內，所以「Windows 目錄可執行」的 AppLocker／SRP 路徑規則會放行，
+    而 Users 群組又能在裡面建立檔案 —— 公開的 AppLocker 繞過清單把它們列為標準手法。
+    正常軟體不會從這裡執行程式：color 放色彩設定檔、Tasks 放排程定義、tracing 放追蹤記錄，
+    所以直接給 level 12。C:\Windows\Temp 不在此列，由 906104 處理。
+    刻意不掛核准清單（906140-906142）：已核准的工具從這些目錄執行，一樣可疑。
+  -->
+  <rule id="906174" level="12">
+    <if_sid>61603</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+(Tasks|tracing|Registration\\+CRMLog|(System32|SysWOW64)\\+(Tasks(_Migrated)?|FxsTmp|com\\+dmp|Microsoft\\+Crypto\\+RSA\\+MachineKeys|spool\\+(drivers\\+color|PRINTERS|SERVERS)))\\+</field>
+    <description>[HIGH] Program run from a user-writable folder inside the Windows directory, a known AppLocker bypass - $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1036.005</id>
+      <id>T1204.002</id>
+    </mitre>
     <group>jt_portable_exec,</group>
   </rule>
 
@@ -397,7 +425,7 @@
      公司若正式使用 RustDesk 這類工具，把它加進 jt-approved-portable 即可。
   -->
   <rule id="906175" level="12">
-    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171</if_sid>
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174</if_sid>
     <field name="win.eventdata.product" type="pcre2">(?i)\b(AnyDesk|TeamViewer|RustDesk|ScreenConnect|Splashtop|NetSupport|UltraViewer|Supremo|Ammyy|Radmin|Remote Utilities|DWAgent|MeshCentral|Mesh Agent|Tactical RMM|RemotePC|Zoho Assist|LogMeIn|Atera|Chrome Remote Desktop|Parsec)\b</field>
     <list field="win.eventdata.originalFileName" lookup="not_match_key">etc/lists/jt-approved-portable</list>
     <list field="win.eventdata.image" lookup="not_match_key">etc/lists/jt-approved-portable</list>
@@ -410,7 +438,7 @@
   </rule>
 
   <rule id="906176" level="12">
-    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171</if_sid>
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)(\\+(ngrok|cloudflared|frpc|frps|chisel|plink|ligolo[^\\]*|bore|localtonet|zrok|tor)\.exe$|\\+Tor Browser\\+)</field>
     <list field="win.eventdata.originalFileName" lookup="not_match_key">etc/lists/jt-approved-portable</list>
     <list field="win.eventdata.image" lookup="not_match_key">etc/lists/jt-approved-portable</list>
@@ -600,10 +628,17 @@
       PowerShell Add-Type  csc.exe 把即時編譯的 C# 寫成 Temp\<8 碼亂數>.dll
     兩者都比對工具自己產生的路徑形狀。Add-Type 給 level 6 而不是更低：惡意的
     PowerShell 也會用它，留下看得到的紀錄，只是不寄信。
+
+    ★ 2026-10-09 修正兩個形狀：
+      NSIS 的暫存目錄是 "ns" ＋ 一個隨機字母 ＋ GetTempFileName 的 1-4 位十六進位
+      （NSIS 原始碼 my_GetTempFileName；一週正式資料 20 種名稱全部符合）。原本寫成
+      3-6 個任意字元：實際名稱都接得住，但只有一位十六進位的（nsa5.tmp）會漏，
+      而且任何 ns 開頭的 3-6 字元目錄都算數。
+      新版 .NET Framework 的 CodeDom 改在同名子目錄裡編譯：Temp\5vcfss1u\5vcfss1u.dll。
   -->
   <rule id="906125" level="3">
     <if_sid>92213</if_sid>
-    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+AppData\\+Local\\+Temp\\+ns[a-z0-9]{3,6}\.tmp\\+(System|nsDialogs|nsExec|nsisdl|INetC|NSISdl|StartMenu|UserInfo|LangDLL|Banner|BgImage|InstallOptions|AdvSplash|Splash|Math|nsProcess|registry|ExecDos|nsArray|ShellExecAsUser|UAC)\.dll$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+AppData\\+Local\\+Temp\\+ns[a-z][0-9a-f]{1,4}\.tmp\\+(System|nsDialogs|nsExec|nsisdl|INetC|NSISdl|StartMenu|UserInfo|LangDLL|Banner|BgImage|InstallOptions|AdvSplash|Splash|Math|nsProcess|registry|ExecDos|nsArray|ShellExecAsUser|UAC)\.dll$</field>
     <description>NSIS installer unpacking its own plug-in into Temp - $(win.eventdata.targetFilename)</description>
     <options>no_full_log</options>
     <group>jt_portable,false_positive,</group>
@@ -612,9 +647,53 @@
   <rule id="906126" level="6">
     <if_sid>92213</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)\\+(csc|powershell|pwsh)\.exe$</field>
-    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+AppData\\+Local\\+Temp\\+[a-z0-9]{8}\.dll$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+AppData\\+Local\\+Temp\\+(([a-z0-9]{8})\\+\2|[a-z0-9]{8})\.dll$</field>
     <description>PowerShell Add-Type compiling to a temporary DLL - $(win.eventdata.targetFilename) by $(win.eventdata.image)</description>
     <group>jt_portable,</group>
+  </rule>
+
+  <!--
+    同一件事以 SYSTEM 執行時（Intune／SCCM 的部署腳本、以 SYSTEM 跑的排程工作）：
+    暫存目錄是 C:\Windows\SystemTemp，事件因此落在 92205（level 9）與 92217（level 6），
+    而不是 92213。2026-10-09 實測：dll 與 cmdline 各一筆 92205、dll 一筆 92217。
+    與 906126 同樣給 level 6。
+  -->
+  <rule id="906129" level="6">
+    <if_sid>92205,92217</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\+(csc|powershell|pwsh)\.exe$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Windows\\+(System)?Temp\\+(([a-z0-9]{8})\\+\3|[a-z0-9]{8})\.(dll|cmdline|0\.cs|out|err|tmp|pdb)$</field>
+    <description>PowerShell Add-Type compiling to a temporary DLL as SYSTEM - $(win.eventdata.targetFilename) by $(win.eventdata.image)</description>
+    <group>jt_portable,</group>
+  </rule>
+
+  <!--
+    另外兩個寫入者（2026-10-09，依一週正式資料：92213 的 137 筆 level 15 中約 50 筆）：
+      git.exe        把 repository 簽出到 Temp，裡面的 .js／.ps1／.exe 每個都是一筆 level 15
+      sftp-server    透過 SSH 把腳本或執行檔傳進 Temp（管理者部署、Ansible 的 SSH 連線都是這樣）
+    git 降為 level 3：落地本身不是證據，真的執行時 906102 會以 level 10 告警。
+    SSH 上傳給 level 10，與 906181（透過遠端傳輸寫入的執行檔內容）一致：
+    遠端放進來的程式值得看見，但 level 15 是留給幾乎確定的入侵。
+    兩條都只看可執行副檔名，與 906167（非可執行副檔名，level 0）互斥 ——
+    同層規則誰先評估不可預期，條件必須不重疊。
+  -->
+  <rule id="906127" level="3">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\+git\.exe$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\.(exe|com|dll|vbs|js|bat|cmd|pif|wsh|ps1|msi|vbe)$</field>
+    <description>git checked out a script or executable into Temp - $(win.eventdata.targetFilename)</description>
+    <options>no_full_log</options>
+    <group>jt_portable,</group>
+  </rule>
+
+  <rule id="906128" level="10">
+    <if_sid>92213</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\+(sftp-server|scp)\.exe$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\.(exe|com|dll|vbs|js|bat|cmd|pif|wsh|ps1|msi|vbe)$</field>
+    <description>[WARN] Script or executable uploaded over SSH into Temp - $(win.eventdata.targetFilename)</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+    <group>jt_portable_file,</group>
   </rule>
 
   <!--

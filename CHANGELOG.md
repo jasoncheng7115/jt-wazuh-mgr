@@ -4,6 +4,41 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.11.4 (2026-10-09)
+
+**jt-portable-detect 3.3**, tuned from four days of production alerts. Every
+change below was checked with a real event on a host, or with wazuh-logtest for
+the audit case, together with a near miss that must still alert.
+
+- **The built-in rule 92213 raised 137 level 15 alerts in four days.** Level 15
+  is the highest level Wazuh has. Three ordinary writers accounted for about
+  fifty of them, and each now has its own rule:
+  - git checking out a repository into Temp is level 3 (906127). Running
+    anything from that checkout is still caught by 906102.
+  - A script or executable uploaded over SSH into Temp is level 10 (906128),
+    the same level as 906181.
+  - PowerShell Add-Type running as SYSTEM compiles into `C:\Windows\SystemTemp`.
+    It is now level 6 (906129), the same as for a user.
+- **906126 (Add-Type) missed current .NET Framework**, which compiles in a
+  subdirectory of the same name (`Temp\1sqktor0\1sqktor0.dll`). Those compiles
+  stayed at level 15. 906125 (NSIS) now matches NSIS's exact temporary
+  directory: `ns`, a letter, then one to four hex digits.
+- **906168 (Defender update staging) missed three current shapes**, which caused
+  five level 10s in a week: `C:\Windows\SystemTemp`, a GUID followed directly
+  by `MpCommU`, and the `mpam-*` update packages. The rule now also requires
+  System integrity. `C:\Windows\Temp` is writable by ordinary users, so a file
+  with the right name there used to be enough to be silenced.
+- **New: running a program from a user-writable folder inside `C:\Windows`** is
+  level 12 (906174). This covers Tasks, tracing, `spool\drivers\color` and the
+  rest of the published AppLocker-bypass list. The approval list does not lower
+  it.
+- **Linux:** execution from a build or test tool's own temporary directory is
+  now level 3 (906237). It uses the same directory list as 906234. One host's
+  test suite had produced all 96 of 906211's level 12s in four days. The `pip`
+  and `wheel` entry points of a Python virtual environment created in a
+  temporary directory are now level 3 when they are a few hundred bytes
+  (906238). A real program under those names stays at level 10.
+
 ## v1.11.3 (2026-10-08)
 
 - **"Connection Lost" right after opening the Wazuh dashboard.** Chrome and

@@ -4,6 +4,30 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.11.4（2026-10-09）
+
+**jt-portable-detect 3.3**，依四天的正式告警調整。以下每一項都在主機上用真實事件驗證過
+（audit 那項用 wazuh-logtest），也都驗證了「仍然必須告警」的反例。
+
+- **內建規則 92213 四天發了 137 筆 level 15。** level 15 是 Wazuh 的最高等級。其中約 50 筆
+  來自三種一般的寫入者，現在各有自己的規則：
+  - git 把 repository 簽出到 Temp：level 3（906127）。從簽出的內容執行任何東西，仍會被 906102 抓到。
+  - 透過 SSH 上傳到 Temp 的腳本或執行檔：level 10（906128），與 906181 同等級。
+  - 以 SYSTEM 執行的 PowerShell Add-Type 會在 `C:\Windows\SystemTemp` 編譯，現在是 level 6
+    （906129），與一般使用者的情況相同。
+- **906126（Add-Type）漏了新版 .NET Framework**：新版改在同名子目錄裡編譯
+  （`Temp\1sqktor0\1sqktor0.dll`），這些編譯一直停在 level 15。906125（NSIS）改為比對 NSIS
+  暫存目錄的確切形狀：`ns`、一個字母、再加 1-4 位十六進位。
+- **906168（Defender 更新暫存）漏了三種現行形狀**，一週造成 5 筆 level 10：`C:\Windows\SystemTemp`、
+  GUID 後面直接接 `MpCommU`，以及 `mpam-*` 更新包。規則同時改為要求 System 完整性：
+  `C:\Windows\Temp` 一般使用者可以寫入，原本在那裡放一個同名檔就會被靜音。
+- **新增：從 `C:\Windows` 底下一般使用者可寫入的資料夾執行程式**為 level 12（906174），
+  涵蓋 Tasks、tracing、`spool\drivers\color` 等公開的 AppLocker 繞過清單。核准清單不會降低它。
+- **Linux**：從建置或測試工具自己的暫存目錄執行程式，現在是 level 3（906237），目錄清單與 906234
+  相同。一台主機的測試套件曾在四天內產生 906211 全部 96 筆 level 12。在暫存目錄建立的 Python
+  虛擬環境中，數百 bytes 的 `pip`、`wheel` 入口腳本現在是 level 3（906238）；同名但體積正常的
+  真實程式維持 level 10。
+
 ## v1.11.3（2026-10-08）
 
 - **一打開 Wazuh Dashboard，這邊就出現「連線中斷」。** Chrome 與 Edge 對自簽憑證按下的「繼續前往」

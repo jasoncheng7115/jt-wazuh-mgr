@@ -465,6 +465,26 @@
   </rule>
 
   <!--
+    The same build and test toolchain directories as 906234, on the execution
+    side. 906234 silences the files appearing there; this keeps the record of a
+    program actually running from them, at level 3 instead of 12. Measured
+    2026-10-09: all 96 of rule 906211's level 12 alerts in four days on one host
+    were a test suite running its own fixture executables from
+    /tmp/pytest-of-root/pytest-<n>/<test>/bin/ (a fake python3, a fake fc-list).
+    Running from go-build, cargo or pytest temp directories is what those tools
+    do on every invocation.
+
+    Level 3, not 0: the directory names are easy to copy, so the event is kept.
+    The pattern is 906234's, character for character; keep the two in step.
+  -->
+  <rule id="906237" level="3">
+    <if_sid>906211,906213</if_sid>
+    <field name="audit.file.name" type="pcre2">^/(tmp|var/tmp)/(pytest-of-|pytest-|tox-|pip-|virtualenv-|go-build|cargo-|rustc|npm-|yarn--|node-compile-cache|v8-compile-cache|bazel|gradle|maven-|mvn|sbt_|ccache|cmake-|meson-|conan|jenkins|gitlab-runner|actions-runner|buildkite|cabal-|stack-)</field>
+    <description>Program run from a build or test toolchain's own temporary directory - $(audit.file.name)</description>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+  <!--
     Developer tools that install and update themselves into a versioned
     directory under the user's home and then run from there. Measured: all 971
     level 10 alerts rule 906210 raised in thirty days on one host, and through
@@ -527,6 +547,24 @@
     <if_sid>906201,906202,906203,906204</if_sid>
     <field name="sha256" type="pcre2">^e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855$</field>
     <description>Symlink or unreadable file, not a program that could be executed</description>
+  </rule>
+
+  <!--
+    A Python virtual environment created in a temporary directory. Test suites
+    and build tools do this through tempfile, so the directory is the random
+    /tmp/tmpXXXXXXXX that cannot be ignored on the agent without also ignoring
+    every mktemp an attacker would use. What identifies it is the content: the
+    entry points venv writes (pip, pip3, pip3.12, wheel) are scripts of a few
+    hundred bytes (measured: 236). A real program dropped under one of those
+    names is far larger and stays at 906202's level 10. Measured 2026-10-09:
+    the largest source of 906202 on a development host, 4-6 files per run.
+  -->
+  <rule id="906238" level="3">
+    <if_sid>906202</if_sid>
+    <field name="file" type="pcre2">^/(tmp|var/tmp)/[^/]+/bin/(pip[0-9.]*|wheel|easy_install[-0-9.]*)$</field>
+    <field name="size" type="pcre2">^[0-9]{1,3}$</field>
+    <description>Python virtual environment entry point created in a temporary directory - $(file)</description>
+    <group>jt_portable_file,</group>
   </rule>
 
   <!--

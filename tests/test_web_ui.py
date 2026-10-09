@@ -2080,7 +2080,7 @@ class TestShippedPacks(unittest.TestCase):
             ('61613', {'image': b.join(['C:', 'Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe']), 'targetFilename': p('Downloads', 'x.exe')}, []),
             ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'cfg.json')}, ['906167']),
             ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'drop.exe')}, []),
-            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'nsdNC.tmp', 'System.dll'),
+            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'nsd36D2.tmp', 'System.dll'),
                        'image': 'setup.exe'}, ['906125']),
             ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'b0rvrt0j.dll'),
                        'image': b.join(['C:', 'Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'])}, ['906126']),
@@ -2089,6 +2089,42 @@ class TestShippedPacks(unittest.TestCase):
             ('61600', {'eventID': '29', 'image': b.join(['C:', 'Windows', 'System32', 'OpenSSH', 'sftp-server.exe']), 'targetFilename': p('Downloads', 'x.exe')}, ['906181']),
             ('61600', {'eventID': '29', 'image': 'explorer.exe', 'targetFilename': b.join(['E:', 'x.exe'])}, ['906182']),
             ('61600', {'eventID': '29', 'image': 'chrome.exe', 'targetFilename': p('Downloads', 'Unconfirmed 1.crdownload')}, ['906180']),
+            # Defender update staging: every observed shape, and only as SYSTEM
+            ('61603', {'image': b.join(['C:', 'Windows', 'SystemTemp', 'C9C5A7A4-31BF-4DA8-B329-278BC1738C43', 'MpSigStub.exe']),
+                       'integrityLevel': 'System', 'parentImage': 'x'}, ['906168']),
+            ('61603', {'image': b.join(['C:', 'Windows', 'Temp', 'C9C5A7A4-31BF-4DA8-B329-278BC1738C43MpCommU', 'mpam-d.exe']),
+                       'integrityLevel': 'System', 'parentImage': 'x'}, ['906168']),
+            ('61603', {'image': b.join(['C:', 'Windows', 'Temp', 'C9C5A7A4-31BF-4DA8-B329-278BC1738C43', 'MpSigStub.exe']),
+                       'integrityLevel': 'Medium', 'parentImage': 'x'}, ['906104']),
+            # user-writable folders inside C:\Windows
+            ('61603', {'image': b.join(['C:', 'Windows', 'System32', 'spool', 'drivers', 'color', 't.exe']), 'parentImage': 'x'}, ['906174']),
+            ('61603', {'image': b.join(['C:', 'Windows', 'Tasks', 't.exe']), 'parentImage': 'x', 'originalFileName': 'PuTTY'}, ['906174']),
+            ('61603', {'image': b.join(['C:', 'Windows', 'Tasks', 'ngrok.exe']), 'parentImage': 'x'}, ['906176']),
+            ('61603', {'image': b.join(['C:', 'Windows', 'System32', 'whoami.exe']), 'parentImage': 'x'}, []),
+            # NSIS: "ns" + a letter + 1-4 hex digits; .NET's CodeDom in a same-name subdirectory
+            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'nso5.tmp', 'System.dll'), 'image': 'setup.exe'}, ['906125']),
+            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'nsk1F2C.tmp', 'nsDialogs.dll'), 'image': 'setup.exe'}, ['906125']),
+            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'nsk12345.tmp', 'System.dll'), 'image': 'setup.exe'}, []),
+            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', '5vcfss1u', '5vcfss1u.dll'),
+                       'image': b.join(['C:', 'Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'])}, ['906126']),
+            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'abcdefgh', '12345678.dll'),
+                       'image': b.join(['C:', 'Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'])}, []),
+            # the same compile as SYSTEM lands under 92205/92217, in SystemTemp
+            ('92205', {'targetFilename': b.join(['C:', 'Windows', 'SystemTemp', 'h02vqsci', 'h02vqsci.cmdline']),
+                       'image': b.join(['C:', 'Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'])}, ['906129']),
+            ('92217', {'targetFilename': b.join(['C:', 'Windows', 'SystemTemp', 'h02vqsci', 'h02vqsci.dll']),
+                       'image': b.join(['C:', 'Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe'])}, ['906129']),
+            ('92217', {'targetFilename': b.join(['C:', 'Windows', 'SystemTemp', 'h02vqsci', 'h02vqsci.dll']),
+                       'image': 'evil.exe'}, []),
+            # git checking out a repository into Temp; SSH uploads
+            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'repo', 'static', 'js', 'csrf.js'),
+                       'image': b.join(['C:', 'Program Files', 'Git', 'mingw64', 'bin', 'git.exe'])}, ['906127']),
+            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'repo', 'package.json'),
+                       'image': b.join(['C:', 'Program Files', 'Git', 'mingw64', 'bin', 'git.exe'])}, ['906167']),
+            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'deploy_1.ps1'),
+                       'image': b.join(['C:', 'Windows', 'System32', 'OpenSSH', 'sftp-server.exe'])}, ['906128']),
+            ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'notes.txt'),
+                       'image': b.join(['C:', 'Windows', 'System32', 'OpenSSH', 'sftp-server.exe'])}, ['906167']),
             ('60601', {'providerName': 'jt-channel-watchdog', 'eventID': '100'}, ['906190']),
             ('60601', {'providerName': 'SomeApp', 'eventID': '100'}, []),
             ('60602', {'providerName': 'jt-channel-watchdog', 'eventID': '101'}, ['906191']),
@@ -2137,6 +2173,21 @@ class TestShippedPacks(unittest.TestCase):
                 for pat in re.findall(r'<ignore type="sregex">([^<]*)</ignore>', body):
                     with self.subTest(file=n, pattern=pat):
                         self.assertNotRegex(pat, r'[\\()\[\]]')
+
+    def test_build_directories_are_the_same_for_files_and_for_execution(self):
+        """906234 quiets files appearing in a toolchain's temp directory and 906237
+        keeps the record of a program running from one. A directory added to only
+        one of them would leave its executions at level 12 or its files at 10."""
+        path = os.path.join(self.packs_dir, 'jt-portable-detect', 'rules', 'zz-906200-jt_portable_nix_rules.xml')
+        with io.open(path, encoding='utf-8') as fh:
+            body = fh.read()
+
+        def pattern(rid, field):
+            m = re.search(r'<rule id="%s"[^>]*>.*?<field name="%s" type="pcre2">([^<]+)</field>' % (rid, re.escape(field)),
+                          body, re.S)
+            self.assertIsNotNone(m, rid)
+            return m.group(1)
+        self.assertEqual(pattern('906237', 'audit.file.name'), pattern('906234', 'file'))
 
     def test_powershell_scripts_are_ascii(self):
         """Windows PowerShell 5.1 reads a script without a byte-order mark in the

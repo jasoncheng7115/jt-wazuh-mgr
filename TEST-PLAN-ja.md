@@ -16,7 +16,7 @@
 ## すべてを実行する
 
 ```bash
-python3 -m unittest discover -s tests     # 213 件のテスト、完全にオフライン
+python3 -m unittest discover -s tests     # 214 件のテスト、完全にオフライン
 python3 tools/preflight.py                # 21 項目の機械的なリリース前チェック
 
 # システムに Flask が入っていないホストで
@@ -283,6 +283,11 @@ location に何を与えても JSON を通常の `json` としてデコードし
 | ioc | リスト上のアドレスが 404；POST が 200；静的コンテンツのみ；`/16` プレフィックスだけで載っているアドレス；載っていないアドレス | 906040（5）；906023（12）；906041（6）；906040；なし | wazuh-logtest、実際の JSON アクセスログ |
 | ioc | リスト上のアドレスからの sshd ログイン成功；載っていないアドレスから；リスト上のアドレスからの失敗 | 906050（14）；5715；5760 | wazuh-logtest |
 | ioc | ワーカー上で、マスターがリストを書き換えた | 5 分以内に 1 回再読み込み、その後は静か | `--reload-if-stale` を手で 3 回実行 |
+| portable-detect | Defender の更新プログラムが SYSTEM で `C:\Windows\SystemTemp\<GUID>\` から実行される；同じファイル名を Medium 整合性で実行 | 906168（0）；906104（10） | 単体テスト（本番イベントの値を使用） |
+| portable-detect | `C:\Windows\Tasks\` からプログラムを実行；`spool\drivers\color\` から実行 | 906174（12）；後者は Defender 自身がブロック（62123） | 実イベント |
+| portable-detect | ユーザーとして SSH でログイン：Temp へスクリプトをアップロード、そこへリポジトリを clone、Add-Type；SYSTEM で再度 Add-Type | 906128（10）；906127（3）；906126（6）；906129（6）—— 92213（15）は出ない | 実イベント |
+| portable-detect | `/tmp/pytest-of-root/...` から pytest のテスト用実行ファイルを実行；同じイベントのパスを `/tmp/x9/` に変更 | 906237（3）；906211（12） | 実際の結合済み audit イベントで wazuh-logtest |
+| portable-detect | `/tmp/tmpXXXX/bin/` に 234 バイトの `pip` と 27 KB の `wheel` を作成 | 906238（3）；906202（10） | 実イベント（FIM） |
 | リストを持つパック | 夜間更新後のリスト | どのノードでも `.cdb` がテキストより新しい | 各ノードで `ls -l etc/lists` |
 
 ---

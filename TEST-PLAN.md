@@ -16,7 +16,7 @@ the screen. None of them substitutes for another.
 ## Running everything
 
 ```bash
-python3 -m unittest discover -s tests     # 213 tests, fully offline
+python3 -m unittest discover -s tests     # 214 tests, fully offline
 python3 tools/preflight.py                # 21 mechanical pre-release checks
 
 # on a host without a system Flask
@@ -286,6 +286,11 @@ is usually the node processing Windows agents.
 | ioc | a listed address gets a 404; a POST served 200; static content; an address listed only by a `/16` prefix; an unlisted address | 906040 (5); 906023 (12); 906041 (6); 906040; nothing | wazuh-logtest with a real JSON access line |
 | ioc | sshd login success from a listed address; from an unlisted one; a failure from a listed one | 906050 (14); 5715; 5760 | wazuh-logtest |
 | ioc | on a worker, the master rewrites the list | one reload within five minutes, then silence | `--reload-if-stale` run by hand three times |
+| portable-detect | Defender's update binaries under `C:\Windows\SystemTemp\<GUID>\` running as SYSTEM; the same file name at Medium integrity | 906168 (0); 906104 (10) | suite, with the production events' values |
+| portable-detect | a program run from `C:\Windows\Tasks\`; from `spool\drivers\color\` | 906174 (12); Defender blocks the second itself (62123) | real event |
+| portable-detect | logged in over SSH as the user: a script uploaded into Temp, a repository cloned there, Add-Type; Add-Type again as SYSTEM | 906128 (10); 906127 (3); 906126 (6); 906129 (6) -- and no 92213 (15) | real event |
+| portable-detect | a pytest fixture run from `/tmp/pytest-of-root/...`; the same event with the path changed to `/tmp/x9/` | 906237 (3); 906211 (12) | wazuh-logtest with a real joined audit event |
+| portable-detect | a 234-byte `pip` and a 27 KB `wheel` created in `/tmp/tmpXXXX/bin/` | 906238 (3); 906202 (10) | real event (FIM) |
 | any pack with a list | the list after the nightly update | `.cdb` newer than the text on every node | `ls -l etc/lists` on each node |
 
 ---
