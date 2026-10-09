@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.11.5
+# jt-wazuh-mgr v1.12.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.11.5-blue)
+![Version](https://img.shields.io/badge/version-1.12.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -87,7 +87,8 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 - Jason Tools 維護的**偵測規則系列目錄**，可直接從介面安裝
 - 每個套件以 manifest 打包規則、解碼器與 CDB 清單；點入可看到會安裝哪些檔案、裝到哪裡、佔用哪些規則 ID
 - 安裝有保護：**規則 ID 衝突偵測**、覆蓋前先備份、`wazuh-analysisd -t` 驗證，**任一步失敗整包回滾**
-- 移除會還原被覆蓋的原檔，並**拒絕刪除你安裝後修改過的檔案**
+- 新版發布後可直接**更新**已安裝的套件：先顯示計畫，列出每個檔案會新增、更新、移除，或因為你改過而保留，再以同樣的備份、驗證與回滾執行。站台維護的清單（核准清單、內部網段、由更新程式填入的清單）永遠不會被取代；新增的檔案會送進已存在的 agent 群組；也會列出從你的版本以來新增的 agent 端步驟
+- 移除會還原被覆蓋的原檔，**拒絕刪除你修改過的規則檔**，並保留站台維護的清單
 - 需要管理端以外設定（Sysmon 過濾條件、auditd、agent 群組、syslog 轉送）的套件附**部署說明**：逐步編號、可複製的指令、每一步的確認方式，以及可檢視或下載的 agent 端檔案
 - 檔案是手動複製進去的套件會顯示為**已安裝（未登記）**，不再被判成和自己衝突
 - 內建套件：可攜式程式偵測（Windows/Linux/macOS）、IP 威脅情資、惡意程式雜湊比對、Zimbra 偵測、Zenarmor（OPNsense）、AdGuard Home、fail2ban、可讀的告警摘要信

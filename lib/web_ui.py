@@ -134,6 +134,10 @@ SESSION_COOKIE_TLS = '__Host-jtwm_session'
 # certificate it serves (the file names differ between Wazuh versions).
 DASHBOARD_CONF = '/etc/wazuh-dashboard/opensearch_dashboards.yml'
 
+# The rule-pack catalogue shipped with the tool. Module level so the test suite
+# can point it at a scratch catalogue holding two versions of one pack.
+PACKS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'packs')
+
 
 def configure_session_cookie(app, tls: bool) -> None:
     """Make the session cookie match the transport.
@@ -703,6 +707,12 @@ HTML_TEMPLATE = '''
         .pack-step-title { font-weight: bold; color: #fff; font-size: 15px; }
         .pack-chip { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid #3a4a6a; color: #9aa3b5; }
         .pack-chip-req { border-color: #fd7e14; color: #fd7e14; }
+        .pack-chip-new { border-color: #4fc3f7; color: #4fc3f7; }
+        .pack-act { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid #3a4a6a; color: #c8cfdc; white-space: nowrap; }
+        .pack-act-add, .pack-act-update { border-color: #28a745; color: #5fd47a; }
+        .pack-act-replace, .pack-act-remove { border-color: #fd7e14; color: #fd7e14; }
+        .pack-act-modified, .pack-act-remove-modified { border-color: #e94560; color: #ff7b93; }
+        .pack-choice { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; cursor: pointer; }
         .pack-step-body { margin: 4px 0 8px; }
         .pack-code { position: relative; margin: 8px 0; }
         .pack-code pre { background: #060a14; border: 1px solid #23304d; border-radius: 4px; padding: 10px 12px; margin: 0; overflow-x: auto; font-size: 13px; line-height: 1.5; color: #cfe3ff; white-space: pre; }
@@ -6677,6 +6687,9 @@ HTML_TEMPLATE = '''
                     (p.has_setup
                         ? '<button class="btn btn-sm" style="margin-left:6px;" onclick="showPackSetup(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-settings"/></svg>Setup guide</button>'
                         : '') +
+                    (p.installed && p.update_available
+                        ? '<button class="btn btn-sm btn-warning" style="margin-left:6px;" onclick="updatePack(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-refresh"/></svg><span>Update</span></button>'
+                        : '') +
                     (p.installed
                         ? '<button class="btn btn-sm btn-danger" style="margin-left:6px;" onclick="uninstallPack(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-trash"/></svg>Remove</button>'
                         : '<button class="btn btn-sm btn-success" style="margin-left:6px;" onclick="installPack(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-download"/></svg>Install</button>');
@@ -6702,10 +6715,11 @@ HTML_TEMPLATE = '''
             steps.forEach((st, i) => {
                 const fid = 'packfile-' + i;
                 html += '<div class="pack-step">' +
-                    '<div class="pack-step-head"><span class="pack-step-no">' + (i + 1) + '</span>' +
+                    '<div class="pack-step-head"><span class="pack-step-no">' + (st.number || (i + 1)) + '</span>' +
                     '<span class="pack-step-title">' + escapeHtml(packLang(st.title, st.title_zh)) + '</span>' +
                     '<span class="pack-chip">' + escapeHtml(PACK_PLATFORM_LABEL[st.platform] || st.platform || '') + '</span>' +
                     (st.required ? '<span class="pack-chip pack-chip-req">Required</span>' : '<span class="pack-chip">Optional</span>') +
+                    (st.since ? '<span class="pack-chip pack-chip-new">New in ' + escapeHtml(st.since) + '</span>' : '') +
                     '</div>' +
                     '<div class="pack-step-body">' + escapeHtml(packLang(st.body, st.body_zh)) + '</div>';
                 if (st.code) {
@@ -6880,6 +6894,9 @@ HTML_TEMPLATE = '''
             const footer = document.getElementById('modalFooter');
             if (footer) {
                 footer.innerHTML =
+                    (d.installed && d.state && d.state.version !== m.version
+                        ? '<button class="btn btn-warning" onclick="closeModal();updatePack(\\'' + escapeHtml(packId) + '\\')"><svg class="icon"><use href="#icon-refresh"/></svg><span>Update</span></button>'
+                        : '') +
                     (d.installed
                         ? '<button class="btn btn-danger" onclick="closeModal();uninstallPack(\\'' + escapeHtml(packId) + '\\')"><svg class="icon"><use href="#icon-trash"/></svg>Remove</button>'
                         : '<button class="btn btn-success" onclick="closeModal();installPack(\\'' + escapeHtml(packId) + '\\')"><svg class="icon"><use href="#icon-download"/></svg>Install</button>') +
@@ -6903,6 +6920,140 @@ HTML_TEMPLATE = '''
                 return;
             }
             showToast(result.message || 'Installed', 'success', 8000);
+            refreshPacks();
+        }
+
+        // ---------- Updating an installed pack ----------
+        // The plan comes first: what happens to every file, which ones the site
+        // has changed, and which agent-side steps are new. Nothing is written
+        // until the operator presses Update.
+        const PACK_ACTION_LABEL = {
+            'add': 'Will be added',
+            'update': 'Will be updated',
+            'replace': 'Replaces a file of the same name (backed up)',
+            'keep': 'Site data, left as it is',
+            'modified': 'Changed on this manager',
+            'remove': 'No longer in this version, will be removed',
+            'remove-modified': 'No longer in this version, changed on this manager',
+            'left': 'Site data from an earlier version, left as it is',
+        };
+
+        function packPlanTable(rows) {
+            return '<div style="overflow-x:auto;"><table class="data-table" style="width:100%;font-size:13px;"><tbody>' +
+                rows.map(r => '<tr><td style="padding:5px 10px;width:1%;"><span class="pack-act pack-act-' + escapeHtml(r.action) + '">' +
+                    escapeHtml(PACK_ACTION_LABEL[r.action] || r.action) + '</span></td>' +
+                    '<td style="padding:5px 10px;font-family:monospace;word-break:break-all;">' + escapeHtml(r.name) + '</td></tr>').join('') +
+                '</tbody></table></div>';
+        }
+
+        async function updatePack(packId) {
+            showModal('Update pack', '<div class="loading"><div class="spinner"></div>Loading...</div>',
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Cancel</button>', true);
+            const plan = await api('/packs/' + encodeURIComponent(packId) + '/update');
+            const body = document.getElementById('modalBody');
+            if (!body) return;
+            if (!plan || plan.error) {
+                body.innerHTML = '<div class="alert alert-error">' + escapeHtml((plan && plan.error) || 'Failed to load') + '</div>';
+                return;
+            }
+            document.getElementById('modalTitle').textContent = packId + '  ' + plan.from + ' → ' + plan.to;
+            let html = '<div class="pack-detail">';
+            if (plan.direction === 'down') {
+                html += '<div class="alert alert-warning">The catalogue holds an older version than the one installed. Updating goes back to it.</div>';
+            } else if (plan.direction === 'same') {
+                html += '<div class="alert alert-info">This version is already installed. Updating again puts back missing files and the pack\\'s own files as this version ships them.</div>';
+            }
+            if ((plan.conflicts || []).length) {
+                html += '<div class="alert alert-error"><div>Rule ID conflict with rules in other files:</div><div style="font-family:monospace;">' +
+                    plan.conflicts.slice(0, 10).map(c => escapeHtml(c.rule) + ' (' + escapeHtml(c.file) + ')').join(', ') + '</div></div>';
+            }
+            const changes = (plan.files || []).filter(f => f.action !== 'same');
+            const unchanged = (plan.files || []).length - changes.length;
+            html += '<h4 class="pack-h">Files on the manager</h4>';
+            html += changes.length ? packPlanTable(changes.map(f => ({ action: f.action, name: f.dest })))
+                                   : '<p class="pack-lead">Nothing to change.</p>';
+            if (unchanged) html += '<p class="pack-lead"><span>Unchanged files:</span> ' + unchanged + '</p>';
+            const lists = plan.lists || {};
+            if ((lists.declare || []).length) {
+                html += '<p class="pack-lead"><span>CDB lists to declare:</span> <code>' + lists.declare.map(escapeHtml).join('</code>, <code>') + '</code></p>';
+            }
+            if ((lists.undeclare || []).length) {
+                html += '<p class="pack-lead"><span>CDB lists to undeclare:</span> <code>' + lists.undeclare.map(escapeHtml).join('</code>, <code>') + '</code></p>';
+            }
+            if (plan.group) {
+                const gchanges = (plan.group.files || []).filter(g => g.action !== 'same');
+                html += '<h4 class="pack-h"><span>Agent group</span> <code>' + escapeHtml(plan.group.name) + '</code></h4>';
+                html += gchanges.length
+                    ? packPlanTable(gchanges.map(g => ({ action: g.action, name: g.file }))) +
+                      '<p class="pack-lead">Agents in this group receive the changed files and reload their configuration.</p>'
+                    : '<p class="pack-lead">Nothing to change.</p>';
+            }
+            if ((plan.needs_choice || []).length) {
+                html += '<div class="alert alert-warning"><div>These files were changed on this manager since the pack wrote them. They are left as they are unless you choose otherwise.</div>' +
+                    '<div style="font-family:monospace;margin-top:6px;">' + plan.needs_choice.map(escapeHtml).join('<br>') + '</div>' +
+                    '<label class="pack-choice"><input type="checkbox" id="packOverwrite"><span>Replace them with this version (a backup is kept)</span></label></div>';
+            }
+            if ((plan.setup_new || []).length) {
+                html += '<h4 class="pack-h">Agent-side steps new in this version</h4>' +
+                    '<p class="pack-lead">The manager cannot do these for you. Do them on the hosts after updating.</p>' +
+                    renderPackSetup(packId, plan.setup_new);
+            }
+            body.innerHTML = html + '</div>';
+            const footer = document.getElementById('modalFooter');
+            if (footer) {
+                footer.innerHTML =
+                    '<button class="btn btn-warning" id="packUpdateGo" onclick="applyPackUpdate(\\'' + escapeHtml(packId) + '\\')"><svg class="icon"><use href="#icon-refresh"/></svg><span>Update</span></button>' +
+                    '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Cancel</button>';
+            }
+        }
+
+        async function applyPackUpdate(packId, opts) {
+            // read the choice before any confirmation replaces the dialog
+            if (!opts) {
+                const box = document.getElementById('packOverwrite');
+                opts = { overwrite_modified: !!(box && box.checked) };
+            }
+            showToast('Updating...', 'info');
+            const r = await api('/packs/' + encodeURIComponent(packId) + '/update', 'POST', opts);
+            if (!r || r.error) {
+                if (r && r.conflicts) {
+                    if (await showConfirm('Rule ID conflict: ' + r.conflicts.slice(0, 8).join(', ') + '. Update anyway?', true)) {
+                        return applyPackUpdate(packId, Object.assign({}, opts, { force: true }));
+                    }
+                    return;
+                }
+                if (r && /local_only/.test(r.error || '') && !opts.local_only) {
+                    if (await showConfirm('Some cluster nodes could not be reached. Update on this node only, and declare the lists on the others later?', true)) {
+                        return applyPackUpdate(packId, Object.assign({}, opts, { local_only: true }));
+                    }
+                    return;
+                }
+                showToast((r && r.error) || 'Update failed', 'error', 10000);
+                return;
+            }
+            let html = '<div class="pack-detail"><div class="alert alert-success">' +
+                '<div><span>Update complete:</span> <code>' + escapeHtml(r.pack) + '</code> ' + escapeHtml(r.from) + ' → ' + escapeHtml(r.to) + '</div>' +
+                '<div>Reload the ruleset on every node for the new rules to take effect.</div></div>';
+            if (r.group_changed) {
+                html += '<div class="alert alert-info"><span>Agents in group</span> <code>' + escapeHtml(r.group || '') + '</code> ' +
+                    '<span>receive the new files and reload their configuration.</span></div>';
+            }
+            if ((r.left || []).length) {
+                html += '<div class="alert alert-warning"><div>Left as they are (changed on this manager):</div>' +
+                    '<div style="font-family:monospace;">' + r.left.map(escapeHtml).join('<br>') + '</div></div>';
+            }
+            if ((r.undeclared_nodes || []).length) {
+                html += '<div class="alert alert-danger"><div>The CDB list could not be declared on these nodes:</div><code>' +
+                    r.undeclared_nodes.map(escapeHtml).join('</code>, <code>') + '</code></div>';
+            }
+            if ((r.setup_new || []).length) {
+                html += '<h4 class="pack-h">Agent-side steps new in this version</h4>' +
+                    '<p class="pack-lead">The manager cannot do these for you. Do them on the hosts after updating.</p>' +
+                    renderPackSetup(packId, r.setup_new);
+            }
+            showModal('Pack updated', html + '</div>',
+                '<button class="btn btn-success" onclick="closeModal();reloadClusterRuleset()"><svg class="icon"><use href="#icon-refresh"/></svg><span>Reload ruleset now</span></button>' +
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
             refreshPacks();
         }
 
@@ -7791,6 +7942,38 @@ _I18N_SCRIPT = r"""
       'They match this version exactly. Installing records them; nothing changes on disk.': '內容與此版本完全相同。按「安裝」只會登記，磁碟上的檔案不會改變。',
       'They differ from this version. Installing backs them up and replaces them.': '內容與此版本不同。按「安裝」會先備份再取代。',
       'Rule ID conflict with rules in other files:': '與其他檔案中的規則 ID 衝突：',
+      'Update': '更新',
+      'Update pack': '更新套件',
+      'Files on the manager': 'Manager 上的檔案',
+      'Will be updated': '將更新',
+      'Replaces a file of the same name (backed up)': '取代同名檔案（會先備份）',
+      'Site data, left as it is': '站台資料，保持原狀',
+      'Changed on this manager': '已在這台 manager 上修改',
+      'No longer in this version, will be removed': '新版已不包含，將移除',
+      'No longer in this version, changed on this manager': '新版已不包含，且已在這台 manager 上修改',
+      'Site data from an earlier version, left as it is': '舊版帶來的站台資料，保持原狀',
+      'Unchanged files:': '未變更的檔案：',
+      'Nothing to change.': '沒有需要變更的項目。',
+      'Agents in this group receive the changed files and reload their configuration.': '這個群組的 agent 會收到變更的檔案並重新載入設定。',
+      'CDB lists to declare:': '要宣告的 CDB 清單：',
+      'CDB lists to undeclare:': '要取消宣告的 CDB 清單：',
+      'These files were changed on this manager since the pack wrote them. They are left as they are unless you choose otherwise.': '這些檔案在套件寫入之後被修改過。除非你選擇取代，否則會保持原狀。',
+      'Replace them with this version (a backup is kept)': '以這個版本取代（會保留備份）',
+      'Agent-side steps new in this version': '這個版本新增的 agent 端步驟',
+      'The manager cannot do these for you. Do them on the hosts after updating.': 'Manager 無法代勞，請在更新後到各主機上完成。',
+      'The catalogue holds an older version than the one installed. Updating goes back to it.': '目錄中的版本比已安裝的舊，更新會退回到這個版本。',
+      'This version is already installed. Updating again puts back missing files and the pack\'s own files as this version ships them.': '這個版本已經安裝。再次更新會補回缺少的檔案，並把套件自己的檔案還原成這個版本的內容。',
+      'Updating...': '更新中…',
+      'Pack updated': '套件已更新',
+      'Reload ruleset now': '立即重新載入規則集',
+      'Update complete:': '更新完成：',
+      'Reload the ruleset on every node for the new rules to take effect.': '請在所有節點重新載入規則集，新規則才會生效。',
+      'Agents in group': '群組',
+      'receive the new files and reload their configuration.': '的 agent 會收到新檔案並重新載入設定。',
+      'Left as they are (changed on this manager):': '保持原狀（已在這台 manager 上修改）：',
+      'The CDB list could not be declared on these nodes:': '下列節點無法宣告 CDB 清單：',
+      'Some cluster nodes could not be reached. Update on this node only, and declare the lists on the others later?': '有叢集節點無法連線。要只更新這個節點，之後再到其他節點宣告清單嗎？',
+      'Update failed': '更新失敗',
       'Install': '安裝',
       'Remove': '移除',
       'Details': '詳細資訊',
@@ -8479,6 +8662,38 @@ _I18N_SCRIPT = r"""
       'They match this version exactly. Installing records them; nothing changes on disk.': 'このバージョンと完全に一致しています。インストールすると記録されるだけで、ディスク上のファイルは変わりません。',
       'They differ from this version. Installing backs them up and replaces them.': 'このバージョンとは内容が異なります。インストールするとバックアップしてから置き換えます。',
       'Rule ID conflict with rules in other files:': '他のファイルのルール ID と競合しています：',
+      'Update': '更新',
+      'Update pack': 'パックを更新',
+      'Files on the manager': 'マネージャー上のファイル',
+      'Will be updated': '更新されます',
+      'Replaces a file of the same name (backed up)': '同名のファイルを置き換えます（バックアップあり）',
+      'Site data, left as it is': 'サイトのデータ、そのまま残します',
+      'Changed on this manager': 'このマネージャー上で変更されています',
+      'No longer in this version, will be removed': 'このバージョンには含まれないため削除されます',
+      'No longer in this version, changed on this manager': 'このバージョンには含まれず、このマネージャー上で変更されています',
+      'Site data from an earlier version, left as it is': '以前のバージョンのサイトデータ、そのまま残します',
+      'Unchanged files:': '変更のないファイル：',
+      'Nothing to change.': '変更する項目はありません。',
+      'Agents in this group receive the changed files and reload their configuration.': 'このグループのエージェントは変更されたファイルを受け取り、設定を再読み込みします。',
+      'CDB lists to declare:': '宣言する CDB リスト：',
+      'CDB lists to undeclare:': '宣言を外す CDB リスト：',
+      'These files were changed on this manager since the pack wrote them. They are left as they are unless you choose otherwise.': 'これらのファイルはパックが書き込んだ後に変更されています。置き換えを選ばない限り、そのまま残します。',
+      'Replace them with this version (a backup is kept)': 'このバージョンで置き換える（バックアップを残します）',
+      'Agent-side steps new in this version': 'このバージョンで新たに必要なエージェント側の手順',
+      'The manager cannot do these for you. Do them on the hosts after updating.': 'マネージャーでは代行できません。更新後に各ホストで実施してください。',
+      'The catalogue holds an older version than the one installed. Updating goes back to it.': 'カタログのバージョンはインストール済みのものより古く、更新するとこのバージョンに戻ります。',
+      'This version is already installed. Updating again puts back missing files and the pack\'s own files as this version ships them.': 'このバージョンはインストール済みです。再度更新すると、欠けているファイルとパック自身のファイルをこのバージョンの内容に戻します。',
+      'Updating...': '更新中…',
+      'Pack updated': 'パックを更新しました',
+      'Reload ruleset now': '今すぐルールセットを再読み込み',
+      'Update complete:': '更新完了：',
+      'Reload the ruleset on every node for the new rules to take effect.': '新しいルールを有効にするには、すべてのノードでルールセットを再読み込みしてください。',
+      'Agents in group': 'グループ',
+      'receive the new files and reload their configuration.': 'のエージェントは新しいファイルを受け取り、設定を再読み込みします。',
+      'Left as they are (changed on this manager):': 'そのまま残したファイル（このマネージャー上で変更済み）：',
+      'The CDB list could not be declared on these nodes:': '次のノードでは CDB リストを宣言できませんでした：',
+      'Some cluster nodes could not be reached. Update on this node only, and declare the lists on the others later?': '一部のクラスターノードに接続できません。このノードだけを更新し、他のノードでは後でリストを宣言しますか？',
+      'Update failed': '更新に失敗しました',
       'Install': 'インストール',
       'Remove': '削除',
       'Details': '詳細',
@@ -8904,6 +9119,8 @@ _I18N_SCRIPT = r"""
       [/^(\d+) packs, (\d+) installed$/, function (m) { return m[1] + ' 個套件，已安裝 ' + m[2] + ' 個'; }],
       [/^Install pack "(.+)"\? Files are backed up and rolled back if the ruleset fails to validate\.$/, function (m) { return '要安裝套件「' + m[1] + '」嗎？檔案會先備份，規則集驗證失敗時自動回滾。'; }],
       [/^Remove pack "(.+)"\? Files it replaced are restored\.$/, function (m) { return '要移除套件「' + m[1] + '」嗎？被它覆蓋的檔案會還原。'; }],
+      [/^Rule ID conflict: (.+)\. Update anyway\?$/, function (m) { return '規則 ID 衝突：' + m[1] + '。仍要更新嗎？'; }],
+      [/^New in (.+)$/, function (m) { return m[1] + ' 新增'; }],
       [/^Installed (.+)\. Reload the ruleset for it to take effect\.$/, function (m) { return '已安裝 ' + m[1] + '，請重新載入規則集使其生效。'; }],
       [/^Removed (.+)\. Reload the ruleset for it to take effect\.$/, function (m) { return '已移除 ' + m[1] + '，請重新載入規則集使其生效。'; }],
       [/^Reload the ruleset on "(.+)"\? Running services are not restarted\.$/, function (m) { return '要在「' + m[1] + '」重新載入規則集嗎？執行中的服務不會重新啟動。'; }],
@@ -9024,6 +9241,8 @@ _I18N_SCRIPT = r"""
       [/^(\d+) packs, (\d+) installed$/, function (m) { return 'パック ' + m[1] + ' 件、うち ' + m[2] + ' 件インストール済み'; }],
       [/^Install pack "(.+)"\? Files are backed up and rolled back if the ruleset fails to validate\.$/, function (m) { return 'パック「' + m[1] + '」をインストールしますか？ ファイルはバックアップされ、ルールセットの検証に失敗した場合は自動的に元に戻されます。'; }],
       [/^Remove pack "(.+)"\? Files it replaced are restored\.$/, function (m) { return 'パック「' + m[1] + '」を削除しますか？ 上書きされていたファイルは復元されます。'; }],
+      [/^Rule ID conflict: (.+)\. Update anyway\?$/, function (m) { return 'ルール ID が競合しています：' + m[1] + '。それでも更新しますか？'; }],
+      [/^New in (.+)$/, function (m) { return m[1] + ' で追加'; }],
       [/^Installed (.+)\. Reload the ruleset for it to take effect\.$/, function (m) { return m[1] + ' をインストールしました。反映するにはルールセットを再読み込みしてください。'; }],
       [/^Removed (.+)\. Reload the ruleset for it to take effect\.$/, function (m) { return m[1] + ' を削除しました。反映するにはルールセットを再読み込みしてください。'; }],
       [/^Reload the ruleset on "(.+)"\? Running services are not restarted\.$/, function (m) { return '「' + m[1] + '」でルールセットを再読み込みしますか？ 稼働中のサービスは再起動されません。'; }],
@@ -13704,8 +13923,6 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
 
     # ---------- Rule packs (Jason Tools maintained rule series) ----------
 
-    PACKS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'packs')
-
     def _wazuh_path():
         """Honour wazuh_path from config.yaml instead of assuming /var/ossec."""
         try:
@@ -13780,6 +13997,29 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         return {os.path.basename(f.get('dest', '')) for f in manifest.get('files', [])
                 if f.get('type') == 'rule'} | {f['name'] for f in manifest.get('files', [])
                                                if f.get('type') == 'rule'}
+
+    def _sha256_of(path):
+        import hashlib
+        try:
+            with open(path, 'rb') as fh:
+                return hashlib.sha256(fh.read()).hexdigest()
+        except OSError:
+            return None
+
+    def _version_key(version):
+        """Numeric parts of a version, so 3.10 sorts after 3.9."""
+        return tuple(int(x) for x in re.findall(r'\d+', str(version or ''))) or (0,)
+
+    def _original_backup(state, dest_rel):
+        """Where the site's own file lives that the pack replaced at dest_rel, if any."""
+        path = (state.get('originals') or {}).get(dest_rel)
+        if path and os.path.isfile(path):
+            return path
+        legacy = os.path.join(state.get('backup_dir') or '', os.path.basename(dest_rel))
+        if state.get('backup_dir') and os.path.isfile(legacy) and \
+                os.path.join(_wazuh_path(), dest_rel) in (state.get('replaced') or []):
+            return legacy
+        return None
 
     # What the deployment guide may show from a pack. Agent-side files are the
     # point; rules and lists are listed for completeness. Nothing outside these
@@ -14019,13 +14259,11 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         uninstall.
         """
         import shutil
-        scheduled = []
         scripts = manifest.get('scripts') or []
         if not scripts:
-            return scheduled
+            return []
         bindir = os.path.join(wazuh, 'etc', 'jt-packs', 'bin')
         os.makedirs(bindir, exist_ok=True)
-        cron_lines = []
         for entry in scripts:
             dest_rel = entry.get('dest', '')
             if not _validate_dest(dest_rel) or not dest_rel.startswith('etc/jt-packs/bin/'):
@@ -14040,7 +14278,20 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             shutil.copy2(src, dest)
             os.chmod(dest, 0o750)
             written.append(dest)
+        return _schedule_scripts(manifest, wazuh, written)
 
+    def _schedule_scripts(manifest, wazuh, written):
+        """Write the pack's cron file from its manifest; returns what is scheduled.
+
+        Separate from copying the scripts so an update can reschedule without
+        touching a script the site has edited.
+        """
+        scheduled, cron_lines = [], []
+        for entry in (manifest.get('scripts') or []):
+            dest_rel = entry.get('dest', '')
+            if not _validate_dest(dest_rel) or not dest_rel.startswith('etc/jt-packs/bin/'):
+                raise ValueError('Refusing unsafe script destination: %s' % dest_rel)
+            dest = os.path.join(wazuh, dest_rel)
             schedule = (entry.get('cron') or '').strip()
             if not schedule:
                 continue
@@ -14093,7 +14344,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         # assigned to it and it may carry settings this pack knows nothing about;
         # replacing it would silently discard someone else's configuration.
         if os.path.isfile(dest):
-            return {'name': name, 'created': False, 'already_present': True,
+            return {'name': name, 'created': False, 'already_present': True, 'hashes': {},
                     'note': 'the group already existed and was left untouched; '
                             'add the pack\'s localfile entries by hand if they are missing'}
         os.makedirs(gdir, exist_ok=True)
@@ -14105,6 +14356,9 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             pass
         os.chmod(dest, 0o660)
         written.append(dest)
+        # What the pack wrote, so an update can tell its own file from one the
+        # site has edited since.
+        hashes = {'agent.conf': _sha256_of(dest)}
 
         # Anything else the pack needs on the agent itself rides along in the
         # group directory, which the cluster distributes to every assigned
@@ -14127,9 +14381,10 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             os.chmod(edest, 0o660)
             written.append(edest)
             extras.append(entry)
+            hashes[entry] = _sha256_of(edest)
 
         return {'name': name, 'created': True, 'already_present': False,
-                'files': extras}
+                'files': extras, 'hashes': hashes}
 
     def _installed_rule_ids(skip_files=()):
         """Rule ids already present on the manager, for conflict detection."""
@@ -14315,6 +14570,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             os.makedirs(_pack_state_dir(), exist_ok=True)
 
             written, backed_up, list_paths = [], [], []
+            kept_existing = set()
             conf_before = None
             peer_conf_before = {}
             try:
@@ -14325,6 +14581,14 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     sub = 'rules' if entry['type'] == 'rule' else ('lists' if entry['type'] == 'list' else 'decoders')
                     src = os.path.join(pdir, sub, entry['name'])
                     dest = os.path.join(_wazuh_path(), dest_rel)
+                    if entry.get('keep') and os.path.exists(dest):
+                        # Site data already in place: an approval list, a
+                        # baseline, a list an updater keeps filling. It belongs
+                        # to the site from here on and is never replaced.
+                        kept_existing.add(dest_rel)
+                        if entry['type'] == 'list' and entry.get('declare'):
+                            list_paths.append(dest_rel)
+                        continue
                     if os.path.exists(dest):
                         shutil.copy2(dest, os.path.join(backup_dir, os.path.basename(dest)))
                         backed_up.append(dest)
@@ -14394,10 +14658,15 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 'version': manifest.get('version', ''),
                 'installed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'installed_by': get_current_user(),
-                'files': [{'dest': e['dest'], 'sha256': e.get('sha256', '')} for e in manifest.get('files', [])],
+                'files': [{'dest': e['dest'], 'sha256': e.get('sha256', ''),
+                           'keep': bool(e.get('keep')), 'written': e['dest'] not in kept_existing}
+                          for e in manifest.get('files', [])],
                 'declared_lists': list_paths,
                 'undeclared_nodes': undeclared_nodes,
-                'scripts': [{'dest': e['dest'], 'sha256': e.get('sha256', '')}
+                # the hash of what was copied, not what the manifest claims:
+                # an update compares against it to spot local edits
+                'scripts': [{'dest': e['dest'],
+                             'sha256': _sha256_of(os.path.join(pdir, 'scripts', e['name'])) or ''}
                             for e in (manifest.get('scripts') or [])],
                 'scheduled': scheduled,
                 'cron_file': _cron_path(pack_id) if scheduled else None,
@@ -14437,6 +14706,378 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             logger.error(f"PACK INSTALL ERROR: {e}")
             return jsonify({'error': str(e)}), 500
 
+    # ---------- Updating an installed pack ----------
+    #
+    # A new release of the tool brings a new catalogue, but what is installed
+    # stays at the old version until someone updates it. Removing and
+    # installing again was the only way, and it had three faults: removal
+    # refused, or with force deleted, the lists a site fills in itself (approved
+    # tools, an IOC list an updater rewrites); an existing agent group was never
+    # touched, so new agent-side files never arrived; and nothing said which
+    # agent-side step was new. The update judges every file against what the
+    # pack wrote when it installed it and what is on disk now.
+
+    PACK_GROUP_FILE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
+
+    def _pack_targets(pdir, manifest):
+        """Every file a pack version places under the Wazuh directory."""
+        out = []
+        for entry in manifest.get('files', []):
+            dest_rel = entry.get('dest', '')
+            if not _validate_dest(dest_rel):
+                raise ValueError('Refusing unsafe destination: %s' % dest_rel)
+            sub = {'rule': 'rules', 'list': 'lists'}.get(entry.get('type'), 'decoders')
+            out.append({'dest': dest_rel, 'src': os.path.join(pdir, sub, entry['name']),
+                        'kind': entry.get('type', 'decoder'), 'keep': bool(entry.get('keep'))})
+        for entry in (manifest.get('scripts') or []):
+            dest_rel = entry.get('dest', '')
+            if not _validate_dest(dest_rel) or not dest_rel.startswith('etc/jt-packs/bin/'):
+                raise ValueError('Refusing unsafe script destination: %s' % dest_rel)
+            out.append({'dest': dest_rel, 'src': os.path.join(pdir, 'scripts', entry['name']),
+                        'kind': 'script', 'keep': False})
+        return out
+
+    def _kind_of(dest_rel):
+        for prefix, kind in (('etc/rules/', 'rule'), ('etc/lists/', 'list'),
+                             ('etc/decoders/', 'decoder'), ('etc/jt-packs/bin/', 'script')):
+            if dest_rel.startswith(prefix):
+                return kind
+        return 'file'
+
+    def _update_plan(pack_id, manifest, state):
+        """What updating an installed pack to the catalogue's version would do.
+
+        Nothing is written here. A file the site has changed since the pack
+        wrote it is not replaced unless the operator asks, and files marked
+        keep in the manifest belong to the site once they exist.
+        """
+        pdir = _pack_dir(pack_id)
+        wazuh = _wazuh_path()
+        recorded = {e['dest']: e for e in (state.get('files') or []) + (state.get('scripts') or [])
+                    if e.get('dest')}
+        files, new_dests = [], set()
+        for t in _pack_targets(pdir, manifest):
+            new_dests.add(t['dest'])
+            new_hash = _sha256_of(t['src'])
+            if new_hash is None:
+                raise ValueError('%s is listed but missing from the pack' % os.path.basename(t['src']))
+            cur = _sha256_of(os.path.join(wazuh, t['dest']))
+            old = recorded.get(t['dest'])
+            if cur is None:
+                action = 'add'
+            elif t['keep']:
+                action = 'keep'
+            elif cur == new_hash:
+                action = 'same'
+            elif old is None:
+                action = 'replace'          # same name, but not a file this pack installed
+            elif old.get('sha256') and cur == old['sha256']:
+                action = 'update'
+            else:
+                action = 'modified'
+            files.append({'dest': t['dest'], 'kind': t['kind'], 'action': action})
+        for dest_rel, old in recorded.items():
+            if dest_rel in new_dests or not _validate_dest(dest_rel):
+                continue
+            cur = _sha256_of(os.path.join(wazuh, dest_rel))
+            if cur is None:
+                continue
+            if old.get('keep'):
+                action = 'left'             # site data an older version brought
+            elif old.get('sha256') and cur != old['sha256']:
+                action = 'remove-modified'
+            else:
+                action = 'remove'
+            files.append({'dest': dest_rel, 'kind': _kind_of(dest_rel), 'action': action})
+
+        group = None
+        spec = manifest.get('agent_group') or {}
+        if spec:
+            name = spec.get('name', '')
+            if not re.match(r'^[A-Za-z0-9_-]{1,64}$', name):
+                raise ValueError('Refusing unsafe agent group name: %r' % name[:40])
+            gdir = os.path.join(wazuh, 'etc', 'shared', name)
+            hashes = (state.get('agent_group') or {}).get('hashes') or {}
+            entries = []
+            for fname in ['agent.conf'] + list(spec.get('files') or []):
+                if not PACK_GROUP_FILE.match(str(fname)):
+                    raise ValueError('Refusing unsafe agent group file name: %r' % str(fname)[:40])
+                src = os.path.join(pdir, 'agent', spec.get('config', 'agent.conf') if fname == 'agent.conf' else fname)
+                new_hash = _sha256_of(src)
+                if new_hash is None:
+                    raise ValueError('Agent group file is missing from the pack: %s' % fname)
+                cur = _sha256_of(os.path.join(gdir, fname))
+                if cur is None:
+                    action = 'add'
+                elif cur == new_hash:
+                    action = 'same'
+                elif hashes.get(fname) and cur == hashes[fname]:
+                    action = 'update'
+                else:
+                    # edited here, or written before installs recorded hashes:
+                    # either way not ours to overwrite without asking
+                    action = 'modified'
+                entries.append({'file': fname, 'action': action})
+            group = {'name': name, 'exists': os.path.isfile(os.path.join(gdir, 'agent.conf')),
+                     'files': entries}
+
+        new_decl = [e['dest'] for e in manifest.get('files', [])
+                    if e.get('type') == 'list' and e.get('declare')]
+        old_decl = list(state.get('declared_lists') or [])
+        skip = _own_rule_files(manifest) | {os.path.basename(d) for d in recorded
+                                            if d.startswith('etc/rules/')}
+        existing = _installed_rule_ids(skip_files=skip)
+        conflicts = [{'rule': rid, 'file': existing[rid]}
+                     for rid in _pack_rule_ids(pdir, manifest) if rid in existing]
+        from_v, to_v = state.get('version', ''), manifest.get('version', '')
+        setup_new = [dict(st, number=i + 1) for i, st in enumerate(manifest.get('setup') or [])
+                     if st.get('since') and _version_key(st['since']) > _version_key(from_v)]
+        choices = [f['dest'] for f in files if f['action'] in ('modified', 'remove-modified')]
+        if group:
+            choices += ['etc/shared/%s/%s' % (group['name'], g['file'])
+                        for g in group['files'] if g['action'] == 'modified']
+        return {
+            'pack': pack_id, 'from': from_v, 'to': to_v,
+            'direction': ('same' if _version_key(to_v) == _version_key(from_v) else
+                          'up' if _version_key(to_v) > _version_key(from_v) else 'down'),
+            'files': files, 'group': group,
+            'lists': {'declare': [p for p in new_decl if p not in old_decl],
+                      'undeclare': [p for p in old_decl if p not in new_decl]},
+            'schedule': [{'script': e['name'], 'schedule': e['cron']}
+                         for e in (manifest.get('scripts') or []) if e.get('cron')],
+            'conflicts': conflicts, 'setup_new': setup_new, 'needs_choice': choices,
+        }
+
+    @app.route('/api/packs/<pack_id>/update', methods=['GET', 'POST'])
+    @login_required
+    @require_capability('rule_packs')
+    def update_pack(pack_id):
+        """GET: what an update would change. POST: do it, all or nothing.
+
+        POST body: overwrite_modified (replace files changed on this manager,
+        keeping a backup), force (accept rule ID conflicts), local_only (go
+        ahead although a cluster node could not be reached).
+        """
+        import shutil, time as _time
+        manifest = _read_manifest(pack_id)
+        if not manifest:
+            return jsonify({'error': 'Unknown pack'}), 404
+        state = _installed_state(pack_id)
+        if not state:
+            return jsonify({'error': 'Pack is not installed'}), 400
+        try:
+            plan = _update_plan(pack_id, manifest, state)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        if request.method == 'GET':
+            return jsonify(plan)
+
+        data = request.get_json(silent=True) or {}
+        overwrite = bool(data.get('overwrite_modified'))
+        force = bool(data.get('force'))
+        local_only = bool(data.get('local_only'))
+        if plan['conflicts'] and not force:
+            return jsonify({'error': 'Rule ID conflict with rules already installed',
+                            'conflicts': [c['rule'] for c in plan['conflicts']][:20]}), 409
+
+        wazuh, pdir = _wazuh_path(), _pack_dir(pack_id)
+        import tempfile
+        backup_root = os.path.join(_pack_state_dir(), 'backup')
+        os.makedirs(backup_root, exist_ok=True)
+        # unique even for two updates within one second
+        ubackup = tempfile.mkdtemp(prefix=f'{pack_id}-update-{int(_time.time())}-', dir=backup_root)
+        undo = []                   # ('created'|'changed'|'removed', path, backup)
+        originals = dict(state.get('originals') or {})
+
+        def stash(path):
+            copy = os.path.join(ubackup, os.path.relpath(path, wazuh).replace('/', '__'))
+            shutil.copy2(path, copy)
+            return copy
+
+        def put(src, dest, mode):
+            if os.path.exists(dest):
+                undo.append(('changed', dest, stash(dest)))
+            else:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                undo.append(('created', dest, None))
+            shutil.copy2(src, dest)
+            try:
+                shutil.chown(dest, 'wazuh', 'wazuh')
+            except Exception:
+                pass
+            os.chmod(dest, mode)
+
+        targets = {t['dest']: t for t in _pack_targets(pdir, manifest)}
+        cron_file = _cron_path(pack_id)
+        cron_before = None
+        if os.path.isfile(cron_file):
+            with open(cron_file, encoding='utf-8') as fh:
+                cron_before = fh.read()
+        conf_before, peer_before, undeclared_nodes = None, {}, []
+        applied, left = [], []
+        group_state = dict(state.get('agent_group') or {})
+        try:
+            for item in plan['files']:
+                action, dest = item['action'], os.path.join(wazuh, item['dest'])
+                if action in ('same', 'keep', 'left'):
+                    continue
+                if action in ('modified', 'remove-modified') and not overwrite:
+                    left.append(item['dest'])
+                    continue
+                if action in ('remove', 'remove-modified'):
+                    undo.append(('removed', dest, stash(dest)))
+                    original = _original_backup(state, item['dest'])
+                    if original:
+                        shutil.copy2(original, dest)    # the site's own file the pack once replaced
+                        originals.pop(item['dest'], None)
+                    else:
+                        os.remove(dest)
+                    applied.append(item)
+                    continue
+                if action == 'replace':
+                    keep_copy = os.path.join(ubackup, 'original__' + item['dest'].replace('/', '__'))
+                    shutil.copy2(dest, keep_copy)
+                    originals[item['dest']] = keep_copy
+                put(targets[item['dest']]['src'], dest, 0o750 if item['kind'] == 'script' else 0o660)
+                applied.append(item)
+
+            scheduled = _schedule_scripts(manifest, wazuh, [])
+            if not scheduled and os.path.isfile(cron_file):
+                os.remove(cron_file)
+
+            declare, undeclare = plan['lists']['declare'], plan['lists']['undeclare']
+            for paths, remove in ((declare, False), (undeclare, True)):
+                if not paths:
+                    continue
+                before = _declare_lists(paths, remove=remove)
+                conf_before = conf_before if conf_before is not None else before
+                peers, failures = _declare_lists_on_peers(paths, remove=remove)
+                for node, content in peers.items():
+                    peer_before.setdefault(node, content)
+                if failures and not local_only:
+                    raise RuntimeError(
+                        'Could not change the CDB list declarations on every cluster node: '
+                        + '; '.join('%s: %s' % (f['node'], f['error']) for f in failures[:3])
+                        + '. Repeat the update with local_only to go ahead on this node only.')
+                undeclared_nodes += [f['node'] for f in failures if not remove]
+
+            group_changed = False
+            if plan['group']:
+                gname = plan['group']['name']
+                gdir = os.path.join(wazuh, 'etc', 'shared', gname)
+                if not plan['group']['exists']:
+                    created = []
+                    group_state = _install_agent_group(pdir, manifest, wazuh, created) or {}
+                    undo.extend(('created', p, None) for p in created)
+                    group_changed = bool(created)
+                else:
+                    hashes = dict(group_state.get('hashes') or {})
+                    spec = manifest.get('agent_group') or {}
+                    for g in plan['group']['files']:
+                        src = os.path.join(pdir, 'agent', spec.get('config', 'agent.conf')
+                                           if g['file'] == 'agent.conf' else g['file'])
+                        if g['action'] == 'same':
+                            hashes[g['file']] = _sha256_of(src)
+                            continue
+                        if g['action'] == 'modified' and not overwrite:
+                            left.append('etc/shared/%s/%s' % (gname, g['file']))
+                            continue
+                        put(src, os.path.join(gdir, g['file']), 0o660)
+                        hashes[g['file']] = _sha256_of(src)
+                        group_changed = True
+                    group_state = dict(group_state, name=gname, hashes=hashes)
+
+            ok, problems = _ruleset_is_valid()
+            if not ok:
+                raise RuntimeError('Ruleset validation failed: ' + '; '.join(problems[:3]))
+        except Exception as update_error:
+            for kind, path, copy in reversed(undo):
+                try:
+                    if kind == 'created':
+                        if os.path.exists(path):
+                            os.remove(path)
+                    else:
+                        shutil.copy2(copy, path)
+                except Exception:
+                    logger.error('PACK UPDATE ROLLBACK could not restore %s', sanitize_for_log(path))
+            if cron_before is None:
+                if os.path.isfile(cron_file):
+                    os.remove(cron_file)
+            else:
+                with open(cron_file, 'w', encoding='utf-8') as fh:
+                    fh.write(cron_before)
+            if conf_before is not None:
+                with open(os.path.join(wazuh, 'etc', 'ossec.conf'), 'w', encoding='utf-8') as fh:
+                    fh.write(conf_before)
+            _restore_peer_configs(peer_before)
+            logger.error(f"PACK UPDATE ROLLED BACK: user={get_current_user()} "
+                         f"pack={sanitize_for_log(pack_id)} error={sanitize_for_log(str(update_error))}")
+            return jsonify({'error': str(update_error), 'rolled_back': True}), 400
+
+        # The record now describes what is on disk: a file left as the site
+        # changed it keeps its old entry, so it still reads as changed.
+        recorded = {e['dest']: e for e in (state.get('files') or []) + (state.get('scripts') or [])}
+        done = {i['dest']: i['action'] for i in applied}
+        new_files, new_scripts = [], []
+        for t in _pack_targets(pdir, manifest):
+            action = next((f['action'] for f in plan['files'] if f['dest'] == t['dest']), 'same')
+            old = recorded.get(t['dest'])
+            if t['dest'] in done or action == 'same':
+                entry = {'dest': t['dest'], 'sha256': _sha256_of(t['src']) or ''}
+            elif action == 'keep' and old is None:
+                entry = {'dest': t['dest'], 'sha256': _sha256_of(t['src']) or '', 'written': False}
+            else:
+                entry = {k: v for k, v in (old or {'dest': t['dest'], 'sha256': ''}).items()}
+            if t['kind'] == 'script':
+                new_scripts.append(entry)
+            else:
+                entry['keep'] = t['keep']
+                entry.setdefault('written', True)
+                new_files.append(entry)
+        # files the new version no longer ships but that are still on disk
+        for f in plan['files']:
+            if f['action'] in ('left', 'remove-modified') and f['dest'] not in done and f['dest'] in recorded:
+                (new_scripts if f['kind'] == 'script' else new_files).append(recorded[f['dest']])
+
+        new_state = dict(state)
+        new_state.update({
+            'version': plan['to'],
+            'files': new_files,
+            'scripts': new_scripts,
+            'declared_lists': [e['dest'] for e in manifest.get('files', [])
+                               if e.get('type') == 'list' and e.get('declare')],
+            'undeclared_nodes': sorted(set((state.get('undeclared_nodes') or []) + undeclared_nodes)),
+            'scheduled': scheduled,
+            'cron_file': cron_file if scheduled else None,
+            'agent_group': group_state or state.get('agent_group'),
+            'originals': originals,
+            'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'updated_by': get_current_user(),
+            'history': (state.get('history') or []) + [{
+                'from': plan['from'], 'to': plan['to'],
+                'at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'by': get_current_user(), 'backup_dir': ubackup}],
+        })
+        with open(_pack_state_path(pack_id), 'w', encoding='utf-8') as fh:
+            json.dump(new_state, fh, ensure_ascii=False, indent=2)
+
+        logger.info(f"PACK UPDATED: user={get_current_user()} pack={sanitize_for_log(pack_id)} "
+                    f"{plan['from']} -> {plan['to']} changed={len(applied)} left={len(left)}")
+        message = ('Updated %s %s -> %s. Reload the ruleset on every node for it to take effect.'
+                   % (pack_id, plan['from'], plan['to']))
+        if left:
+            message += (' %d file(s) changed on this manager were left as they are.' % len(left))
+        if group_changed:
+            message += (" Agents in group '%s' receive the new files and reload their "
+                        'configuration.' % plan['group']['name'])
+        if plan['setup_new']:
+            message += ' %d agent-side step(s) are new in this version.' % len(plan['setup_new'])
+        return jsonify({'success': True, 'pack': pack_id, 'from': plan['from'], 'to': plan['to'],
+                        'applied': applied, 'left': left, 'group_changed': group_changed,
+                        'group': (plan['group'] or {}).get('name'),
+                        'undeclared_nodes': undeclared_nodes, 'setup_new': plan['setup_new'],
+                        'message': message})
+
     @app.route('/api/packs/<pack_id>', methods=['DELETE'])
     @login_required
     @require_capability('rule_packs')
@@ -14451,10 +15092,17 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         data = request.get_json(silent=True) or {}
         force = bool(data.get('force'))
         try:
+            # Records written before files could be marked as site data carry no
+            # keep flag; the catalogue's own manifest says which ones are.
+            catalogue_keep = {f.get('dest'): bool(f.get('keep'))
+                              for f in ((_read_manifest(pack_id) or {}).get('files') or [])}
+            for entry in state.get('files', []):
+                if 'keep' not in entry and catalogue_keep.get(entry.get('dest')):
+                    entry['keep'] = True
             modified = []
             for entry in state.get('files', []):
                 dest = os.path.join(_wazuh_path(), entry['dest'])
-                if not os.path.exists(dest):
+                if not os.path.exists(dest) or entry.get('keep'):
                     continue
                 if entry.get('sha256'):
                     import hashlib
@@ -14467,11 +15115,17 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                                 'modified': modified,
                                 'hint': 'Re-send with force=true to remove them anyway'}), 409
 
-            removed = []
+            removed, kept = [], []
             for entry in state.get('files', []):
                 dest = os.path.join(_wazuh_path(), entry['dest'])
-                backup = os.path.join(state.get('backup_dir', ''), os.path.basename(dest))
-                if os.path.isfile(backup):
+                if entry.get('keep') and os.path.exists(dest) and (
+                        not entry.get('written', True) or _sha256_of(dest) != entry.get('sha256')):
+                    # Site data -- an approval list someone filled in, a list an
+                    # updater rewrote. Removing the pack must not take it along.
+                    kept.append(entry['dest'])
+                    continue
+                backup = _original_backup(state, entry['dest'])
+                if backup:
                     shutil.copy2(backup, dest)      # restore what the pack replaced
                 elif os.path.exists(dest):
                     os.remove(dest)
@@ -14511,9 +15165,12 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             logger.info(f"PACK UNINSTALLED: user={get_current_user()} pack={sanitize_for_log(pack_id)} "
                         f"removed={len(removed)} ruleset_ok={ok}")
             message = ('Removed %s. Reload the ruleset for it to take effect.' % pack_id)
+            if kept:
+                message += (' Kept the site data in %s; the list is no longer declared.'
+                            % ', '.join(kept))
             if group_note:
                 message += ' Note: ' + group_note + '.'
-            return jsonify({'success': True, 'pack': pack_id, 'removed': removed,
+            return jsonify({'success': True, 'pack': pack_id, 'removed': removed, 'kept': kept,
                             'ruleset_valid': ok, 'problems': problems,
                             'group_note': group_note, 'message': message})
         except Exception as e:

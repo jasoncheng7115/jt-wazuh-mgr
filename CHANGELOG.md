@@ -4,6 +4,44 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.12.0 (2026-10-10)
+
+- **Update an installed rule pack.** A new release brings a newer catalogue,
+  but installed packs stayed at their old version, and the only way forward
+  was to remove and install again. That had three faults. Removal refused, and
+  with force deleted, the lists a site fills in itself: approved tools, internal
+  networks, or the IOC list an updater rewrites every night. An agent group
+  that already existed was never touched, so files added to it never reached
+  the agents; jt-portable-detect 3.2's channel watchdog was one. And nothing
+  said which agent-side step was new. Now the Rule Packs tab offers **Update**
+  beside an outdated pack:
+  - A **plan** comes first and writes nothing. Each file is judged against what
+    the pack wrote when it installed it and what is on disk now, and shown as
+    added, updated, removed, replacing a file of the same name, or changed on
+    this manager.
+  - A file **changed on this manager** (a tuned rule, an edited agent.conf) is
+    left as it is, unless the operator ticks the option to replace it. A backup
+    is kept when it is replaced.
+  - Files the manifest marks as **site data** (`keep`) are never replaced once
+    they exist: the approval lists, the Zimbra baseline and networks, and the
+    lists the IOC and malware-hash updaters fill.
+  - **Agent-group files** the pack added since are put into the existing group,
+    and files it changed are updated if nobody edited them.
+  - CDB lists are declared or undeclared on every node, the schedule is
+    rewritten, and `wazuh-analysisd -t` validates the result. **Any failure
+    rolls back** the files, the declarations and the schedule.
+  - The **agent-side steps** added since the installed version are listed with
+    the result (setup steps can now say `since`), and the result offers to
+    reload the ruleset on every node.
+- **Removal keeps site data.** A list marked `keep` that the site has changed is
+  left in place instead of blocking the removal, and a forced removal no longer
+  deletes it. This also applies to packs installed before this release; the
+  catalogue says which lists are site data. Removing a pack after an update
+  still restores the file it replaced when it was first installed.
+- The browser test suite has a 22nd journey for the update. Its mock manager
+  now writes cron entries into its scratch tree: before, a journey installing a
+  pack with an updater would have written into the real `/etc/cron.d`.
+
 ## v1.11.5 (2026-10-09)
 
 **jt-portable-detect 3.4.** Every change was checked with real events on Windows

@@ -129,6 +129,22 @@ def build_workdir():
     for name, body in DECODERS.items():
         with io.open(os.path.join(WORKDIR, 'etc/decoders', name), 'w', encoding='utf-8') as fh:
             fh.write(body)
+    # The ruleset check the pack installer and updater run after writing.
+    os.makedirs(os.path.join(WORKDIR, 'bin'), exist_ok=True)
+    with io.open(os.path.join(WORKDIR, 'bin/wazuh-analysisd'), 'w', encoding='utf-8') as fh:
+        fh.write('#!/bin/sh\necho "ruleset loaded"\nexit 0\n')
+    os.chmod(os.path.join(WORKDIR, 'bin/wazuh-analysisd'), 0o755)
+    # An install record from an older release, so the update path has
+    # something to update: jt-portable-detect 3.1, before the steps that 3.2
+    # and 3.4 added.
+    with io.open(os.path.join(web_ui.PACKS_DIR, 'jt-portable-detect', 'manifest.json'), encoding='utf-8') as fh:
+        current = json.load(fh)
+    with io.open(os.path.join(WORKDIR, 'etc/jt-packs/jt-portable-detect.json'), 'w', encoding='utf-8') as fh:
+        json.dump({'id': 'jt-portable-detect', 'version': '3.1', 'installed_at': '2026-10-01 10:00:00',
+                   'installed_by': 'e2e',
+                   'files': [{'dest': f['dest'], 'sha256': 'from-3.1'} for f in current['files']],
+                   'declared_lists': [f['dest'] for f in current['files'] if f.get('declare')],
+                   'scripts': [], 'agent_group': {'name': 'portable-detect', 'created': True}}, fh)
     with io.open(os.path.join(WORKDIR, 'logs/ossec.log'), 'w', encoding='utf-8') as fh:
         fh.write('2026/09/01 10:00:00 wazuh-analysisd: INFO: Started (pid: 1234).\n'
                  '2026/09/01 10:00:01 wazuh-remoted: INFO: Started (pid: 1235).\n'
@@ -469,6 +485,9 @@ class Cfg:
 
 
 web_ui.get_config = lambda: Cfg(_real_cfg())
+# A pack with an updater writes a cron entry; never into this machine's /etc/cron.d.
+web_ui.PACK_CRON_DIR = os.path.join(WORKDIR, 'cron.d')
+os.makedirs(web_ui.PACK_CRON_DIR, exist_ok=True)
 
 if __name__ == '__main__':
     build_workdir()

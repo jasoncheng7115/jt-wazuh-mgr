@@ -1395,16 +1395,26 @@ class TestRulePacks(PackFixture):
                           if p['id'] == 'jt-portable-detect'][0]['installed'])
 
     def test_uninstall_refuses_to_discard_local_edits(self):
+        """An edited rule file is someone's work: removal refuses until forced.
+        An edited site list (keep) is not a reason to refuse, and survives even
+        a forced removal -- it used to be deleted with the pack."""
         self.client.post('/api/packs/jt-portable-detect/install')
+        rule = os.path.join(self.tmp, 'etc/rules/zz-906100-jt_portable_rules.xml')
+        with io.open(rule, 'a', encoding='utf-8') as fh:
+            fh.write('<!-- local tuning -->\n')
         target = os.path.join(self.tmp, 'etc/lists/jt-approved-portable')
         with io.open(target, 'a', encoding='utf-8') as fh:
             fh.write('MyTool.exe:approved\n')
         resp = self.client.delete('/api/packs/jt-portable-detect')
         self.assertEqual(resp.status_code, 409)
-        self.assertIn('etc/lists/jt-approved-portable', resp.get_json()['modified'])
+        self.assertIn('etc/rules/zz-906100-jt_portable_rules.xml', resp.get_json()['modified'])
+        self.assertNotIn('etc/lists/jt-approved-portable', resp.get_json()['modified'])
         self.assertTrue(os.path.isfile(target))
         forced = self.client.delete('/api/packs/jt-portable-detect', json={'force': True})
         self.assertEqual(forced.status_code, 200)
+        self.assertFalse(os.path.exists(rule))
+        self.assertTrue(os.path.isfile(target), 'the site list went with the pack')
+        self.assertIn('etc/lists/jt-approved-portable', forced.get_json()['kept'])
 
     def test_conflicting_rule_ids_block_the_install(self):
         with io.open(os.path.join(self.tmp, 'etc/rules/other.xml'), 'w', encoding='utf-8') as fh:
@@ -1543,6 +1553,264 @@ class TestRulePacks(PackFixture):
 # --------------------------------------------------------------------------
 # Front-end assets embedded in the template
 # --------------------------------------------------------------------------
+
+class TestPackUpdate(PackFixture):
+    """Updating an installed pack to the catalogue's newer version.
+
+    A scratch catalogue holds a small pack, jt-test, written first as 1.0 and
+    then rewritten as 1.1, so every kind of change between two versions can be
+    produced on purpose: a rule changed, added and dropped, a list added and
+    dropped, a list the site owns, a script, agent-group files, a new step.
+    """
+
+    def setUp(self):
+        super().setUp()
+        import tempfile
+        self.cat = tempfile.mkdtemp(prefix='jtpack-cat-')
+        self.addCleanup(__import__('shutil').rmtree, self.cat, True)
+        self.addCleanup(setattr, web_ui, 'PACKS_DIR', web_ui.PACKS_DIR)
+        web_ui.PACKS_DIR = self.cat
+        self.write_version('1.0')
+
+    RULE = '<group name="jt_test,">\n  <rule id="%s" level="%d">\n    <match>%s</match>\n    <description>test %s</description>\n  </rule>\n</group>\n'
+
+    def write_version(self, version):
+        import hashlib, json as _json, shutil as _sh
+        pdir = os.path.join(self.cat, 'jt-test')
+        _sh.rmtree(pdir, ignore_errors=True)
+        for sub in ('rules', 'lists', 'scripts', 'agent'):
+            os.makedirs(os.path.join(pdir, sub))
+        v11 = version == '1.1'
+        files = {
+            ('rule', 'zz-990000-test.xml'): self.RULE % ('990001', 4 if v11 else 3, 'alpha', 'alpha'),
+            ('list', 'jt-test-approved'): 'shipped-in-%s:x\n' % version,
+        }
+        if v11:
+            files[('rule', 'zz-990200-new.xml')] = self.RULE % ('990201', 3, 'gamma', 'gamma')
+            files[('list', 'jt-test-new')] = 'new:x\n'
+        else:
+            files[('rule', 'zz-990100-old.xml')] = self.RULE % ('990101', 3, 'beta', 'beta')
+            files[('list', 'jt-test-old')] = 'old:x\n'
+        entries = []
+        for (kind, name), body in files.items():
+            sub = 'rules' if kind == 'rule' else 'lists'
+            with io.open(os.path.join(pdir, sub, name), 'w', encoding='utf-8') as fh:
+                fh.write(body)
+            e = {'type': kind, 'name': name, 'dest': 'etc/%s/%s' % (sub, name),
+                 'sha256': hashlib.sha256(body.encode()).hexdigest()}
+            if kind == 'list':
+                e['declare'] = True
+                e['keep'] = name == 'jt-test-approved'
+            entries.append(e)
+        with io.open(os.path.join(pdir, 'scripts', 'jt-test-updater.py'), 'w', encoding='utf-8') as fh:
+            fh.write('print("%s")\n' % version)
+        with io.open(os.path.join(pdir, 'agent', 'agent.conf'), 'w', encoding='utf-8') as fh:
+            fh.write('<agent_config><!-- %s --></agent_config>\n' % ('1.1' if v11 else '1.0'))
+        with io.open(os.path.join(pdir, 'agent', 'x.rules'), 'w', encoding='utf-8') as fh:
+            fh.write('-w /tmp -p x -k t\n')
+        agent_files = ['x.rules']
+        if v11:
+            with io.open(os.path.join(pdir, 'agent', 'y.ps1'), 'w', encoding='utf-8') as fh:
+                fh.write('Write-Output 1\n')
+            agent_files.append('y.ps1')
+        setup = [{'platform': 'manager', 'required': True, 'title': 'Install', 'title_zh': '安裝',
+                  'body': 'b', 'body_zh': 'b'}]
+        if v11:
+            setup.append({'platform': 'windows', 'required': False, 'title': 'New agent step',
+                          'title_zh': '新步驟', 'body': 'b', 'body_zh': 'b', 'since': '1.1'})
+        manifest = {'id': 'jt-test', 'name': 'Test', 'version': version, 'rule_id_range': '990000-990299',
+                    'files': entries,
+                    'scripts': [{'name': 'jt-test-updater.py', 'dest': 'etc/jt-packs/bin/jt-test-updater.py',
+                                 'cron': '0 * * * *'}],
+                    'agent_group': {'name': 'jt-test', 'config': 'agent.conf', 'files': agent_files},
+                    'setup': setup}
+        with io.open(os.path.join(pdir, 'manifest.json'), 'w', encoding='utf-8') as fh:
+            _json.dump(manifest, fh)
+
+    def path(self, rel):
+        return os.path.join(self.tmp, rel)
+
+    @staticmethod
+    def slurp(path):
+        with io.open(path, encoding='utf-8') as fh:
+            return fh.read()
+
+    def read(self, rel):
+        return self.slurp(self.path(rel))
+
+    def write(self, rel, body):
+        os.makedirs(os.path.dirname(self.path(rel)), exist_ok=True)
+        with io.open(self.path(rel), 'w', encoding='utf-8') as fh:
+            fh.write(body)
+
+    def install(self):
+        r = self.client.post('/api/packs/jt-test/install', json={})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+
+    def plan(self):
+        r = self.client.get('/api/packs/jt-test/update')
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        return r.get_json()
+
+    @staticmethod
+    def actions(plan):
+        return {f['dest']: f['action'] for f in plan['files']}
+
+    def state(self):
+        with io.open(self.path('etc/jt-packs/jt-test.json'), encoding='utf-8') as fh:
+            return json.load(fh)
+
+    def test_the_plan_names_what_happens_to_every_file(self):
+        self.install()
+        self.write('etc/lists/jt-test-approved', 'site-approved:x\n')
+        self.write_version('1.1')
+        plan = self.plan()
+        self.assertEqual((plan['from'], plan['to'], plan['direction']), ('1.0', '1.1', 'up'))
+        self.assertEqual(self.actions(plan), {
+            'etc/rules/zz-990000-test.xml': 'update',
+            'etc/rules/zz-990200-new.xml': 'add',
+            'etc/rules/zz-990100-old.xml': 'remove',
+            'etc/lists/jt-test-approved': 'keep',
+            'etc/lists/jt-test-new': 'add',
+            'etc/lists/jt-test-old': 'remove',
+            'etc/jt-packs/bin/jt-test-updater.py': 'update',
+        })
+        self.assertEqual({g['file']: g['action'] for g in plan['group']['files']},
+                         {'agent.conf': 'update', 'x.rules': 'same', 'y.ps1': 'add'})
+        self.assertEqual(plan['lists'], {'declare': ['etc/lists/jt-test-new'],
+                                         'undeclare': ['etc/lists/jt-test-old']})
+        self.assertEqual([st['title'] for st in plan['setup_new']], ['New agent step'])
+        self.assertEqual(plan['needs_choice'], [])
+        # nothing written by looking
+        self.assertIn('level="3"', self.read('etc/rules/zz-990000-test.xml'))
+
+    def test_update_applies_the_new_version_and_leaves_site_data(self):
+        self.install()
+        self.write('etc/lists/jt-test-approved', 'site-approved:x\n')
+        self.write_version('1.1')
+        r = self.client.post('/api/packs/jt-test/update', json={})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        body = r.get_json()
+        self.assertIn('level="4"', self.read('etc/rules/zz-990000-test.xml'))
+        self.assertTrue(os.path.isfile(self.path('etc/rules/zz-990200-new.xml')))
+        self.assertFalse(os.path.exists(self.path('etc/rules/zz-990100-old.xml')))
+        self.assertEqual(self.read('etc/lists/jt-test-approved'), 'site-approved:x\n')
+        self.assertIn('<list>etc/lists/jt-test-new</list>', self.conf())
+        self.assertNotIn('<list>etc/lists/jt-test-old</list>', self.conf())
+        self.assertIn('1.1', self.read('etc/jt-packs/bin/jt-test-updater.py'))
+        self.assertIn('<!-- 1.1 -->', self.read('etc/shared/jt-test/agent.conf'))
+        self.assertTrue(os.path.isfile(self.path('etc/shared/jt-test/y.ps1')))
+        self.assertTrue(body['group_changed'])
+        self.assertEqual([st['title'] for st in body['setup_new']], ['New agent step'])
+        st = self.state()
+        self.assertEqual(st['version'], '1.1')
+        self.assertEqual([(h['from'], h['to']) for h in st['history']], [('1.0', '1.1')])
+        # a second look finds nothing left to do
+        self.assertTrue(all(a in ('same', 'keep') for a in self.actions(self.plan()).values()))
+
+    def test_a_rule_edited_on_the_manager_is_left_unless_asked(self):
+        self.install()
+        self.write('etc/rules/zz-990000-test.xml', self.RULE % ('990001', 9, 'alpha', 'site edit'))
+        self.write_version('1.1')
+        plan = self.plan()
+        self.assertEqual(self.actions(plan)['etc/rules/zz-990000-test.xml'], 'modified')
+        self.assertIn('etc/rules/zz-990000-test.xml', plan['needs_choice'])
+        r = self.client.post('/api/packs/jt-test/update', json={}).get_json()
+        self.assertIn('etc/rules/zz-990000-test.xml', r['left'])
+        self.assertIn('site edit', self.read('etc/rules/zz-990000-test.xml'))
+        # still reads as changed afterwards, and the operator can replace it later
+        self.assertEqual(self.actions(self.plan())['etc/rules/zz-990000-test.xml'], 'modified')
+        r = self.client.post('/api/packs/jt-test/update', json={'overwrite_modified': True}).get_json()
+        self.assertTrue(r['success'], r)
+        self.assertIn('level="4"', self.read('etc/rules/zz-990000-test.xml'))
+        backups = [h['backup_dir'] for h in self.state()['history']]
+        saved = os.path.join(backups[-1], 'etc__rules__zz-990000-test.xml')
+        self.assertIn('site edit', self.slurp(saved))
+
+    def test_a_failed_ruleset_check_rolls_the_whole_update_back(self):
+        self.install()
+        conf_before = self.conf()
+        cron = os.path.join(self._cron_dir, 'jt-jt-test')
+        cron_before = self.slurp(cron)
+        self.write_version('1.1')
+        self._write_analysisd(self.ANALYSISD_BAD)
+        r = self.client.post('/api/packs/jt-test/update', json={})
+        self.assertEqual(r.status_code, 400, r.get_data(as_text=True))
+        self.assertTrue(r.get_json()['rolled_back'])
+        self.assertIn('level="3"', self.read('etc/rules/zz-990000-test.xml'))
+        self.assertTrue(os.path.isfile(self.path('etc/rules/zz-990100-old.xml')))
+        self.assertFalse(os.path.exists(self.path('etc/rules/zz-990200-new.xml')))
+        self.assertFalse(os.path.exists(self.path('etc/shared/jt-test/y.ps1')))
+        self.assertIn('<!-- 1.0 -->', self.read('etc/shared/jt-test/agent.conf'))
+        self.assertIn('1.0', self.read('etc/jt-packs/bin/jt-test-updater.py'))
+        self.assertEqual(self.conf(), conf_before)
+        self.assertEqual(self.slurp(cron), cron_before)
+        self.assertEqual(self.state()['version'], '1.0')
+
+    def test_removing_after_an_update_restores_the_original_and_keeps_site_lists(self):
+        self.write('etc/rules/zz-990000-test.xml', '<!-- the site file this pack replaced -->\n')
+        self.install()
+        self.write('etc/lists/jt-test-approved', 'site-approved:x\n')
+        self.write_version('1.1')
+        self.assertTrue(self.client.post('/api/packs/jt-test/update', json={}).get_json()['success'])
+        r = self.client.delete('/api/packs/jt-test', json={})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(self.read('etc/rules/zz-990000-test.xml'), '<!-- the site file this pack replaced -->\n')
+        self.assertFalse(os.path.exists(self.path('etc/rules/zz-990200-new.xml')))
+        self.assertEqual(self.read('etc/lists/jt-test-approved'), 'site-approved:x\n')
+        self.assertIn('etc/lists/jt-test-approved', r.get_json()['kept'])
+
+    def test_an_agent_group_file_the_site_edited_is_not_overwritten(self):
+        self.install()
+        self.write('etc/shared/jt-test/agent.conf', '<agent_config><!-- site --></agent_config>\n')
+        self.write_version('1.1')
+        self.assertEqual({g['file']: g['action'] for g in self.plan()['group']['files']}['agent.conf'], 'modified')
+        r = self.client.post('/api/packs/jt-test/update', json={}).get_json()
+        self.assertIn('etc/shared/jt-test/agent.conf', r['left'])
+        self.assertIn('<!-- site -->', self.read('etc/shared/jt-test/agent.conf'))
+        self.assertTrue(os.path.isfile(self.path('etc/shared/jt-test/y.ps1')))
+
+    def test_an_install_recorded_before_group_hashes_is_treated_as_edited(self):
+        """Installs from before 1.11.6 kept no hashes for the agent group, so a
+        differing file there cannot be told apart from a site edit."""
+        self.install()
+        st = self.state()
+        st['agent_group'].pop('hashes', None)
+        with io.open(self.path('etc/jt-packs/jt-test.json'), 'w', encoding='utf-8') as fh:
+            json.dump(st, fh)
+        self.write_version('1.1')
+        group = {g['file']: g['action'] for g in self.plan()['group']['files']}
+        self.assertEqual(group, {'agent.conf': 'modified', 'x.rules': 'same', 'y.ps1': 'add'})
+
+    def test_a_site_list_present_before_install_is_never_replaced(self):
+        self.write('etc/lists/jt-test-approved', 'already-here:x\n')
+        self.install()
+        self.assertEqual(self.read('etc/lists/jt-test-approved'), 'already-here:x\n')
+        self.assertIn('<list>etc/lists/jt-test-approved</list>', self.conf())
+        r = self.client.delete('/api/packs/jt-test', json={})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.read('etc/lists/jt-test-approved'), 'already-here:x\n')
+
+    def test_removal_uses_the_catalogue_for_records_without_keep(self):
+        """Records written before keep existed: an edited site list used to make
+        removal refuse, and force then deleted the site's data."""
+        self.install()
+        st = self.state()
+        for e in st['files']:
+            e.pop('keep', None)
+            e.pop('written', None)
+        with io.open(self.path('etc/jt-packs/jt-test.json'), 'w', encoding='utf-8') as fh:
+            json.dump(st, fh)
+        self.write('etc/lists/jt-test-approved', 'site-approved:x\n')
+        r = self.client.delete('/api/packs/jt-test', json={})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(self.read('etc/lists/jt-test-approved'), 'site-approved:x\n')
+
+    def test_updating_needs_an_installed_pack(self):
+        self.assertEqual(self.client.get('/api/packs/jt-test/update').status_code, 400)
+        self.assertEqual(self.client.post('/api/packs/jt-test/update', json={}).status_code, 400)
+        self.assertEqual(self.client.get('/api/packs/no-such-pack/update').status_code, 404)
+
 
 class TestPackDeployment(PackFixture):
     """The deployment guide and the 'already there, no record' state (1.10.0)."""
@@ -2219,6 +2487,26 @@ class TestShippedPacks(unittest.TestCase):
             self.assertIsNotNone(m, rid)
             return m.group(1)
         self.assertEqual(pattern('906237', 'audit.file.name'), pattern('906234', 'file'))
+
+    def test_every_list_says_whether_the_site_owns_it(self):
+        """keep decides whether an update or a removal may touch a list. A list
+        the site fills in (approved tools, internal networks) or an updater
+        rewrites must say so; the default would replace or delete site data."""
+        for pack_id, m in ((mm["id"], mm) for _, mm in self.packs):
+            for f in m.get('files', []):
+                if f.get('type') == 'list':
+                    with self.subTest(pack=pack_id, list=f['name']):
+                        self.assertIn('keep', f)
+
+    def test_setup_steps_marked_new_name_a_version_the_pack_has_reached(self):
+        def key(v):
+            return tuple(int(x) for x in re.findall(r'\d+', v))
+        for pack_id, m in ((mm["id"], mm) for _, mm in self.packs):
+            for st in m.get('setup') or []:
+                if 'since' in st:
+                    with self.subTest(pack=pack_id, step=st['title']):
+                        self.assertRegex(st['since'], r'^\d+(\.\d+)*$')
+                        self.assertLessEqual(key(st['since']), key(m['version']))
 
     def test_powershell_scripts_are_ascii(self):
         """Windows PowerShell 5.1 reads a script without a byte-order mark in the

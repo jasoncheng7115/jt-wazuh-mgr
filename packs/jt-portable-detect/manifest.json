@@ -45,14 +45,16 @@
    "name": "jt-approved-portable",
    "dest": "etc/lists/jt-approved-portable",
    "declare": true,
-   "sha256": "6f37c964df3d17a185a6d74f240ea854f56dc3ffe3854e718949b7b678bfec41"
+   "sha256": "6f37c964df3d17a185a6d74f240ea854f56dc3ffe3854e718949b7b678bfec41",
+   "keep": true
   },
   {
    "type": "list",
    "name": "jt-approved-portable-hash",
    "dest": "etc/lists/jt-approved-portable-hash",
    "declare": true,
-   "sha256": "d0e2abcc83c7bfb2297f5e60279f0e483e7610bb8d93581cf95b66820df25a1e"
+   "sha256": "d0e2abcc83c7bfb2297f5e60279f0e483e7610bb8d93581cf95b66820df25a1e",
+   "keep": true
   }
  ],
  "notes": [
@@ -114,7 +116,8 @@
    "file": "agent/sysmon-jt-portable.xml",
    "code": "Sysmon64.exe -c C:\\path\\to\\your-config.xml\nSysmon64.exe -c",
    "verify": "Copy C:\\Windows\\System32\\notepad.exe to your Downloads folder as test.pdf. Expect rule 906183 (level 10) on the manager. Delete the file afterwards.",
-   "verify_zh": "把 C:\\Windows\\System32\\notepad.exe 複製到「下載」並命名為 test.pdf，管理端應出現規則 906183（level 10）。測完刪除該檔。"
+   "verify_zh": "把 C:\\Windows\\System32\\notepad.exe 複製到「下載」並命名為 test.pdf，管理端應出現規則 906183（level 10）。測完刪除該檔。",
+   "since": "3.4"
   },
   {
    "platform": "windows",
@@ -126,7 +129,8 @@
    "file": "agent/jt-channel-watchdog.ps1",
    "code": "$dir = \"$env:ProgramFiles\\jt-wazuh-mgr\"\nNew-Item -ItemType Directory -Force $dir | Out-Null\nCopy-Item \"${env:ProgramFiles(x86)}\\ossec-agent\\shared\\jt-channel-watchdog.ps1\" $dir -Force\n$run   = New-ScheduledTaskAction -Execute powershell.exe -Argument \"-NoProfile -ExecutionPolicy Bypass -File `\"$dir\\jt-channel-watchdog.ps1`\"\"\n$boot  = New-ScheduledTaskTrigger -AtStartup; $boot.Delay = 'PT3M'\n$every = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 15)\nRegister-ScheduledTask -TaskPath '\\jt-wazuh-mgr\\' -TaskName channel-watchdog -Action $run -Trigger $boot, $every -User SYSTEM -RunLevel Highest -Force | Out-Null",
    "verify": "Get-ScheduledTaskInfo -TaskPath '\\jt-wazuh-mgr\\' -TaskName channel-watchdog shows LastTaskResult 0 within 15 minutes. After the next reboot, rule 906190 (level 3) appears on the manager a few minutes after the agent connects. To see whether a host is affected now, look for 'Could not EvtSubscribe' in the agent's ossec.log; a silent subscription leaves no line at all.",
-   "verify_zh": "15 分鐘內 Get-ScheduledTaskInfo -TaskPath '\\jt-wazuh-mgr\\' -TaskName channel-watchdog 的 LastTaskResult 應為 0。下次重新開機後，agent 連上幾分鐘內 manager 會出現規則 906190（level 3）。要看主機現在是否受影響，可在 agent 的 ossec.log 找 'Could not EvtSubscribe'；但訂閱「無聲失效」時不會留下任何一行。"
+   "verify_zh": "15 分鐘內 Get-ScheduledTaskInfo -TaskPath '\\jt-wazuh-mgr\\' -TaskName channel-watchdog 的 LastTaskResult 應為 0。下次重新開機後，agent 連上幾分鐘內 manager 會出現規則 906190（level 3）。要看主機現在是否受影響，可在 agent 的 ossec.log 找 'Could not EvtSubscribe'；但訂閱「無聲失效」時不會留下任何一行。",
+   "since": "3.2"
   },
   {
    "platform": "windows",
@@ -147,7 +151,8 @@
    "file": "agent/jt-portable.rules",
    "code": "apt install auditd        # or: dnf install audit\ncp /var/ossec/etc/shared/jt-portable.rules /etc/audit/rules.d/\naugenrules --load\nauditctl -l | grep jt_portable",
    "verify": "cp /bin/true /tmp/jt-portable-test && /tmp/jt-portable-test; rm /tmp/jt-portable-test  — expect rule 906211 (level 12).",
-   "verify_zh": "cp /bin/true /tmp/jt-portable-test && /tmp/jt-portable-test; rm /tmp/jt-portable-test —— 應出現規則 906211（level 12）。"
+   "verify_zh": "cp /bin/true /tmp/jt-portable-test && /tmp/jt-portable-test; rm /tmp/jt-portable-test —— 應出現規則 906211（level 12）。",
+   "since": "3.4"
   },
   {
    "platform": "linux",

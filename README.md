@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.11.5
+# jt-wazuh-mgr v1.12.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@ A powerful web-based management tool for Wazuh agents in cluster environments.
 
 > **Recommended**: Use the Web UI as the primary interface — it's the main feature of this tool with full functionality.
 
-![Version](https://img.shields.io/badge/version-1.11.5-blue)
+![Version](https://img.shields.io/badge/version-1.12.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -87,7 +87,8 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 - **Catalogue of detection rule series** maintained by Jason Tools, installable from the UI
 - Each pack bundles rules, decoders and CDB lists behind a manifest; open one to see the files it installs, where they go, and which rule IDs it claims
 - Install is guarded: **rule-ID conflict detection**, backup of anything overwritten, `wazuh-analysisd -t` validation, and **full rollback if any step fails**
-- Removal restores replaced files and **refuses to discard files you edited** after installing
+- **Update** an installed pack when a new release brings a newer version. A plan comes first: what happens to every file (added, updated, removed, or left because you changed it), then the update runs with the same backup, validation and rollback. Lists the site maintains (approved tools, internal networks, lists an updater fills) are never replaced, new files reach agent groups that already exist, and the agent-side steps added since your version are listed
+- Removal restores replaced files, **refuses to discard rule files you edited**, and keeps the lists the site maintains
 - **Setup guide** for packs that depend on configuration the manager cannot apply (Sysmon filters, auditd, agent groups, syslog forwarding): numbered steps, copyable commands, a way to check each one, and the agent-side files to view or download
 - A pack whose files were copied in by hand is recognised as **installed but untracked**, instead of being reported as conflicting with itself
 - Ships with: portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, Zimbra detection, Zenarmor (OPNsense), AdGuard Home, fail2ban, and a readable alert digest by mail

@@ -498,6 +498,33 @@ async function run() {
     await closeModal();
   });
 
+  await journey('J22 an installed pack is updated from its plan', async () => {
+    await tab('packs', 1800);
+    const offered = await page.evaluate(() => [...document.querySelectorAll('#packs-panel tr')]
+      .some(tr => /jt-portable-detect/.test(tr.textContent) && [...tr.querySelectorAll('button')].some(b => /Update/.test(b.textContent))));
+    check('an outdated install offers Update', offered);
+    await page.evaluate(() => updatePack('jt-portable-detect'));
+    await wait(1800);
+    const plan = await page.$eval('#modalBody', e => e.innerText);
+    check('the plan says what happens to each file', /Files on the manager/.test(plan) && /Will be added|Will be updated/.test(plan), plan.slice(0, 200));
+    check('site data is left alone', /Site data, left as it is/.test(plan));
+    check('agent-side steps new since the installed version are listed',
+      /Agent-side steps new in this version/.test(plan) && /Defender/.test(plan) && /New in 3\.4/.test(plan), plan.slice(-300));
+    const title = await page.$eval('#modalTitle', e => e.textContent);
+    check('the dialog names both versions', /3\.1/.test(title) && /3\.4/.test(title), title);
+    await page.evaluate(() => { const b = document.getElementById('packUpdateGo'); if (b) b.click(); });
+    await wait(2500);
+    const done = await page.$eval('#modalBody', e => e.innerText);
+    check('the update reports completion', /Update complete/.test(done), done.slice(0, 200));
+    check('the result offers to reload the ruleset', await page.evaluate(() =>
+      [...document.querySelectorAll('#modalFooter button')].some(b => /Reload ruleset now/.test(b.textContent))));
+    await closeModal();
+    await wait(1500);
+    const after = await page.evaluate(() => [...document.querySelectorAll('#packs-panel tr')]
+      .filter(tr => /jt-portable-detect/.test(tr.textContent)).map(tr => tr.textContent).join(' '));
+    check('the list no longer offers an update', !/update 3\.1/.test(after) && /Installed/.test(after), after.slice(0, 160));
+  });
+
   await journey('J16 security headers are present on a real response', async () => {
     const resp = await page.goto(BASE + '/login', { waitUntil: 'networkidle2' });
     const h = resp.headers();
