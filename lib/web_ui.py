@@ -14272,7 +14272,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             if not os.path.isfile(src):
                 raise ValueError('Script %s is listed but missing from the pack' % entry['name'])
             dest = os.path.join(wazuh, dest_rel)
-            if os.path.exists(dest):
+            if os.path.exists(dest) and _sha256_of(dest) != _sha256_of(src):
                 shutil.copy2(dest, os.path.join(backup_dir, os.path.basename(dest)))
                 backed_up.append(dest)
             shutil.copy2(src, dest)
@@ -14344,7 +14344,16 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         # assigned to it and it may carry settings this pack knows nothing about;
         # replacing it would silently discard someone else's configuration.
         if os.path.isfile(dest):
-            return {'name': name, 'created': False, 'already_present': True, 'hashes': {},
+            # Files identical to the pack's are recorded as the pack's, so a
+            # later update can replace them; anything else counts as the site's.
+            same = {}
+            for fname, fsrc in [('agent.conf', src)] + [
+                    (str(e), os.path.join(pdir, 'agent', str(e))) for e in (spec.get('files') or [])
+                    if re.match(r'^[A-Za-z0-9._-]{1,64}$', str(e))]:
+                cur = _sha256_of(os.path.join(gdir, fname))
+                if cur and cur == _sha256_of(fsrc):
+                    same[fname] = cur
+            return {'name': name, 'created': False, 'already_present': True, 'hashes': same,
                     'note': 'the group already existed and was left untouched; '
                             'add the pack\'s localfile entries by hand if they are missing'}
         os.makedirs(gdir, exist_ok=True)
@@ -14589,7 +14598,11 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                         if entry['type'] == 'list' and entry.get('declare'):
                             list_paths.append(dest_rel)
                         continue
-                    if os.path.exists(dest):
+                    # A file already in place with this exact content is the
+                    # pack's own (copied by hand, or installed before records
+                    # existed). Backing it up as the "original" would make a
+                    # later removal restore it instead of removing it.
+                    if os.path.exists(dest) and _sha256_of(dest) != _sha256_of(src):
                         shutil.copy2(dest, os.path.join(backup_dir, os.path.basename(dest)))
                         backed_up.append(dest)
                     shutil.copy2(src, dest)

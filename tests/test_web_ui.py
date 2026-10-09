@@ -1806,6 +1806,31 @@ class TestPackUpdate(PackFixture):
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         self.assertEqual(self.read('etc/lists/jt-test-approved'), 'site-approved:x\n')
 
+    def test_registering_files_already_in_place_does_not_make_them_originals(self):
+        """A pack copied in by hand and then installed through the tool to record
+        it: the files on disk are the pack's own. Treated as site originals, a
+        later removal would put them straight back instead of removing them."""
+        pdir = os.path.join(self.cat, 'jt-test')
+        for sub, name in (('rules', 'zz-990000-test.xml'), ('rules', 'zz-990100-old.xml')):
+            self.write('etc/%s/%s' % (sub, name), self.slurp(os.path.join(pdir, sub, name)))
+        self.write('etc/jt-packs/bin/jt-test-updater.py', self.slurp(os.path.join(pdir, 'scripts', 'jt-test-updater.py')))
+        self.install()
+        self.assertEqual(self.state()['replaced'], [])
+        r = self.client.delete('/api/packs/jt-test', json={})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertFalse(os.path.exists(self.path('etc/rules/zz-990000-test.xml')))
+        self.assertFalse(os.path.exists(self.path('etc/rules/zz-990100-old.xml')))
+
+    def test_an_existing_group_records_only_the_files_that_are_the_packs(self):
+        pdir = os.path.join(self.cat, 'jt-test')
+        self.write('etc/shared/jt-test/agent.conf', self.slurp(os.path.join(pdir, 'agent', 'agent.conf')))
+        self.write('etc/shared/jt-test/x.rules', '-w /home -p x -k site\n')
+        self.install()
+        self.assertEqual(sorted(self.state()['agent_group']['hashes']), ['agent.conf'])
+        self.write_version('1.1')
+        group = {g['file']: g['action'] for g in self.plan()['group']['files']}
+        self.assertEqual(group, {'agent.conf': 'update', 'x.rules': 'modified', 'y.ps1': 'add'})
+
     def test_updating_needs_an_installed_pack(self):
         self.assertEqual(self.client.get('/api/packs/jt-test/update').status_code, 400)
         self.assertEqual(self.client.post('/api/packs/jt-test/update', json={}).status_code, 400)
@@ -2650,6 +2675,18 @@ class TestAlertDigest(unittest.TestCase):
         html = self.mod.render_html({('1', 'h'): group}, 1, 12, None)
         self.assertNotIn('<script>', html)
         self.assertIn('&lt;script&gt;', html)
+
+    def test_site_settings_live_outside_the_cron_line(self):
+        """Installing or updating the pack rewrites its cron entry from the
+        manifest, so a --dashboard added there by hand was lost; the settings
+        file is never written by the installer."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.mod.read_site_settings(d), {})
+            os.makedirs(os.path.join(d, 'etc', 'jt-packs'))
+            with io.open(os.path.join(d, 'etc', 'jt-packs', 'jt-alert-digest.conf'), 'w', encoding='utf-8') as fh:
+                fh.write('# comment\nDashboard = https://dash.example/app/wazuh\nnot a setting\n')
+            self.assertEqual(self.mod.read_site_settings(d), {'dashboard': 'https://dash.example/app/wazuh'})
 
     def test_every_group_names_its_host_with_address_and_agent_id(self):
         """A reader asked which machine a message was about: the agent name sat in

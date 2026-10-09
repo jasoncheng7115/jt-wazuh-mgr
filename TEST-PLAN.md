@@ -16,7 +16,7 @@ the screen. None of them substitutes for another.
 ## Running everything
 
 ```bash
-python3 -m unittest discover -s tests     # 227 tests, fully offline
+python3 -m unittest discover -s tests     # 230 tests, fully offline
 python3 tools/preflight.py                # 21 mechanical pre-release checks
 
 # on a host without a system Flask

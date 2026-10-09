@@ -2,7 +2,7 @@
  "id": "jt-alert-digest",
  "name": "Readable Alert Digest",
  "name_zh": "可讀的告警摘要信",
- "version": "1.2",
+ "version": "1.3",
  "summary": "Replaces wazuh-maild's raw notifications with one grouped, readable message per run.",
  "summary_zh": "把 wazuh-maild 的原始通知換成分組整理過、讀得完的摘要信。",
  "rule_id_range": "131100-131199",
@@ -43,7 +43,7 @@
   {
    "name": "jt-alert-digest.py",
    "dest": "etc/jt-packs/bin/jt-alert-digest.py",
-   "sha256": "d5edfd665369b770c9f7c403cafb3b0e29c4e2daaab7b6411de5a59fc30a6fab",
+   "sha256": "0e6a5523ebac9a918fe8d5b46580bbe8a958ced99042f10f04fe061376e8079b",
    "cron": "*/2 * * * *",
    "args": "--wazuh-path {wazuh_path}",
    "description": "Groups new alerts and sends one readable message, using the mail settings already in ossec.conf"
@@ -55,9 +55,21 @@
    "required": true,
    "title": "Install on every node that writes alerts",
    "title_zh": "在每個會寫告警的節點各裝一份",
-   "body": "Each cluster node writes only the alerts of the agents it processes, so in a cluster this must run on every node — Windows agents are usually on a worker. The installer schedules it on the node you install from; on each worker, copy the script and the cron file across.",
-   "body_zh": "叢集裡每個節點只寫自己處理的 agent 的告警，所以每個節點都要跑一份 —— Windows agent 通常在 worker。安裝程式只在你執行安裝的節點排程；每台 worker 請把腳本與 cron 檔複製過去。",
-   "code": "scp /var/ossec/etc/jt-packs/bin/jt-alert-digest.py <worker>:/var/ossec/etc/jt-packs/bin/\nscp /etc/cron.d/jt-wazuh-mgr-jt-alert-digest <worker>:/etc/cron.d/"
+   "body": "Each cluster node writes only the alerts of the agents it processes, so in a cluster this must run on every node — Windows agents are usually on a worker. The installer schedules it on the node you install from; on each worker, copy the script and the cron file across, and the settings file below if you use one.",
+   "body_zh": "每個叢集節點只寫入它負責的 agent 的告警，所以叢集中每個節點都要執行 —— Windows agent 通常在 worker 上。安裝程式只會在你安裝的那個節點排程；每個 worker 請把腳本與排程檔複製過去，若有使用下方的設定檔也一併複製。",
+   "code": "scp /var/ossec/etc/jt-packs/bin/jt-alert-digest.py <worker>:/var/ossec/etc/jt-packs/bin/\nscp /etc/cron.d/jt-jt-alert-digest <worker>:/etc/cron.d/"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.3",
+   "title": "Put a link to the dashboard in each message",
+   "title_zh": "在每封信裡附上主控台連結",
+   "body": "The digest can end with a link to your Wazuh dashboard. Put it in the settings file rather than on the cron line: installing or updating the pack rewrites the cron entry from the pack, and never touches this file. Each node reads its own copy.",
+   "body_zh": "摘要信可以在結尾附上 Wazuh 主控台的連結。請寫在設定檔裡，不要加在排程那一行：安裝或更新套件時會依套件重寫排程，但永遠不會動到這個檔案。每個節點讀自己的那一份。",
+   "code": "echo 'dashboard = https://<dashboard-host>/app/wazuh' > /var/ossec/etc/jt-packs/jt-alert-digest.conf\n/var/ossec/etc/jt-packs/bin/jt-alert-digest.py --dry-run | tail -3",
+   "verify": "The dry run prints the link as the last line of the message when there are alerts to report.",
+   "verify_zh": "有告警可報時，試跑會在訊息最後一行印出這個連結。"
   },
   {
    "platform": "manager",

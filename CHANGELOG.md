@@ -4,6 +4,26 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.12.1 (2026-10-10)
+
+Found while recording our own manager's hand-copied packs through Install, so
+that they can be updated:
+
+- **Installing over a pack's own files made them "originals".** A file already
+  in place with exactly the pack's content was backed up as the file the pack
+  replaced. A later removal then restored it instead of removing it. Identical
+  files, and identical scripts, are now taken as the pack's own.
+- **An agent group that already existed recorded nothing,** so the next update
+  showed every one of its files as changed on this manager. Files identical to
+  the pack's are now recorded as the pack's; anything else still counts as the
+  site's.
+- **jt-alert-digest 1.3:** the dashboard link at the foot of each message is
+  read from `etc/jt-packs/jt-alert-digest.conf` (`dashboard = URL`). Installing
+  or updating a pack rewrites its cron entry from the manifest, so a
+  `--dashboard` added to that line by hand was lost; the installer never writes
+  this file. The setup guide gains that step and now names the cron file the
+  installer actually writes, `/etc/cron.d/jt-jt-alert-digest`.
+
 ## v1.12.0 (2026-10-10)
 
 - **Update an installed rule pack.** A new release brings a newer catalogue,

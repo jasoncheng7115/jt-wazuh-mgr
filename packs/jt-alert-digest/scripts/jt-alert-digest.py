@@ -71,6 +71,30 @@ SANS = ("-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "
 # Configuration, read from the manager rather than duplicated here
 # --------------------------------------------------------------------------
 
+def read_site_settings(wazuh):
+    """Site settings that survive updating the pack.
+
+    etc/jt-packs/jt-alert-digest.conf, one "key = value" per line. Installing
+    or updating the pack rewrites its cron entry from the manifest, so an
+    argument added to that line by hand would be lost; this file is never
+    written by the installer. Each node has its own (etc/jt-packs is not
+    synchronised by the cluster). Known key: dashboard.
+    """
+    settings = {}
+    path = os.path.join(wazuh, "etc", "jt-packs", "jt-alert-digest.conf")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                settings[key.strip().lower()] = value.strip()
+    except OSError:
+        pass
+    return settings
+
+
 def read_global_config(wazuh):
     """Pull the mail settings out of ossec.conf.
 
@@ -587,6 +611,8 @@ def main():
     _QUEUE = queue if os.path.exists(queue) else None
 
     config = read_global_config(wazuh)
+    site = read_site_settings(wazuh)
+    dashboard = args.dashboard or site.get("dashboard")
     min_level = args.level if args.level is not None else config["level"]
     recipients = args.to or config["email_to"]
 
@@ -603,8 +629,8 @@ def main():
             write_offset(state, new_offset)
         return 0
 
-    text = render_text(groups, total, min_level, args.dashboard)
-    html = render_html(groups, total, min_level, args.dashboard)
+    text = render_text(groups, total, min_level, dashboard)
+    html = render_html(groups, total, min_level, dashboard)
     line = subject(groups, total)
 
     if args.dry_run:
