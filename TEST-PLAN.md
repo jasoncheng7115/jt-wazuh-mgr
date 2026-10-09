@@ -16,7 +16,7 @@ the screen. None of them substitutes for another.
 ## Running everything
 
 ```bash
-python3 -m unittest discover -s tests     # 214 tests, fully offline
+python3 -m unittest discover -s tests     # 215 tests, fully offline
 python3 tools/preflight.py                # 21 mechanical pre-release checks
 
 # on a host without a system Flask
@@ -291,6 +291,8 @@ is usually the node processing Windows agents.
 | portable-detect | logged in over SSH as the user: a script uploaded into Temp, a repository cloned there, Add-Type; Add-Type again as SYSTEM | 906128 (10); 906127 (3); 906126 (6); 906129 (6) -- and no 92213 (15) | real event |
 | portable-detect | a pytest fixture run from `/tmp/pytest-of-root/...`; the same event with the path changed to `/tmp/x9/` | 906237 (3); 906211 (12) | wazuh-logtest with a real joined audit event |
 | portable-detect | a 234-byte `pip` and a 27 KB `wheel` created in `/tmp/tmpXXXX/bin/` | 906238 (3); 906202 (10) | real event (FIM) |
+| portable-detect | programs started through WMI (parent WmiPrvSE) from `C:\JtwmRoot\`, the Recycle Bin, `C:\Windows\tracing\`; `ngrok.exe` from the root folder | 906177 (3); 906178 (10); 906174 (12); 906176 (12). Before 3.4 all four ended at the built-in level 0 rule 92069 | real event, after merging the 3.4 Sysmon fragment |
+| portable-detect | on a Linux host with the 3.4 auditd file: a program run from `/run/user/0` in a session opened after the rules were loaded; from `/var/crash` | 906211 (12) for both | real event |
 | any pack with a list | the list after the nightly update | `.cdb` newer than the text on every node | `ls -l etc/lists` on each node |
 
 ---

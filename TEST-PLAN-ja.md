@@ -16,7 +16,7 @@
 ## すべてを実行する
 
 ```bash
-python3 -m unittest discover -s tests     # 214 件のテスト、完全にオフライン
+python3 -m unittest discover -s tests     # 215 件のテスト、完全にオフライン
 python3 tools/preflight.py                # 21 項目の機械的なリリース前チェック
 
 # システムに Flask が入っていないホストで
@@ -288,6 +288,8 @@ location に何を与えても JSON を通常の `json` としてデコードし
 | portable-detect | ユーザーとして SSH でログイン：Temp へスクリプトをアップロード、そこへリポジトリを clone、Add-Type；SYSTEM で再度 Add-Type | 906128（10）；906127（3）；906126（6）；906129（6）—— 92213（15）は出ない | 実イベント |
 | portable-detect | `/tmp/pytest-of-root/...` から pytest のテスト用実行ファイルを実行；同じイベントのパスを `/tmp/x9/` に変更 | 906237（3）；906211（12） | 実際の結合済み audit イベントで wazuh-logtest |
 | portable-detect | `/tmp/tmpXXXX/bin/` に 234 バイトの `pip` と 27 KB の `wheel` を作成 | 906238（3）；906202（10） | 実イベント（FIM） |
+| portable-detect | WMI（親プロセス WmiPrvSE）経由で `C:\JtwmRoot\`、ごみ箱、`C:\Windows\tracing\` からプログラムを起動；ルートのフォルダーから `ngrok.exe` を起動 | 906177（3）；906178（10）；906174（12）；906176（12）。3.4 より前は 4 件とも組み込みの level 0 ルール 92069 で止まっていた | 実イベント（3.4 の Sysmon フラグメントをマージ後） |
+| portable-detect | 3.4 の auditd ファイルを適用した Linux ホスト：ルール読み込み「後」に開いたログインセッションで `/run/user/0` からプログラムを実行；`/var/crash` から実行 | どちらも 906211（12） | 実イベント |
 | リストを持つパック | 夜間更新後のリスト | どのノードでも `.cdb` がテキストより新しい | 各ノードで `ls -l etc/lists` |
 
 ---

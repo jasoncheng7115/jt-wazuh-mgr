@@ -2101,6 +2101,20 @@ class TestShippedPacks(unittest.TestCase):
             ('61603', {'image': b.join(['C:', 'Windows', 'Tasks', 't.exe']), 'parentImage': 'x', 'originalFileName': 'PuTTY'}, ['906174']),
             ('61603', {'image': b.join(['C:', 'Windows', 'Tasks', 'ngrok.exe']), 'parentImage': 'x'}, ['906176']),
             ('61603', {'image': b.join(['C:', 'Windows', 'System32', 'whoami.exe']), 'parentImage': 'x'}, []),
+            # a folder of its own at the root of a local drive; the Recycle Bin
+            ('61603', {'image': b.join(['C:', 'Tools', 'putty.exe']), 'parentImage': 'x', 'originalFileName': 'PuTTY'}, ['906177']),
+            ('61603', {'image': b.join(['D:', 'Data', 'tool.exe']), 'parentImage': 'x'}, ['906177']),
+            ('61603', {'image': b.join(['C:', 'tool.exe']), 'parentImage': 'x'}, ['906177']),
+            ('61603', {'image': b.join(['C:', 'Tools', 'ngrok.exe']), 'parentImage': 'x'}, ['906176']),
+            ('61603', {'image': b.join(['C:', 'Program Files', 'App', 'app.exe']), 'parentImage': 'x'}, []),
+            ('61603', {'image': b.join(['C:', 'Windows.old', 'x.exe']), 'parentImage': 'x'}, []),
+            ('61603', {'image': b.join(['C:', '$Recycle.Bin', 'S-1-5-21-1', '$R1A2B3C.exe']), 'parentImage': 'x'}, ['906178']),
+            ('61603', {'image': b.join(['E:', '$Recycle.Bin', 'S-1-5-21-1', '$R1A2B3C.exe']), 'parentImage': 'x'}, ['906178']),
+            # started through WMI: the built-in level 0 rule 92069 (parent WmiPrvSE)
+            # is a sibling of 61603's children and used to swallow these events
+            ('92069', {'image': b.join(['C:', 'JtwmRoot', 'jtwm-rt.exe']), 'parentImage': 'WmiPrvSE.exe'}, ['906177']),
+            ('92069', {'image': b.join(['C:', 'Windows', 'tracing', 't.exe']), 'parentImage': 'WmiPrvSE.exe'}, ['906174']),
+            ('92069', {'image': p('AppData', 'Local', 'Temp', 'abc', 't.exe'), 'parentImage': 'WmiPrvSE.exe'}, ['906102']),
             # NSIS: "ns" + a letter + 1-4 hex digits; .NET's CodeDom in a same-name subdirectory
             ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'nso5.tmp', 'System.dll'), 'image': 'setup.exe'}, ['906125']),
             ('92213', {'targetFilename': p('AppData', 'Local', 'Temp', 'nsk1F2C.tmp', 'nsDialogs.dll'), 'image': 'setup.exe'}, ['906125']),
@@ -2173,6 +2187,23 @@ class TestShippedPacks(unittest.TestCase):
                 for pat in re.findall(r'<ignore type="sregex">([^<]*)</ignore>', body):
                     with self.subTest(file=n, pattern=pat):
                         self.assertNotRegex(pat, r'[\\()\[\]]')
+
+    def test_process_creation_rules_also_hang_off_the_builtin_level_0_siblings(self):
+        """0800-sysmon_id_1.xml attaches level 0 rules to every process creation
+        through <if_group>sysmon_event1</if_group>, which makes them siblings of
+        anything under 61603. When one matched first the event stopped at level 0:
+        four programs started through WMI (rule 92069, parent WmiPrvSE) from
+        C:\\Windows\\tracing, the Recycle Bin and the root of C: raised nothing."""
+        shadowing = {'92025', '92028', '92042', '92069'}
+        for name in ('zz-906100-jt_portable_rules.xml',):
+            path = os.path.join(self.packs_dir, 'jt-portable-detect', 'rules', name)
+            with io.open(path, encoding='utf-8') as fh:
+                body = fh.read()
+            for rid, parents in re.findall(r'<rule id="(\d+)"[^>]*>\s*<if_sid>([^<]+)</if_sid>', body):
+                ids = {x.strip() for x in parents.split(',')}
+                if '61603' in ids:
+                    with self.subTest(rule=rid):
+                        self.assertTrue(shadowing <= ids, sorted(shadowing - ids))
 
     def test_build_directories_are_the_same_for_files_and_for_execution(self):
         """906234 quiets files appearing in a toolchain's temp directory and 906237

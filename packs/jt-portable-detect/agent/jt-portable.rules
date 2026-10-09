@@ -15,8 +15,8 @@
 ## pack's agent.conf already reads.
 ##
 ## Cost. A -p x watch records an audit event per execution under that path.
-## /tmp, /var/tmp and /dev/shm are quiet on a server, so the three enabled
-## below are close to free. /home is not quiet on a multi-user or developer
+## /tmp, /var/tmp, /dev/shm, /var/crash and /run/user are quiet on a server,
+## so the watches enabled below are close to free. /home is not quiet on a multi-user or developer
 ## host -- every tool a person runs from their own directory is a record --
 ## so it ships commented out. Turn it on where the answer matters more than
 ## the volume, not everywhere by default.
@@ -31,6 +31,14 @@
 -w /tmp -p x -k jt_portable_tmpexec
 -w /var/tmp -p x -k jt_portable_tmpexec
 -w /dev/shm -p x -k jt_portable_tmpexec
+
+## Two more places anyone can write to and run from (added 2026-10-09).
+## /var/crash is world-writable (1777) on Ubuntu and Debian and sits on an
+## ordinary disk; nothing legitimate executes from it. /run/user/<uid> is the
+## per-login tmpfs systemd mounts without noexec, unlike /run itself.
+## /dev/mqueue and /run/lock need no watch: both are mounted noexec.
+-w /var/crash -p x -k jt_portable_tmpexec
+-w /run/user -p x -k jt_portable_tmpexec
 
 ## Programs run from removable media. Rare on a server, and the classic way
 ## a portable tool arrives on a workstation.

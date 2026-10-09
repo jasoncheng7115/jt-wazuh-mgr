@@ -4,6 +4,36 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.11.5 (2026-10-09)
+
+**jt-portable-detect 3.4.** Every change was checked with real events on Windows
+and Linux hosts.
+
+- **Programs started through WMI raised none of the pack's location rules.**
+  The built-in `0800-sysmon_id_1.xml` attaches level 0 rules to every process
+  creation with `<if_group>sysmon_event1</if_group>`. The broadest of them,
+  92069, matches any process whose parent is WmiPrvSE. These rules are siblings
+  of everything under 61603, and when one matched first the event stopped at
+  level 0. In testing, four programs started through WMI from Temp-like places
+  raised nothing. Starting a dropped program through WMI is a common way to run
+  something on another host. Every process-creation rule in the pack now also
+  hangs off 92069, 92025, 92028 and 92042, and a test fails if a new one does
+  not.
+- **New: a program run from a folder of its own at the root of C: or D:**
+  (`C:\Tools\`) is level 3 (906177). Level 3 only, because `C:\Python312`,
+  `C:\msys64` and `C:\tools` have the same shape. A remote-access or tunnelling
+  tool run from there still rises to level 12. **A program run from the Recycle
+  Bin** is level 10 (906178).
+- **Sysmon fragment:** process-creation filters for those places and for the
+  user-writable folders inside `C:\Windows` (906174). With an include-mode
+  configuration, 906174 could not see anything before. Merge the fragment
+  again on hosts that already have an earlier one.
+- **auditd file:** watches `/var/crash`, which is world-writable on Ubuntu and
+  Debian, and `/run/user`, the per-login tmpfs mounted without noexec. A session
+  mounted after the rules were loaded is covered. `/dev/mqueue` and `/run/lock`
+  need no watch, because both are mounted noexec. Copy the file again on hosts
+  that already have it.
+
 ## v1.11.4 (2026-10-09)
 
 **jt-portable-detect 3.3**, tuned from four days of production alerts. Every

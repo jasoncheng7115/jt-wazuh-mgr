@@ -34,9 +34,19 @@
        906143-906149  ★ 保留給客戶端自訂的排除規則
        906150-906159  關聯規則
        906160-906167  內建 Sysmon 事件 11 偵測（92200-92217）的調校
-       906175-906179  G 項：遠端控制與穿隧工具
+       906175-906176  G 項：遠端控制與穿隧工具
+       906177-906178  A 項的延伸（續）：磁碟根目錄的自建資料夾、資源回收筒
        906180-906189  F 項：Sysmon 事件 29（偵測到可執行檔）
        906190-906199  H 項：收集健康度（事件通道訂閱失效後重啟 agent）
+
+  ── ★ 內建的 level 0 規則也是同層（2026-10-09 實測）──
+    0800-sysmon_id_1.xml 用 <if_group>sysmon_event1</if_group> 掛了幾條 level 0 的基礎規則，
+    與掛在 61603 底下的本套件規則同層：92069（父程序是 WmiPrvSE）、92025（reg）、
+    92028（PowerShell 執行腳本）、92042（netsh）。它們先命中時，事件就停在 level 0 ——
+    實測以 WMI 從 C:\Windows\tracing、資源回收筒、C:\ 根目錄啟動程式，四筆全部無聲。
+    以 WMI 遠端啟動丟進來的程式是常見的橫向移動手法，所以凡是掛在 61603 的規則，
+    也一併掛在這四條底下：不論誰先評估，最後都會走到本套件的規則。
+    （if_group 不會出現在 if_sid 裡，找同層規則時兩種都要查；測試會擋漏掛。）
 
   ── ★ 同層規則的評估順序 ──
     Wazuh 依序嘗試同一父規則下的子規則，第一個命中的勝出並往下走，其餘同層規則
@@ -113,7 +123,7 @@
       Users\<使用者>\OneDrive - <公司>\Desktop，原本的寫法在這些電腦上完全不命中。
   -->
   <rule id="906100" level="6">
-    <if_sid>61603</if_sid>
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+(Public\\+|[^\\]+\\+(OneDrive[^\\]*\\+)?(Downloads|Desktop|Documents)\\+|[^\\]+\\+[^\\]+$)</field>
     <description>Portable executable run from a user directory - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
@@ -129,7 +139,7 @@
         將 [E-Z] 改為 [D-Z] 即可，見 docs/TUNING.md 第 5 節）
   -->
   <rule id="906101" level="10">
-    <if_sid>61603</if_sid>
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[E-Z]:\\+</field>
     <description>[WARN] Portable executable run from a non-system drive, possibly removable media - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
@@ -153,7 +163,7 @@
         Temp1_x.zip，結果兩條同時成立。離線比對時抓到，2026-10-05。
   -->
   <rule id="906102" level="10">
-    <if_sid>61603</if_sid>
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+(?!\\|(Rar\$EX[a-z]{1,3}[0-9.]+|7z[A-Z0-9]{3,}|Temp[0-9]+_[^\\]+\.zip|wz[0-9A-F]{3,})\\)</field>
     <description>[WARN] Portable executable run from the user Temp directory - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
@@ -178,7 +188,7 @@
       同時涵蓋兩種情形，不要寫死數量。
   -->
   <rule id="906103" level="12">
-    <if_sid>61603</if_sid>
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^\\+[^\\]+\\+[^\\]+\\+</field>
     <description>[HIGH] Portable executable run directly from a network share - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
@@ -206,7 +216,7 @@
                          提高。要提高之前請先收集至少 7 日 baseline。
   -->
   <rule id="906104" level="10">
-    <if_sid>61603</if_sid>
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+(System)?Temp\\+</field>
     <description>[WARN] Portable executable run from the system Temp directory - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
@@ -216,7 +226,7 @@
   </rule>
 
   <rule id="906105" level="6">
-    <if_sid>61603</if_sid>
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+ProgramData\\+</field>
     <description>Portable executable run from ProgramData - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
@@ -333,11 +343,45 @@
     刻意不掛核准清單（906140-906142）：已核准的工具從這些目錄執行，一樣可疑。
   -->
   <rule id="906174" level="12">
-    <if_sid>61603</if_sid>
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+(Tasks|tracing|Registration\\+CRMLog|(System32|SysWOW64)\\+(Tasks(_Migrated)?|FxsTmp|com\\+dmp|Microsoft\\+Crypto\\+RSA\\+MachineKeys|spool\\+(drivers\\+color|PRINTERS|SERVERS)))\\+</field>
     <description>[HIGH] Program run from a user-writable folder inside the Windows directory, a known AppLocker bypass - $(win.eventdata.image)</description>
     <mitre>
       <id>T1036.005</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+  <!--
+    系統磁碟根目錄下自建的資料夾（2026-10-09 新增）。Authenticated Users 預設可以在
+    C:\ 底下建立資料夾，免安裝工具常被解壓到 C:\Tools\ 這類位置。但 C:\Python312、
+    C:\msys64、C:\tools（Chocolatey）、C:\PHP 也是這個形狀，所以只給 level 3：留下紀錄、
+    讓遠端控制與穿隧工具（906175／906176）在這裡照樣升到 level 12，但不打擾人。
+    排除的是 Windows 自己管理的根目錄；Users、ProgramData 由其他規則處理，
+    資源回收筒由 906178 處理。D: 一併涵蓋（常是資料分割區），E: 以後由 906101 處理。
+    一週正式資料只有 26 筆，全是測試用資料夾。
+  -->
+  <rule id="906177" level="3">
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[CD]:\\+((?!(Windows|Program Files|Program Files \(x86\)|ProgramData|Users|\$Recycle\.Bin|System Volume Information|Recovery|\$WinREAgent|\$Windows\.~BT|\$Windows\.~WS|Windows\.old|\$SysReset|\$GetCurrent|Config\.Msi)\\)[^\\]+\\+|[^\\]+$)</field>
+    <description>Program run from a folder of its own at the root of a local drive - $(win.eventdata.image)</description>
+    <options>no_full_log</options>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+  <!--
+    從資源回收筒執行程式（2026-10-09 新增）。被刪除的檔案改名成 $Rxxxxxx.exe 留在
+    \$Recycle.Bin\<SID>\ 底下；正常操作不會從這裡執行任何東西，拿它藏東西則是老手法。
+    也掛在 906101 底下：E: 以後的磁碟由 906101 處理，同層誰先評估不可預期，
+    這樣不論哪條先命中，最後都會落在這條。
+  -->
+  <rule id="906178" level="10">
+    <if_sid>61603,92025,92028,92042,92069,906101</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+\$Recycle\.Bin\\+</field>
+    <description>[WARN] Program run from the Recycle Bin - $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1564.001</id>
       <id>T1204.002</id>
     </mitre>
     <group>jt_portable_exec,</group>
@@ -366,7 +410,7 @@
     事後在磁碟上找不到。與 906102 互斥（906102 以 lookahead 排除這些目錄）。
   -->
   <rule id="906170" level="10">
-    <if_sid>61603</if_sid>
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+(Rar\$EX[a-z]{1,3}[0-9.]+|7z[A-Z0-9]{3,}|Temp[0-9]+_[^\\]+\.zip|wz[0-9A-F]{3,})\\+</field>
     <description>[WARN] Program run directly from inside an archive - $(win.eventdata.image) user: $(win.eventdata.user) parent: $(win.eventdata.parentImage)</description>
     <mitre>
@@ -386,7 +430,7 @@
     level 5：先觀察，這個位置在開發工作站上常有合理用途。
   -->
   <rule id="906171" level="5">
-    <if_sid>61603</if_sid>
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+(?!Public\\)[^\\]+\\+(?!(AppData|OneDrive[^\\]*|Downloads|Desktop|Documents)\\)(?!\.)[^\\]+\\+</field>
     <description>Program run from a custom folder in a user profile - $(win.eventdata.image) user: $(win.eventdata.user)</description>
     <mitre>
@@ -425,7 +469,7 @@
      公司若正式使用 RustDesk 這類工具，把它加進 jt-approved-portable 即可。
   -->
   <rule id="906175" level="12">
-    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174</if_sid>
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174,906177,906178</if_sid>
     <field name="win.eventdata.product" type="pcre2">(?i)\b(AnyDesk|TeamViewer|RustDesk|ScreenConnect|Splashtop|NetSupport|UltraViewer|Supremo|Ammyy|Radmin|Remote Utilities|DWAgent|MeshCentral|Mesh Agent|Tactical RMM|RemotePC|Zoho Assist|LogMeIn|Atera|Chrome Remote Desktop|Parsec)\b</field>
     <list field="win.eventdata.originalFileName" lookup="not_match_key">etc/lists/jt-approved-portable</list>
     <list field="win.eventdata.image" lookup="not_match_key">etc/lists/jt-approved-portable</list>
@@ -438,7 +482,7 @@
   </rule>
 
   <rule id="906176" level="12">
-    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174</if_sid>
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174,906177,906178</if_sid>
     <field name="win.eventdata.image" type="pcre2">(?i)(\\+(ngrok|cloudflared|frpc|frps|chisel|plink|ligolo[^\\]*|bore|localtonet|zrok|tor)\.exe$|\\+Tor Browser\\+)</field>
     <list field="win.eventdata.originalFileName" lookup="not_match_key">etc/lists/jt-approved-portable</list>
     <list field="win.eventdata.image" lookup="not_match_key">etc/lists/jt-approved-portable</list>

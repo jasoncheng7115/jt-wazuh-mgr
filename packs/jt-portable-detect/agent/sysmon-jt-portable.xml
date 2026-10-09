@@ -19,7 +19,7 @@
 
   What each part feeds
   ────────────────────
-    ProcessCreate (event 1)          906100-906106, 906170-906176   — most
+    ProcessCreate (event 1)          906100-906106, 906170-906178   — most
                                      configurations already log every
                                      process; if yours includes rather than
                                      excludes, make sure these paths are in.
@@ -50,6 +50,15 @@
         <Image condition="begin with">C:\Windows\SystemTemp\</Image>
         <Image condition="begin with">\\</Image>
         <Image condition="excludes">C:\</Image>
+        <!-- folders inside C:\Windows that ordinary users can write to (906174) -->
+        <Image condition="contains any">C:\Windows\Tasks\;C:\Windows\tracing\;C:\Windows\Registration\CRMLog\;\System32\Tasks\;\SysWOW64\Tasks\;\System32\FxsTmp\;\SysWOW64\FxsTmp\;\System32\com\dmp\;\SysWOW64\com\dmp\;\Microsoft\Crypto\RSA\MachineKeys\;\spool\drivers\color\;\spool\PRINTERS\;\spool\SERVERS\</Image>
+        <!-- anything on the system drive outside Windows and Program Files:
+             folders of their own at the root (906177), the Recycle Bin (906178) -->
+        <Rule groupRelation="and">
+          <Image condition="begin with">C:\</Image>
+          <Image condition="not begin with">C:\Windows\</Image>
+          <Image condition="not begin with">C:\Program Files</Image>
+        </Rule>
       </ProcessCreate>
     </RuleGroup>
 

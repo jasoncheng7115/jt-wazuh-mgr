@@ -15,7 +15,7 @@
 ## 執行方式
 
 ```bash
-python3 -m unittest discover -s tests     # 214 項，完全離線
+python3 -m unittest discover -s tests     # 215 項，完全離線
 python3 tools/preflight.py                # 21 項發版前機械檢查
 
 # 系統沒有 Flask 的主機
@@ -260,6 +260,8 @@ Windows 的情境要在 worker 上再驗一次，Windows agent 通常由 worker 
 | portable-detect | 以使用者身分 SSH 登入：上傳腳本到 Temp、在那裡 clone repository、Add-Type；再以 SYSTEM 執行 Add-Type | 906128（10）；906127（3）；906126（6）；906129（6）—— 且沒有 92213（15） | 真實事件 |
 | portable-detect | 從 `/tmp/pytest-of-root/...` 執行 pytest 的測試替身；同一事件把路徑改成 `/tmp/x9/` | 906237（3）；906211（12） | wazuh-logtest，使用真實的合併 audit 事件 |
 | portable-detect | 在 `/tmp/tmpXXXX/bin/` 建立 234 bytes 的 `pip` 與 27 KB 的 `wheel` | 906238（3）；906202（10） | 真實事件（FIM） |
+| portable-detect | 以 WMI（父程序 WmiPrvSE）從 `C:\JtwmRoot\`、資源回收筒、`C:\Windows\tracing\` 啟動程式；從根目錄資料夾啟動 `ngrok.exe` | 906177（3）；906178（10）；906174（12）；906176（12）。3.4 之前四筆都停在內建的 level 0 規則 92069 | 真實事件，合併 3.4 的 Sysmon 片段之後 |
+| portable-detect | Linux 主機套用 3.4 的 auditd 檔：在規則載入「之後」才開的登入工作階段中，從 `/run/user/0` 執行程式；從 `/var/crash` 執行 | 兩者都是 906211（12） | 真實事件 |
 | 有清單的套件 | 每晚更新後的清單 | 每個節點的 `.cdb` 都比文字檔新 | 在各節點 `ls -l etc/lists` |
 
 ---
