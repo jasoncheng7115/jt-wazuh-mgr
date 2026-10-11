@@ -1,0 +1,653 @@
+<!--
+  jt-docker 1.0 - Docker Engine detection for Wazuh 4.x (jt-wazuh-mgr rule pack)
+  Rule IDs 132600-132699. Author: Jason Tools. License: AGPL-3.0-or-later.
+
+  Sources of events, and what each one can and cannot see:
+
+  * Docker API events, from Wazuh's docker-listener wodle on the docker host
+    (built-in rules 87900-87958, decoded by the json decoder, location
+    Wazuh-Docker). The daemon attaches only the container's labels, image and
+    name to a container event (moby daemon/events.go
+    LogContainerEventWithAttributes): NO event says whether a container is
+    privileged, which host paths it mounts, its capabilities or namespaces.
+    An exec event is the text "exec_start: " + program + " " + arguments
+    (moby daemon/exec.go), the same for a person, a cron job and the
+    daemon's own healthchecks (daemon/health.go), with no user and no TTY.
+  * The dockerd / containerd log (syslog or journald), built-in decoder
+    "docker" and rules 86000-86006, plus a third "docker" decoder from this
+    pack that also accepts a local time zone offset (see the decoder file).
+  * File integrity monitoring of the daemon configuration (agent group).
+  * The optional posture check (agent/jt-docker-posture.sh, run by a local
+    wodle command): one line per running container from docker inspect. It
+    is the only source here for privileged mode, host mounts, capabilities
+    and host namespaces.
+
+  What happens inside a container without the Docker API (a web shell in an
+  application) is not in any of these: that needs process telemetry on the
+  host (auditd, Falco, Tetragon).
+
+  Layout
+    132601-132610  docker exec (children of 87907)
+    132620-132629  other Docker API events
+    132640-132645  dockerd / containerd log (children of 86000)
+    132650         auditd promiscuous-mode record of a Docker veth (80710)
+    132660-132663  file integrity of the daemon configuration (550/553/554)
+    132680-132690  posture check (own decoders, first time seen)
+
+  Ordering note (Wazuh 4.14.7 rules.c and rules_list.c): children of one
+  parent are tried from the highest level down, and level 0 counts as the
+  highest (priority 99). That is why the quiet healthcheck rule is level 1,
+  not 0: at level 0 it would be tried before the level 12 rules below and
+  before other packs' children of 87907.
+-->
+
+<group name="docker,jt_docker,">
+
+  <!-- ================================================================
+       docker exec (built-in 87907, level 3, "exec_start: <command>")
+       ================================================================ -->
+
+  <!-- 132607-132610 are tried first (level 12). Ideas from Elastic
+       detection-rules (execution_container_runtime_cli_suspicious_arguments,
+       privilege_escalation_docker_mount_chroot_container_escape,
+       privilege_escalation_container_escape_via_kernel_core_pattern,
+       privilege_escalation_docker_release_file_creation), Falco rules
+       (Netcat Remote Code Execution in Container, Detect release_agent File
+       Container Escapes, Known Cryptominer Process Executed) and the 2025
+       exposed-API campaigns (alpine container, host root mounted, base64
+       script). Re-implemented on the exec command line; nothing copied.
+       https://github.com/elastic/detection-rules  https://github.com/falcosecurity/rules -->
+
+  <rule id="132607" level="12">
+    <if_sid>87907</if_sid>
+    <field name="docker.Action" type="pcre2">\b(?:curl|wget|fetch)\b[^|]*\|\s*(?:sudo\s+)?(?:\S*/)?(?:ba|da|z|k|a)?sh\b|\bbase64\s+(?:-d|--decode|-di)\b[^|]*\|\s*(?:\S*/)?(?:ba|da|z|k|a)?sh\b|\b(?:curl|wget)\b[^;|]*\s(?:-o|-O|--output|--output-document)\s*['"]?/(?:tmp|var/tmp|dev/shm)/\S+.*\bchmod\s+(?:[0-7]*[1357][0-7]*|[ugoa]*\+[rw]*x)\b|\b(?:sh|bash)\s+-c\s+['"]?\$\((?:curl|wget)\b</field>
+    <description>[HIGH] Docker: download-and-run or decode-and-run command started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
+    <mitre>
+      <id>T1609</id>
+      <id>T1105</id>
+      <id>T1059.004</id>
+    </mitre>
+    <group>jt_docker_exec_suspicious,pci_dss_10.2.7,gdpr_IV_32.2,</group>
+  </rule>
+
+  <rule id="132608" level="12">
+    <if_sid>87907</if_sid>
+    <field name="docker.Action" type="pcre2">/dev/(?:tcp|udp)/[^/\s]+/\d+|\b(?:nc|ncat|netcat)(?:\.\w+)?\s(?:[^|;]*\s)?(?:-e|-c|--exec|--sh-exec)\s|\bsocat\b[^|;]*\b(?:exec|system):|\b(?:ba)?sh\s+-i\s*[0-9]?\x3e\x26|\bmkfifo\b.*\b(?:nc|ncat|netcat|telnet)\b|\bpython[23]?\s+-c\s.*\bsocket\b.*\b(?:subprocess|pty\.spawn|os\.dup2)\b|\bperl\s+-e\s.*\bSocket\b|\bphp\s+-r\s.*\bfsockopen\b|\bruby\s+-rsocket\b</field>
+    <description>[HIGH] Docker: reverse shell pattern in a command started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
+    <mitre>
+      <id>T1609</id>
+      <id>T1059.004</id>
+    </mitre>
+    <group>jt_docker_exec_suspicious,pci_dss_10.2.7,gdpr_IV_32.2,</group>
+  </rule>
+
+  <rule id="132609" level="12">
+    <if_sid>87907</if_sid>
+    <field name="docker.Action" type="pcre2">\bnsenter\b.*(?:\s-t\s*1\b|--target[= ]1\b|/proc/1/ns/)|\bchroot\s+/(?:host|hostfs|rootfs|mnt|media/host)\b|\bmount\s+(?:-\S+\s+)*(?:-t\s+\S+\s+)?/dev/(?:sd[a-z]|nvme\d|vd[a-z]|xvd[a-z]|hd[a-z]|mapper/|dm-\d)|\brelease_agent\b|\bnotify_on_release\b|/proc/sys/kernel/core_pattern|/sys/kernel/uevent_helper|/proc/sys/fs/binfmt_misc/register|/proc/1/root/|\bdebugfs\s+(?:-\S+\s+)*/dev/|\b(?:docker|containerd|crio|podman)\.sock\b|\bdocker\s+-H\s+(?:unix|tcp)://</field>
+    <description>[HIGH] Docker: container escape technique in a command started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
+    <mitre>
+      <id>T1611</id>
+      <id>T1609</id>
+    </mitre>
+    <group>jt_docker_exec_suspicious,jt_docker_escape,pci_dss_10.2.7,gdpr_IV_32.2,</group>
+  </rule>
+
+  <rule id="132610" level="12">
+    <if_sid>87907</if_sid>
+    <field name="docker.Action" type="pcre2">(?i)\b(?:xmrig|xmr-stak|cpuminer|minerd|ccminer|nbminer|lolminer|srbminer\S*|cgminer|bfgminer|t-rex)\b|stratum\+(?:tcp|ssl|tls)://|--donate-level\b|\bnicehash\b</field>
+    <description>[HIGH] Docker: cryptocurrency miner started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
+    <mitre>
+      <id>T1496</id>
+      <id>T1609</id>
+    </mitre>
+    <group>jt_docker_exec_suspicious,jt_docker_miner,pci_dss_10.2.7,gdpr_IV_32.2,</group>
+  </rule>
+
+  <!-- Package manager in a running container: the image is being changed by
+       hand (container drift), typically to bring in tools. Falco "Launch
+       Package Management Process in Container". pip and npm are left out:
+       developers use them in containers routinely. -->
+  <rule id="132605" level="7">
+    <if_sid>87907</if_sid>
+    <field name="docker.Action" type="pcre2">\b(?:apt-get|apt|aptitude)\s+(?:-\S+\s+)*install\b|\bapk\s+(?:--?\S+\s+)*add\b|\b(?:yum|dnf|microdnf|tdnf)\s+(?:-\S+\s+)*install\b|\bzypper\s+(?:--?\S+\s+)*(?:in|install)\b|\bpacman\s+-S</field>
+    <description>Docker: software installed by hand in running container $(docker.Actor.Attributes.name): $(docker.Action)</description>
+    <mitre>
+      <id>T1609</id>
+      <id>T1105</id>
+    </mitre>
+    <group>jt_docker_exec_drift,pci_dss_10.2.7,gdpr_IV_32.2,</group>
+  </rule>
+
+  <!-- Environment and secret dumps. A container's environment is where its
+       passwords and API keys live (database URLs, tokens), so "env" or
+       "printenv" without arguments reads all of them. Also secret mounts,
+       service account tokens, cloud and registry credentials, private key
+       searches. Elastic "Sensitive Keys Or Passwords Searched For Inside A
+       Container"; MITRE T1552.007 (container API). -->
+  <rule id="132604" level="6">
+    <if_sid>87907</if_sid>
+    <field name="docker.Action" type="pcre2">^exec_start: (?:(?:/usr)?/bin/(?:ba|a|da)?sh\s+-c\s+)?(?:\S*/)?(?:env|printenv|set|export\s+-p)\s*$|/proc/(?:\d+|self|1)/environ\b|/run/secrets/|/var/run/secrets/|\.aws/credentials\b|\.docker/config\.json\b|\.kube/config\b|\.git-credentials\b|\.pgpass\b|\bid_(?:rsa|dsa|ecdsa|ed25519)\b|BEGIN [A-Z ]*PRIVATE KEY|/etc/shadow\b</field>
+    <description>Docker: command reading environment variables or secrets started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
+    <mitre>
+      <id>T1552.007</id>
+      <id>T1552.001</id>
+      <id>T1609</id>
+    </mitre>
+    <group>jt_docker_exec_secrets,pci_dss_10.2.7,gdpr_IV_32.2,</group>
+  </rule>
+
+  <!-- Scanners, sniffers and listeners started in a container. Elastic
+       "Suspicious Network Tool Launched Inside A Container" (nc -z port
+       checks are left to the healthcheck rule). -->
+  <rule id="132606" level="6">
+    <if_sid>87907</if_sid>
+    <field name="docker.Action" type="pcre2">^exec_start: (?:(?:/usr)?/bin/(?:ba|a|da)?sh\s+-c\s+)?(?:\S*/)?(?:nmap|masscan|zmap|zgrab2?|tcpdump|tshark|ngrep|mitmproxy|hping3|socat)\b|\b(?:nc|ncat|netcat)(?:\.\w+)?\s+(?:-\S+\s+)*-[a-zA-Z]*l</field>
+    <description>Docker: network scanner, sniffer or listener started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
+    <mitre>
+      <id>T1046</id>
+      <id>T1609</id>
+    </mitre>
+    <group>jt_docker_exec_netool,pci_dss_10.2.7,gdpr_IV_32.2,</group>
+  </rule>
+
+  <!-- Interactive shells the built-in 87908 (bash, /bin/bash, sh, dash,
+       /bin/dash with no arguments) does not list: other paths, ash (alpine,
+       busybox), zsh, ksh, login shells, busybox sh, su. Same level as 87908,
+       which loads first and keeps its own five shapes. A shell with no
+       command can only be used through an open standard input, which is what
+       "docker exec -it" gives a person. Falco "Terminal shell in container". -->
+  <rule id="132603" level="5">
+    <if_sid>87907</if_sid>
+    <field name="docker.Action" type="pcre2">^exec_start: (?:(?:/usr)?(?:/local)?/s?bin/)?(?:(?:busybox|toybox)\s+)?(?:ba|da|z|k|mk|a|c|tc|fi|y|r)?sh(?:\s+(?:-[ilsx]+|--login|--norc|--noprofile))*\s*$|^exec_start: (?:(?:/usr)?/s?bin/)?su(?:\s+(?:-|-l|--login))?(?:\s+[\w.-]+)?\s*$</field>
+    <description>Docker: interactive shell started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
+    <mitre>
+      <id>T1609</id>
+      <id>T1059.004</id>
+    </mitre>
+    <group>jt_docker_exec_shell,pci_dss_10.2.7,gdpr_IV_32.2,hipaa_164.312.b,nist_800_53_AU.14,tsc_CC6.8,tsc_CC7.2,tsc_CC7.3,</group>
+  </rule>
+
+  <!-- Repeated identical command: the same command line in the same
+       container (container ID) within an hour. The first one stays the
+       built-in 87907 (level 3); repeats are level 2 (recorded, correlatable,
+       no alert). This is what host-side cron jobs and pollers that run
+       "docker exec" look like.
+
+       Behaviour, from the 4.14.7 source (eventinfo.c Search_LastSids and the
+       list insertion in analysisd.c): only an event that ends as 87907 is
+       kept for this comparison, and the event that matches is the one
+       marked, so the first command of a series keeps answering for the rest.
+       It lasts for the timeframe or until analysisd's correlation memory
+       drops it (memory_size, 8192 events of level 1 and above; when full,
+       everything older than the largest rule frequency is dropped). On a
+       quiet manager that is one level 3 alert per poller per hour; on a busy
+       one, one every few minutes. A poller that runs all day is better given
+       a site rule. -->
+  <rule id="132602" level="2" timeframe="3600">
+    <if_matched_sid>87907</if_matched_sid>
+    <same_field>docker.Actor.ID</same_field>
+    <same_field>docker.Action</same_field>
+    <description>Docker: same command started again in container $(docker.Actor.Attributes.name) within an hour: $(docker.Action)</description>
+    <group>jt_docker_exec_repeat,</group>
+  </rule>
+
+  <!-- Healthchecks. The daemon runs a container's HEALTHCHECK as an exec
+       (moby daemon/health.go): a CMD-SHELL test becomes
+       "exec_start: /bin/sh -c <test>", a CMD test the command itself. At one
+       site this was 92% of all exec events (443,064 of 481,195 in 11 days;
+       one Keycloak container every 3 seconds). The shape is the one the
+       Dockerfile reference and the official images use: an HTTP probe of the
+       container itself (curl or wget to localhost, 127.x, [::1] or 0.0.0.0),
+       a program or script with "health" in its name, pg_isready, mysqladmin
+       or mariadb-admin ping, redis/valkey-cli ping, rabbitmq-diagnostics,
+       nc -z; optionally piped into jq/grep/awk-like filters, output sent to
+       /dev/null, "|| exit 1" at the end. Nothing else is allowed in the
+       command: no other pipe target, no ";", no "and" chaining, no backquote or "$(".
+       https://docs.docker.com/reference/dockerfile/#healthcheck
+       Level 1, not 0: see the ordering note at the top. The level 12 rules
+       above are tried first, so a probe-shaped command that also pipes into
+       a shell or contains a reverse shell still alerts. -->
+  <rule id="132601" level="1">
+    <if_sid>87907</if_sid>
+    <field name="docker.Action" type="pcre2">^exec_start: (?:(?:/usr)?/bin/(?:ba|a|da)?sh\s+(?:-o\s+pipefail\s+)?-c\s+)?['\"]?(?:(?:\S*/)?(?:curl|wget)\s(?:(?:(?!://)(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?))*?\s)?(?:https?://)?(?:localhost|127(?:\.\d{1,3}){3}|\[::1\]|0\.0\.0\.0)(?:[:/'\"\s](?:(?!://)(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?))*)?|(?:(?:\S*/)?(?:python3?|node|php|ruby|perl|bash|sh)\s+)?(?:\S*/)?[\w.-]*health[\w.-]*(?:\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*)?|(?:\S*/)?pg_isready(?:\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*)?|(?:\S*/)?(?:mysqladmin|mariadb-admin)\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*\bping\b(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*|(?:\S*/)?(?:redis|valkey|keydb)-cli\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*?\bping\b(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*|(?:\S*/)?rabbitmq-diagnostics\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*|(?:\S*/)?(?:nc|ncat)\s+-z\w*\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*)(?:(?:\s*\|\s*(?:jq|grep|egrep|fgrep|awk|cut|head|tail|wc|tr)\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*)|(?:\s*(?:[12]?\x3e\s*/dev/null|2\x3e\x261)))*(?:\s*\|\|\s*exit\s+1)?['\"]?\s*$</field>
+    <description>Docker: healthcheck-shaped command in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
+    <group>jt_docker_exec_healthcheck,</group>
+  </rule>
+
+
+  <!-- ================================================================
+       Other Docker API events
+       ================================================================ -->
+
+  <!-- Host network: "network connect" with the network type host
+       (moby daemon/container_operations.go connectToNetwork, which logs
+       name and type of the network; a container started with the host
+       network mode joins the predefined network "host"). The container then
+       shares the host's network stack: host-only services, every interface,
+       no port mapping. -->
+  <rule id="132620" level="5">
+    <if_sid>87928</if_sid>
+    <field name="docker.Actor.Attributes.type">^host$</field>
+    <description>Docker: container $(docker.Actor.Attributes.container) started with the host network</description>
+    <mitre>
+      <id>T1610</id>
+    </mitre>
+    <group>jt_docker_hostns,</group>
+  </rule>
+
+  <!-- Daemon configuration reloaded (SIGHUP after daemon.json was edited):
+       Type daemon, Action reload, with the reloadable settings as
+       attributes (moby daemon/reload.go). No built-in rule; it stayed at
+       87900 level 0. -->
+  <rule id="132621" level="5">
+    <if_sid>87900</if_sid>
+    <field name="docker.Type">^daemon$</field>
+    <field name="docker.Action">^reload$</field>
+    <description>Docker: daemon configuration reloaded on $(docker.Actor.Attributes.name) (registry mirrors $(docker.Actor.Attributes.registry-mirrors), insecure registries $(docker.Actor.Attributes.insecure-registries))</description>
+    <mitre>
+      <id>T1543</id>
+    </mitre>
+    <group>jt_docker_daemon_config,</group>
+  </rule>
+
+  <!-- Insecure registries: the daemon pulls from these over plain HTTP or
+       without certificate checks, so anyone on the path can swap images.
+       Loopback entries are left out (a local registry on the same host). -->
+  <rule id="132622" level="8">
+    <if_sid>132621</if_sid>
+    <field name="docker.Actor.Attributes.insecure-registries" type="pcre2">(?:\[|,)\s*"(?!127\.|localhost[:"/]|\[?::1\]?[:"/])[^"]+"</field>
+    <description>Docker: daemon on $(docker.Actor.Attributes.name) reloaded with insecure (plain HTTP or unverified TLS) registries: $(docker.Actor.Attributes.insecure-registries)</description>
+    <mitre>
+      <id>T1543</id>
+      <id>T1557</id>
+    </mitre>
+    <group>jt_docker_daemon_config,</group>
+  </rule>
+
+  <!-- docker-listener status messages (wodles/docker/DockerListener.py).
+       "Disconnected from the Docker service" is sent when the event stream
+       ends: the daemon stopped or restarted, and nothing is monitored until
+       it reconnects ("Connected to Docker service", left at level 0). -->
+  <rule id="132623" level="5">
+    <if_sid>87900</if_sid>
+    <field name="docker.Wodle event">^Disconnected from the Docker service$</field>
+    <description>Docker: docker-listener lost the Docker daemon (stopped or restarted); events are not monitored until it reconnects</description>
+    <group>jt_docker_listener,</group>
+  </rule>
+
+  <rule id="132624" level="3">
+    <if_sid>87900</if_sid>
+    <field name="docker.Wodle event">^Docker service is not running$</field>
+    <description>Docker: docker-listener started but the Docker daemon is not running</description>
+    <group>jt_docker_listener,</group>
+  </rule>
+
+  <!-- Routine stops. The built-in 87924 gives every kill and die level 7, so
+       one "docker stop" is two level 7 alerts. A clean exit (code 0, or 143
+       after SIGTERM) and a kill with an ordinary stop signal (SIGTERM, and
+       the STOPSIGNAL some images use: SIGQUIT for nginx, SIGWINCH for
+       Apache httpd, SIGINT) go to level 3. SIGKILL and other exit codes
+       (137 = killed or out of memory, 1, 139...) stay at level 7. -->
+  <rule id="132625" level="3">
+    <if_sid>87924</if_sid>
+    <field name="docker.Action">^die$</field>
+    <field name="docker.Actor.Attributes.exitCode" type="pcre2">^(?:0|143)$</field>
+    <description>Docker: container $(docker.Actor.Attributes.name) exited normally (exit code $(docker.Actor.Attributes.exitCode))</description>
+    <group>jt_docker_lifecycle,</group>
+  </rule>
+
+  <rule id="132626" level="3">
+    <if_sid>87924</if_sid>
+    <field name="docker.Action">^kill$</field>
+    <field name="docker.Actor.Attributes.signal" type="pcre2">^(?:2|3|15|28|SIG(?:INT|QUIT|TERM|WINCH))$</field>
+    <description>Docker: container $(docker.Actor.Attributes.name) sent its stop signal $(docker.Actor.Attributes.signal)</description>
+    <group>jt_docker_lifecycle,</group>
+  </rule>
+
+  <!-- Miner images: any container event (create, start, exec...) whose
+       image name is a known miner, and an image pull of one. -->
+  <rule id="132627" level="12">
+    <if_sid>87900</if_sid>
+    <field name="docker.Type">^container$</field>
+    <field name="docker.Actor.Attributes.image" type="pcre2">(?i)xmrig|xmr-stak|cpuminer|minerd|nbminer|lolminer|srbminer|cryptonight|monero-?miner|nicehash</field>
+    <description>[HIGH] Docker: container $(docker.Actor.Attributes.name) runs a cryptocurrency miner image $(docker.Actor.Attributes.image) ($(docker.Action))</description>
+    <mitre>
+      <id>T1496</id>
+      <id>T1610</id>
+    </mitre>
+    <group>jt_docker_miner,</group>
+  </rule>
+
+  <rule id="132628" level="12">
+    <if_sid>87932</if_sid>
+    <field name="docker.Actor.ID" type="pcre2">(?i)xmrig|xmr-stak|cpuminer|minerd|nbminer|lolminer|srbminer|cryptonight|monero-?miner|nicehash</field>
+    <description>[HIGH] Docker: cryptocurrency miner image pulled: $(docker.Actor.ID)</description>
+    <mitre>
+      <id>T1496</id>
+      <id>T1610</id>
+    </mitre>
+    <group>jt_docker_miner,</group>
+  </rule>
+
+  <!-- 87901 is "^create$" on any event type, so an image created by docker
+       build, commit or import reads "Container sha256:... created". -->
+  <rule id="132629" level="3">
+    <if_sid>87901</if_sid>
+    <field name="docker.Type">^image$</field>
+    <description>Docker: image $(docker.Actor.Attributes.name) created (build, commit or import)</description>
+    <mitre>
+      <id>T1612</id>
+    </mitre>
+    <group>jt_docker_image,</group>
+  </rule>
+
+
+  <!-- ================================================================
+       dockerd / containerd log (decoder "docker", built-in base 86000)
+       Strings from moby docker-v29.9.0 and runc v1.1.12 / v1.3.3.
+       ================================================================ -->
+
+  <!-- daemon/command/daemon.go: dockerd logs this, with host="tcp://...", for
+       every TCP listener that does not require client certificates. Anyone
+       who can reach it is root on the host; this is the entry point of the
+       exposed-API campaigns (port 2375). The trusted part is the host field
+       at the end of the line. -->
+  <rule id="132640" level="12">
+    <if_sid>86000</if_sid>
+    <match>Binding to IP address without --tlsverify is insecure</match>
+    <regex type="pcre2">\shost="tcp://(?!(?:127\.\d+\.\d+\.\d+|localhost|\[::1\])(?::\d+)?")[^"]+"\s*$</regex>
+    <description>[HIGH] Docker: daemon API listening on TCP without TLS client verification (unauthenticated root access from the network)</description>
+    <mitre>
+      <id>T1133</id>
+      <id>T1610</id>
+    </mitre>
+    <group>jt_docker_api_exposed,pci_dss_2.2,</group>
+  </rule>
+
+  <rule id="132641" level="8">
+    <if_sid>86000</if_sid>
+    <match>Binding to IP address without --tlsverify is insecure</match>
+    <regex type="pcre2">\shost="tcp://(?:127\.\d+\.\d+\.\d+|localhost|\[::1\])(?::\d+)?"\s*$</regex>
+    <description>Docker: daemon API listening on a loopback TCP port without TLS client verification (root access for every local process and host-network container)</description>
+    <mitre>
+      <id>T1610</id>
+    </mitre>
+    <group>jt_docker_api_exposed,</group>
+  </rule>
+
+  <!-- "API listen on %s" (daemon/command/daemon.go): a Unix socket is a path,
+       anything else is a TCP listener (with or without TLS). -->
+  <rule id="132642" level="5">
+    <if_sid>86000</if_sid>
+    <field name="docker.message" type="pcre2">^API listen on (?!/)\S+$</field>
+    <description>Docker: daemon API listening on a TCP address: $(docker.message)</description>
+    <mitre>
+      <id>T1133</id>
+    </mitre>
+    <group>jt_docker_api_exposed,</group>
+  </rule>
+
+  <!-- runc 1.1.12+ refuses a working directory outside the container
+       (CVE-2024-21626, "Leaky Vessels", a malicious image WORKDIR
+       /proc/self/fd/N or exec -w). libcontainer/init_linux.go:
+       "current working directory is outside of container mount namespace
+       root", then two dashes and "possible container breakout detected". The error reaches the
+       daemon log in "Handler for POST ... returned error" (status 500).
+       https://github.com/opencontainers/runc/security/advisories/GHSA-xr7r-f8xq-vfvv -->
+  <rule id="132643" level="12">
+    <if_sid>86000</if_sid>
+    <match>possible container breakout detected</match>
+    <description>[HIGH] Docker: runc blocked a container breakout attempt (working directory outside the container, CVE-2024-21626 technique)</description>
+    <mitre>
+      <id>T1611</id>
+    </mitre>
+    <group>jt_docker_escape,</group>
+  </rule>
+
+  <!-- runc 1.2.8 / 1.3.3 / 1.4.0-rc.3 verify /dev/null before using it to
+       mask paths (CVE-2025-31133: /dev/null replaced by a symlink to a procfs
+       file). libcontainer/rootfs_linux.go: "container's /dev/null is invalid".
+       https://github.com/opencontainers/runc/security/advisories/GHSA-9493-h29p-rfm2 -->
+  <rule id="132644" level="12">
+    <if_sid>86000</if_sid>
+    <match>container's /dev/null is invalid</match>
+    <description>[HIGH] Docker: runc refused a container whose /dev/null was replaced (CVE-2025-31133 masked-path escape technique)</description>
+    <mitre>
+      <id>T1611</id>
+    </mitre>
+    <group>jt_docker_escape,</group>
+  </rule>
+
+  <!-- dockerd start line: msg="Docker daemon" commit=... version=X.Y.Z.
+       Upstream releases older than 29.8.2 miss at least one fix:
+       CVE-2026-92543 (high, insecure-registry fallback, fixed 29.8.2),
+       CVE-2026-41567 (high, PUT /containers/{id}/archive ran a container
+       binary on the host, 29.5.1), CVE-2026-42306 (docker cp race, 29.5.1),
+       CVE-2026-34040 (AuthZ plugin bypass, 29.3.1), CVE-2024-41110 (critical
+       AuthZ bypass, 27.1.1). https://github.com/moby/moby/security/advisories
+       Distribution packages (docker.io) may carry backported fixes under an
+       older number: check the distribution's advisory before upgrading.
+       Update the version in this rule when Docker publishes a new fix. -->
+  <rule id="132645" level="5">
+    <if_sid>86000</if_sid>
+    <field name="docker.message">^Docker daemon$</field>
+    <regex type="pcre2">\sversion=(?:[0-9]|1[0-9]|2[0-8])\.\d+\.\d+\S*\s*$|\sversion=29\.[0-7]\.\d+\S*\s*$|\sversion=29\.8\.[01](?!\d)\S*\s*$</regex>
+    <description>Docker: Docker Engine older than 29.8.2 started (known security fixes missing; distribution packages may have backports)</description>
+    <group>jt_docker_version,</group>
+  </rule>
+
+
+  <!-- ================================================================
+       auditd: built-in 80710 "Device enables promiscuous mode" (level 10)
+       ================================================================ -->
+
+  <!-- 80710 matches "prom=256" anywhere, which includes "old_prom=256", so a
+       veth leaving promiscuous mode fires too. Docker puts every container's
+       veth on a bridge, which switches promiscuous mode on and off: on a
+       docker host with auditd every container start and stop is a level 10
+       alert (23 in three days on one host). Only records of dockerd itself
+       for a veth interface are lowered; tcpdump or anything else on a real
+       interface stays at level 10. -->
+  <rule id="132650" level="2">
+    <if_sid>80710</if_sid>
+    <field name="audit.dev" type="pcre2">^veth[0-9a-f]+$</field>
+    <match type="pcre2">\sexe="(?:/usr)?(?:/local)?/s?bin/dockerd"</match>
+    <description>Docker: container network interface $(audit.dev) promiscuous mode changed by dockerd (bridge port)</description>
+    <group>jt_docker_audit,</group>
+  </rule>
+
+
+  <!-- ================================================================
+       File integrity of the daemon configuration (agent group syscheck:
+       /etc/docker, the systemd drop-ins, /etc/containerd, realtime with
+       diffs). Rules on built-in 550 (changed), 553 (deleted), 554 (added).
+       FIM events cannot be replayed with wazuh-logtest; these were checked
+       with real files in a sandbox manager.
+       ================================================================ -->
+
+  <rule id="132660" level="8">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/etc/docker/daemon\.json$|^/etc/(?:default|sysconfig)/docker$|^/etc/containerd/config\.toml$</field>
+    <description>Docker: daemon configuration file $(file) changed</description>
+    <mitre>
+      <id>T1543</id>
+    </mitre>
+    <group>jt_docker_daemon_config,</group>
+  </rule>
+
+  <!-- The systemd unit overrides are where "-H tcp://0.0.0.0:2375" is
+       usually added (docs.docker.com/engine/daemon/remote-access). -->
+  <rule id="132661" level="8">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/etc/systemd/system/(?:docker|containerd)\.(?:service|socket)(?:\.d/[^/]+)?$</field>
+    <description>Docker: systemd unit or override for the Docker daemon changed: $(file)</description>
+    <mitre>
+      <id>T1543.002</id>
+    </mitre>
+    <group>jt_docker_daemon_config,</group>
+  </rule>
+
+  <!-- The diff (report_changes) of either adds a TCP listener. The field is
+       changed_content (analysisd decoders/syscheck.c FIM_DIFF); added lines
+       start with ">". -->
+  <rule id="132662" level="12">
+    <if_sid>132660,132661</if_sid>
+    <field name="changed_content" type="pcre2">(?m)^\x3e.*tcp://</field>
+    <description>[HIGH] Docker: daemon configuration $(file) now makes the API listen on TCP</description>
+    <mitre>
+      <id>T1543</id>
+      <id>T1133</id>
+    </mitre>
+    <group>jt_docker_daemon_config,jt_docker_api_exposed,</group>
+  </rule>
+
+  <rule id="132663" level="5">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/etc/docker/|^/etc/containerd/</field>
+    <description>Docker: file in the daemon configuration directory changed: $(file)</description>
+    <mitre>
+      <id>T1543</id>
+    </mitre>
+    <group>jt_docker_daemon_config,</group>
+  </rule>
+
+
+  <!-- ================================================================
+       Posture check (optional; agent/jt-docker-posture.sh run by a wodle
+       command with tag jt-docker-posture). One line per running container
+       and per daemon. The decoders keep "first time seen" (fts): a posture
+       alerts once per agent, container name and settings, and again only
+       when the settings change. The image is not part of it, so an image
+       update does not repeat the alert.
+       ================================================================ -->
+
+  <rule id="132680" level="0">
+    <decoded_as>jt-docker-posture</decoded_as>
+    <location>command_jt-docker-posture</location>
+    <description>Docker posture: container $(docker.posture.container) ($(docker.posture.image))</description>
+    <group>jt_docker_posture,</group>
+  </rule>
+
+  <rule id="132681" level="0">
+    <decoded_as>jt-docker-posture-daemon</decoded_as>
+    <location>command_jt-docker-posture</location>
+    <description>Docker posture: daemon $(docker.posture.kind) $(docker.posture.detail)</description>
+    <group>jt_docker_posture,</group>
+  </rule>
+
+  <!-- docker info warning, daemon/info.go: "[DEPRECATION NOTICE]: API is
+       accessible on http://ADDR without encryption." Seen even when the
+       daemon log is not collected. -->
+  <rule id="132682" level="12">
+    <if_sid>132681</if_sid>
+    <if_fts />
+    <field name="docker.posture.kind">^warning$</field>
+    <field name="docker.posture.detail" type="pcre2">API is accessible on http://\S+ without encryption</field>
+    <description>[HIGH] Docker posture: daemon API reachable over TCP without encryption or authentication: $(docker.posture.detail)</description>
+    <mitre>
+      <id>T1133</id>
+      <id>T1610</id>
+    </mitre>
+    <group>jt_docker_posture,jt_docker_api_exposed,</group>
+  </rule>
+
+  <rule id="132683" level="5">
+    <if_sid>132681</if_sid>
+    <if_fts />
+    <field name="docker.posture.kind">^daemon$</field>
+    <field name="docker.posture.detail" type="pcre2">^(?:(?:[0-9]|1[0-9]|2[0-8])\.\d+\.\d+|29\.[0-7]\.\d+|29\.8\.[01](?!\d))\S*\s</field>
+    <description>Docker posture: Docker Engine older than 29.8.2 (known security fixes missing; distribution packages may have backports): $(docker.posture.detail)</description>
+    <group>jt_docker_posture,jt_docker_version,</group>
+  </rule>
+
+  <!-- Container settings. Ideas from Falco (Launch Privileged Container,
+       Launch Sensitive Mount Container, Launch Excessively Capable
+       Container) and the CIS Docker Benchmark section 5 (docker-bench-security
+       checks 5.4, 5.5, 5.9, 5.10, 5.16, 5.17, 5.21, 5.31). Monitoring agents
+       (cAdvisor, node-exporter), Portainer, Watchtower and Traefik
+       legitimately use some of these: they alert once and stay quiet. -->
+  <rule id="132684" level="10">
+    <if_sid>132680</if_sid>
+    <if_fts />
+    <field name="docker.posture.flags" type="pcre2">^privileged=true\s</field>
+    <description>[WARN] Docker posture: privileged container $(docker.posture.container) ($(docker.posture.image)) running: $(docker.posture.flags) binds=$(docker.posture.binds)</description>
+    <mitre>
+      <id>T1611</id>
+      <id>T1610</id>
+    </mitre>
+    <group>jt_docker_posture,</group>
+  </rule>
+
+  <rule id="132685" level="10">
+    <if_sid>132680</if_sid>
+    <if_fts />
+    <field name="docker.posture.binds" type="pcre2">(?:^|,)(?:/var)?/run/(?:docker|containerd/containerd|crio/crio|podman/podman)\.sock:</field>
+    <description>[WARN] Docker posture: container $(docker.posture.container) ($(docker.posture.image)) has the container runtime socket mounted (root on the host): binds=$(docker.posture.binds)</description>
+    <mitre>
+      <id>T1611</id>
+      <id>T1610</id>
+    </mitre>
+    <group>jt_docker_posture,</group>
+  </rule>
+
+  <rule id="132686" level="10">
+    <if_sid>132680</if_sid>
+    <if_fts />
+    <field name="docker.posture.binds" type="pcre2">(?:^|,)/(?:|etc|root|boot|proc|sys|dev|usr|lib|bin|sbin|run|var/run|var/lib/docker|var/lib/containerd|var/lib/kubelet)/?:[^,]*:rw,</field>
+    <description>[WARN] Docker posture: container $(docker.posture.container) ($(docker.posture.image)) has a host system directory mounted writable: binds=$(docker.posture.binds)</description>
+    <mitre>
+      <id>T1611</id>
+    </mitre>
+    <group>jt_docker_posture,</group>
+  </rule>
+
+  <rule id="132687" level="8">
+    <if_sid>132680</if_sid>
+    <if_fts />
+    <field name="docker.posture.flags" type="pcre2">\spid=host\s|\scap_add=(?:\S*,)?(?:CAP_)?(?:SYS_ADMIN|SYS_MODULE|SYS_PTRACE|SYS_RAWIO|SYS_BOOT|DAC_READ_SEARCH|BPF|ALL)(?:,|\s)</field>
+    <description>Docker posture: container $(docker.posture.container) ($(docker.posture.image)) shares the host PID namespace or has a powerful capability: $(docker.posture.flags)</description>
+    <mitre>
+      <id>T1611</id>
+    </mitre>
+    <group>jt_docker_posture,</group>
+  </rule>
+
+  <rule id="132688" level="6">
+    <if_sid>132680</if_sid>
+    <if_fts />
+    <field name="docker.posture.flags" type="pcre2">\ssecopt=\S*(?:seccomp[=:]unconfined|apparmor[=:]unconfined|label[=:]disable|systempaths=unconfined)</field>
+    <description>Docker posture: container $(docker.posture.container) ($(docker.posture.image)) runs with seccomp, AppArmor or SELinux confinement disabled: $(docker.posture.flags)</description>
+    <mitre>
+      <id>T1611</id>
+    </mitre>
+    <group>jt_docker_posture,</group>
+  </rule>
+
+  <rule id="132689" level="5">
+    <if_sid>132680</if_sid>
+    <if_fts />
+    <field name="docker.posture.flags" type="pcre2">\s(?:net|ipc|uts|userns)=host\s</field>
+    <description>Docker posture: container $(docker.posture.container) ($(docker.posture.image)) shares a host namespace (network, IPC, UTS or user): $(docker.posture.flags)</description>
+    <mitre>
+      <id>T1610</id>
+    </mitre>
+    <group>jt_docker_posture,</group>
+  </rule>
+
+  <!-- Read-only mount of the host root or of /etc, /root, /boot, /proc,
+       /sys: the container can read every secret on the host (shadow file,
+       SSH keys, other containers' data). Typical for node-exporter and
+       cAdvisor, which then alert once. -->
+  <rule id="132690" level="6">
+    <if_sid>132680</if_sid>
+    <if_fts />
+    <field name="docker.posture.binds" type="pcre2">(?:^|,)/(?:|etc|root|boot|proc|sys|var/lib/docker)/?:[^,]*:ro,</field>
+    <description>Docker posture: container $(docker.posture.container) ($(docker.posture.image)) has a host system directory mounted read-only: binds=$(docker.posture.binds)</description>
+    <mitre>
+      <id>T1611</id>
+      <id>T1552.001</id>
+    </mitre>
+    <group>jt_docker_posture,</group>
+  </rule>
+
+</group>

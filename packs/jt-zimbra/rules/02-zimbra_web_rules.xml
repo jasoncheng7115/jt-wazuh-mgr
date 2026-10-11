@@ -8,6 +8,9 @@
   ※ id / url / protocol / srcip / srcport 皆為「靜態欄位」，
      必須使用專屬標籤，寫成 <field name="id"> 會靜默失效。
   ※ referer / user_agent 為動態欄位，使用 <field name="...">。
+  3.2: reflected XSS (100996), non-stock JSP outside /public/ (100988/100989),
+       commands in a JSP query (100993); stock-JSP list completed (100822);
+       100827 no longer takes JSP requests.
 -->
 <group name="zimbra,web,">
 
@@ -15,6 +18,25 @@
   <rule id="100820" level="0">
     <decoded_as>zimbra-proxy-access</decoded_as>
     <description>Zimbra proxy access log (base rule)</description>
+  </rule>
+
+  <!-- 3.2: a script fragment in a request to the Classic web client (/h/,
+       /m/) or a public JSP: the reflected cross-site scripting shape of
+       CVE-2022-27926 (/public/launchNewWindow.jsp), CVE-2023-37580
+       (/m/momovetofolder, exploited in the wild per Google TAG) and
+       CVE-2018-6882. Level 10 and loaded before 100821 so that a stock JSP
+       carrying a payload does not end at 100822 (level 0). The browser of
+       whoever opens the link runs it; the request itself is the visible
+       part. -->
+  <rule id="100996" level="10">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">(?i)(?:/[hm]/|/public/[^?\s]*\.jspx?)\S*(?:%3c(?:/|%2f)?(?:script|svg|img|iframe)|\x3c(?:/)?(?:script|svg|img|iframe)|javascript(?::|%3a)|on(?:error|load|toggle|mouseover|focus|begin)(?:=|%3d))</url>
+    <description>[WARN] Script injection attempt in a Zimbra web client URL (reflected XSS): $(url) from: $(srcip)</description>
+    <mitre>
+      <id>T1189</id>
+      <id>T1203</id>
+    </mitre>
+    <group>web_attack,</group>
   </rule>
 
   <!-- 第一段：所有 /public/ 下的 JSP 存取 -->
@@ -28,10 +50,15 @@
     <group>zimbra_public_jsp,</group>
   </rule>
 
-  <!-- 第二段：原廠 JSP 降為 level 0（維運只需維護這一條的清單） -->
+  <!-- 第二段：原廠 JSP 降為 level 0（維運只需維護這一條的清單）
+       3.2: the list now has every JSP under public/ in the shipped 10.1.20
+       baseline. admin.jsp and noscript.jsp (the admin console's), the PDF
+       viewer pdfjs/web/viewer.jsp and proto/index.jsp were missing, so a
+       user opening a PDF attachment raised 100823 at level 14 (seen on a
+       real server: HTTP 200 for /public/pdfjs/web/viewer.jsp). -->
   <rule id="100822" level="0">
     <if_sid>100821</if_sid>
-    <url type="pcre2">/public/(Boot|Offline|PasswordRecovery|Resources|TwoFactorSetup|addressVerification|error|extuserprov|insecureResponse|launchNewWindow|launchZCS|loadImgData|login|modern|pre-cache|secureRequest|setResourceBundle)\.jsp|/public/jsp/[A-Za-z0-9_]+\.jsp</url>
+    <url type="pcre2">/public/(Boot|Offline|PasswordRecovery|Resources|TwoFactorSetup|addressVerification|admin|error|extuserprov|insecureResponse|launchNewWindow|launchZCS|loadImgData|login|modern|noscript|pre-cache|secureRequest|setResourceBundle)\.jsp|/public/jsp/[A-Za-z0-9_]+\.jsp|/public/pdfjs/web/viewer\.jsp|/public/proto/index\.jsp</url>
     <description>Normal access to a Zimbra stock JSP</description>
   </rule>
 
@@ -68,20 +95,73 @@
     <if_sid>100821</if_sid>
     <if_matched_group>zimbra_public_jsp</if_matched_group>
     <id type="pcre2">^(?!(?:200|302)$)</id>
-    <url type="pcre2">^(?!.*(?:/public/(Boot|Offline|PasswordRecovery|Resources|TwoFactorSetup|addressVerification|error|extuserprov|insecureResponse|launchNewWindow|launchZCS|loadImgData|login|modern|pre-cache|secureRequest|setResourceBundle)\.jsp|/public/jsp/[A-Za-z0-9_]+\.jsp))</url>
+    <url type="pcre2">^(?!.*(?:/public/(Boot|Offline|PasswordRecovery|Resources|TwoFactorSetup|addressVerification|admin|error|extuserprov|insecureResponse|launchNewWindow|launchZCS|loadImgData|login|modern|noscript|pre-cache|secureRequest|setResourceBundle)\.jsp|/public/jsp/[A-Za-z0-9_]+\.jsp|/public/pdfjs/web/viewer\.jsp|/public/proto/index\.jsp))</url>
     <same_source_ip />
     <same_srcport />
     <description>[HIGH] Repeated JSP requests from one source port, suggesting a web shell manager holding a connection: $(srcip):$(srcport)</description>
     <group>webshell,</group>
   </rule>
 
-  <!-- 管理介面自外部來源存取 -->
+  <!-- 3.2: a JSP outside /public/ that is not one Zimbra ships. Web
+       shells planted through CVE-2022-27925 / CVE-2022-37042 landed under
+       /zimbraAdmin/ and other web application paths (Volexity 2022-08),
+       where 100821 never looked. Stock JSPs outside public/ in 10.1.20:
+       service/document/editor.jsp, service/error/403.jsp and
+       attachment_blocked.jsp, service/spnego/error401.jsp and snoop.jsp,
+       portals/example/dynamic.jsp; zimlet JSPs (/service/zimlet/) come
+       from deployed zimlets and are left to the zimlet rules and FIM.
+       A 404 is a scanner probing names and stays with the 404 counter
+       (100983/100981); anything that answers is reported. -->
+  <rule id="100988" level="10">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">(?i)^(?:https?://[^/\s]+)?(?![^?\s]*/public/)(?!/service/zimlet/)(?!/(?:service/(?:document/editor|error/(?:403|attachment_blocked)|spnego/(?:error401|snoop))|portals/example/dynamic)\.jsp)/[^?\s]*\.jspx?(?:[;?]|$)</url>
+    <id type="pcre2">^(?!404$)</id>
+    <description>[WARN] Non-stock JSP outside /public/ answered a request: $(url) status: $(id) from: $(srcip)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>zimbra_public_jsp,</group>
+  </rule>
+
+  <rule id="100989" level="14">
+    <if_sid>100988</if_sid>
+    <id>^200$|^302$</id>
+    <description>[HIGH] Non-stock JSP outside /public/ returned success, a web shell may be live: $(url) from: $(srcip)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>webshell,zimbra_public_jsp,</group>
+  </rule>
+
+  <!-- 3.2: a JSP called with an operating-system path or a Zimbra command
+       in its query string, the shape of the shells CISA listed for
+       CVE-2022-27925 (AA22-228A: /public/jsp/runas.jsp?pwd=zim&i=/opt/zimbra/bin/zmlocalconfig).
+       Any status, stock name or not: the query is the evidence. -->
+  <rule id="100993" level="14">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">(?i)\.jspx?\?\S*?(?:=(?:/|%2f)(?:opt|bin|sbin|usr|etc|tmp|var|dev|proc)(?:/|%2f)|\bzmlocalconfig\b|\bzmprov\b|\bwhoami\b|/bin/(?:ba)?sh\b|%2fbin%2f(?:ba)?sh\b)</url>
+    <description>[HIGH] JSP called with a system path or command in its query string, web shell use: $(url) from: $(srcip)</description>
+    <mitre>
+      <id>T1505.003</id>
+      <id>T1059.004</id>
+    </mitre>
+    <group>webshell,</group>
+  </rule>
+
+  <!-- 管理介面自外部來源存取
+       3.2: JSP requests are left to 100821/100988. 100827 used to take any
+       URL under /zimbraAdmin, and its level 0 child 100828 then silenced a
+       web shell such as /zimbraAdmin/x.jsp opened from a private address
+       (the path CVE-2022-27925 shells used); from a public address it was
+       reported as an admin login (12) instead of a live shell (14). The
+       admin console's other requests (/zimbraAdmin/, /service/admin/soap)
+       still raise 100827. -->
   <rule id="100827" level="12">
     <if_sid>100820</if_sid>
-    <url type="pcre2">/zimbraAdmin|/service/admin|:7071</url>
+    <url type="pcre2">(?i)^(?![^?\s]*\.jspx?(?:[;?]|$)).*(?:/zimbraAdmin|/service/admin|:7071)</url>
     <description>[HIGH] Admin interface accessed: $(url) from: $(srcip)</description>
     <mitre>
-      <id>T1078.003</id>
+      <id>T1078</id>
     </mitre>
   </rule>
 

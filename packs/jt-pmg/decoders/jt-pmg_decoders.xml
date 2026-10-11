@@ -11,9 +11,10 @@
   tried in file order and the first whose prematch fits is used, so the
   specific ones come before the generic per-message one.
 
-  Formats are from pmg-api 9.1 (src/PMG/API2/AccessControl.pm, Quarantine.pm,
-  Utils.pm, RuleDB/*.pm, Service/pmgmirror.pm, LDAPSet.pm) and from real
-  syslog lines of a PMG 9 gateway.
+  Formats are from pmg-api 9.1.4 (src/PMG/API2/AccessControl.pm, Quarantine.pm,
+  Utils.pm, MailQueue.pm, RuleDB/*.pm, Service/pmgmirror.pm, LDAPSet.pm) and
+  from real syslog lines of a PMG 9 gateway. Lines with RFC 3339 timestamps
+  (the default from PMG 8 on Debian 12) pre-decode the same way.
 -->
 
 <decoder name="jt-pmg">
@@ -73,11 +74,13 @@
     delivered quarantined mail 'C1R2T3' (/var/spool/pmg/virus/A1/1E0B...) to user@example.com
   The spool path says which quarantine it was: spam, virus or attachment
   (on a cluster node: /var/spool/pmg/cluster/<n>/virus/...).
+  " to <receiver>" exists only since pmg-api 8.1.7 (commit db2b1f6, January
+  2025); PMG 8.0 to 8.1.6 end the line after the path, so it is optional.
 -->
 <decoder name="jt-pmg-quarantine-release">
   <parent>jt-pmg</parent>
   <prematch type="pcre2">^delivered quarantined mail '</prematch>
-  <regex type="pcre2">^delivered quarantined mail '(\S+)' \(\S*?/(spam|virus|attachment)/\S*\) to (.+)$</regex>
+  <regex type="pcre2">^delivered quarantined mail '(\S+)' \(\S*?/(spam|virus|attachment)/\S*\)(?: to (.+))?$</regex>
   <order>pmg.quarantine_id, pmg.quarantine, pmg.rcpt</order>
 </decoder>
 
@@ -109,6 +112,66 @@
   <prematch type="pcre2">^[0-9A-F]+: moved mail for \x3c</prematch>
   <regex type="pcre2">^([0-9A-F]+): moved mail for \x3c([^\x3e]*)\x3e to (\w+) (quarantine) - \S+ \(rule: (.+)\)$</regex>
   <order>pmg.logid, pmg.rcpt, pmg.quarantine, pmg.action, pmg.rule</order>
+</decoder>
+
+<!--
+  A copy of a mail sent by a BCC action (RuleDB/BCC.pm):
+    1E0B...: bcc to <archive@example.com> (rule: Copy to archive, 4A1B2C3D4E)
+    1E0B...: bcc to <archive@example.com> (rule: Copy to archive) failed
+  First-time-seen is keyed on the gateway (location) and the target, a
+  dynamic field of this decoder's order: rule 132437 alerts the first time a
+  gateway copies mail to an address. (extra_data is accepted in <fts> but is
+  not part of the key in 4.14: every target after the first stayed silent.)
+  "bcc to <> (rule: x, ignored)" (a bounce, nothing sent) is left to the
+  generic per-mail decoder.
+-->
+<decoder name="jt-pmg-bcc">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^[0-9A-F]+: bcc to \x3c[^\x3e]+\x3e \(rule: .+, [0-9A-F]+\)$</prematch>
+  <regex type="pcre2">^([0-9A-F]+): bcc to \x3c([^\x3e]+)\x3e \(rule: (.+), [0-9A-F]+\)$</regex>
+  <order>pmg.logid, pmg.rcpt, pmg.rule</order>
+  <fts>name, location, pmg.rcpt</fts>
+</decoder>
+
+<decoder name="jt-pmg-bcc-failed">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^[0-9A-F]+: bcc to \x3c[^\x3e]*\x3e \(rule: .+\) failed$</prematch>
+  <regex type="pcre2">^([0-9A-F]+): bcc to \x3c([^\x3e]*)\x3e \(rule: (.+)\) failed$</regex>
+  <order>pmg.logid, pmg.rcpt, pmg.rule</order>
+</decoder>
+
+<!--
+  An attachment removed by a "Remove attachments" action (RuleDB/Remove.pm):
+    1E0B...: removed attachment 3 ('invoice.pdf.exe', rule: Block Dangerous Files)
+-->
+<decoder name="jt-pmg-attachment">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^[0-9A-F]+: removed attachment </prematch>
+  <regex type="pcre2">^([0-9A-F]+): removed attachment (\S+) \('(.*)', rule: (.+)\)$</regex>
+  <order>pmg.logid, pmg.attachment, pmg.file, pmg.rule</order>
+</decoder>
+
+<!--
+  A mail handed back to Postfix for delivery (RuleDB/Accept.pm), one line per
+  recipient, with the Postfix queue ID of the delivery:
+    1E0B...: accept mail to <user@example.com> (459381E0560) (rule: default-accept)
+-->
+<decoder name="jt-pmg-accept">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^[0-9A-F]+: accept mail to \x3c</prematch>
+  <regex type="pcre2">^([0-9A-F]+): accept mail to \x3c([^\x3e]*)\x3e \((\S+)\) \(rule: (.+)\)$</regex>
+  <order>pmg.logid, pmg.rcpt, pmg.qid, pmg.rule</order>
+</decoder>
+
+<!--
+  The SpamAssassin result of a mail (RuleDB/Spam.pm), one line per mail:
+    1E0B...: SA score=3/5 time=1.744 bayes=undefined autolearn=disabled hits=DMARC_NONE(0.1),...
+-->
+<decoder name="jt-pmg-spam-score">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^[0-9A-F]+: SA score=</prematch>
+  <regex type="pcre2">^([0-9A-F]+): SA score=(\S+) .*?hits=(\S*)</regex>
+  <order>pmg.logid, pmg.sa_score, pmg.sa_hits</order>
 </decoder>
 
 <!-- Any other per-mail line: only the log ID is decoded; rules match the text. -->

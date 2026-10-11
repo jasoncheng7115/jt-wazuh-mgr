@@ -2,62 +2,82 @@
  "id": "jt-alert-digest",
  "name": "Readable Alert Digest",
  "name_zh": "可讀的告警摘要信",
- "version": "1.3",
- "summary": "Replaces wazuh-maild's raw notifications with one grouped, readable message per run.",
- "summary_zh": "把 wazuh-maild 的原始通知換成分組整理過、讀得完的摘要信。",
+ "version": "1.4",
+ "summary": "Replaces wazuh-maild's raw notifications with one grouped, readable message per run, and reports its own failures in the console.",
+ "summary_zh": "把 wazuh-maild 的原始通知換成分組整理過、讀得完的摘要信，並在主控台回報自己的故障。",
  "rule_id_range": "131100-131199",
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
  "requires": {
-  "wazuh": ">=4.8"
+  "wazuh": ">=4.8 <5.0"
  },
  "notes": [
   "The mail channel usually already exists and already works. What stops it being useful is the format: wazuh-maild sends the raw full_log followed by every decoded field printed a second time, and concatenates an hour's alerts into one message. Measured on a live manager, one message ran to seventeen notifications and several thousand lines, and the single genuine detection in it sat underneath fourteen alerts from a build host.",
-  "This pack groups alerts that share a rule and an agent, prints the few fields that identify what happened, and sends one message per run. The same seventeen notifications become about forty lines.",
-  "No configuration of its own. smtp_server, email_from, email_to and email_alert_level are read from the manager's ossec.conf, where they are already set for wazuh-maild, so the two cannot drift apart.",
-  "PREREQUISITE - turn wazuh-maild off once this is delivering, or both will send. Set email_alert_level to 15 or email_notification to no, then restart the manager.",
-  "Group headings quote the part of the rule description that is common to the whole group. Wazuh interpolates $(field) into a description, so taking the first alert's copy would put one alert's address or path into a heading covering a dozen of them.",
-  "A send that fails leaves the read position alone, so the next run retries rather than dropping the alerts. The first run ever records the end of the alert file and sends nothing, because mailing the whole backlog is not a useful way to start.",
-  "Rule 131100 exists because a notifier cannot announce its own failure by mail. The script writes failures into the manager's event queue instead, which puts them in the console where someone is already looking.",
-  "The schedule is every two minutes rather than immediate. That is deliberate: a burst of forty alerts arrives as one message instead of forty, and two minutes is not the part of an incident response that matters."
+  "This pack groups alerts that share a rule and an agent, prints the few fields that identify what happened, and sends one message per run. The same seventeen notifications become about forty lines. With more than one group, the message opens with a one-line-per-group summary.",
+  "Mail settings are read from the manager's ossec.conf, from the block Wazuh itself reads them from: smtp_server, email_from and email_to from <global>, email_alert_level from <alerts>. 1.3 collected email_to from anywhere in the file, so the recipients of every <reports> block also received every digest. Optional per-node settings live in etc/jt-packs/jt-alert-digest.conf, which installing or updating never writes. Without that file the digest sends plain SMTP to port 25 exactly as 1.3 did.",
+  "PREREQUISITE - turn wazuh-maild off once this is delivering, or both will send. Set email_notification to no and stop the wazuh-maild process; nothing else needs a restart. Do not raise email_alert_level for that purpose: the digest reads it too and would go quiet together with maild. (Notes before 1.4 said to raise it; that advice was wrong.)",
+  "Group headings quote the part of the rule description that is common to the whole group. Wazuh interpolates $(field) into a description, so taking the first alert's copy would put one alert's address or path into a heading covering a dozen of them. The cut never falls inside a token; when the shared part is too short (CVE ids), a label such as \"Vulnerabilities detected\" is used.",
+  "The read position is kept by inode and dated file name. At midnight the digest finishes the rotated file, also after monitord has compressed it, then any whole days in between, then today's file. 1.3 jumped to the start of the new file, so on a node that could not deliver, the backlog was thrown away every midnight: 323 level 12+ alerts in nine days on one worker. A failed send leaves the position alone, only complete lines are read (analysisd flushes once a second), and a backlog above 5,000 alerts is sent in parts instead of stalling the reader. The first run records the end of the file and sends nothing.",
+  "A notifier cannot announce its own failure by mail, so the script writes JSON status events into the manager's event queue, where rules turn them into console alerts: 131111 delivery failing (level 10, when it starts or changes, then hourly; 1.3 raised the same alert every two minutes, 703 a day on one node), 131112 nothing delivered for two hours (level 12, then every six hours), 131113 alerts skipped for good (level 12), 131116 a configuration that cannot deliver (level 12), 131115 the script crashed (level 10), 131114 delivering again (level 3). 131100 stays for copies of 1.3 or older still running.",
+  "Once a day (08:00 by default) each node mails a short summary: alerts by level, digests sent, repeats held back, the delivery state, the most frequent rules, and agents that stopped and did not start again within fifteen minutes. A day without that mail means the digest is not running at all, the one failure no rule can report. Set daily = off to disable it.",
+  "Repeat hold: a (rule, host) group already mailed in full within the last 60 minutes is not repeated in full; its alerts are counted and listed in one \"still ongoing\" line in the next message, or in a short message once the hour is up. A higher level, a new host or a new rule is never held. On one manager's eleven days of level 12+ alerts this would have cut 485 messages to about 221 without leaving any alert out. A (rule, host) pair not seen in 90 days is marked NEW, and the subject says so.",
+  "Content: Windows eventchannel alerts show the process, command line, parent, user, file or connection (in 1.3, 93% of one worker's level 12+ alerts printed no fields at all); vulnerability alerts are one line per package with the CVE count and the highest CVSS score. Credentials (passwords and tokens in URLs and command lines, Authorization headers, cookies, private keys) are masked in the mail only; the alert in Wazuh is untouched. Messages carry a Message-ID and Auto-Submitted header, are quoted-printable encoded, and stay below the size at which Gmail cuts a message off.",
+  "The schedule is every two minutes rather than immediate. That is deliberate: a burst of forty alerts arrives as one message instead of forty, and two minutes is not the part of an incident response that matters. A lock keeps two overlapping runs from mailing the same alerts.",
+  "Written for Wazuh 4.8 to 4.14, which write logs/alerts/alerts.json; Wazuh 5.0 has no such file, and there the digest raises a configuration alert instead of staying silent. Runs on the manager's own python3 (3.8 or later), standard library only."
  ],
  "notes_zh": [
   "郵件管道通常本來就有、也本來就通。讓它沒有用的是格式：wazuh-maild 會把 full_log 原文加上每個解碼欄位再印一次，還把一小時內的告警串成一封。在正式機實測，一封信有 17 則通知、數千行，而其中唯一真正的偵測被壓在 14 則來自建置主機的告警底下。",
-  "這個套件把相同（規則, 主機）的告警折成一組，只留能說明發生什麼事的欄位，每次執行送一封。同樣那 17 則會變成約 40 行。",
-  "沒有自己的設定檔。smtp_server、email_from、email_to 與 email_alert_level 都從 manager 的 ossec.conf 讀 —— 那裡本來就為了 wazuh-maild 設好了，所以兩邊不會走樣。",
-  "前提條件 - 確認摘要信送得到之後要把 wazuh-maild 關掉，否則兩邊都會寄。把 email_alert_level 改成 15 或 email_notification 改成 no，然後重啟 manager。",
-  "分組標題取的是整組描述的共同部分。Wazuh 會把 $(欄位) 內插進 description，所以直接用第一則的描述，會把只屬於某一則的位址或路徑寫在涵蓋十幾則的標題上。",
-  "寄送失敗時不會推進讀取位置，下一輪重試而不是把告警弄丟。第一次執行只記下告警檔的結尾、不寄任何東西 —— 把整個歷史一次寄出來不是個有用的開場。",
-  "規則 131100 存在的理由是：通知程式沒辦法用通知宣告自己壞了。腳本改成把失敗寫進 manager 的事件佇列，讓它出現在使用者本來就會看的主控台，而不是一個沒人開的記錄檔。",
-  "排程是每兩分鐘一次而不是即時。這是刻意的：40 筆的爆量會變成一封信而不是 40 封，而那兩分鐘不是事件應變中要緊的部分。"
+  "這個套件把相同（規則, 主機）的告警折成一組，只留能說明發生什麼事的欄位，每次執行送一封。同樣那 17 則會變成約 40 行。超過一組時，信的開頭先列出每組一行的摘要。",
+  "郵件設定從 manager 的 ossec.conf 讀，而且只從 Wazuh 自己讀它的那個區塊讀：smtp_server、email_from、email_to 來自 <global>，email_alert_level 來自 <alerts>。1.3 會從整個檔案收集 email_to，所以每個 <reports> 區塊的收件人也會收到每一封摘要信。各節點的選用設定放在 etc/jt-packs/jt-alert-digest.conf，安裝或更新永遠不會寫這個檔案。沒有這個檔案時，行為與 1.3 完全相同：以一般 SMTP 寄到 25 埠。",
+  "前提條件 - 確認摘要信送得到之後要把 wazuh-maild 關掉，否則兩邊都會寄。把 email_notification 設成 no，再停掉 wazuh-maild 程序即可，其他都不需要重啟。不要用調高 email_alert_level 的方式關：摘要信也讀這個值，會跟著 maild 一起安靜。（1.4 之前的說明寫的是調高它，那是錯的。）",
+  "分組標題取的是整組描述的共同部分。Wazuh 會把 $(欄位) 內插進 description，所以直接用第一則的描述，會把只屬於某一則的位址或路徑寫在涵蓋十幾則的標題上。切點不會落在一個詞的中間；共同部分太短時（例如 CVE 編號），改用「Vulnerabilities detected」這類標籤。",
+  "讀取位置以 inode 加上日期檔名記錄。午夜換檔時，先把換出去的檔案讀完（monitord 壓縮成 .gz 之後也可以），再讀中間整天的檔案，最後才是今天的檔案。1.3 會直接跳到新檔案的開頭，所以一個寄不出去的節點每到午夜就把積壓的告警丟掉：某台 worker 九天內有 323 筆 level 12 以上就這樣消失。寄送失敗不會推進讀取位置；只讀完整的行（analysisd 每秒才寫出一次）；積壓超過 5,000 則時分批寄出，而不是讓讀取停擺。第一次執行只記下告警檔的結尾、不寄任何東西。",
+  "通知程式沒辦法用通知宣告自己壞了，所以腳本把 JSON 狀態事件寫進 manager 的事件佇列，由規則轉成主控台告警：131111 寄送失敗（level 10，開始或原因改變時一次，之後每小時一次；1.3 每兩分鐘一次，某節點一天 703 筆）、131112 兩小時都沒送達（level 12，之後每六小時一次）、131113 有告警被永久跳過（level 12）、131116 設定使寄送不可能（level 12）、131115 腳本當掉（level 10）、131114 恢復寄送（level 3）。131100 保留給仍在執行 1.3 或更舊版本的節點。",
+  "每個節點每天寄一封簡短的摘要（預設 08:00）：各等級告警數、寄出幾封、壓下多少重複、寄送狀態、最常出現的規則，以及停止後十五分鐘內沒有再啟動的 agent。哪天沒收到這封信，就代表摘要信根本沒在跑 —— 這是任何規則都無法回報的故障。設定 daily = off 可關閉。",
+  "重複壓制：同一組（規則, 主機）在 60 分鐘內已完整寄過的，不再完整重寄；這些告警會被計數，在下一封信裡以一行「still ongoing」列出，或在一小時到期時寄一封簡短的信。等級升高、新主機、新規則永遠不會被壓下。以某台 manager 十一天的 level 12 以上告警試算，485 封會變成約 221 封，而且沒有任何告警被省略。90 天內沒出現過的（規則, 主機）組合標示 NEW，主旨也會註明。",
+  "內容：Windows eventchannel 告警會列出程序、命令列、父程序、使用者、檔案或連線（1.3 時某台 worker 的 level 12 以上告警有 93% 一個欄位都沒印）；弱點告警每個套件一行，附 CVE 數量與最高 CVSS 分數。帳密類資訊（網址與命令列中的密碼和 token、Authorization 標頭、cookie、私鑰）只在信裡遮蔽，Wazuh 裡的告警不受影響。信件帶有 Message-ID 與 Auto-Submitted 標頭、以 quoted-printable 編碼，並維持在 Gmail 會截斷的大小以下。",
+  "排程是每兩分鐘一次而不是即時。這是刻意的：40 筆的爆量會變成一封信而不是 40 封，而那兩分鐘不是事件應變中要緊的部分。另有鎖定機制，避免兩次重疊的執行寄出同一批告警。",
+  "適用於會寫 logs/alerts/alerts.json 的 Wazuh 4.8 至 4.14；Wazuh 5.0 沒有這個檔案，在那裡摘要信會發出設定錯誤的告警，而不是默不作聲。使用 manager 本身的 python3（3.8 以上），只用標準函式庫。"
  ],
  "files": [
   {
    "type": "rule",
    "name": "zz-131100-jt_alert_digest_rules.xml",
    "dest": "etc/rules/zz-131100-jt_alert_digest_rules.xml",
-   "sha256": "7bf4d35f7427a47eb24e188ca8990099a363e9c549d9ca2083a7a4fa9729af60"
+   "sha256": "2b10d01c0c9b3d6e293d7bc9b21b0b140d8c50bfa644e8d5068d769763b983fc"
   }
  ],
  "scripts": [
   {
    "name": "jt-alert-digest.py",
    "dest": "etc/jt-packs/bin/jt-alert-digest.py",
-   "sha256": "0e6a5523ebac9a918fe8d5b46580bbe8a958ced99042f10f04fe061376e8079b",
+   "sha256": "6abeaa312be3d29ab47620c244ceaede942b16c492eb457041b59e4e33ac8436",
    "cron": "*/2 * * * *",
    "args": "--wazuh-path {wazuh_path}",
-   "description": "Groups new alerts and sends one readable message, using the mail settings already in ossec.conf"
+   "description": "Groups new alerts and sends one readable message, using the mail settings already in ossec.conf; reports its own failures to the manager"
   }
  ],
  "setup": [
   {
    "platform": "manager",
    "required": true,
-   "title": "Install on every node that writes alerts",
-   "title_zh": "在每個會寫告警的節點各裝一份",
-   "body": "Each cluster node writes only the alerts of the agents it processes, so in a cluster this must run on every node — Windows agents are usually on a worker. The installer schedules it on the node you install from; on each worker, copy the script and the cron file across, and the settings file below if you use one.",
-   "body_zh": "每個叢集節點只寫入它負責的 agent 的告警，所以叢集中每個節點都要執行 —— Windows agent 通常在 worker 上。安裝程式只會在你安裝的那個節點排程；每個 worker 請把腳本與排程檔複製過去，若有使用下方的設定檔也一併複製。",
+   "title": "Install on every node that writes alerts, and reload the ruleset on each",
+   "title_zh": "在每個會寫告警的節點各裝一份，並在每個節點重新載入規則",
+   "body": "Each cluster node writes only the alerts of the agents it processes, so in a cluster this must run on every node; Windows agents are usually on a worker. The installer schedules it on the node you install from; on each worker, copy the script and the cron file across, and the settings file below if you use one. The cluster copies the rule file to the workers but does not reload their analysisd: use Reload ruleset afterwards, or the worker's status events are not recognised.",
+   "body_zh": "每個叢集節點只寫入它負責的 agent 的告警，所以叢集中每個節點都要執行；Windows agent 通常在 worker 上。安裝程式只會在你安裝的那個節點排程；每個 worker 請把腳本與排程檔複製過去，若有使用下方的設定檔也一併複製。叢集會把規則檔同步到 worker，但不會重新載入 worker 的 analysisd：之後請按「重新載入規則集」，否則 worker 的狀態事件不會被辨識。",
    "code": "scp /var/ossec/etc/jt-packs/bin/jt-alert-digest.py <worker>:/var/ossec/etc/jt-packs/bin/\nscp /etc/cron.d/jt-jt-alert-digest <worker>:/etc/cron.d/"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.4",
+   "title": "Remove a hand-made schedule left from an earlier version",
+   "title_zh": "移除早期版本留下的手動排程",
+   "body": "Before the tool scheduled scripts, the digest was sometimes installed by hand with its own cron file, often carrying --dashboard on the command line. If such a file is still there next to the tool's jt-jt-alert-digest, both run and an old copy keeps mailing in the 1.3 format. Keep only the tool's file, and move any --dashboard value into the settings file.",
+   "body_zh": "在工具會排程腳本之前，摘要信有時是手動安裝、有自己的排程檔，命令列上常帶著 --dashboard。若這種檔案還和工具寫的 jt-jt-alert-digest 並存，兩者都會執行，舊的那份會繼續用 1.3 的格式寄信。只保留工具寫的那份，並把 --dashboard 的值移到設定檔。",
+   "code": "grep -l jt-alert-digest /etc/cron.d/*\n# keep /etc/cron.d/jt-jt-alert-digest, remove any other file listed",
+   "verify": "grep -l jt-alert-digest /etc/cron.d/* lists only /etc/cron.d/jt-jt-alert-digest on every node.",
+   "verify_zh": "每個節點上 grep -l jt-alert-digest /etc/cron.d/* 只列出 /etc/cron.d/jt-jt-alert-digest。"
   },
   {
    "platform": "manager",
@@ -65,9 +85,9 @@
    "since": "1.3",
    "title": "Put a link to the dashboard in each message",
    "title_zh": "在每封信裡附上主控台連結",
-   "body": "The digest can end with a link to your Wazuh dashboard. Put it in the settings file rather than on the cron line: installing or updating the pack rewrites the cron entry from the pack, and never touches this file. Each node reads its own copy.",
-   "body_zh": "摘要信可以在結尾附上 Wazuh 主控台的連結。請寫在設定檔裡，不要加在排程那一行：安裝或更新套件時會依套件重寫排程，但永遠不會動到這個檔案。每個節點讀自己的那一份。",
-   "code": "echo 'dashboard = https://<dashboard-host>/app/wazuh' > /var/ossec/etc/jt-packs/jt-alert-digest.conf\n/var/ossec/etc/jt-packs/bin/jt-alert-digest.py --dry-run | tail -3",
+   "body": "The digest can end with a link to your Wazuh dashboard, and from 1.4 each group also links to its own alerts (that rule, that agent, the minutes around them) in the 4.9+ threat-hunting view; set link = off to drop those. Put the setting in the settings file rather than on the cron line: installing or updating the pack rewrites the cron entry from the pack, and never touches this file. Each node reads its own copy.",
+   "body_zh": "摘要信可以在結尾附上 Wazuh 主控台的連結；1.4 起每一組還會連到它自己的告警（該規則、該 agent、前後幾分鐘），使用 4.9 以上的 threat-hunting 畫面；設定 link = off 可取消。請寫在設定檔裡，不要加在排程那一行：安裝或更新套件時會依套件重寫排程，但永遠不會動到這個檔案。每個節點讀自己的那一份。",
+   "code": "echo 'dashboard = https://<dashboard-host>/app/wazuh' >> /var/ossec/etc/jt-packs/jt-alert-digest.conf\n/var/ossec/etc/jt-packs/bin/jt-alert-digest.py --dry-run | tail -3",
    "verify": "The dry run prints the link as the last line of the message when there are alerts to report.",
    "verify_zh": "有告警可報時，試跑會在訊息最後一行印出這個連結。"
   },
@@ -76,17 +96,51 @@
    "required": true,
    "title": "Check that the mail server accepts the node",
    "title_zh": "確認郵件伺服器接受該節點",
-   "body": "A failed send is not lost: the read position stays put and the next run retries, and rule 131100 raises an alert. Many mail servers refuse a sender without a reverse DNS (PTR) record, which is the usual reason one node delivers and another does not.",
-   "body_zh": "寄送失敗不會遺失：讀取位置不前進、下一輪重試，並由規則 131100 產生告警。許多郵件伺服器會拒收沒有反向 DNS（PTR）記錄的來源，這通常就是「一台寄得出去、另一台寄不出去」的原因。",
-   "code": "dig -x <node_ip> +short"
+   "body": "A failed send is not lost: the read position stays put and the next run retries, and the console shows rule 131111, then 131112 after two hours. Many mail servers refuse a sender without a reverse DNS (PTR) record, which is the usual reason one node delivers and another does not. Query the DNS server the mail server uses, not the node's own resolver: a line in the node's /etc/hosts answers locally and hides the missing record.",
+   "body_zh": "寄送失敗不會遺失：讀取位置不前進、下一輪重試，主控台會出現規則 131111，兩小時後是 131112。許多郵件伺服器會拒收沒有反向 DNS（PTR）記錄的來源，這通常就是「一台寄得出去、另一台寄不出去」的原因。請查詢郵件伺服器所用的 DNS，而不是節點自己的解析器：節點 /etc/hosts 裡的一行會在本機回答，把缺少的記錄藏起來。",
+   "code": "dig -x <node_ip> +short @<dns-server-the-mail-server-uses>"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "since": "1.4",
+   "title": "Test delivery from each node with --check and --test",
+   "title_zh": "在每個節點用 --check 與 --test 測試寄送",
+   "body": "--check prints the settings the node will use and walks the SMTP conversation up to RCPT TO for every recipient, then resets it: nothing is delivered and nothing is written, and the mail server's exact answer is printed (a 450 for a missing PTR shows here on the first try instead of after the first alert). --test then sends one marked test message. Run both on every node.",
+   "body_zh": "--check 會列出該節點將使用的設定，並把 SMTP 對話走到每個收件人的 RCPT TO 後重設：不寄出、不寫入任何東西，並印出郵件伺服器的原始回應（缺 PTR 的 450 會在第一次就顯示，而不是等第一則告警）。接著用 --test 寄一封標示為測試的信。每個節點都要各跑一次。",
+   "code": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --test",
+   "verify": "--check ends with \"the server accepts this node and every recipient\", and the test message arrives.",
+   "verify_zh": "--check 最後一行是「the server accepts this node and every recipient」，而且測試信有收到。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.4",
+   "title": "Optional: submit through port 587 with STARTTLS and a login",
+   "title_zh": "選用：改由 587 埠以 STARTTLS 加帳號登入送信",
+   "body": "Wazuh's own mail daemon can only send plain SMTP without authentication. The digest can also submit like a mail client, per node, which helps a node the mail server would otherwise refuse (no PTR record) and keeps alert content off the wire in clear text. tls is none (default), may (STARTTLS when offered), required, verify (also checks the certificate; tls_ca_file for a private CA) or implicit (TLS from the first byte, port 465). A password is only sent over required, verify or implicit, and only from a file that belongs to root with mode 600; never put it in the settings file, which is world-readable.",
+   "body_zh": "Wazuh 自己的郵件 daemon 只能以不驗證的一般 SMTP 送信。摘要信可以在各節點像郵件軟體一樣投遞，可以讓原本會被郵件伺服器拒收的節點（例如缺 PTR）送得出去，也讓告警內容不再以明文在網路上傳送。tls 可設 none（預設）、may（伺服器提供時才用 STARTTLS）、required、verify（另外檢查憑證；私有 CA 用 tls_ca_file）或 implicit（一連線就是 TLS，465 埠）。密碼只會在 required、verify、implicit 下送出，而且只從屬於 root、權限 600 的檔案讀取；不要寫在設定檔裡，那個檔案每個人都讀得到。",
+   "code": "install -m 600 -o root -g root /dev/null /var/ossec/etc/jt-packs/jt-alert-digest.secret\nprintf '%s\\n' '<password>' > /var/ossec/etc/jt-packs/jt-alert-digest.secret\ncat >> /var/ossec/etc/jt-packs/jt-alert-digest.conf <<'EOF'\nsmtp_port = 587\ntls = required\nsmtp_user = <sender-account>\nsmtp_password_file = /var/ossec/etc/jt-packs/jt-alert-digest.secret\nEOF\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --check",
+   "verify": "--check shows \"STARTTLS: encrypted\" and \"AUTH: accepted\" before MAIL FROM.",
+   "verify_zh": "--check 在 MAIL FROM 之前顯示「STARTTLS: encrypted」與「AUTH: accepted」。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.4",
+   "title": "Optional: tune repeats, the daily summary and exclusions",
+   "title_zh": "選用：調整重複壓制、每日摘要與排除",
+   "body": "All in the settings file, per node, and all optional: repeat (minutes a group is held after a full mail, 60 by default, 0 turns the hold off), daily (time of the daily summary, 08:00 by default, off to disable), level (mail from this level up, ignoring the rules' own mail flag; by default email_alert_level and rule.mail decide, exactly as for wazuh-maild), to (recipients for this node instead of email_to), exclude_rules and exclude_agents (never mailed, still counted in the daily summary), max_per_hour (0 by default: no limit; above it, alerts wait for the next allowed run and are never dropped). Unknown or invalid values are listed by --check and in the daily summary, and the default is used.",
+   "body_zh": "都寫在各節點的設定檔裡，而且都是選用：repeat（完整寄出後壓制同一組幾分鐘，預設 60，設 0 關閉）、daily（每日摘要的時間，預設 08:00，off 關閉）、level（從這個等級起寄出，忽略規則本身的 mail 旗標；預設由 email_alert_level 與 rule.mail 決定，與 wazuh-maild 完全相同）、to（這個節點改寄給這些收件人，取代 email_to）、exclude_rules 與 exclude_agents（不寄出，但仍計入每日摘要）、max_per_hour（預設 0 不限制；超過時告警等到下一次允許的執行，絕不丟棄）。不認得或無效的值會由 --check 與每日摘要列出，並改用預設值。",
+   "code": "cat >> /var/ossec/etc/jt-packs/jt-alert-digest.conf <<'EOF'\nrepeat = 60\ndaily = 08:00\nexclude_agents = <lab-agent-name>\nEOF"
   },
   {
    "platform": "manager",
    "required": true,
    "title": "Turn wazuh-maild off once the digest arrives",
    "title_zh": "摘要信寄達後關閉 wazuh-maild",
-   "body": "Otherwise both send. Set <email_notification>no</email_notification> in ossec.conf, then stop the daemon; the rest of the manager does not need a restart.",
-   "body_zh": "否則兩邊都會寄。在 ossec.conf 設定 <email_notification>no</email_notification>，再停止該 daemon 即可，管理端其他部分不需重啟。",
+   "body": "Otherwise both send. Set <email_notification>no</email_notification> in ossec.conf, then stop the daemon; the rest of the manager does not need a restart. Do not raise email_alert_level to silence maild: the digest reads that value too.",
+   "body_zh": "否則兩邊都會寄。在 ossec.conf 設定 <email_notification>no</email_notification>，再停止該 daemon 即可，管理端其他部分不需重啟。不要用調高 email_alert_level 的方式讓 maild 安靜：摘要信也讀這個值。",
    "code": "pkill -TERM -x wazuh-maild"
   }
  ],

@@ -40,7 +40,8 @@
   Fields: jitsi.source, jitsi.level, jitsi.message (Prosody);
   jitsi.app, jitsi.level, jitsi.context, jitsi.caller, jitsi.message (Java);
   jitsi.trace (continuation lines); jitsi.error, jitsi.reason, jitsi.room,
-  jitsi.session, srcip where a message carries them.
+  jitsi.session, srcip where a message carries them (only in the shapes
+  decoded here, not in the docker json-file shape).
 -->
 
 <!-- Shape 1, Prosody console sink behind a syslog or journald header. -->
@@ -115,6 +116,18 @@
 </decoder>
 
 <!--
+  The same line from jitsi-meet before about stable-9xxx (stable/jitsi-meet_8922,
+  mod_auth_token.lua:83): "Error verifying token err:%s, reason:%s", nothing
+  after the reason. Only taken when no tenant field follows, so the two
+  decoders never both set the fields.
+-->
+<decoder name="jt-jitsi-fields">
+  <parent>jt-jitsi</parent>
+  <regex type="pcre2">Error verifying token err:(\S+?), reason:(?!.* tenant:)(.*?)\s*$</regex>
+  <order>jitsi.error, jitsi.reason</order>
+</decoder>
+
+<!--
   mod_token_verification: "Token <jwt> not allowed to join: <room>@<muc> err:
   <err> reason: <reason>". The token itself is not decoded.
 -->
@@ -124,11 +137,30 @@
   <order>jitsi.room, jitsi.error, jitsi.reason</order>
 </decoder>
 
-<!-- Addresses: mod_rate_limit and mod_filter_iq_jibri. -->
+<!--
+  Addresses: mod_rate_limit, mod_filter_iq_jibri, Prosody's mod_limits
+  ("Rejecting stream from %s (%d of %d current connections)") and
+  mod_register_limits ("Adding ip %s to registration blocklist"). Each
+  message starts after the tab (or #011) of the console sink or after the
+  ": " of the syslog sink. Until 1.1 "Limiting" was anchored at the start of
+  the whole line, so it never matched and rule 132525 carried no srcip.
+  A dual-stack listener reports IPv4 clients as ::ffff:a.b.c.d, which the
+  firewall-drop response would hand to ip6tables: the prefix is dropped.
+-->
 <decoder name="jt-jitsi-fields">
   <parent>jt-jitsi</parent>
-  <regex type="pcre2">(?:^Limiting |Join rate exceeded for |Filtering jibri start recording, ip:)([0-9a-fA-F.:]+)[ ,]</regex>
+  <regex type="pcre2">(?:\t|#011|: )(?:Limiting |Join rate exceeded for |Filtering jibri start recording, ip:|Rejecting stream from |Adding ip )(?:::ffff:)?([0-9a-fA-F.:]+)[ ,]</regex>
   <order>srcip</order>
+</decoder>
+
+<!--
+  Jicofo's conference context, "[room=<room>@<muc> meeting_id=...]": the room
+  of a kick (132555) and of Jicofo's other conference messages, for the alert.
+-->
+<decoder name="jt-jitsi-fields">
+  <parent>jt-jitsi</parent>
+  <regex type="pcre2">^Jicofo \S+ \S+ \w+: \[\d+\] \[(?:[^\]]* )?room=([^\s\]]+)</regex>
+  <order>jitsi.room</order>
 </decoder>
 
 <!-- Jibri: session id and meeting name of a recording or stream. -->

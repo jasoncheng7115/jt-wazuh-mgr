@@ -2,21 +2,25 @@
  "id": "jt-ioc",
  "name": "IP Threat Intelligence",
  "name_zh": "IP 威脅情資比對",
- "version": "1.4",
- "summary": "Matches addresses in logins, outbound connections and web requests against a multi-source threat intelligence list.",
- "summary_zh": "以多來源威脅情資比對登入、對外連線與網站請求中的位址。",
+ "version": "1.5",
+ "summary": "Matches addresses in logins, outbound connections, Suricata records and web requests against public threat feeds, graded by how many independent sources list them.",
+ "summary_zh": "以公開威脅情資比對登入、對外連線、Suricata 記錄與網站請求中的位址，並依被多少獨立來源列入分級。",
  "rule_id_range": "906001-906099",
  "notes_zh": [
-  "會告警的情況：清單中的位址成功登入（906050／906051，level 14）、Windows 處理程序主動連往清單位址（906032，level 13）、清單位址的網站請求拿到動態內容（906023-906026，level 12）。",
-  "清單位址的網站請求若被拒、被導向或找不到，記為 level 5（906040）不寄信；同一位址 10 分鐘內 30 次才觸發 906043（level 10）。1.3 之前實測：一台反向代理一週 29,845 筆 level 12，佔所有記錄到的公網位址的 98.5%，幾乎全是拿到 404 的掃描器。",
-  "1.3 之前所有規則都掛在內建規則 1（syslog 通用範本）底下，只有剛好經過它的事件才會比對：sshd 與 Windows 事件從來沒有被比對過。Windows 規則的欄位又寫成規則端不存在的 data.win.eventdata.*。已全部改寫。",
-  "網站分級讀取 http_status、method、path 三個欄位（JSON 存取記錄的常見命名）。若你的記錄用的是別的名稱，清單位址的每個請求仍會以 level 12 告警；請在解碼器改名，或照 906040 的寫法改用你的欄位名稱。",
-  "清單每六小時由 11 個公開來源重建。網段會展開成 Wazuh 查得到的鍵值：address_match_key 只比對完整位址與以八位元組為界的前綴（203.0.113.），從不比對 CIDR 寫法的鍵 —— 1.3 之前清單裡的 1,276 筆網段從來沒被比對到。",
-  "寫完清單後，更新程式會重新載入本節點的規則集（重新編譯清單）。叢集的 worker 會收到清單，但 master 不會替它重載：請在每台 worker 排程 --reload-if-stale（見部署說明）。",
-  "保留位址、幾個公共 DNS 與 Cloudflare 的節點網段永遠不會列入。站台自訂排除寫在 etc/jt-packs/ioc-cache/exclusions.txt，一行一個 IP 或 CIDR。",
-  "新清單比原本少一半以上時拒絕覆蓋 —— 來源改格式和「網路變安全了」看起來一模一樣。",
+  "會告警的情況（1.5）：清單位址成功登入 906050／906051 為 level 10，位址屬於高可信度時為 level 14（906052／906053）。Windows 處理程序以 TCP 連出：906032 level 8／906033 level 13。Suricata 的 flow、HTTP、TLS 記錄連往清單伺服器：906054／906058 level 8／906055／906059 level 13。網站接受了清單位址的寫入（POST、PUT、PATCH、DELETE 回 2xx）：906044／906038 level 6／906045、906046、906039 level 12。一般目的位址欄位出現清單位址：level 6／12。連入流量、被拒的網站請求與 UDP 記錄在告警等級以下（2）或 3 到 5。",
+  "兩份清單、兩個等級。jason_tools_threat_ip 收錄所有被列入的位址；jason_tools_threat_ip_high 收錄被兩個獨立來源列入、或被精選清單列入的位址（Spamhaus DROP；啟用時的 ThreatFox 與 Feodo）。Tor 出口節點會被列入，但單憑 Tor 不會成為高可信度。每條比對規則都有一條子規則在高可信度清單再查一次。等級無法放在同一份清單的值裡：Wazuh 4.x 的 address_match_key_value 是反的（值不符時才成立；wazuh/wazuh#8269，已在 4.14.7 重測）。節點沒有宣告高可信度清單時，analysisd 只會忽略高可信度規則（警告 7616），第一級照常運作。",
+  "為什麼單一來源不告警。2026-10-11 實測 1.4 的清單（280,554 個位址）：91% 只來自單一來源，72% 只來自 blocklist.net.ua，多半是幾個月前的封鎖；14,343 個（5.1%）是公開的研究掃描器；5,488 個是不是出口的 Tor 中繼節點；darklist.de 自 2023 年 8 月起就沒更新，卻仍加入最大到 /15 的網段，7 筆 level 13 的 Sysmon 告警有 3 筆來自它。以同一天的來源建立，1.5 的清單有 106,251 個位址與前綴，其中 19,619 個為高可信度（6,914 個有兩票的位址、12,705 個 Spamhaus DROP 前綴），並移除 12,073 個研究掃描器。",
+  "來源。預設啟用：blocklist.de（過去 48 小時的攻擊者）、CINS Army、blocklist.net.ua（取它自己的 CSV，只收 30 天內的封鎖）、Proofpoint ET 已遭入侵主機、Spamhaus DROP（精選，依其條款免費使用；EDROP 已於 2024 年併入）與 Tor 出口節點。預設關閉，在 etc/jt-packs/jt-ioc.conf 開啟：ThreatFox（信心 75 以上）與 Feodo Tracker，因為 abuse.ch 要求營利組織付費訂閱；DShield（CC BY-NC-SA，非商業）；matthewroberts.io（其他清單的激進彙整）。公開的研究掃描器網段（MISP warninglists，CC0）會被移除。本套件不附任何情資資料，每個站台依各來源的條款自行下載。",
+  "網站分級讀取 http_status、method、path（JSON 存取記錄）或 combined 格式的狀態碼與方法。1.3 之前一台反向代理一週 29,845 筆 level 12，佔所有記錄到的公網位址的 98.5%；1.4 剩下的 level 12 是雲端位址向一個對任何路徑都回 200 的單頁應用程式抓 /login、/admin。看了頁面什麼都證明不了，所以 1.5 只在網站接受寫入時告警。被拒與靜態內容記為 level 2；同一位址 10 分鐘內被拒 30 次觸發 906043（remote_addr）或 906042（client_ip），level 6。",
+  "鍵值格式。address_match_key 只比對完整位址與以八位元組為界的前綴（203.0.113.），從不比對 CIDR 寫法，所以網段會展開成這種前綴。每個鍵也以 IPv4 對映格式寫一份（::ffff:203.0.113.7）：Java 應用程式與 Proxmox 的 pvedaemon 就是這樣記錄 IPv4 用戶端，1.4 的清單永遠比對不到。與排除範圍重疊的清單網段整段捨棄。",
+  "寫完清單後，更新程式會重新載入本節點的規則集（重新編譯清單）。叢集的 worker 會收到清單，但 master 不會替它重載：請在每台 worker 排程 --reload-if-stale。這個模式也會回報 master 已經不再更新的清單。",
+  "保留位址、公共 DNS 與 Cloudflare 的節點網段永遠不會列入。站台自訂排除寫在 etc/jt-packs/ioc-cache/exclusions.txt，一行一個 IP 或 CIDR。",
+  "清單無聲停止更新，看起來和正常運作一模一樣。更新程式在某個來源下載失敗、或解析結果不到上次一半時保留它的舊副本；新清單少了一半或變成三倍時拒絕覆蓋；絕不寫出空清單；以原子方式寫入；每個失敗都送進 manager 的事件佇列：906090（level 5）執行失敗、906091（level 10）清單超過 stale_hours（48 小時）未更新、906092（level 4）某個來源失敗、906093（level 10）abuse.ch 拒絕下載。",
   "安裝本套件會寫入一支以 root 身分排程執行的程式。這是刻意的，移除套件時會一併刪除。",
-  "906032（處理程序連往清單位址，level 13）現在只看 TCP。上線第一晚的 7 筆全是台灣地震預警軟體與家用網路 P2P 節點之間的 UDP 流量，那些家用 IP 被來源列入。連往清單位址的 UDP 改由 906036 以 level 6 記錄。"
+  "Sysmon 事件 3：906032 只看 TCP；連往清單位址的 UDP（906036）記為 level 2，因為上線第一晚的 7 筆 level 13 都是地震預警軟體與被來源列入的家用 IP 之間的 UDP 點對點流量。port 53 另外記為 level 3（906035）：DNS 伺服器會向網域指定的任何名稱伺服器查詢，某站台的解析器就曾這樣連到 Spamhaus DROP 網段。1.5 之前 PowerShell 的 TCP 連線（內建 92101）與 port 3389（92108）從來沒被比對過：這兩條 level 0 規則會先被嘗試並結束評估。",
+  "Suricata（1.5 新增）：內建 86600 會接走所有 eve.json 事件，所以一般的 src_ip、dest_ip 規則從來看不到 Suricata，1.4 的 906014 用的欄位（data.dest_ip）也不存在。1.5 在 flow、HTTP、TLS 記錄比對 dest_ip（也就是伺服器端）。IDS 告警交給內建 99915／99916 與為它們分級的套件（jt-opnsense）。",
+  "沒有做的事：DNS 回應（Sysmon 事件 22、AdGuard、Suricata dns 記錄）把多個位址放在同一個欄位，CDB 查詢無法拆開；原生 IPv6 項目；清單位址的登入失敗（任何對外服務的日常背景；Wazuh 內建 99904／99919 會對它的範例清單做這件事）；連往非出口 Tor 中繼節點的連線。本套件不提供主動回應：網站規則的位址在 remote_addr，主動回應讀不到；登入規則也掛在可能記錄轉送位址的網站應用程式底下；連入的掃描器由防火牆直接使用同樣的來源封鎖比較好。",
+  "1.5 的等級變更：906001-906009 由 12 改為 2（高可信度 906061-906069：5）；906011-906019 由 13／12 改為 6（高可信度 906071-906079：12）；906021／906022 由 12 改為 3（高可信度 906027／906028：8）；906023-906026 由 12 改為 3；906040 由 5 改為 2；906041 由 6 改為 2；906043 由 10 改為 6；906050／906051 由 14 改為 10（高可信度：14）；906031 由 8 改為 2（高可信度 906034：5）；906032 由 13 改為 8（高可信度 906033：13）；906036 由 6 改為 2（高可信度 906037：8）。906080（所有目的位址比對都是 level 14）已移除。不再把戰術代碼 TA0011 當成技術使用。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -28,43 +32,55 @@
    "type": "rule",
    "name": "01-906000-jason_tools_ioc.xml",
    "dest": "etc/rules/01-906000-jason_tools_ioc.xml",
-   "sha256": "f9efd0040f52666e5c44a1f557384652176796badb694e7e0f20a83e3f2b0537"
+   "sha256": "7a2e186591ffe9ef2fff4ceba8d52b599378d9f11cb78a0600bb144012fabf88"
   },
   {
    "type": "rule",
    "name": "zz-906050-jason_tools_ioc_late.xml",
    "dest": "etc/rules/zz-906050-jason_tools_ioc_late.xml",
-   "sha256": "b31b52859e3c4a14d70f41b7a34e91e0ddca337bb1b5de0462c28d131bf5ed81"
+   "sha256": "785646584f8e877bfb9709b36452a4aaa02ce6f17e60456dac0aa5e359443b4f"
   },
   {
    "type": "list",
    "name": "jason_tools_threat_ip",
    "dest": "etc/lists/jason_tools_threat_ip",
    "declare": true,
-   "sha256": "11f498d647b9a6fcb91a62a435537381b96274be524827097f6eaebe4586fccb",
+   "sha256": "7e8c021ea494f4f0be1c8057107b326a62cb86f2ea3d1a4362d137df6e61bf2c",
+   "keep": true
+  },
+  {
+   "type": "list",
+   "name": "jason_tools_threat_ip_high",
+   "dest": "etc/lists/jason_tools_threat_ip_high",
+   "declare": true,
+   "sha256": "7e8c021ea494f4f0be1c8057107b326a62cb86f2ea3d1a4362d137df6e61bf2c",
    "keep": true
   }
  ],
  "notes": [
-  "What alerts: a successful login from a listed address (906050/906051, level 14), a Windows process connecting out to one (906032, level 13), and a web request from one that got dynamic content (906023-906026, level 12).",
-  "A web request from a listed address that was refused, redirected or not found is recorded at level 5 (906040) and does not mail; thirty from one address in ten minutes raise 906043 at level 10. Measured before 1.3: a week of 29,845 level 12 alerts on one reverse proxy, 98.5 per cent of every logged public address, nearly all of them scanners getting a 404.",
-  "Until 1.3 every rule hung off built-in rule 1, the generic syslog template, so only events that happened to pass through it were checked: sshd and Windows events never were. The Windows rules also named their fields data.win.eventdata.*, which does not exist on the rule side. They are rewritten.",
-  "The web grading reads the fields http_status, method and path, as a JSON access log usually names them. A log that names them differently still alerts at level 12 on every request from a listed address; rename the fields in your decoder, or copy rule 906040 under your own names.",
-  "The list is rebuilt every six hours from 11 public feeds. Network entries are expanded to the keys Wazuh can look up: address_match_key matches an address and its octet-boundary prefixes (203.0.113.), never a CIDR key, so the 1,276 networks the list held before 1.3 were never matched.",
-  "After writing the list the updater reloads the ruleset on this node, which recompiles it. A cluster worker receives the list but is not reloaded by the master: schedule the updater with --reload-if-stale on every worker (setup guide).",
-  "Reserved ranges, a few public resolvers and Cloudflare's edge ranges are never listed. Site exclusions go in etc/jt-packs/ioc-cache/exclusions.txt, one IP or CIDR per line.",
-  "It refuses to install a list that has lost more than half its entries, because a feed changing format looks exactly like the internet becoming safe.",
+  "What alerts (1.5). A successful login from a listed address: 906050/906051 at level 10, or level 14 (906052/906053) when the address is high-confidence. A Windows process connecting out over TCP: 906032 level 8 / 906033 level 13. Suricata flow, HTTP and TLS records to a listed server: 906054/906058 level 8 / 906055/906059 level 13. A web write the server accepted (POST, PUT, PATCH, DELETE answered 2xx): 906044/906038 level 6 / 906045, 906046, 906039 level 12. A listed address in a generic destination field: level 6 / 12. Inbound traffic, refused web requests and UDP are recorded below the alert level (2) or at 3 to 5.",
+  "Two lists, two tiers. jason_tools_threat_ip holds every listed address; jason_tools_threat_ip_high holds those listed by two independent providers, or by a curated list (Spamhaus DROP; ThreatFox and Feodo when enabled). Tor exits are listed but never high on their own. Each lookup rule has a child that repeats the lookup in the high list. The tier cannot live in one list's values: address_match_key_value is inverted in Wazuh 4.x (it matches when the value does not; wazuh/wazuh#8269, re-measured on 4.14.7). On a node where the high list is not declared, analysisd ignores only the high rules (warning 7616) and the first tier keeps working.",
+  "Why one source is quiet. Measured 2026-10-11 on the 1.4 list (280,554 addresses): 91 per cent came from a single provider and 72 per cent from blocklist.net.ua alone, most of them bans months old; 14,343 (5.1 per cent) were published research scanners; 5,488 were Tor relays that are not exits; darklist.de had not changed since August 2023 yet still added networks up to /15, and produced 3 of the 7 level 13 Sysmon alerts. Built from the same day's feeds, 1.5 lists 106,251 addresses and prefixes, 19,619 of them high (6,914 addresses with two votes, 12,705 Spamhaus DROP prefixes), with 12,073 research scanners removed.",
+  "Feeds. On by default: blocklist.de (attackers of the last 48 hours), CINS Army, blocklist.net.ua (its own CSV, bans of the last 30 days), Proofpoint ET compromised hosts, Spamhaus DROP (curated, free under its terms; EDROP was merged into it in 2024) and Tor exits. Off by default, in etc/jt-packs/jt-ioc.conf: ThreatFox (confidence 75 or more) and Feodo Tracker, because abuse.ch requires a paid subscription for organisations with profit motives; DShield (CC BY-NC-SA, non-commercial); matthewroberts.io (an aggressive aggregate of other lists). Published research scanner ranges (MISP warninglists, CC0) are removed. The pack ships no feed data; every site downloads it under each source's terms.",
+  "Web grading reads http_status, method and path (JSON access logs) or the combined format's status and method. Before 1.3 one reverse proxy produced 29,845 level 12 alerts a week, 98.5 per cent of the public addresses it logged; in 1.4 the remaining level 12 alerts were cloud addresses fetching /login and /admin from a single-page application that answers 200 to every path. A page view proves nothing, so 1.5 alerts only on a write the server accepted. Refusals and static content are recorded at level 2; thirty refusals from one address in ten minutes raise 906043 (remote_addr) or 906042 (client_ip) at level 6.",
+  "Key format. address_match_key matches an address and its octet-boundary prefixes (203.0.113.), never a CIDR key, so networks are expanded to such prefixes. Every key is also written in IPv4-mapped form (::ffff:203.0.113.7), which is how Java applications and Proxmox's pvedaemon log IPv4 clients; the 1.4 list could never match those. A listed network that overlaps an exclusion is dropped whole.",
+  "After writing the lists the updater reloads the ruleset on this node, which recompiles them. A cluster worker receives the lists but is not reloaded by the master: schedule the updater with --reload-if-stale on every worker. In that mode it also reports a list the master stopped refreshing.",
+  "Reserved ranges, public resolvers and Cloudflare's edge ranges are never listed. Site exclusions go in etc/jt-packs/ioc-cache/exclusions.txt, one IP or CIDR per line.",
+  "A list that silently stops updating looks exactly like one that works. The updater keeps a feed's previous copy when a download fails or parses to less than half its last size, refuses a list that lost half its keys or tripled, never writes an empty list, writes atomically, and sends every failure to the manager's event queue: 906090 (level 5) a failed run, 906091 (level 10) a list older than stale_hours (48), 906092 (level 4) one feed failed, 906093 (level 10) abuse.ch refused the download.",
   "Installing this pack writes an executable that runs as root on a schedule. That is deliberate and is removed again on uninstall.",
-  "906032 (process connecting out to a listed address, level 13) now requires TCP. Its first night produced seven alerts, all from a Taiwanese earthquake early-warning client exchanging UDP with peers on home connections that feeds had listed. UDP to a listed address is recorded by 906036 at level 6."
+  "Sysmon event 3: 906032 requires TCP; UDP to a listed address (906036) is recorded at level 2, after the first night's seven level 13 alerts were an earthquake-alert client's UDP peer-to-peer traffic to home connections that feeds had listed. Port 53 is kept apart at level 3 (906035): a DNS server queries whatever name server a domain names, and one site's resolvers did so with Spamhaus DROP space. Until 1.5 PowerShell over TCP (built-in 92101) and port 3389 (92108) were never looked up: those level 0 rules are tried first and ended the evaluation.",
+  "Suricata (new in 1.5): the built-in 86600 takes every eve.json event, so the generic src_ip and dest_ip rules never saw Suricata, and 1.4's 906014 named a field (data.dest_ip) that does not exist. 1.5 looks up dest_ip in flow, HTTP and TLS records, where it is the server. IDS alerts are left to the built-in 99915/99916 and to whatever grades them (jt-opnsense).",
+  "What it does not do: DNS answers (Sysmon event 22, AdGuard, Suricata dns records) carry several addresses in one field, which a CDB lookup cannot split; native IPv6 entries; failed logins from listed addresses (the background of any exposed service; Wazuh's built-in 99904/99919 do it for its sample list); connections to Tor relays that are not exits. It offers no active response: web rules carry remote_addr, which a response cannot read, login rules also hang under web applications that may log a forwarded address, and inbound scanners are better blocked by giving the firewall the same feeds.",
+  "1.5 level changes: 906001-906009 12 to 2 (high 906061-906069: 5); 906011-906019 13/12 to 6 (high 906071-906079: 12); 906021/906022 12 to 3 (high 906027/906028: 8); 906023-906026 12 to 3; 906040 5 to 2; 906041 6 to 2; 906043 10 to 6; 906050/906051 14 to 10 (high: 14); 906031 8 to 2 (high 906034: 5); 906032 13 to 8 (high 906033: 13); 906036 6 to 2 (high 906037: 8). 906080 (every destination match at level 14) is removed. The tactic id TA0011 is no longer used as a technique."
  ],
  "scripts": [
   {
    "name": "update-threat-ip-list.py",
    "dest": "etc/jt-packs/bin/update-threat-ip-list.py",
-   "sha256": "98e02318bf9e98ec69bcdfe3a511fc5c3d1028d65e2dfb8401a9d385d64c5325",
+   "sha256": "81ff0840fa454711465f88f0c85931cc935453afd92b3acebf8eb9ae738ace63",
    "cron": "17 */6 * * *",
    "args": "--wazuh-path {wazuh_path}",
-   "description": "Rebuilds jason_tools_threat_ip from 11 public IP threat-intel feeds"
+   "description": "Rebuilds jason_tools_threat_ip and jason_tools_threat_ip_high from public IP threat feeds"
   }
  ],
  "tested_with": [
@@ -77,23 +93,45 @@
    "required": true,
    "title": "Install the pack and run the updater once",
    "title_zh": "安裝套件並先執行一次更新程式",
-   "body": "Install from this page. The list ships empty and the rules match nothing until the updater has filled it; run it once by hand rather than waiting up to six hours. It reloads the ruleset on this node when it finishes.",
-   "body_zh": "在本頁安裝。清單出貨時是空的，更新程式填入前規則不會比對到任何東西；請手動先跑一次，不必等最多六小時。完成時它會重新載入本節點的規則集。",
-   "code": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py --wazuh-path /var/ossec --force",
-   "verify": "ls -l /var/ossec/etc/lists/jason_tools_threat_ip*  — the .cdb must be newer than the text file.",
-   "verify_zh": "ls -l /var/ossec/etc/lists/jason_tools_threat_ip* —— .cdb 必須比文字檔新。"
+   "body": "Install or update from this page. Both lists ship as a placeholder and the rules match nothing until the updater has filled them; run it once by hand rather than waiting up to six hours. It reloads the ruleset on this node when it finishes. The first run after updating from 1.4 skips the size guard once: the 1.5 lists are smaller by design (darklist.de, Tor relays, old bans and research scanners are gone).",
+   "body_zh": "在本頁安裝或更新。兩份清單出貨時都是佔位內容，更新程式填入前規則不會比對到任何東西；請手動先跑一次，不必等最多六小時。完成時它會重新載入本節點的規則集。從 1.4 更新後的第一次執行會略過一次大小檢查：1.5 的清單本來就比較小（darklist.de、Tor 中繼節點、舊的封鎖與研究掃描器都移除了）。",
+   "code": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py --wazuh-path /var/ossec",
+   "verify": "ls -l /var/ossec/etc/lists/jason_tools_threat_ip*  — both .cdb files must be newer than their text files, and the text files must not hold the placeholder.",
+   "verify_zh": "ls -l /var/ossec/etc/lists/jason_tools_threat_ip* —— 兩個 .cdb 都必須比各自的文字檔新，文字檔也不能還是佔位內容。"
   },
   {
    "platform": "manager",
    "required": true,
    "title": "On every cluster worker: reload when the list arrives",
    "title_zh": "每台叢集 worker：清單送到後重新載入",
-   "body": "The cluster copies the list to the workers but does not reload them, so a worker keeps matching the old compiled list. Copy the updater to each worker and schedule it in --reload-if-stale mode, which downloads nothing and reloads only when a list's text is newer than its compiled copy.",
-   "body_zh": "叢集會把清單複製到 worker，但不會替它重載，worker 會繼續用舊的編譯版本比對。請把更新程式複製到每台 worker，並以 --reload-if-stale 模式排程：它不下載任何東西，只在某份清單的文字檔比編譯版新時才重新載入。",
+   "body": "The cluster copies the lists to the workers but does not reload them, so a worker keeps matching the old compiled lists. Copy the updater to each worker and schedule it in --reload-if-stale mode, which downloads nothing, reloads only when a list changed since its last reload, and reports a list the master stopped refreshing (906091).",
+   "body_zh": "叢集會把清單複製到 worker，但不會替它重載，worker 會繼續用舊的編譯版本比對。請把更新程式複製到每台 worker，並以 --reload-if-stale 模式排程：它不下載任何東西，只在清單自上次重載後有變動時才重新載入，並回報 master 已不再更新的清單（906091）。",
    "code": "scp /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py <worker>:/var/ossec/etc/jt-packs/bin/\necho '*/5 * * * * root /usr/bin/python3 /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py --wazuh-path /var/ossec --reload-if-stale >> /var/ossec/logs/jt-ioc-reload.log 2>&1' > /etc/cron.d/jt-wazuh-mgr-ioc-reload   # on the worker",
-   "verify": "On the worker, a few minutes after the master's update: ls -l /var/ossec/etc/lists/jason_tools_threat_ip*  — the .cdb is newer than the text.",
+   "verify": "On the worker, a few minutes after the master's update: ls -l /var/ossec/etc/lists/jason_tools_threat_ip*  — the .cdb files are newer than the text.",
    "verify_zh": "在 worker 上，master 更新幾分鐘後：ls -l /var/ossec/etc/lists/jason_tools_threat_ip* —— .cdb 比文字檔新。",
    "since": "1.3"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Cluster: the high-confidence list on every node, and the new updater on the workers",
+   "title_zh": "叢集：每個節點都要有高可信度清單，worker 也要換新版更新程式",
+   "body": "1.5 adds jason_tools_threat_ip_high. The cluster copies etc/lists but not ossec.conf; updating from this page declares the list on every node it can reach (and refuses otherwise, unless you choose this node only). A node where it is not declared ignores the high-confidence rules (warning 7616 in the reload result) and alerts at the first tier only; Windows agents are usually analysed on a worker. For a node the update could not reach, add the line inside <ruleset> by hand and restart that node once. Copy the 1.5 updater to each worker as well: its reload job runs the worker's own copy, and only 1.5 reports a list the master stopped refreshing.",
+   "body_zh": "1.5 新增 jason_tools_threat_ip_high。叢集會複製 etc/lists，但不會複製 ossec.conf；在本頁更新時會在每個連得到的節點宣告這份清單（連不到時會拒絕，除非選擇只更新本節點）。沒有宣告的節點會忽略高可信度規則（重載結果出現警告 7616），只以第一級告警；Windows agent 通常由 worker 分析。更新時連不到的節點，請手動在 <ruleset> 內加上這行並重新啟動該節點一次。也請把 1.5 的更新程式複製到每台 worker：重載排程執行的是 worker 自己那份，而且只有 1.5 會回報 master 已不再更新的清單。",
+   "code": "<list>etc/lists/jason_tools_threat_ip_high</list>\n\nscp /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py <worker>:/var/ossec/etc/jt-packs/bin/",
+   "verify": "On each node: /var/ossec/bin/wazuh-analysisd -t prints no warning 7616, and /var/ossec/etc/lists/jason_tools_threat_ip_high.cdb exists.",
+   "verify_zh": "在每個節點上：/var/ossec/bin/wazuh-analysisd -t 沒有警告 7616，且 /var/ossec/etc/lists/jason_tools_threat_ip_high.cdb 存在。",
+   "since": "1.5"
+  },
+  {
+   "platform": "network",
+   "required": true,
+   "title": "Let the manager reach the feeds",
+   "title_zh": "讓 manager 連得到情資來源",
+   "body": "The master downloads from lists.blocklist.de, cinsscore.com, blocklist.net.ua (a 30 MB CSV twice a day), rules.emergingthreats.net, www.spamhaus.org, torstatus.rueckgr.at (check.torproject.org as fallback) and raw.githubusercontent.com (research scanner ranges); with the optional feeds also threatfox.abuse.ch, feodotracker.abuse.ch, feeds.dshield.org, www.matthewroberts.io. A DNS filter that blocks Tor domains also blocks the Tor fallback. A feed that cannot be reached raises 906092 and its previous copy is used.",
+   "body_zh": "master 會從 lists.blocklist.de、cinsscore.com、blocklist.net.ua（30 MB 的 CSV，一天兩次）、rules.emergingthreats.net、www.spamhaus.org、torstatus.rueckgr.at（備援 check.torproject.org）與 raw.githubusercontent.com（研究掃描器網段）下載；啟用選用來源時還有 threatfox.abuse.ch、feodotracker.abuse.ch、feeds.dshield.org、www.matthewroberts.io。封鎖 Tor 網域的 DNS 過濾也會擋掉 Tor 的備援來源。連不到的來源會觸發 906092，並沿用它的舊副本。",
+   "code": "grep -E 'FAILED|ERROR' /var/ossec/logs/jt-ioc*.log /var/log/syslog 2>/dev/null | tail",
+   "since": "1.5"
   },
   {
    "platform": "manager",
@@ -103,6 +141,26 @@
    "body": "If a feed lists an address you use — a partner, a monitoring service, your own egress — add it to the exclusions file. It takes effect at the next update.",
    "body_zh": "若來源列入了你會用到的位址（合作夥伴、監控服務、自己的對外位址），把它加進排除檔，下次更新生效。",
    "code": "echo '198.51.100.20' >> /var/ossec/etc/jt-packs/ioc-cache/exclusions.txt"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "Optional feeds and settings: etc/jt-packs/jt-ioc.conf",
+   "title_zh": "選用來源與設定：etc/jt-packs/jt-ioc.conf",
+   "body": "One \"key = value\" per line, on the master; the installer never writes it. threatfox = yes and feodo = yes add abuse.ch's confirmed command-and-control addresses as high-confidence entries: abuse.ch requires an Auth-Key (auth_key, free at https://auth.abuse.ch/) and a paid subscription for organisations with profit motives. dshield = yes (CC BY-NC-SA, non-commercial) and matthewroberts = yes add votes. Any default feed can be switched off (cins = no). Also: net_ua_max_days (30), high_min_votes (2), threatfox_min_confidence (75), stale_hours (48), research_scanners = no, mapped_v6_keys = no, <feed>_url. chmod 600 the file when it holds a key.",
+   "body_zh": "在 master 上，一行一個「key = value」；安裝程式永遠不會寫它。threatfox = yes 與 feodo = yes 會把 abuse.ch 已確認的命令與控制位址加入為高可信度：abuse.ch 要求 Auth-Key（auth_key，在 https://auth.abuse.ch/ 免費申請），營利組織需要付費訂閱。dshield = yes（CC BY-NC-SA，非商業）與 matthewroberts = yes 會增加票數。任何預設來源都可以關閉（cins = no）。其他：net_ua_max_days（30）、high_min_votes（2）、threatfox_min_confidence（75）、stale_hours（48）、research_scanners = no、mapped_v6_keys = no、<來源>_url。檔案內有金鑰時請 chmod 600。",
+   "code": "cat >> /var/ossec/etc/jt-packs/jt-ioc.conf <<'EOF'\nthreatfox = yes\nfeodo = yes\nauth_key = <your abuse.ch Auth-Key>\nEOF\nchmod 600 /var/ossec/etc/jt-packs/jt-ioc.conf\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py --wazuh-path /var/ossec --force",
+   "since": "1.5"
+  },
+  {
+   "platform": "network",
+   "required": false,
+   "title": "Suricata: write flow records to eve.json",
+   "title_zh": "Suricata：在 eve.json 寫出 flow 記錄",
+   "body": "906054-906057 read flow records, which Suricata writes only when the eve-log output lists the flow type; HTTP and TLS records (906058/906059) are written by the common default configuration. The agent must read eve.json as JSON. Flow records are one per connection: expect a much larger event volume, nearly all of it ending at level 0.",
+   "body_zh": "906054-906057 讀取 flow 記錄，Suricata 只有在 eve-log 輸出列出 flow 類型時才會寫；HTTP 與 TLS 記錄（906058／906059）在常見的預設設定就會寫出。agent 必須以 JSON 格式讀取 eve.json。flow 記錄每條連線一筆：事件量會大很多，幾乎全部停在 level 0。",
+   "code": "outputs:\n  - eve-log:\n      types:\n        - flow\n        - http\n        - tls",
+   "since": "1.5"
   }
  ]
 }

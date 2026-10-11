@@ -1,0 +1,51 @@
+<!--
+  jt-docker 1.0 decoders (jt-wazuh-mgr rule pack). License: AGPL-3.0-or-later.
+
+  1. "docker": a third decoder with the built-in name.
+
+     Wazuh's own two "docker" decoders (0410-docker_decoders.xml) only accept a
+     UTC timestamp, time="2026-10-10T07:58:15.451144976Z": their prematch is
+     \d+.\d+\w" and \w cannot match the "+" of an offset. dockerd writes the
+     host's local time, so on any host not set to UTC every line,
+     time="2026-10-10T07:58:15.451144976+08:00" level=info msg="...", ends as
+     "No decoder matched" (4.14.7 sandbox; real lines from Docker 29.2.1) and
+     none of the built-in rules 86000-86006 see it.
+
+     This decoder has the same name, so <decoded_as>docker</decoded_as> and the
+     built-in rules apply unchanged to these lines too; it only runs when the
+     built-in ones did not match. It also keeps an escaped quote (\") inside
+     msg, where the built-in regex stops at the first quote. Fields after msg
+     (host=, error=, version=...) stay in the log line for the rules.
+     A daemon started with log-format json writes JSON instead; that is
+     decoded by Wazuh's json decoder and is not handled here.
+
+  2. "jt-docker-posture" and "jt-docker-posture-daemon": the output of the
+     pack's optional posture check (agent/jt-docker-posture.sh), run by a
+     wodle command on the docker host. Lines come without a syslog header, so
+     no program name is set and these prematches apply. Free-form text (the
+     bind mount list) is the last field, so a host path cannot fake the
+     fields before it. fts makes the rules alert the first time a setting is
+     seen on an agent, not every hour. The image is left out of fts on
+     purpose: an image update alone does not repeat the alert.
+-->
+
+<decoder name="docker">
+  <program_name type="pcre2">^(?:dockerd|containerd)$</program_name>
+  <prematch type="pcre2">^time="\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)" level=\w+ msg="</prematch>
+  <regex type="pcre2">^time="[^"]+" level=(\w+) msg="((?:[^"\\]|\\.)*)"</regex>
+  <order>docker.level,docker.message</order>
+</decoder>
+
+<decoder name="jt-docker-posture">
+  <prematch>^jt-docker-posture: container </prematch>
+  <regex type="pcre2">^jt-docker-posture: container /?(\S+) (\S+) (privileged=\S* pid=\S* net=\S* ipc=\S* uts=\S* userns=\S* cap_add=\S* secopt=\S* devices=\S*) binds=(.*)$</regex>
+  <order>docker.posture.container,docker.posture.image,docker.posture.flags,docker.posture.binds</order>
+  <fts>location,docker.posture.container,docker.posture.flags,docker.posture.binds</fts>
+</decoder>
+
+<decoder name="jt-docker-posture-daemon">
+  <prematch type="pcre2">^jt-docker-posture: (?:daemon|warning) </prematch>
+  <regex type="pcre2">^jt-docker-posture: (daemon|warning) (.+)$</regex>
+  <order>docker.posture.kind,docker.posture.detail</order>
+  <fts>location,docker.posture.kind,docker.posture.detail</fts>
+</decoder>

@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.13.1
+# jt-wazuh-mgr v1.14.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@
 
 > **推奨**: Web UI を主なインターフェースとしてお使いください。本ツールの中心となる機能であり、すべての機能が利用できます。
 
-![Version](https://img.shields.io/badge/version-1.13.1-blue)
+![Version](https://img.shields.io/badge/version-1.14.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -89,13 +89,14 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 - Jason Tools が保守する**検知ルール群のカタログ**。UI からインストールできます
 - 各パックはマニフェストのもとにルール・デコーダー・CDB リストをまとめています。開くとインストールされるファイル、その配置先、使用するルール ID を確認できます
 - インストールは保護されています: **ルール ID の重複検出**、上書きされるファイルのバックアップ、`wazuh-analysisd -t` による検証、そして**いずれかの手順が失敗した場合の完全なロールバック**
+- 一覧には**この Wazuh マネージャーにインストールされているバージョン**と**この jt-wazuh-mgr に同梱のバージョン**が並び、更新できるパックに印を付けて件数も表示します。マネージャー側のほうが新しい場合は「更新」としてダウングレードを勧めません
 - 新しいリリースで新しいバージョンが出たら、インストール済みのパックをそのまま**更新**できます。まず計画を表示し、各ファイルが追加・更新・削除されるのか、変更済みのためそのまま残すのかを示したうえで、同じバックアップ・検証・ロールバックで実行します。サイトが管理するリスト（承認リスト、内部ネットワーク、更新プログラムが書き込むリスト）は置き換えません。新しいファイルは既存のエージェントグループにも届き、お使いのバージョン以降に追加されたエージェント側の手順も一覧表示します
 - 削除時は置き換えられたファイルを復元し、**編集されたルールファイルの破棄を拒否**し、サイトが管理するリストは残します
 - マネージャー以外での設定（Sysmon のフィルター、auditd、エージェントグループ、syslog 転送）が必要なパックには**セットアップガイド**を同梱：番号付きの手順、コピーできるコマンド、各手順の確認方法、表示・ダウンロードできるエージェント側ファイル
 - 手作業でファイルを配置したパックは**インストール済み（未登録）**として認識し、自分自身との競合とは報告しません
 - **アクティブレスポンス（任意）：** パックはレスポンス（例：ブルートフォースの送信元をブロック）を提供できます。インストールしても有効にはならず、それぞれ何をどこでブロックするか、リスクを明記しています。有効にすると印を付けたブロックをクラスターの全ノードの `ossec.conf` に書き込み、ノードごとに検証し、いずれかが受け付けなければ全ノードを元に戻します。無効にするとファイルは完全に元どおりになります。各ノードの `white_list` と、再起動が必要なマネージャーも表示します
 - **インストール直後から静か：** 大量のアラートを止めるためにサイトのリストを登録する必要のあるパックはありません。ログインの成功は意味のあるときだけアラートにします（組み込みの管理者、パブリックアドレス、失敗直後の成功、あるアカウントがあるアドレスから初めて現れたとき）。許可リストは任意の調整です
-- 同梱パック 22 個: 可搬実行ファイルの検知（Windows／Linux／macOS）、IP 脅威インテリジェンス、マルウェアのハッシュ照合、読みやすいアラート要約メール、Zimbra、Z-Push、Proxmox VE と Ceph、Proxmox Backup Server、Proxmox Mail Gateway、OPNsense、Zenarmor、AdGuard Home、fail2ban、Keycloak、Univention Corporate Server／Samba AD、Nextcloud、LibreNMS、Synology DSM、Odoo、Jitsi Meet、jt-ipam、jt-vc-portal
+- 同梱パック 23 個: 可搬実行ファイルの検知（Windows／Linux／macOS）、IP 脅威インテリジェンス、マルウェアのハッシュ照合、読みやすいアラート要約メール、Zimbra、Z-Push、Proxmox VE と Ceph、Proxmox Backup Server、Proxmox Mail Gateway、OPNsense、Zenarmor、AdGuard Home、fail2ban、Keycloak、Univention Corporate Server／Samba AD、Nextcloud、LibreNMS、Synology DSM、Odoo、Jitsi Meet、Docker、jt-ipam、jt-vc-portal。どのパックも、ベンダーのドキュメント、製品のソースコードにある実際のログ形式、セキュリティアドバイザリ（CISA KEV を含む）、MITRE ATT&CK と照らし合わせ、使い捨ての Wazuh マネージャーコンテナで 1 件ずつテストしています
 
 ### セキュリティ
 - すべてのパラメーターに対する入力検証。コマンドインジェクションとパストラバーサルへの対策

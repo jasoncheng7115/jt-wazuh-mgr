@@ -22,20 +22,29 @@
                     not parse at all, so the whole line reaches the decoders:
                       1 2026-10-11T11:12:30+08:00 nas1 Connection - - [meta sequenceId="5"] User [alice] ...
 
+  The message templates come from DSM's own catalogues, read from the
+  7.2.2-72806 and 7.4.1-90080 firmware (usr/syno/share/synolog/events/auth for
+  Connection, usr/syno/synosdk/texts/enu/events for System, identical for every
+  template used here except the drive read/write error wording). Connection
+  templates decoded: 0001-0005, 0011-0019 and 001a (7.4: AMFA first factor,
+  Entra ID users refused a local sign-in). System lines are "ACTOR:<tab>EVENT"
+  (syslog-ng csv-parser on ":<tab>" in syno.d/synolog.conf).
+
   Both fill the same fields, so one set of rules serves every shape:
     dstuser, srcip                the account and the client address
     synology.event                what happened, e.g. "signed in to", "failed to log in"
     protocol, system_name         the service: DSM, SSH, SMB, CIFS(SMB3), WebDAV ...
                                   (twice: system_name is what <fts> accepts)
     synology.method               password, OTP (sign-ins only)
-    synology.reason               the text after "due to"
+    synology.reason               the text after "due to" or "because"
     synology.share                the shared folder that was accessed
     synology.actor, synology.message
                                   the acting account DSM writes before some
                                   messages (SYSTEM, or an administrator) and
                                   the message itself
     synology.target, synology.task
-                                  Hyper Backup destination type and task name
+                                  Hyper Backup destination type and task name,
+                                  Task Scheduler task name
     synology.file_action, synology.path, synology.new_path, synology.object, synology.size
                                   file transfer logs
     synology.app, synology.host   jt-synology-raw only: the category and, for
@@ -80,10 +89,17 @@
   <order>dstuser, srcip</order>
 </decoder>
 
-<!-- Auto block: Host [192.0.2.10] was blocked via [SSH]. -->
+<!-- No address: User [alice] failed to log in via [SMB] ... (0012), User [alice] was blocked by Account Protection (12A00101). -->
 <decoder name="jt-synology-fields">
   <parent>jt-synology</parent>
-  <regex type="pcre2">Host \[(?:::[fF]{4}:)?([0-9A-Fa-f:.]+)\] was (?:blocked|unblocked)</regex>
+  <regex type="pcre2">User \[([^\]]*)\] (?:was blocked by Account Protection|failed to log in via \[)</regex>
+  <order>dstuser</order>
+</decoder>
+
+<!-- Auto block: Host [192.0.2.10] was blocked via [SSH]. Host [..] has been blocked at [..]. Host [..] failed to connect via [SMB] due to [..] (0017). -->
+<decoder name="jt-synology-fields">
+  <parent>jt-synology</parent>
+  <regex type="pcre2">Host \[(?:::[fF]{4}:)?([0-9A-Fa-f:.]+)\] (?:was (?:blocked|unblocked)|has been blocked|failed to connect)</regex>
   <order>srcip</order>
 </decoder>
 
@@ -95,7 +111,7 @@
 
 <decoder name="jt-synology-fields">
   <parent>jt-synology</parent>
-  <regex type="pcre2">\] (signed in to|failed to sign in to|has successfully passed the first authentication|logged in successfully|logged in from|failed to log in|accessed shared folder|logged out|was blocked|was unblocked)</regex>
+  <regex type="pcre2">\] (signed in to|failed to sign in to|has successfully passed the first authentication|logged in successfully|logged \[[^\]]*\] in successfully|logged in from|failed to log in|was rejected to log in|failed to connect|accessed shared folder|logged out|was blocked by Account Protection|was blocked|has been blocked|was unblocked)</regex>
   <order>synology.event</order>
 </decoder>
 
@@ -109,20 +125,20 @@
 <!-- every other "via [service]": logins, share access, auto block, log out -->
 <decoder name="jt-synology-fields">
   <parent>jt-synology</parent>
-  <regex type="pcre2">(?:logged in successfully|failed to log in|from \[[^\]]+\]|was blocked|was unblocked|logged out[^\[]*) via \[(([^\]]+))\]</regex>
+  <regex type="pcre2">(?:logged in successfully|logged \[[^\]]*\] in successfully|failed to log in|was rejected to log in the server|failed to connect|from \[[^\]]+\]|was blocked|was unblocked|logged out[^\[]*) via \[(([^\]]+))\]</regex>
   <order>protocol, system_name</order>
 </decoder>
 
 <decoder name="jt-synology-fields">
   <parent>jt-synology</parent>
-  <regex type="pcre2">first authentication of 2FA via \[([^\]]+)\]</regex>
+  <regex type="pcre2">first authentication of (?:2FA|AMFA) via \[([^\]]+)\]</regex>
   <order>synology.method</order>
 </decoder>
 
 <!-- due to authorization failure. / due to [NTLMv1 not permitted]. -->
 <decoder name="jt-synology-fields">
   <parent>jt-synology</parent>
-  <regex type="pcre2">due to \[?([^\]]+?)\]?\.?$</regex>
+  <regex type="pcre2">(?:due to|because) \[?([^\]]+?)\]?\.?$</regex>
   <order>synology.reason</order>
 </decoder>
 
@@ -142,6 +158,12 @@
 <decoder name="jt-synology-fields">
   <parent>jt-synology</parent>
   <regex type="pcre2">[Bb]ackup task \[([^\]]+)\] (?:was|has been)</regex>
+  <order>synology.task</order>
+</decoder>
+
+<decoder name="jt-synology-fields">
+  <parent>jt-synology</parent>
+  <regex type="pcre2">\b(?:Scheduled|Triggered) Task \[([^\]]+)\]</regex>
   <order>synology.task</order>
 </decoder>
 
@@ -200,7 +222,13 @@
 
 <decoder name="jt-synology-raw-fields">
   <parent>jt-synology-raw</parent>
-  <regex type="pcre2">Host \[(?:::[fF]{4}:)?([0-9A-Fa-f:.]+)\] was (?:blocked|unblocked)</regex>
+  <regex type="pcre2">User \[([^\]]*)\] (?:was blocked by Account Protection|failed to log in via \[)</regex>
+  <order>dstuser</order>
+</decoder>
+
+<decoder name="jt-synology-raw-fields">
+  <parent>jt-synology-raw</parent>
+  <regex type="pcre2">Host \[(?:::[fF]{4}:)?([0-9A-Fa-f:.]+)\] (?:was (?:blocked|unblocked)|has been blocked|failed to connect)</regex>
   <order>srcip</order>
 </decoder>
 
@@ -212,7 +240,7 @@
 
 <decoder name="jt-synology-raw-fields">
   <parent>jt-synology-raw</parent>
-  <regex type="pcre2">\] (signed in to|failed to sign in to|has successfully passed the first authentication|logged in successfully|logged in from|failed to log in|accessed shared folder|logged out|was blocked|was unblocked)</regex>
+  <regex type="pcre2">\] (signed in to|failed to sign in to|has successfully passed the first authentication|logged in successfully|logged \[[^\]]*\] in successfully|logged in from|failed to log in|was rejected to log in|failed to connect|accessed shared folder|logged out|was blocked by Account Protection|was blocked|has been blocked|was unblocked)</regex>
   <order>synology.event</order>
 </decoder>
 
@@ -224,19 +252,19 @@
 
 <decoder name="jt-synology-raw-fields">
   <parent>jt-synology-raw</parent>
-  <regex type="pcre2">(?:logged in successfully|failed to log in|from \[[^\]]+\]|was blocked|was unblocked|logged out[^\[]*) via \[(([^\]]+))\]</regex>
+  <regex type="pcre2">(?:logged in successfully|logged \[[^\]]*\] in successfully|failed to log in|was rejected to log in the server|failed to connect|from \[[^\]]+\]|was blocked|was unblocked|logged out[^\[]*) via \[(([^\]]+))\]</regex>
   <order>protocol, system_name</order>
 </decoder>
 
 <decoder name="jt-synology-raw-fields">
   <parent>jt-synology-raw</parent>
-  <regex type="pcre2">first authentication of 2FA via \[([^\]]+)\]</regex>
+  <regex type="pcre2">first authentication of (?:2FA|AMFA) via \[([^\]]+)\]</regex>
   <order>synology.method</order>
 </decoder>
 
 <decoder name="jt-synology-raw-fields">
   <parent>jt-synology-raw</parent>
-  <regex type="pcre2">due to \[?([^\]]+?)\]?\.?$</regex>
+  <regex type="pcre2">(?:due to|because) \[?([^\]]+?)\]?\.?$</regex>
   <order>synology.reason</order>
 </decoder>
 
@@ -255,5 +283,11 @@
 <decoder name="jt-synology-raw-fields">
   <parent>jt-synology-raw</parent>
   <regex type="pcre2">[Bb]ackup task \[([^\]]+)\] (?:was|has been)</regex>
+  <order>synology.task</order>
+</decoder>
+
+<decoder name="jt-synology-raw-fields">
+  <parent>jt-synology-raw</parent>
+  <regex type="pcre2">\b(?:Scheduled|Triggered) Task \[([^\]]+)\]</regex>
   <order>synology.task</order>
 </decoder>

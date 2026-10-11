@@ -29,6 +29,26 @@
 -->
 
 <!--
+  Audit log injection (GHSA-jjm2-jg4p-3v9q, fixed in 26.7.4 and 26.4.2p1):
+  https://github.com/opnsense/core/security/advisories/GHSA-jjm2-jg4p-3v9q
+  authgui.inc writes "Web GUI authentication error for '<user name>' from <address>"
+  with the user name exactly as posted. A line feed in it splits the record; the
+  last piece is the attacker's text followed by "' from <real address>" (the web
+  server adds the address, the attacker cannot change it), without the
+  "/index.php: " prefix of a genuine line. After the fix the line feed becomes a
+  space and the whole thing stays on one genuine-looking line, with two "' from"
+  clauses. This decoder takes only those two shapes and puts the last address,
+  the real one, in srcip. It must stay the first child of solaris_bsm in this
+  file; a genuine line has neither shape.
+-->
+<decoder name="jt-opnsense-gui-injected">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^(?!\S+: (?:Web GUI authentication error for|Successful login for user|Session timed out for user|User logged out for user) ').*' from:? (?:::ffff:)?[0-9A-Fa-f:.]+(?:%\w+)?$|^\S+: (?:Web GUI authentication error for|Successful login for user) '.*' from:? .*' from:? (?:::ffff:)?[0-9A-Fa-f:.]+(?:%\w+)?$</prematch>
+  <regex type="pcre2">' from:? (?:::ffff:)?([0-9A-Fa-f:.]+)(?:%\w+)?$</regex>
+  <order>srcip</order>
+</decoder>
+
+<!--
   src/www/authgui.inc, through log_msg() which prefixes the script name:
     sprintf("Successful login for user '%s' from: %s", usernamefld, REMOTE_ADDR)
   Real: /index.php: Successful login for user 'root' from: 192.0.2.200
@@ -103,15 +123,19 @@
   username as <session user>@<REMOTE_ADDR> for the web interface and the API,
   and as "(<whoami>)" without an address for scripts, cron and the console.
   An account name that already contains "@" gets no address appended.
+  opnsense.account is the word as logged ("root@192.0.2.200", or "alice@example.com"
+  for such an account), so descriptions read right in both cases (nested capture).
+  The address must look like IPv4 or contain a colon (IPv6): "alice@example.org" is an
+  account name, not an address.
   Real:
     user root@192.0.2.200 changed configuration to /conf/backup/config-1791241409.0298.xml in /system_general.php /system_general.php made changes
     user (root) changed configuration to /conf/backup/config-1791241958.381.xml in /usr/local/opnsense/mvc/script/run_migrations.php ...
 -->
 <decoder name="jt-opnsense-config-change-web">
   <parent>solaris_bsm</parent>
-  <prematch type="pcre2">^user \S+?@[0-9A-Fa-f:.]+ (?:\([^)]*\) )?changed configuration to </prematch>
-  <regex type="pcre2">^user (\S+?)@(?:::ffff:)?([0-9A-Fa-f:.]+) (?:\(([^)]*)\) )?changed configuration to (\S+) in (\S+)</regex>
-  <order>user, srcip, opnsense.impersonated_by, opnsense.backup, url</order>
+  <prematch type="pcre2">^user \S+?@(?:::ffff:)?(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:.]*) (?:\([^)]*\) )?changed configuration to </prematch>
+  <regex type="pcre2">^user ((\S+?)@(?:::ffff:)?(\d{1,3}(?:\.\d{1,3}){3}|[0-9A-Fa-f]*:[0-9A-Fa-f:.]*)) (?:\(([^)]*)\) )?changed configuration to (\S+) in (\S+)</regex>
+  <order>opnsense.account, user, srcip, opnsense.impersonated_by, opnsense.backup, url</order>
 </decoder>
 
 <decoder name="jt-opnsense-config-change-system">
@@ -124,8 +148,8 @@
 <decoder name="jt-opnsense-config-change-other">
   <parent>solaris_bsm</parent>
   <prematch type="pcre2">^user \S+ (?:\([^)]*\) )?changed configuration to </prematch>
-  <regex type="pcre2">^user (\S+) (?:\(([^)]*)\) )?changed configuration to (\S+) in (\S+)</regex>
-  <order>user, opnsense.impersonated_by, opnsense.backup, url</order>
+  <regex type="pcre2">^user ((\S+)) (?:\(([^)]*)\) )?changed configuration to (\S+) in (\S+)</regex>
+  <order>opnsense.account, user, opnsense.impersonated_by, opnsense.backup, url</order>
 </decoder>
 
 <!--
@@ -318,6 +342,50 @@
   <prematch type="pcre2">^(?:\x3c\d+\x3e)?(?:\[\d+\] )?carp: demoted by </prematch>
   <regex type="pcre2">carp: demoted by (-?\d+) to (-?\d+) \((.*)\)</regex>
   <order>opnsense.demotion, opnsense.demotion_total, opnsense.reason</order>
+</decoder>
+
+<!--
+  A process killed by a signal that dumps core (SIGSEGV, SIGBUS, SIGILL, SIGABRT ...),
+  from the FreeBSD kernel, sys/kern/kern_sig.c sigexit() (releng/14.3; the same
+  text in 13.x), logged while kern.logsigexit is 1 (the default):
+    "pid %d (%s), jid %d, uid %d: exited on signal %d%s"
+  where the last part is " (core dumped)" or " (no core dump - ...)". %s is the
+  command name, at most 19 characters. SIGTERM and SIGKILL are never logged here.
+-->
+<decoder name="jt-opnsense-sigexit">
+  <parent>kernel</parent>
+  <prematch type="pcre2">^(?:\x3c\d+\x3e)?(?:\[\d+\] )?pid \d+ \(.*\), (?:jid \d+, )?uid \d+: exited on signal \d+</prematch>
+  <regex type="pcre2">pid (\d+) \((.*)\), (?:jid \d+, )?uid (\d+): exited on signal (\d+)</regex>
+  <order>opnsense.pid, opnsense.process, opnsense.uid, opnsense.signal</order>
+</decoder>
+
+<!--
+  Output of the commands in this pack's agent group (agent/agent.conf), which the
+  agent runs only when the plugin's "remote commands" option is on. Wazuh's
+  logcollector sends each output line of a log_format "command" entry as
+    "ossec: output: '<alias>': <line>"     (src/logcollector/read_command.c)
+  which the built-in "ossec" decoder takes; these are its children.
+
+  pkg audit (freebsd/pkg src/audit.c), the summary line:
+    "%u problem(s) in %u package(s) found."            pkg 2.x
+    "%u problem(s) in %u installed package(s) found."  pkg 1.x
+  opnsense-version (opnsense/core src/sbin/opnsense-version), default output:
+    "${product_name} ${product_version} (${product_arch})", e.g. "OPNsense 26.1.2 (amd64)"
+-->
+<decoder name="jt-opnsense-pkg-audit">
+  <parent>ossec</parent>
+  <type>ossec</type>
+  <prematch type="pcre2">^ossec: output: 'jt-opnsense-pkg-audit': \d+ problem\(s\) in \d+ </prematch>
+  <regex type="pcre2">: (\d+) problem\(s\) in (\d+) (?:installed )?package\(s\) found</regex>
+  <order>opnsense.problems, opnsense.packages</order>
+</decoder>
+
+<decoder name="jt-opnsense-version">
+  <parent>ossec</parent>
+  <type>ossec</type>
+  <prematch type="pcre2">^ossec: output: 'jt-opnsense-version': \S+ \d</prematch>
+  <regex type="pcre2">^ossec: output: 'jt-opnsense-version': (\S+) (\S+)</regex>
+  <order>opnsense.product, opnsense.version</order>
 </decoder>
 
 <!--

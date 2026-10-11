@@ -1,28 +1,92 @@
 <!--
-  jt-alert-digest — readable alert mail
+  jt-alert-digest - readable alert mail
   File:    zz-131100-jt_alert_digest_rules.xml
   Range:   131100-131199
   Licence: AGPL-3.0-or-later    Jason Tools Co., Ltd.
 
-  這個套件的主體是一支排程腳本，不是規則。這裡只有一條規則，
-  而它守的是那支腳本本身。
+  這個套件的主體是一支排程腳本，不是規則。這裡的規則守的是那支腳本本身。
 
-  理由是這個套件解決的問題有一個令人不快的性質：**通知管道壞掉的時候，
-  它沒辦法用通知告訴你它壞了**。摘要信寄不出去，就沒有信可以說「寄不出去」。
-  cron 的記錄檔會寫下原因，但記錄檔沒人看 —— 這正是這個套件存在的理由。
+  理由是這個套件解決的問題有一個令人不快的性質：通知管道壞掉的時候，
+  它沒辦法用通知告訴你它壞了。摘要信寄不出去，就沒有信可以說「寄不出去」。
+  cron 的記錄檔會寫下原因，但記錄檔沒人看，這正是這個套件存在的理由。
 
-  所以腳本把失敗直接寫進 manager 自己的事件佇列
-  （`queue/sockets/queue`，就是整合腳本注入事件的同一條路），
-  由下面這條規則轉成主控台上的一般告警。這樣「通知系統本身故障」
-  就會出現在使用者本來就會看的地方，而不是只留在一個沒人開的檔案裡。
+  所以腳本把狀態直接寫進 manager 自己的事件佇列
+  （queue/sockets/queue，就是整合腳本注入事件的同一條路），
+  由下面的規則轉成主控台上的一般告警。
+
+  1.4 起事件是 JSON：1:jt-alert-digest:{"jt_alert_digest":{"event":...}}。
+  由內建的 json 解碼器解開（沒有自訂解碼器，也絕對不寫 parent json），
+  規則比對 location 與 jt_alert_digest.event。只有 root 能寫那個 socket，
+  而且只有這支腳本用這個 location，所以其他來源不會誤觸。
+  腳本自己做去重：失敗開始或改變時一次、之後每小時一次；
+  兩小時都沒送達再升級（之後每六小時一次）。1.3 是每輪一次，
+  一個寄不出去的節點一天 703 筆一模一樣的告警。
+
+  131110 是 level 0 的頂層基礎規則：頂層規則先試 level 0、再依 level 由高到低，
+  level 1-4 的基礎規則會輸給 1002（L2，訊息含 error/failed 就命中）。
+  事件欄位不認得的（未來版本新增的事件）停在 131110，不告警。
+
+  沒有 MITRE：這些幾乎都是營運故障（郵件伺服器拒收、DNS、設定），
+  不是攻擊者行為；攻擊者若要讓通知安靜，最可能的做法是停掉排程，
+  那由每日摘要信的「沒收到」來發現，而不是由任何一筆事件。
 -->
 
 <group name="jt_alert_digest,">
 
+  <!-- 1.0-1.3 copies write a plain text line; kept so a node still running an
+       old copy (a hand-made cron on a worker) keeps raising its failures. -->
   <rule id="131100" level="10">
-    <location>jt-alert-digest</location>
-    <match>ERROR</match>
-    <description>Alert digest could not be delivered, so alert mail is reaching nobody</description>
+    <location>^jt-alert-digest$</location>
+    <match>^jt-alert-digest: ERROR </match>
+    <description>[WARN] Alert digest could not be delivered, so alert mail is reaching nobody (pre-1.4 script)</description>
+    <group>jt_alert_digest_failure,</group>
+  </rule>
+
+  <rule id="131110" level="0">
+    <decoded_as>json</decoded_as>
+    <location>^jt-alert-digest$</location>
+    <field name="jt_alert_digest.event">\.+</field>
+    <description>Alert digest status event</description>
+  </rule>
+
+  <rule id="131111" level="10">
+    <if_sid>131110</if_sid>
+    <field name="jt_alert_digest.event">^delivery_failed$</field>
+    <description>[WARN] Alert digest on $(jt_alert_digest.node) cannot deliver mail ($(jt_alert_digest.error_class)), $(jt_alert_digest.pending) alerts waiting: $(jt_alert_digest.error)</description>
+    <group>jt_alert_digest_failure,</group>
+  </rule>
+
+  <rule id="131112" level="12">
+    <if_sid>131110</if_sid>
+    <field name="jt_alert_digest.event">^undelivered$</field>
+    <description>[HIGH] Alert mail from $(jt_alert_digest.node) has reached nobody for $(jt_alert_digest.age_minutes) minutes, $(jt_alert_digest.pending) alerts waiting ($(jt_alert_digest.error_class))</description>
+    <group>jt_alert_digest_failure,</group>
+  </rule>
+
+  <rule id="131113" level="12">
+    <if_sid>131110</if_sid>
+    <field name="jt_alert_digest.event">^skipped$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) skipped alerts that will never be mailed: $(jt_alert_digest.reason)</description>
+    <group>jt_alert_digest_failure,</group>
+  </rule>
+
+  <rule id="131114" level="3">
+    <if_sid>131110</if_sid>
+    <field name="jt_alert_digest.event">^recovered$</field>
+    <description>Alert digest on $(jt_alert_digest.node) is delivering again after $(jt_alert_digest.failed_minutes) minutes ($(jt_alert_digest.error_class)), $(jt_alert_digest.sent_late) alerts sent late</description>
+  </rule>
+
+  <rule id="131115" level="10">
+    <if_sid>131110</if_sid>
+    <field name="jt_alert_digest.event">^crashed$</field>
+    <description>[WARN] Alert digest on $(jt_alert_digest.node) crashed: $(jt_alert_digest.exception)</description>
+    <group>jt_alert_digest_failure,</group>
+  </rule>
+
+  <rule id="131116" level="12">
+    <if_sid>131110</if_sid>
+    <field name="jt_alert_digest.event">^config_error$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) cannot deliver with its configuration: $(jt_alert_digest.problem)</description>
     <group>jt_alert_digest_failure,</group>
   </rule>
 

@@ -3,13 +3,17 @@
   Rule range 132000-132099. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
 
   Modules
-    132000-132009  base rules: one per DSM category and message shape
+    132000-132008  base rules: one per DSM category and message shape
     132010-132019  successful logins: private and outside addresses, administrators
     132020-132029  failed logins, brute force, DSM auto block, account protection
     132030-132039  first-seen login pairs, success after failures
-    132040-132049  Hyper Backup
-    132050-132059  file transfer logs (SMB, File Station, ...)
-    132060-132099  System: accounts, storage, disks, power, packages, settings
+    132040-132049  Hyper Backup, backup data corruption, restores
+    132050-132053  file transfer logs (SMB, File Station, ...)
+    132054-132059  snapshots, replication, recycle bin, auto block switched off
+    132060-132099  System: accounts, logs, storage, disks, power, packages,
+                   services, shared folders, Task Scheduler
+    The range is full: 132009 (clock) and 132032 (rc.local) are System rules
+    placed in free slots.
 
   Every rule hangs off this pack's own base rules, never off a built-in one.
   Logins deliberately do not carry the built-in authentication_success group:
@@ -111,7 +115,7 @@
   -->
   <rule id="132011" level="2">
     <if_sid>132002,132003</if_sid>
-    <field name="synology.event" type="pcre2">^logged in successfully$</field>
+    <field name="synology.event" type="pcre2">^logged (?:\[[^\]]*\] )?in successfully$</field>
     <protocol type="pcre2">^(?i:SSH|Telnet)$</protocol>
     <description>Synology DSM: administrator $(dstuser) logged in to a shell via $(protocol) from $(srcip)</description>
     <mitre>
@@ -122,7 +126,7 @@
 
   <rule id="132012" level="2">
     <if_sid>132002,132003</if_sid>
-    <field name="synology.event" type="pcre2">^logged in successfully$</field>
+    <field name="synology.event" type="pcre2">^logged (?:\[[^\]]*\] )?in successfully$</field>
     <protocol type="pcre2">^(?!(?i:SSH|Telnet)$)</protocol>
     <description>Synology DSM: $(dstuser) logged in via $(protocol) from $(srcip)</description>
     <mitre>
@@ -323,12 +327,23 @@
   -->
   <rule id="132020" level="5">
     <if_sid>132002,132003</if_sid>
-    <field name="synology.event" type="pcre2">^(?:failed to sign in to|failed to log in)$</field>
+    <field name="synology.event" type="pcre2">^(?:failed to sign in to|failed to log in|was rejected to log in)$</field>
     <description>Synology DSM: failed login to $(protocol) as $(dstuser) from $(srcip)</description>
     <mitre>
       <id>T1110.001</id>
     </mitre>
     <group>synology_auth_failed,</group>
+  </rule>
+
+  <!--
+    Connection template 0017, a client refused before any account is named
+    (for example SMB1 or NTLMv1 only). Not a password guess, so it does not
+    count towards brute force.
+  -->
+  <rule id="132021" level="3">
+    <if_sid>132002,132003</if_sid>
+    <field name="synology.event" type="pcre2">^failed to connect$</field>
+    <description>Synology DSM: $(srcip) could not connect via $(protocol): $(synology.reason)</description>
   </rule>
 
   <!--
@@ -403,10 +418,15 @@
     <group>synology_bruteforce,</group>
   </rule>
 
-  <!-- Auto block (Control Panel, Security, Protection): DSM blocked an address itself. -->
+  <!--
+    Auto block (Control Panel, Security, Protection): DSM blocked an address
+    itself. "Host [ip] was blocked via [service]." and "Host [ip] has been
+    blocked at [..]." are System catalogue entries 12A00004 and 12A00003; the
+    published samples show them under Connection, so both categories count.
+  -->
   <rule id="132027" level="10">
-    <if_sid>132002,132003</if_sid>
-    <field name="synology.event" type="pcre2">^was blocked$</field>
+    <if_sid>132002,132003,132004,132005</if_sid>
+    <field name="synology.event" type="pcre2">^(?:was blocked|has been blocked)$</field>
     <srcip>10.0.0.0/8</srcip>
     <srcip>172.16.0.0/12</srcip>
     <srcip>192.168.0.0/16</srcip>
@@ -415,7 +435,7 @@
     <srcip>169.254.0.0/16</srcip>
     <srcip>fc00::/7</srcip>
     <srcip>fe80::/10</srcip>
-    <description>[WARN] Synology DSM auto block: $(srcip) blocked after repeated failed logins via $(protocol) (internal address)</description>
+    <description>[WARN] Synology DSM auto block: $(srcip) was blocked after repeated failed logins (internal address): $(synology.message)</description>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -423,8 +443,8 @@
   </rule>
 
   <rule id="132028" level="10">
-    <if_sid>132002,132003</if_sid>
-    <field name="synology.event" type="pcre2">^was blocked$</field>
+    <if_sid>132002,132003,132004,132005</if_sid>
+    <field name="synology.event" type="pcre2">^(?:was blocked|has been blocked)$</field>
     <srcip negate="yes">10.0.0.0/8</srcip>
     <srcip negate="yes">172.16.0.0/12</srcip>
     <srcip negate="yes">192.168.0.0/16</srcip>
@@ -433,7 +453,7 @@
     <srcip negate="yes">169.254.0.0/16</srcip>
     <srcip negate="yes">fc00::/7</srcip>
     <srcip negate="yes">fe80::/10</srcip>
-    <description>[WARN] Synology DSM auto block: $(srcip) blocked after repeated failed logins via $(protocol) (external address)</description>
+    <description>[WARN] Synology DSM auto block: $(srcip) was blocked after repeated failed logins (external address): $(synology.message)</description>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -441,17 +461,19 @@
   </rule>
 
   <!--
-    Account protection (DSM 7) locks an account rather than an address. The
-    wording was not available from a real device; the pattern is deliberately
-    loose and limited to the connection and system logs.
+    Account protection locks an account, not an address: "User [alice] was
+    blocked by Account Protection" (System catalogue 12A00101, no trailing
+    period, same in DSM 7.2.2 and 7.4.1). Version 1.1 matched invented wording
+    and never fired on the real line.
   -->
   <rule id="132029" level="8">
     <if_sid>132002,132003,132004,132005</if_sid>
-    <match type="pcre2">(?i)\b(?:locked out|lockout)\b|\baccount\b[^.]*\b(?:was|has been|is) (?:locked|protected|disabled because)\b</match>
-    <description>Synology DSM account protection: an account was locked: $(synology.message)</description>
+    <field name="synology.event" type="pcre2">^was blocked by Account Protection$</field>
+    <description>Synology DSM account protection: $(dstuser) was blocked after failed logins from untrusted clients</description>
     <mitre>
       <id>T1110</id>
     </mitre>
+    <group>synology_autoblock,</group>
   </rule>
 
   <!--
@@ -520,6 +542,11 @@
   <!--
     Hyper Backup. Each task writes a start and an end line. Success is kept
     below the alert level; failures are what people need to hear about.
+    Wording: libsynobackup.so (Hyper Backup 2.2.9-1521) and the real DSM 7
+    success line; the backup destination entries of Hyper Backup Vault
+    (12500030-12500038) are in the DSM System catalogue.
+    Correlation memory: analysisd keeps the last 8,192 events of level 1 or
+    more (memory_size), so on a busy manager 132046 may not see three days.
   -->
   <rule id="132040" level="0">
     <if_sid>132006,132007</if_sid>
@@ -535,7 +562,7 @@
 
   <rule id="132042" level="10">
     <if_sid>132006,132007</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:partially|cancel|skipped|(?:finished|completed) successfully)).*(?i:\bfail(?:ed|ure|s)?\b|\berror\b|\bexception\b|\baborted\b)</field>
+    <field name="synology.message" type="pcre2">^(?!.*(?i:partially|cancel|skipped|(?:finished|completed) successfully|no error was found|found broken|corrupt)).*(?i:\bfail(?:ed|ure|s)?\b|\berror\b|\bexception\b|\baborted\b)</field>
     <description>[WARN] Synology Hyper Backup: task $(synology.task) failed: $(synology.message)</description>
     <mitre>
       <id>T1490</id>
@@ -551,17 +578,26 @@
 
   <rule id="132044" level="5">
     <if_sid>132006,132007</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:partially)).*(?i:\bcancell?ed\b|\bskipped\b)</field>
-    <description>Synology Hyper Backup: a backup was cancelled or skipped: $(synology.message)</description>
+    <field name="synology.message" type="pcre2">^(?!.*(?i:partially|integrity check is finished)).*(?i:\bcancell?ed\b|\bskipped\b|\bdiscarded successfully\b)</field>
+    <description>Synology Hyper Backup: a backup was cancelled, skipped or discarded: $(synology.message)</description>
   </rule>
 
+  <!--
+    Deleting backups is what ransomware operators do before encrypting. The
+    task, the destination ("Backup destination [..] deleted."), and on a Hyper
+    Backup Vault the stored data ("Data stored in backup destination [..] was
+    removed by [..].", "Stored data of backup task [..] was removed from backup
+    destination [..] by [..]."). "Backup destination [..] was removed." is left
+    out: it pairs with "was found" and reads like a destination going offline.
+  -->
   <rule id="132045" level="8">
-    <if_sid>132006,132007</if_sid>
-    <field name="synology.message" type="pcre2">(?i)backup task \[[^\]]+\] (?:was|has been) (?:removed|deleted)</field>
-    <description>Synology Hyper Backup: backup task $(synology.task) was deleted</description>
+    <if_sid>132004,132005,132006,132007</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^(?!Stored version|The backup folder)(?:.*?)(?:backup task \[[^\]]+\] (?:was|has been) (?:removed|deleted)|\bBackup destination \[[^\]]*\] deleted$|^Data stored in backup destination \[[^\]]*\] was removed by \[|^Stored data of backup task \[[^\]]*\] was removed from backup destination \[)</field>
+    <description>Synology Hyper Backup: a backup task, destination or its stored data was deleted: $(synology.message)</description>
     <mitre>
       <id>T1490</id>
     </mitre>
+    <group>synology_backup_deleted,</group>
   </rule>
 
   <rule id="132046" level="12" frequency="3" timeframe="259200">
@@ -572,6 +608,33 @@
       <id>T1490</id>
     </mitre>
     <group>synology_backup_failed,</group>
+  </rule>
+
+  <!-- "Backup integrity check is finished. No error was found." (1.1 raised it to level 10) -->
+  <rule id="132047" level="2">
+    <if_sid>132006,132007</if_sid>
+    <field name="synology.message" type="pcre2">(?i)integrity check is finished\. No error was found|^(?:\[[^\]]*\]\[[^\]]*\] )?Data integrity check finished\.</field>
+    <description>Synology Hyper Backup: integrity check of $(synology.task) found no error</description>
+  </rule>
+
+  <!--
+    The backup or the data on the volume is corrupt: Hyper Backup's integrity
+    check ("... The backup target is found broken."), a destination whose data
+    "was corrupted", an incomplete stored version on a Hyper Backup Vault, and
+    Btrfs reporting a checksum mismatch or a file system error.
+  -->
+  <rule id="132048" level="12">
+    <if_sid>132004,132005,132006,132007</if_sid>
+    <field name="synology.message" type="pcre2">(?i)integrity check is finished\. The backup target is found broken|data stored in backup destination .+? was corrupted|^Backup version \[[^\]]*\] of the stored backup task .+? was incomplete|^Checksum mismatch on file \[|^File system error was found on volume \[</field>
+    <description>[HIGH] Synology DSM: corrupt backup or data found: $(synology.message)</description>
+    <group>synology_storage,</group>
+  </rule>
+
+  <!-- A restore replaces live data with an older version: recorded and visible. -->
+  <rule id="132049" level="3">
+    <if_sid>132004,132005,132006,132007</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^Restored (?:shared folder|iSCSI LUN) \[[^\]]+\] from snapshot \[|^Share \[[^\]]+\] was restored$|Restore started to restore version created at|^Local Recovery started to restore version</field>
+    <description>Synology DSM: data restored from a snapshot or backup: $(synology.message)</description>
   </rule>
 
   <!--
@@ -611,9 +674,13 @@
   </rule>
 
   <!--
-    System log. The wording below follows DSM's message catalogue; only some
-    of it could be checked against a real device (see the pack notes), so the
-    patterns key on a few stable words and each excludes its neighbours.
+    System log. The wording follows DSM's System message catalogue
+    (usr/syno/synosdk/texts/enu/events, DSM 7.2.2-72806 and 7.4.1-90080; the
+    entry ids are given next to the rules). Every template of that catalogue
+    was replayed against these rules in a test manager: no rule matches a
+    template it was not written for. No System line has been seen from a real
+    NAS yet, so the patterns allow for an optional acting account and a
+    missing final period.
   -->
 
   <!-- Accounts and groups -->
@@ -629,7 +696,7 @@
 
   <rule id="132061" level="6">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">(?i)\bpassword\b[^.]*\b(?:changed|reset|modified|updated)\b|\b(?:changed|reset) (?:the )?password\b</field>
+    <field name="synology.message" type="pcre2">(?i)\bpassword\b[^.]*\b(?:changed|reset|modified|updated)\b|\b(?:changed|reset) (?:the )?password\b|\bpassword was set to\b</field>
     <description>Synology DSM: password changed: $(synology.message)</description>
     <mitre>
       <id>T1098</id>
@@ -659,7 +726,7 @@
 
   <rule id="132064" level="5">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">(?i)\bapp(?:lication)? privileges?\b</field>
+    <field name="synology.message" type="pcre2">(?i)^The app privilege on app \[</field>
     <description>Synology DSM: application privileges changed: $(synology.message)</description>
     <mitre>
       <id>T1098</id>
@@ -667,42 +734,44 @@
     <group>synology_account_change,</group>
   </rule>
 
-  <rule id="132065" level="6">
-    <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">(?i)\b(?:2-step|two-step|2fa|otp|multi-factor)\b[^.]*\b(?:disabled|turned off|removed|reset|deleted)\b</field>
-    <description>Synology DSM: two-factor sign-in turned off or reset: $(synology.message)</description>
-    <mitre>
-      <id>T1556</id>
-    </mitre>
-    <group>synology_account_change,</group>
-  </rule>
-
   <!-- Storage -->
+  <!-- 116000A6, 11600075, 11600043 ("Volume1 was degraded."), 116000C3 ("iSCSI LUN [..] was degrade [..]"), 116000B1 -->
   <rule id="132070" level="12">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:crash)).*(?i:\b(?:storage pool|volume|raid|disk group|ssd cache)\b[^.]*\bdegrad)</field>
+    <field name="synology.message" type="pcre2">^(?!.*(?i:crash)).*(?i:\b(?:storage pool|volume|raid|disk group|ssd cache|lun)[^.]*\bdegrad)</field>
     <description>[HIGH] Synology DSM: storage degraded, redundancy lost: $(synology.message)</description>
     <group>synology_storage,</group>
   </rule>
 
+  <!-- 116000A7, 11600076, 11600042 ("Volume1 was crashed."), 11600053, 116000C4 ("LUN [..] crashed."), 116000A9 -->
   <rule id="132071" level="12">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">(?i)\b(?:storage pool|volume|raid|disk group|ssd cache)\b[^.]*\bcrash</field>
+    <field name="synology.message" type="pcre2">(?i)\b(?:storage pool|volume|raid|disk group|ssd cache|lun)[^.]*\bcrash</field>
     <description>[HIGH] Synology DSM: storage crashed: $(synology.message)</description>
     <group>synology_storage,</group>
   </rule>
 
+  <!-- 11600045 "Volume1 was in normal status." -->
   <rule id="132072" level="3">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:degrad|crash|fail)).*(?i:\b(?:storage pool|volume|raid|disk group)\b[^.]*\b(?:repaired|repair (?:is |was |has been )?(?:complete|completed|finished)|(?:back|returned) to (?:normal|healthy)|rebuil[dt] (?:is |was |has been )?(?:complete|completed|finished)))</field>
+    <field name="synology.message" type="pcre2">^(?!.*(?i:degrad|crash|fail)).*(?i:\b(?:storage pool|volume|raid|disk group)[^.]*\b(?:repaired|repair (?:is |was |has been )?(?:complete|completed|finished)|(?:back|returned) to (?:normal|healthy)|was in normal status|rebuil[dt] (?:is |was |has been )?(?:complete|completed|finished)))</field>
     <description>Synology DSM: storage repaired: $(synology.message)</description>
     <group>synology_storage,</group>
   </rule>
 
+  <!--
+    Drive and hardware faults: 116000BC-C1 (S.M.A.R.T.), 116000B8 and
+    11C00008 (bad sectors), 11600015/16 (defective, I/O error), 11600081/82
+    (7.2.2 "Read error at internal disk [..]", 7.4.1 "A read error occurred at
+    sector [..] on [Drive ..]"), 116000C5
+    (lifespan), 116000CA-CF, fans, power supplies, overheating and memory ECC
+    errors. Not: a warning an administrator suppressed or re-enabled
+    (116000D3-E2), an error that was corrected or remapped, a fault that ended.
+  -->
   <rule id="132073" level="10">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:storage pool|volume|raid group|disk group)).*(?i:(?:S\.M\.A\.R\.T\.?|\bSMART\b)[^.]*\b(?:fail\w*|abnormal|critical|warning|bad)\b|\bbad sectors?\b|\b(?:drive|disk|hdd|ssd)\b[^.]*\b(?:failing|failed|has failed|crashed|critical|abnormal|not responding|reached (?:its |the )?(?:critical|warning))\b|\bIronWolf Health\b[^.]*\b(?:warning|abnormal|critical|fail\w*)\b)</field>
-    <description>[WARN] Synology DSM: a drive is failing: $(synology.message)</description>
+    <field name="synology.message" type="pcre2">^(?!.*(?i:degrad|crash|has been (?:disabled|suppressed|re-enabled|corrected|resumed)|^Suppression of|was remapped|Advisor|after server retrials|restored to normal|in normal status|has resumed)).*(?i:(?:S\.M\.A\.R\.T\.?|\bSMART\b)[^.]*\b(?:fail\w*|abnormal|critical|bad)\b|\bbad sectors?\b|\b(?:drive|disk|hdd|ssd)\b[^.]*\b(?:failing|failed|has failed|crashed|critical|abnormal|not responding|defective|has issues|has an I/O error|experienced critical access error|reached (?:its |the )?(?:critical|warning))|\b(?:read|write) error (?:occurred at|at internal disk)|\berror occurred while accessing Disk\b|\bLifespan of Disk\b[^.]*\bbelow the pre-defined value|\bRetry error occurs on the disk\b|\bIronWolf Health\b[^.]*\b(?:abnormal|critical|fail\w*)\b|\bout of order\b|\bwas overheated\b|\btemperature (?:reached the critical limit|exceeded the normal value)|\bmemory ECC error\b|\bredundant power\[[^\]]*\] on \S+ failed)</field>
+    <description>[WARN] Synology DSM: a drive or other hardware is failing: $(synology.message)</description>
     <group>synology_storage,</group>
   </rule>
 
@@ -714,7 +783,7 @@
 
   <rule id="132075" level="7">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:degrad|crash)).*(?i:\bvolume\b[^.]*\b(?:almost full|nearly full|running out of|is full|low (?:capacity|space)|insufficient (?:capacity|space))\b)</field>
+    <field name="synology.message" type="pcre2">^(?!.*(?i:degrad|crash)).*(?i:\blow storage space on\b|\bvolume\b[^.]*\b(?:almost full|nearly full|running out of|is full|low (?:capacity|space)|insufficient (?:capacity|space))\b|\bfile number of \[[^\]]+\] was reaching the limit\b)</field>
     <description>Synology DSM: a volume is running out of space: $(synology.message)</description>
     <group>synology_storage,</group>
   </rule>
@@ -732,29 +801,30 @@
   <!-- Power -->
   <rule id="132080" level="8">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:low battery|battery (?:is )?low|safe mode)).*(?i:\bon battery\b|\bpower (?:failure|outage|loss)\b|\blost (?:ac|utility|mains) power\b)</field>
+    <field name="synology.message" type="pcre2">^(?!.*(?i:low battery|battery (?:is )?low|safe mode|safe shutdown)).*(?i:\bon battery\b|\bpower (?:failure|outage|loss)\b|\blost (?:ac|utility|mains) power\b)</field>
     <description>Synology DSM: running on UPS battery: $(synology.message)</description>
     <group>synology_power,</group>
   </rule>
 
   <rule id="132081" level="10">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">(?i)\blow battery\b|\bbattery (?:is )?low\b|\bsafe mode\b|\bUPS\b[^.]*\b(?:shut ?down|shutting down)\b|\b(?:shut ?down|shutting down)\b[^.]*\bUPS\b</field>
+    <field name="synology.message" type="pcre2">^(?!.*(?i:split-brain)).*(?i:\blow battery\b|\bbattery (?:is )?low\b|\bsafe mode\b|\bsafe shutdown\b|\bUPS\b[^.]*\b(?:shut ?down|shutting down)\b|\b(?:shut ?down|shutting down)\b[^.]*\bUPS\b)</field>
     <description>[WARN] Synology DSM: UPS battery low, the NAS is shutting down or in safe mode: $(synology.message)</description>
     <group>synology_power,</group>
   </rule>
 
   <rule id="132082" level="3">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:low battery|safe mode|on battery)).*(?i:\bback online\b|\bpower (?:was |has been )?restored\b|\bUPS\b[^.]*\b(?:was |has been )?(?:plugged in|connected)\b)</field>
+    <field name="synology.message" type="pcre2">^(?!.*(?i:low battery|safe mode|on battery)).*(?i:\bback online\b|\bpower (?:was |has been )?restored\b|\bAC power of (?:the )?(?:local|remote) UPS was restored\b|\bUPS\b[^.]*\b(?:was |has been )?(?:plugged in|connected)\b)</field>
     <description>Synology DSM: power restored or UPS connected: $(synology.message)</description>
     <group>synology_power,</group>
   </rule>
 
+  <!-- Also 1140000C, 11600028/29/2C/2D, 11600039: a UPS the NAS cannot see or that reports a fault. -->
   <rule id="132083" level="5">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:low battery|safe mode)).*(?i:\bUPS\b[^.]*\b(?:plugged out|unplugged|disconnected|removed|lost communication|communication (?:was )?lost)\b)</field>
-    <description>Synology DSM: UPS disconnected, the NAS is no longer protected from power loss: $(synology.message)</description>
+    <field name="synology.message" type="pcre2">^(?!.*(?i:low battery|safe mode|safe shutdown|on battery)).*(?i:\bUPS\b[^.]*\b(?:plugged out|unplugged|disconnected|removed|lost communication|communication (?:was )?lost)\b|\bCan not detect the (?:local|remote) UPS\b|\bAbnormal (?:power )?status of the (?:local|remote) UPS\b|\bUPS battery status was abnormal\b|\bLocal UPS was overloaded\b|\bFailed to (?:connect to|get response from) the remote UPS\b)</field>
+    <description>Synology DSM: UPS disconnected, unreachable or abnormal, the NAS may not be protected from power loss: $(synology.message)</description>
     <group>synology_power,</group>
   </rule>
 
@@ -767,8 +837,16 @@
 
   <rule id="132085" level="3">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:\bUPS\b|battery|improper|unexpected|abnormal)).*(?i:\b(?:counting down to|is going to|started to|will) (?:reboot|shut ?down|restart)\b|\bwas (?:rebooted|shut down|restarted)\b)</field>
+    <field name="synology.message" type="pcre2">(?i)^(?:System|Server) start(?:ed)? counting down to (?:reboot|shutdown)(?! due to)|^System started to shutdown due to auto poweroff time up</field>
     <description>Synology DSM: the NAS is restarting or shutting down: $(synology.message)</description>
+    <group>synology_power,</group>
+  </rule>
+
+  <!-- 1110000A-1110001E (overheating, "shutdown system now"), 13300045, 11600084/9A/11400011 (fan or critical event) -->
+  <rule id="132077" level="12">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)overheat(?:ing)?[,:][^.]*\b(?:shutdown system now|shut down the system now)|\bwas shut down due to overheating\b|counting down to shutdown due to (?:cpu fan failed|fan failed|the critical event)</field>
+    <description>[HIGH] Synology DSM: the NAS is shutting down to protect itself (overheating, fan failure or critical event): $(synology.message)</description>
     <group>synology_power,</group>
   </rule>
 
@@ -778,7 +856,7 @@
     <field name="synology.message" type="pcre2">^(?!.*(?i:updat|upgrad|fail)).*(?i:\bpackage\b[^.]*\b(?:installed|uninstalled|removed)\b|\b(?:installed|uninstalled|removed) (?:the )?package\b)</field>
     <description>Synology DSM: package installed or removed: $(synology.message)</description>
     <mitre>
-      <id>T1072</id>
+      <id>T1543.002</id>
     </mitre>
     <group>synology_package,</group>
   </rule>
@@ -792,45 +870,78 @@
 
   <rule id="132088" level="5">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">(?i)\b(?:package|update|upgrade)\b[^.]*\bfail\w*|\bfail\w*\b[^.]*\b(?:package|update|upgrade)\b</field>
-    <description>Synology DSM: package or DSM update failed: $(synology.message)</description>
+    <field name="synology.message" type="pcre2">(?i)^Failed to (?:install|update|repair|uninstall) package \[|^Automatically install \[[^\]]+\] failed</field>
+    <description>Synology DSM: package installation or update failed: $(synology.message)</description>
+    <group>synology_package,</group>
+  </rule>
+
+  <!--
+    11B01030/31, 1160001D, 11600074, 14300017 and the high-availability
+    upgrade: DSM itself stays unpatched. Synology fixes critical flaws only in
+    new builds (Synology-SA-26:13 needs 7.4-90075, 7.3.2-86009-4,
+    7.2.2-72806-9 or 7.2.1-69057-12); DSM does not log its version on update,
+    so the pack can only report the failure.
+  -->
+  <rule id="132079" level="7">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^Failed to (?:install the DSM Security Fix|check the DSM Security Fix file)\b|^Failed to update the server$|^System failed to update the server, because of incompatible patch file|^Failed to update DSM to \[|^Failed to (?:perform the upgrade|upgrade the high-availability cluster|upgrade the passive server)</field>
+    <description>Synology DSM: a DSM update or security fix failed, known vulnerabilities may stay open: $(synology.message)</description>
     <group>synology_package,</group>
   </rule>
 
   <!-- Services, security settings, shared folders -->
+  <!-- 11B00104 "SSH service was started." -->
   <rule id="132090" level="6">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:stopped|disabled)).*(?i:\b(?:started|enabled|turned on)\b[^.]*\[?(?:SSH|Telnet)\b|\b(?:SSH|Telnet)\b[^.]*\b(?:was |has been )?(?:started|enabled|turned on)\b)</field>
-    <description>Synology DSM: SSH or Telnet service started: $(synology.message)</description>
+    <field name="synology.message" type="pcre2">(?i)^SSH service was started$|^System successfully (?:started|enabled) \[[^\]]*\bssh</field>
+    <description>Synology DSM: SSH service started: $(synology.message)</description>
     <mitre>
       <id>T1021.004</id>
     </mitre>
     <group>synology_config_change,</group>
   </rule>
 
-  <rule id="132091" level="6">
+  <!--
+    11B00100 "Telnet service was started." Telnet sends passwords in clear text
+    and DSM's telnetd (GNU inetutils) had an unauthenticated remote code
+    execution flaw: CVE-2026-32746, Synology-SA-26:03, fixed in DSM
+    7.3.2-86009-3, 7.2.2-72806-8 and 7.2.1-69057-11; Synology's mitigation is
+    to disable Telnet.
+    https://www.synology.com/en-global/security/advisory/Synology_SA_26_03
+  -->
+  <rule id="132089" level="8">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:locked|lockout|protected|blocked via)).*(?i:\bfirewall\b|\bauto ?block\b|\bdenial[- ]of[- ]service\b|\bDoS protection\b|\bcertificate\b[^.]*\b(?:imported|replaced|deleted|added|created)\b)</field>
-    <description>Synology DSM: security settings changed: $(synology.message)</description>
+    <field name="synology.message" type="pcre2">(?i)^Telnet service was started$|^System successfully (?:started|enabled) \[[^\]]*\btelnet</field>
+    <description>Synology DSM: Telnet service started (clear-text logins, CVE-2026-32746): $(synology.message)</description>
     <mitre>
-      <id>T1562.004</id>
+      <id>T1021</id>
     </mitre>
     <group>synology_config_change,</group>
   </rule>
 
+  <!-- 12B00001-12B00011 (certificates; "was automatically renewed" is routine), 12A00001 -->
+  <rule id="132091" level="5">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^Successfully (?:add|replace|delete|recreate|reset) certificate|^Successfully set certificate \[[^\]]+\] as default|^Successfully set \[[^\]]+\] to certificate \[|^Enabled auto block service$</field>
+    <description>Synology DSM: certificate or auto block setting changed: $(synology.message)</description>
+    <group>synology_config_change,</group>
+  </rule>
+
+  <!-- 11800D01 "@1 folder [@2] was created.", 13700009, 11800C00, 11800D27 -->
   <rule id="132092" level="5">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:deleted|removed|metadata)).*(?i:\bshared folder\b[^.]*\b(?:was |has been )?created\b|\bshared folder\b[^.]*\b(?:permissions?|privileges?)\b|\bcreated (?:a |the )?shared folder\b)</field>
-    <description>Synology DSM: shared folder created or its permissions changed: $(synology.message)</description>
+    <field name="synology.message" type="pcre2">(?i)^(?:Access right of the shared folder \[[^\]]+\] was set|Recycle bin of shared folder \[[^\]]+\] was disabled|(?:[\w ]+ )?folder \[[^\]]+\] was created(?: when enabling \[[^\]]*\])?)$</field>
+    <description>Synology DSM: shared folder created, its access rights set or its recycle bin disabled: $(synology.message)</description>
     <mitre>
       <id>T1222</id>
     </mitre>
     <group>synology_config_change,</group>
   </rule>
 
+  <!-- 11800D00 "@1 folder [@2] was deleted." (not 11800D20, metadata) -->
   <rule id="132093" level="8">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:metadata)).*(?i:\bshared folder\b[^.]*\b(?:was |has been )?(?:deleted|removed)\b|\b(?:deleted|removed) (?:the )?shared folder\b)</field>
+    <field name="synology.message" type="pcre2">(?i)^(?!Metadata of)(?:[\w ]+ )?folder \[[^\]]+\] was deleted$</field>
     <description>Synology DSM: a shared folder was deleted: $(synology.message)</description>
     <mitre>
       <id>T1485</id>
@@ -838,19 +949,181 @@
     <group>synology_config_change,</group>
   </rule>
 
-  <!-- Security Advisor and the antivirus packages -->
-  <rule id="132094" level="5">
+  <!--
+    Recovery points. Ransomware on a NAS deletes snapshots, replicas and
+    backups before it encrypts (MITRE T1490; Synology's own guidance is
+    immutable snapshots). Catalogue entries 13C00003/04 (shared folder),
+    13C80001/02 (volume), 13D00007/08 (iSCSI LUN), with "Failed to delete"
+    for a deletion that was refused, for example on an immutable snapshot.
+    Retention writes "by retention rules" for a LUN (13D00009) and is
+    expected to write "by [SYSTEM]" for a shared folder: both stay at level 0.
+    Only the catalogue proves this wording; no real line has been captured.
+  -->
+  <rule id="132054" level="8">
     <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">^(?!.*(?i:malware|virus|suspicious|compromis|infected)).*(?i:\bSecurity Advisor\b)</field>
-    <description>Synology DSM Security Advisor: $(synology.message)</description>
+    <field name="synology.message" type="pcre2">(?i)^(?:Failed to delete|Deleted) a (?:shared folder snapshot \[[^\]]*\] from share \[[^\]]*\]|snapshot \[[^\]]*\] of iSCSI LUN \[[^\]]*\]) by \[(?!SYSTEM\])[^\]]*\]$|^(?:Failed to delete|Deleted) a volume snapshot \[</field>
+    <description>Synology DSM: a snapshot was deleted (or deletion was tried) by an account: $(synology.message)</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
+    <group>synology_snapshot_deleted,</group>
   </rule>
 
-  <rule id="132095" level="10">
-    <if_sid>132004,132005</if_sid>
-    <field name="synology.message" type="pcre2">(?i)\bSecurity Advisor\b[^.]*\b(?:malware|virus|suspicious|compromis\w*|infected)\b|\b(?:malware|virus(?:es)?|infected files?)\b[^.]*\b(?:found|detected)\b</field>
-    <description>[WARN] Synology DSM: malware or a compromise indicator reported: $(synology.message)</description>
+  <rule id="132055" level="12" frequency="5" timeframe="600">
+    <if_matched_sid>132054</if_matched_sid>
+    <same_location />
+    <description>[HIGH] Synology DSM: 5 snapshots deleted (or deletion tried) on one NAS within 10 minutes, as ransomware does before encrypting</description>
     <mitre>
-      <id>T1204</id>
+      <id>T1490</id>
+    </mitre>
+    <group>synology_snapshot_deleted,</group>
+  </rule>
+
+  <!-- 13E00003, 13E0001C, 13E00022/23: a Snapshot Replication plan was deleted (the off-site copy). -->
+  <rule id="132056" level="8">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^Deleted a (?:local )?replication of </field>
+    <description>Synology DSM: a snapshot replication was deleted: $(synology.message)</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
+    <group>synology_snapshot_deleted,</group>
+  </rule>
+
+  <!-- 13E00006, 13C00002, 13D00004, 13D0000D: recovery points silently stop being made. -->
+  <rule id="132057" level="7">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^Failed to (?:sync [\w ]+ replication from \[|take a shared folder \[[^\]]*\] snapshot|take a snapshot from (?:iSCSI LUN|remote LUN))</field>
+    <description>Synology DSM: a snapshot or a replication failed: $(synology.message)</description>
+    <group>synology_snapshot_failed,</group>
+  </rule>
+
+  <!-- 11800D28/29: emptying a recycle bin removes the last copy of deleted files. -->
+  <rule id="132058" level="3">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^Start to empty (?:all recycle bins|recycle bin of shared folder \[)</field>
+    <description>Synology DSM: recycle bin emptied: $(synology.message)</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
+  </rule>
+
+  <!-- Defences switched off or evidence removed: 12A00002 "Disabled auto block service.", 11801E12 "Clear [..].", 13300025/13E00021 "Log file was cleared." -->
+  <rule id="132059" level="10">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^Disabled auto block service$</field>
+    <description>[WARN] Synology DSM: auto block was switched off</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>synology_config_change,</group>
+  </rule>
+
+  <rule id="132066" level="10">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^Clear \[[^\]]+\]$|^Log file was cleared$</field>
+    <description>[WARN] Synology DSM: a log was cleared: $(synology.message)</description>
+    <mitre>
+      <id>T1070.002</id>
+    </mitre>
+    <group>synology_config_change,</group>
+  </rule>
+
+  <!--
+    Auto block lists edited by hand: 11B00018 (an address unblocked), 12A00005
+    (removed from the allow list), 11B00017 (blocked by hand), 12A00006 (the
+    list is full: a sustained attack). Expiry ("... from Block List due to it's
+    expired.", 12A00007) is routine and stays at level 0.
+  -->
+  <rule id="132067" level="5">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^(?:Delete host IP \[[^\]]+\] from (?:Block|Allow) List|Add host IP \[[^\]]+\] to blocking list by \[[^\]]*\]|Too many IP addresses in auto block list)$</field>
+    <description>Synology DSM auto block list changed: $(synology.message)</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>synology_config_change,</group>
+  </rule>
+
+  <!-- 1110001C: someone with physical access reset the administrator password. -->
+  <rule id="132068" level="10">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^The RESET button has been pressed by a user to reset the administrator password</field>
+    <description>[WARN] Synology DSM: the RESET button was pressed to reset the administrator password (physical access)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>synology_account_change,</group>
+  </rule>
+
+  <!-- 13000154, 13000166: the vault that holds the keys of encrypted shared folders. -->
+  <rule id="132069" level="8">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^System successfully reset the Encryption Key Vault|^The Encryption Key Vault was disabled$</field>
+    <description>Synology DSM: the encryption key vault was reset or disabled: $(synology.message)</description>
+    <group>synology_config_change,</group>
+  </rule>
+
+  <!-- 13100007, 13100001: DSM opened a port on the router through UPnP, putting a service on the internet. -->
+  <rule id="132078" level="6">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^System successfully added port-mapping \(|^System successfully (?:add|added|create|created|enable|enabled) port mapping (?:for port|of service)</field>
+    <description>Synology DSM: a router port was opened through UPnP: $(synology.message)</description>
+    <mitre>
+      <id>T1133</id>
+    </mitre>
+    <group>synology_config_change,</group>
+  </rule>
+
+  <!-- 11801E10, 11801E11, 11801E14: a changed clock breaks the timeline and one-time passwords. -->
+  <rule id="132009" level="5">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^Server date/time was changed to \[|^Network time synchronization is disabled$|^Time zone was changed to \[</field>
+    <description>Synology DSM: system clock or time synchronisation changed: $(synology.message)</description>
+    <group>synology_config_change,</group>
+  </rule>
+
+  <!-- 11100018: DSM's own check found a malware pattern in the start-up script and renamed it. -->
+  <rule id="132032" level="12">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)\brc\.local has been renamed? to rc\.local\.bak due to contain malware pattern</field>
+    <description>[HIGH] Synology DSM: DSM found a malware pattern in the start-up script rc.local and disabled it</description>
+    <mitre>
+      <id>T1037.004</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Task Scheduler (14400001-06, 14400201, 14400301). A root task is the usual
+    way to persist on DSM and to launch an encryptor; a triggered task runs at
+    boot. Created: visible; removed, renamed or failing: recorded at level 3.
+  -->
+  <rule id="132097" level="6">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^Scheduled Task \[[^\]]+\] was created$</field>
+    <description>Synology DSM Task Scheduler: scheduled task $(synology.task) was created</description>
+    <mitre>
+      <id>T1053.003</id>
+    </mitre>
+    <group>synology_config_change,</group>
+  </rule>
+
+  <rule id="132098" level="8">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^Triggered Task \[[^\]]+\] was created$</field>
+    <description>Synology DSM Task Scheduler: triggered (boot or shutdown) task $(synology.task) was created</description>
+    <mitre>
+      <id>T1037</id>
+    </mitre>
+    <group>synology_config_change,</group>
+  </rule>
+
+  <rule id="132099" level="3">
+    <if_sid>132004,132005</if_sid>
+    <field name="synology.message" type="pcre2">(?i)^(?:Scheduled|Triggered) Task \[[^\]]+\] (?:was removed$|was renamed to \[|failed to run)</field>
+    <description>Synology DSM Task Scheduler: $(synology.message)</description>
+    <mitre>
+      <id>T1053.003</id>
     </mitre>
   </rule>
 

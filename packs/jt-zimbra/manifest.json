@@ -2,9 +2,9 @@
  "id": "jt-zimbra",
  "name": "Zimbra Detection Suite",
  "name_zh": "Zimbra 偵測套組",
- "version": "3.1",
- "summary": "FIM, web, authentication, SOAP, MTA and host-noise rules for Zimbra mail servers, with the decoders they need.",
- "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、SOAP、MTA 與主機雜訊規則，並附上所需的解碼器。",
+ "version": "3.2",
+ "summary": "FIM, web, authentication, administrative-change, SOAP, MTA and host-noise rules for Zimbra mail servers, with the decoders they need.",
+ "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、管理變更、SOAP、MTA 與主機雜訊規則，並附上所需的解碼器。",
  "rule_id_range": "100800-100999",
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -38,7 +38,21 @@
   "First-seen pairs are remembered by the manager (fts) per agent, so a fresh install reports each existing (account, address) pair once in its first days: on the two measured servers about 40 alerts at level 3 or 5 in the first week, then about one a day. A phone or a monitoring probe produces one alert per address, ever.",
   "Mailbox reading through a delegated administrator session from a private address is not counted by the bulk-reading rules 100972/100973 any more: it is reported the first time for each (administrator, mailbox, address) triple at level 5 (100897), and an administrator starting on five different mailboxes within an hour raises level 12 (100899). Measured: one internal tool read 1,788 messages of one mailbox in 8.8 days; 3.0 raised 1.3 level 12-14 alerts a day for it unless its account was listed, 3.1 raises one level 5 alert, ever. From a public address such reads are still counted.",
   "100852 (one account from several public addresses, level 13) now counts first-seen public pairs. In 3.0 it used different_srcip, which in 4.14.7 counts earlier events whose address differs from the current one, not distinct addresses: two logins from one address and one from a second already counted as three sources, so a phone changing its mobile address within an hour would have raised it.",
-  "preauth logins (an SSO integration logs in every user this way) are recorded at level 2 instead of level 13 each; that preauth is in use is raised at most once a day at level 10 (100831), and preauth into an administrator account at level 12 every time (100832)."
+  "preauth logins (an SSO integration logs in every user this way) are recorded at level 2 instead of level 13 each; that preauth is in use is raised at most once a day at level 10 (100831), and preauth into an administrator account at level 12 every time (100832).",
+  "3.2 gives failed logins a decoder of their own (zimbra-audit-fail), so password spraying (100843/100836) counts distinct accounts and distributed guessing (100844) distinct addresses: both count the first failure of each (account, address) pair (100811, first-time-seen). In 3.1 they used different_user and different_srcip, which in Wazuh 4.14.7 count earlier events whose value differs from the current one: seven failures of one account and one of another from a shared address raised level 12 (verified in a sandbox). A pair counts once, ever; the volume rule 100842 (12 failures in 5 minutes from one address) still counts every failure.",
+  "Failures for accounts that do not exist were invisible. Zimbra writes them without cmd= (\"Error occurred during authentication: authentication failed for [x]. Reason: account not found.\", service/account/Auth.java) and only when the localconfig key zimbra_additional_logging is true, which is not the default. 3.2 decodes that line as a failure, so guessed account names count towards spraying; turning the key on is an optional setup step.",
+  "Zimbra's own lockout record (error=account lockout due to too many failed logins) is now always level 10 (100856). In 3.1 it competed with the plain failure rules and could come out at level 5 or 6, and the test for it used a line shape Zimbra never writes.",
+  "Administrative changes are reported for the first time. Zimbra writes every directory change made through the admin interfaces (admin console, zmprov without -l, any admin token) to audit.log with the attributes it changed; in 3.1 they all ended at level 0. Now: any change level 3 (100908), account, domain and configuration lifecycle 5 (100918), zimlets and delegated-admin constraints 8 (100916), forwarding set by an administrator 10 (100914), a password reset of an administrator-class account 10 (100915), a domain preauth key 10 (100913), administrator rights granted 12 (100910), MTA trusted networks opened to every address 12 (100911), any change from a public address 12 (100912/100919). Lines that carry a credential (preauth key, bind passwords, secrets) are reported without the log line. Measured: none in 9 days on two servers. Zimbra does not log GrantRight/RevokeRight or zmprov -l, so those stay invisible.",
+  "SMTP command injection: an address containing $(, ${ or a backtick in any Postfix line is level 13 (100980), a forged \"Service status change:\" record inside a Postfix line level 14 (100986), and the same in an amavis line 13 (100987). These are CVE-2026-73570 (swatchdog SNMP notification, CISA KEV, fixed in 10.1.20) and CVE-2024-45519 (postjournal, KEV): the attacker's address is written to /var/log/zimbra.log even when Postfix rejects it. Only zmconfigd writes that status line legitimately. Measured: no address containing those characters in 171,515 Postfix lines in 7 days.",
+  "Web: a JSP outside /public/ that Zimbra does not ship (100988, level 10 when it answers, 14 for 200/302 in 100989), a JSP called with a system path or a Zimbra command in its query (100993, the CISA AA22-228A shape, 14), the ClientUploader upload endpoint (100994) and the WebEx zimlet SSRF CVE-2020-7796 (100995) at 12, reflected cross-site scripting shapes on the Classic client and public JSPs (100996, 10), and an exploit URL answered with 404, the endpoint not existing here (100997, 8 instead of 12-14). Path traversal (100976) is case-insensitive now and catches ..;/ and encoded forms; a 401 from mboximport still counts, because the exploit wrote its shell while returning 401.",
+  "Bugs fixed: the stock-JSP list (100822) missed the PDF viewer, admin.jsp, noscript.jsp and proto/index.jsp, so a user opening a PDF attachment raised 100823 at level 14 (seen on a real server); 100827 (admin interface) and its level 0 child silenced a web shell under /zimbraAdmin/ opened from a private address, and reported it as an admin login from a public one; 100979 (a file written into the web root by a mail-handling process, the CVE-2022-41352 class) could never fire, because its level 15 sibling 100803 loaded first and took the same events (verified with a synthetic whodata event).",
+  "100800 (the base rule for file changes under the web root and lib/ext) and 100876 (configuration files rewritten unchanged) are level 1 instead of 0. Wazuh 4.14.7 tries a level 0 rule before all of its siblings, so they took FIM events in Zimbra paths before the hash-list rules beside them (jt-malware-hash 100141, built-in 99901) could look the file up: a known-malware file in a Zimbra directory was silent. Verified with synthetic FIM events in a sandbox: such a file now ends at the hash rule (level 14), and every other event ends where it did. 100960 (timestomping) had never fired for the same reason; it now takes only a non-stock executable file in the web root whose only change is its modification time.",
+  "sudo: zmconfigd rewrites Postfix settings on every configuration pass, and 3.1 left those that Postfix later executes from visible. 3.2 quiets them only when the value is Zimbra's stock value (the /opt/zimbra paths, ldap-transport.cf, amavis on 127.0.0.1:10024, the milter on 127.0.0.1:7026, postfix/postdrop, empty values): about 52 visible alerts a day on two measured servers. Any other value stays visible. always_bcc, sender_bcc_maps, recipient_bcc_maps and smtpd_proxy_filter set through sudo copy or divert every message and are level 12 (100804).",
+  "Account takeover: a mail filter (now level 7), sending identity (3) or preference change (2, recorded) by an account within 30 minutes of its first login from a public address it had never used is level 12 (100816), the shape of the CVE-2025-27915 and CVE-2023-37580 payloads and of a phished password. A phone saving its settings through Z-Push is not counted. The window is in practice as long as the manager's correlation memory (8,192 events).",
+  "Logins: SSOAuth (SAML, JWT, SPNEGO) now follows the login policy; a login with a password-reset recovery code is level 5 (100812); a lockout lifted by a successful login is level 3 (100813); ZimbraInvalidLoginFilter suspending an address is level 8 (100818, at most once every 30 minutes, each refused request recorded at level 2).",
+  "File integrity: the zimbra group now monitors /etc/pam.d, /etc/sudoers and /etc/sudoers.d with whodata and report_changes. A change is level 13 (100938 PAM, 100939 sudo), an added \"NOPASSWD: ALL\" line 14 (100936), a write by the package manager 5. These are the persistence steps reported after CVE-2026-73570 exploitation (a pam_exec hook in /etc/pam.d/sudo, NOPASSWD: ALL for the zimbra account). Zimbra's installer rewrites its sudoers file on upgrade, so expect one 100939 then.",
+  "100963 re-levels the built-in 503 (agent started) and 504 (agent disconnected) for every agent, not only Zimbra servers. It is level 5 instead of 14 and no longer mentions Zimbra; measured 3 to 36 a day on one manager, mostly a laptop going to sleep. The ID and parents stay, because site rules may count it.",
+  "Versions: decoders and rules follow the Zimbra 10.1.20 source (zm-mailbox, tag 10.1.20); the audit and mailbox log layout has not changed since 8.8.15. mboximport (backup extension) and the two-factor operations exist only in the Network edition; ClientUploader was removed in 10.0.1. Not covered because no log line shows them: SMTP smuggling (CVE-2023-51764), the memcache injection CVE-2022-27924, and amavis archive extraction (CVE-2022-41352 is covered through file integrity)."
  ],
  "notes_zh": [
   "zimbra-webfiles 是原廠檔案基線。隨附的版本產生自 Zimbra 10.1.20（FOSS 與 NETWORK 版聯集），是起點而非自行產生的替代品。",
@@ -64,20 +78,34 @@
   "第一次出現的組合由管理端記住（fts），以 agent 為單位，所以全新安裝後的頭幾天，每一組既有的（帳號、位址）都會回報一次：在兩台實測伺服器上，第一週約 40 則 level 3 或 5，之後每天約一則。手機或監控探針每個位址只會有一則告警，永遠如此。",
   "從私有位址透過管理員委派工作階段讀取信箱，不再計入大量讀信規則 100972/100973：每一組（管理員、信箱、位址）第一次出現時以 level 5 回報（100897），管理員在一小時內開始讀取五個不同的信箱則是 level 12（100899）。實測：一個內部工具在 8.8 天內讀了同一個信箱 1,788 封信；3.0 若不把它的帳號列入，每天會產生 1.3 則 level 12-14 告警，3.1 只會產生一則 level 5，永遠如此。從公開位址的這類讀取仍會計數。",
   "100852（同一帳號從多個公開位址登入，level 13）現在計算的是第一次出現的公開組合。3.0 用的是 different_srcip，它在 4.14.7 中計算的是「位址與目前事件不同」的先前事件數，而不是不同位址的數量：從一個位址登入兩次、另一個位址一次，就已經算成三個來源，手機一小時內換一次行動網路位址就會觸發。",
-  "preauth 登入（SSO 整合會用這種方式登入每一位使用者）改為每筆 level 2 記錄，不再是每筆 level 13；「伺服器正在使用 preauth」這件事每天最多以 level 10 回報一次（100831），以 preauth 登入管理員帳號則每次都是 level 12（100832）。"
+  "preauth 登入（SSO 整合會用這種方式登入每一位使用者）改為每筆 level 2 記錄，不再是每筆 level 13；「伺服器正在使用 preauth」這件事每天最多以 level 10 回報一次（100831），以 preauth 登入管理員帳號則每次都是 level 12（100832）。",
+  "3.2 讓登入失敗有自己的解碼器（zimbra-audit-fail），密碼噴灑（100843/100836）因此計算的是「不同的帳號」，分散式猜測（100844）計算的是「不同的位址」：兩者都只計算每個（帳號, 位址）組合的第一次失敗（100811，first-time-seen）。3.1 用的是 different_user 與 different_srcip，在 Wazuh 4.14.7 裡計算的是「值與目前這筆不同」的較早事件：同一個共用位址上，一個帳號失敗七次、另一個帳號失敗一次，就觸發 level 12（已在沙箱驗證）。每個組合永遠只算一次；量的規則 100842（同一位址 5 分鐘 12 次失敗）仍然計算每一次失敗。",
+  "不存在的帳號登入失敗原本完全看不到。Zimbra 寫這種記錄時不用 cmd= 格式（「Error occurred during authentication: authentication failed for [x]. Reason: account not found.」，service/account/Auth.java），而且只在 localconfig 的 zimbra_additional_logging 為 true 時才寫，預設不是。3.2 把這一行當成失敗解碼，猜測的帳號名稱也會計入密碼噴灑；開啟這個設定是選用的部署步驟。",
+  "Zimbra 自己的帳號鎖定記錄（error=account lockout due to too many failed logins）現在一律是 level 10（100856）。3.1 時它與一般失敗規則競爭，可能以 level 5 或 6 出現，而且當時的測試用的是 Zimbra 從來不會寫的格式。",
+  "管理變更第一次被回報。透過管理介面（管理主控台、不帶 -l 的 zmprov、任何管理權杖）所做的目錄變更，Zimbra 都會連同變更的屬性寫進 audit.log；3.1 時這些全部停在 level 0。現在：任何變更 level 3（100908），帳號、網域與設定的建立刪除修改 5（100918），zimlet 與委派管理限制 8（100916），管理者設定轉寄 10（100914），重設管理類帳號的密碼 10（100915），網域 preauth 金鑰 10（100913），授予管理者權限 12（100910），MTA 信任網段開放給所有位址 12（100911），任何變更來自公開位址 12（100912/100919）。帶有憑證的記錄（preauth 金鑰、繫結密碼、密鑰）回報時不附記錄原文。實測兩台伺服器 9 天內沒有任何一筆。Zimbra 不記錄 GrantRight/RevokeRight 與 zmprov -l，這兩者仍然看不到。",
+  "SMTP 指令注入：任何 Postfix 記錄中的郵件位址含有 $(、${ 或反引號時為 level 13（100980），Postfix 記錄中出現偽造的「Service status change:」為 level 14（100986），amavis 記錄中出現同樣內容為 13（100987）。對應 CVE-2026-73570（swatchdog 的 SNMP 通知，CISA KEV，10.1.20 修正）與 CVE-2024-45519（postjournal，KEV）：即使 Postfix 拒收，攻擊者的位址仍會寫進 /var/log/zimbra.log。只有 zmconfigd 會合法寫出那一行狀態記錄。實測 7 天 171,515 行 Postfix 記錄中沒有任何位址含有這些字元。",
+  "Web：不是 Zimbra 原廠、位於 /public/ 以外的 JSP（100988，有回應時 level 10，回應 200/302 時 100989 為 14），查詢字串帶有系統路徑或 Zimbra 指令的 JSP（100993，CISA AA22-228A 的樣式，14），ClientUploader 上傳端點（100994）與 WebEx zimlet 的 SSRF CVE-2020-7796（100995）為 12，Classic 用戶端與公開 JSP 的反射型 XSS 樣式（100996，10），以及漏洞網址回應 404、表示這台沒有那個端點（100997，8，原本是 12 到 14）。路徑穿越（100976）改為不分大小寫，並涵蓋 ..;/ 與編碼形式；mboximport 回應 401 仍然算數，因為該漏洞在回應 401 的同時已寫入 web shell。",
+  "修正的錯誤：原廠 JSP 清單（100822）漏了 PDF 檢視器、admin.jsp、noscript.jsp 與 proto/index.jsp，使用者開啟 PDF 附件就觸發 level 14 的 100823（正式機上確實發生過）；100827（管理介面）與它的 level 0 子規則會讓從私有位址開啟的 /zimbraAdmin/ 下的 web shell 靜音，從公開位址開啟時則被報成管理者登入；100979（郵件處理程序在網站根目錄寫入檔案，CVE-2022-41352 類）永遠不會觸發，因為同為 level 15、較早載入的兄弟規則 100803 先接走了相同的事件（以合成的 whodata 事件驗證）。",
+  "100800（網站根目錄與 lib/ext 檔案異動的基礎規則）與 100876（內容未變、被重寫的設定檔）由 level 0 改為 1。Wazuh 4.14.7 會先嘗試 level 0 的規則、再嘗試它的所有兄弟規則，所以它們會在旁邊的雜湊清單規則（jt-malware-hash 100141、內建 99901）查詢檔案之前，就先接走 Zimbra 路徑的 FIM 事件：Zimbra 目錄裡的已知惡意檔案因此完全沒有告警。已在沙箱以合成的 FIM 事件驗證：這類檔案現在停在雜湊規則（level 14），其他事件的結果不變。100960（竄改時間戳）也因同樣原因從未觸發過；現在只收網站根目錄中非原廠可執行檔「只有修改時間改變」的情況。",
+  "sudo：zmconfigd 每次套用設定都會重寫 Postfix 參數，3.1 讓其中 Postfix 之後會拿來執行的那些參數保持可見。3.2 只在值是 Zimbra 原廠值時才讓它們安靜（/opt/zimbra 底下的路徑、ldap-transport.cf、127.0.0.1:10024 的 amavis、127.0.0.1:7026 的 milter、postfix/postdrop、空值）：實測兩台伺服器每天約少 52 筆可見告警。其他任何值仍然可見。透過 sudo 設定 always_bcc、sender_bcc_maps、recipient_bcc_maps 與 smtpd_proxy_filter 會複製或轉走每一封信，為 level 12（100804）。",
+  "帳號接管：某個帳號第一次從沒用過的公開位址登入後 30 分鐘內，修改郵件篩選規則（現為 level 7）、寄件身分（3）或偏好設定（2，只記錄），為 level 12（100816），這是 CVE-2025-27915 與 CVE-2023-37580 攻擊程式以及密碼被釣走時的樣子。手機透過 Z-Push 儲存設定不計入。時間窗實際上取決於管理端的關聯記憶（8,192 個事件）。",
+  "登入：SSOAuth（SAML、JWT、SPNEGO）現在套用登入政策；以重設密碼的復原碼登入為 level 5（100812）；成功登入解除了鎖定為 level 3（100813）；ZimbraInvalidLoginFilter 暫停某個位址為 level 8（100818，最多每 30 分鐘一次，每個被拒絕的請求以 level 2 記錄）。",
+  "檔案完整性：zimbra 群組現在以 whodata 與 report_changes 監控 /etc/pam.d、/etc/sudoers 與 /etc/sudoers.d。變更為 level 13（100938 PAM、100939 sudo），新增一行「NOPASSWD: ALL」為 14（100936），套件管理程式寫入為 5。這些是 CVE-2026-73570 被利用後公開報告的持久化手法（在 /etc/pam.d/sudo 掛 pam_exec、給 zimbra 帳號 NOPASSWD: ALL）。Zimbra 安裝程式升級時會重寫自己的 sudoers 檔，屆時會出現一筆 100939。",
+  "100963 改變的是內建 503（agent 啟動）與 504（agent 斷線）的等級，適用於所有 agent，不只 Zimbra 伺服器。現在是 level 5（原為 14），描述不再提到 Zimbra；實測一台管理端每天 3 到 36 筆，多半是筆電進入睡眠。規則 ID 與父規則不變，因為站台規則可能會計算它。",
+  "版本：解碼器與規則依據 Zimbra 10.1.20 原始碼（zm-mailbox，tag 10.1.20）；audit 與 mailbox 記錄格式自 8.8.15 起未變。mboximport（備份擴充）與兩步驟驗證操作只存在於 Network 版；ClientUploader 在 10.0.1 移除。沒有任何記錄行能看出、因此未涵蓋的：SMTP smuggling（CVE-2023-51764）、memcache 注入 CVE-2022-27924，以及 amavis 解壓縮（CVE-2022-41352 由檔案完整性涵蓋）。"
  ],
  "files": [
   {
    "type": "decoder",
    "name": "0001-zimbra_decoders.xml",
    "dest": "etc/decoders/0001-zimbra_decoders.xml",
-   "sha256": "66d5f7ffd94870b3a6b96ba430eb927084f73b837e7cf8e5ffb243ebfbca0ff5"
+   "sha256": "6897c24a37d4d2cc51d7771a21b8e3a994a3b56a7119a06196b1ecfc7e3fc9c5"
   },
   {
    "type": "decoder",
    "name": "0002-zimbra_mailbox_decoders.xml",
    "dest": "etc/decoders/0002-zimbra_mailbox_decoders.xml",
-   "sha256": "2989e3ac569d33b6eb3a618147edbd80c4c4bc773f360317f47daf613b36fb14"
+   "sha256": "84f48e4ce2ce615553656560b63b8fc6daccffd87687ac4b2bc8073be55bbf4a"
   },
   {
    "type": "decoder",
@@ -89,19 +117,19 @@
    "type": "rule",
    "name": "01-zimbra_fim_rules.xml",
    "dest": "etc/rules/01-zimbra_fim_rules.xml",
-   "sha256": "07dd37a6cd35fd715428a34b5b46639bd0e159e0ccfc232c3f77bd2490266f54"
+   "sha256": "0d84b95adeff56bdf531428437e47c579f8429f78275157151d9d38beac49c54"
   },
   {
    "type": "rule",
    "name": "02-zimbra_web_rules.xml",
    "dest": "etc/rules/02-zimbra_web_rules.xml",
-   "sha256": "4ad47d1d4c2f9eab5319d1833a01898a3ced56d49f346225e3fdffe6fb350877"
+   "sha256": "37a6dc90fcb2cc614582e77dcb69fe22bcc028e7f8064782d03244d70cd80750"
   },
   {
    "type": "rule",
    "name": "03-zimbra_auth_rules.xml",
    "dest": "etc/rules/03-zimbra_auth_rules.xml",
-   "sha256": "32482aff930d19151ff24c4fe8ce66bb1ce3ccf21f8fd125a07e178432b6d690"
+   "sha256": "60f135eb1e7c1af473127a8ae98a7b25fa5825a7743eda8ebfdc93ca937d6cf3"
   },
   {
    "type": "rule",
@@ -119,19 +147,19 @@
    "type": "rule",
    "name": "06-zimbra_threat_rules.xml",
    "dest": "etc/rules/06-zimbra_threat_rules.xml",
-   "sha256": "6fb9987b9472399914393e2f83eb74d31c4111dd4bda11ecafe755d18929f2e2"
+   "sha256": "24eb5f57fc6518148709748dd0fa6d89685ba3fe0eb37ccf8981ce02bbd4efe1"
   },
   {
    "type": "rule",
    "name": "08-zimbra_soap_rules.xml",
    "dest": "etc/rules/08-zimbra_soap_rules.xml",
-   "sha256": "0b3bc3b6d4e2bed4b88c693f9cbe1fa7f0f84e3ecc6da2e48dec3b396dc5cd1b"
+   "sha256": "a5ec97fe95a0bb6ad9b6554f5508f3c1b51629fd68b848399d413f6447560511"
   },
   {
    "type": "rule",
    "name": "zz-100866-zimbra_host_rules.xml",
    "dest": "etc/rules/zz-100866-zimbra_host_rules.xml",
-   "sha256": "f451da11d9415f3cbff5fcaf6b120c391474479c7a64f5835eb07aa6b9178f09"
+   "sha256": "9eb5b92b659cc5b50bfd3ec7a7a6ccc4dd828655b99c593677b78822fc508b6b"
   },
   {
    "type": "list",
@@ -239,6 +267,41 @@
    "body": "syscheck's restrict and <ignore type=\"sregex\"> are OS_Match: only ^ $ | ! are special. A pattern written as a regular expression, such as restrict=\"\\.(jsp|sh)$\" or ^/opt/zimbra/conf/(ca|nginx/includes), matches nothing: the restricted directories report no file at all and the ignore excludes nothing. The pack's agent.conf uses the OS_Match form (.jsp$|.sh$).",
    "body_zh": "syscheck 的 restrict 與 <ignore type=\"sregex\"> 都是 OS_Match：只有 ^ $ | ! 是特殊字元。寫成正規表示式的樣式，例如 restrict=\"\\.(jsp|sh)$\" 或 ^/opt/zimbra/conf/(ca|nginx/includes)，永遠比對不到：受限目錄完全不會回報任何檔案，ignore 也排除不了任何東西。套件的 agent.conf 使用 OS_Match 寫法（.jsp$|.sh$）。",
    "file": "agent/agent.conf"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "since": "3.2",
+   "title": "3.2: monitor PAM and sudo on the Zimbra servers",
+   "title_zh": "3.2：在 Zimbra 伺服器上監控 PAM 與 sudo",
+   "body": "The pack's zimbra group adds /etc/pam.d, /etc/sudoers and /etc/sudoers.d to file integrity monitoring (whodata and report_changes; a few dozen small files without secrets). An update leaves a group you have changed as it is: then add the <directories> line from the pack's agent.conf to your copy. Restart the agents afterwards; the setting applies only after a restart, and synced in the agent list only means the file arrived.",
+   "body_zh": "套件的 zimbra 群組新增監控 /etc/pam.d、/etc/sudoers 與 /etc/sudoers.d（whodata 與 report_changes；只有幾十個不含機密的小檔）。如果群組設定被你改過，更新不會取代它：請把套件 agent.conf 裡那一行 <directories> 加進你的版本。之後重啟 agent；設定要重啟後才生效，agent 清單顯示 synced 只代表檔案已送達。",
+   "file": "agent/agent.conf",
+   "code": "/var/ossec/bin/agent_control -R -u <agent_id>",
+   "verify": "After the restart, change a comment in /etc/pam.d/sudo on a test server and look for rule 100938, then restore the file.",
+   "verify_zh": "重啟後，在測試伺服器上改動 /etc/pam.d/sudo 的一行註解，確認出現規則 100938，再把檔案改回來。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "3.2",
+   "title": "Optional: log failed logins for accounts that do not exist",
+   "title_zh": "選用：記錄不存在帳號的登入失敗",
+   "body": "By default Zimbra writes nothing to audit.log when someone tries an account name that does not exist, so guessing names is invisible. The localconfig key zimbra_additional_logging adds exactly that one line and nothing else in 10.1.20. zmlocalconfig --reload applies it without a restart; if your version does not accept --reload, zmmailboxdctl restart does (web mail, IMAP and POP are unavailable for about a minute).",
+   "body_zh": "預設情況下，有人嘗試不存在的帳號名稱時 Zimbra 不會在 audit.log 寫任何東西，猜帳號因此完全看不到。localconfig 的 zimbra_additional_logging 在 10.1.20 只會多寫這一行，不影響其他記錄。zmlocalconfig --reload 不必重啟即可套用；若你的版本不接受 --reload，就用 zmmailboxdctl restart（網頁信箱、IMAP 與 POP 約有一分鐘無法使用）。",
+   "code": "su - zimbra -c 'zmlocalconfig -e zimbra_additional_logging=true && zmlocalconfig --reload'",
+   "verify": "grep 'account not found' /opt/zimbra/log/audit.log after a test login with a made-up name; the alert is rule 100811.",
+   "verify_zh": "用一個虛構的帳號名稱測試登入後，grep 'account not found' /opt/zimbra/log/audit.log；告警為規則 100811。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "3.2",
+   "title": "Check exposure to CVE-2026-73570 (SNMP notifications)",
+   "title_zh": "檢查 CVE-2026-73570（SNMP 通知）的曝險",
+   "body": "The swatchdog SNMP notification injection (CISA KEV) needs the optional zimbra-snmp package with SNMP notifications on, and is fixed in 10.1.20. Rules 100980/100986 report attempts either way. If the package is installed and the server is older than 10.1.20, upgrade, or remove zimbra-snmp, or turn the notifications off. These commands only read.",
+   "body_zh": "swatchdog 的 SNMP 通知注入（CISA KEV）需要安裝選用的 zimbra-snmp 套件並開啟 SNMP 通知，10.1.20 已修正。不論如何，規則 100980/100986 都會回報攻擊嘗試。若已安裝該套件且版本早於 10.1.20，請升級，或移除 zimbra-snmp，或關閉通知。以下指令只做讀取。",
+   "code": "dpkg -l zimbra-snmp 2>/dev/null | tail -1   # or: rpm -q zimbra-snmp\nsu - zimbra -c 'zmcontrol -v; zmlocalconfig snmp_notify'"
   }
  ],
  "active_response": [

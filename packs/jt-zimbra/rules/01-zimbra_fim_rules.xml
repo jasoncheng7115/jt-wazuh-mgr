@@ -18,8 +18,18 @@
 -->
 <group name="zimbra,syscheck,">
 
-  <!-- 基礎規則：Zimbra Web 與擴充目錄的任何檔案異動 -->
-  <rule id="100800" level="0">
+  <!-- 基礎規則：Zimbra Web 與擴充目錄的任何檔案異動
+       3.2: level 0 to 1. Wazuh 4.14.7 tries a level 0 child before all of
+       its siblings (rules.c gives it priority), so at level 0 this rule took
+       every FIM event under the web root before the hash-list rules beside it
+       (jt-malware-hash 100141/100142, built-in 99901, both level 14 on
+       550/554) could look the file up: a known-malware file in a Zimbra path
+       ended here, silent. At level 1 the siblings are tried by level, highest
+       first, so a listed hash ends at 100141 or 99901; everything else still
+       reaches this rule and its children as before. Level 1 is below
+       log_alert_level: events that no child takes are recorded, not alerted,
+       exactly as at level 0. -->
+  <rule id="100800" level="1">
     <if_sid>550,553,554</if_sid>
     <field name="file" type="pcre2">^/opt/zimbra/(jetty_base|jetty)/webapps/|^/opt/zimbra/lib/ext/</field>
     <description>Zimbra web or extension directory file change (base rule)</description>

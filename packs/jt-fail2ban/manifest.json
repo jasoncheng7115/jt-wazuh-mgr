@@ -2,27 +2,41 @@
  "id": "jt-fail2ban",
  "name": "fail2ban Detection Suite",
  "name_zh": "fail2ban 偵測套組",
- "version": "1.2",
- "summary": "Decoder and rules for fail2ban, which Wazuh ships no support for at all.",
- "summary_zh": "fail2ban 的解碼器與規則。Wazuh 完全沒有內建對 fail2ban 的支援。",
+ "version": "1.3",
+ "summary": "Decoder and rules for fail2ban: bans graded by source and repetition, and fail2ban itself failing (bans not applied or not effective, stopped, blind jails).",
+ "summary_zh": "fail2ban 的解碼器與規則：依來源與重複程度分級的封鎖，以及 fail2ban 本身失靈（封鎖沒套用或無效、停止、jail 失明）。",
  "rule_id_range": "131000-131099",
  "notes": [
   "Wazuh 4.14.7 ships no fail2ban decoder and no fail2ban rules. Verified by feeding real log lines to wazuh-logtest, every one of which returned \"No decoder matched\".",
-  "The agent must collect /var/log/fail2ban.log, fail2ban's own logtarget. It does not write to syslog, so nothing arrives without an explicit localfile entry. Put that entry in a group of its own rather than in a product group: fail2ban runs on mail servers, web servers, jump hosts and anything else facing the internet, and tying its collection to one product leaves every other host running it invisible.",
-  "A ban and the unban that ends it are both reported. The pair is what makes an incident readable afterwards: when the block started and when it lifted.",
-  "A ban of an RFC 1918 address is graded above a ban of an external one. An outside address failing authentication is background noise; an inside host doing it is either a client left with a stale password or a machine working through credentials.",
-  "The address is decoded into srcip, so these events correlate with the rest of the ruleset and are usable by an active response command.",
-  "PREREQUISITE - the base rule requires the event to come from a file named fail2ban. If the log is collected under a different name, adjust <location> in rule 131000.",
-  "\"[jail] address already banned\" is not decoded: its address precedes the verb, which no single <order> can express alongside the other forms, and it adds nothing to the ban that already alerted."
+  "All four fail2ban log targets are decoded: its own file (the default, /var/log/fail2ban.log, collected through the fail2ban group), SYSLOG, SYSTEMD-JOURNAL and SYSOUT under systemd (lines from /var/log/syslog or the journal, which most agents read already). 1.2 decoded only the file. The startup errors fail2ban prints before its logging is set up go to the journal as fail2ban-server and are decoded too.",
+  "A ban is the control working, so a ban of an outside address is level 3 (1.2: 5): an internet-facing host earns tens to hundreds a day. A ban of an internal address (RFC 1918, loopback, CGNAT 100.64.0.0/10, IPv6 fc00::/7 and fe80::/10) is level 7: either a host working through credentials, or a proxy/NAT address whose ban locks out every client behind it. An unban is recorded at level 2 (1.2: 3), an internal one at level 3.",
+  "\"Restore Ban\", a restart re-applying the bans in fail2ban's database, is recorded at level 2 and no longer counted as a ban. In 1.2 one restart that restored one address in four jails raised a false level 10.",
+  "Escalation comes from what one ban cannot show: the same address banned 4 times in 30 minutes (131010, level 10), on 3 different hosts within an hour (131017, level 10), by 3 jails of one host (131018, level 10), 20 bans on one host in 5 minutes (131019, ban storm: a distributed attack or a filter banning real users), the stock recidive jail (131012, level 7) and bantime.increment reaching a fifth or permanent ban (131015, level 7). An internal address banned 3 times is level 10 (131011, 1.2: 12, since a client with a stale password does that too); banned on two different hosts within the hour it is level 12 (131016).",
+  "Half of the pack is about fail2ban not doing its job, which nothing else on the manager notices. fail2ban logs \"Ban\" before it runs the firewall action, so a failed action (131025, level 10) means a ban was reported but nothing was blocked. Three failures from a banned address more than a minute after the ban (fail2ban's own WARNING) mean the block does not reach the traffic (131024, level 7): a proxy or NAT in front, the wrong port or chain, IPv6 not covered, a flushed ruleset. The firewall rules fail2ban created disappearing (131028, level 7) or not coming back (131029, level 10) are reported too.",
+  "fail2ban or a jail going away: \"Exiting Fail2ban\" (level 5), a jail stopped (level 3) or skipped by a configuration error (level 10), a start that failed (level 10, e.g. Ubuntu 24.04's first fail2ban release on Python 3.12: \"No module named 'asynchat'\"), and systemd's view of fail2ban.service: exit status 255, which systemd never restarts (level 10), other failures (level 6), the restart limit (level 10), stopped (level 5). Reboots and upgrades also stop it; a restart is followed by \"Starting Fail2ban\" (level 2) within seconds.",
+  "A jail that went blind: the filter going idle after too many errors or dropping a log file (level 10), a log it cannot open (level 7, hourly) or that is missing (level 5), failures dropped for lack of a readable time stamp (level 7), log times far from the clock (level 3). Also: a ban address obtained by DNS lookup of a logged host name, which whoever controls that name can steer (usedns = warn, the default; level 5, hourly), a broken ban database (level 5), a ban that could not be removed (level 5), and a whitelisted address failing ten times in ten minutes, which fail2ban will never ban (level 5, hourly).",
+  "Any other ERROR or CRITICAL line is level 5 (131060). Failures below the ban threshold (\"Found\") stay silent at level 0; restores, flushes, increases and whitelist hits are recorded at level 2 for correlation.",
+  "srcip holds only real addresses (a ::ffff: prefix is removed), so CIDR rules, correlation and active response never see anything else. What fail2ban banned is always in f2b.id: filters with <F-ID> ban user names or mail addresses, and 1.2 decoded \"198.51.100.7,\" with the comma from the observer's Found line.",
+  "Optional liveness check (setup step): the agent runs fail2ban-client status every hour, which is the only way to notice a fail2ban that died without logging anything. It answers whether the server runs and has jails; a filter thread hung by a regular expression (GHSA-33wh-ccjc-p397, GHSA-c2mg-2r7g-c3wp) still answers, so even this cannot prove that a jail works.",
+  "What the pack cannot see: an administrator's unbanip is logged exactly like a ban that expired, and client commands are logged only at DEBUG; the mail-whois remote code execution (CVE-2021-32749, fixed in 0.10.7 and 0.11.3; Ubuntu 20.04 only through ESM) leaves no trace in fail2ban's log. The journal target carries no level name, so the \"ban not effective\" rule cannot work there. In 0.11 a module name of 23 or more characters (fail2ban.filterpyinotify) makes Wazuh's pre-decoder drop the program name; those few lines are not decoded.",
+  "No list, no site data: every rule works as shipped. Tested against fail2ban 0.11.1 (Ubuntu 20.04), 0.11.2, 1.0.x and 1.1.x message formats, quoted from the source (git tag 1.1.1, file and line in each rule comment). On the reference site two mail servers produced three bans, all install tests, in 41 days; the levels are set for hosts that face the internet.",
+  "PREREQUISITE - for the file target the base rule requires the event to come from a file named fail2ban. If the log is collected under a different name, adjust <location> in rule 131000. The syslog and journal shapes are recognised by program name and need nothing."
  ],
  "notes_zh": [
   "Wazuh 4.14.7 完全沒有內建 fail2ban 的解碼器與規則。以真實記錄餵給 wazuh-logtest 驗證過，每一種格式都是 No decoder matched。",
-  "agent 必須收集 /var/log/fail2ban.log，那是 fail2ban 自己的 logtarget。它不寫 syslog，沒有明確的 localfile 設定就什麼都收不到。這條設定要放在**獨立的群組**而非某個產品群組底下：fail2ban 會跑在郵件伺服器、網頁伺服器、跳板機等任何對外的主機上，把收集綁在單一產品上，其他跑 fail2ban 的主機就全部看不到了。",
-  "封鎖與解除封鎖都會告警。這一對才能讓事後判讀完整：什麼時候擋起來、什麼時候解除。",
-  "封鎖對象若是 RFC 1918 位址，等級高於外部位址。外部位址認證失敗是網路日常；內部主機這樣做，不是用戶端留著舊密碼，就是那台機器在逐一試帳密。",
-  "位址解碼到 srcip 欄位，因此可與規則集其他部分關聯，也能被主動回應指令使用。",
-  "前提條件 - 基礎規則要求事件來自檔名含 fail2ban 的來源。若以其他名稱收集，請調整規則 131000 的 <location>。",
-  "「[jail] 位址 already banned」不做解碼：它的位址在動詞之前，單一 <order> 無法同時表達兩種順序，而且它並未提供封鎖告警以外的資訊。"
+  "fail2ban 的四種記錄目標都會解碼：它自己的檔案（預設的 /var/log/fail2ban.log，經 fail2ban 群組收集）、SYSLOG、SYSTEMD-JOURNAL，以及 systemd 下的 SYSOUT（來自 /var/log/syslog 或 journal，多數 agent 本來就在讀）。1.2 只解碼檔案。fail2ban 在記錄設定完成前印出的啟動錯誤，會以 fail2ban-server 的名義進 journal，也會解碼。",
+  "封鎖是防護在運作，所以外部位址被封鎖是 level 3（1.2 是 5）：對外的主機一天會有幾十到幾百次。內部位址（RFC 1918、loopback、CGNAT 100.64.0.0/10、IPv6 fc00::/7 與 fe80::/10）被封鎖是 level 7：不是某台主機在試帳密，就是 proxy／NAT 位址被封鎖、後面所有用戶端都被擋。解除封鎖記在 level 2（1.2 是 3），內部位址的解除封鎖為 level 3。",
+  "「Restore Ban」是重啟後從 fail2ban 資料庫重新套用的封鎖，現在記在 level 2，不再算成封鎖。1.2 時一次重啟還原同一位址在四個 jail 的封鎖，就會誤發 level 10。",
+  "升級來自單一封鎖看不出的事：同一位址 30 分鐘內被封鎖 4 次（131010，level 10）、一小時內在 3 台不同主機被封鎖（131017，level 10）、被同一主機的 3 個 jail 封鎖（131018，level 10）、同一主機 5 分鐘內 20 次封鎖（131019，封鎖風暴：分散式攻擊，或過濾器把真的使用者擋掉）、內建 recidive jail（131012，level 7），以及 bantime.increment 到第五次或永久封鎖（131015，level 7）。內部位址被封鎖 3 次是 level 10（131011，1.2 是 12，因為留著舊密碼的用戶端也會這樣）；一小時內在兩台不同主機被封鎖則是 level 12（131016）。",
+  "套件有一半是在看 fail2ban 有沒有盡責，這件事 manager 上沒有其他東西會發現。fail2ban 是先記「Ban」再執行防火牆動作，所以動作失敗（131025，level 10）代表記錄說封鎖了、實際上什麼都沒擋。封鎖一分鐘後同一位址還有三次失敗（fail2ban 自己的 WARNING）代表封鎖沒有擋到流量（131024，level 7）：前面有 proxy 或 NAT、port 或 chain 不對、沒涵蓋 IPv6、規則集被清空。fail2ban 建立的防火牆規則消失（131028，level 7）或無法恢復（131029，level 10）也會告警。",
+  "fail2ban 或某個 jail 消失：「Exiting Fail2ban」（level 5）、jail 停止（level 3）或因設定錯誤被略過（level 10）、啟動失敗（level 10，例如 Ubuntu 24.04 第一版 fail2ban 在 Python 3.12 上的「No module named 'asynchat'」），以及 systemd 看到的 fail2ban.service：結束碼 255（systemd 不會重啟，level 10）、其他失敗（level 6）、達到重啟上限（level 10）、已停止（level 5）。重開機與升級也會讓它停止；若是重啟，幾秒內會接著出現「Starting Fail2ban」（level 2）。",
+  "jail 失明：過濾器錯誤太多而停擺或放棄某個記錄檔（level 10）、無法開啟記錄檔（level 7，每小時一次）或記錄檔不見（level 5）、因時間戳記無法辨識而丟掉失敗事件（level 7）、記錄時間與時鐘相差太多（level 3）。另外：封鎖位址是對記錄中的主機名稱做 DNS 查詢得來的，掌控該名稱的人就能左右封鎖對象（usedns = warn 是預設值；level 5，每小時一次）、封鎖資料庫損壞（level 5）、無法解除的封鎖（level 5），以及白名單位址十分鐘內失敗十次，fail2ban 永遠不會封鎖它（level 5，每小時一次）。",
+  "其他任何 ERROR 或 CRITICAL 行為 level 5（131060）。未達封鎖門檻的失敗（「Found」）維持 level 0 不告警；還原、清除、延長封鎖與白名單命中記在 level 2，供關聯使用。",
+  "srcip 只放真正的位址（會去掉 ::ffff: 前綴），所以 CIDR 規則、關聯與主動回應不會拿到其他東西。fail2ban 封鎖的對象一律放在 f2b.id：使用 <F-ID> 的過濾器封鎖的是使用者名稱或郵件位址，而 1.2 會把 observer 的 Found 行解成帶逗號的「198.51.100.7,」。",
+  "選用的存活檢查（部署步驟）：agent 每小時執行 fail2ban-client status，這是發現 fail2ban 無聲死掉的唯一辦法。它能回答服務是否在跑、有沒有 jail；但被正規表示式卡住的過濾執行緒（GHSA-33wh-ccjc-p397、GHSA-c2mg-2r7g-c3wp）照樣會回應，所以這也無法證明 jail 正常運作。",
+  "套件看不到的：管理者的 unbanip 與封鎖到期的記錄完全一樣，用戶端指令只在 DEBUG 等級才記錄；mail-whois 遠端執行程式碼漏洞（CVE-2021-32749，0.10.7 與 0.11.3 修正；Ubuntu 20.04 只能透過 ESM）在 fail2ban 記錄裡不留痕跡。journal 目標不帶等級名稱，所以「封鎖無效」規則在那裡無法運作。0.11 中 23 個字元以上的模組名稱（fail2ban.filterpyinotify）會讓 Wazuh 前置解碼器丟掉程式名稱，這少數幾行不會解碼。",
+  "沒有清單、沒有站台資料：每條規則照原樣就能用。依 fail2ban 0.11.1（Ubuntu 20.04）、0.11.2、1.0.x、1.1.x 的訊息格式測試，格式取自原始碼（git tag 1.1.1，每條規則的註解寫有檔案與行號）。參考站台兩台郵件伺服器 41 天內只有三次封鎖，全是安裝測試；等級是依對外的主機設定的。",
+  "前提條件 - 檔案目標的基礎規則要求事件來自檔名含 fail2ban 的來源。若以其他名稱收集，請調整規則 131000 的 <location>。syslog 與 journal 形式以程式名稱辨識，不需調整。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -34,13 +48,13 @@
    "type": "decoder",
    "name": "fail2ban-decoder.xml",
    "dest": "etc/decoders/fail2ban-decoder.xml",
-   "sha256": "468af069ad64754fb2262035891faac7638baa26e6bad3134bc066d89bb70a6b"
+   "sha256": "9af0cbd1f9d4599f6ad5ee2cb4bf0ac6109c3ffb1cb18c7fef7839e19399c287"
   },
   {
    "type": "rule",
    "name": "fail2ban-rule.xml",
    "dest": "etc/rules/fail2ban-rule.xml",
-   "sha256": "92d25f4fcdde75acf22d279f18fe2f50f2376a0462fe7127d35b242bc3a9f9a9"
+   "sha256": "ed1183010e1c6def768f2976b285de5077b1f0e00465f6ce1eaa351ed9ab82ab"
   }
  ],
  "agent_group": {
@@ -62,16 +76,77 @@
    "required": true,
    "title": "Assign every host running fail2ban to the fail2ban group",
    "title_zh": "把所有執行 fail2ban 的主機加入 fail2ban 群組",
-   "body": "fail2ban writes /var/log/fail2ban.log rather than syslog, so nothing arrives until the agent reads that file. The group exists on its own because fail2ban runs on mail, web and jump hosts alike.",
-   "body_zh": "fail2ban 寫的是 /var/log/fail2ban.log 而不是 syslog，agent 不讀這個檔案就什麼都收不到。它是獨立群組，因為郵件、網站、跳板機都可能跑 fail2ban。",
+   "body": "With its default logtarget fail2ban writes /var/log/fail2ban.log rather than syslog, so nothing arrives until the agent reads that file. The group exists on its own because fail2ban runs on mail, web and jump hosts alike.",
+   "body_zh": "預設的 logtarget 下 fail2ban 寫的是 /var/log/fail2ban.log 而不是 syslog，agent 不讀這個檔案就什麼都收不到。它是獨立群組，因為郵件、網站、跳板機都可能跑 fail2ban。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g fail2ban",
-   "verify": "fail2ban-client set sshd banip 192.0.2.10 ; fail2ban-client set sshd unbanip 192.0.2.10  — expect a ban and an unban alert.",
-   "verify_zh": "fail2ban-client set sshd banip 192.0.2.10 ; fail2ban-client set sshd unbanip 192.0.2.10 —— 應出現封鎖與解除封鎖兩則告警。"
+   "verify": "fail2ban-client set sshd banip 192.0.2.10 ; fail2ban-client set sshd unbanip 192.0.2.10  - expect rule 131001 (level 3); the unban is recorded at level 2 (archives only).",
+   "verify_zh": "fail2ban-client set sshd banip 192.0.2.10 ; fail2ban-client set sshd unbanip 192.0.2.10 - 應出現規則 131001（level 3）；解除封鎖記在 level 2（只在 archives）。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "1.3",
+   "title": "Check where fail2ban logs",
+   "title_zh": "確認 fail2ban 的記錄寫到哪裡",
+   "body": "Run the command on the host. /var/log/fail2ban.log (or another file): the group's entry collects it. SYSLOG, SYSTEMD-JOURNAL or SYSOUT: the pack decodes those lines from /var/log/syslog or the journal, which agents usually read already (agents 4.9 and later read the journal by default); agent.conf has a commented journald entry for an agent that reads neither. The startup errors and systemd's messages about fail2ban.service always go to the journal or syslog, whatever logtarget says.",
+   "body_zh": "在主機上執行指令。/var/log/fail2ban.log（或其他檔案）：群組設定會收集它。SYSLOG、SYSTEMD-JOURNAL 或 SYSOUT：套件會解碼 /var/log/syslog 或 journal 裡的這些行，agent 通常本來就在讀（4.9 以後的 agent 預設讀 journal）；兩者都不讀的 agent，agent.conf 裡有一段註解掉的 journald 設定可用。啟動錯誤與 systemd 關於 fail2ban.service 的訊息，不論 logtarget 怎麼設，一律進 journal 或 syslog。",
+   "code": "fail2ban-client get logtarget",
+   "verify": "systemctl restart fail2ban  - expect 131036 \"fail2ban stopped\" (level 5), then 131035 \"starting\" (level 2, archives only).",
+   "verify_zh": "systemctl restart fail2ban - 應出現 131036「fail2ban stopped」（level 5），接著是 131035「starting」（level 2，只在 archives）。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "1.3",
+   "title": "Make sure log rotation tells fail2ban to reopen its log",
+   "title_zh": "確認記錄輪替會讓 fail2ban 重新開啟記錄檔",
+   "body": "With the file target, the logrotate rule must run fail2ban-client flushlogs after rotating. Without it fail2ban keeps writing into the rotated file and Wazuh, which follows /var/log/fail2ban.log, sees nothing from the first rotation on (a \"File rotated\" alert, rule 591, every week and then silence). Distribution packages ship it; check hand-made installations.",
+   "body_zh": "使用檔案目標時，logrotate 規則在輪替後必須執行 fail2ban-client flushlogs。少了它，fail2ban 會繼續寫進已輪替的檔案，而追著 /var/log/fail2ban.log 的 Wazuh 從第一次輪替起就什麼都收不到（每週一則「File rotated」告警，規則 591，之後一片安靜）。發行版套件都有這一行；手動安裝的請檢查。",
+   "code": "grep -A3 postrotate /etc/logrotate.d/fail2ban    # expect: fail2ban-client flushlogs",
+   "verify": "After the next rotation a ban still raises 131001.",
+   "verify_zh": "下次輪替之後，封鎖仍會觸發 131001。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "1.3",
+   "title": "Optional: hourly liveness check of fail2ban",
+   "title_zh": "選用：每小時檢查 fail2ban 是否還活著",
+   "body": "A fail2ban that died without a word cannot be seen in its log. This entry makes the agent run fail2ban-client status every hour: rule 131072 (level 10) when it does not answer, 131073 (level 10) when it runs without any jail, nothing when it is healthy. Put it in the host's own /var/ossec/etc/ossec.conf and restart the agent. To send it through the fail2ban group instead, each agent must first allow remote commands (logcollector.remote_commands=1 in local_internal_options.conf), which lets anyone who can edit group files run commands as root on those agents: that is why the pack does not ship it in agent.conf. The agent runs as root; nothing else changes on the host.",
+   "body_zh": "無聲死掉的 fail2ban 在它的記錄裡看不出來。這段設定讓 agent 每小時執行 fail2ban-client status：沒有回應時觸發規則 131072（level 10），運作中卻沒有任何 jail 時觸發 131073（level 10），正常時什麼都沒有。請放在主機自己的 /var/ossec/etc/ossec.conf 並重啟 agent。若改經 fail2ban 群組派送，每台 agent 必須先允許遠端指令（local_internal_options.conf 的 logcollector.remote_commands=1），這等於讓能改群組檔案的人都能以 root 在那些 agent 上執行指令：所以套件沒有把它放進 agent.conf。agent 以 root 執行；主機上其他東西都不變。",
+   "code": "<localfile>\n  <log_format>command</log_format>\n  <command>fail2ban-client status || echo fail2ban-client failed</command>\n  <alias>fail2ban-health</alias>\n  <frequency>3600</frequency>\n</localfile>",
+   "verify": "systemctl stop fail2ban, then restart the agent: expect 131072 within a minute. Start fail2ban again.",
+   "verify_zh": "systemctl stop fail2ban 後重啟 agent：一分鐘內應出現 131072。之後記得再啟動 fail2ban。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.3",
+   "title": "Before enabling the active response: whitelist your own addresses",
+   "title_zh": "啟用主動回應之前：把自己的位址加入白名單",
+   "body": "The response below blocks an address on every agent. Put administration, monitoring, backup and VPN egress addresses into the manager's <global><white_list> on every node, and into fail2ban's ignoreip on the hosts, before enabling it.",
+   "body_zh": "下面的主動回應會在每台 agent 上封鎖位址。啟用前，請把管理、監控、備份與 VPN 出口位址加入每個節點 manager 的 <global><white_list>，並加入各主機 fail2ban 的 ignoreip。",
+   "code": "<global>\n  <white_list>192.0.2.0/24</white_list>\n</global>"
+  }
+ ],
+ "active_response": [
+  {
+   "id": "share-repeat-offender",
+   "command": "firewall-drop",
+   "rules_id": [
+    "131010",
+    "131017"
+   ],
+   "location": "all",
+   "timeout": 3600,
+   "title": "Block a repeat offender on every Linux agent",
+   "title_zh": "在每台 Linux agent 上封鎖屢犯的位址",
+   "body": "When fail2ban bans the same outside address 4 times within 30 minutes (rule 131010) or on 3 different hosts within an hour (rule 131017), every agent drops traffic from it for one hour with iptables or nftables. fail2ban already blocks it on the host that banned it; this carries the verdict to the others. Internal addresses never reach these rules. Risks: a shared NAT, carrier-grade NAT or cloud egress address is blocked everywhere, users behind it included; a jail whose address can be steered (usedns lookups, web jails that read a client address from X-Forwarded-For) lets an attacker get someone else blocked on every host; Windows agents have no firewall-drop, so nothing happens there. Whitelist your own addresses first (see the setup step).",
+   "body_zh": "fail2ban 在 30 分鐘內封鎖同一外部位址 4 次（規則 131010），或一小時內在 3 台不同主機封鎖它（規則 131017）時，每台 agent 以 iptables 或 nftables 丟棄該位址的流量一小時。封鎖它的那台主機上 fail2ban 已經擋了；這是把判斷帶到其他主機。內部位址不會觸發這兩條規則。風險：共用 NAT、電信級 NAT 或雲端出口位址會在所有主機上被擋，後面的使用者也一樣；若某個 jail 的位址可被操控（usedns 查詢、從 X-Forwarded-For 取用戶端位址的網站 jail），攻擊者就能讓別人在每台主機上被擋；Windows agent 沒有 firewall-drop，在那裡不會有作用。請先把自己的位址加入白名單（見部署步驟）。"
   }
  ],
  "tested_with": [
-  "4.14.7",
-  "4.14.8"
+  "4.14.7"
  ]
 }

@@ -16,7 +16,7 @@ the screen. None of them substitutes for another.
 ## Running everything
 
 ```bash
-python3 -m unittest discover -s tests     # 254 tests, fully offline
+python3 -m unittest discover -s tests     # 331 tests, fully offline
 python3 tools/preflight.py                # 21 mechanical pre-release checks
 
 # on a host without a system Flask
@@ -136,7 +136,7 @@ release-time change.
 ## Layer 4 — browser journeys, automated
 
 ```bash
-tests/e2e/run.sh          # 23 journeys, 112 checks, needs docker
+tests/e2e/run.sh          # 23 journeys, 114 checks, needs docker
 ```
 
 `tests/e2e/mock_api.py` serves the real application against a mocked, stateful
@@ -270,9 +270,14 @@ rule it is ignoring. `test` replays `tests/pack_cases/<pack>.json` through
 `wazuh-logtest`: real lines (sanitised) and synthesised ones, a near miss for
 every rule that matters, `repeat` for frequency rules, and several lines joined
 by a newline for a sequence in one session. Every pack from 1.13.0 on is checked
-this way before release. What logtest cannot show (the `ignore` interval,
-file-integrity and auditd events, the agent-side `<ignore>` and `out_format`) is
-checked by feeding files to the container's own logcollector, or on a host.
+this way before release. Since 1.14.0 a case can also carry `"fim"` instead of a
+log line: the tool sends that syscheck event into the container's own analysisd
+queue and judges the alert it writes (the sandbox logs from level 1, so quiet
+rules can be named), with optional log lines sent first for a correlation; and
+`before` lines can each name their own location, for correlations across hosts,
+through one logtest session over its socket. What is still out of reach (the
+`ignore` interval, the agent-side `<ignore>` and `out_format`) is checked by
+feeding files to the container's own logcollector, or on a host.
 
 Check both sides of every scenario: the rule that should fire, and the near miss
 that should not. On a cluster, repeat the Windows scenarios on the worker, which

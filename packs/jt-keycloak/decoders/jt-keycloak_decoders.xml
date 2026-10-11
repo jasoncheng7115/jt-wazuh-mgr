@@ -28,8 +28,19 @@
   events), keycloak.realm, keycloak.client, keycloak.user_id, srcip
   (ipAddress), keycloak.error, dstuser (username), keycloak.resource_type,
   keycloak.resource_path, keycloak.credential_type, keycloak.impersonator,
-  keycloak.failures, keycloak.version, keycloak.trace. An IPv4 address
-  written as ::ffff:a.b.c.d is decoded as a.b.c.d so CIDR checks apply.
+  keycloak.failures, keycloak.reason, keycloak.redirect_uri,
+  keycloak.credential_id (selected_credential_id), keycloak.requested_subject,
+  keycloak.version, keycloak.trace. An IPv4 address written as
+  ::ffff:a.b.c.d is decoded as a.b.c.d so CIDR checks apply.
+
+  keycloak.realm is realmName (Keycloak 25 and later). Keycloak 24 and older
+  write no realmName; the realmId is used instead. That is the realm name
+  for realms whose id equals their name (the master realm of an older
+  installation is "master"), otherwise an internal id.
+
+  Values are quoted by default and a quote inside a value is written as \"
+  (StringUtil.sanitizeSpacesAndQuotes, Keycloak 24-26). Values that can
+  contain a comma (reason, redirect_uri) are read up to the closing quote.
 
   FTS (first time seen) is the pair user and source address, set on the
   login decoder only (see there).
@@ -63,12 +74,13 @@
   Keycloak writes the fixed keys of a user event in this order (type,
   realmId, realmName, clientId, userId, sessionId if any, ipAddress), then
   the details, among them username. A LOGIN line stops here, so the field
-  children below are not used for it.
+  children below are not used for it. Keycloak 24 has no realmName: the
+  realmId is taken instead (see the header).
 -->
 <decoder name="jt-keycloak-login">
   <parent>jt-keycloak</parent>
   <prematch type="pcre2">\[org\.keycloak\.events\] \([^)]*\) type="?LOGIN"?, </prematch>
-  <regex type="pcre2">\[org\.keycloak\.events\] \([^)]*\) type="?(LOGIN)"?, realmId="?[^",]*"?, realmName="?([^",]+)"?, clientId="?([^",]+)"?, userId="?([^",]+)"?,(?: sessionId="?[^",]*"?,)? ipAddress="?(?:::ffff:)?([^",\s]+)"?.*?, username="?([^",]+)</regex>
+  <regex type="pcre2">\[org\.keycloak\.events\] \([^)]*\) type="?(LOGIN)"?, (?:realmId="?[^",]*"?, realmName|realmId)="?([^",]+)"?, clientId="?([^",]+)"?, userId="?([^",]+)"?,(?: sessionId="?[^",]*"?,)? ipAddress="?(?:::ffff:)?([^",\s]+)"?.*?, username="?([^",]+)</regex>
   <order>keycloak.type, keycloak.realm, keycloak.client, keycloak.user_id, srcip, dstuser</order>
   <fts>name, user, srcip</fts>
   <ftscomment>First time this user signed in from this address.</ftscomment>
@@ -115,9 +127,10 @@
   <order>keycloak.operation</order>
 </decoder>
 
+<!-- realmName, or realmId where no realmName follows (Keycloak 24). -->
 <decoder name="jt-keycloak-fields">
   <parent>jt-keycloak</parent>
-  <regex type="pcre2">, realmName="?([^",]+)</regex>
+  <regex type="pcre2">, (?:realmId="?[^",]*"?, realmName|realmId)="?([^",]+)</regex>
   <order>keycloak.realm</order>
 </decoder>
 
@@ -179,6 +192,44 @@
   <parent>jt-keycloak</parent>
   <regex type="pcre2">, num_failures="?(\d+)</regex>
   <order>keycloak.failures</order>
+</decoder>
+
+<!--
+  reason and redirect_uri can contain commas ("... Saved redirectUri: %s,
+  redirectUri parameter: %s"), so a quoted value is read to its closing
+  quote. Without quotes (quotes set to none) a value ends at the next comma.
+-->
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, reason=(?|"((?:[^"\\]|\\.)*)"|([^",][^,]*))</regex>
+  <order>keycloak.reason</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, redirect_uri=(?|"((?:[^"\\]|\\.)*)"|([^",][^,]*))</regex>
+  <order>keycloak.redirect_uri</order>
+</decoder>
+
+<!--
+  selected_credential_id is set by the one-time code form only
+  (OTPFormAuthenticator.validateOTP, Keycloak 26.4.7), never by the password
+  form: on a LOGIN_ERROR it means the password step had passed. A user name
+  that contains the text ", selected_credential_id=" cannot fake it in the
+  default quoted format, because the quote in front of the value would be
+  written as \".
+-->
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">(?|\) type="[^"]*",.*?, selected_credential_id="([0-9A-Za-z-]+)"|\) type=[^",]*,.*?, selected_credential_id=([0-9A-Za-z-]+))</regex>
+  <order>keycloak.credential_id</order>
+</decoder>
+
+<!-- Legacy token exchange (V1) impersonation: the user the token is for. -->
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, requested_subject="?([^",]+)</regex>
+  <order>keycloak.requested_subject</order>
 </decoder>
 
 <decoder name="jt-keycloak-fields">

@@ -4,6 +4,54 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.14.0（2026-10-11）
+
+- **套件清單同時顯示兩個版本。** 每個套件旁邊列出這台 Wazuh manager 上已安裝的版本，以及這份 jt-wazuh-mgr
+  提供的版本。這裡的版本較新時標示「可更新」，清單上方統計可更新的數量；詳細資訊視窗列出兩個版本並附「更新」按鈕。
+  版本依數字比較（3.10 比 3.9 新，1.2 等於 1.2.0），manager 上已經是較新版本時，不再被當成「更新」而降版。
+  手動複製進去、沒有安裝記錄的檔案，會顯示它們相符的版本。
+- **每個套件都依第一手資料強化**，並新增一個套件 **jt-docker**（共 23 個）。每個套件都對照廠商文件、產品原始碼
+  中實際的記錄格式、資安公告與 CVE（含 CISA KEV）以及 MITRE ATT&CK 檢查過，每條規則在拋棄式 Wazuh manager
+  裡都有命中案例與不該命中的反例。重點：
+  - **jt-alert-digest 1.4：** 1.3 在午夜輪替時會丟掉當天的積壓（輪替後舊檔的尾端從來不讀），積壓超過 5,000 則就
+    永遠卡住；現在會跟著輪替讀完、只讀完整的行、大量積壓分批寄出。收件人只取 `<global>`。站台設定檔可選用
+    STARTTLS、AUTH 與連接埠；Windows 與弱點告警會列出欄位；一小時內重複的群組會暫緩並彙總，不會丟掉；每日摘要；
+    寄送失敗只在狀態改變時告警（131111-131116）。
+  - **jt-zpush 1.2（資安修正）：** 登入名稱可以夾帶自己的 `from=`，而 1.1 讀的正是那一個，所以選用的防火牆主動回應
+    可以被誘導去封鎖任意位址。可信的欄位現在從行尾讀取。後端回 401 但不是密碼錯誤的情況，不再算成登入失敗。
+  - **jt-ioc 1.5：** 在完整清單之外加上高信心清單（兩個獨立來源都列出，或來自精選來源）；移除已停更的來源、研究用
+    掃描器與非出口的 Tor 節點；開始比對 Suricata 連線；有商業使用限制的來源預設關閉。本站實測：五天 11,915 筆告警
+    降到約 100 筆。
+  - **jt-malware-hash 1.6：** Sysmon 雜湊比對（程序、映像載入、驅動程式、下載、寫檔、刪除）、Windows 的檔案完整性
+    群組、站台 IOC 清單、允許清單、有弱點的驅動程式、Suricata 檔案雜湊，以及更新失敗或清單過期時的告警。
+  - **jt-portable-detect 3.5：** Linux 上有一條內建規則搶先接走所有 Python 執行，從暫存位置執行的腳本因此從來看不到；
+    新增依 LOLRMM 目錄判斷的遠端管理工具、改名的穿隧工具、穿隧 DNS、WinRAR CVE-2025-8088／CVE-2025-6218、
+    Defender ASR；移除 AppLocker 的大量告警。
+  - **jt-zimbra 3.2：** SMTP 指令注入（CVE-2026-73570、CVE-2024-45519）、audit.log 的管理變更、PAM 與 sudoers 變更、
+    `/public/` 以外的 JSP web shell；level 0 的規則不再擋住 Zimbra 路徑裡已知的惡意程式雜湊。
+  - **jt-ucs 1.2：** Samba JSON 稽核的路徑從來沒有命中過；現在涵蓋 ADIDNS 萬用／WPAD 記錄、LDAP 與 Samba 密碼噴灑、
+    AdminSDHolder／DCShadow／委派／GPO 變更、Kerberoasting、Zerologon 式的爆量，以及機密與 CA 檔案的變更。
+  - **jt-opnsense 1.2：** 在套件內為 Suricata 告警分級、NAT 與過濾規則變更、竄改記錄設定、LDAP 過濾器注入
+    （CVE-2026-34578）、稽核記錄偽造（GHSA-jjm2-jg4p-3v9q）、每日 `pkg audit`。
+  - **jt-proxmox 1.2：** `/etc/pve` 的檔案完整性雜訊從每天約 2,500 筆降到約 1 筆；監看安全相關檔案、hookscript 與
+    原始 QEMU 參數、第二因素、密碼變更、叢集成員變動、破壞性工作。
+  - **jt-keycloak 1.2、jt-pbs 1.2、jt-pmg 1.2、jt-synology 1.2、jt-nextcloud 1.2、jt-adguard 1.4、jt-zenarmor 1.6、
+    jt-librenms 1.2、jt-odoo 1.2、jt-jitsi 1.2、jt-fail2ban 1.3、jt-ipam 1.2、jt-vc-portal 1.2：** 修好了永遠不會
+    觸發的規則（Zenarmor 未封鎖的威脅、Synology 帳號保護、PMG 8.1.7 之前的隔離放行、Jitsi 權杖失敗、phpIPAM 登入
+    失敗、Keycloak 移除憑證、PBS 經 syslog 的登入失敗、Nextcloud 35 的 WebDAV 暴力破解），並各自補上公告中描述的
+    攻擊手法（權杖重放、移除備份保護、刪除快照、BCC 規則、匯出、上傳模組）。
+  - **jt-docker 1.0（新）：** 健康檢查的 exec（本站 `docker exec` 告警的 92%）降到不告警；容器內的 shell、傾印機密、
+    下載執行、反向 shell、逃逸與挖礦會告警；沒有 TLS 的 TCP API、runc 的逃逸阻擋訊息與 `daemon.json` 變更會告警；
+    選用的設定盤點會把特權容器與掛載主機路徑各報一次。
+- **更新套件時要注意：** jt-alert-digest 不再寄給 `<reports>` 的收件人，並會每天寄一封摘要；每個節點都要重新載入
+  規則集。站台若已用自己的規則為 Suricata 分級，安裝 jt-opnsense 1.2 時應一併退役。abuse.ch 的來源（ThreatFox、
+  Feodo，以及 jt-malware-hash 用的 MalwareBazaar）免費條款只涵蓋非營利用途，公司使用請確認授權。更新前已啟用的
+  主動回應，會沿用舊的規則清單，直到停用再啟用一次。
+- **MITRE ID：** 有五個 ID 不在 Wazuh 4.14.7 的資料庫裡（這類規則的每筆告警都會寫一行警告），已改成上層技術；
+  新增測試逐一對照該資料庫。
+- **沙箱：** `tools/pack_sandbox.py` 現在可以測試檔案完整性規則（案例把 syscheck 事件送進沙箱的 analysisd）、
+  跨主機關聯（每筆事件各自的來源）以及必須在檔案變更之前出現的記錄行。
+
 ## v1.13.1（2026-10-11）
 
 每個套件裝上去、清單維持出廠的空白狀態，就已經安靜而且有用。登入成功本身不再是告警：一般帳號從私有位址

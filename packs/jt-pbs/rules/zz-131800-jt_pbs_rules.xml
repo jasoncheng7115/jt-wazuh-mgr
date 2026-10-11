@@ -6,12 +6,23 @@
   usage rules extend the built-in command output rules (530-532).
 
   Modules
-    131800-131809  logins (api/auth.log); 131823 administrator login after failures
-    131810-131822  daemon messages (syslog): datastores, notifications, probes, full disks
-    131830-131859  task results (tasks/archive): backup, verify, GC, prune, sync, tape
-    131860-131874  REST API changes (api/access.log)
-    131875-131877  logins with their source address (api/access.log)
+    131800-131809  logins (successes from api/auth.log, failures from syslog
+                   or auth.log); 131823 administrator login after failures,
+                   131824 wrong second factor
+    131810-131829  daemon messages (syslog): datastores, notifications, probes,
+                   full disks, second-factor lockouts, the task scheduler;
+                   131859 corrupt chunks, 131886 protected backups, 131887 lock
+    131830-131858  task results (tasks/archive): backup, verify, GC, prune, sync, tape
+    131860-131889  REST API changes (api/access.log), with 131853 tape keys;
+                   131875-131877 logins with their source address;
+                   131878-131881 and 131888 deleting backups and protection
     131890-131894  datastore disk usage (df -P, or the optional jt-pbs-datastores command)
+    131895-131898  configuration files changed on disk (FIM of /etc/proxmox-backup)
+
+  Proxmox Backup Server versions: written from 4.2.2 logs and checked against
+  the 4.2.8 source (proxmox-backup.git, proxmox.git, October 2026). The
+  auth.log, access log and task archive formats are unchanged since 1.x; the
+  syslog copies of task ERROR lines exist since 3.3.
 
   No rule depends on a site list: etc/lists/jt-pbs-datastore-mounts is
   optional tuning and ships with a placeholder only.
@@ -25,8 +36,8 @@
 <group name="pbs,jt_pbs,">
 
   <!--
-    Logins, from /var/log/proxmox-backup/api/auth.log. "user=" is present only
-    for a password login at /access/ticket. A request refused for an expired or
+    Logins, from /var/log/proxmox-backup/api/auth.log (failures also from
+    syslog, see 131802). "user=" is present only for a login at /access/ticket. A request refused for an expired or
     missing ticket has no user, and neither has one refused for a wrong API
     token: Proxmox VE nodes use API tokens, so a node whose token was changed
     or removed fails this way every few seconds, with the node's address.
@@ -46,6 +57,11 @@
   <rule id="131800" level="0">
     <decoded_as>jt-pbs-auth</decoded_as>
     <description>Proxmox Backup Server authentication messages</description>
+  </rule>
+
+  <rule id="131810" level="0">
+    <decoded_as>jt-pbs</decoded_as>
+    <description>Proxmox Backup Server daemon messages</description>
   </rule>
 
   <rule id="131801" level="2">
@@ -71,8 +87,18 @@
     <group>authentication_success,</group>
   </rule>
 
+  <!--
+    Failures are written twice by Proxmox Backup Server: to api/auth.log and,
+    with log::error!, to syslog (proxmox-rest-server, environment.rs,
+    log_failed_auth). Before 1.2 the syslog copy stopped at the level 0 base
+    131810, so a server outside the pbs group showed no failed login at all.
+    The failure rules are now children of both bases; the pbs group reads only
+    the successful logins from auth.log (restrict), so each failure is counted
+    once. A site that keeps its own copy of the group's agent.conf must add
+    that restrict, or the brute-force rules count every failure twice.
+  -->
   <rule id="131802" level="5">
-    <if_sid>131800</if_sid>
+    <if_sid>131800,131810</if_sid>
     <match type="pcre2">authentication failure; rhost=\S+ user=</match>
     <description>Proxmox Backup Server: failed login for $(dstuser) from $(srcip): $(pbs.msg)</description>
     <mitre>
@@ -81,16 +107,41 @@
     <group>authentication_failed,</group>
   </rule>
 
+  <!--
+    "authentication failed" is what the second login step returns when the
+    second factor is wrong (proxmox-auth-api, access.rs, authenticate_2nd):
+    that step is only reached after a correct password, so the password of
+    the account is known to whoever is trying. A child of 131802, so it does
+    not count towards the password brute-force rules; repeated wrong TOTP
+    codes lock TOTP after 8 tries (131825).
+  -->
+  <rule id="131824" level="8">
+    <if_sid>131802</if_sid>
+    <match type="pcre2">authentication failure; rhost=\S+ user=\S+ msg=authentication failed$</match>
+    <description>Proxmox Backup Server: correct password but wrong second factor for $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
   <rule id="131803" level="2">
-    <if_sid>131800</if_sid>
+    <if_sid>131800,131810</if_sid>
     <match type="pcre2">authentication failure; rhost=\S+ msg=(?:invalid ticket|no authentication credentials provided|ticket with bad signature)</match>
     <description>Proxmox Backup Server: request with an expired, missing or invalid ticket from $(srcip)</description>
   </rule>
 
+  <!--
+    A request without a user name that was refused for another reason: an API
+    token secret that does not match ("invalid credentials", proxmox-sys
+    crypt.rs) or a token that is disabled or expired ("user account or token
+    disabled or expired.", proxmox-auth-api).
+  -->
   <rule id="131804" level="5">
-    <if_sid>131800</if_sid>
+    <if_sid>131800,131810</if_sid>
     <match type="pcre2">authentication failure; rhost=\S+ msg=(?!invalid ticket|no authentication credentials provided|ticket with bad signature)</match>
-    <description>Proxmox Backup Server: request refused from $(srcip): $(pbs.msg) (wrong API token?)</description>
+    <description>Proxmox Backup Server: request refused from $(srcip): $(pbs.msg) (an API token that is wrong, disabled or expired)</description>
     <group>pbs_auth_refused,</group>
   </rule>
 
@@ -141,12 +192,24 @@
   </rule>
 
   <!--
-    Daemon messages, from syslog (proxmox-backup-proxy, proxmox-backup-api).
+    A wrong password for a pam realm account is logged a second time by PAM
+    itself (pam_unix with the service proxmox-backup-auth), which the built-in
+    rule 5503 reports at level 5 with the address still in ::ffff: form.
+    131802 already reports the same failure with the account and the realm,
+    and 131805 counts it, so the PAM copy is recorded below the alert level.
+    Measured: 33 a year on one server, one for every failed root@pam login.
   -->
-  <rule id="131810" level="0">
-    <decoded_as>jt-pbs</decoded_as>
-    <description>Proxmox Backup Server daemon messages</description>
+  <rule id="131889" level="2">
+    <if_sid>5503</if_sid>
+    <match>pam_unix(proxmox-backup-auth:auth): authentication failure</match>
+    <description>PAM: failed Proxmox Backup Server login (reported by rule 131802)</description>
   </rule>
+
+  <!--
+    Daemon messages, from syslog (proxmox-backup-proxy, proxmox-backup-api).
+    The base is defined here, before the login rules, because the failed
+    login rules below are children of it too; its own children start at 131811.
+  -->
 
   <!--
     A datastore that is not mounted. The proxy checks every datastore with a
@@ -165,10 +228,16 @@
     <description>Proxmox Backup Server: datastore $(pbs.datastore) is not mounted</description>
   </rule>
 
+  <!--
+    The line comes from the garbage collection scheduler (proxmox-backup-proxy,
+    schedule_datastore_garbage_collection), so only a datastore with a
+    gc-schedule logs it. Removing the schedule of a datastore that stays
+    unplugged, or the datastore, stops it.
+  -->
   <rule id="131812" level="5" frequency="60" timeframe="3600" ignore="86400">
     <if_matched_sid>131811</if_matched_sid>
     <same_field>pbs.datastore</same_field>
-    <description>Proxmox Backup Server: datastore $(pbs.datastore) has not been mounted for an hour; its scheduled jobs do not run (reported once a day)</description>
+    <description>Proxmox Backup Server: datastore $(pbs.datastore) has not been mounted for an hour; its garbage collection schedule cannot run (reported once a day)</description>
   </rule>
 
   <rule id="131813" level="2">
@@ -177,15 +246,27 @@
     <description>Proxmox Backup Server: datastore $(pbs.datastore) is in maintenance mode or being unmounted</description>
   </rule>
 
+  <!--
+    The datastore configuration lock could not be taken. Measured: 8 a year,
+    all "Interrupted system call (os error 4)" while the daemons stopped for a
+    reboot or an upgrade. Before 1.2 this was 131814 at level 10.
+  -->
+  <rule id="131887" level="3">
+    <if_sid>131810</if_sid>
+    <match type="pcre2">^lookup_datastore failed - Unable to acquire lock </match>
+    <description>Proxmox Backup Server: the datastore configuration lock could not be taken (usually while the services stop or restart): $(pbs.error)</description>
+  </rule>
+
   <!-- Any other reason a datastore cannot be opened (its disk or chunk store is gone). -->
   <rule id="131814" level="10" ignore="3600">
     <if_sid>131810</if_sid>
-    <match type="pcre2">^lookup_datastore failed - (?!datastore '[^']+' is not mounted$)(?!.*(?:maintenance mode|is being unmounted|is being deleted|No space left on device|os error 28))</match>
+    <match type="pcre2">^lookup_datastore failed - (?!datastore '[^']+' is not mounted$)(?!Unable to acquire lock )(?!.*(?:maintenance mode|is being unmounted|is being deleted|No space left on device|os error 28))</match>
     <description>[WARN] Proxmox Backup Server: a datastore cannot be opened: $(pbs.error)</description>
   </rule>
 
   <!--
-    "TASK ERROR:" in syslog is a copy of a backup task's result. The task
+    "TASK ERROR:" in syslog is a copy of a task's result (worker_task.rs,
+    log_result); since 3.3 every failed task is copied this way. The task
     archive (131830 on) has the same result with the task type, the backup
     group and the user, so this copy stays at level 3.
     Measured: 85 in four weeks, all "backup ended but finished state is not set."
@@ -249,6 +330,81 @@
     <if_sid>131810</if_sid>
     <match type="pcre2">No space left on device|os error 28</match>
     <description>[HIGH] Proxmox Backup Server: out of disk space (No space left on device); backups to the datastore fail</description>
+  </rule>
+
+  <!--
+    Second factors locked (proxmox-tfa, api/mod.rs): TOTP is locked after 8
+    wrong codes, every second factor for an hour after 100 failed tries
+    (documented in the user management chapter). Proxmox Backup Server does
+    not notify anyone about it (a TODO in proxmox-auth-api, access.rs). Each
+    login attempt while locked logs the line again.
+  -->
+  <rule id="131825" level="10">
+    <if_sid>131810</if_sid>
+    <match type="pcre2">^(?:TOTP of user '[^']+' is locked|refusing 2nd factor for user '[^']+')</match>
+    <description>[WARN] Proxmox Backup Server: the second factor of $(dstuser) is locked after repeated wrong codes; someone who knows the password keeps trying</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!--
+    The task scheduler (proxmox-backup-proxy) could not start a scheduled job.
+    No task is created then, so the task archive has nothing to report and a
+    failed start is visible only here. A datastore that is not mounted or in
+    maintenance is left out (131811 to 131813 cover it). At most once an hour:
+    a broken job repeats at every run of its schedule.
+  -->
+  <rule id="131827" level="10" ignore="3600">
+    <if_sid>131810</if_sid>
+    <match type="pcre2">^unable to start (?:garbage collection job on datastore|datastore (?:prune|sync|verification) job|tape backup job) (?!.*(?:is not mounted|maintenance mode|is being unmounted|is being deleted))</match>
+    <description>[WARN] Proxmox Backup Server: a scheduled job could not be started: $(pbs.error)</description>
+  </rule>
+
+  <!-- The scheduler loop itself failed: no scheduled job runs (GC, prune, sync, verify, tape). -->
+  <rule id="131828" level="12" ignore="3600">
+    <if_sid>131810</if_sid>
+    <match type="pcre2">^task scheduler(?: panic|: | failed - )</match>
+    <description>[HIGH] Proxmox Backup Server: the task scheduler failed, scheduled jobs do not run: $(pbs.error)</description>
+  </rule>
+
+  <!-- A job configuration file or schedule the scheduler cannot read: the affected jobs are skipped. -->
+  <rule id="131829" level="7" ignore="3600">
+    <if_sid>131810</if_sid>
+    <match type="pcre2">^(?:unable to read (?:datastore|prune job|sync job|verification job|tape job) config - |(?:datastore|prune job|sync job|verification job|tape backup job) config from_value failed - |unable to parse schedule '|compute_next_event for '[^']*' failed - |could not get last run time of )</match>
+    <description>Proxmox Backup Server: the task scheduler cannot read a job configuration or schedule, the job is skipped: $(pbs.error)</description>
+  </rule>
+
+  <!--
+    Corrupt or missing chunks found by a verification. Since 3.3 the ERROR
+    lines of a task are also written to syslog (proxmox-log, NoWorkerTask
+    filter), so this works without the pbs group and before the task ends
+    (src/backup/verify.rs, src/server/verify_job.rs). The task result in the
+    archive (131837, level 12) follows when the verification finishes. A
+    damaged datastore logs one line per chunk: at most once an hour.
+  -->
+  <rule id="131859" level="10" ignore="3600">
+    <if_sid>131810</if_sid>
+    <match type="pcre2">^(?:can't verify chunk, load failed - |can't verify missing chunk with digest |can't verify chunk with digest |Failed to verify the following snapshots/groups:)</match>
+    <description>[WARN] Proxmox Backup Server: a verification found corrupt or missing chunks; see the verification task log</description>
+  </rule>
+
+  <!--
+    A request to delete protected backups was refused: "cannot remove
+    protected snapshot" (pbs-datastore, backup_info.rs) or "group only
+    partially deleted due to protected snapshots" (api2/admin/datastore.rs,
+    namespace.rs), as the 400 answer copied to syslog or as a warning.
+    Ransomware that reaches the backup server through a Proxmox VE node tries
+    exactly this before it removes the protection (Pay2Key, 2025).
+  -->
+  <rule id="131886" level="10">
+    <if_sid>131810</if_sid>
+    <match type="pcre2">cannot remove protected snapshot|only partially deleted due to protected snapshots</match>
+    <description>[WARN] Proxmox Backup Server: a request to delete protected backups was refused (request $(protocol) $(url), client $(srcip))</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
   </rule>
 
   <!--
@@ -408,25 +564,20 @@
     <description>[WARN] Proxmox Backup Server: datastore $(pbs.id) removed by $(pbs.user)</description>
     <mitre>
       <id>T1490</id>
-    </mitre>
-  </rule>
-
-  <rule id="131852" level="8">
-    <if_sid>131831</if_sid>
-    <field name="pbs.task" type="pcre2">^(?:forget-group|delete-namespace)$</field>
-    <description>Proxmox Backup Server: backups removed ($(pbs.task) $(pbs.id)) by $(pbs.user)</description>
-    <mitre>
-      <id>T1490</id>
-    </mitre>
-  </rule>
-
-  <rule id="131853" level="8">
-    <if_sid>131831</if_sid>
-    <field name="pbs.task" type="pcre2">^remove-encryption-key$</field>
-    <description>Proxmox Backup Server: tape encryption key $(pbs.id) removed by $(pbs.user); tapes written with it cannot be read without a backup of the key</description>
-    <mitre>
       <id>T1485</id>
     </mitre>
+  </rule>
+
+  <!--
+    Until 1.1 this rule looked for "forget-group" and "delete-namespace" tasks,
+    which do not exist: deleting a group, a snapshot or a namespace is a
+    synchronous API call without a task (131865 reports it from the access
+    log). Moving a group or a namespace (4.2) is a task.
+  -->
+  <rule id="131852" level="3">
+    <if_sid>131831</if_sid>
+    <field name="pbs.task" type="pcre2">^(?:move-group|move-namespace)$</field>
+    <description>Proxmox Backup Server: backups moved ($(pbs.task) $(pbs.id)) by $(pbs.user)</description>
   </rule>
 
   <rule id="131854" level="3">
@@ -461,6 +612,9 @@
     <if_sid>131831</if_sid>
     <field name="pbs.task" type="pcre2">^srvstop$</field>
     <description>Proxmox Backup Server: service $(pbs.id) stopped by $(pbs.user)</description>
+    <mitre>
+      <id>T1489</id>
+    </mitre>
   </rule>
 
   <!--
@@ -499,6 +653,25 @@
     <group>pbs_api,</group>
   </rule>
 
+  <!--
+    A second factor removed (DELETE /access/tfa/{userid}/{id}) or the TFA
+    lockout cleared (PUT /access/users/{userid}/unlock-tfa) for an account with
+    a built-in administrator name (root@pam, admin@..., administrator@...).
+    Both leave the administrator with a password only. The user id is URL
+    encoded in the path (%40 for @).
+  -->
+  <rule id="131826" level="10">
+    <if_sid>131861</if_sid>
+    <protocol type="pcre2">^(?:PUT|DELETE)$</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/+access/(?:tfa/+(?:root|admin|administrator)(?:%40|@)[^/?]+/[^/?]+|users/+(?:root|admin|administrator)(?:%40|@)[^/?]+/unlock-tfa)(?:\?|$)</url>
+    <description>[WARN] Proxmox Backup Server API: a second factor of the administrator account was removed or unlocked by $(dstuser) ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1556.006</id>
+      <id>T1098</id>
+    </mitre>
+    <group>pbs_api,</group>
+  </rule>
+
   <rule id="131863" level="8">
     <if_sid>131860</if_sid>
     <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
@@ -515,6 +688,7 @@
     <description>[HIGH] Proxmox Backup Server API: a datastore was removed together with its backups by $(dstuser) ($(url)) from $(srcip)</description>
     <mitre>
       <id>T1490</id>
+      <id>T1485</id>
     </mitre>
     <group>pbs_api,</group>
   </rule>
@@ -547,6 +721,77 @@
     <id type="pcre2">^2\d\d$</id>
     <url type="pcre2">^/api2/(?:json|extjs)/+(?:config/prune|admin/datastore/[^/?]+/(?:protected|change-owner))(?:[/?]|$)</url>
     <description>Proxmox Backup Server API: retention, protection or ownership of backups changed by $(dstuser) ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
+    <group>pbs_api,</group>
+  </rule>
+
+  <!--
+    The children of 131867 are exclusive by path.
+    Prune jobs (the retention of a datastore or namespace): shortening the
+    keep-* values deletes backups at the next prune run. The values are in the
+    request body, not in the log; the pbs group's FIM diff of prune.cfg shows
+    them (131897). Measured: 2 changes in 14 days on one server.
+    MITRE calls this T1485.001 (Lifecycle-Triggered Deletion); the MITRE
+    database of Wazuh 4.14.7 does not have it yet (analysisd warns for every
+    event), so the parent T1485 is used.
+  -->
+  <rule id="131883" level="8">
+    <if_sid>131867</if_sid>
+    <url type="pcre2">^/api2/(?:json|extjs)/+config/prune(?:[/?]|$)</url>
+    <description>Proxmox Backup Server API: prune job (retention) changed by $(dstuser) ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+    <group>pbs_api,</group>
+  </rule>
+
+  <!--
+    Protection of a backup set or cleared. The web interface and Proxmox VE
+    (its storage plugin calls the API) send the new value in the request body,
+    so the direction is unknown; proxmox-backup-client sends it in the query
+    string, where removing the protection is visible (131888). Ransomware that
+    owns a Proxmox VE node removes the protection and then deletes the backups
+    through the node's storage token (Pay2Key, 2025: pvesh set ... protected 0,
+    then pvesh delete); 131881 correlates the two. Measured: 1 a year.
+    Both rules carry the group pbs_protection_change for 131881.
+  -->
+  <rule id="131878" level="6">
+    <if_sid>131867</if_sid>
+    <protocol>PUT</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/+admin/datastore/[^/?]+/protected(?:\?|$)</url>
+    <description>Proxmox Backup Server API: protection of a backup changed by $(dstuser) ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
+    <group>pbs_api,pbs_protection_change,</group>
+  </rule>
+
+  <rule id="131888" level="10">
+    <if_sid>131878</if_sid>
+    <url type="pcre2">[?\x26]protected=(?:false|0|no|off)(?:\x26|$)</url>
+    <description>[WARN] Proxmox Backup Server API: protection of a backup removed by $(dstuser) ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
+    <group>pbs_api,pbs_protection_change,</group>
+  </rule>
+
+  <!--
+    Ad-hoc push and pull syncs, S3 endpoints and the encryption keys of push
+    sync jobs (4.2): ways to copy backups elsewhere, or to make pushed copies
+    unreadable (archiving or removing a key). Sync jobs and remotes: 131868.
+  -->
+  <rule id="131882" level="8">
+    <if_sid>131860</if_sid>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <id type="pcre2">^2\d\d$</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/+(?:push|pull|config/(?:s3|encryption-keys))(?:[/?]|$)</url>
+    <description>Proxmox Backup Server API: push or pull sync, S3 endpoint or sync encryption key by $(dstuser) ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1537</id>
+    </mitre>
     <group>pbs_api,</group>
   </rule>
 
@@ -578,7 +823,18 @@
     <url type="pcre2">^/api2/(?:json|extjs)/+config/notifications(?!/targets/[^/?]+/test(?:\?|$))(?:[/?]|$)</url>
     <description>Proxmox Backup Server API: notification settings changed by $(dstuser) ($(protocol) $(url)) from $(srcip)</description>
     <mitre>
-      <id>T1562</id>
+      <id>T1562.006</id>
+    </mitre>
+    <group>pbs_api,</group>
+  </rule>
+
+  <!-- A notification endpoint, target or matcher removed: job failures may no longer reach anyone. -->
+  <rule id="131884" level="8">
+    <if_sid>131870</if_sid>
+    <protocol>DELETE</protocol>
+    <description>Proxmox Backup Server API: a notification endpoint or matcher was removed by $(dstuser) ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1562.006</id>
     </mitre>
     <group>pbs_api,</group>
   </rule>
@@ -589,6 +845,21 @@
     <id type="pcre2">^2\d\d$</id>
     <url type="pcre2">^/api2/(?:json|extjs)/+config/tape-encryption-keys(?:[/?]|$)</url>
     <description>Proxmox Backup Server API: tape encryption keys changed by $(dstuser) ($(protocol) $(url)) from $(srcip)</description>
+    <group>pbs_api,</group>
+  </rule>
+
+  <!--
+    A tape encryption key removed (DELETE /config/tape-encryption-keys/{fp}).
+    Until 1.1 this rule looked for a "remove-encryption-key" task, which does
+    not exist.
+  -->
+  <rule id="131853" level="8">
+    <if_sid>131871</if_sid>
+    <protocol>DELETE</protocol>
+    <description>Proxmox Backup Server API: tape encryption key removed by $(dstuser) ($(url)) from $(srcip); tapes written with it cannot be read without a backup of the key</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
     <group>pbs_api,</group>
   </rule>
 
@@ -607,6 +878,18 @@
     <id type="pcre2">^2\d\d$</id>
     <url type="pcre2">^/api2/(?:json|extjs)/+config/(?:verify|tape-backup-job|media-pool|drive|changer|traffic-control|metrics)(?:[/?]|$)</url>
     <description>Proxmox Backup Server API: job or tape configuration changed by $(dstuser) ($(protocol) $(url)) from $(srcip)</description>
+    <group>pbs_api,</group>
+  </rule>
+
+  <!-- A verification job removed: corruption, or backups encrypted by ransomware, go unnoticed. -->
+  <rule id="131885" level="8">
+    <if_sid>131873</if_sid>
+    <protocol>DELETE</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/+config/verify/</url>
+    <description>Proxmox Backup Server API: a verification job was removed by $(dstuser) ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
     <group>pbs_api,</group>
   </rule>
 
@@ -673,12 +956,65 @@
   </rule>
 
   <!-- A user or token that tried a change it has no permission for. -->
+  <!-- Deleting or unprotecting backups is 131879, so the two are exclusive. -->
   <rule id="131874" level="5">
     <if_sid>131860</if_sid>
     <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
     <id>403</id>
     <user type="pcre2">@</user>
+    <url type="pcre2">^(?!/api2/(?:json|extjs)/+admin/datastore/[^/?]+/(?:snapshots|groups|namespace|protected)(?:[/?]|$))</url>
     <description>Proxmox Backup Server API: $(dstuser) was refused $(protocol) $(url) from $(srcip)</description>
+    <group>pbs_api,</group>
+  </rule>
+
+  <!--
+    An authenticated user or token tried to delete backups, or to change their
+    protection, and was refused (any 4xx: 403 for a missing privilege, 400 for
+    a protected snapshot or a group it does not own). The documented
+    ransomware protection is one token per Proxmox VE cluster with only
+    DatastoreBackup, which can create backups but not delete them: ransomware
+    that takes over a node and runs pvesh delete on its backups then produces
+    exactly these refusals. Never seen on the measured server.
+  -->
+  <rule id="131879" level="7">
+    <if_sid>131860</if_sid>
+    <protocol type="pcre2">^(?:PUT|DELETE)$</protocol>
+    <id type="pcre2">^4\d\d$</id>
+    <user type="pcre2">@</user>
+    <url type="pcre2">^/api2/(?:json|extjs)/+admin/datastore/[^/?]+/(?:snapshots|groups|namespace|protected)(?:[/?]|$)</url>
+    <description>Proxmox Backup Server API: $(dstuser) was refused deleting or unprotecting backups ($(protocol) $(url), answer $(id)) from $(srcip)</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
+    <group>pbs_api,</group>
+  </rule>
+
+  <rule id="131880" level="12" frequency="5" timeframe="600">
+    <if_matched_sid>131879</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] Proxmox Backup Server API: $(dstuser) keeps trying to delete backups it may not delete, from $(srcip)</description>
+    <mitre>
+      <id>T1490</id>
+      <id>T1485</id>
+    </mitre>
+    <group>pbs_api,</group>
+  </rule>
+
+  <!--
+    Backups deleted, or a deletion refused, within ten minutes of a protection
+    change from the same address (131878, 131888): remove the protection, then
+    delete. Groups are used here because the protection change ends on either
+    of two rules and if_matched_sid takes one id.
+  -->
+  <rule id="131881" level="12" timeframe="600">
+    <if_sid>131865,131879</if_sid>
+    <if_matched_group>pbs_protection_change</if_matched_group>
+    <same_source_ip />
+    <description>[HIGH] Proxmox Backup Server API: backups deleted (or a deletion refused) by $(dstuser) from $(srcip) right after a protection change from the same address</description>
+    <mitre>
+      <id>T1490</id>
+      <id>T1485</id>
+    </mitre>
     <group>pbs_api,</group>
   </rule>
 
@@ -732,6 +1068,56 @@
     <field name="pbs.usage" type="pcre2">^(?:9[89]|100)$</field>
     <description>[HIGH] Proxmox Backup Server: datastore filesystem $(pbs.mount) is $(pbs.usage)% full</description>
     <group>low_diskspace,</group>
+  </rule>
+
+  <!--
+    Configuration files changed on disk (file integrity monitoring of
+    /etc/proxmox-backup). proxmox-backup-manager on the server's shell changes
+    them without any REST API request, so the access log rules never see it.
+    Every Linux agent's default syscheck scans /etc every 12 hours; the pbs
+    group watches /etc/proxmox-backup in real time and keeps a diff of the
+    files without secrets. A change made through the web interface is reported
+    twice, by the access log rule and here. Children of the built-in 550
+    (changed), 553 (deleted) and 554 (added), which stay level 7 / 7 / 5 for
+    the other files. Measured on one server: no change in three weeks apart
+    from the subscription file (ignored by the group).
+  -->
+  <rule id="131895" level="8">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/etc/proxmox-backup/(?:acl\.cfg|user\.cfg|token\.shadow|shadow\.json|domains\.cfg|tfa\.json|ldap_passwords\.json)$</field>
+    <description>Proxmox Backup Server: users, permissions, API tokens, passwords, realms or second factors changed on disk ($(file))</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131896" level="8">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/etc/proxmox-backup/(?:(?:datastore|remote|sync|s3|encryption-keys)\.cfg$|encryption-keys/)</field>
+    <description>Proxmox Backup Server: datastores, remotes, sync jobs, S3 endpoints or sync encryption keys changed on disk ($(file))</description>
+    <mitre>
+      <id>T1537</id>
+    </mitre>
+  </rule>
+
+  <!-- prune.cfg holds the keep-* values: the pbs group's diff shows a shortened retention. -->
+  <rule id="131897" level="8">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/etc/proxmox-backup/(?:prune|verification)\.cfg$</field>
+    <description>Proxmox Backup Server: prune (retention) or verification jobs changed on disk ($(file))</description>
+    <mitre>
+      <id>T1485</id>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="131898" level="8">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/etc/proxmox-backup/notifications(?:-priv)?\.cfg$</field>
+    <description>Proxmox Backup Server: notification settings changed on disk ($(file))</description>
+    <mitre>
+      <id>T1562.006</id>
+    </mitre>
   </rule>
 
 </group>

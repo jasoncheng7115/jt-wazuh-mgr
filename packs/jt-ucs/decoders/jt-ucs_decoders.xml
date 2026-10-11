@@ -9,9 +9,11 @@
   management console's PAM lines and the Samba init script all arrived
   undecoded.
 
-  The Samba audit and Admin Diary decoders at the end are for optional
-  sources that only exist after the site enables them (see the pack's setup
-  guide). They do nothing until then.
+  The Samba audit, configuration registry and Admin Diary decoders at the end
+  read files that the pack's agent group sends with a program name of its
+  own (out_format). The Samba audit and Admin Diary files only exist after
+  the site enables them (see the pack's setup guide); they do nothing until
+  then.
 -->
 
 <!--
@@ -97,45 +99,58 @@
 <decoder name="jt-ucs-samba-init">
   <program_name type="pcre2">^samba-ad-dc$</program_name>
 </decoder>
-
 <!--
   OPTIONAL SOURCE: Samba JSON audit logging (auth_json_audit,
-  dsdb_password_json_audit, dsdb_group_json_audit), routed to files of their
-  own and written in single-line syslog format (debug syslog format = yes):
-    2026-10-11T10:00:00.123456+08:00 dc1-example samba[1234]: JSON Authentication: {"timestamp": ..., "type": "Authentication", "Authentication": {...}}
-  Only this single-line format is decoded: a decoder without a program name
-  is never tried on lines that have one, so the program name samba is
-  required (verified in the sandbox).
-  Field extraction uses one regex per key (same-name sibling decoders): the
-  JSON plugin cannot be combined with a regex that turns
-  "remoteAddress": "ipv4:198.51.100.20:51234" into srcip, and srcip is what
-  frequency rules and active response need.
-  Lines written by smbd (SMB and NTLM on the DC) carry the program name smbd,
-  which the built-in smbd decoder claims first; the jt-smbd-audit-fields
-  children below repeat the same extraction under it (the prematch is given
-  once, on the first of the same-name siblings).
+  dsdb_json_audit, dsdb_password_json_audit, dsdb_group_json_audit), each
+  class routed to a file of its own (setup guide). Samba writes the JSON
+  object alone on the line, with no date, host or program name
+  (lib/audit_logging/audit_logging.c, audit_log_json, Samba 4.21). Up to
+  Samba 4.23 the line starts with two spaces; 4.24 removed them (Samba bug
+  15898). The pack's agent group reads these files with
+    out_format "$(timestamp) $(hostname) samba-audit: $(log)"
+  so the manager receives a syslog line with the program name samba-audit:
+    Oct 11 10:00:00 dc1-example samba-audit:   {"timestamp": "2026-10-11T10:00:00.123456+0800", "type": "Authentication", "Authentication": {...}}
+  Before 1.2 this decoder expected "samba[pid]: JSON Authentication: {",
+  a shape no current Samba writes, so nothing here ever matched.
+  The lines never reach Wazuh's json decoder (they carry a program name), and
+  no decoder here is a child of it: a child of the built-in json decoder
+  stops the decoding of every other JSON event on the manager.
+  Field extraction uses one regex per key (same-name sibling decoders),
+  because "remoteAddress": "ipv4:198.51.100.20:51234" has to become srcip
+  (for same_source_ip, fts and active response), which the JSON plugin
+  cannot do. Samba adds the keys in a fixed order (auth/auth_log.c), so
+  the first "status", "dn" or "type" in a line is the record's own.
+  Record types no rule uses (replicatedUpdate, dsdbTransaction) are still
+  decoded, so they stay at level 0 instead of reaching generic rules (the
+  word "error" in a replicatedUpdate record raised rule 1002).
 -->
 <decoder name="jt-samba-audit">
-  <program_name type="pcre2">^samba$</program_name>
-  <prematch type="pcre2">^JSON (?:Authentication|Authorization|passwordChange|groupChange): \{</prematch>
+  <program_name type="pcre2">^samba-audit$</program_name>
+  <prematch type="pcre2">^\s*\{"timestamp": "[^"]*", "type": "(?:Authentication|Authorization|KDC Authorization|passwordChange|groupChange|dsdbChange|replicatedUpdate|dsdbTransaction)", </prematch>
 </decoder>
 
 <!--
   Successful Kerberos and NTLM logons (auth_json_audit:3) get a child of their
-  own that carries fts on (account, address). Samba writes the keys of an
-  Authentication record in a fixed order, so one regex takes all of them.
+  own that carries fts on (account, address). One regex takes all fields:
+  in an Authentication record status, localAddress, remoteAddress,
+  serviceDescription, authDescription, clientDomain and clientAccount follow
+  each other in this order (record version 1.2 and 1.3).
+  The prematch requires everything the regex needs: a child whose prematch
+  matches but whose regex does not ends the decoding (verified with a null
+  remoteAddress: no field was decoded at all), so a logon without an address
+  or account goes to the field decoders below instead.
 -->
 <decoder name="jt-samba-audit-ok">
   <parent>jt-samba-audit</parent>
-  <prematch type="pcre2">^JSON Authentication: \{.*?"status": "NT_STATUS_OK", </prematch>
-  <regex type="pcre2">^JSON (Authentication): \{.*?"status": "(NT_STATUS_OK)", .*?"remoteAddress": "ipv[46]:\[?(?:::ffff:)?([0-9A-Fa-f.:]+?)\]?:\d+", "serviceDescription": "([^"]*)".*?"clientAccount": "([^"]*)"</regex>
+  <prematch type="pcre2">"type": "Authentication", "Authentication": \{.*?"status": "NT_STATUS_OK", "localAddress": [^,]*, "remoteAddress": "ipv[46]:[^"]*", "serviceDescription": "[^"]*", .*?"clientAccount": "</prematch>
+  <regex type="pcre2">"type": "(Authentication)", .*?"status": "(NT_STATUS_OK)", .*?"remoteAddress": "ipv[46]:\[?(?:::ffff:)?([0-9A-Fa-f.:]+?)\]?:\d+", "serviceDescription": "([^"]*)".*?"clientAccount": "([^"]*)"</regex>
   <order>samba.type, samba.status, srcip, samba.service, user</order>
   <fts>name, user, srcip</fts>
 </decoder>
 
 <decoder name="jt-samba-audit-fields">
   <parent>jt-samba-audit</parent>
-  <regex type="pcre2">JSON (\w+): \{</regex>
+  <regex type="pcre2">"type": "([^"]+)"</regex>
   <order>samba.type</order>
 </decoder>
 
@@ -157,9 +172,10 @@
   <order>srcip</order>
 </decoder>
 
+<!-- clientAccount in Authentication records, account in KDC Authorization records. -->
 <decoder name="jt-samba-audit-fields">
   <parent>jt-samba-audit</parent>
-  <regex type="pcre2">"clientAccount": "([^"]+)"</regex>
+  <regex type="pcre2">"(?:clientAccount|account)": "([^"]+)"</regex>
   <order>user</order>
 </decoder>
 
@@ -185,6 +201,12 @@
   <parent>jt-samba-audit</parent>
   <regex type="pcre2">"workstation": "([^"]+)"</regex>
   <order>samba.workstation</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"operation": "([^"]+)"</regex>
+  <order>samba.operation</order>
 </decoder>
 
 <decoder name="jt-samba-audit-fields">
@@ -217,35 +239,27 @@
   <order>samba.actor_sid</order>
 </decoder>
 
-<decoder name="jt-smbd-audit-fields">
-  <parent>smbd</parent>
-  <prematch type="pcre2">JSON (?:Authentication|Authorization|passwordChange|groupChange): \{</prematch>
-  <regex type="pcre2">JSON (\w+): \{</regex>
-  <order>samba.type</order>
-</decoder>
-
-<decoder name="jt-smbd-audit-fields">
-  <parent>smbd</parent>
-  <regex type="pcre2">"status": "([^"]+)"</regex>
-  <order>samba.status</order>
-</decoder>
-
-<decoder name="jt-smbd-audit-fields">
-  <parent>smbd</parent>
-  <regex type="pcre2">"remoteAddress": "ipv[46]:\[?(?:::ffff:)?([0-9A-Fa-f.:]+?)\]?:\d+"</regex>
-  <order>srcip</order>
-</decoder>
-
-<decoder name="jt-smbd-audit-fields">
-  <parent>smbd</parent>
-  <regex type="pcre2">"clientAccount": "([^"]+)"</regex>
-  <order>user</order>
-</decoder>
-
-<decoder name="jt-smbd-audit-fields">
-  <parent>smbd</parent>
-  <regex type="pcre2">"serviceDescription": "([^"]+)"</regex>
-  <order>samba.service</order>
+<!--
+  OPTIONAL SOURCE: the UCS configuration registry's change log
+  (/var/log/univention/config-registry.replog, written when
+  ucr/replog/enabled is yes). univention-config-registry writes one line per
+  set or unset (python/univention/config_registry/frontend.py, replog(), UCS 5.2):
+    2026-07-19 00:00:06: set updater/statistics=U:13b,R:M old:U:13b,R:M
+    2026-10-11 10:00:00: set ldap/debug/level=0 old:256
+    2026-10-11 10:00:00: unset 'sshd/permitroot' old:without-password
+    2026-10-11 10:00:00: set samba/global/options/server schannel=no old:[Previously undefined]
+  (a key may contain spaces; the value is shell-quoted, the old value is not)
+  A layer option (the force, schedule or ldap-policy layer) may come
+  before the key; it is decoded as ucs.ucr_layer.
+  The agent group adds the program name ucr-replog (out_format): a line that
+  starts with a date would otherwise lose its first word to Wazuh's
+  pre-decoder.
+-->
+<decoder name="jt-ucs-ucr">
+  <program_name type="pcre2">^ucr-replog$</program_name>
+  <prematch type="pcre2">^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d: (?:set|unset) </prematch>
+  <regex type="pcre2">^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d: (set|unset) (?:--(ldap-policy|force|schedule) )?'?([^=']+?)'?(?:=(.*?))? old:(.*)$</regex>
+  <order>ucs.ucr_action, ucs.ucr_layer, ucs.ucr_key, ucs.ucr_value, ucs.ucr_old</order>
 </decoder>
 
 <!--

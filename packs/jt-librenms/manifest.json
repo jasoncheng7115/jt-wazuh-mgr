@@ -2,9 +2,9 @@
  "id": "jt-librenms",
  "name": "LibreNMS Detection Suite",
  "name_zh": "LibreNMS 偵測套組",
- "version": "1.1",
- "summary": "Failed logins, rejected API tokens, account, token and alerting changes, and undelivered alert notifications on LibreNMS, which Wazuh saw only as generic web traffic.",
- "summary_zh": "LibreNMS 的登入失敗、被拒的 API token、帳號、token 與告警設定的變更，以及送不出去的告警通知；Wazuh 原本只把它當成一般網頁流量。",
+ "version": "1.2",
+ "summary": "Failed logins, rejected API tokens, account/token/alerting changes and undelivered notifications on LibreNMS, plus the access-log indicators of its known command-execution and SQL-injection exploits - all of which Wazuh saw only as generic web traffic.",
+ "summary_zh": "LibreNMS 的登入失敗、被拒的 API token、帳號／token／告警設定變更與送不出去的通知，再加上其已知命令執行與 SQL 注入漏洞在存取記錄留下的跡象；Wazuh 原本只把這些當成一般網頁流量。",
  "rule_id_range": "131900-131999",
  "notes": [
   "LibreNMS writes three things Wazuh can read: its application log (/opt/librenms/logs/librenms.log), the dispatcher service's messages in journald, and the web server's access and error logs. Wazuh had no decoder for the first two and saw the third only as generic web traffic, so LibreNMS logins, API use and administrative changes did not register.",
@@ -16,7 +16,12 @@
   "Noise removed, measured on one server over 10 days: 17,146 level 5 \"Web server 400 error code\" alerts were API lookups of objects that do not exist by two integrations (99 per cent of what that server sent); they drop to level 2. 1,582 level 3 \"Nginx error message\" alerts were PHP deprecation notices from LibreNMS's code; they drop to level 0 when nothing else is in the line. The agent group drops the poll timing lines of librenms.log (one per device every five minutes).",
   "LibreNMS logs in to the devices it monitors; when its credentials are wrong, the failures show in the devices' own logs, not in LibreNMS's files. Its documented Proxmox VE support reads through librenms-agent and pvesh on the node and does not log in to the REST API; a monitoring account that logs in to the API every few minutes (the built-in rule 87203 each time) belongs to an API-based collector. The jt-proxmox pack's service-account list (etc/lists/jt-pve-service-accounts) quiets those logins and keeps their failures.",
   "LibreNMS's documented rsyslog configuration for receiving syslog sends every message, the host's own included, to LibreNMS and then stops (\"& stop\"): /var/log/syslog and /var/log/auth.log stop being written, and Wazuh loses that host's SSH, sudo and service messages. Restrict that rule to remote senders if the host should still be monitored.",
-  "Active response is not enabled and is offered for the two login brute-force rules only: blocking an address on a monitoring server can also block the devices and integrations it talks to."
+  "Active response is not enabled and is offered for the two login brute-force rules only: blocking an address on a monitoring server can also block the devices and integrations it talks to.",
+  "Exploit indicators (added 1.2), from the web access log. LibreNMS's known command-execution chains leave a trace there: changing the path of a program it runs (an executable setting such as snmpget or rrdtool) is level 12, and a request to /about or /ajax/netcmd right after such a change, from the same address, is level 13 - this is the Metasploit sequence for CVE-2024-51092, CVE-2026-6204 and CVE-2026-84190 (all fixed by LibreNMS 26.5.0). Shell metacharacters in the SNMP capture request (CVE-2018-20434) or a collectd graph request (CVE-2019-10669) are level 12. SQL injection markers in the API, ajax_output.php, graph.php or ajax_table.php - the time-based form of CVE-2024-32480 and CVE-2025-65093 that the built-in rule 31103 does not catch - are level 10; a purely boolean-blind payload carrying no distinctive token is left to 31103. Login credentials passed in the URL (the unthrottled GET login of CVE-2023-46745) are level 7, level 10 for a burst: the password is written to every access and proxy log whether or not the login succeeds, so disable it (auth.allow_get_login must stay false, its default since 23.11.0).",
+  "Reading secrets through the API (added 1.2). GET /api/v0/devices and /api/v0/devices/<device> return the SNMP community and SNMPv3 passwords in clear text to any token that may view the device, and GET /api/v0/oxidized/config/<device> returns a device's full backed-up configuration. These are routine from pollers and integrations on the private network and stay quiet there; from an external address a credential read is level 8 and a configuration read level 10 (a configuration read is level 6 even from inside, because it exposes secrets). The device list /api/v0/oxidized that Oxidized itself polls is not treated as a secret read.",
+  "File integrity (added 1.2, LibreNMS host only). The agent group watches /opt/librenms/html for a new PHP file (a web shell: level 12; upstream added none to the web root in six months of releases) and /opt/librenms/.env and config.php for change (the database password and APP_KEY: level 7, with report_changes off so no secret is copied into an alert). Only PHP files under the web root are tracked, which keeps the file-integrity database small. These rules need file-integrity events and so are not part of the access-log or application-log paths.",
+  "Addresses and spoofing (added 1.2). The address in the application log and in the Auth Log is Laravel's Request::ip(); up to LibreNMS 26.4 it follows any client's X-Forwarded-For header, because the trusted-proxy default was \"*\" (config/trustedproxy.php; 26.7.0 changed it to 127.0.0.1). Set APP_TRUSTED_PROXIES to the real proxy addresses, or an attacker can put any address - the manager's or a gateway's - into these alerts. For that reason active response is offered only on the failed-web-login rule, whose address is the web server's own, never on the unknown-user rule, whose address can be forged.",
+  "Version coverage (added 1.2). The application-log rules were written for the bracketed [timestamp][LEVEL] format of LibreNMS 25.1.0 and later; the unknown-user login line is additionally decoded in the bare format of 23.6-24.12 and the Laravel-default format of 23.5 and earlier, so user-name guessing is caught on older installs too. On those older versions the default LOG_LEVEL was \"error\", so the warning-level messages (undelivered notifications) were not written at all - upgrade, or set LOG_LEVEL=warning. The agent group now starts a new multi-line record at any line that is not a stack-trace continuation, which joins records correctly in both the old and new formats. The access-log, API and change rules do not depend on the LibreNMS version. The API rules also cover the opt-in API v1 (/api/v1) for rejected tokens and not-found responses."
  ],
  "notes_zh": [
   "LibreNMS 會寫出三種 Wazuh 讀得到的東西：應用程式記錄（/opt/librenms/logs/librenms.log）、dispatcher 服務寫進 journald 的訊息，以及網頁伺服器的存取與錯誤記錄。前兩者 Wazuh 沒有解碼器，第三種只被當成一般網頁流量，所以 LibreNMS 的登入、API 使用與管理變更都沒有留下任何告警。",
@@ -28,7 +33,12 @@
   "移除的雜訊，以一台伺服器 10 天實測：17,146 筆 level 5「Web server 400 error code」是兩個整合程式透過 API 查詢不存在的物件（占該伺服器送出內容的 99%），降為 level 2。1,582 筆 level 3「Nginx error message」是 LibreNMS 程式碼的 PHP 棄用通知，該行沒有其他內容時降為 level 0。agent 群組會丟掉 librenms.log 的輪詢計時行（每台裝置每五分鐘一行）。",
   "LibreNMS 會登入它監控的裝置；它的帳密有誤時，失敗會出現在裝置自己的記錄裡，而不是 LibreNMS 的檔案。它文件中的 Proxmox VE 支援是透過節點上的 librenms-agent 與 pvesh 讀取，不會登入 REST API；每隔幾分鐘就登入 API 一次的監控帳號（每次都觸發內建規則 87203）屬於以 API 收集資料的工具。jt-proxmox 套件的服務帳號清單（etc/lists/jt-pve-service-accounts）可以讓這些登入安靜下來，失敗仍會告警。",
   "LibreNMS 文件中接收 syslog 的 rsyslog 設定，會把所有訊息（包含主機自己的）送給 LibreNMS 後就停止處理（「& stop」）：/var/log/syslog 與 /var/log/auth.log 從此不再寫入，Wazuh 也就失去這台主機的 SSH、sudo 與服務訊息。若這台主機仍需要被監控，請把該規則限定為遠端來源。",
-  "主動回應預設不啟用，只提供給兩條登入暴力破解規則：在監控伺服器上封鎖位址，也可能封鎖它要連線的裝置與整合程式。"
+  "主動回應預設不啟用，只提供給兩條登入暴力破解規則：在監控伺服器上封鎖位址，也可能封鎖它要連線的裝置與整合程式。",
+  "漏洞跡象（1.2 新增），取自網頁存取記錄。LibreNMS 已知的命令執行手法會在這裡留下痕跡：變更它要執行之程式的路徑（例如 snmpget、rrdtool 這類可執行檔設定）為 level 12；在這類變更之後，來自同一位址、對 /about 或 /ajax/netcmd 的請求為 level 13——這正是 CVE-2024-51092、CVE-2026-6204、CVE-2026-84190（皆於 LibreNMS 26.5.0 修正）的 Metasploit 流程。SNMP 擷取請求（CVE-2018-20434）或 collectd 圖表請求（CVE-2019-10669）中出現 shell 特殊字元為 level 12。API、ajax_output.php、graph.php 或 ajax_table.php 的查詢字串出現 SQL 注入跡象——內建規則 31103 接不到的 CVE-2024-32480 時間盲注與 CVE-2025-65093——為 level 10；不含明顯特徵字樣的純布林盲注交給 31103。把登入帳密放進網址（CVE-2023-46745 那條未限流的 GET 登入）為 level 7、連續多次為 level 10：不論登入成功與否，密碼都會被寫進每一份存取與代理記錄，所以應停用它（auth.allow_get_login 需維持預設的 false，自 23.11.0 起）。",
+  "透過 API 讀取機密（1.2 新增）。GET /api/v0/devices 與 /api/v0/devices/<裝置> 會把 SNMP community 與 SNMPv3 密碼以明文回傳給任何可檢視該裝置的 token，GET /api/v0/oxidized/config/<裝置> 則會回傳某台裝置完整的組態備份。這些動作來自私有網段的 poller 與整合程式時屬例行、保持安靜；來自外部位址時，讀取帳密為 level 8、讀取組態為 level 10（讀取組態即使來自內部也是 level 6，因為它會外洩機密）。Oxidized 自己輪詢用的裝置清單 /api/v0/oxidized 不視為機密讀取。",
+  "檔案完整性（1.2 新增，僅 LibreNMS 主機）。agent 群組會監看 /opt/librenms/html 是否出現新的 PHP 檔（webshell：level 12；上游六個版本以來未在網頁根目錄新增任何檔案），以及 /opt/librenms/.env 與 config.php 是否變動（資料庫密碼與 APP_KEY：level 7，並關閉 report_changes，避免機密被寫進告警）。只追蹤網頁根目錄下的 PHP 檔，讓完整性資料庫維持精簡。這些規則需要檔案完整性事件，因此不屬於存取記錄或應用程式記錄的路徑。",
+  "位址與偽造（1.2 新增）。應用程式記錄與 Auth Log 裡的位址是 Laravel 的 Request::ip()；LibreNMS 26.4 以前它會依任何用戶端的 X-Forwarded-For 標頭而定，因為信任代理的預設值是「*」（config/trustedproxy.php；26.7.0 改為 127.0.0.1）。請把 APP_TRUSTED_PROXIES 設為實際的代理位址，否則攻擊者可以把任何位址（包含 manager 或閘道）塞進這些告警。基於這個原因，主動回應只提供給網頁登入失敗規則（其位址是網頁伺服器自己取得的），絕不提供給不存在使用者的規則（其位址可被偽造）。",
+  "版本涵蓋（1.2 新增）。應用程式記錄規則是針對 LibreNMS 25.1.0 之後的 [時間戳][等級] 括號格式撰寫；不存在使用者的登入行另外也能在 23.6-24.12 的裸格式與 23.5 以前的 Laravel 預設格式下解碼，因此舊版也能偵測使用者名稱猜測。那些舊版的預設 LOG_LEVEL 是「error」，所以警告等級的訊息（送不出去的通知）根本不會被寫出——請升級，或設定 LOG_LEVEL=warning。agent 群組現在會在任何「不是堆疊追蹤延續行」的行開始一筆新的多行記錄，因此新舊格式都能正確合併。存取記錄、API 與變更規則不受 LibreNMS 版本影響。API 規則也涵蓋選用的 API v1（/api/v1）的被拒 token 與查無資料回應。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -43,13 +53,13 @@
    "type": "decoder",
    "name": "jt-librenms_decoders.xml",
    "dest": "etc/decoders/jt-librenms_decoders.xml",
-   "sha256": "39c2cfa973b20f7e337318b4bf1c7343d109b6107b428bcb2378ce52bf8b5c74"
+   "sha256": "12516fb79cd51460362596232a249ce828ca7de0de04882c8cc59ca211eb4d94"
   },
   {
    "type": "rule",
    "name": "zz-131900-jt_librenms_rules.xml",
    "dest": "etc/rules/zz-131900-jt_librenms_rules.xml",
-   "sha256": "bbafa23f1b3319ef752811dfeaae4e3ed2949f5435eb93e7ee88be7ba858235c"
+   "sha256": "7d14aa7cff40f032457b1f354cd0120969b672f45c18a9360cca17ce78b7aba8"
   }
  ],
  "agent_group": {
@@ -109,6 +119,42 @@
    "body": "With rsyslog, LibreNMS's guide sends every message, the host's own included, to /opt/librenms/syslog.php and then discards it, so /var/log/syslog and /var/log/auth.log stay empty and Wazuh sees no SSH, sudo or service message from the host. Wrap the action so that only remote senders go to LibreNMS, then restart rsyslog (no effect on LibreNMS; messages arriving during the restart may be lost). syslog-ng as documented by LibreNMS keeps writing the local files unless the log path has flags(final).",
    "body_zh": "使用 rsyslog 時，LibreNMS 指南會把所有訊息（包含主機自己的）送給 /opt/librenms/syslog.php 後丟棄，所以 /var/log/syslog 與 /var/log/auth.log 一直是空的，Wazuh 看不到這台主機的 SSH、sudo 與服務訊息。請把該動作包在條件裡，只讓遠端來源送給 LibreNMS，再重新啟動 rsyslog（不影響 LibreNMS；重新啟動期間送達的訊息可能遺失）。依 LibreNMS 文件設定的 syslog-ng 會繼續寫本機檔案，除非該 log 路徑加了 flags(final)。",
    "code": "# /etc/rsyslog.d/30-librenms.conf: keep the module(load=\"omprog\") and template(name=\"librenms\" ...) lines, replace the action and \"& stop\"\nif $fromhost-ip != '127.0.0.1' then {\n  action(type=\"omprog\" binary=\"/opt/librenms/syslog.php\" template=\"librenms\")\n  stop\n}"
+  },
+  {
+   "platform": "all",
+   "required": false,
+   "since": "1.2",
+   "title": "Set the trusted proxies so logged addresses cannot be forged",
+   "title_zh": "設定信任的代理，讓記錄到的位址無法被偽造",
+   "body": "The address LibreNMS writes to its application log and Auth Log is Laravel's Request::ip(). Up to LibreNMS 26.4 the trusted-proxy list defaulted to \"*\", so that address follows any client's X-Forwarded-For header: an attacker can make the unknown-user and brute-force alerts (and anything that reads their srcip) show any address at all. 26.7.0 changed the default to 127.0.0.1. On any version, set APP_TRUSTED_PROXIES in /opt/librenms/.env to the real reverse-proxy address(es), or to a blank value if LibreNMS is reached directly. It takes effect on the next request; no restart. This is also why the pack's active response is offered only on the web-login rule, whose address is the web server's own.",
+   "body_zh": "LibreNMS 寫進應用程式記錄與 Auth Log 的位址是 Laravel 的 Request::ip()。LibreNMS 26.4 以前，信任代理清單預設為「*」，所以該位址會依任何用戶端的 X-Forwarded-For 標頭而定：攻擊者可讓不存在使用者與暴力破解告警（以及任何使用其 srcip 的東西）顯示成任意位址。26.7.0 已把預設改為 127.0.0.1。無論版本，請在 /opt/librenms/.env 設定 APP_TRUSTED_PROXIES 為實際的反向代理位址，若 LibreNMS 直接對外則設為空值。它在下一個請求即生效，不需重新啟動。這也是為什麼套件的主動回應只提供給網頁登入規則（其位址是網頁伺服器自己取得的）。",
+   "code": "# /opt/librenms/.env\nAPP_TRUSTED_PROXIES=192.0.2.10,192.0.2.11   # the reverse proxy address(es); blank if reached directly",
+   "verify": "After an external login attempt, confirm the srcip in rule 131910/131946 is the real client address, not a header value.",
+   "verify_zh": "在一次外部登入嘗試後，確認規則 131910／131946 的 srcip 是實際用戶端位址，而非標頭值。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "1.2",
+   "title": "Quiet the poller's own sockets in the netstat check (LibreNMS host)",
+   "title_zh": "在 netstat 檢查中讓 poller 自己的連線安靜下來（LibreNMS 主機）",
+   "body": "The built-in listening-ports check (rule 533, level 7) fires every time the set of local sockets changes. On a LibreNMS poller that is constant: the snmpget, snmpbulkwalk and check-plugin client sockets come and go on every poll (measured about 230 level-7 alerts a day on one server). Filter those program names out of the agent's own netstat command. This has to be done in the LibreNMS host's local ossec.conf, not through the group, because a command delivered by a shared group needs logcollector.remote_commands=1 on the agent, which is off by default and widens what the manager may run on every agent. Replace the netstat localfile with the one below (keep the rest of the pipeline).",
+   "body_zh": "內建的監聽埠檢查（規則 533，level 7）只要本機連線集合一變動就會觸發。在 LibreNMS poller 上這是常態：snmpget、snmpbulkwalk 與檢查外掛的用戶端連線每次輪詢都在增減（實測一台伺服器每天約 230 筆 level 7）。請把這些程式名從 agent 自己的 netstat 指令過濾掉。這必須在 LibreNMS 主機的本機 ossec.conf 做，不能透過群組，因為群組下發的指令需要 agent 端 logcollector.remote_commands=1，該選項預設關閉，開啟會擴大 manager 可在每個 agent 上執行的範圍。請把 netstat 的 localfile 換成下方版本（其餘管線保留）。",
+   "code": "<localfile>\n  <log_format>full_command</log_format>\n  <command>netstat -tulpn | sed 's/\\([[:alnum:]]\\+\\)\\ \\+[[:digit:]]\\+\\ \\+[[:digit:]]\\+\\ \\+\\(.*\\):\\([[:digit:]]*\\)\\ \\+\\([0-9\\.\\:\\*]\\+\\).\\+\\ \\([[:digit:]]*\\/[[:alnum:]\\-]*\\).*/\\1 \\2 == \\3 == \\4 \\5/' | sort -k 4 -g | sed 's/ == \\(.*\\) ==/:\\1/' | sed 1,2d | grep -Ev '/(snmp[a-z]*|check)'</command>\n  <alias>netstat listening ports</alias>\n  <frequency>360</frequency>\n</localfile>",
+   "verify": "After the next netstat run, rule 533 no longer reports the poller's snmpget/snmpbulkwalk sockets.",
+   "verify_zh": "下一次 netstat 執行後，規則 533 不再回報 poller 的 snmpget／snmpbulkwalk 連線。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "1.2",
+   "title": "File integrity on the web root and secrets is delivered by the group",
+   "title_zh": "網頁根目錄與機密的檔案完整性由群組下發",
+   "body": "The librenms group now also tells the agent to watch /opt/librenms/html for a new PHP file (rule 131994, a web shell) and /opt/librenms/.env and config.php for change (rule 131995). Only PHP files under the web root are tracked, so the file-integrity database stays small, and report_changes is off so no secret is copied into an alert. A host without /opt/librenms simply skips these. If LibreNMS is installed in another path or in a container, adjust the syscheck paths in the agent's own configuration. File-integrity scanning runs on the agent's schedule, so a new file is reported at the next scan, not instantly.",
+   "body_zh": "librenms 群組現在也會要求 agent 監看 /opt/librenms/html 是否出現新的 PHP 檔（規則 131994，webshell），以及 /opt/librenms/.env 與 config.php 是否變動（規則 131995）。只追蹤網頁根目錄下的 PHP 檔，所以完整性資料庫維持精簡，並關閉 report_changes，不會把機密寫進告警。沒有 /opt/librenms 的主機會直接略過這些。若 LibreNMS 安裝在其他路徑或容器裡，請在該 agent 自己的設定調整 syscheck 路徑。檔案完整性掃描依 agent 的排程執行，所以新檔案會在下一次掃描時回報，而非即時。",
+   "file": "agent/agent.conf",
+   "verify": "Create /opt/librenms/html/zzz-test.php on the LibreNMS host; expect rule 131994 at the next syscheck scan, then remove it.",
+   "verify_zh": "在 LibreNMS 主機建立 /opt/librenms/html/zzz-test.php，下一次 syscheck 掃描應出現規則 131994，之後移除它。"
   }
  ],
  "active_response": [
@@ -116,15 +162,14 @@
    "id": "block-librenms-login-bruteforce",
    "command": "firewall-drop",
    "rules_id": [
-    "131911",
     "131943"
    ],
    "location": "local",
    "timeout": 600,
    "title": "Block an address that keeps failing to log in to LibreNMS",
    "title_zh": "封鎖一再登入 LibreNMS 失敗的位址",
-   "body": "Drops all traffic from the source address on the LibreNMS server for 10 minutes, after repeated unknown-user logins (131911) or repeated failed web logins (131943). Risk, higher than on most servers: the block is not limited to the web interface, so if the address is a monitored device, a poller, an integration or a syslog sender, LibreNMS stops hearing from it, marks it down and raises alerts of its own. If LibreNMS sits behind a reverse proxy without the real client address in its log, the address is the proxy's and everyone is locked out. An administrator who mistypes a password repeatedly is locked out for 10 minutes, with everyone behind the same NAT address. Put management networks, pollers and the reverse proxy in the manager's white_list first. Not offered for the API rules: repeated rejected tokens are far more often an integration whose token was revoked than an attack.",
-   "body_zh": "在多次以不存在的使用者登入（131911）或多次網頁登入失敗（131943）後，於 LibreNMS 伺服器上丟棄該來源位址的所有流量 10 分鐘。風險比一般伺服器高：封鎖不只限於網頁介面，若該位址是受監控的裝置、poller、整合程式或 syslog 來源，LibreNMS 會收不到它的資料、判定它斷線並自己發出告警。若 LibreNMS 在反向代理後面而記錄裡不是實際的來源位址，被封鎖的會是代理，所有人都進不來。一再打錯密碼的管理者會被擋 10 分鐘，同一個 NAT 位址後的所有人也一樣。請先把管理網段、poller 與反向代理加入 manager 的 white_list。API 規則不提供此回應：token 一再被拒，多半是 token 已撤銷的整合程式，而不是攻擊。"
+   "body": "Drops all traffic from the source address on the LibreNMS server for 10 minutes, after repeated failed web logins (131943). The address is the web server's own $remote_addr, not the X-Forwarded-For-derived address of the application log, so it cannot be forged by the client. Risk, higher than on most servers: the block is not limited to the web interface, so if the address is a monitored device, a poller, an integration or a syslog sender, LibreNMS stops hearing from it, marks it down and raises alerts of its own. If LibreNMS sits behind a reverse proxy without the real client address in its log, the address is the proxy's and everyone is locked out. An administrator who mistypes a password repeatedly is locked out for 10 minutes, with everyone behind the same NAT address. Put management networks, pollers and the reverse proxy in the manager's white_list first. Not offered for the unknown-user rule (131911): its address comes from Laravel's Request::ip(), which an attacker can forge with X-Forwarded-For before LibreNMS 26.7 unless APP_TRUSTED_PROXIES is set, so it could be used to block an address of the attacker's choosing. Not offered for the API rules: repeated rejected tokens are far more often an integration whose token was revoked than an attack.",
+   "body_zh": "在多次網頁登入失敗（131943）後，於 LibreNMS 伺服器上丟棄該來源位址的所有流量 10 分鐘。此位址是網頁伺服器自己取得的 $remote_addr，不是應用程式記錄中由 X-Forwarded-For 推得的位址，因此用戶端無法偽造。風險比一般伺服器高：封鎖不只限於網頁介面，若該位址是受監控的裝置、poller、整合程式或 syslog 來源，LibreNMS 會收不到它的資料、判定它斷線並自己發出告警。若 LibreNMS 在反向代理後面而記錄裡不是實際來源位址，被封鎖的會是代理，所有人都進不來。一再打錯密碼的管理者會被擋 10 分鐘，同一個 NAT 位址後的所有人也一樣。請先把管理網段、poller 與反向代理加入 manager 的 white_list。不提供給不存在使用者的規則（131911）：其位址來自 Laravel 的 Request::ip()，在 LibreNMS 26.7 以前若未設定 APP_TRUSTED_PROXIES，攻擊者可用 X-Forwarded-For 偽造，因而可能被用來封鎖攻擊者指定的位址。API 規則也不提供：token 一再被拒，多半是 token 已撤銷的整合程式，而不是攻擊。"
   }
  ]
 }

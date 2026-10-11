@@ -479,11 +479,11 @@
    "note": "synthesized from LibreNMS source (routes/api.php ack_alert)"
   },
   {
-   "log": "192.0.2.30 - - [11/Oct/2026:10:00:00 +0800] \"GET /api/v0/devices HTTP/1.1\" 200 9000 \"-\" \"curl/7.81.0\"",
+   "log": "10.0.250.3 - - [11/Oct/2026:10:00:00 +0800] \"GET /api/v0/devices HTTP/1.1\" 200 9000 \"-\" \"curl/7.81.0\"",
    "location": "/var/log/nginx/access.log",
    "expect_rule": "none",
    "expect_level": 0,
-   "note": "near miss: reading through the API; synthesized"
+   "note": "near miss: reading the device list from a private address is quiet"
   },
   {
    "log": "192.0.2.10 - - [11/Oct/2026:10:00:00 +0800] \"POST /users HTTP/1.1\" 302 410 \"https://nms.example.com/users/create\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
@@ -726,9 +726,9 @@
   {
    "log": "192.0.2.10 - - [11/Oct/2026:10:00:00 +0800] \"POST /alert/transports/3/test HTTP/1.1\" 200 80 \"https://nms.example.com/alert-transports\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
    "location": "/var/log/nginx/access.log",
-   "expect_rule": "none",
-   "expect_level": 0,
-   "note": "near miss: testing a transport; synthesized"
+   "expect_rule": "131977",
+   "expect_level": 3,
+   "note": "alert transport test runs the transport (CVE-2026-55182 trigger); synthesized from routes/web.php alert.transports.test"
   },
   {
    "log": "192.0.2.10 - - [11/Oct/2026:10:00:00 +0800] \"POST /ajax_form.php HTTP/1.1\" 200 80 \"https://nms.example.com/alert-transports\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
@@ -771,6 +771,263 @@
    "expect_rule": "31301",
    "expect_level": 3,
    "note": "near miss: real upstream timeout stays built-in, sanitized"
+  },
+  {
+   "log": "Auth Error (mysql): No user () [admin] from 192.0.2.10",
+   "location": "/opt/librenms/logs/librenms.log",
+   "expect_rule": "131910",
+   "expect_level": 5,
+   "note": "real shape (LibreNMS 23.6-24.12 bare NoColorFormatter line): unknown user, no timestamp/level"
+  },
+  {
+   "log": "[2023-05-02T10:15:02+00:00] production.ERROR: Auth Error (ldap): No user (-1) [bob] from 192.0.2.11",
+   "location": "/opt/librenms/logs/librenms.log",
+   "expect_rule": "131910",
+   "expect_level": 5,
+   "note": "real shape (LibreNMS <=23.5 Monolog default): unknown user"
+  },
+  {
+   "log": "INFO: device:poll sw1.example.com (12) polled in 3.456s",
+   "location": "/opt/librenms/logs/librenms.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: a bare pre-25.1 poll line is not an auth line and carries no gradable level"
+  },
+  {
+   "log": "Auth Error (mysql): No user () [admin] from 192.0.2.10",
+   "location": "/opt/librenms/logs/librenms.log",
+   "expect_rule": "131911",
+   "expect_level": 10,
+   "note": "legacy bare lines, sixth unknown user from one address: burst still fires",
+   "repeat": 6
+  },
+  {
+   "log": "192.0.2.10 - - [11/Oct/2026:10:00:00 +0800] \"PUT /settings/snmpget HTTP/1.1\" 200 80 \"https://nms.example.com/settings/external/binaries\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131975",
+   "expect_level": 12,
+   "note": "synthesized from Metasploit librenms_authenticated_rce_cve_2024_51092 (PUT /settings/snmpget)"
+  },
+  {
+   "log": "192.0.2.10 - - [11/Oct/2026:10:00:00 +0800] \"PUT /settings/rrd_purge HTTP/1.1\" 200 80 \"https://nms.example.com/settings/system/cleanup\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131969",
+   "expect_level": 6,
+   "note": "near miss: an ordinary setting that is not a program path stays level 6"
+  },
+  {
+   "log": "192.0.2.10 - - [11/Oct/2026:10:00:01 +0800] \"GET /about HTTP/1.1\" 200 9000 \"-\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: GET /about with no prior binary-path change is routine"
+  },
+  {
+   "log": "192.0.2.10 - - [11/Oct/2026:10:00:00 +0800] \"POST /delhost HTTP/1.1\" 200 80 \"https://nms.example.com/device/12/delete\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131978",
+   "expect_level": 8,
+   "note": "synthesized from the Metasploit modules (legacy POST /delhost)"
+  },
+  {
+   "log": "192.0.2.10 - - [11/Oct/2026:10:00:00 +0800] \"GET /delhost HTTP/1.1\" 200 9000 \"https://nms.example.com/\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: opening the delete page is not a deletion"
+  },
+  {
+   "log": "192.0.2.50 - - [11/Oct/2026:10:00:00 +0800] \"GET /?username=admin&password=secret&submit= HTTP/1.1\" 200 410 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131981",
+   "expect_level": 7,
+   "note": "synthesized from CVE-2023-46745 (GET login with credentials in the URL)"
+  },
+  {
+   "log": "192.0.2.50 - - [11/Oct/2026:10:00:00 +0800] \"GET /login?username=admin&password=secret HTTP/1.1\" 200 410 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131981",
+   "expect_level": 7,
+   "note": "synthesized from CVE-2023-46745 (GET /login with credentials)"
+  },
+  {
+   "log": "192.0.2.50 - - [11/Oct/2026:10:00:00 +0800] \"GET /?username=admin&password=secret&submit= HTTP/1.1\" 200 410 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131982",
+   "expect_level": 10,
+   "note": "sixth credential-in-URL login from one address: brute force",
+   "repeat": 6
+  },
+  {
+   "log": "192.0.2.50 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"-\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131941",
+   "expect_level": 1,
+   "note": "near miss: opening the login page without credentials in the URL"
+  },
+  {
+   "log": "192.0.2.50 - - [11/Oct/2026:10:00:00 +0800] \"GET /api/v0/devices?order=device_id%60%20and%20if(ascii(substr(user(),1,1))=114,sleep(5),1) HTTP/1.1\" 200 80 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131983",
+   "expect_level": 10,
+   "note": "synthesized from CVE-2024-32480 PoC (time-based blind via the API order parameter)"
+  },
+  {
+   "log": "192.0.2.50 - - [11/Oct/2026:10:00:00 +0800] \"GET /ajax_output.php?id=capture&format=text&type=discovery&hostname=sw1%27+union+select+1 HTTP/1.1\" 200 80 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131983",
+   "expect_level": 10,
+   "note": "synthesized from CVE-2025-65093 (SQL injection via ajax_output.php hostname)"
+  },
+  {
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /api/v0/devices?order=hostname HTTP/1.1\" 200 80 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: an ordinary order parameter from a private address, no injection markers"
+  },
+  {
+   "log": "192.0.2.10 - - [11/Oct/2026:10:00:00 +0800] \"GET /ajax_output.php?id=capture&format=text&type=snmpwalk&hostname=sw1.example.com HTTP/1.1\" 200 410 \"-\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131984",
+   "expect_level": 3,
+   "note": "synthesized: SNMP capture run from the web UI"
+  },
+  {
+   "log": "192.0.2.50 - - [11/Oct/2026:10:00:00 +0800] \"GET /ajax_output.php?id=capture&format=text&type=snmpwalk&hostname=localhost%3Bid HTTP/1.1\" 200 410 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131985",
+   "expect_level": 12,
+   "note": "synthesized from CVE-2018-20434 (shell metacharacter in the capture request)"
+  },
+  {
+   "log": "192.0.2.50 - - [11/Oct/2026:10:00:00 +0800] \"GET /graph.php?device=1&type=device_collectd&from=1`id` HTTP/1.1\" 200 410 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131986",
+   "expect_level": 12,
+   "note": "synthesized from CVE-2019-10669 (shell metacharacter in a collectd graph request)"
+  },
+  {
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /graph.php?device=1&type=device_collectd&from=1600000000&to=1600003600 HTTP/1.1\" 200 410 \"-\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: an ordinary collectd graph carries only numbers"
+  },
+  {
+   "log": "203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"GET /api/v0/devices/12 HTTP/1.1\" 200 9000 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131990",
+   "expect_level": 8,
+   "note": "synthesized from app/Http/Resources/Device.php (external read returns SNMP secrets)"
+  },
+  {
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /api/v0/devices/12/ports HTTP/1.1\" 200 9000 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: a device sub-resource does not return credentials"
+  },
+  {
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /api/v0/oxidized/config/sw1.example.com HTTP/1.1\" 200 9000 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131991",
+   "expect_level": 6,
+   "note": "synthesized from routes/api.php get_oxidized_config (configuration backup read, private)"
+  },
+  {
+   "log": "203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"GET /api/v0/oxidized/config/search/password HTTP/1.1\" 200 9000 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131992",
+   "expect_level": 10,
+   "note": "synthesized from routes/api.php search_oxidized (configuration backup read, external)"
+  },
+  {
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /api/v0/oxidized HTTP/1.1\" 200 9000 \"-\" \"python-requests/2.31\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: the device list Oxidized itself polls does not return configurations"
+  },
+  {
+   "log": "192.0.2.44 - - [11/Oct/2026:10:00:00 +0800] \"GET /api/v1/devices HTTP/1.1\" 401 41 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131951",
+   "expect_level": 5,
+   "note": "synthesized from config/restify.php (API v1, rejected token answers 401)"
+  },
+  {
+   "log": "203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"GET /api/v0/devices/sw1?q=%20from%20users HTTP/1.1\" 200 80 \"-\" \"curl/7.81.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131983",
+   "expect_level": 10,
+   "note": "an injection to a device endpoint is labelled as injection (L10), not as a device read (131990 L8), so no pack rule outranks 31103"
+  },
+  {
+   "fim": {
+    "path": "/opt/librenms/html/plugins/x.php",
+    "type": "added"
+   },
+   "expect_rule": "131994",
+   "expect_level": 12,
+   "note": "fim: new PHP file in the web root"
+  },
+  {
+   "fim": {
+    "path": "/opt/librenms/html/plugins/x.php",
+    "type": "modified"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: an existing PHP file changed (an update), stays built-in 550"
+  },
+  {
+   "fim": {
+    "path": "/opt/librenms/html/images/logo.png",
+    "type": "added"
+   },
+   "expect_rule": "554",
+   "expect_level": 5,
+   "note": "fim: near miss: not a PHP file"
+  },
+  {
+   "fim": {
+    "path": "/opt/librenms/.env",
+    "type": "modified"
+   },
+   "expect_rule": "131995",
+   "expect_level": 7,
+   "note": "fim: .env changed"
+  },
+  {
+   "fim": {
+    "path": "/opt/librenms/config.php",
+    "type": "modified"
+   },
+   "expect_rule": "131995",
+   "expect_level": 7,
+   "note": "fim: config.php changed"
+  },
+  {
+   "fim": {
+    "path": "/opt/librenms/config.php.default",
+    "type": "modified"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: the shipped example file"
+  }
+ ],
+ "sequences": [
+  {
+   "before": [
+    "192.0.2.10 - - [11/Oct/2026:10:00:00 +0800] \"PUT /settings/snmpget HTTP/1.1\" 200 80 \"https://nms.example.com/settings/external/binaries\" \"Mozilla/5.0\""
+   ],
+   "log": "192.0.2.10 - - [11/Oct/2026:10:00:05 +0800] \"GET /about HTTP/1.1\" 200 9000 \"-\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131976",
+   "expect_level": 13,
+   "note": "synthesized from Metasploit CVE-2024-51092 chain: GET /about right after a binary-path change runs the planted program"
   }
  ]
 }

@@ -337,9 +337,9 @@
   {
    "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.2.xml in /api/auth/user/add /api/auth/user/add made changes",
    "location": "/var/ossec/logs/opnsense_syslog.log",
-   "expect_rule": "131522",
-   "expect_level": 7,
-   "note": "synthesized; MVC user manager"
+   "expect_rule": "131554",
+   "expect_level": 8,
+   "note": "synthesized; MVC user manager, a new account (1.2: 131554, was 131522)"
   },
   {
    "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@2001:db8::5 (alice) changed configuration to /conf/backup/config-1791686400.2.xml in /api/auth/group/set /api/auth/group/set made changes",
@@ -373,8 +373,8 @@
    "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.1 changed configuration to /conf/backup/config-1791686400.6.xml in /xmlrpc.php /xmlrpc.php made changes",
    "location": "/var/ossec/logs/opnsense_syslog.log",
    "expect_rule": "131525",
-   "expect_level": 3,
-   "note": "synthesized; HA sync on the backup node"
+   "expect_level": 5,
+   "note": "synthesized; HA sync on the backup node, also the CVE-2026-44193 path (1.2: level 5, was 3)"
   },
   {
    "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user alice@example.com changed configuration to /conf/backup/config-1791686400.7.xml in /firewall_rules_edit.php /firewall_rules_edit.php made changes",
@@ -809,6 +809,531 @@
    "expect_level": 10,
    "repeat": 18,
    "note": "real shape; 18 blocks from one source in 45 s"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: Aug 19 14:02:11 fw audit: Successful login for user 'admin' from: 10.0.0.5 [relay auth: user 'bob' from 192.0.2.4' from 203.0.113.118",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131539",
+   "expect_level": 10,
+   "note": "synthesized from the GHSA-jjm2-jg4p-3v9q PoC output, entry 4 (before 26.7.4): leftover piece with the real address"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'bob' from 192.0.2.4 Aug 19 14:02:11 fw audit: Successful login for user 'admin' from: 10.0.0.5 [relay auth: user 'bob' from 192.0.2.4' from 203.0.113.118",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131539",
+   "expect_level": 10,
+   "note": "synthesized from the GHSA-jjm2-jg4p-3v9q 'post-patch expected output' (26.7.4 and later): one line, two from clauses"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'admin' from: 10.0.0.5' from 203.0.113.118",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131539",
+   "expect_level": 10,
+   "note": "synthesized; forged success-shaped leftover keeps the genuine prefix, caught by the second from clause"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'bob' from 192.0.2.4",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131502",
+   "expect_level": 5,
+   "note": "near miss / known limit: the clean forged piece (advisory entry 2) looks genuine and stays a normal failure"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'o'brien' from 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131502",
+   "expect_level": 5,
+   "note": "near miss: a quote in a typed user name is not injection"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Session timed out for user 'root' from: 192.0.2.200",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131505",
+   "expect_level": 2,
+   "note": "near miss: genuine timeout line ends with ' from: address and keeps its decoder"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin*' from 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131547",
+   "expect_level": 8,
+   "note": "synthesized from GHSA-jpm7-f59c-mp54 (payload admin*) and authgui.inc"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'x)(|(uid=x' from 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131547",
+   "expect_level": 8,
+   "note": "synthesized from the advisory's filter payload"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'a&b' from 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131547",
+   "expect_level": 8,
+   "note": "synthesized; ampersand (written as x26 in the rule)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'admin*' from: 10.0.0.7",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131548",
+   "expect_level": 12,
+   "note": "synthesized; login that only an LDAP filter bypass explains"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'admin*' from: 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131548",
+   "expect_level": 12,
+   "note": "synthesized; same from an outside address"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'mapadmin' from 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131502",
+   "expect_level": 5,
+   "note": "near miss: letters of the old &amp; entity (a m p) no longer match"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/firewall/d_nat/set_rule/6f2a1c4e-1111-4b1a-9d1e-0123456789ab /api/firewall/d_nat/set_rule/6f2a1c4e-1111-4b1a-9d1e-0123456789ab made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131549",
+   "expect_level": 7,
+   "note": "synthesized; port forward (DNatController, 26.1 and later)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /firewall_nat_edit.php /firewall_nat_edit.php made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131549",
+   "expect_level": 7,
+   "note": "synthesized; legacy port forward page (until 25.7)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/firewall/source_nat/addRule /api/firewall/source_nat/addRule made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131549",
+   "expect_level": 7,
+   "note": "synthesized; outbound NAT, camelCase action name"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /system_advanced_firewall.php /system_advanced_firewall.php made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131549",
+   "expect_level": 7,
+   "note": "synthesized; page holding Disable Firewall"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/firewall/filter/set_rule/6f2a1c4e-1111-4b1a-9d1e-0123456789ab /api/firewall/filter/set_rule/6f2a1c4e-1111-4b1a-9d1e-0123456789ab made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131521",
+   "expect_level": 5,
+   "note": "near miss: a filter rule edit stays the generic change"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/syslog/settings/add_destination/ /api/syslog/settings/add_destination/ made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131552",
+   "expect_level": 8,
+   "note": "synthesized; new remote log destination (Syslog SettingsController)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/ids/settings/set /api/ids/settings/set made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131552",
+   "expect_level": 8,
+   "note": "synthesized; IDS general settings (enable, interfaces, IPS mode)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/wazuhagent/settings/set /api/wazuhagent/settings/set made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131552",
+   "expect_level": 8,
+   "note": "synthesized; Wazuh agent plugin settings"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/crowdsec/general/set /api/crowdsec/general/set made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131552",
+   "expect_level": 8,
+   "note": "synthesized; CrowdSec plugin settings"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/ids/settings/toggle_rule/2100527/0 /api/ids/settings/toggle_rule/2100527/0 made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131521",
+   "expect_level": 5,
+   "note": "near miss: IDS rule tuning stays the generic change"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/cron/settings/set_job/6f2a1c4e-1111-4b1a-9d1e-0123456789ab /api/cron/settings/set_job/6f2a1c4e-1111-4b1a-9d1e-0123456789ab made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131553",
+   "expect_level": 6,
+   "note": "synthesized; cron job changed (Cron SettingsController)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/cron/settings/addJob /api/cron/settings/addJob made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131553",
+   "expect_level": 6,
+   "note": "synthesized; camelCase form as in CVE-2023-39008"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/auth/user/add_api_key/alice /api/auth/user/add_api_key/alice made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131554",
+   "expect_level": 8,
+   "note": "synthesized; new API key (UserController addApiKeyAction)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/auth/user/upload /api/auth/user/upload made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131554",
+   "expect_level": 8,
+   "note": "synthesized; accounts imported"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/auth/user/set/6f2a1c4e-1111-4b1a-9d1e-0123456789ab /api/auth/user/set/6f2a1c4e-1111-4b1a-9d1e-0123456789ab made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131522",
+   "expect_level": 7,
+   "note": "near miss: editing an account stays 131522"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/auth/user/del_api_key/EXAMPLEKEY0123456789 /api/auth/user/del_api_key/EXAMPLEKEY0123456789 made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131522",
+   "expect_level": 7,
+   "note": "near miss: removing an API key stays 131522"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/trust/ca/add /api/trust/ca/add made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131557",
+   "expect_level": 7,
+   "note": "synthesized; new certificate authority (Trust CaController)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/trust/crl/del/6f2a1c4e11114b1a /api/trust/crl/del/6f2a1c4e11114b1a made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131557",
+   "expect_level": 7,
+   "note": "synthesized; revocation list removed"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/trust/cert/add /api/trust/cert/add made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131521",
+   "expect_level": 5,
+   "note": "near miss: a certificate stays the generic change"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.9.xml in /api/trust/crl/set/6f2a1c4e11114b1a /api/trust/crl/set/6f2a1c4e11114b1a made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131521",
+   "expect_level": 5,
+   "note": "near miss: editing a CRL (usually adding revocations) stays generic"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user alice@example.org changed configuration to /conf/backup/config-1791686400.9.xml in /system_general.php /system_general.php made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131521",
+   "expect_level": 5,
+   "note": "near miss: account with @ in its name, description shows the account as logged"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: action allowed syslog.stop for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131558",
+   "expect_level": 7,
+   "note": "synthesized from actions_syslog.conf [stop]"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: action allowed syslog.reset for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131558",
+   "expect_level": 7,
+   "note": "synthesized from actions_syslog.conf [reset] (Reset syslog files)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: action allowed ids.stop for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131558",
+   "expect_level": 7,
+   "note": "synthesized from actions_ids.conf [stop]"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: action allowed wazuh_agent.stop for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131558",
+   "expect_level": 7,
+   "note": "synthesized from the plugin actions_wazuh_agent.conf [stop]"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: action allowed crowdsec.decisions-delete for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131558",
+   "expect_level": 7,
+   "note": "synthesized from the plugin actions_crowdsec.conf"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: action allowed syslog.restart for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: a restart is not a stop (real shape, weekly on site firewall A)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: action allowed ids.reload for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: rule reload"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: [c4ce4878-6866-4d58-8d1a-ccac3a5600ee] delete entry from pf table ( sshlockout / 203.0.113.9 )",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131559",
+   "expect_level": 8,
+   "note": "synthesized from actions_filter.conf [delete.table]"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: [c4ce4878-6866-4d58-8d1a-ccac3a5600ee] kill pf table ( __wazuh_agent_drop )",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131559",
+   "expect_level": 8,
+   "note": "synthesized from actions_filter.conf [kill.table]"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: [c4ce4878-6866-4d58-8d1a-ccac3a5600ee] delete entry from pf table ( crowdsec_blocklists / 203.0.113.9 )",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131559",
+   "expect_level": 8,
+   "note": "synthesized; CrowdSec table name from the plugin crowdsec.inc"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: [c4ce4878-6866-4d58-8d1a-ccac3a5600ee] delete entry from pf table ( office_hosts / 192.0.2.9 )",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: an ordinary alias"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: [c4ce4878-6866-4d58-8d1a-ccac3a5600ee] add entry to pf table ( sshlockout / 203.0.113.9 )",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: adding to the table is blocking, not releasing"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[77089]: [Firmware] User root locked package os-example",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131532",
+   "expect_level": 3,
+   "note": "synthesized from FirmwareController.php"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com kernel: pid 1234 (dhclient), jid 0, uid 0: exited on signal 11 (core dumped)",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131573",
+   "expect_level": 6,
+   "note": "synthesized from FreeBSD kern_sig.c sigexit()"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com kernel: <6>[11035654] pid 4321 (php-cgi), jid 0, uid 0: exited on signal 6 (no core dump - other error)",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131573",
+   "expect_level": 6,
+   "note": "synthesized; FreeBSD 14 kernel prefix as on the site firewalls"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com kernel: [11035654] 1791686400.123456 [ 418] netmap_transmit           igb1 full hwcur 302 hwtail 300 qlen 1 len 66 m 0xfffff80012345678",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: real shape (site firewall A, netmap queue full), not a crash"
+  },
+  {
+   "log": "ossec: output: 'jt-opnsense-pkg-audit': 3 problem(s) in 2 package(s) found.",
+   "location": "jt-opnsense-pkg-audit",
+   "expect_rule": "131578",
+   "expect_level": 5,
+   "note": "synthesized from freebsd/pkg src/audit.c (pkg 2.x) and logcollector read_command.c"
+  },
+  {
+   "log": "ossec: output: 'jt-opnsense-pkg-audit': 1 problem(s) in 1 installed package(s) found.",
+   "location": "jt-opnsense-pkg-audit",
+   "expect_rule": "131578",
+   "expect_level": 5,
+   "note": "synthesized; pkg 1.x wording"
+  },
+  {
+   "log": "ossec: output: 'jt-opnsense-pkg-audit': 0 problem(s) in 0 package(s) found.",
+   "location": "jt-opnsense-pkg-audit",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: nothing found"
+  },
+  {
+   "log": "ossec: output: 'jt-opnsense-pkg-audit': openssl-3.0.15,1 is vulnerable:",
+   "location": "jt-opnsense-pkg-audit",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: detail line, recorded at the built-in 530"
+  },
+  {
+   "log": "ossec: output: 'jt-opnsense-version': OPNsense 26.1.2 (amd64)",
+   "location": "jt-opnsense-version",
+   "expect_rule": "131579",
+   "expect_level": 7,
+   "note": "synthesized from src/sbin/opnsense-version; the version of site firewall A"
+  },
+  {
+   "log": "ossec: output: 'jt-opnsense-version': OPNsense 24.7.12_4 (amd64)",
+   "location": "jt-opnsense-version",
+   "expect_rule": "131579",
+   "expect_level": 7,
+   "note": "synthesized; an older series"
+  },
+  {
+   "log": "ossec: output: 'jt-opnsense-version': OPNsense 26.1.8 (amd64)",
+   "location": "jt-opnsense-version",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: the fixed version"
+  },
+  {
+   "log": "ossec: output: 'jt-opnsense-version': OPNsense 26.1.10 (amd64)",
+   "location": "jt-opnsense-version",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: two-digit patch level"
+  },
+  {
+   "log": "ossec: output: 'jt-opnsense-version': OPNsense 26.7.5 (amd64)",
+   "location": "jt-opnsense-version",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: the version of site firewall B"
+  },
+  {
+   "log": "ossec: output: 'jt-opnsense-version': OPNsense 25.10.2 (amd64)",
+   "location": "jt-opnsense-version",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: Business Edition numbering is not judged"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"203.0.113.250\",\"src_port\":40000,\"dest_ip\":\"203.0.113.250\",\"dest_port\":443,\"proto\":\"TCP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2100527,\"rev\":3,\"signature\":\"GPL SCAN same SRC/DST\",\"category\":\"Potentially Bad Traffic\",\"severity\":2,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Informational\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131596",
+   "expect_level": 2,
+   "note": "real shape (site firewall A: 618 in 41 days), ET Informational"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"198.51.100.20\",\"src_port\":40000,\"dest_ip\":\"203.0.113.251\",\"dest_port\":0,\"proto\":\"ICMP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2100485,\"rev\":3,\"signature\":\"GPL ICMP_INFO Destination Unreachable Communication Administratively Prohibited\",\"category\":\"Misc activity\",\"severity\":3,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Informational\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131596",
+   "expect_level": 2,
+   "note": "real shape (site firewall A), priority 3"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"198.51.100.21\",\"src_port\":40000,\"dest_ip\":\"203.0.113.251\",\"dest_port\":161,\"proto\":\"UDP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2101411,\"rev\":3,\"signature\":\"GPL SNMP public access udp\",\"category\":\"Attempted Information Leak\",\"severity\":3,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Unknown\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131596",
+   "expect_level": 2,
+   "note": "synthesized; priority 3 without ET Informational"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"198.51.100.171\",\"src_port\":40000,\"dest_ip\":\"203.0.113.251\",\"dest_port\":443,\"proto\":\"TCP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2012843,\"rev\":3,\"signature\":\"ET POLICY Cleartext WordPress Login\",\"category\":\"Potential Corporate Privacy Violation\",\"severity\":1,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Informational\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131596",
+   "expect_level": 2,
+   "note": "real shape (site firewall A: 150 in 41 days); priority 1 but ET Informational"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"198.51.100.30\",\"src_port\":40000,\"dest_ip\":\"203.0.113.251\",\"dest_port\":0,\"proto\":\"IPv4\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2030387,\"rev\":3,\"signature\":\"ET EXPLOIT Possible CVE-2020-11900 IP-in-IP tunnel Double-Free\",\"category\":\"Attempted Administrator Privilege Gain\",\"severity\":1,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Major\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "86601",
+   "expect_level": 3,
+   "note": "near miss, real shape (site firewall A: 80 in 41 days): inbound attempt from the internet stays at the built-in level"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"198.51.100.31\",\"src_port\":40000,\"dest_ip\":\"203.0.113.251\",\"dest_port\":123,\"proto\":\"UDP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2017919,\"rev\":3,\"signature\":\"ET DELETED Possible NTP DDoS Inbound Frequent Un-Authed MON_LIST Requests IMPL 0x03\",\"category\":\"Attempted Denial of Service\",\"severity\":2,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Unknown\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "86601",
+   "expect_level": 3,
+   "note": "near miss, real shape (site firewall A: 78 in 41 days)"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"192.168.0.25\",\"src_port\":40000,\"dest_ip\":\"198.51.100.80\",\"dest_port\":443,\"proto\":\"TCP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2024897,\"rev\":3,\"signature\":\"ET EXPLOIT Apache Struts RCE Attempt (Outbound)\",\"category\":\"Attempted Administrator Privilege Gain\",\"severity\":1,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Major\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131500",
+   "expect_level": 7,
+   "note": "synthesized; inside host sending an exploit"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"172.31.255.5\",\"src_port\":40000,\"dest_ip\":\"10.1.2.3\",\"dest_port\":443,\"proto\":\"TCP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"blocked\",\"gid\":1,\"signature_id\":2019236,\"rev\":3,\"signature\":\"ET WEB_SERVER Possible CVE-2014-6271 Attempt\",\"category\":\"Web Application Attack\",\"severity\":1,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Major\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131500",
+   "expect_level": 7,
+   "note": "synthesized; inside to inside, blocked by IPS"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"fd00:0000:0000:0001:0000:0000:0000:0025\",\"src_port\":40000,\"dest_ip\":\"2001:0db8:0000:0000:0000:0000:0000:0080\",\"dest_port\":443,\"proto\":\"TCP\",\"ip_v\":6,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2024897,\"rev\":3,\"signature\":\"ET EXPLOIT Apache Struts RCE Attempt (Outbound)\",\"category\":\"Attempted Administrator Privilege Gain\",\"severity\":1,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Major\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131500",
+   "expect_level": 7,
+   "note": "synthesized; Suricata expanded IPv6 ULA source"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"0000:0000:0000:0000:0000:0000:0000:0000\",\"src_port\":40000,\"dest_ip\":\"ff02:0000:0000:0000:0000:0001:ff00:0001\",\"dest_port\":0,\"proto\":\"IPv6-ICMP\",\"ip_v\":6,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2030386,\"rev\":3,\"signature\":\"ET EXPLOIT Possible CVE-2020-11899 Multicast out-of-bound read\",\"category\":\"Attempted Administrator Privilege Gain\",\"severity\":1,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Major\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "86601",
+   "expect_level": 3,
+   "note": "near miss, real shape (site firewall A): unspecified source is not inside"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"192.168.0.26\",\"src_port\":40000,\"dest_ip\":\"198.51.100.81\",\"dest_port\":443,\"proto\":\"TCP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2027117,\"rev\":3,\"signature\":\"GPL SCAN nmap XMAS\",\"category\":\"Detection of a Network Scan\",\"severity\":3,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Unknown\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131596",
+   "expect_level": 2,
+   "note": "near miss for 131500: scans from inside stay low priority"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"192.168.0.27\",\"src_port\":40000,\"dest_ip\":\"198.51.100.90\",\"dest_port\":443,\"proto\":\"TCP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2034567,\"rev\":3,\"signature\":\"ET MALWARE Example CnC Checkin\",\"category\":\"A Network Trojan was detected\",\"severity\":1,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Critical\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131599",
+   "expect_level": 10,
+   "note": "synthesized; trojan class"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"192.168.0.27\",\"src_port\":40000,\"dest_ip\":\"198.51.100.90\",\"dest_port\":443,\"proto\":\"TCP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"blocked\",\"gid\":1,\"signature_id\":2034568,\"rev\":3,\"signature\":\"ET MALWARE Example CnC Beacon\",\"category\":\"Malware Command and Control Activity Detected\",\"severity\":1,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Major\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131599",
+   "expect_level": 10,
+   "note": "synthesized; blocked call home is still an infected host"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"192.168.0.28\",\"src_port\":40000,\"dest_ip\":\"198.51.100.91\",\"dest_port\":53,\"proto\":\"UDP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2034569,\"rev\":3,\"signature\":\"ET INFO Observed Example C2 Domain in DNS Lookup\",\"category\":\"Domain Observed Used for C2 Detected\",\"severity\":1,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Informational\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131599",
+   "expect_level": 10,
+   "note": "synthesized; compromise class wins over ET Informational"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"192.168.0.29\",\"src_port\":40000,\"dest_ip\":\"198.51.100.92\",\"dest_port\":443,\"proto\":\"TCP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2034570,\"rev\":3,\"signature\":\"ET COINMINER Example Stratum Login\",\"category\":\"Crypto Currency Mining Activity Detected\",\"severity\":2,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Major\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131599",
+   "expect_level": 10,
+   "note": "synthesized; coin mining"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-01T22:10:11.123456+0800\",\"flow_id\":304222504822229,\"in_iface\":\"igb2\",\"event_type\":\"alert\",\"src_ip\":\"198.51.100.40\",\"src_port\":40000,\"dest_ip\":\"203.0.113.251\",\"dest_port\":443,\"proto\":\"TCP\",\"ip_v\":4,\"pkt_src\":\"wire/pcap\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2034571,\"rev\":3,\"signature\":\"ET PHISHING Successful Example Credential Phish\",\"category\":\"Successful Credential Theft Detected\",\"severity\":1,\"metadata\":{\"created_at\":[\"2020_06_17\"],\"signature_severity\":[\"Major\"],\"updated_at\":[\"2024_03_01\"]}},\"app_proto\":\"failed\",\"direction\":\"to_server\"}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "131599",
+   "expect_level": 10,
+   "note": "synthesized; credential theft"
   }
  ]
 }

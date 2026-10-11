@@ -548,25 +548,25 @@
    "note": "synthesized"
   },
   {
-   "log": "UPID:pbs1:00148956:08143ED0:00001C1B:6ACAEE54:forget-group:store1\\x3avm-102:root@pam: 6ACAEFC6 OK",
+   "log": "UPID:pbs1:00148956:08143ED0:00001C1B:6ACAEE54:move-group:store1\\x3ans1/vm/102\\x3ans2:root@pam: 6ACAEFC6 OK",
    "location": "/var/log/proxmox-backup/tasks/archive",
    "expect_rule": "131852",
-   "expect_level": 8,
-   "note": "synthesized"
+   "expect_level": 3,
+   "note": "synthesized from src/api2/admin/datastore.rs 4.2.8 (move-group task); 131852 used to look for a forget-group task that does not exist"
   },
   {
-   "log": "UPID:pbs1:00148956:08143ED0:00001C1B:6ACAEE54:delete-namespace:store1\\x3ans1:root@pam: 6ACAEFC6 OK",
+   "log": "UPID:pbs1:00148956:08143ED0:00001C1B:6ACAEE54:move-namespace:store1\\x3ans1\\x3ans2:root@pam: 6ACAEFC6 OK",
    "location": "/var/log/proxmox-backup/tasks/archive",
    "expect_rule": "131852",
-   "expect_level": 8,
-   "note": "synthesized"
+   "expect_level": 3,
+   "note": "synthesized from namespace.rs 4.2.8 (move-namespace task)"
   },
   {
    "log": "UPID:pbs1:00148956:08143ED0:00001C1B:6ACAEE54:remove-encryption-key:00\\x3a11\\x3a22:root@pam: 6ACAEFC6 OK",
    "location": "/var/log/proxmox-backup/tasks/archive",
-   "expect_rule": "131853",
-   "expect_level": 8,
-   "note": "synthesized"
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: no such task in PBS 3/4 (the key is removed by an API call, 131853); stays quiet"
   },
   {
    "log": "UPID:pbs1:00148956:08143ED0:00001C1B:6ACAEE54:create-datastore:store2:root@pam: 6ACAEFC6 OK",
@@ -652,9 +652,9 @@
   {
    "log": "::ffff:192.0.2.200 - root@pam [17/09/2026:00:41:43 +0800] \"PUT /api2/extjs/config/prune/storeconfig-store1\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
    "location": "/var/log/proxmox-backup/api/access.log",
-   "expect_rule": "131867",
-   "expect_level": 6,
-   "note": "real (sanitized)"
+   "expect_rule": "131883",
+   "expect_level": 8,
+   "note": "real (sanitized); prune job (retention) change, 1.2 raises it from 6 to 8 (retention shortening, T1485)"
   },
   {
    "log": "::ffff:192.0.2.200 - root@pam [17/09/2026:00:41:43 +0800] \"POST /api2/extjs/admin/prune/storeconfig-store1/run\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
@@ -748,15 +748,16 @@
   {
    "log": "::ffff:192.0.2.200 - root@pam [17/09/2026:00:41:43 +0800] \"DELETE /api2/extjs/admin/datastore/store1/snapshots?backup-id=102&backup-time=1789142408&backup-type=vm&ns=ns1\" 400 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
    "location": "/var/log/proxmox-backup/api/access.log",
-   "expect_rule": "none",
-   "note": "near miss: refused deletion with 400"
+   "expect_rule": "131879",
+   "note": "a refused deletion by an authenticated user is reported since 1.2 (it was the near miss of 131865)",
+   "expect_level": 7
   },
   {
    "log": "::ffff:192.0.2.200 - root@pam [17/09/2026:00:41:43 +0800] \"PUT /api2/extjs/admin/datastore/store1/protected?backup-id=102&backup-time=1789142408&backup-type=vm&protected=0\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
    "location": "/var/log/proxmox-backup/api/access.log",
-   "expect_rule": "131867",
-   "expect_level": 6,
-   "note": "synthesized"
+   "expect_rule": "131888",
+   "expect_level": 10,
+   "note": "synthesized; protection removed, visible in the query string (protected=0)"
   },
   {
    "log": "::ffff:192.0.2.200 - root@pam [17/09/2026:00:41:43 +0800] \"POST /api2/extjs/config/remote\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
@@ -796,9 +797,9 @@
   {
    "log": "::ffff:192.0.2.200 - root@pam [17/09/2026:00:41:43 +0800] \"DELETE /api2/extjs/config/notifications/matchers/default-matcher\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
    "location": "/var/log/proxmox-backup/api/access.log",
-   "expect_rule": "131870",
-   "expect_level": 6,
-   "note": "synthesized"
+   "expect_rule": "131884",
+   "expect_level": 8,
+   "note": "synthesized; a notification matcher removed (T1562.006)"
   },
   {
    "log": "::ffff:192.0.2.200 - root@pam [17/09/2026:00:41:43 +0800] \"POST /api2/extjs/config/notifications/targets/smtp-relay/test\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
@@ -1041,6 +1042,713 @@
    "location": "df -P",
    "expect_rule": "none",
    "note": "near miss: the same mount in the default df -P, not listed: invisible (documented)"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:192.0.2.13]:5405 user=root@pam msg=authentication error - AUTH_ERR (7)",
+   "location": "/var/log/syslog",
+   "expect_rule": "131802",
+   "expect_level": 5,
+   "note": "real (sanitized, journal 2025-10-15): syslog copy of a failed login; stopped at the level 0 base 131810 before 1.2"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:192.0.2.13]:5405 user=root@pam msg=authentication error - AUTH_ERR (7)",
+   "location": "/var/log/syslog",
+   "expect_rule": "131805",
+   "expect_level": 10,
+   "repeat": 6,
+   "note": "brute force counted from syslog (the pbs group no longer reads failures from auth.log)"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:192.0.2.13]:5405 user=root@pam msg=authentication error - AUTH_ERR (7)",
+   "location": "/var/log/syslog",
+   "expect_rule": "131802",
+   "expect_level": 5,
+   "repeat": 5,
+   "note": "near miss: five syslog failures stay single"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:192.0.2.13]:58796 msg=invalid ticket - expired",
+   "location": "/var/log/syslog",
+   "expect_rule": "131803",
+   "expect_level": 2,
+   "note": "real shape (journal, 20 a year): expired ticket from syslog stays at level 2"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:198.51.100.110]:40112 msg=invalid credentials",
+   "location": "/var/log/syslog",
+   "expect_rule": "131804",
+   "expect_level": 5,
+   "note": "real shape (journal): wrong API token secret from syslog"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=unknown user=root@pam msg=authentication error - AUTH_ERR (7)",
+   "location": "/var/log/syslog",
+   "expect_rule": "131802",
+   "expect_level": 5,
+   "note": "synthesized from environment.rs (rhost=unknown variant); srcip stays empty"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: successful auth for user 'erin@pbs'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131809",
+   "expect_level": 10,
+   "before": [
+    "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:10.0.250.7]:5405 user=erin@pbs msg=authentication error - AUTH_ERR (7)",
+    "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:10.0.250.7]:5405 user=erin@pbs msg=authentication error - AUTH_ERR (7)",
+    "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:10.0.250.7]:5405 user=erin@pbs msg=authentication error - AUTH_ERR (7)"
+   ],
+   "note": "three failures from syslog, then the login from auth.log (the pbs group shape since 1.2)"
+  },
+  {
+   "log": "::ffff:203.0.113.19 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131877",
+   "expect_level": 12,
+   "before": [
+    "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:203.0.113.19]:5405 user=root@pam msg=authentication error - AUTH_ERR (7)",
+    "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:203.0.113.19]:5405 user=root@pam msg=authentication error - AUTH_ERR (7)",
+    "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:203.0.113.19]:5405 user=root@pam msg=authentication error - AUTH_ERR (7)",
+    "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:203.0.113.19]:5405 user=root@pam msg=authentication error - AUTH_ERR (7)",
+    "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:203.0.113.19]:5405 user=root@pam msg=authentication error - AUTH_ERR (7)",
+    "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:203.0.113.19]:5405 user=root@pam msg=authentication error - AUTH_ERR (7)"
+   ],
+   "note": "brute force from syslog, then a login from the same address in the access log"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: pam_unix(proxmox-backup-auth:auth): authentication failure; logname= uid=0 euid=0 tty= ruser= rhost=::ffff:192.0.2.13  user=root",
+   "location": "/var/log/syslog",
+   "expect_rule": "131889",
+   "expect_level": 2,
+   "note": "real shape (journal, 33 a year): the PAM copy of a failed root@pam login no longer raises 5503 (level 5) a second time"
+  },
+  {
+   "log": "Oct 15 10:10:25 pbs1 sshd[812]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=192.0.2.13  user=root",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5503",
+   "expect_level": 5,
+   "note": "near miss: other PAM services keep the built-in 5503"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: pam_winbind(proxmox-backup-auth:auth): request wbcLogonUser failed: WBC_ERR_AUTH_ERROR, PAM error: PAM_USER_UNKNOWN (10), NTSTATUS: NT_STATUS_NO_SUCH_USER, Error message was: The specified account does not exist.",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "note": "real shape (journal, 33 a year); stays quiet"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-proxy[3448591]: POST /api2/json/access/ticket: 401 Unauthorized: [client [::ffff:192.0.2.13]:5405] permission check failed.",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "note": "real shape (journal): the 401 copy of a failed login is not counted again"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:192.0.2.13]:5405 user=bob@pbs msg=authentication failed",
+   "location": "/var/log/syslog",
+   "expect_rule": "131824",
+   "expect_level": 8,
+   "note": "synthesized from access.rs authenticate_2nd: correct password, wrong second factor"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:192.0.2.13]:40000 user=bob@pbs msg=authentication failed",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131824",
+   "expect_level": 8,
+   "note": "the same in the auth.log shape"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:192.0.2.13]:5405 user=bob@pbs msg=authentication failed",
+   "location": "/var/log/syslog",
+   "expect_rule": "131824",
+   "expect_level": 8,
+   "repeat": 6,
+   "note": "near miss: wrong second factors do not count as password brute force"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:192.0.2.13]:5405 user=bob@pbs msg=invalid credentials",
+   "location": "/var/log/syslog",
+   "expect_rule": "131802",
+   "expect_level": 5,
+   "note": "near miss: wrong password of a pbs realm account (proxmox-sys crypt.rs) stays 131802"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: TOTP of user 'bob@pbs' is locked",
+   "location": "/var/log/syslog",
+   "expect_rule": "131825",
+   "expect_level": 10,
+   "note": "synthesized from proxmox-tfa api/mod.rs (8 wrong TOTP codes)"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: refusing 2nd factor for user 'bob@pbs'",
+   "location": "/var/log/syslog",
+   "expect_rule": "131825",
+   "expect_level": 10,
+   "note": "synthesized from proxmox-tfa api/mod.rs (all second factors locked for an hour)"
+  },
+  {
+   "log": "Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: no 2nd factor available for user 'bob@pbs'",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "note": "near miss: another proxmox-tfa message"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: unable to start datastore prune job daily-store1 - unable to acquire lock on datastore",
+   "location": "/var/log/syslog",
+   "expect_rule": "131827",
+   "expect_level": 10,
+   "note": "synthesized from proxmox-backup-proxy.rs 4.2.8 (no task is created)"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: unable to start garbage collection job on datastore store1 - cannot start job that is started!",
+   "location": "/var/log/syslog",
+   "expect_rule": "131827",
+   "expect_level": 10,
+   "note": "synthesized from proxmox-backup-proxy.rs and jobstate.rs"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: unable to start datastore verification job v-1a2b3c4d-5e6f - datastore 'usb' is not mounted",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "note": "near miss: an unplugged removable datastore (131811 to 131813 cover it)"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: task scheduler panic: called `Option::unwrap()` on a `None` value",
+   "location": "/var/log/syslog",
+   "expect_rule": "131828",
+   "expect_level": 12,
+   "note": "synthesized from proxmox-backup-proxy.rs (run_task_scheduler)"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: task scheduler failed - Too many open files (os error 24)",
+   "location": "/var/log/syslog",
+   "expect_rule": "131828",
+   "expect_level": 12,
+   "note": "synthesized from proxmox-backup-proxy.rs"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: unable to parse schedule 'mon..fri 25:00' - unable to parse calendar event",
+   "location": "/var/log/syslog",
+   "expect_rule": "131829",
+   "expect_level": 7,
+   "note": "synthesized from proxmox-backup-proxy.rs"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: prune job config from_value failed - missing property 'store'",
+   "location": "/var/log/syslog",
+   "expect_rule": "131829",
+   "expect_level": 7,
+   "note": "synthesized from proxmox-backup-proxy.rs"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: skipping scheduled GC on store1, could look it up - datastore is in maintenance mode",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "note": "near miss: a GC skipped for maintenance stays quiet"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: can't verify missing chunk with digest 0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+   "location": "/var/log/syslog",
+   "expect_rule": "131859",
+   "expect_level": 10,
+   "note": "synthesized from src/backup/verify.rs 4.2.8 (ERROR lines of a task reach syslog since 3.3)"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: can't verify chunk, load failed - store 'store1', unable to load chunk '0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0' - Input/output error (os error 5)",
+   "location": "/var/log/syslog",
+   "expect_rule": "131859",
+   "expect_level": 10,
+   "note": "synthesized from verify.rs"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: Failed to verify the following snapshots/groups:",
+   "location": "/var/log/syslog",
+   "expect_rule": "131859",
+   "expect_level": 10,
+   "note": "synthesized from src/server/verify_job.rs"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: TASK ERROR: verification failed - job aborted",
+   "location": "/var/log/syslog",
+   "expect_rule": "131815",
+   "expect_level": 3,
+   "note": "real (journal, 1 a year); near miss: an aborted verification is not a corrupt chunk"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: DELETE /api2/json/admin/datastore/store1/snapshots?backup-id=102&backup-time=1789142408&backup-type=vm&ns=ns1: 400 Bad Request: [client [::ffff:198.51.100.109]:40112] cannot remove protected snapshot",
+   "location": "/var/log/syslog",
+   "expect_rule": "131886",
+   "expect_level": 10,
+   "note": "synthesized from pbs-datastore backup_info.rs and rest.rs log_response"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: DELETE /api2/json/admin/datastore/store1/groups?backup-id=102&backup-type=vm&ns=ns1: 400 Bad Request: [client [::ffff:198.51.100.109]:40112] group only partially deleted due to protected snapshots",
+   "location": "/var/log/syslog",
+   "expect_rule": "131886",
+   "expect_level": 10,
+   "note": "synthesized from api2/admin/datastore.rs (error-on-protected defaults to true)"
+  },
+  {
+   "log": "Oct 12 03:00:00 pbs1 proxmox-backup-proxy[1345878]: DELETE /api2/json/admin/datastore/store1/snapshots?backup-id=102&backup-time=1789142408&backup-type=vm: 400 Bad Request: [client [::ffff:198.51.100.109]:40112] snapshot vm/102/2026-10-03T18:00:01Z does not exist.",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "note": "near miss: another refused deletion stays quiet in syslog"
+  },
+  {
+   "log": "Sep  2 07:30:01 pbs1 proxmox-backup-proxy[1345878]: lookup_datastore failed - Unable to acquire lock \"/etc/proxmox-backup/.datastore.lck\" - Interrupted system call (os error 4)",
+   "location": "/var/log/syslog",
+   "expect_rule": "131887",
+   "expect_level": 3,
+   "note": "real (sanitized, journal 2026-09-02, 8 a year at reboots); was 131814 level 10"
+  },
+  {
+   "log": "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"PUT /api2/json/admin/datastore/store1/protected\" 200 0 libwww-perl/6.77",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131878",
+   "expect_level": 6,
+   "note": "synthesized; Proxmox VE (PVE::APIClient) sends the value in the body: the site journal has PUT .../protected without a query string from a node"
+  },
+  {
+   "log": "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"PUT /api2/json/admin/datastore/store1/protected?backup-id=102&backup-time=1789142408&backup-type=vm&ns=ns1&protected=false\" 200 0 proxmox-backup-client/4.2.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131888",
+   "expect_level": 10,
+   "note": "synthesized from proxmox-backup-client snapshot.rs (query string)"
+  },
+  {
+   "log": "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"PUT /api2/json/admin/datastore/store1/protected?backup-id=102&backup-time=1789142408&backup-type=vm&ns=ns1&protected=true\" 200 0 proxmox-backup-client/4.2.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131878",
+   "expect_level": 6,
+   "note": "near miss: protection set, not removed"
+  },
+  {
+   "log": "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"DELETE /api2/json/admin/datastore/store1/snapshots?backup-id=102&backup-time=1789142408&backup-type=vm&ns=ns1\" 200 0 proxmox-backup-client/4.2.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131881",
+   "expect_level": 12,
+   "before": [
+    "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"PUT /api2/json/admin/datastore/store1/protected\" 200 0 libwww-perl/6.77"
+   ],
+   "note": "Pay2Key pattern: protection changed, then deletion, same node"
+  },
+  {
+   "log": "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"DELETE /api2/json/admin/datastore/store1/snapshots?backup-id=102&backup-time=1789142408&backup-type=vm&ns=ns1\" 403 0 proxmox-backup-client/4.2.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131881",
+   "expect_level": 12,
+   "before": [
+    "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"PUT /api2/json/admin/datastore/store1/protected?backup-id=102&backup-time=1789142408&backup-type=vm&ns=ns1&protected=false\" 200 0 proxmox-backup-client/4.2.0"
+   ],
+   "note": "protection removed, then a refused deletion (DatastoreBackup token)"
+  },
+  {
+   "log": "::ffff:198.51.100.110 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"DELETE /api2/json/admin/datastore/store1/snapshots?backup-id=102&backup-time=1789142408&backup-type=vm&ns=ns1\" 200 0 proxmox-backup-client/4.2.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131865",
+   "expect_level": 8,
+   "before": [
+    "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"PUT /api2/json/admin/datastore/store1/protected\" 200 0 libwww-perl/6.77"
+   ],
+   "note": "near miss: the deletion comes from another address"
+  },
+  {
+   "log": "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"DELETE /api2/json/admin/datastore/store1/snapshots?backup-id=102&backup-time=1789142408&backup-type=vm&ns=ns1\" 200 0 proxmox-backup-client/4.2.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131865",
+   "expect_level": 8,
+   "before": [
+    "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"PUT /api2/extjs/config/prune/storeconfig-store1\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+   ],
+   "note": "near miss: a retention change is not a protection change"
+  },
+  {
+   "log": "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"DELETE /api2/json/admin/datastore/store1/snapshots?backup-id=102&backup-time=1789142408&backup-type=vm&ns=ns1\" 403 0 proxmox-backup-client/4.2.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131879",
+   "expect_level": 7,
+   "note": "synthesized from hierarchy.rs check_ns_privs_full (403 \"permission check failed - missing Datastore.Modify|Datastore.Prune\")"
+  },
+  {
+   "log": "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"PUT /api2/json/admin/datastore/store1/protected\" 400 0 libwww-perl/6.77",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131879",
+   "expect_level": 7,
+   "note": "refused protection change (site journal: 1 a year, 400)"
+  },
+  {
+   "log": "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"DELETE /api2/json/admin/datastore/store1/snapshots?backup-id=102&backup-time=1789142408&backup-type=vm&ns=ns1\" 403 0 proxmox-backup-client/4.2.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131880",
+   "expect_level": 12,
+   "repeat": 5,
+   "note": "five refused deletions from one address in ten minutes"
+  },
+  {
+   "log": "::ffff:198.51.100.109 - backup@pbs!pve [11/10/2026:10:00:00 +0800] \"DELETE /api2/json/admin/datastore/store1/snapshots?backup-id=102&backup-time=1789142408&backup-type=vm&ns=ns1\" 403 0 proxmox-backup-client/4.2.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131879",
+   "expect_level": 7,
+   "repeat": 4,
+   "note": "near miss: four refused deletions"
+  },
+  {
+   "log": "::ffff:203.0.113.70 - - [11/10/2026:10:00:00 +0800] \"DELETE /api2/json/admin/datastore/store1/snapshots?backup-id=102\" 401 0 curl/8.5.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "none",
+   "note": "near miss: unauthenticated (the failure is in syslog)"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:00:00 +0800] \"DELETE /api2/extjs/access/tfa/root%40pam/totp-1a2b3c\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131826",
+   "expect_level": 10,
+   "note": "synthesized from the PBS API (access/tfa/{userid}/{id})"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:00:00 +0800] \"PUT /api2/extjs/access/users/root%40pam/unlock-tfa\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131826",
+   "expect_level": 10,
+   "note": "synthesized from api2/access/user.rs (unlock-tfa)"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:00:00 +0800] \"DELETE /api2/extjs/access/tfa/operator%40pbs/totp-1a2b3c\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131861",
+   "expect_level": 8,
+   "note": "near miss: an ordinary account stays 131861"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:00:00 +0800] \"POST /api2/extjs/access/tfa/root%40pam\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131861",
+   "expect_level": 8,
+   "note": "near miss: a second factor added to the administrator"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:00:00 +0800] \"PUT /api2/extjs/admin/datastore/store1/change-owner\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131867",
+   "expect_level": 6,
+   "note": "near miss of 131883: ownership change stays 6"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:00:00 +0800] \"DELETE /api2/extjs/config/verify/v-f16f2ca9-244e\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131885",
+   "expect_level": 8,
+   "note": "synthesized; verification job removed (T1562.001)"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:00:00 +0800] \"DELETE /api2/extjs/config/tape-encryption-keys/7b%3A2a%3A11\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131853",
+   "expect_level": 8,
+   "note": "synthesized from api2/config/tape_encryption_keys.rs (delete_key)"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:00:00 +0800] \"POST /api2/json/push\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131882",
+   "expect_level": 8,
+   "note": "synthesized from api2/push.rs (ad-hoc push sync)"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:00:00 +0800] \"POST /api2/extjs/config/s3\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131882",
+   "expect_level": 8,
+   "note": "synthesized from api2/config/s3.rs"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:00:00 +0800] \"DELETE /api2/extjs/config/encryption-keys/key1\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131882",
+   "expect_level": 8,
+   "note": "synthesized from api2/config/encryption_keys.rs (4.2)"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:00:00 +0800] \"POST /api2/extjs/admin/sync/s-1a2b3c4d-5e6f/run\" 200 0 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "none",
+   "note": "near miss: running a configured sync job is routine"
+  },
+  {
+   "log": "UPID:pbs1:00148956:08143ED0:00001C1B:6ACAEE54:move-group:store1\\x3ans1/vm/102\\x3ans2:root@pam: 6ACAEFC6 target group already exists",
+   "location": "/var/log/proxmox-backup/tasks/archive",
+   "expect_rule": "131834",
+   "expect_level": 5,
+   "note": "near miss: a failed move is a task failure"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/acl.cfg",
+    "type": "modified",
+    "changed": [
+     "size",
+     "md5",
+     "sha1",
+     "sha256"
+    ],
+    "diff": "1a2\n> acl:1:/datastore:operator@pbs:Admin\n",
+    "process": "/usr/sbin/proxmox-backup-manager",
+    "mode": "whodata"
+   },
+   "expect_rule": "131895",
+   "expect_level": 8,
+   "note": "fim: permission added on the shell (proxmox-backup-manager acl update); diff kept"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/token.shadow",
+    "type": "modified",
+    "changed": [
+     "size",
+     "md5",
+     "sha1",
+     "sha256"
+    ]
+   },
+   "expect_rule": "131895",
+   "expect_level": 8,
+   "note": "fim: API token secret changed (hash only, no diff)"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/tfa.json",
+    "type": "deleted"
+   },
+   "expect_rule": "131895",
+   "expect_level": 8,
+   "note": "fim: second factors removed on disk"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/shadow.json",
+    "type": "modified",
+    "changed": [
+     "size",
+     "md5",
+     "sha1",
+     "sha256"
+    ]
+   },
+   "expect_rule": "131895",
+   "expect_level": 8,
+   "note": "fim: pbs realm password changed"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/acl.cfg.tmp_A1b2C3",
+    "type": "added"
+   },
+   "expect_rule": "554",
+   "expect_level": 5,
+   "note": "fim: near miss: the temporary file PBS renames into place (the group restrict keeps it out; if seen, built-in 554)"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/.acl.lck",
+    "type": "modified",
+    "changed": [
+     "mtime"
+    ]
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: lock file (restrict keeps it out of the group; default /etc scan: built-in 550)"
+  },
+  {
+   "fim": {
+    "path": "/etc/pve/user.cfg",
+    "type": "modified",
+    "changed": [
+     "size",
+     "md5",
+     "sha1",
+     "sha256"
+    ]
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: the Proxmox VE user.cfg is not a PBS file"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/datastore.cfg",
+    "type": "modified",
+    "changed": [
+     "size",
+     "md5",
+     "sha1",
+     "sha256"
+    ],
+    "diff": "3c3\n< \tgc-schedule daily\n---\n> \tgc-schedule yearly\n"
+   },
+   "expect_rule": "131896",
+   "expect_level": 8,
+   "note": "fim: datastore configuration changed on disk"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/remote.cfg",
+    "type": "added"
+   },
+   "expect_rule": "131896",
+   "expect_level": 8,
+   "note": "fim: a remote added (hash only: it holds the remote password)"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/sync.cfg",
+    "type": "added"
+   },
+   "expect_rule": "131896",
+   "expect_level": 8,
+   "note": "fim: a sync job added"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/encryption-keys/sync-key1.json",
+    "type": "added"
+   },
+   "expect_rule": "131896",
+   "expect_level": 8,
+   "note": "fim: push sync encryption key added (4.2)"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/datastore.cfg.tmp_X9y8Z7",
+    "type": "added"
+   },
+   "expect_rule": "554",
+   "expect_level": 5,
+   "note": "fim: near miss: temporary file of datastore.cfg"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/.datastore.lck",
+    "type": "modified",
+    "changed": [
+     "mtime"
+    ]
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: datastore lock file"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/prune.cfg",
+    "type": "modified",
+    "changed": [
+     "size",
+     "md5",
+     "sha1",
+     "sha256"
+    ],
+    "diff": "2c2\n< \tkeep-daily 14\n---\n> \tkeep-daily 1\n"
+   },
+   "expect_rule": "131897",
+   "expect_level": 8,
+   "note": "fim: retention shortened, the diff shows keep-daily 14 to 1 (measured in the sandbox with a real FIM event)"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/verification.cfg",
+    "type": "deleted"
+   },
+   "expect_rule": "131897",
+   "expect_level": 8,
+   "note": "fim: verification jobs removed"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/prune.cfg.tmp_Z9y8X7",
+    "type": "added"
+   },
+   "expect_rule": "554",
+   "expect_level": 5,
+   "note": "fim: near miss: temporary file of prune.cfg"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/notifications.cfg",
+    "type": "deleted"
+   },
+   "expect_rule": "131898",
+   "expect_level": 8,
+   "note": "fim: notification targets and matchers removed"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/notifications-priv.cfg",
+    "type": "modified",
+    "changed": [
+     "size",
+     "md5",
+     "sha1",
+     "sha256"
+    ]
+   },
+   "expect_rule": "131898",
+   "expect_level": 8,
+   "note": "fim: notification secrets changed (hash only)"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/.notifications.lck",
+    "type": "modified",
+    "changed": [
+     "mtime"
+    ]
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: notifications lock file"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/subscription",
+    "type": "modified",
+    "changed": [
+     "size",
+     "md5",
+     "sha1",
+     "sha256"
+    ]
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: subscription status (ignored by the group; the default /etc scan reports it as built-in 550, measured 4 in three weeks)"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/authkey.key",
+    "type": "modified",
+    "changed": [
+     "size",
+     "md5",
+     "sha1",
+     "sha256"
+    ]
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: other files keep the built-in rule"
+  },
+  {
+   "fim": {
+    "path": "/etc/proxmox-backup/node.cfg",
+    "type": "modified",
+    "changed": [
+     "size",
+     "md5",
+     "sha1",
+     "sha256"
+    ]
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: node settings (ACME account, HTTP proxy) keep the built-in rule"
   }
  ]
 }

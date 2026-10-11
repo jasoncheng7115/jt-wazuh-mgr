@@ -1,87 +1,301 @@
 <!--
-  Jason Tools IOC — rules that attach to built-in rule groups
+  jt-ioc: rules that attach to built-in rule chains
   File:    zz-906050-jason_tools_ioc_late.xml
+  Range:   906001-906099, shared with 01-906000-jason_tools_ioc.xml
+           (this file: 906031-906039, 906050-906059, 906090-906093)
   Licence: AGPL-3.0-or-later    Jason Tools Co., Ltd.
 
   ★ Why a separate file with a zz- prefix.
     <if_group> attaches a rule as a child of the rules that carry that group
-    *and are already loaded*. Rule files load in filename order across the
-    built-in and custom directories, and 01-906000-… sorts before the built-in
-    0580-win-security and 0595-win-sysmon files. In that file these rules
-    either failed outright ("Group 'sysmon_event3' was not found ... will be
-    ignored", measured on 4.14.7 on 2026-10-06) or attached only to the
-    authentication_success rules that happened to load earlier, missing the
-    Windows logon rules. zz- loads after every built-in file.
+    *and are already loaded*, and <if_sid> must name a rule loaded earlier.
+    Rule files load in filename order across the built-in and custom
+    directories; 01-906000-… sorts before the built-in Windows, Sysmon,
+    Suricata and web files ("Group 'sysmon_event3' was not found ... will be
+    ignored", measured on 4.14.7 on 2026-10-06). zz- loads after all of them.
+
+  Every lookup of jason_tools_threat_ip (any listed address: "one source")
+  has a child that looks the same field up in jason_tools_threat_ip_high (two
+  independent providers or a curated list). See the other file's header for
+  why the tier needs a list of its own.
 -->
 
 <group name="jason_tools_ioc,">
 
-  <!--
-    清單裡的位址「成功登入」。這才是 IOC 比對最有價值的時刻：失敗的嘗試每個對外
-    服務每天都有，成功的才代表對方進來了。以 if_group 掛在所有 authentication_success
-    規則底下（sshd 5715、Windows 登入 60106、PAM 等）。
-    ★ 這兩條自己的 <group> 不能含 authentication_success，否則會成為彼此
-      （以及自己）的子規則。
+  <!-- ===== Successful logins =====
+    The moment the list matters most: failures arrive from listed addresses
+    every day on every exposed service, a success means the address got in.
+    Attached to every authentication_success rule loaded before this file
+    (sshd 5715, Windows 60106/92651, PAM, the other jt- packs).
+    One source: level 10 (above the time-of-day rules 17101/17102, level 9,
+    which are siblings and would otherwise be tried first). High: level 14.
+    Never fired on the site this was built on (30 days, both nodes).
+    ★ These rules' own <group> must not contain authentication_success, or they
+      would become children of each other.
   -->
-  <rule id="906050" level="14">
+  <rule id="906050" level="10">
     <if_group>authentication_success</if_group>
     <list field="srcip" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
-    <description>[CRITICAL] Jason Tools IOC: successful login from a threat-listed address - $(srcip) user: $(dstuser)</description>
+    <description>[WARN] jt-ioc: successful login from an address on a threat feed - $(srcip) user: $(dstuser)</description>
     <mitre>
       <id>T1078</id>
+      <id>T1133</id>
     </mitre>
     <group>threat_intelligence,ioc_login,</group>
   </rule>
 
-  <rule id="906051" level="14">
+  <rule id="906052" level="14">
+    <if_sid>906050</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/jason_tools_threat_ip_high</list>
+    <description>[HIGH] jt-ioc: successful login from an address listed by several threat feeds or a curated list - $(srcip) user: $(dstuser)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1133</id>
+    </mitre>
+    <group>threat_intelligence,ioc_login,ioc_high,</group>
+  </rule>
+
+  <rule id="906051" level="10">
     <if_group>authentication_success</if_group>
     <list field="win.eventdata.ipAddress" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
-    <description>[CRITICAL] Jason Tools IOC: successful Windows logon from a threat-listed address - $(win.eventdata.ipAddress) user: $(win.eventdata.targetUserName)</description>
+    <description>[WARN] jt-ioc: successful Windows logon from an address on a threat feed - $(win.eventdata.ipAddress) user: $(win.eventdata.targetUserName)</description>
     <mitre>
       <id>T1078</id>
+      <id>T1133</id>
     </mitre>
     <group>threat_intelligence,ioc_login,</group>
   </rule>
 
-  <!--
-    Windows 主機與清單位址的連線（Sysmon 事件 3）。主動連出去的是 C2 的典型跡象；
-    連進來的多半是掃描。欄位名稱是 win.eventdata.*（不是 data.win.eventdata.*），
-    以 initiated 區分方向，兩條互斥。
+  <rule id="906053" level="14">
+    <if_sid>906051</if_sid>
+    <list field="win.eventdata.ipAddress" lookup="address_match_key">etc/lists/jason_tools_threat_ip_high</list>
+    <description>[HIGH] jt-ioc: successful Windows logon from an address listed by several threat feeds or a curated list - $(win.eventdata.ipAddress) user: $(win.eventdata.targetUserName)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1133</id>
+    </mitre>
+    <group>threat_intelligence,ioc_login,ioc_high,</group>
+  </rule>
+
+  <!-- ===== Sysmon event 3: Windows network connections =====
+    Fields are win.eventdata.* (not data.win.eventdata.*); initiated tells the
+    direction. Parents: 61605 (every event 3) and the built-in level 0 rules
+    attached to it, which are tried before any sibling and would otherwise
+    end the evaluation: 92101 (PowerShell over TCP: a download cradle to a
+    listed address was never looked up) and 92108 (port 3389).
+    Measured 2026-10-06..11 on one Windows 11 host: 1,403 events, all from an
+    earthquake-alert client's UDP peer-to-peer traffic to home connections that
+    feeds had listed; 935 of them from feeds 1.5 dropped or bans older than 30 days.
+    Port 53 is kept apart: a DNS server contacts whatever name server a domain
+    names, and one site's resolvers did exactly that with Spamhaus DROP space.
   -->
-  <rule id="906031" level="8">
-    <if_group>sysmon_event3</if_group>
+  <rule id="906031" level="2">
+    <if_sid>61605,92101,92108</if_sid>
     <field name="win.eventdata.initiated" type="pcre2">(?i)^false$</field>
     <list field="win.eventdata.sourceIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
-    <description>Jason Tools IOC: inbound connection from a threat-listed address - $(win.eventdata.sourceIp) to $(win.eventdata.image)</description>
+    <description>jt-ioc: inbound connection from a threat-listed address - $(win.eventdata.sourceIp) to $(win.eventdata.image)</description>
     <mitre>
       <id>T1595</id>
     </mitre>
     <group>threat_intelligence,sysmon,network_connection,</group>
   </rule>
 
-  <!-- ★ 2026-10-06：只看 TCP。上線第一晚 7 筆全是台灣地震預警軟體 OXWU 的 P2P UDP 流量，
-       對象是被列入清單的家用 IP（那些家用電腦本身中毒、掃過別人）。C2 幾乎都走 TCP；
-       UDP 改由 906036 以 level 6 記錄。 -->
-  <rule id="906032" level="13">
-    <if_group>sysmon_event3</if_group>
-    <field name="win.eventdata.initiated" type="pcre2">(?i)^true$</field>
-    <field name="win.eventdata.protocol" type="pcre2">(?i)^tcp$</field>
-    <list field="win.eventdata.destinationIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
-    <description>[HIGH] Jason Tools IOC: process connected out to a threat-listed address - $(win.eventdata.destinationIp):$(win.eventdata.destinationPort) by $(win.eventdata.image)</description>
+  <rule id="906034" level="5">
+    <if_sid>906031</if_sid>
+    <list field="win.eventdata.sourceIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip_high</list>
+    <description>jt-ioc: inbound connection from an address listed by several threat feeds - $(win.eventdata.sourceIp) to $(win.eventdata.image):$(win.eventdata.destinationPort)</description>
     <mitre>
-      <id>T1071</id>
-      <id>TA0011</id>
+      <id>T1595</id>
     </mitre>
-    <group>threat_intelligence,sysmon,command_and_control,outbound_threat,</group>
+    <group>threat_intelligence,sysmon,network_connection,ioc_high,</group>
   </rule>
 
-  <rule id="906036" level="6">
-    <if_group>sysmon_event3</if_group>
+  <rule id="906035" level="3">
+    <if_sid>61605,92101,92108</if_sid>
+    <field name="win.eventdata.initiated" type="pcre2">(?i)^true$</field>
+    <field name="win.eventdata.destinationPort" type="pcre2">^53$</field>
+    <list field="win.eventdata.destinationIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
+    <description>jt-ioc: DNS traffic to a threat-listed address (resolvers query any name server) - $(win.eventdata.destinationIp) by $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,sysmon,</group>
+  </rule>
+
+  <rule id="906032" level="8">
+    <if_sid>61605,92101,92108</if_sid>
+    <field name="win.eventdata.initiated" type="pcre2">(?i)^true$</field>
+    <field name="win.eventdata.protocol" type="pcre2">(?i)^tcp$</field>
+    <field name="win.eventdata.destinationPort" type="pcre2">^(?!53$)\d+$</field>
+    <list field="win.eventdata.destinationIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
+    <description>jt-ioc: process connected out to an address on a threat feed - $(win.eventdata.destinationIp):$(win.eventdata.destinationPort) by $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,sysmon,outbound_threat,</group>
+  </rule>
+
+  <rule id="906033" level="13">
+    <if_sid>906032</if_sid>
+    <list field="win.eventdata.destinationIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip_high</list>
+    <description>[HIGH] jt-ioc: process connected out to an address listed by several threat feeds or a curated list - $(win.eventdata.destinationIp):$(win.eventdata.destinationPort) by $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,sysmon,command_and_control,outbound_threat,ioc_high,</group>
+  </rule>
+
+  <rule id="906036" level="2">
+    <if_sid>61605,92101,92108</if_sid>
     <field name="win.eventdata.initiated" type="pcre2">(?i)^true$</field>
     <field name="win.eventdata.protocol" type="pcre2">(?i)^udp$</field>
+    <field name="win.eventdata.destinationPort" type="pcre2">^(?!53$)\d+$</field>
     <list field="win.eventdata.destinationIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
-    <description>Jason Tools IOC: UDP traffic to a threat-listed address, often peer-to-peer - $(win.eventdata.destinationIp):$(win.eventdata.destinationPort) by $(win.eventdata.image)</description>
+    <description>jt-ioc: UDP traffic to a threat-listed address, often peer-to-peer - $(win.eventdata.destinationIp):$(win.eventdata.destinationPort) by $(win.eventdata.image)</description>
     <group>threat_intelligence,sysmon,</group>
+  </rule>
+
+  <rule id="906037" level="8">
+    <if_sid>906036</if_sid>
+    <list field="win.eventdata.destinationIp" lookup="address_match_key">etc/lists/jason_tools_threat_ip_high</list>
+    <description>jt-ioc: UDP traffic to an address listed by several threat feeds or a curated list - $(win.eventdata.destinationIp):$(win.eventdata.destinationPort) by $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,sysmon,outbound_threat,ioc_high,</group>
+  </rule>
+
+  <!-- ===== Suricata eve.json =====
+    The built-in 86600 takes every eve.json event, so the generic src_ip /
+    dest_ip rules under rule 1 never saw Suricata (and 1.4's 906014 named
+    data.dest_ip, which does not exist). Flow records and the http / tls
+    records (86602 / 86604, level 0) say who started the connection: dest_ip
+    is the server. Alerts (86601) are left to the built-in 99915/99916 and to
+    whatever grades them (jt-opnsense): a sibling here would take them over.
+    Flow records need the eve "flow" type (docs.suricata.io, eve-json-format).
+  -->
+  <rule id="906054" level="8">
+    <if_sid>86600</if_sid>
+    <field name="event_type" type="pcre2">^(flow|netflow)$</field>
+    <field name="proto" type="pcre2">(?i)^tcp$</field>
+    <field name="dest_port" type="pcre2">^(?!53$)\d+$</field>
+    <list field="dest_ip" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
+    <description>jt-ioc: connection to an address on a threat feed (Suricata flow) - $(src_ip) to $(dest_ip):$(dest_port)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,suricata,outbound_threat,</group>
+  </rule>
+
+  <rule id="906055" level="13">
+    <if_sid>906054</if_sid>
+    <list field="dest_ip" lookup="address_match_key">etc/lists/jason_tools_threat_ip_high</list>
+    <description>[HIGH] jt-ioc: connection to an address listed by several threat feeds or a curated list (Suricata flow) - $(src_ip) to $(dest_ip):$(dest_port)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,suricata,command_and_control,outbound_threat,ioc_high,</group>
+  </rule>
+
+  <rule id="906056" level="2">
+    <if_sid>86600</if_sid>
+    <field name="event_type" type="pcre2">^(flow|netflow)$</field>
+    <field name="proto" type="pcre2">(?i)^udp$</field>
+    <field name="dest_port" type="pcre2">^(?!53$)\d+$</field>
+    <list field="dest_ip" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
+    <description>jt-ioc: UDP flow to a threat-listed address (Suricata) - $(src_ip) to $(dest_ip):$(dest_port)</description>
+    <group>threat_intelligence,suricata,</group>
+  </rule>
+
+  <rule id="906057" level="8">
+    <if_sid>906056</if_sid>
+    <list field="dest_ip" lookup="address_match_key">etc/lists/jason_tools_threat_ip_high</list>
+    <description>jt-ioc: UDP flow to an address listed by several threat feeds or a curated list (Suricata) - $(src_ip) to $(dest_ip):$(dest_port)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,suricata,outbound_threat,ioc_high,</group>
+  </rule>
+
+  <rule id="906058" level="8">
+    <if_sid>86602,86604</if_sid>
+    <list field="dest_ip" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
+    <description>jt-ioc: $(event_type) session to an address on a threat feed (Suricata) - $(src_ip) to $(dest_ip):$(dest_port)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,suricata,outbound_threat,</group>
+  </rule>
+
+  <rule id="906059" level="13">
+    <if_sid>906058</if_sid>
+    <list field="dest_ip" lookup="address_match_key">etc/lists/jason_tools_threat_ip_high</list>
+    <description>[HIGH] jt-ioc: $(event_type) session to an address listed by several threat feeds or a curated list (Suricata) - $(src_ip) to $(dest_ip):$(dest_port)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>threat_intelligence,suricata,command_and_control,outbound_threat,ioc_high,</group>
+  </rule>
+
+  <!-- ===== Web access logs in combined format (built-in web-accesslog decoder) =====
+    31100 is the base, 31108 (level 0, tried first) takes simple 2xx/3xx
+    requests. A write the server accepted from a listed address; level 6 so the
+    built-in attack rules (31103-31105, levels 6-7, loaded first) are still
+    tried before it. Reads srcip, protocol (the method) and id (the status).
+  -->
+  <rule id="906038" level="6">
+    <if_sid>31100,31108</if_sid>
+    <protocol type="pcre2">^(POST|PUT|PATCH|DELETE)$</protocol>
+    <id type="pcre2">^2\d\d$</id>
+    <list field="srcip" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
+    <description>jt-ioc: web server accepted a $(protocol) from a threat-listed address - $(srcip) $(url)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>threat_intelligence,ioc_web,</group>
+  </rule>
+
+  <rule id="906039" level="12">
+    <if_sid>906038</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/jason_tools_threat_ip_high</list>
+    <description>[HIGH] jt-ioc: web server accepted a $(protocol) from an address listed by several threat feeds - $(srcip) $(url)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>threat_intelligence,ioc_web,ioc_high,</group>
+  </rule>
+
+  <!-- ===== The updater's own health =====
+    update-threat-ip-list.py writes its failures to the manager's event queue
+    (location "jt-ioc"). Only a local root process can write that socket.
+    A list that stopped updating detects less every day and looks exactly like
+    one that works.
+  -->
+  <rule id="906090" level="5">
+    <location>^jt-ioc$</location>
+    <match>^jt-ioc: ERROR </match>
+    <description>jt-ioc: threat list update failed; the lists in use are unchanged</description>
+    <group>jt_ioc_update,</group>
+  </rule>
+
+  <rule id="906091" level="10">
+    <if_sid>906090</if_sid>
+    <match>ERROR stale: </match>
+    <description>[WARN] jt-ioc: the threat address list has not been refreshed: new threat addresses are not matched</description>
+    <group>jt_ioc_update,</group>
+  </rule>
+
+  <rule id="906092" level="4">
+    <if_sid>906090</if_sid>
+    <match>ERROR feed: </match>
+    <description>jt-ioc: one threat feed failed; its previous copy was used</description>
+    <group>jt_ioc_update,</group>
+  </rule>
+
+  <rule id="906093" level="10">
+    <if_sid>906090</if_sid>
+    <match>ERROR refused: </match>
+    <description>[WARN] jt-ioc: abuse.ch refused a threat feed download: set auth_key in etc/jt-packs/jt-ioc.conf</description>
+    <group>jt_ioc_update,</group>
   </rule>
 
 </group>

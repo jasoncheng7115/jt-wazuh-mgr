@@ -1,0 +1,378 @@
+{
+ "pack": "jt-ioc",
+ "sandbox_lists": {
+  "jason_tools_threat_ip": "\"198.51.100.10\":blocklist_de\n\"198.51.100.20\":blocklist_de,cins\n\"203.0.113.\":spamhaus_drop\n\"198.51.100.30\":tor_exit\n\"::ffff:198.51.100.10\":blocklist_de\n\"::ffff:198.51.100.20\":blocklist_de,cins\n\"::ffff:203.0.113.\":spamhaus_drop\n",
+  "jason_tools_threat_ip_high": "\"198.51.100.20\":blocklist_de,cins\n\"203.0.113.\":spamhaus_drop\n\"::ffff:198.51.100.20\":blocklist_de,cins\n\"::ffff:203.0.113.\":spamhaus_drop\n"
+ },
+ "note": "Windows logons (906051/906053) and Sysmon (906031-906037) cannot be replayed by wazuh-logtest (CLAUDE.md pitfall 14); they are the same lookups on win.eventdata.* fields.",
+ "cases": [
+  {
+   "log": "Oct 11 10:00:00 host1 sshd[2211]: Accepted publickey for alice from 198.51.100.10 port 50122 ssh2: ED25519 SHA256:AbCdEf0123456789",
+   "location": null,
+   "expect_rule": "906050",
+   "expect_level": 10,
+   "note": "sshd success from an address on one feed (shape: OpenSSH auth2.c \"Accepted %s for %s from %s port %d\")"
+  },
+  {
+   "log": "Oct 11 10:00:00 host1 sshd[2211]: Accepted publickey for alice from 198.51.100.20 port 50122 ssh2: ED25519 SHA256:AbCdEf0123456789",
+   "location": null,
+   "expect_rule": "906052",
+   "expect_level": 14,
+   "note": "sshd success from an address with two votes"
+  },
+  {
+   "log": "Oct 11 10:00:00 host1 sshd[2211]: Accepted publickey for alice from 203.0.113.77 port 50122 ssh2: ED25519 SHA256:AbCdEf0123456789",
+   "location": null,
+   "expect_rule": "906052",
+   "expect_level": 14,
+   "note": "sshd success from inside a Spamhaus DROP prefix key (203.0.113.)"
+  },
+  {
+   "log": "Oct 11 10:00:00 host1 sshd[2211]: Accepted publickey for alice from 198.51.100.30 port 50122 ssh2: ED25519 SHA256:AbCdEf0123456789",
+   "location": null,
+   "expect_rule": "906050",
+   "expect_level": 10,
+   "note": "sshd success from a Tor exit: listed, never high on its own"
+  },
+  {
+   "log": "Oct 11 10:00:00 host1 sshd[2211]: Accepted publickey for alice from ::ffff:198.51.100.10 port 50122 ssh2: ED25519 SHA256:AbCdEf0123456789",
+   "location": null,
+   "expect_rule": "906050",
+   "expect_level": 10,
+   "note": "IPv4-mapped srcip matches the ::ffff: key (1.4 never matched these)"
+  },
+  {
+   "log": "Oct 11 10:00:00 host1 sshd[2211]: Accepted publickey for alice from ::ffff:198.51.100.20 port 50122 ssh2: ED25519 SHA256:AbCdEf0123456789",
+   "location": null,
+   "expect_rule": "906052",
+   "expect_level": 14,
+   "note": "IPv4-mapped srcip, high"
+  },
+  {
+   "log": "Oct 11 10:00:00 host1 sshd[2211]: Accepted publickey for alice from 192.0.2.50 port 50122 ssh2: ED25519 SHA256:AbCdEf0123456789",
+   "location": null,
+   "expect_rule": "5715",
+   "expect_level": 3,
+   "note": "near miss: unlisted public address stays at the built-in 5715"
+  },
+  {
+   "log": "Oct 11 10:00:00 host1 sshd[2212]: Failed password for alice from 198.51.100.20 port 50122 ssh2",
+   "location": null,
+   "expect_rule": "5760",
+   "expect_level": 5,
+   "note": "near miss: a failure from a high address is background, not ours"
+  },
+  {
+   "log": "Oct 11 10:00:00 host1 sshd[2211]: Accepted publickey for alice from 10.0.0.8 port 50122 ssh2: ED25519 SHA256:AbCdEf0123456789",
+   "location": null,
+   "expect_rule": "5715",
+   "expect_level": 3,
+   "note": "POLICY: 50 logins from a private address never reach the pack (the updater never lists private ranges)",
+   "repeat": 50
+  },
+  {
+   "log": "Oct 11 10:00:00 host1 sshd[2213]: Accepted password for PLACEHOLDER-FILLED-BY-THE-UPDATER from 192.0.2.60 port 50122 ssh2",
+   "location": null,
+   "expect_rule": "5715",
+   "expect_level": 3,
+   "note": "shipped lists hold only a placeholder key that no address can match"
+  },
+  {
+   "log": "{\"event\":\"conn\",\"srcip\":\"198.51.100.10\",\"dstip\":\"192.0.2.10\",\"action\":\"allow\"}",
+   "location": null,
+   "expect_rule": "906001",
+   "expect_level": 2,
+   "note": "generic JSON srcip on one feed: recorded, no alert"
+  },
+  {
+   "log": "{\"event\":\"conn\",\"srcip\":\"198.51.100.20\",\"dstip\":\"192.0.2.10\",\"action\":\"allow\"}",
+   "location": null,
+   "expect_rule": "906061",
+   "expect_level": 5,
+   "note": "generic srcip high"
+  },
+  {
+   "log": "{\"event\":\"conn\",\"srcip\":\"192.0.2.11\",\"dstip\":\"198.51.100.10\",\"action\":\"allow\"}",
+   "location": null,
+   "expect_rule": "906011",
+   "expect_level": 6,
+   "note": "generic dstip on one feed"
+  },
+  {
+   "log": "{\"event\":\"conn\",\"srcip\":\"192.0.2.11\",\"dstip\":\"203.0.113.77\",\"action\":\"allow\"}",
+   "location": null,
+   "expect_rule": "906071",
+   "expect_level": 12,
+   "note": "generic dstip in a DROP prefix"
+  },
+  {
+   "log": "{\"event\":\"conn\",\"srcip\":\"192.0.2.11\",\"dstip\":\"192.0.2.50\",\"action\":\"allow\"}",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: nothing listed"
+  },
+  {
+   "log": "{\"event\":\"conn\",\"src_ip\":\"198.51.100.20\",\"dst_ip\":\"192.0.2.10\"}",
+   "location": null,
+   "expect_rule": "906063",
+   "expect_level": 5,
+   "note": "generic src_ip high (not Suricata: no event_type)"
+  },
+  {
+   "log": "{\"event\":\"conn\",\"src_ip\":\"192.0.2.11\",\"dst_ip\":\"198.51.100.20\"}",
+   "location": null,
+   "expect_rule": "906073",
+   "expect_level": 12,
+   "note": "generic dst_ip high"
+  },
+  {
+   "log": "{\"event\":\"conn\",\"destination_ip\":\"198.51.100.10\"}",
+   "location": null,
+   "expect_rule": "906017",
+   "expect_level": 6,
+   "note": "generic destination_ip on one feed"
+  },
+  {
+   "log": "{\"event\":\"lookup\",\"ip\":\"198.51.100.10\"}",
+   "location": null,
+   "expect_rule": "906021",
+   "expect_level": 3,
+   "note": "ip field, direction unknown"
+  },
+  {
+   "log": "{\"event\":\"lookup\",\"ip\":\"198.51.100.20\"}",
+   "location": null,
+   "expect_rule": "906027",
+   "expect_level": 8,
+   "note": "ip field, high"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-08T11:51:40+08:00\",\"client_ip\":\"172.71.114.32\",\"remote_addr\":\"198.51.100.10\",\"vhost\":\"www.example.com\",\"method\":\"GET\",\"path\":\"/.vscode/sftp.json\",\"request\":\"GET /.vscode/sftp.json HTTP/1.1\",\"http_version\":\"HTTP/1.1\",\"http_status\":404,\"bytes_sent\":1834,\"request_time\":0.004,\"referer\":\"\",\"user_agent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\",\"http_x_forwarded_for\":\"198.51.100.10\",\"remote_user\":\"\"}",
+   "location": "/var/log/nginx/www.example.com.access.log",
+   "expect_rule": "906040",
+   "expect_level": 2,
+   "note": "real shape (a reverse proxy JSON log, sanitised): refused, recorded only"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-08T11:51:40+08:00\",\"client_ip\":\"172.71.114.32\",\"remote_addr\":\"198.51.100.20\",\"vhost\":\"www.example.com\",\"method\":\"GET\",\"path\":\"/assets/app.js\",\"request\":\"GET /assets/app.js HTTP/1.1\",\"http_version\":\"HTTP/1.1\",\"http_status\":200,\"bytes_sent\":1834,\"request_time\":0.004,\"referer\":\"\",\"user_agent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\",\"http_x_forwarded_for\":\"198.51.100.20\",\"remote_user\":\"\"}",
+   "location": "/var/log/nginx/www.example.com.access.log",
+   "expect_rule": "906041",
+   "expect_level": 2,
+   "note": "static content from a high address: still a crawler"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-08T11:51:40+08:00\",\"client_ip\":\"172.71.114.32\",\"remote_addr\":\"198.51.100.10\",\"vhost\":\"www.example.com\",\"method\":\"GET\",\"path\":\"/admin\",\"request\":\"GET /admin HTTP/1.1\",\"http_version\":\"HTTP/1.1\",\"http_status\":200,\"bytes_sent\":1834,\"request_time\":0.004,\"referer\":\"\",\"user_agent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\",\"http_x_forwarded_for\":\"198.51.100.10\",\"remote_user\":\"\"}",
+   "location": "/var/log/nginx/www.example.com.access.log",
+   "expect_rule": "906023",
+   "expect_level": 3,
+   "note": "the 1.4 level 12 case: a cloud address fetching /admin from a single-page app; now level 3"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-08T11:51:40+08:00\",\"client_ip\":\"172.71.114.32\",\"remote_addr\":\"198.51.100.10\",\"vhost\":\"www.example.com\",\"method\":\"POST\",\"path\":\"/api/session\",\"request\":\"POST /api/session HTTP/1.1\",\"http_version\":\"HTTP/1.1\",\"http_status\":200,\"bytes_sent\":1834,\"request_time\":0.004,\"referer\":\"\",\"user_agent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\",\"http_x_forwarded_for\":\"198.51.100.10\",\"remote_user\":\"\"}",
+   "location": "/var/log/nginx/www.example.com.access.log",
+   "expect_rule": "906044",
+   "expect_level": 6,
+   "note": "the server accepted a write from a listed address"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-08T11:51:40+08:00\",\"client_ip\":\"172.71.114.32\",\"remote_addr\":\"198.51.100.20\",\"vhost\":\"www.example.com\",\"method\":\"POST\",\"path\":\"/api/session\",\"request\":\"POST /api/session HTTP/1.1\",\"http_version\":\"HTTP/1.1\",\"http_status\":200,\"bytes_sent\":1834,\"request_time\":0.004,\"referer\":\"\",\"user_agent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\",\"http_x_forwarded_for\":\"198.51.100.20\",\"remote_user\":\"\"}",
+   "location": "/var/log/nginx/www.example.com.access.log",
+   "expect_rule": "906045",
+   "expect_level": 12,
+   "note": "accepted write, high"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-08T11:51:40+08:00\",\"client_ip\":\"172.71.114.32\",\"remote_addr\":\"198.51.100.20\",\"vhost\":\"www.example.com\",\"method\":\"POST\",\"path\":\"/api/session\",\"request\":\"POST /api/session HTTP/1.1\",\"http_version\":\"HTTP/1.1\",\"http_status\":302,\"bytes_sent\":1834,\"request_time\":0.004,\"referer\":\"\",\"user_agent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\",\"http_x_forwarded_for\":\"198.51.100.20\",\"remote_user\":\"\"}",
+   "location": "/var/log/nginx/www.example.com.access.log",
+   "expect_rule": "906040",
+   "expect_level": 2,
+   "note": "near miss: a redirect is not an accepted write"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-08T11:51:40+08:00\",\"client_ip\":\"198.51.100.20\",\"remote_addr\":\"192.0.2.33\",\"vhost\":\"www.example.com\",\"method\":\"PUT\",\"path\":\"/upload/x.php\",\"request\":\"PUT /upload/x.php HTTP/1.1\",\"http_version\":\"HTTP/1.1\",\"http_status\":201,\"bytes_sent\":1834,\"request_time\":0.004,\"referer\":\"\",\"user_agent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\",\"http_x_forwarded_for\":\"198.51.100.20\",\"remote_user\":\"\"}",
+   "location": "/var/log/nginx/www.example.com.access.log",
+   "expect_rule": "906046",
+   "expect_level": 12,
+   "note": "accepted write, high, address in client_ip"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-08T11:51:40+08:00\",\"client_ip\":\"172.71.114.32\",\"remote_addr\":\"192.0.2.50\",\"vhost\":\"www.example.com\",\"method\":\"POST\",\"path\":\"/api/session\",\"request\":\"POST /api/session HTTP/1.1\",\"http_version\":\"HTTP/1.1\",\"http_status\":200,\"bytes_sent\":1834,\"request_time\":0.004,\"referer\":\"\",\"user_agent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\",\"http_x_forwarded_for\":\"192.0.2.50\",\"remote_user\":\"\"}",
+   "location": "/var/log/nginx/www.example.com.access.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: unlisted visitor"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-08T11:51:40+08:00\",\"client_ip\":\"172.71.114.32\",\"remote_addr\":\"198.51.100.10\",\"vhost\":\"www.example.com\",\"method\":\"GET\",\"path\":\"/wp-login.php\",\"request\":\"GET /wp-login.php HTTP/1.1\",\"http_version\":\"HTTP/1.1\",\"http_status\":404,\"bytes_sent\":1834,\"request_time\":0.004,\"referer\":\"\",\"user_agent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\",\"http_x_forwarded_for\":\"198.51.100.10\",\"remote_user\":\"\"}",
+   "location": "/var/log/nginx/www.example.com.access.log",
+   "expect_rule": "906043",
+   "expect_level": 6,
+   "note": "thirty refusals in one session: scanning",
+   "repeat": 30
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-08T11:51:40+08:00\",\"client_ip\":\"198.51.100.20\",\"remote_addr\":\"192.0.2.33\",\"vhost\":\"www.example.com\",\"method\":\"GET\",\"path\":\"/wp-login.php\",\"request\":\"GET /wp-login.php HTTP/1.1\",\"http_version\":\"HTTP/1.1\",\"http_status\":404,\"bytes_sent\":1834,\"request_time\":0.004,\"referer\":\"\",\"user_agent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\",\"http_x_forwarded_for\":\"198.51.100.20\",\"remote_user\":\"\"}",
+   "location": "/var/log/nginx/www.example.com.access.log",
+   "expect_rule": "906042",
+   "expect_level": 6,
+   "note": "thirty refusals, address in client_ip",
+   "repeat": 30
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-08T11:51:40+08:00\",\"client_ip\":\"172.71.114.32\",\"remote_addr\":\"198.51.100.10\",\"vhost\":\"www.example.com\",\"method\":\"GET\",\"path\":\"/wp-login.php\",\"request\":\"GET /wp-login.php HTTP/1.1\",\"http_version\":\"HTTP/1.1\",\"http_status\":404,\"bytes_sent\":1834,\"request_time\":0.004,\"referer\":\"\",\"user_agent\":\"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36\",\"http_x_forwarded_for\":\"198.51.100.10\",\"remote_user\":\"\"}",
+   "location": "/var/log/nginx/www.example.com.access.log",
+   "expect_rule": "906040",
+   "expect_level": 2,
+   "note": "near miss for 906043: 29 refusals stay at 906040",
+   "repeat": 29
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-11T10:00:00.123456+0800\",\"flow_id\":1234567890123456,\"in_iface\":\"em0\",\"event_type\":\"flow\",\"src_ip\":\"10.0.0.5\",\"src_port\":51544,\"dest_ip\":\"198.51.100.10\",\"dest_port\":443,\"proto\":\"TCP\",\"app_proto\":\"tls\",\"flow\":{\"pkts_toserver\":9,\"pkts_toclient\":7,\"bytes_toserver\":1204,\"bytes_toclient\":5120,\"start\":\"2026-10-11T09:59:58.000000+0800\",\"end\":\"2026-10-11T10:00:00.000000+0800\",\"age\":2,\"state\":\"closed\",\"reason\":\"timeout\",\"alerted\":false}}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "906054",
+   "expect_level": 8,
+   "note": "Suricata flow (docs.suricata.io eve-json-format) to an address on one feed"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-11T10:00:00.123456+0800\",\"flow_id\":1234567890123456,\"in_iface\":\"em0\",\"event_type\":\"flow\",\"src_ip\":\"10.0.0.5\",\"src_port\":51544,\"dest_ip\":\"198.51.100.20\",\"dest_port\":443,\"proto\":\"TCP\",\"app_proto\":\"tls\",\"flow\":{\"pkts_toserver\":9,\"pkts_toclient\":7,\"bytes_toserver\":1204,\"bytes_toclient\":5120,\"start\":\"2026-10-11T09:59:58.000000+0800\",\"end\":\"2026-10-11T10:00:00.000000+0800\",\"age\":2,\"state\":\"closed\",\"reason\":\"timeout\",\"alerted\":false}}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "906055",
+   "expect_level": 13,
+   "note": "Suricata flow to a high address"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-11T10:00:00.123456+0800\",\"flow_id\":1234567890123456,\"in_iface\":\"em0\",\"event_type\":\"flow\",\"src_ip\":\"10.0.0.5\",\"src_port\":51544,\"dest_ip\":\"203.0.113.77\",\"dest_port\":8443,\"proto\":\"TCP\",\"app_proto\":\"tls\",\"flow\":{\"pkts_toserver\":9,\"pkts_toclient\":7,\"bytes_toserver\":1204,\"bytes_toclient\":5120,\"start\":\"2026-10-11T09:59:58.000000+0800\",\"end\":\"2026-10-11T10:00:00.000000+0800\",\"age\":2,\"state\":\"closed\",\"reason\":\"timeout\",\"alerted\":false}}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "906055",
+   "expect_level": 13,
+   "note": "Suricata flow into a DROP prefix"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-11T10:00:00.123456+0800\",\"flow_id\":1234567890123456,\"in_iface\":\"em0\",\"event_type\":\"flow\",\"src_ip\":\"10.0.0.5\",\"src_port\":51544,\"dest_ip\":\"192.0.2.50\",\"dest_port\":443,\"proto\":\"TCP\",\"app_proto\":\"tls\",\"flow\":{\"pkts_toserver\":9,\"pkts_toclient\":7,\"bytes_toserver\":1204,\"bytes_toclient\":5120,\"start\":\"2026-10-11T09:59:58.000000+0800\",\"end\":\"2026-10-11T10:00:00.000000+0800\",\"age\":2,\"state\":\"closed\",\"reason\":\"timeout\",\"alerted\":false}}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: unlisted destination stays at 86600"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-11T10:00:00.123456+0800\",\"flow_id\":1234567890123456,\"in_iface\":\"em0\",\"event_type\":\"flow\",\"src_ip\":\"10.0.0.5\",\"src_port\":51544,\"dest_ip\":\"198.51.100.20\",\"dest_port\":53,\"proto\":\"UDP\",\"app_proto\":\"tls\",\"flow\":{\"pkts_toserver\":9,\"pkts_toclient\":7,\"bytes_toserver\":1204,\"bytes_toclient\":5120,\"start\":\"2026-10-11T09:59:58.000000+0800\",\"end\":\"2026-10-11T10:00:00.000000+0800\",\"age\":2,\"state\":\"closed\",\"reason\":\"timeout\",\"alerted\":false}}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: a resolver querying a listed name server"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-11T10:00:00.123456+0800\",\"flow_id\":1234567890123456,\"in_iface\":\"em0\",\"event_type\":\"flow\",\"src_ip\":\"10.0.0.5\",\"src_port\":51544,\"dest_ip\":\"198.51.100.10\",\"dest_port\":40000,\"proto\":\"UDP\",\"app_proto\":\"tls\",\"flow\":{\"pkts_toserver\":9,\"pkts_toclient\":7,\"bytes_toserver\":1204,\"bytes_toclient\":5120,\"start\":\"2026-10-11T09:59:58.000000+0800\",\"end\":\"2026-10-11T10:00:00.000000+0800\",\"age\":2,\"state\":\"closed\",\"reason\":\"timeout\",\"alerted\":false}}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "906056",
+   "expect_level": 2,
+   "note": "UDP flow to one feed: peer-to-peer, recorded"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-11T10:00:00.123456+0800\",\"flow_id\":1234567890123456,\"in_iface\":\"em0\",\"event_type\":\"flow\",\"src_ip\":\"10.0.0.5\",\"src_port\":51544,\"dest_ip\":\"198.51.100.20\",\"dest_port\":40000,\"proto\":\"UDP\",\"app_proto\":\"tls\",\"flow\":{\"pkts_toserver\":9,\"pkts_toclient\":7,\"bytes_toserver\":1204,\"bytes_toclient\":5120,\"start\":\"2026-10-11T09:59:58.000000+0800\",\"end\":\"2026-10-11T10:00:00.000000+0800\",\"age\":2,\"state\":\"closed\",\"reason\":\"timeout\",\"alerted\":false}}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "906057",
+   "expect_level": 8,
+   "note": "UDP flow to a high address"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-11T10:00:00.123456+0800\",\"flow_id\":1234567890123456,\"in_iface\":\"em0\",\"event_type\":\"flow\",\"src_ip\":\"198.51.100.20\",\"src_port\":51544,\"dest_ip\":\"10.0.0.5\",\"dest_port\":22,\"proto\":\"TCP\",\"app_proto\":\"tls\",\"flow\":{\"pkts_toserver\":9,\"pkts_toclient\":7,\"bytes_toserver\":1204,\"bytes_toclient\":5120,\"start\":\"2026-10-11T09:59:58.000000+0800\",\"end\":\"2026-10-11T10:00:00.000000+0800\",\"age\":2,\"state\":\"closed\",\"reason\":\"timeout\",\"alerted\":false}}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: inbound flow started by a listed scanner"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-11T10:00:00.123456+0800\",\"flow_id\":1234567890123456,\"in_iface\":\"em0\",\"event_type\":\"tls\",\"src_ip\":\"10.0.0.5\",\"src_port\":51544,\"dest_ip\":\"198.51.100.20\",\"dest_port\":443,\"proto\":\"TCP\",\"tls\":{\"sni\":\"cdn.example.net\",\"version\":\"TLS 1.3\"}}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "906059",
+   "expect_level": 13,
+   "note": "TLS session to a high address (86604 is level 0)"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-11T10:00:00.123456+0800\",\"flow_id\":1234567890123456,\"in_iface\":\"em0\",\"event_type\":\"http\",\"src_ip\":\"10.0.0.5\",\"src_port\":51544,\"dest_ip\":\"198.51.100.10\",\"dest_port\":80,\"proto\":\"TCP\",\"http\":{\"hostname\":\"example.net\",\"url\":\"/a.bin\",\"http_method\":\"GET\",\"status\":200}}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "906058",
+   "expect_level": 8,
+   "note": "HTTP session to one feed (86602)"
+  },
+  {
+   "log": "{\"timestamp\":\"2026-10-11T10:00:00.123456+0800\",\"flow_id\":1234567890123456,\"in_iface\":\"em0\",\"event_type\":\"alert\",\"src_ip\":\"198.51.100.20\",\"src_port\":51544,\"dest_ip\":\"10.0.0.5\",\"dest_port\":22,\"proto\":\"TCP\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2001219,\"rev\":20,\"signature\":\"ET SCAN Potential SSH Scan\",\"category\":\"Attempted Information Leak\",\"severity\":2}}",
+   "location": "/var/log/suricata/eve.json",
+   "expect_rule": "86601",
+   "expect_level": 3,
+   "note": "near miss: IDS alerts are left to 86601 and its graders"
+  },
+  {
+   "log": "198.51.100.10 - - [11/Oct/2026:10:00:00 +0800] \"POST /xmlrpc.php HTTP/1.1\" 200 512 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "906038",
+   "expect_level": 6,
+   "note": "combined format (web-accesslog decoder): accepted POST from one feed"
+  },
+  {
+   "log": "198.51.100.20 - - [11/Oct/2026:10:00:00 +0800] \"POST /xmlrpc.php HTTP/1.1\" 200 512 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "906039",
+   "expect_level": 12,
+   "note": "combined format: accepted POST, high"
+  },
+  {
+   "log": "198.51.100.20 - - [11/Oct/2026:10:00:00 +0800] \"GET /index.html HTTP/1.1\" 200 512 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: a page view stays at 31108 (level 0)"
+  },
+  {
+   "log": "198.51.100.20 - - [11/Oct/2026:10:00:00 +0800] \"POST /xmlrpc.php HTTP/1.1\" 404 512 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "near miss: refused write keeps the built-in 31101"
+  },
+  {
+   "log": "jt-ioc: ERROR failed: the new list has 1200 keys against 212502 before, a drop of more than half; refusing to replace it (check the feeds, then run with --force)",
+   "location": "jt-ioc",
+   "expect_rule": "906090",
+   "expect_level": 5,
+   "note": "updater: shrink guard refused the list"
+  },
+  {
+   "log": "jt-ioc: ERROR stale: jason_tools_threat_ip has not been refreshed for 61 h (limit 48 h); new threat addresses are not being matched",
+   "location": "jt-ioc",
+   "expect_rule": "906091",
+   "expect_level": 10,
+   "note": "updater or worker reload job: stale list"
+  },
+  {
+   "log": "jt-ioc: ERROR stale: jason_tools_threat_ip still holds the placeholder the pack ships (limit 48 h); new threat addresses are not being matched",
+   "location": "jt-ioc",
+   "expect_rule": "906091",
+   "expect_level": 10,
+   "note": "installed but never filled"
+  },
+  {
+   "log": "jt-ioc: ERROR feed: tor_exit: <urlopen error [Errno 101] Network is unreachable>; its previous copy is used",
+   "location": "jt-ioc",
+   "expect_rule": "906092",
+   "expect_level": 4,
+   "note": "one feed failed"
+  },
+  {
+   "log": "jt-ioc: ERROR refused: abuse.ch refused the threatfox download (HTTP 401). Set auth_key in etc/jt-packs/jt-ioc.conf; the previous copy is used",
+   "location": "jt-ioc",
+   "expect_rule": "906093",
+   "expect_level": 10,
+   "note": "abuse.ch Auth-Key missing or wrong"
+  },
+  {
+   "log": "jt-ioc: ERROR failed: no feed has a usable copy; the installed lists are unchanged",
+   "location": "/var/log/syslog",
+   "expect_rule": "1002",
+   "expect_level": 2,
+   "note": "near miss: the same text from a file is not the updater"
+  }
+ ]
+}

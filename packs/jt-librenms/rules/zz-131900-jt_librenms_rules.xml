@@ -3,8 +3,8 @@
   Rule range 131900-131999. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
 
   The zz- prefix makes this file load after the built-in ruleset: it extends
-  the built-in web access rules (31100, 31101, 31108, 31530) and the nginx
-  error rule 31301.
+  the built-in web access rules (31100, 31101, 31103, 31108, 31530), the nginx
+  error rule 31301 and the file integrity rules 550 and 554.
 
   Modules
     131900-131919  application log (librenms.log): unknown-user logins,
@@ -13,8 +13,16 @@
     131940-131949  web logins: failures, successes, expired forms (access log)
     131950-131959  REST API: rejected tokens, not-found noise, changes
     131960-131979  web interface changes: users, roles, API tokens, 2FA,
-                   settings, devices, alert rules and transports
-    131980-131989  web server error log noise
+                   settings, binary paths, devices, alert rules and transports
+    131980         web server error log noise
+    131981-131989  passwords in the URL, exploit triggers, SQL injection
+    131990-131993  REST API reads of device credentials and configurations
+    131994-131995  file integrity: the web root and LibreNMS's secrets
+
+  Rules that accept a query string and outrank the built-in SQL injection
+  rule 31103 (level 7) exclude its patterns, so an injection is reported as
+  one: the API and data-access rules sit at level 6 or below (31103 is tried
+  first), and their higher-level variants are their children.
 
   What the access log can and cannot say. It carries the method, the path, the
   status and the client address, never the LibreNMS user and never the form
@@ -36,6 +44,12 @@
     <description>LibreNMS application log messages grouped</description>
   </rule>
 
+  <!-- The unknown-user line as LibreNMS before 25.1 wrote it (see the decoder). -->
+  <rule id="131906" level="0">
+    <decoded_as>jt-librenms-legacy</decoded_as>
+    <description>LibreNMS application log messages grouped (before 25.1)</description>
+  </rule>
+
   <!--
     One line per device per polling cycle, "used by the simple python dispatcher
     watchdog" (app/Jobs/PollDevice.php), written at ALERT level. The agent group
@@ -47,7 +61,7 @@
     <if_sid>131900</if_sid>
     <field name="librenms.level" type="pcre2">^ALERT$</field>
     <field name="librenms.message" type="pcre2">^INFO: device:(?:poll|discover) </field>
-    <description>LibreNMS: routine poll or discovery timing line</description>
+    <description>LibreNMS: routine poll or discovery timing line (the agent group drops these)</description>
   </rule>
 
   <!-- The children of 131900 below are mutually exclusive by level. -->
@@ -82,9 +96,12 @@
     LibreNMS writes to a file: a wrong password for an existing user goes to the
     authlog table only (see 131942 for the access-log view of those).
     The children of 131904 are mutually exclusive by the start of the message.
+    The address is Request::ip(), which before 26.7 follows a client's
+    X-Forwarded-For header unless APP_TRUSTED_PROXIES is set: good enough to
+    count, not to block (no active response on 131911).
   -->
   <rule id="131910" level="5">
-    <if_sid>131904</if_sid>
+    <if_sid>131904,131906</if_sid>
     <field name="librenms.message" type="pcre2">^Auth Error \(</field>
     <description>LibreNMS: login attempt from $(srcip) with unknown user name $(dstuser)</description>
     <group>authentication_failed,invalid_login,</group>
@@ -365,6 +382,13 @@
   <!-- ===== REST API (access log) ===== -->
 
   <!--
+    /api/v0 is the documented API (X-Auth-Token). /api/v1 (Laravel Restify,
+    config/restify.php base "/api/v1", auth:sanctum) is opt-in through
+    api.v1.enabled and answers 401, 403 and 404 the same way, so the status
+    rules cover both. The path rules below are v0 routes (routes/api.php).
+  -->
+
+  <!--
     The API answers 404 for an object that does not exist or a list that is
     empty ("No ports found"). Integrations that walk every device produce them
     in bulk: measured 17,146 level 5 alerts in 10 days on one server from two
@@ -372,14 +396,14 @@
   -->
   <rule id="131950" level="2">
     <if_sid>31101</if_sid>
-    <url type="pcre2">^/api/v0/</url>
+    <url type="pcre2">^/api/v[01]/</url>
     <id type="pcre2">^404$</id>
     <description>LibreNMS API: the requested object does not exist</description>
   </rule>
 
   <rule id="131951" level="5">
     <if_sid>31100,31101,31530</if_sid>
-    <url type="pcre2">^/api/v0(?:/|$)</url>
+    <url type="pcre2">^/api/v[01](?:/|$)</url>
     <id type="pcre2">^40[13]$</id>
     <description>LibreNMS API: request from $(srcip) rejected, the token is missing, invalid or lacks permission</description>
     <group>authentication_failed,</group>
@@ -399,13 +423,14 @@
   </rule>
 
   <!-- A request that changes something and succeeded. Children are mutually
-       exclusive by method and path. -->
+       exclusive by method and path. Level 3 is below 31103, which is tried
+       first, so an injection into a write path is reported as one. -->
   <rule id="131953" level="3">
     <if_sid>31100,31108,31530</if_sid>
     <protocol type="pcre2">^(?:POST|PUT|PATCH|DELETE)$</protocol>
-    <url type="pcre2">^/api/v0/</url>
+    <url type="pcre2">^/api/v[01]/</url>
     <id type="pcre2">^2</id>
-    <description>LibreNMS API: $(protocol) $(url) from $(srcip)</description>
+    <description>LibreNMS API: change request succeeded ($(protocol) $(url)) from $(srcip)</description>
   </rule>
 
   <rule id="131954" level="5">
@@ -446,7 +471,7 @@
     <url type="pcre2">^/api/v0/(?:devices|devicegroups|locations)/[^/?]+/maintenance$</url>
     <description>LibreNMS API: maintenance mode set, alerts suppressed ($(url)) from $(srcip)</description>
     <mitre>
-      <id>T1562</id>
+      <id>T1562.001</id>
     </mitre>
   </rule>
 
@@ -586,6 +611,48 @@
     </mitre>
   </rule>
 
+  <!--
+    The path of a program LibreNMS runs (settings of type "executable" in
+    resources/definitions/config_definitions.json, plus nagios_plugins, the
+    directory service checks are run from). Pointing one at a command or an
+    uploaded file is how CVE-2024-51092 (fixed 24.10.0), CVE-2026-6204 (26.3.0)
+    and CVE-2026-84190 (26.5.0) turn an administrator session into command
+    execution: the Metasploit module librenms_authenticated_rce_cve_2024_51092
+    sends PUT /settings/snmpget, then GET /about (which runs "snmpget -V" and
+    "rrdtool"), then DELETE /settings/snmpget. Paths are set once at
+    installation; a later change is rare.
+    https://github.com/advisories/GHSA-x645-6pf9-xwxw
+  -->
+  <rule id="131975" level="12">
+    <if_sid>131969</if_sid>
+    <url type="pcre2">^/settings/(?:snmpget|snmpgetnext|snmpwalk|snmpbulkwalk|snmptranslate|snmptrap|fping6?|rrdtool|ipmitool|nfdump|traceroute|virsh|email_sendmail_path|nagios_plugins)$</url>
+    <description>[HIGH] LibreNMS: the path of a program LibreNMS runs was changed ($(protocol) $(url)) from $(srcip), the first step of known command execution exploits</description>
+    <mitre>
+      <id>T1059.004</id>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!--
+    The trigger: the About page runs snmpget and rrdtool (AboutController,
+    Version::netSnmp / rrdtool), /ajax/netcmd ran traceroute and the like
+    (CVE-2026-6204, gone from master). Right after a program path was changed
+    from the same address, this is the exploit's second request; an
+    administrator checking the About page after fixing a path matches too.
+  -->
+  <rule id="131976" level="13" timeframe="600">
+    <if_sid>31100,31108</if_sid>
+    <if_matched_sid>131975</if_matched_sid>
+    <same_source_ip />
+    <protocol type="pcre2">^GET$</protocol>
+    <url type="pcre2">^/(?:about/?$|ajax/netcmd(?:\?|$))</url>
+    <description>[HIGH] LibreNMS: $(url) requested from $(srcip) right after a program path was changed, which runs the new program (command execution)</description>
+    <mitre>
+      <id>T1059.004</id>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
   <rule id="131971" level="8">
     <if_sid>31100,31108,31530</if_sid>
     <protocol type="pcre2">^(?:POST|DELETE)$</protocol>
@@ -612,7 +679,7 @@
     <id type="pcre2">^2</id>
     <description>LibreNMS: alert rule created, changed, switched on or off, or deleted ($(protocol) $(url)) from $(srcip)</description>
     <mitre>
-      <id>T1562</id>
+      <id>T1562.001</id>
     </mitre>
   </rule>
 
@@ -624,6 +691,194 @@
     <description>LibreNMS: alert transport or template deleted ($(url)) from $(srcip)</description>
     <mitre>
       <id>T1562</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Testing an alert transport runs it. The Signal transport took the path of
+    its binary and the recipient from the transport's settings and ran them
+    (CVE-2026-55182, GHSA-c9fv-cgmm-2wg7, fixed 26.5.0); the settings are saved
+    through /ajax_form.php, whose body the access log does not show, and the
+    test is the request that executes them. Otherwise a rare administrator
+    action.
+  -->
+  <rule id="131977" level="3">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/alert/transports/\d+/test$</url>
+    <id type="pcre2">^2</id>
+    <description>LibreNMS: alert transport $(url) tested (runs it) from $(srcip)</description>
+  </rule>
+
+  <!-- The legacy delete page: POST /delhost with id and confirm, used by the
+       Metasploit modules to remove the device they added. -->
+  <rule id="131978" level="8">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/delhost/?$</url>
+    <id type="pcre2">^2</id>
+    <description>LibreNMS: device deletion requested on the legacy page (POST $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1562</id>
+    </mitre>
+  </rule>
+
+  <!-- ===== Exploit indicators in the request line (access log) ===== -->
+
+  <!--
+    LibreNMS still accepts a login over GET when auth.allow_get_login is on
+    (off by default since the fix for CVE-2023-46745, GHSA-rq42-58qf-v3qx,
+    23.11.0): GET /?username=...&amp;password=...&amp;submit= is not rate limited, so
+    it is a brute-force path, and the password is written into the access log
+    and every proxy log in front of it whether the login succeeds or not.
+  -->
+  <rule id="131981" level="7">
+    <if_sid>31100,31108</if_sid>
+    <protocol type="pcre2">^GET$</protocol>
+    <url type="pcre2">^/(?:login)?\?(?=[^ ]*\busername=)(?=[^ ]*\bpassword=)</url>
+    <description>LibreNMS: login credentials passed in the URL from $(srcip) (unthrottled GET login, the password is now in the logs)</description>
+    <group>authentication_failed,</group>
+    <mitre>
+      <id>T1110</id>
+      <id>T1552</id>
+    </mitre>
+  </rule>
+
+  <rule id="131982" level="10" frequency="6" timeframe="120">
+    <if_matched_sid>131981</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] LibreNMS: repeated logins with credentials in the URL from $(srcip) (brute force)</description>
+    <group>authentication_failures,</group>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+  </rule>
+
+  <!--
+    SQL injection markers in a LibreNMS endpoint that takes them in the query
+    string. 31103 (level 7) catches select/union/from/where, but the blind
+    forms below carry none of those: time-based through the API "order"
+    parameter (CVE-2024-32480, GHSA-jh57-j3vq-h438, fixed 24.4.0), and the
+    ajax_output.php "hostname" parameter (CVE-2025-65093, GHSA-6pmj-xjxp-p8g9,
+    fixed 25.11.0). Sibling of 31103 at a higher level, so it is tried first
+    and wins on these paths; elsewhere 31103 is unchanged. A purely
+    boolean-blind payload (AND 1=1) carries no distinctive token and is left
+    to 31103 / manual review. It also carries 31103's own tokens, so that on
+    these LibreNMS endpoints an injection is always labelled here (level 10)
+    and never hidden by a lower pack rule such as a device read.
+    https://github.com/advisories/GHSA-jh57-j3vq-h438
+  -->
+  <rule id="131983" level="10">
+    <if_sid>31100,31108</if_sid>
+    <url type="pcre2">^/(?:api/v[01]/|ajax_output\.php|graph\.php|ajax_table\.php)(?=[^ ]*(?i:sleep\(|benchmark\(|information_schema|union[\s%+*/]+(?:all[\s%+*/]+)?select|updatexml\(|extractvalue\(|%60|if\((?:ascii|length|substr)|substr\(\s*\(?select|=select%20|select\+|insert%20|%20from%20|%20where%20|union%20|union\+|where\+|null,null|xp_cmdshell))</url>
+    <description>[WARN] LibreNMS: SQL injection markers in the request to $(url) from $(srcip)</description>
+    <group>attack,sql_injection,</group>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!--
+    The web UI's SNMP capture (GET /ajax_output.php?id=capture): an
+    administrator reading a device's SNMP walk. The shell-metacharacter child
+    is the trigger of the addhost community-parameter command execution
+    (CVE-2018-20434) and direct injection into its own parameters.
+  -->
+  <rule id="131984" level="3">
+    <if_sid>31100,31108</if_sid>
+    <url type="pcre2">^/ajax_output\.php\?(?=[^ ]*\bid=capture)</url>
+    <description>LibreNMS: SNMP capture run from the web UI from $(srcip)</description>
+  </rule>
+
+  <rule id="131985" level="12">
+    <if_sid>131984</if_sid>
+    <url type="pcre2">(?:[;|]|%3[bB]|%7[cC]|%60|`|\$\(|%24%28)</url>
+    <description>[HIGH] LibreNMS: shell metacharacters in the SNMP capture request from $(srcip) (command injection attempt)</description>
+    <group>attack,</group>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059.004</id>
+    </mitre>
+  </rule>
+
+  <!--
+    graph.php with the collectd graph type and shell metacharacters: the
+    "from"/"to" parameters of a device_collectd graph reached a shell
+    (CVE-2019-10669). A normal collectd graph carries only numbers there.
+  -->
+  <rule id="131986" level="12">
+    <if_sid>31100,31108</if_sid>
+    <url type="pcre2">^/graph\.php\?(?=[^ ]*\btype=device_collectd)(?=[^ ]*(?:[;|]|%3[bB]|%7[cC]|%60|`|\$\(|%24%28))</url>
+    <description>[HIGH] LibreNMS: shell metacharacters in a collectd graph request from $(srcip) (command injection attempt)</description>
+    <group>attack,</group>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059.004</id>
+    </mitre>
+  </rule>
+
+  <!-- ===== REST API reads that expose secrets (access log) ===== -->
+
+  <!--
+    GET /api/v0/devices and /api/v0/devices/<device> return the SNMP community
+    and the v3 auth and privacy passwords in clear text to any token that may
+    view the device (app/Http/Resources/Device.php). Routine from pollers and
+    integrations on the private network (left at level 0/2), but a read from
+    outside is a credential dump. Only the list and the single-device detail
+    return the secrets; the sub-resources (/ports, /health ...) do not.
+  -->
+  <rule id="131990" level="8">
+    <if_sid>31100,31108</if_sid>
+    <protocol type="pcre2">^GET$</protocol>
+    <url type="pcre2">^/api/v0/devices(?:/[^/?]+)?/?(?:\?|$)</url>
+    <id type="pcre2">^2</id>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>[WARN] LibreNMS: device SNMP credentials read through the API from external address $(srcip)</description>
+    <group>attack,</group>
+    <mitre>
+      <id>T1552</id>
+      <id>T1602.001</id>
+    </mitre>
+  </rule>
+
+  <!--
+    GET /api/v0/oxidized/config/<device> and /oxidized/config/search/<str>
+    return the full backed-up configuration of a device, secrets included
+    (routes/api.php get_oxidized_config, search_oxidized). The device list
+    /api/v0/oxidized that Oxidized itself polls is not this. A configuration
+    dump is worth an alert even from inside; from outside it is high.
+  -->
+  <rule id="131991" level="6">
+    <if_sid>31100,31108</if_sid>
+    <protocol type="pcre2">^GET$</protocol>
+    <url type="pcre2">^/api/v0/oxidized/config/(?:search/)?[^?]</url>
+    <id type="pcre2">^2</id>
+    <description>LibreNMS: device configuration backup read through the API ($(url)) from $(srcip)</description>
+    <group>attack,</group>
+    <mitre>
+      <id>T1602.002</id>
+    </mitre>
+  </rule>
+
+  <rule id="131992" level="10">
+    <if_sid>131991</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>[WARN] LibreNMS: device configuration backup read through the API from external address $(srcip)</description>
+    <group>attack,</group>
+    <mitre>
+      <id>T1602.002</id>
     </mitre>
   </rule>
 
@@ -642,6 +897,42 @@
     <if_sid>31301</if_sid>
     <regex type="pcre2">^(?=.*/librenms/)(?!.*PHP Error\((?!(?:8192|16384)\))\d+\))(?!.*(?:PHP (?:Fatal|Parse) error|Uncaught|Exception)).*FastCGI sent in stderr: "PHP message: \S*PHP Error\((?:8192|16384)\)</regex>
     <description>LibreNMS: PHP deprecation notice in the web server error log</description>
+  </rule>
+
+  <!-- ===== File integrity (syscheck), LibreNMS host only ===== -->
+
+  <!--
+    A new PHP file in the web root. agent/agent.conf tracks only *.php under
+    /opt/librenms/html, so any file added there is a new PHP file. Upstream
+    added none to html/ in six months of releases (979 commits), so this is a
+    web shell or a dropped page, not an update artefact. 554 is "file added".
+    Verified by shape against the working jt-portable-detect FIM rules;
+    file-integrity events cannot be replayed through wazuh-logtest (they are
+    produced inside the manager, not decoded), so this rule has no logtest case.
+  -->
+  <rule id="131994" level="12">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">^/opt/librenms/html/.*\.php$</field>
+    <description>[HIGH] LibreNMS: a new PHP file appeared in the web root - $(file)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>jt_librenms_webshell,</group>
+  </rule>
+
+  <!--
+    A change to LibreNMS's secrets or main configuration: .env holds APP_KEY
+    and the database password, config.php can override any setting. 550 is
+    "checksum changed". Rare outside an administrator's deliberate edit.
+  -->
+  <rule id="131995" level="7">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/opt/librenms/(?:\.env|config\.php)$</field>
+    <description>[WARN] LibreNMS: a secret or configuration file changed - $(file)</description>
+    <mitre>
+      <id>T1565.001</id>
+    </mitre>
+    <group>jt_librenms_config_change,</group>
   </rule>
 
 </group>

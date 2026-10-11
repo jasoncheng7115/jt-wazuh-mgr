@@ -86,3 +86,15 @@
   <regex type="pcre2">[\[;]aname=([^;\]]+);</regex>
   <order>srcuser</order>
 </decoder>
+
+<!-- 3.2: ZimbraInvalidLoginFilter, when a server enables it, refuses
+     every request from an address after repeated failed logins and writes
+     one line per refused request (servlet/ZimbraInvalidLoginFilter.java,
+     10.1.20, logger zimbra.misc):
+       2026-10-11 12:00:00,000 INFO  [qtp1-9:https://mail.example.com/service/soap/AuthRequest] [] misc - Access from IP 203.0.113.5 suspended, for repeated failed login.
+-->
+<decoder name="zimbra-invalid-login-filter">
+  <prematch type="pcre2">\] misc - Access from IP \S+ suspended, for repeated failed login\.</prematch>
+  <regex type="pcre2">\] misc - Access from IP (?:::ffff:)?([0-9a-fA-F.:]+) suspended</regex>
+  <order>srcip</order>
+</decoder>

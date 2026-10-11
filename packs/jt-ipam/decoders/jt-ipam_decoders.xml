@@ -2,7 +2,8 @@
   jt-ipam: decoders
   Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
 
-  jt-ipam writes two kinds of records:
+  jt-ipam writes two kinds of records, and the pack reads two more sources
+  on the jt-ipam host (3 and 4):
 
   1. Service messages on stdout, which systemd puts in the journal as
      jt-ipam-backend, jt-ipam-sync and jt-ipam-backup. A Linux agent that reads
@@ -11,6 +12,10 @@
      and forwards each record as one GELF message (JSON). The pack's setup
      guide has rsyslog on the jt-ipam host write each message as a syslog line
      with the program name jt-ipam-audit, which the jt-ipam agent group reads.
+  3. guacd, the console engine (journal, program guacd): own decoder below.
+  4. PostgreSQL's log, which the jt-ipam agent group reads from 1.2 on, for
+     refused changes to the audit table: own decoder below.
+  The web server's access and error logs use Wazuh's built-in decoders.
 
   Wazuh's built-in FreeIPA decoder matches program_name "ipa" ANYWHERE in the
   name, so it claims all four programs before any decoder of ours could.
@@ -185,4 +190,54 @@
   <parent>freeipa</parent>
   <regex type="pcre2">\\"peer_id\\": \\"(\d+)\\"</regex>
   <order>jtipam.peer</order>
+</decoder>
+
+<!-- The target of a console session in one field: the remote host of an SSH,
+     RDP, VNC, noVNC, BMC or SFTP session, or the peer ID of a RustDesk
+     session. Counted by the "one account, many targets" rule. -->
+<decoder name="jt-ipam">
+  <parent>freeipa</parent>
+  <regex type="pcre2">\\"(?:host|peer_id)\\": \\"([^\\"]+)\\"</regex>
+  <order>jtipam.target</order>
+</decoder>
+
+<!--
+  guacd (Apache Guacamole's proxy daemon), the console engine jt-ipam runs as
+  the jt-ipam-guacd service. Its program name has no built-in decoder.
+  guacd writes every message twice (guacamole-server 1.6.0, src/guacd/log.c,
+  vguacd_log): once to syslog ("Joining existing connection ...") and once to
+  stderr, which systemd also puts in the journal with the prefix
+  "guacd[<pid>]: INFO:<tab>". Both copies were found in the journal of one
+  installation. The rules read the syslog copy only, so each event alerts
+  once. Format strings: src/guacd/connection.c ("Joining existing connection
+  \"%s\"", "Connection \"%s\" does not exist").
+-->
+<decoder name="jt-ipam-guacd">
+  <program_name type="pcre2">^guacd$</program_name>
+</decoder>
+
+<decoder name="jt-ipam-guacd-fields">
+  <parent>jt-ipam-guacd</parent>
+  <regex type="pcre2">[Cc]onnection "([^"]*)"</regex>
+  <order>jtipam.connection</order>
+</decoder>
+
+<!--
+  PostgreSQL's own log, as Debian and Ubuntu write it by default
+  (log_line_prefix '%m [%p] %q%u@%d '), e.g.
+    2026-09-23 06:12:13.835 UTC [1750547] jt_ipam@jt_ipam ERROR:  audit_logs is append-only: UPDATE is not allowed (id=4411)
+    2026-10-03 16:04:31.567 UTC [426] LOG:  checkpoint starting: time
+  The built-in PostgreSQL decoder expects a bracketed timestamp and takes
+  none of these lines; the pre-decoder leaves them whole (4.14.7). The user
+  name in the prefix is whatever a client sent, so it may hold spaces or an
+  "@": the rules anchor on the end of the message, not only on the prefix.
+-->
+<decoder name="jt-ipam-pgsql">
+  <prematch type="pcre2">^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d+)? \S+ \[\d+\] </prematch>
+</decoder>
+
+<decoder name="jt-ipam-pgsql-fields">
+  <parent>jt-ipam-pgsql</parent>
+  <regex type="pcre2">^\S+ \S+ \S+ \[(\d+)\] (?:(.*?)@(\S*) )?([A-Z]+):  </regex>
+  <order>jtipam.pg_pid, dstuser, jtipam.database, jtipam.pg_severity</order>
 </decoder>

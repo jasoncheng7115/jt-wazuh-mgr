@@ -59,13 +59,145 @@
      prefix, so the rules' IPv4 ranges apply to it.
      ========================================================== -->
 
+<!-- ==========================================================
+     3.2: failed logins have a decoder of their own, zimbra-audit-fail,
+     loaded before zimbra-audit so it claims them first. Two reasons:
+
+     * Its fts key (name, user, srcip, location) marks the first failure of
+       an (account, address) pair. Rules 100843 (password spraying) and
+       100844 (distributed guessing) count those first-seen pairs, which
+       makes them count DISTINCT accounts and DISTINCT addresses. In 3.1
+       they used different_user / different_srcip, which in 4.14.7 count
+       earlier events whose value differs from the current one: seven
+       failures of one account and one of another from a shared address
+       already counted as "eight accounts" (tested). Because the decoder
+       name is part of the key, a failure never marks a pair as seen for
+       the login rules (100837/100838), which use zimbra-audit's own key.
+
+     * An unknown account never reaches the cmd= form: Zimbra's account
+       SOAP handler (service/account/Auth.java, 10.1.20) writes
+         security - Error occurred during authentication: authentication failed for [guess@example.com]. Reason: account not found.
+       and only when localconfig zimbra_additional_logging is true
+       (default false). Without this branch, password spraying with
+       guessed names produced no failure at all.
+
+     Every line this decoder takes is a failure: cmd=... with error=
+     (wrong password, locked account, preauth mismatch, the lockout itself:
+     "error=account lockout due to too many failed logins", which
+     LdapLockoutPolicy logs at INFO) or the unknown-account sentence.
+     ========================================================== -->
+<decoder name="zimbra-audit-fail">
+  <prematch type="pcre2">\] security - (?:cmd=\w[\w ]*;.*? error=|Error occurred during authentication: authentication failed for \[)</prematch>
+  <regex type="pcre2">\] security - cmd=(\w[\w ]*);</regex>
+  <order>action</order>
+  <fts>name, user, srcip, location</fts>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">\] security - cmd=(\w[\w ]*);</regex>
+  <order>action</order>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? account(?:Name)?=([^;\s]+);</regex>
+  <order>user</order>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">\] security - Error occurred during authentication: authentication failed for \[([^\]]+)\]</regex>
+  <order>user</order>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">[\[;]oip=(?:::ffff:)?([0-9a-fA-F.:]+)[,;]</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">^(?!.*[\[;]oip=).*?[\[;]ip=(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">[\[;]oip=[^;\]]*, ?(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
+  <order>zimbra.via_proxy</order>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">[\[;]ua=([^;\]]*)</regex>
+  <order>zimbra.ua</order>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">\[[^\]:]*:(\w+://[^\]\s]+)\]</regex>
+  <order>url</order>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? protocol=(\w+);</regex>
+  <order>protocol</order>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? error=([^;]+);</regex>
+  <order>zimbra.error</order>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">\] security - Error occurred during authentication: authentication failed for \[[^\]]*\]\. Reason: ([^.]+)</regex>
+  <order>zimbra.error</order>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">[\[;]oproto=(\w+);</regex>
+  <order>zimbra.oproto</order>
+</decoder>
+
+<!-- The account again, as a dynamic field for same_field (100844). -->
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? account(?:Name)?=([^;\s]+);</regex>
+  <order>zimbra.account</order>
+</decoder>
+
+<decoder name="zimbra-audit-fail-fields">
+  <parent>zimbra-audit-fail</parent>
+  <regex type="pcre2">\] security - Error occurred during authentication: authentication failed for \[([^\]]+)\]</regex>
+  <order>zimbra.account</order>
+</decoder>
+
+<!-- ==========================================================
+     Everything else in audit.log: logins, preauth, DelegateAuth, and
+     (3.2) the administrative commands Zimbra's admin SOAP handlers log
+     with the attributes they changed (service/admin/*.java, 10.1.20):
+       security - cmd=ModifyAccount; name=user1@example.com; zimbraIsAdminAccount=TRUE;
+       security - cmd=CreateAccount; name=new@example.com; zimbraCOSId=...;
+       security - cmd=ModifyConfig; zimbraMtaMyNetworks=127.0.0.0/8 0.0.0.0/0;
+     For those, user is the account changed (name= after cmd=) and
+     srcuser the administrator (name= in the context brackets).
+     A command name may contain spaces ("ChangePrimaryEmail account
+     renamed", "auto provision Account"), hence cmd=\w[\w ]*.
+     ========================================================== -->
+
 <!-- fts (first time seen) is on the parent: on same-name sibling decoders
      4.14.7 accepts it only on the first sibling and then never applies it
      (tested). The key is (account, client address, administrator for a
      DelegateAuth, agent): rules 100837, 100838 and 100896 use it. -->
 <decoder name="zimbra-audit">
-  <prematch type="pcre2">\] security - cmd=\w+;</prematch>
-  <regex type="pcre2">\] security - cmd=(\w+);</regex>
+  <prematch type="pcre2">\] security - cmd=\w[\w ]*;</prematch>
+  <regex type="pcre2">\] security - cmd=(\w[\w ]*);</regex>
   <order>action</order>
   <fts>name, srcuser, user, srcip, location</fts>
 </decoder>
@@ -74,13 +206,20 @@
      action is decoded again here. -->
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=(\w+);</regex>
+  <regex type="pcre2">\] security - cmd=(\w[\w ]*);</regex>
   <order>action</order>
 </decoder>
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=\w+;.*? account(?:Name)?=([^;\s]+);</regex>
+  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? account(?:Name)?=([^;\s]+);</regex>
+  <order>user</order>
+</decoder>
+
+<!-- 3.2: the account an administrative command changed. -->
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">\] security - cmd=\w[\w ]*; name=([^;]+);</regex>
   <order>user</order>
 </decoder>
 
@@ -117,14 +256,29 @@
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=\w+;.*? protocol=(\w+);</regex>
+  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? protocol=(\w+);</regex>
   <order>protocol</order>
 </decoder>
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=\w+;.*? error=([^;]+);</regex>
+  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? error=([^;]+);</regex>
   <order>zimbra.error</order>
+</decoder>
+
+<!-- 3.2: "mode=recoveryCode" (a login with a password-reset recovery code)
+     and "info=account re-activated from lockout status upon successful
+     login" (LdapProvisioning.java, LdapLockoutPolicy.java, 10.1.20). -->
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? mode=([^;]+);</regex>
+  <order>zimbra.mode</order>
+</decoder>
+
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? info=([^;]+);</regex>
+  <order>zimbra.info</order>
 </decoder>
 
 <!-- Logins that saslauthd forwards for SMTP AUTH carry oproto=smtp (and an
@@ -144,10 +298,19 @@
   <order>srcuser</order>
 </decoder>
 
+<!-- 3.2: the administrator behind an administrative command (the context
+     name=). Not for logins, preauth or DelegateAuth, so their fts keys
+     stay what they were. -->
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">[\[;]name=([^;\]]+);.*\] security - cmd=(?!(?:Auth|AdminAuth|SSOAuth|PreAuth|DelegateAuth);)\w[\w ]*;</regex>
+  <order>srcuser</order>
+</decoder>
+
 <!-- The account again, as a dynamic field: same_user does not match against
      events kept for if_matched_group in 4.14.7, same_field does (tested). -->
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=\w+;.*? account(?:Name)?=([^;\s]+);</regex>
+  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? account(?:Name)?=([^;\s]+);</regex>
   <order>zimbra.account</order>
 </decoder>

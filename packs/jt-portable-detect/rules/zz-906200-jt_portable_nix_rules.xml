@@ -224,6 +224,16 @@
        Parent 80700 is the built-in auditd group and is level 0. That is
        fine for if_sid; it would not be for if_matched_sid, which is why
        the correlation rule below hangs off 906210 rather than off 80700.
+
+       ★ 3.5: 906210, 906211 and 906213 also hang off the built-in 92600.
+         0850-audit_rules.xml attaches 92600 (level 0, "audit.exe contains
+         python") to every rule of the audit group through <if_group>, so it is
+         a sibling of these rules under 80700, and a level 0 sibling is always
+         tried first. Any Python program, a script with a python shebang or
+         python3 /tmp/x.py, stopped there: silent, or 92601 at level 6 when the
+         path ends in .py. Verified in the sandbox: a python script run from
+         /tmp ended at 92601 (level 6) instead of 906211 (level 12). Same shape
+         as the Windows 92069 problem (CLAUDE.md pitfall 18).
   -->
   <!--
     ★ 2026-09-08，實機驗證後修正描述欄位。
@@ -234,7 +244,7 @@
     才是實際觸發監看的那個檔案。兩個都放進描述，先講檔案再講映像。
   -->
   <rule id="906210" level="10">
-    <if_sid>80700</if_sid>
+    <if_sid>80700,92600</if_sid>
     <field name="audit.key">jt_portable_exec</field>
     <description>[WARN] Program executed from a user-writable area - $(audit.file.name) via $(audit.exe) uid: $(audit.uid)</description>
     <mitre>
@@ -244,7 +254,7 @@
   </rule>
 
   <rule id="906211" level="12">
-    <if_sid>80700</if_sid>
+    <if_sid>80700,92600</if_sid>
     <field name="audit.key">jt_portable_tmpexec</field>
     <description>[HIGH] Program executed from a temporary, memory or world-writable filesystem - $(audit.file.name) via $(audit.exe) uid: $(audit.uid)</description>
     <mitre>
@@ -315,12 +325,17 @@
       same record and whichever Wazuh tried first won. If this one won, a
       level 12 became a 10 and skipped 906211's exclusions. A positive
       lookahead rather than negate="yes", which is unreliable (see CLAUDE.md).
+
+    ★ 3.5: the dynamic loader counts as an interpreter. `/lib64/ld-linux-x86-64.so.2 /tmp/x`
+      runs an ELF file that has no execute bit, or sits on a noexec mount, and the executed
+      image is the loader, not the file (ld.so(8): "the dynamic linker can be run directly").
+      The watched paths also follow jt-portable.rules since 3.4: /var/crash and /run/user/<uid>.
   -->
   <rule id="906213" level="10">
-    <if_sid>80700</if_sid>
+    <if_sid>80700,92600</if_sid>
     <field name="audit.key" type="pcre2">^(?!jt_portable_tmpexec$).*</field>
-    <field name="audit.execve.a0" type="pcre2">^(?:/\S*/)?((ba|da|k|z|tc|c)?sh|python[0-9.]*|perl|ruby|php|node|lua[0-9.]*)$</field>
-    <field name="audit.execve.a1" type="pcre2">^/(tmp|var/tmp|dev/shm)/</field>
+    <field name="audit.execve.a0" type="pcre2">^(?:/\S*/)?((ba|da|k|z|tc|c)?sh|python[0-9.]*|perl|ruby|php|node|lua[0-9.]*|ld-linux(-[a-z0-9_-]+)?\.so\.[0-9]+|ld-musl-[a-z0-9_]+\.so\.[0-9]+|ld\.so)$</field>
+    <field name="audit.execve.a1" type="pcre2">^/(tmp|var/tmp|dev/shm|var/crash|run/user/[0-9]+)/</field>
     <description>[WARN] Script executed through an interpreter from a temporary or memory filesystem - $(audit.execve.a1) by $(audit.execve.a0)</description>
     <mitre>
       <id>T1204.002</id>
@@ -622,6 +637,22 @@
     <if_sid>906201,906202,906204</if_sid>
     <field name="file" type="pcre2">^/(tmp|var/tmp)/(pytest-of-|pytest-|tox-|pip-|virtualenv-|go-build|cargo-|rustc|npm-|yarn--|node-compile-cache|v8-compile-cache|bazel|gradle|maven-|mvn|sbt_|ccache|cmake-|meson-|conan|jenkins|gitlab-runner|actions-runner|buildkite|cabal-|stack-)</field>
     <description>Build or test toolchain scratch directory (normal)</description>
+  </rule>
+
+  <!--
+    containerd's temporary mounts. When it unpacks or diffs an image layer, containerd
+    mounts the layer on a directory it creates with os.MkdirTemp(os.TempDir(),
+    "containerd-mount"), which is /tmp/containerd-mount<digits> for a daemon started by
+    systemd (containerd source, mount/temp.go). File integrity monitoring then sees every
+    binary of the image appear in /tmp: measured 2026-10-11, 202 level 10 alerts in one day
+    from one Docker host (init, busybox, libssl.so, apk...). The same shape on every host
+    that runs Docker or containerd. Added in 3.5; the agent.conf of the group also ignores
+    the path, which keeps those files out of the FIM database.
+  -->
+  <rule id="906239" level="0">
+    <if_sid>906201,906202,906204</if_sid>
+    <field name="file" type="pcre2">^/tmp/containerd-mount[0-9]+/</field>
+    <description>Container image layer mounted by containerd in a temporary directory (normal)</description>
   </rule>
 
   <!--

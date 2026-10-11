@@ -1,6 +1,7 @@
 <!--
-  Zimbra authentication rules (audit.log)          range 100831-100859
-  Decoder: zimbra-audit (decoders/0001-zimbra_decoders.xml)
+  Zimbra authentication rules (audit.log)          range 100831-100859,
+                                                   100811-100813, 100835, 100907-100919
+  Decoders: zimbra-audit and zimbra-audit-fail (decoders/0001-zimbra_decoders.xml)
 
   3.1 (2026-10-11): one policy for every successful login, with no site
   data needed. With the shipped lists left as they are:
@@ -44,9 +45,22 @@
     zimbraLogToSyslog set the same lines also arrive through syslog
     ("zimbra_audit"), and counting both halved every threshold.
 
+  3.2 (2026-10-11):
+  * Failures have their own decoder (zimbra-audit-fail) and base rule
+    (100835). Its fts key marks the first failure of an (account, address)
+    pair (100811); spraying (100843) and distributed guessing (100844) count
+    those, so "eight accounts" and "ten addresses" are distinct values.
+  * The unknown-account line (zimbra_additional_logging) is a failure.
+  * The lockout record (error=account lockout due to too many failed logins)
+    is a child of 100841 and always level 10.
+  * SSOAuth logins follow the login policy; a recovery-code login is level 5
+    (100812); a lockout lifted by a login is level 3 (100813).
+  * Administrative changes (cmd=ModifyAccount ... in audit.log): 100908-100919.
+
   Counted correlation uses pack groups (if_matched_group), not
   if_matched_sid: an event is only counted for the rule it finally matched.
-    zimbra_login_failed   every failed attempt (100841, 100857)
+    zimbra_login_failed   every failed attempt (100841, 100857, 100811)
+    zimbra_newpair_fail   first failure of an (account, address) pair (100811)
     zimbra_auth_failures  the brute-force alerts (100842, 100843, 100844, 100836, 100859)
     zimbra_auth_success   every real login (not Zimbra's own tools)
     zimbra_external_login logins from a public address
@@ -70,18 +84,73 @@
 
   <!-- ── failures ── -->
 
+  <!-- 3.2: failures have their own decoder, zimbra-audit-fail (see the
+       decoder file), so they no longer pass through 100840. The decoder
+       takes every cmd= line with error= and the unknown-account sentence
+       Zimbra writes when zimbra_additional_logging is on. -->
+  <rule id="100835" level="0">
+    <decoded_as>zimbra-audit-fail</decoded_as>
+    <location>/opt/zimbra/log/audit.log</location>
+    <description>Zimbra authentication failure log (base rule)</description>
+  </rule>
+
+  <rule id="100907" level="0">
+    <decoded_as>zimbra-audit-fail</decoded_as>
+    <location type="pcre2">^(?!.*/opt/zimbra/log/audit\.log$)</location>
+    <description>Zimbra audit failure line received through syslog, a copy of audit.log (not counted)</description>
+  </rule>
+
   <rule id="100841" level="5">
-    <if_sid>100840</if_sid>
-    <match type="pcre2">\berror=|authentication failed|AuthFailed|invalid password</match>
+    <if_sid>100835</if_sid>
     <description>Zimbra authentication failed: $(dstuser) from: $(srcip) ($(zimbra.error))</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
     <group>authentication_failed,zimbra_login_failed,</group>
   </rule>
 
+  <!-- 3.2: Zimbra's own record of locking an account is
+         cmd=Auth; account=x; error=account lockout due to too many failed logins;
+       (LdapLockoutPolicy.java:222, 10.1.20). It contains "error=" and
+       "lockout", so in 3.1 it was claimed by 100841 or 100857 and the
+       level 10 lockout alert (then a sibling of 100841) could come out at
+       level 5 or 6. It is now a child of 100841, and 100857 excludes it.
+       Not in zimbra_login_failed: Zimbra writes it next to the failure line
+       of the same attempt, which is already counted. -->
+  <rule id="100856" level="10">
+    <if_sid>100841</if_sid>
+    <field name="zimbra.error" type="pcre2">lockout due to too many failed logins</field>
+    <description>[WARN] Zimbra locked an account after repeated failed logins: $(dstuser) (last attempt from: $(srcip))</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,</group>
+  </rule>
+
+  <!-- A login attempt on an account that is already locked
+       ("authentication failed for [x], account lockout"). -->
   <rule id="100857" level="6">
     <if_sid>100841</if_sid>
-    <field name="zimbra.error" type="pcre2">(?i)lockout|locked</field>
+    <field name="zimbra.error" type="pcre2">^(?!.*lockout due to too many failed logins)(?i:.*(?:lockout|locked))</field>
     <description>Login attempt on a locked Zimbra account: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
     <group>authentication_failed,zimbra_login_failed,</group>
+  </rule>
+
+  <!-- 3.2: the first failure of an (account, address) pair (fts of
+       zimbra-audit-fail). Counted twice: as a failure (zimbra_login_failed,
+       for the volume rule 100842) and as a new pair (zimbra_newpair_fail,
+       for 100843 and 100844, which need distinct accounts or addresses). -->
+  <rule id="100811" level="5">
+    <if_sid>100841</if_sid>
+    <if_fts />
+    <description>Zimbra authentication failed, first failure for this account from this address: $(dstuser) from: $(srcip) ($(zimbra.error))</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,zimbra_login_failed,zimbra_newpair_fail,</group>
   </rule>
 
   <!-- Brute force from one address. Through Z-Push or a reverse proxy the
@@ -115,12 +184,16 @@
     <group>authentication_failures,zimbra_auth_failures,</group>
   </rule>
 
-  <!-- Password spraying: one address, many accounts, few tries each. -->
+  <!-- Password spraying: one address, many accounts, few tries each.
+       3.2: counts first-seen (account, address) failure pairs (100811)
+       from one address, so eight means eight different accounts. 3.1 used
+       different_user, which counted seven failures of one account and one
+       of another as eight. A pair counts once, ever: an address that sprays
+       the same list again later is still caught by the volume rule 100842. -->
   <rule id="100843" level="12" frequency="8" timeframe="600">
-    <if_matched_group>zimbra_login_failed</if_matched_group>
+    <if_matched_group>zimbra_newpair_fail</if_matched_group>
     <same_source_ip />
-    <different_user />
-    <description>[HIGH] One source tried many different accounts, possible password spraying: $(srcip)</description>
+    <description>[HIGH] One source failed to log in to eight or more different Zimbra accounts, possible password spraying: $(srcip)</description>
     <mitre>
       <id>T1110.003</id>
     </mitre>
@@ -145,38 +218,31 @@
   </rule>
 
   <!-- One account failing from many addresses: guessing spread over a
-       botnet, which no per-address rule (and no firewall block) sees. -->
+       botnet, which no per-address rule (and no firewall block) sees.
+       3.2: counts first-seen failure pairs of one account (ten different
+       addresses), not different_srcip (see 100843). -->
   <rule id="100844" level="10" frequency="10" timeframe="600">
-    <if_matched_group>zimbra_login_failed</if_matched_group>
-    <same_user />
-    <different_srcip />
-    <description>[WARN] One Zimbra account failed to log in from many different addresses, distributed password guessing: $(dstuser)</description>
+    <if_matched_group>zimbra_newpair_fail</if_matched_group>
+    <same_field>zimbra.account</same_field>
+    <description>[WARN] One Zimbra account failed to log in from ten or more different addresses, distributed password guessing: $(dstuser)</description>
     <mitre>
       <id>T1110.001</id>
     </mitre>
     <group>authentication_failures,zimbra_auth_failures,</group>
   </rule>
 
-  <!-- zimbraPasswordLockoutEnabled locked the account. -->
-  <rule id="100856" level="10">
-    <if_sid>100840</if_sid>
-    <match type="pcre2">lockout due to</match>
-    <description>[WARN] Zimbra locked an account after repeated failed logins: $(dstuser)</description>
-    <mitre>
-      <id>T1110</id>
-    </mitre>
-    <group>authentication_failures,</group>
-  </rule>
-
   <!-- ── successes ── -->
 
   <!-- Every successful login, recorded at level 2 (about 4,800 a day on the
        two measured servers). The children below raise the ones the policy
-       in the header asks for. -->
+       in the header asks for. 3.2: SSOAuth (a SAML, JWT or SPNEGO login,
+       LdapProvisioning.ssoAuthAccount) is a login too; before 3.2 it was
+       never counted. The "info=" line Zimbra writes when a login lifts a
+       lockout is 100813, not a second login. -->
   <rule id="100845" level="2">
     <if_sid>100840</if_sid>
-    <action type="pcre2">^(?:Auth|AdminAuth)$</action>
-    <match type="pcre2">^(?!.*(?:\berror=|lockout due to|(?i:preauth)))</match>
+    <action type="pcre2">^(?:Auth|AdminAuth|SSOAuth)$</action>
+    <match type="pcre2">^(?!.*(?:\berror=|lockout due to|(?i:preauth)|\] security - cmd=\w+;.*? info=))</match>
     <description>Zimbra authentication succeeded: $(dstuser) from: $(srcip)</description>
     <group>authentication_success,zimbra_auth_success,</group>
   </rule>
@@ -190,6 +256,37 @@
     <description>Zimbra command-line tool authenticated (routine)</description>
   </rule>
 
+  <!-- 3.2: a login with a password-reset recovery code (the "forgot
+       password" code mailed to the account's recovery address):
+         cmd=Auth; account=x; mode=recoveryCode;   (or "recoveryCode - account unlocked")
+       (LdapProvisioning.recoveryCodeBasedAuthAccount, 10.1.20). Whoever
+       controls the recovery address controls the account, so it is
+       visible, from any address. Still a login for 100846/100833. -->
+  <rule id="100812" level="5">
+    <if_sid>100845</if_sid>
+    <field name="zimbra.mode" type="pcre2">^recoveryCode</field>
+    <description>Zimbra login with a password-reset recovery code: $(dstuser) from: $(srcip) ($(zimbra.mode))</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,zimbra_auth_success,</group>
+  </rule>
+
+  <!-- 3.2: a successful login after the lockout period ended lifts the
+       lockout and Zimbra writes an extra line before the login line:
+         cmd=Auth; account=x; info=account re-activated from lockout status upon successful login;
+       (LdapLockoutPolicy.successfulLogin, 10.1.20). The login itself is
+       the next line (100845), so this one is not counted as a login. -->
+  <rule id="100813" level="3">
+    <if_sid>100840</if_sid>
+    <action>Auth</action>
+    <field name="zimbra.info" type="pcre2">re-activated from lockout</field>
+    <description>Zimbra account unlocked by a successful login after its lockout expired: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
   <!-- Administrator-class login (see the header). 3.1: was level 8 for the
        admin console only; now level 3, with the address deciding the rest.
        saslauthd's SMTP AUTH checks use the admin port with an smtp:// URL
@@ -199,7 +296,7 @@
     <match type="pcre2">^(?!.*(?:[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]])).*(?:\[[^\]\s]*:https?://[^\]\s]*/service/admin/soap|\] security - cmd=AdminAuth;|\] security - cmd=\w+;.*? account=(?:admin|administrator|root)@)</match>
     <description>Zimbra administrator-class login: $(dstuser) from: $(srcip)</description>
     <mitre>
-      <id>T1078.003</id>
+      <id>T1078</id>
     </mitre>
     <group>authentication_success,zimbra_auth_success,</group>
   </rule>
@@ -215,7 +312,7 @@
     <srcip>fe80::/10</srcip>
     <description>Zimbra administrator-class login from a private address: $(dstuser) from: $(srcip)</description>
     <mitre>
-      <id>T1078.003</id>
+      <id>T1078</id>
     </mitre>
     <group>authentication_success,zimbra_auth_success,</group>
   </rule>
@@ -233,7 +330,7 @@
     <list field="srcip" lookup="not_address_match_key">etc/lists/zimbra-internal-networks</list>
     <description>Zimbra administrator-class login from a public address: $(dstuser) from: $(srcip)</description>
     <mitre>
-      <id>T1078.003</id>
+      <id>T1078</id>
     </mitre>
     <group>authentication_success,zimbra_auth_success,zimbra_external_login,</group>
   </rule>
@@ -339,7 +436,7 @@
     <description>[HIGH] preauth login to a Zimbra administrator account; unless an SSO integration does this, the preauth key may have leaked: $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1550.001</id>
-      <id>T1078.003</id>
+      <id>T1078</id>
     </mitre>
     <group>credential_access,</group>
   </rule>
@@ -399,7 +496,7 @@
     <description>A Zimbra administrator session from a public address took over another account: $(srcuser) as $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1550.001</id>
-      <id>T1078.003</id>
+      <id>T1078</id>
     </mitre>
   </rule>
 
@@ -421,6 +518,177 @@
       <id>T1078</id>
     </mitre>
     <group>credential_access,</group>
+  </rule>
+
+</group>
+
+<!-- ==========================================================
+     3.2: administrative changes (audit.log)          100908-100919
+
+     Every admin SOAP handler that changes the directory logs to audit.log
+     with the attributes it changed (service/admin/*.java, 10.1.20):
+       cmd=ModifyAccount; name=user1@example.com; zimbraIsAdminAccount=TRUE;
+     In 3.1 all of them ended at 100840 (level 0). They arrive through the
+     admin console, zmprov (without -l) and any tool holding an admin
+     token; zmprov -l writes to LDAP directly and logs nothing here.
+     Measured: none in 9 days on two servers, so every one is visible.
+
+       any administrative change ............................ 3  (100908)
+       account and domain lifecycle, configuration .......... 5  (100918)
+       a credential-bearing attribute (line withheld) ....... 5  (100917)
+       zimlets, delegated-admin constraints ................. 8  (100916)
+       mail forwarding set by an administrator .............. 10 (100914)
+       password reset of an administrator-class account ..... 10 (100915)
+       domain preauth key set (line withheld) ............... 10 (100913)
+       administrator rights granted ......................... 12 (100910)
+       MTA trusted networks opened to every address ......... 12 (100911)
+       any of these from a public address ................... 12 (100912/100919)
+     user is the account changed, srcuser the administrator (the session's
+     name=), srcip the administrator's client.
+     Not logged by Zimbra at all, so not covered: GrantRight/RevokeRight
+     (delegated rights), changes a user makes to their own preferences
+     (see 100815 in 08-zimbra_soap_rules.xml), zmprov -l.
+     ========================================================== -->
+<group name="zimbra,account_changed,">
+
+  <rule id="100908" level="3">
+    <if_sid>100840</if_sid>
+    <action type="pcre2">^(?!(?:Auth|AdminAuth|SSOAuth|PreAuth|DelegateAuth|DistributionListAction|SubscribeDistributionList|CheckPasswordStrength)$)</action>
+    <description>Zimbra administrative change: $(action) $(dstuser) by $(srcuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!-- A distribution-list owner managing the list, a user subscribing,
+       an administrator checking a password's strength: recorded only. -->
+  <rule id="100909" level="2">
+    <if_sid>100840</if_sid>
+    <action type="pcre2">^(?:DistributionListAction|SubscribeDistributionList|CheckPasswordStrength)$</action>
+    <description>Zimbra list or password-strength operation: $(action) $(dstuser) by $(srcuser)</description>
+  </rule>
+
+  <rule id="100910" level="12">
+    <if_sid>100908</if_sid>
+    <action type="pcre2">^(?:CreateAccount|ModifyAccount|CreateCalendarResource|ModifyCalendarResource)$</action>
+    <match type="pcre2">(?i)\bzimbraIs(?:Delegated|Domain)?AdminAccount=TRUE;</match>
+    <description>[HIGH] Zimbra administrator rights granted: $(action) $(dstuser) by $(srcuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!-- zimbraMtaMyNetworks is Postfix mynetworks: every address listed may
+       relay without logging in. -->
+  <rule id="100911" level="12">
+    <if_sid>100908</if_sid>
+    <match type="pcre2">\bzimbraMtaMyNetworks=(?:[^;]*[\s,])?(?:0\.0\.0\.0/0|::/0|0/0)[\s,;]</match>
+    <description>[HIGH] Zimbra MTA trusted networks set to every address, the server is an open relay: $(action) $(dstuser) by $(srcuser) from: $(srcip)</description>
+    <group>spam,</group>
+  </rule>
+
+  <!-- Lines carrying a credential end at 100913/100917 (and 100919), which
+       withhold the log line; this one shows it. -->
+  <rule id="100912" level="12">
+    <if_sid>100908</if_sid>
+    <match type="pcre2">^(?!.*\bzimbra\w*(?:BindPassword|AuthPassword|CertificatePassword|SourcePassword|SpecificPassword|UCPassword|Secret|TokenKey|PreAuthKey)=[^;\s])</match>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>[HIGH] Zimbra administrative change made from a public address: $(action) $(dstuser) by $(srcuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="100913" level="10">
+    <if_sid>100908</if_sid>
+    <match type="pcre2">\bzimbraPreAuthKey=[^;\s]</match>
+    <options>no_full_log</options>
+    <description>[WARN] Zimbra domain preauth key set; whoever holds it can log in as any account of the domain (log line withheld, it contains the key): $(dstuser) by $(srcuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1556</id>
+    </mitre>
+  </rule>
+
+  <rule id="100914" level="10">
+    <if_sid>100908</if_sid>
+    <action type="pcre2">^(?:CreateAccount|ModifyAccount)$</action>
+    <match type="pcre2">(?i)\bzimbra(?:Pref)?MailForwardingAddress=[^;\s]|\bzimbraPrefMailLocalDeliveryDisabled=TRUE;</match>
+    <description>[WARN] Zimbra mail forwarding set on an account by an administrator: $(dstuser) by $(srcuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1114.003</id>
+    </mitre>
+    <group>exfiltration,</group>
+  </rule>
+
+  <rule id="100915" level="10">
+    <if_sid>100908</if_sid>
+    <action>SetPassword</action>
+    <user type="pcre2">^(?:admin|administrator|root)@</user>
+    <description>[WARN] Password of a Zimbra administrator-class account reset by an administrator: $(dstuser) by $(srcuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!-- A zimlet is code that runs in every user's web client. -->
+  <rule id="100916" level="8">
+    <if_sid>100908</if_sid>
+    <action type="pcre2">^(?:CreateZimlet|DeleteZimlet|ModifyDelegatedAdminConstraints)$</action>
+    <description>Zimbra zimlet or delegated-administrator constraint changed: $(action) $(dstuser) by $(srcuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1505</id>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!-- An external LDAP bind password, an application password, a token or
+       a two-factor secret in the changed attributes: Zimbra logs the value
+       in clear, and the alert would copy it. Placed before 100918 (same
+       level, loaded first). -->
+  <rule id="100917" level="5">
+    <if_sid>100908</if_sid>
+    <match type="pcre2">\bzimbra\w*(?:BindPassword|AuthPassword|CertificatePassword|SourcePassword|SpecificPassword|UCPassword|Secret|TokenKey|PreAuthKey)=[^;\s]</match>
+    <options>no_full_log</options>
+    <description>Zimbra administrative change setting a credential attribute (log line withheld, it contains the value): $(action) $(dstuser) by $(srcuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="100918" level="5">
+    <if_sid>100908</if_sid>
+    <action type="pcre2">^(?:CreateAccount|DeleteAccount|RenameAccount|AddAccountAlias|RemoveAccountAlias|ChangePrimaryEmail[\w ]*|SetPassword|CreateDomain|DeleteDomain|ModifyDomain|ModifyConfig|CreateCos|CopyCos|ModifyCos|RenameCos|DeleteCos|CreateServer|ModifyServer|DeleteServer|DeleteMailbox|CreateGalSyncAccount|DeleteGalSyncAccount)$</action>
+    <description>Zimbra account, domain or configuration change: $(action) $(dstuser) by $(srcuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+      <id>T1136</id>
+    </mitre>
+  </rule>
+
+  <rule id="100919" level="12">
+    <if_sid>100913,100917</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/zimbra-internal-networks</list>
+    <options>no_full_log</options>
+    <description>[HIGH] Zimbra credential or preauth key set from a public address (log line withheld): $(action) $(dstuser) by $(srcuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+      <id>T1078</id>
+    </mitre>
   </rule>
 
 </group>

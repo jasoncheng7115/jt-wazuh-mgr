@@ -10,12 +10,24 @@
 
   Modules
     132200-132209  base, log level classes, request summary
-    132210-132229  logins: rejected, brute force, spraying, success afterwards
+    132210-132229  logins: rejected, brute force, spraying, success afterwards,
+                   mail server refusals that are not a wrong password
     132230-132239  mail backend: Zimbra refusals, availability
     132240-132249  devices: new device, remote wipe, policy
     132250-132259  loop detection, crashes, other fatal errors
     132260-132269  successful requests: first-seen device, administrator accounts
+    132270-132279  attack tooling: scripting user agents, file share search,
+                   login names shaped like an injection
     132280-132289  web server access log
+
+  Sources: Z-Push 2.7.6 (github.com/Z-Hub/Z-Push, src/index.php,
+  src/lib/request/request.php, src/lib/request/search.php,
+  src/autodiscover/autodiscover.php) and the Zimbra backend revision 75
+  (sourceforge.net/projects/zimbrabackend, zimbra.php SoapRequest). Ideas
+  for the attack tooling rules: PEAS (github.com/FSecureLABS/PEAS),
+  EASSniper (github.com/fugawi/EASSniper), Microsoft's DEV-0343 report
+  (ActiveSync password spraying, 2021-10-11) and CVE-2025-8264 (SQL
+  injection through the login name, IMAP backend, fixed in Z-Push 2.7.6).
 
   Z-Push sits between the phones and the mail server. The mail server sees the
   Z-Push host as the client of every session (the Zimbra backend forwards the
@@ -76,7 +88,8 @@
     threat-listed address that logs in is level 14).
     A 401 with an empty login before the # in the [..] prefix ("[#jdoe]") is a
     request without credentials (a browser or a scanner); with a login it is
-    a rejected password.
+    a rejected password. The two are told apart by the first character after
+    "[": login names are unfiltered and may contain "]" or "#" further on.
   -->
   <rule id="132207" level="2">
     <if_sid>132202</if_sid>
@@ -88,7 +101,7 @@
 
   <rule id="132208" level="2">
     <if_sid>132202</if_sid>
-    <match type="pcre2">\[\s?INFO\] \[(?:#[^\]]*)?\](?: ?\[[^\]]*\])? cmd='[^']*' memory='</match>
+    <match type="pcre2">\[\s?INFO\] \[[#\]]</match>
     <id type="pcre2">^401$</id>
     <description>Z-Push request without credentials from $(srcip)</description>
   </rule>
@@ -204,7 +217,7 @@
   -->
   <rule id="132210" level="5">
     <if_sid>132202</if_sid>
-    <match type="pcre2">\[\s?INFO\] \[[^\]#]+(?:#[^\]]*)?\](?: ?\[[^\]]*\])? cmd='[^']*' memory='</match>
+    <match type="pcre2">\[\s?INFO\] \[[^#\]]</match>
     <id type="pcre2">^401$</id>
     <description>Z-Push: ActiveSync login rejected for $(dstuser) from $(srcip) (device $(zpush.devtype) $(zpush.devid))</description>
     <mitre>
@@ -234,6 +247,126 @@
     <if_sid>132205</if_sid>
     <field name="zpush.exception" type="pcre2">^AuthenticationRequiredException$</field>
     <description>Z-Push: request of $(dstuser) rejected: $(zpush.message)</description>
+  </rule>
+
+  <!--
+    Mail backend. The Zimbra backend names four refusals of its own
+    (zimbra.php SoapRequest, revision 75). The ActiveSync switch of a Zimbra
+    account is the closest thing to a device block list (Z-Push 2.7 has
+    none): every request of that account is rejected with 401. 132229 takes
+    the four refusals that are not a wrong password and marks them for
+    132223/132224 below (an expired auth token is routine and stays at its
+    level 2); 132230, 132231 and 132237 raise three of them and carry the
+    same mark, and 132231 falls back to 132229 while its one-hour limit runs,
+    so the mark is never lost. These rules are defined ahead of 132223,
+    which looks for their mark. Each rule below starts its pattern at the
+    beginning of the message with a different text, so no line can match two
+    of them, whatever order Wazuh tries them in.
+  -->
+  <rule id="132229" level="2">
+    <if_sid>132204</if_sid>
+    <field name="zpush.message" type="pcre2">^Zimbra-\x3eSoapRequest\(\): (?:zimbra Auth Token has expired|zimbra 2FA Auth Failed|zimbra ActiveSync Disabled for user|Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs) - Throw AuthenticationRequiredException</field>
+    <description>Z-Push: the mail server refused $(dstuser) for a reason other than the password: $(zpush.message)</description>
+    <group>jt_zpush_backend_refusal,</group>
+  </rule>
+
+  <rule id="132230" level="5">
+    <if_sid>132229</if_sid>
+    <field name="zpush.message" type="pcre2">^Zimbra-\x3eSoapRequest\(\): zimbra ActiveSync Disabled for user</field>
+    <description>Z-Push: ActiveSync is disabled for $(dstuser) on the mail server, the device is refused</description>
+    <group>jt_zpush_backend_refusal,</group>
+  </rule>
+
+  <rule id="132231" level="10" ignore="3600">
+    <if_sid>132229</if_sid>
+    <field name="zpush.message" type="pcre2">^Zimbra-\x3eSoapRequest\(\): Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs</field>
+    <description>[WARN] Z-Push: Zimbra refuses the Z-Push server (not in zimbraHttpThrottleSafeIPs), every login fails</description>
+    <group>jt_zpush_backend_refusal,</group>
+  </rule>
+
+  <rule id="132232" level="7" ignore="600">
+    <if_sid>132204</if_sid>
+    <field name="zpush.message" type="pcre2">^Zimbra-\x3eSoapRequest\(\): DoSFilter trap - </field>
+    <description>Z-Push: Zimbra DoSFilter is throttling the Z-Push server (add it to zimbraHttpThrottleSafeIPs)</description>
+  </rule>
+
+  <rule id="132233" level="2">
+    <if_sid>132204</if_sid>
+    <field name="zpush.message" type="pcre2">^Zimbra-\x3e(?:SoapRequest\(\): (?:ERROR: curl_exec - |SOAP FAULT: HTML Error Returned - |Connection Refused - )|Logon\(\): END Logon - Proxy Error)</field>
+    <description>Z-Push: request to the mail server failed: $(zpush.message)</description>
+  </rule>
+
+  <!-- account.TWO_FACTOR_AUTH_FAILED. With two-factor authentication on
+       (Maldua 2FA on Zimbra 10.1 and later), an ActiveSync device logs in
+       with an application code, not the account password; a device still
+       sending the password fails like this on every request. -->
+  <rule id="132237" level="5">
+    <if_sid>132229</if_sid>
+    <field name="zpush.message" type="pcre2">^Zimbra-\x3eSoapRequest\(\): zimbra 2FA Auth Failed - </field>
+    <description>Z-Push: the mail server refused the two-factor login of $(dstuser) (an ActiveSync device needs an application code as its password)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>jt_zpush_backend_refusal,</group>
+  </rule>
+
+  <!--
+    Refusals that are not a wrong password. The Zimbra backend answers four
+    mail server faults with the same AuthenticationRequiredException (HTTP 401)
+    as a wrong password (zimbra.php SoapRequest, revision 75):
+      service.AUTH_EXPIRED                 "Auth Token Expired"
+      account.TWO_FACTOR_AUTH_FAILED       "2FA Auth Failed"
+      account.ACTIVESYNC_DISABLED          "ActiveSync Disabled for user"
+      account.NOT_IN_ZIMBRAHTTPTHROTTLESAFEIPS
+                                           "Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs"
+    The request summary of such a request reads exactly like a rejected
+    password. Counted, a mail server that stops trusting the Z-Push host
+    (the last one: every login fails) makes every account look brute-forced
+    and every carrier address look like a sprayer, and the opt-in active
+    response would block real users. In the same process, the backend writes
+    its ERROR line, then Z-Push the user agent, the fatal exception and the
+    summary (index.php): 132229 and its children mark the ERROR line, 132222
+    the fatal one, and 132223 (ActiveSync) and 132224 (autodiscover)
+    re-label the summary of the same process, so that it is recorded but
+    never reaches the counting rules (only events whose final rule is 132210
+    or 132211 are counted). A login name can imitate the fatal message (the
+    name is written into the [..] prefix of that line), but the exception
+    decoder reads the prefix strictly and the request decoder up to "] cmd=",
+    so the two decoded accounts then differ and same_user does not tie them
+    (sandbox case). The ERROR line of each refusal still alerts on its own
+    (132230, 132231, 132237). analysisd works in several threads, so two
+    lines in a row can be handled out of order; with two marks one and two
+    lines ahead (and the agent group holding the split summary until the
+    next line starts) a missed mark is rare, and a summary that misses it is
+    counted as a rejected login, as in 1.1.
+  -->
+  <rule id="132222" level="2">
+    <if_sid>132213</if_sid>
+    <field name="zpush.message" type="pcre2">^Zimbra-\x3eSoapRequest\(\): (?:Auth Token Expired|2FA Auth Failed|ActiveSync Disabled for user|Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs) - Force client to reconnect\.</field>
+    <description>Z-Push: request of $(dstuser) refused by the mail server for a reason other than the password: $(zpush.message)</description>
+    <group>jt_zpush_backend_refusal,</group>
+  </rule>
+
+  <!-- Z-Push's syslog backend puts the pid in the syslog header, which is not
+       a field. Wazuh treats a field missing from both events as the same
+       (sandbox), so there the account alone ties the two lines. -->
+  <rule id="132223" level="2" timeframe="60">
+    <if_sid>132210</if_sid>
+    <if_matched_group>jt_zpush_backend_refusal</if_matched_group>
+    <same_field>zpush.pid</same_field>
+    <same_user />
+    <same_location />
+    <description>Z-Push: ActiveSync request of $(dstuser) from $(srcip) refused by the mail server for a reason other than the password (not counted as a failed login)</description>
+  </rule>
+
+  <!-- Autodiscover: the fatal line has no account in its prefix, the
+       failure line the e-mail address of the request; the process ties them. -->
+  <rule id="132224" level="2" timeframe="60">
+    <if_sid>132211</if_sid>
+    <if_matched_group>jt_zpush_backend_refusal</if_matched_group>
+    <same_field>zpush.pid</same_field>
+    <same_location />
+    <description>Z-Push: autodiscover login of $(dstuser) from $(srcip) refused by the mail server for a reason other than the password (not counted as a failed login)</description>
   </rule>
 
   <!--
@@ -283,6 +416,31 @@
       <id>T1110.003</id>
     </mitre>
     <group>authentication_failures,jt_zpush_spraying,</group>
+  </rule>
+
+  <!--
+    Spraying from many addresses at once: Microsoft's DEV-0343 report
+    (2021-10-11) describes ActiveSync spraying from 150 to over 1,000 Tor
+    addresses per target, one or two attempts each, which 132215 never
+    counts. Twenty rejected logins on one host within ten minutes, each for
+    another account and from another address than the current one. One
+    address trying many accounts never reaches it (132215 does); neither
+    does one account failing again and again (132214). What else reaches
+    it: about a dozen phones with stale passwords failing at the same time,
+    or a mail server that rejects everybody for a reason 132223 does not
+    know. No active response: blocking the last of many addresses achieves
+    nothing.
+  -->
+  <rule id="132225" level="10" frequency="20" timeframe="600">
+    <if_matched_sid>132210</if_matched_sid>
+    <same_location />
+    <different_srcip />
+    <different_user />
+    <description>[WARN] Z-Push: rejected ActiveSync logins for many accounts from many addresses within ten minutes (distributed password spraying), last $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,jt_zpush_distributed_spray,</group>
   </rule>
 
   <!-- The same two patterns through autodiscover. -->
@@ -348,36 +506,6 @@
       <id>T1078</id>
       <id>T1110.003</id>
     </mitre>
-  </rule>
-
-  <!--
-    Mail backend. The Zimbra backend names three refusals of its own. The
-    ActiveSync switch of a Zimbra account is the closest thing to a device
-    block list (Z-Push 2.7 has none): every request of that account is
-    rejected with 401.
-  -->
-  <rule id="132230" level="5">
-    <if_sid>132204</if_sid>
-    <match type="pcre2">SoapRequest\(\): zimbra ActiveSync Disabled for user</match>
-    <description>Z-Push: ActiveSync is disabled for $(dstuser) on the mail server, the device is refused</description>
-  </rule>
-
-  <rule id="132231" level="10" ignore="3600">
-    <if_sid>132204</if_sid>
-    <match type="pcre2">Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs</match>
-    <description>[WARN] Z-Push: Zimbra refuses the Z-Push server (not in zimbraHttpThrottleSafeIPs), every login fails</description>
-  </rule>
-
-  <rule id="132232" level="7" ignore="600">
-    <if_sid>132204</if_sid>
-    <match type="pcre2">DoSFilter trap - </match>
-    <description>Z-Push: Zimbra DoSFilter is throttling the Z-Push server (add it to zimbraHttpThrottleSafeIPs)</description>
-  </rule>
-
-  <rule id="132233" level="2">
-    <if_sid>132204</if_sid>
-    <match type="pcre2">SoapRequest\(\): (?:ERROR: curl_exec - |SOAP FAULT: HTML Error Returned - |Connection Refused - )|Logon\(\): END Logon - Proxy Error</match>
-    <description>Z-Push: request to the mail server failed: $(zpush.message)</description>
   </rule>
 
   <!--
@@ -490,6 +618,123 @@
   </rule>
 
   <!--
+    Attack tooling.
+
+    User agents. Phones and mail apps name themselves (Apple-iPhone..,
+    Android-Mail/.., Outlook-iOS/.., MSFT-WIN-..); the tools that test
+    passwords against ActiveSync or read mailboxes through it send the
+    defaults of their HTTP library: PEAS "python-EAS-Client 1.0",
+    pyActiveSync "Python", EASSniper the PowerShell default
+    ("... WindowsPowerShell/5.1 ..."), scripts python-requests, curl,
+    Go-http-client. Z-Push logs the user agent before every exception (so
+    for every rejected login) and for every GET, which is how EASSniper
+    tests passwords (index.php). Monitoring probes are GETs too, so 132270
+    fires the first time this manager sees an account used by such a client
+    (fts: account and user agent), not for every request: a monitoring
+    script alerts once, and so does an administrator testing with curl.
+    check_http (monitoring-plugins) is not listed. On nine days of two
+    production hosts the only user agents were check_http, Apple-iPhone,
+    Apple-iPad and Android-Mail.
+  -->
+  <rule id="132270" level="6">
+    <if_sid>132202</if_sid>
+    <extra_data type="pcre2">(?i)^(?:python|curl/|wget/|go-http-client/|libwww-perl/|lwp-|ruby|axios/|node-fetch/|sqlmap/|nikto|masscan/|zgrab|nuclei|hydra|medusa|ncrack)|windowspowershell/|powershell/|nmap scripting engine|\(hydra\)</extra_data>
+    <if_fts />
+    <description>Z-Push: first request of $(dstuser) seen by this manager from a scripting or attack tool (user agent '$(zpush.useragent)')</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <rule id="132271" level="2">
+    <if_sid>132202</if_sid>
+    <extra_data type="pcre2">(?i)^(?:python|curl/|wget/|go-http-client/|libwww-perl/|lwp-|ruby|axios/|node-fetch/|sqlmap/|nikto|masscan/|zgrab|nuclei|hydra|medusa|ncrack)|windowspowershell/|powershell/|nmap scripting engine|\(hydra\)</extra_data>
+    <description>Z-Push: request of $(dstuser) from a scripting or attack tool (user agent '$(zpush.useragent)')</description>
+  </rule>
+
+  <!--
+    Document library search. Exchange ActiveSync can list and read files on
+    UNC shares (Search with DocumentLibrary, ItemOperations), which PEAS
+    uses to probe file shares through the mail gateway. Modern phones never
+    search the document library. Z-Push serves only GAL and MAILBOX
+    searches and logs a warning for any other type (lib/request/search.php,
+    "Searchtype '%s' is not supported.") when the backend does not claim
+    the type. The Zimbra backend (revision 75) claims DOCUMENTLIBRARY and
+    then returns nothing, so with it no line is written; with the other
+    backends (IMAP, Kopano, CardDAV, combined) the warning appears.
+  -->
+  <rule id="132272" level="8">
+    <if_sid>132203</if_sid>
+    <match type="pcre2">\] Searchtype 'DOCUMENTLIBRARY' is not supported\.</match>
+    <description>Z-Push: $(dstuser) searched the document library (network file shares) through ActiveSync, which current phones do not do</description>
+    <mitre>
+      <id>T1135</id>
+      <id>T1039</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Login names shaped like an injection. Z-Push passes the login unfiltered
+    to the backend, and CVE-2025-8264 (Z-Push before 2.7.6, IMAP backend with
+    IMAP_FROM_SQL_QUERY) was an SQL injection through it. A real login is an
+    account or an e-mail address; these patterns do not occur in one (an
+    apostrophe alone, as in o'brien, does not match): a quote followed by SQL
+    syntax, SQL functions used for timing, LDAP filter syntax, "../", a
+    "${" or "$(" expansion, a backtick, an HTML tag, and a quote followed by
+    another field of the request summary (an attempt to write the logged
+    address or result). The odd-numbered rules read the account of the URL
+    (getUser), the even-numbered ones the login of the Authorization header
+    (the [..] prefix).
+    A rejected request (401) is left to 132210 on purpose: only events whose
+    final rule is 132210 are counted, and a client could otherwise send a
+    junk account in the URL next to a real login in the header, have every
+    wrong password labelled here instead, and never reach the brute-force,
+    spraying or active-response rules. Many injection-shaped names from one
+    address are spraying (132215). What is labelled: any other error (a
+    backend that breaks on the quote answers 500), level 8, and a success,
+    level 12 (the injection may have worked).
+  -->
+  <rule id="132273" level="8">
+    <if_sid>132202</if_sid>
+    <id type="pcre2">^(?!2\d\d$|401$)\d+$</id>
+    <field name="zpush.getuser" type="pcre2">(?i)['"\x60]\s*(?:or|and|xor|union|select|having)(?:\s|['"(\d])|['"\x60]\s*(?:;|--|#|/\*|\)|\|\||=|\+)|['"]\s+\w+\s*=|\bunion\b.{0,40}\bselect\b|\b(?:sleep|benchmark|pg_sleep|extractvalue|updatexml)\s*\(|\bwaitfor\s+delay\b|\)\s*\(|\*\s*\)|\(\s*[|\x26!]|%00|\.\./|\.\.\\|\$\{|\$\(|\x60|\x3c[a-z!/?]</field>
+    <description>Z-Push: ActiveSync request with an account name shaped like an injection attempt failed from $(srcip) (HTTP $(id)): $(zpush.getuser)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <rule id="132274" level="8">
+    <if_sid>132202</if_sid>
+    <id type="pcre2">^(?!2\d\d$|401$)\d+$</id>
+    <user type="pcre2">(?i)['"\x60]\s*(?:or|and|xor|union|select|having)(?:\s|['"(\d])|['"\x60]\s*(?:;|--|#|/\*|\)|\|\||=|\+)|['"]\s+\w+\s*=|\bunion\b.{0,40}\bselect\b|\b(?:sleep|benchmark|pg_sleep|extractvalue|updatexml)\s*\(|\bwaitfor\s+delay\b|\)\s*\(|\*\s*\)|\(\s*[|\x26!]|%00|\.\./|\.\.\\|\$\{|\$\(|\x60|\x3c[a-z!/?]</user>
+    <description>Z-Push: ActiveSync request with a login name shaped like an injection attempt failed from $(srcip) (HTTP $(id)): $(dstuser)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <rule id="132275" level="12">
+    <if_sid>132207</if_sid>
+    <field name="zpush.getuser" type="pcre2">(?i)['"\x60]\s*(?:or|and|xor|union|select|having)(?:\s|['"(\d])|['"\x60]\s*(?:;|--|#|/\*|\)|\|\||=|\+)|['"]\s+\w+\s*=|\bunion\b.{0,40}\bselect\b|\b(?:sleep|benchmark|pg_sleep|extractvalue|updatexml)\s*\(|\bwaitfor\s+delay\b|\)\s*\(|\*\s*\)|\(\s*[|\x26!]|%00|\.\./|\.\.\\|\$\{|\$\(|\x60|\x3c[a-z!/?]</field>
+    <description>[HIGH] Z-Push: a request with an account name shaped like an injection attempt succeeded from $(srcip) (login $(dstuser)): $(zpush.getuser)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="132276" level="12">
+    <if_sid>132207</if_sid>
+    <user type="pcre2">(?i)['"\x60]\s*(?:or|and|xor|union|select|having)(?:\s|['"(\d])|['"\x60]\s*(?:;|--|#|/\*|\)|\|\||=|\+)|['"]\s+\w+\s*=|\bunion\b.{0,40}\bselect\b|\b(?:sleep|benchmark|pg_sleep|extractvalue|updatexml)\s*\(|\bwaitfor\s+delay\b|\)\s*\(|\*\s*\)|\(\s*[|\x26!]|%00|\.\./|\.\.\\|\$\{|\$\(|\x60|\x3c[a-z!/?]</user>
+    <description>[HIGH] Z-Push: a request with a login name shaped like an injection attempt succeeded from $(srcip) (account $(zpush.getuser)): $(dstuser)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!--
     Web server access log. Phones synchronise in bursts: one tablet sent 55
     POSTs in 20 seconds, 20 of them within two. The built-in rule 31533 (eight
     POSTs from one address in 20 seconds, level 10, "likely bot") fired 50 to
@@ -503,6 +748,41 @@
     <url type="pcre2">^/Microsoft-Server-ActiveSync</url>
     <id type="pcre2">^(?:2\d\d|499)$</id>
     <description>ActiveSync POST request (not counted as a POST flood)</description>
+  </rule>
+
+  <!--
+    The access log carries the user agent of every request, also of the
+    successful ones Z-Push does not log it for. Only POSTs, which is how a
+    client speaks ActiveSync or autodiscover (a monitoring probe GETs). Both
+    hang directly under 31100 above the level of 31101 (400 errors) and
+    31530 (POST), so they are tried first whatever the result; such a
+    request is then not counted by the POST flood rule 31533 either.
+    132282: PEAS sends DeviceType=iPhone by default; the iOS mail app names
+    itself Apple-<model>. Other clients choose other device types (Outlook
+    for iOS sends Outlook). Measured on nine days of two hosts: 16,756
+    iPhone and iPad POSTs, all from Apple user agents.
+  -->
+  <rule id="132281" level="8">
+    <if_sid>31100</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">(?i)^/(?:Microsoft-Server-ActiveSync|autodiscover/autodiscover\.xml)</url>
+    <match type="pcre2">\x22 \x22(?i:(?:python|curl/|wget/|go-http-client/|libwww-perl/|lwp-|ruby|axios/|node-fetch/|sqlmap/|nikto|masscan/|zgrab|nuclei|hydra|medusa|ncrack)|[^\x22]*(?:windowspowershell/|powershell/|nmap scripting engine|\(hydra\)))[^\x22]*\x22\]?\s*$</match>
+    <description>ActiveSync or autodiscover request from a scripting or attack tool from $(srcip) (HTTP $(id))</description>
+    <mitre>
+      <id>T1114.002</id>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <rule id="132282" level="7">
+    <if_sid>31100</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">(?i)^/Microsoft-Server-ActiveSync\?(?:.*\x26)?DeviceType=iP(?:hone|ad|od)(?:\x26|$)</url>
+    <match type="pcre2">\x22 \x22(?!Apple-|iOS/|iPadOS/)[^\x22]*\x22\]?\s*$</match>
+    <description>ActiveSync request claiming to be an Apple device without an Apple user agent from $(srcip) (spoofed device type, HTTP $(id))</description>
+    <mitre>
+      <id>T1114.002</id>
+    </mitre>
   </rule>
 
 </group>

@@ -2,27 +2,31 @@
  "id": "jt-proxmox",
  "name": "Proxmox VE Detection Suite",
  "name_zh": "Proxmox VE 偵測套組",
- "version": "1.1",
- "summary": "Tasks, high availability, cluster quorum, Ceph health and REST API changes on Proxmox VE, where Wazuh only decodes logins.",
- "summary_zh": "Proxmox VE 的任務、高可用、叢集 quorum、Ceph 健康狀態與 REST API 變更；Wazuh 內建只解碼登入。",
+ "version": "1.2",
+ "summary": "Tasks, high availability, cluster quorum, Ceph health, REST API changes and /etc/pve file integrity on Proxmox VE, where Wazuh only decodes logins.",
+ "summary_zh": "Proxmox VE 的任務、高可用、叢集 quorum、Ceph 健康狀態、REST API 變更與 /etc/pve 檔案完整性；Wazuh 內建只解碼登入。",
  "rule_id_range": "131200-131299",
  "notes": [
-  "Wazuh ships decoders for pvedaemon, pveproxy and pvestatd and four rules, all about logins. Everything else a cluster writes (tasks, HA, corosync, backup results, the Ceph cluster log) arrived undecoded and matched nothing, or matched the generic rule 1002.",
-  "Tasks: a guest destroyed is level 8, a snapshot rollback level 6, a root shell on the node opened from the web interface level 5, a guest console, creation or migration level 3. A failed task is level 5; a backup job that ends with errors, or a guest whose backup failed, is level 10.",
-  "High availability and quorum: a node being fenced and this node losing quorum are level 12; an HA service in error or recovery is level 10; a node that drops out of the cluster is level 4, and level 8 when it happens six times in an hour. Corosync link flaps are recorded below the alert level and raise level 7 only in a burst, because a busy cluster network produces hundreds a month.",
-  "Ceph health from the cluster log on monitor nodes: a warning is level 7, an error or a down OSD or monitor level 10, a full OSD or pool or damaged placement groups level 12. The agent group drops the [DBG] lines (about 99 per cent of the log) and the regular HEALTH_OK.",
-  "REST API from the pveproxy access log: failed logins (level 5; six from one address in two minutes, level 10), and changes that succeeded: users, permissions and realms (level 8), API tokens (level 10), guest deletion (level 8), firewall changes (level 6), uploads to storage (level 5), cluster configuration (level 6). The agent group sends these lines under the program name jt-pveproxy so that the pack's decoder reads them: pveproxy logs an IPv4 client as ::ffff:a.b.c.d, the built-in decoders keep that prefix, and Wazuh's firewall-drop then writes an ip6tables rule that the client's IPv4 traffic never meets. The pack's decoder reports the plain IPv4 address.",
-  "Successful logins: the built-in rule 87203 alerts at level 3 on every login, and a monitoring system that logs in every few seconds makes that tens of thousands of alerts a day (measured: 20,880 a day from one monitoring account, against 7 root logins). The pack records an ordinary account's login at level 2, keeps root's visible at level 3, and raises a login that follows six failures for the same account to level 12. This works on a fresh install; etc/lists/jt-pve-service-accounts is optional tuning that drops listed accounts to level 0. pvedaemon's success line carries no client address, so a login from outside cannot be told apart there.",
-  "Proxmox Backup Server has a pack of its own, jt-pbs."
+  "Wazuh ships decoders for pvedaemon, pveproxy and pvestatd and four rules, all about logins. Everything else a cluster writes (tasks, HA, corosync, backup results, configuration changes, the Ceph cluster log) arrived undecoded and matched nothing, or matched the generic rule 1002. Log strings and task names were checked against the Proxmox VE 9.2 sources (pve-manager 9.2.21, qemu-server 9.2.10, libpve-access-control 9.1.2) and Ceph 19.2.",
+  "Tasks: a guest destroyed is level 8, a snapshot rollback level 6, a root shell on the node opened from the web interface level 5, a guest console, creation, migration, file transfer or volume deletion level 3. Destroying storage (disk wipe, ZFS, LVM or directory storage removed) is level 8, a Ceph pool or file system destroyed level 10, a Ceph daemon destroyed level 6, backups pruned by hand level 5, a cluster created or joined level 8. A failed task is level 5; a backup job that ends with errors, or a guest whose backup failed, is level 10.",
+  "Configuration changes from the cluster log: a hookscript set on a VM is level 10 (it runs as root on the host at every start and stop), raw QEMU arguments level 8, the root@pam password changed level 8, another password level 5, a node added to the cluster level 10, removed level 6. Proxmox VE does not log container configuration changes at all.",
+  "High availability and quorum: a node being fenced and this node losing quorum are level 12; an HA service in error or recovery is level 10; a node that drops out of the cluster is level 4, and level 8 when it happens six times in an hour. Corosync link flaps are recorded below the alert level and raise level 7 only in a burst, because a busy cluster network produces hundreds a month. The cluster file system losing corosync (corosync stopped, restarted or crashed) is level 5, and the firewall service stopping and removing its rules level 6.",
+  "Ceph health from the cluster log on monitor nodes: a health check that starts is level 7 (warning) or 10 (error), level 10 for a down OSD or monitor and 12 for a full OSD or pool or damaged placement groups; a check whose summary changes is level 3 (7 for an error), a cleared check level 3. While a warning lasts Ceph repeats a summary every ten minutes; those repeats are recorded below the alert level (a 40-minute clock skew was 23 alerts at level 7 in 1.1, now 2). The agent group drops the [DBG] lines (about 99 per cent of the log) and the regular HEALTH_OK. Every monitor node writes the whole cluster log, so an event arrives once per monitor node.",
+  "REST API from the pveproxy access log: failed logins (level 5; six from one address in two minutes, level 10), and changes that succeeded: users, permissions and realms (level 8), API tokens and a second factor removed (level 10), guest deletion, a backup or a backup job deleted, the datacenter firewall options and a guest OS password set through the guest agent (level 8), firewall changes and commands sent into a guest through its agent (level 6), uploads to storage (level 5), cluster configuration (level 6). The agent group sends these lines under the program name jt-pveproxy so that the pack's decoder reads them: pveproxy logs an IPv4 client as ::ffff:a.b.c.d, the built-in decoders keep that prefix, and Wazuh's firewall-drop then writes an ip6tables rule that the client's IPv4 traffic never meets. The pack's decoder reports the plain IPv4 address.",
+  "Successful logins: the built-in rule 87203 alerts at level 3 on every login, and a monitoring system that logs in every few seconds makes that tens of thousands of alerts a day (measured: 20,880 a day from one monitoring account, against 7 root logins). The pack records an ordinary account's login at level 2, keeps root@pam's visible at level 3, and raises a login that follows six failures for the same account to level 12. A correct password with a wrong second factor is level 8, a second-factor lockout level 10. pvedaemon's success line carries no client address; the access log does: a login from a public address is level 5 the first time that address is seen and level 3 after that, and level 12 right after repeated failures from it. The first change an account makes from an address is level 3 (root@pam: 5), once. This works on a fresh install; etc/lists/jt-pve-service-accounts is optional tuning that drops listed accounts' logins to level 0.",
+  "File integrity of /etc/pve (every Linux agent watches /etc by default): /etc/pve is pmxcfs, a database exposed as files, which renumbers inodes, touches modification times, keeps status and HA state files that change every few seconds and writes through temporary files; vzdump adds and removes a lock line in every guest's configuration at each backup. Measured on one cluster: about 2,500 FIM alerts a day at level 5 and 7, all routine; with the pack about one. What remains: API token secrets, the cluster-wide root SSH keys and the cluster CA (level 10), corosync.conf, users and realms (level 8), second factors and pve realm passwords, the datacenter and node firewall, backup jobs (level 6), a snippet added (level 6, the agent group watches /var/lib/vz/snippets). A cluster-wide file is reported by every node.",
+  "Not covered: what changed inside a guest configuration (FIM sees that it changed, not how; report_changes would show it, but the diffs carry guest descriptions, which some sites use for passwords), container configuration (not logged by Proxmox VE), and the installed version (no component logs it in a line the agent reads). Proxmox Backup Server has a pack of its own, jt-pbs."
  ],
  "notes_zh": [
-  "Wazuh 內建 pvedaemon、pveproxy、pvestatd 的解碼器與四條規則，全都只管登入。叢集寫出的其他內容（任務、HA、corosync、備份結果、Ceph 叢集記錄）送進來後沒有解碼、也不命中任何規則，或只命中通用的 1002。",
-  "任務：刪除 guest 為 level 8，回復快照 level 6，從網頁介面開啟節點本身的 root shell 為 level 5，開啟 guest 主控台、建立或遷移 guest 為 level 3。任務失敗為 level 5；備份工作以錯誤結束，或某台 guest 備份失敗，為 level 10。",
-  "高可用與 quorum：節點被 fence、本節點失去 quorum 為 level 12；HA 服務進入 error 或 recovery 為 level 10；節點脫離叢集為 level 4，一小時內發生六次則為 level 8。corosync 連線閃斷記錄在告警等級之下，只有短時間大量發生才升為 level 7，因為繁忙的叢集網路一個月就有數百次。",
-  "Ceph 健康狀態取自 monitor 節點的叢集記錄：警告為 level 7，錯誤或 OSD、monitor 停擺為 level 10，OSD 或 pool 滿了、placement group 損壞為 level 12。agent 群組會丟掉 [DBG] 行（約占記錄 99%）與例行的 HEALTH_OK。",
-  "pveproxy 存取記錄裡的 REST API：登入失敗（level 5；同一位址兩分鐘內六次為 level 10），以及成功的變更：使用者、權限與 realm（level 8）、API token（level 10）、刪除 guest（level 8）、防火牆變更（level 6）、上傳到儲存區（level 5）、叢集設定（level 6）。agent 群組以程式名稱 jt-pveproxy 送出這些記錄，讓套件自己的解碼器讀取：pveproxy 把 IPv4 用戶端記成 ::ffff:a.b.c.d，內建解碼器保留這個前綴，Wazuh 的 firewall-drop 就會寫成 ip6tables 規則，用戶端的 IPv4 流量永遠碰不到。套件的解碼器回報的是單純的 IPv4 位址。",
-  "成功登入：內建規則 87203 對每一次登入都告警 level 3，每幾秒登入一次的監控系統會讓它一天變成幾萬筆（實測：一個監控帳號一天 20,880 筆，root 只有 7 筆）。套件把一般帳號的登入記成 level 2，root 的登入維持 level 3 可見，同一帳號失敗六次後的登入升到 level 12。裝上去就有效；etc/lists/jt-pve-service-accounts 只是選用的微調，列入的帳號降為 level 0。pvedaemon 的成功記錄沒有用戶端位址，所以無法在那裡分辨是否從外部登入。",
-  "Proxmox Backup Server 另有自己的套件 jt-pbs。"
+  "Wazuh 內建 pvedaemon、pveproxy、pvestatd 的解碼器與四條規則，全都只管登入。叢集寫出的其他內容（任務、HA、corosync、備份結果、設定變更、Ceph 叢集記錄）送進來後沒有解碼、也不命中任何規則，或只命中通用的 1002。記錄字串與任務名稱已對照 Proxmox VE 9.2 原始碼（pve-manager 9.2.21、qemu-server 9.2.10、libpve-access-control 9.1.2）與 Ceph 19.2。",
+  "任務：刪除 guest 為 level 8，回復快照 level 6，從網頁介面開啟節點本身的 root shell 為 level 5，開啟 guest 主控台、建立、遷移、傳送檔案或刪除磁碟區為 level 3。摧毀儲存（抹除磁碟、移除 ZFS、LVM 或目錄儲存）為 level 8，摧毀 Ceph pool 或檔案系統為 level 10，摧毀 Ceph daemon 為 level 6，手動修剪備份為 level 5，建立或加入叢集為 level 8。任務失敗為 level 5；備份工作以錯誤結束，或某台 guest 備份失敗，為 level 10。",
+  "叢集記錄裡的設定變更：VM 設定 hookscript 為 level 10（每次開機與關機都以 root 在主機上執行），設定原始 QEMU 參數為 level 8，root@pam 密碼變更為 level 8，其他帳號的密碼為 level 5，叢集新增節點為 level 10、移除節點為 level 6。Proxmox VE 完全不記錄容器的設定變更。",
+  "高可用與 quorum：節點被 fence、本節點失去 quorum 為 level 12；HA 服務進入 error 或 recovery 為 level 10；節點脫離叢集為 level 4，一小時內發生六次則為 level 8。corosync 連線閃斷記錄在告警等級之下，只有短時間大量發生才升為 level 7，因為繁忙的叢集網路一個月就有數百次。叢集檔案系統與 corosync 斷線（corosync 停止、重啟或當掉）為 level 5，防火牆服務停止並移除規則為 level 6。",
+  "Ceph 健康狀態取自 monitor 節點的叢集記錄：健康檢查開始時為 level 7（警告）或 10（錯誤），OSD、monitor 停擺為 level 10，OSD 或 pool 滿了、placement group 損壞為 level 12；檢查的摘要改變為 level 3（錯誤為 7），檢查解除為 level 3。警告持續期間 Ceph 每十分鐘重複一次摘要，這些重複記錄在告警等級之下（1.1 時一次 40 分鐘的時鐘偏差產生 23 筆 level 7，現在 2 筆）。agent 群組會丟掉 [DBG] 行（約占記錄 99%）與例行的 HEALTH_OK。每個 monitor 節點都寫完整的叢集記錄，所以同一事件會從每個 monitor 節點各來一次。",
+  "pveproxy 存取記錄裡的 REST API：登入失敗（level 5；同一位址兩分鐘內六次為 level 10），以及成功的變更：使用者、權限與 realm（level 8）、API token 與移除第二因素（level 10）、刪除 guest、刪除備份或備份工作、資料中心防火牆選項、透過 guest agent 設定 guest 作業系統密碼（level 8）、防火牆變更與透過 guest agent 對 guest 下指令（level 6）、上傳到儲存區（level 5）、叢集設定（level 6）。agent 群組以程式名稱 jt-pveproxy 送出這些記錄，讓套件自己的解碼器讀取：pveproxy 把 IPv4 用戶端記成 ::ffff:a.b.c.d，內建解碼器保留這個前綴，Wazuh 的 firewall-drop 就會寫成 ip6tables 規則，用戶端的 IPv4 流量永遠碰不到。套件的解碼器回報的是單純的 IPv4 位址。",
+  "成功登入：內建規則 87203 對每一次登入都告警 level 3，每幾秒登入一次的監控系統會讓它一天變成幾萬筆（實測：一個監控帳號一天 20,880 筆，root 只有 7 筆）。套件把一般帳號的登入記成 level 2，root@pam 的登入維持 level 3 可見，同一帳號失敗六次後的登入升到 level 12。密碼正確但第二因素錯誤為 level 8，第二因素被鎖定為 level 10。pvedaemon 的成功記錄沒有用戶端位址，存取記錄有：從公開位址登入，該位址第一次出現時為 level 5、之後為 level 3，緊接在同一位址多次失敗之後則為 level 12。某帳號第一次從某位址做變更為 level 3（root@pam 為 5），只有一次。裝上去就有效；etc/lists/jt-pve-service-accounts 只是選用的微調，列入的帳號登入降為 level 0。",
+  "/etc/pve 的檔案完整性（每個 Linux agent 預設都監看 /etc）：/etc/pve 是 pmxcfs，以檔案形式呈現的資料庫，會重新編號 inode、更新修改時間、狀態檔與 HA 狀態檔每幾秒就變，寫入時經過暫存檔；vzdump 每次備份都會在每台 guest 的設定加上再移除一行鎖定。一個叢集實測：每天約 2,500 筆 level 5 與 7 的 FIM 告警，全是例行；裝了套件後約 1 筆。留下的是：API token 密鑰、全叢集的 root SSH 金鑰與叢集 CA（level 10），corosync.conf、使用者與 realm（level 8），第二因素與 pve realm 密碼、資料中心與節點防火牆、備份工作（level 6），新增 snippet（level 6，agent 群組會監看 /var/lib/vz/snippets）。全叢集共用的檔案會由每個節點各回報一次。",
+  "未涵蓋：guest 設定裡改了什麼（FIM 只看得到有變、看不到怎麼變；report_changes 看得到，但差異內容會帶出 guest 的描述欄，有些站台把密碼寫在那裡）、容器設定（Proxmox VE 不記錄）、安裝的版本（沒有元件在 agent 讀得到的記錄行裡寫出版本）。Proxmox Backup Server 另有自己的套件 jt-pbs。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -37,13 +41,13 @@
    "type": "decoder",
    "name": "jt-proxmox_decoders.xml",
    "dest": "etc/decoders/jt-proxmox_decoders.xml",
-   "sha256": "0d9c24b1df0243c45091307c43046fe75add7e2bfe4d9bf16fb69507a2cd7761"
+   "sha256": "9d7b87e4ed8a565f18e52027e2db3183c561bb0187e6c74c118ba0ffd0b9b461"
   },
   {
    "type": "rule",
    "name": "zz-131200-jt_proxmox_rules.xml",
    "dest": "etc/rules/zz-131200-jt_proxmox_rules.xml",
-   "sha256": "edc37d5a21e169577de43fa802ec7ea33e6cfe759d799e7749f60f32697c01fe"
+   "sha256": "094da7da8a2791796be8ffcaf750b90ae48ebb47f2b9628fb0c0827c644d3c25"
   },
   {
    "type": "list",
@@ -58,7 +62,7 @@
   "name": "proxmox",
   "config": "agent.conf",
   "files": [],
-  "description": "The Proxmox logs outside syslog: REST API changes from the pveproxy access log, and the Ceph cluster log on monitor nodes"
+  "description": "The Proxmox logs outside syslog: REST API changes and public logins from the pveproxy access log, the Ceph cluster log on monitor nodes, and file integrity of the snippets directory"
  },
  "setup": [
   {
@@ -74,8 +78,8 @@
    "required": true,
    "title": "Assign the Proxmox nodes to the proxmox group",
    "title_zh": "把 Proxmox 節點加入 proxmox 群組",
-   "body": "The group collects the REST API access log and the Ceph cluster log, keeping only requests that change something, failed logins and Ceph warnings. The access log is sent under the program name jt-pveproxy (out_format in the group configuration); keep that line, or the API rules and the active response see nothing. Task, HA and corosync messages come from /var/log/syslog, which the agent reads already; on a node that logs only to journald, add a journald localfile to the agent's own configuration.",
-   "body_zh": "群組會收集 REST API 存取記錄與 Ceph 叢集記錄，只保留會改變東西的請求與 Ceph 警告。任務、HA、corosync 訊息來自 /var/log/syslog，agent 本來就有在讀；若節點只寫 journald，請在該 agent 自己的設定加上 journald 的 localfile。 存取記錄以程式名稱 jt-pveproxy 送出（群組設定裡的 out_format），請保留這一行，否則 API 規則與主動回應都收不到。",
+   "body": "The group collects the REST API access log and the Ceph cluster log, keeping only requests that change something, failed logins, logins from public addresses and Ceph warnings; it watches /var/lib/vz/snippets and stops file integrity events for the HA state files under /etc/pve. The access log is sent under the program name jt-pveproxy (out_format in the group configuration); keep that line, or the API rules and the active response see nothing. Task, HA and corosync messages come from /var/log/syslog, which the agent reads already; on a node that logs only to journald, add a journald localfile to the agent's own configuration.",
+   "body_zh": "群組會收集 REST API 存取記錄與 Ceph 叢集記錄，只保留會改變東西的請求、登入失敗、從公開位址的登入與 Ceph 警告；並監看 /var/lib/vz/snippets，停止 /etc/pve 底下 HA 狀態檔的檔案完整性事件。存取記錄以程式名稱 jt-pveproxy 送出（群組設定裡的 out_format），請保留這一行，否則 API 規則與主動回應都收不到。任務、HA、corosync 訊息來自 /var/log/syslog，agent 本來就有在讀；若節點只寫 journald，請在該 agent 自己的設定加上 journald 的 localfile。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g proxmox\n/var/ossec/bin/agent_control -R -u <agent_id>",
    "verify": "Open a node shell from the web interface. Expect rule 131215 (level 5) on the manager.",
@@ -89,6 +93,28 @@
    "body": "Not needed: routine logins are already recorded below the alert level. Listing an account drops its logins to level 0 instead of 2. One line per account, the user name without its realm, then reload the ruleset. Their failures still alert.",
    "body_zh": "不是必要的：例行登入本來就記在告警等級以下。列入的帳號登入降為 level 0（原本是 2）。每行一個帳號，寫不含 realm 的使用者名稱，然後重新載入規則集。這些帳號的登入失敗照樣告警。",
    "code": "echo 'monitoring:service' >> /var/ossec/etc/lists/jt-pve-service-accounts"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "1.2",
+   "title": "Updating from 1.1: bring the proxmox group configuration up to date",
+   "title_zh": "從 1.1 更新：更新 proxmox 群組設定",
+   "body": "1.2 changes the group's agent.conf in three places: successful logins are dropped only when they come from a private address (the rules for logins from public addresses need the others), /var/lib/vz/snippets is watched, and the HA state files under /etc/pve are no longer scanned. If the update reports the group file as modified by the site, merge these by hand. The file integrity part needs an agent restart; nothing else on the node changes.",
+   "body_zh": "1.2 改了群組 agent.conf 的三處：成功登入只在來自私有位址時才丟掉（公開位址的登入規則需要其他的）、監看 /var/lib/vz/snippets、不再掃描 /etc/pve 底下的 HA 狀態檔。若更新結果顯示群組檔案已被站台修改，請手動合併。檔案完整性的部分要重啟 agent；節點上其他東西都不會變。",
+   "file": "agent/agent.conf",
+   "code": "/var/ossec/bin/agent_control -R -u <agent_id>",
+   "verify": "Create a file in /var/lib/vz/snippets on a node. Expect rule 131293 (level 6).",
+   "verify_zh": "在節點的 /var/lib/vz/snippets 建立一個檔案，應出現規則 131293（level 6）。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.2",
+   "title": "Expect fewer alerts from /etc/pve and Ceph",
+   "title_zh": "/etc/pve 與 Ceph 的告警會變少",
+   "body": "File integrity events from /etc/pve that carry no content change (pmxcfs renumbering inodes, touching times, its status and temporary files) and the guest configuration changes that every backup makes are now recorded below the alert level, and so are Ceph's ten-minute repeats of an ongoing warning. A dashboard filtered on rule 550 for /etc/pve, or on 131251, will show far less. Nothing needs to be done.",
+   "body_zh": "沒有內容變更的 /etc/pve 檔案完整性事件（pmxcfs 重新編號 inode、更新時間、它的狀態檔與暫存檔），以及每次備份造成的 guest 設定變更，現在都記錄在告警等級之下；Ceph 對持續中警告每十分鐘的重複也一樣。以規則 550 篩選 /etc/pve、或以 131251 篩選的儀表板會少很多。不需要做任何事。"
   }
  ],
  "active_response": [

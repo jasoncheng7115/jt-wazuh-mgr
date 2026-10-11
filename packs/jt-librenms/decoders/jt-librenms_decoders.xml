@@ -25,7 +25,10 @@
   A login with a user name that does not exist. LibreNMS writes this line
   (app/Providers/LegacyUserProvider.php) for the built-in, LDAP, AD and RADIUS
   back ends; a wrong password for an existing user is recorded only in the
-  authlog table of its database. The user name is whatever was typed.
+  authlog table of its database. The user name is whatever was typed. The
+  address is Laravel's Request::ip(): up to 26.4 it follows any client's
+  X-Forwarded-For header unless APP_TRUSTED_PROXIES is set (config/trustedproxy.php
+  defaulted to "*"), so it is not used for active response.
 -->
 <decoder name="jt-librenms-log-auth">
   <parent>jt-librenms-log</parent>
@@ -38,6 +41,24 @@
   <parent>jt-librenms-log</parent>
   <regex type="pcre2">^\[[^\]]+\]\[([A-Z]+)\] (.*?)\s*$</regex>
   <order>librenms.level, librenms.message</order>
+</decoder>
+
+<!--
+  Releases before 25.1 wrote librenms.log in other shapes (config/logging.php
+  and app/Logging/NoColorFormatter.php of each tag):
+    23.6 to 24.12  "%message% %context% %extra%"   (no timestamp, no level)
+      Auth Error (mysql): No user () [admin] from 192.0.2.10
+    up to 23.5     Monolog's default "[%datetime%] %channel%.%level_name%: ..."
+      [2023-05-02T10:15:02+00:00] production.ERROR: Auth Error (mysql): No user () [admin] from 192.0.2.10
+  Only the unknown-user line is decoded in these shapes: it is LibreNMS's own
+  wording, while the generic "production.ERROR:" shape is every Laravel
+  application's and a bare line carries no level to grade. The default level
+  there was "error", so warnings were not written at all.
+-->
+<decoder name="jt-librenms-legacy">
+  <prematch type="pcre2">^(?:\[\d{4}-\d\d-\d\d[T ][^\]]*\] \w+\.ERROR: )?Auth Error \([^)]*\): No user \(</prematch>
+  <regex type="pcre2">(Auth Error \(([^)]*)\): No user \([^)]*\) \[(.*)\] from (\S+?))\s*$</regex>
+  <order>librenms.message, librenms.auth_type, dstuser, srcip</order>
 </decoder>
 
 <!--

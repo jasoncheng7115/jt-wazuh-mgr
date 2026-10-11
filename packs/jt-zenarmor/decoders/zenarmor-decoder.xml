@@ -17,7 +17,7 @@
       The others copy a few of those values into fields that other rules,
       CDB lookups and active response understand.
 
-  Fields added by this file (version 1.4 of the pack):
+  Fields added by this file (version 1.6 of the pack):
     zenarmor.index    conn | dns | tls | http | sip | alert
     srcip, srcport    the client (ip_src_saddr, ip_src_port)
     dstip, dstport    the server (ip_dst_saddr, ip_dst_port)
@@ -33,9 +33,14 @@
                         tls    category (the web category; the regex takes
                                the last "category" key, because the device
                                object earlier in the record has one too)
-                        other  security_tags
-  The zenarmor.domain and zenarmor.category regexes are anchored on the index,
-  so exactly one of each set can match an event.
+                        other  security_tags; for a dns record whose
+                               security_tags is empty (an unblocked lookup,
+                               since Zenarmor 1.17.4), the first threat
+                               category in domain_categories (1.6)
+  The zenarmor.domain and zenarmor.category regexes are anchored on the index
+  and on an empty or non-empty security_tags, so exactly one of each set can
+  match an event. The program name is a substring match: zenarmorngfw[pid]
+  decodes too.
 
   The JSON writes numbers bare ("ip_dst_port":443, "is_blocked":1) and has a
   space after "alertinfo":, so every regex allows optional white space.
@@ -120,5 +125,11 @@
 <decoder name="zen-conn">
   <parent>zen-dec</parent>
   <regex type="pcre2">\bindex=(?!alert,|tls,)\w+,.*?"security_tags":\s*\[\s*"([^"]+)"</regex>
+  <order>zenarmor.category</order>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">(?i)\bindex=dns,.*?"security_tags":\s*\[\s*\].*?"domain_categories":\s*\[[^\]]*?"([^"]*(?:Malware|Virus|Botnet|C\x26C|Command|Ransomware|Trojan|Spyware|Keylogger|Compromised|Worm|Tunnel|Phishing|Mining|Scam|Fraud|Spam)[^"]*)"</regex>
   <order>zenarmor.category</order>
 </decoder>

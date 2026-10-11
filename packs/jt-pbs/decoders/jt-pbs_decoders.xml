@@ -46,6 +46,68 @@
 </decoder>
 
 <!--
+  Failed logins and refused requests. The API daemon writes them to syslog as
+  well as to api/auth.log (proxmox-rest-server, environment.rs,
+  log_failed_auth: "authentication failure; rhost={peer} user={user} msg={msg}",
+  log::error!), e.g.
+    Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:192.0.2.13]:5405 user=root@pam msg=authentication error - AUTH_ERR (7)
+  The same fields as in auth.log, so one set of rules serves both. The rhost
+  is "unknown" when the daemon has no peer address; srcip stays empty then.
+-->
+<decoder name="jt-pbs-fields">
+  <parent>jt-pbs</parent>
+  <regex type="pcre2">^authentication failure; rhost=\[(?:::ffff:)?([^\]]+)\]:\d+ </regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="jt-pbs-fields">
+  <parent>jt-pbs</parent>
+  <regex type="pcre2">^authentication failure; rhost=\S+ user=(\S+) msg=</regex>
+  <order>dstuser</order>
+</decoder>
+
+<decoder name="jt-pbs-fields">
+  <parent>jt-pbs</parent>
+  <regex type="pcre2">^authentication failure; rhost=\S+ (?:user=\S+ )?msg=(.*)$</regex>
+  <order>pbs.msg</order>
+</decoder>
+
+<!--
+  Second-factor lockouts (proxmox-tfa, api/mod.rs, log::error!):
+    TOTP of user '{userid}' is locked
+    refusing 2nd factor for user '{userid}'
+-->
+<decoder name="jt-pbs-fields">
+  <parent>jt-pbs</parent>
+  <regex type="pcre2">^(?:TOTP of user|refusing 2nd factor for user) '([^']+)'</regex>
+  <order>dstuser</order>
+</decoder>
+
+<!--
+  Every refused request (4xx, 5xx) is also written to syslog
+  (proxmox-rest-server, rest.rs, log_response:
+  "{method} {path}: {status} {reason}: [client {peer}] {message}"), e.g.
+    DELETE /api2/json/admin/datastore/store1/snapshots?backup-id=102: 400 Bad Request: [client [::ffff:192.0.2.9]:40112] cannot remove protected snapshot
+  The address comes from the [client ...] sibling above.
+-->
+<decoder name="jt-pbs-fields">
+  <parent>jt-pbs</parent>
+  <regex type="pcre2">^([A-Z]+) (/\S*?): (\d{3}) [A-Z]</regex>
+  <order>protocol, url, id</order>
+</decoder>
+
+<!--
+  The task scheduler of proxmox-backup-proxy (src/bin/proxmox-backup-proxy.rs)
+  prints to stderr, which reaches syslog, when it cannot start a scheduled job
+  or read the job configuration. Nothing is written to the task archive then.
+-->
+<decoder name="jt-pbs-fields">
+  <parent>jt-pbs</parent>
+  <regex type="pcre2">^((?:unable to (?:start|read|parse) |task scheduler|compute_next_event for |could not get last run time of |(?:datastore|prune job|sync job|verification job|tape backup job) config from_value failed).*)$</regex>
+  <order>pbs.error</order>
+</decoder>
+
+<!--
   /var/log/proxmox-backup/api/auth.log, e.g.
     2026-09-17T01:10:02+08:00: successful auth for user 'root@pam'
     2026-08-20T18:33:36+08:00: authentication failure; rhost=[::ffff:192.0.2.13]:19433 user=root@pam msg=authentication error - AUTH_ERR (7)

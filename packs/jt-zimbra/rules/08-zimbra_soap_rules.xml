@@ -193,14 +193,68 @@
 
   <!-- Mail filter rules saved. Forwarding or deleting rules are the usual
        trace of a business-mail compromise (the polling rules 100883/100884
-       see the result later; this sees the change when it happens). -->
-  <rule id="100930" level="5">
+       see the result later; this sees the change when it happens).
+       3.2: level 5 to 7. The stored XSS exploited through CVE-2025-27915
+       (CISA KEV 2025-10-07, calendar invitations) saved a filter that
+       redirected the victim's mail; none in 9 days on two servers. -->
+  <rule id="100930" level="7">
     <if_sid>100970</if_sid>
     <action type="pcre2">^(?:ModifyFilterRules|ModifyOutgoingFilterRules)Request$</action>
     <description>Zimbra mail filter rules changed: $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1564.008</id>
+      <id>T1114.003</id>
     </mitre>
+    <group>zimbra_mailflow_change,</group>
+  </rule>
+
+  <!-- 3.2: a sending identity created or changed (the From name, the
+       reply-to address, a send-as persona): how a mailbox taken over is
+       made to answer for its owner. -->
+  <rule id="100814" level="3">
+    <if_sid>100970</if_sid>
+    <action type="pcre2">^(?:CreateIdentity|ModifyIdentity)Request$</action>
+    <match type="pcre2">^(?!.*[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]])</match>
+    <description>Zimbra sending identity created or changed: $(action) by $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>zimbra_mailflow_change,</group>
+  </rule>
+
+  <!-- 3.2: preferences saved. This is also how a user sets forwarding
+       ("Forward a copy to"), but the web client saves preferences for
+       ordinary settings too (sort order, reading pane), and mailbox.log
+       does not say which: recorded only, and used by 100816. -->
+  <rule id="100815" level="2">
+    <if_sid>100970</if_sid>
+    <action>ModifyPrefsRequest</action>
+    <match type="pcre2">^(?!.*[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]])</match>
+    <description>Zimbra preferences saved: $(dstuser) from: $(srcip)</description>
+    <group>zimbra_mailflow_change,</group>
+  </rule>
+
+  <!-- 3.2: the account-takeover sequence: a login from a public address
+       this account had never used (100837, level 5), then within 30
+       minutes a mail filter, identity or preference change by the same
+       account; the shape of the CVE-2025-27915 and CVE-2023-37580 payloads
+       and of a phished password. A phone (Z-Push) saving its settings is
+       not counted. In practice the window is as long as the manager's
+       correlation memory lasts (8,192 events). Level 12 is above the
+       level 5 it correlates with (4.14.7 skips events matched at or above
+       the correlating rule's level). -->
+  <rule id="100816" level="12" timeframe="1800">
+    <if_sid>100930,100814,100815</if_sid>
+    <if_matched_sid>100837</if_matched_sid>
+    <same_user />
+    <match type="pcre2">^(?!.*[\[;]ua=[^;\]]*ZPZB/)</match>
+    <description>[HIGH] Zimbra account changed its mail filters, identity or preferences right after its first login from a new public address, possible account takeover: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1114.003</id>
+      <id>T1564.008</id>
+    </mitre>
+    <group>credential_access,</group>
   </rule>
 
   <rule id="100932" level="3">
@@ -224,6 +278,40 @@
       <id>T1098</id>
     </mitre>
     <group>account_changed,</group>
+  </rule>
+
+</group>
+
+<!-- ==========================================================
+     3.2: ZimbraInvalidLoginFilter (mailbox.log, when a server enables it)
+     Decoder: zimbra-invalid-login-filter (0002-zimbra_mailbox_decoders.xml)
+     The filter refuses every request from an address after
+     zimbraInvalidLoginFilterMaxFailedLogin failed logins (default 10) and
+     logs one line per refused request, so the alert is raised at most once
+     every 30 minutes (ignore is per rule, not per address: a second address
+     suspended inside the window is folded into it); every line is recorded
+     at level 2. The syslog copy ends at the base rule.
+     ========================================================== -->
+<group name="zimbra,authentication,">
+
+  <rule id="100817" level="0">
+    <decoded_as>zimbra-invalid-login-filter</decoded_as>
+    <description>Zimbra invalid-login filter message (base rule)</description>
+  </rule>
+
+  <rule id="100805" level="2">
+    <if_sid>100817</if_sid>
+    <location>/opt/zimbra/log/mailbox.log</location>
+    <description>Zimbra refused a request from a suspended address: $(srcip)</description>
+  </rule>
+
+  <rule id="100818" level="8" ignore="1800">
+    <if_sid>100805</if_sid>
+    <description>Zimbra suspended an address after repeated failed logins (ZimbraInvalidLoginFilter): $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,</group>
   </rule>
 
 </group>

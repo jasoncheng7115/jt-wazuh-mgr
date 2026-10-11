@@ -1,49 +1,195 @@
 <!--
-  fail2ban decoder
+  fail2ban decoder (jt-fail2ban 1.3)
 
   Wazuh 4.14.7 ships no decoder and no rules for fail2ban at all. Every line
   below returns "No decoder matched" out of the box; verified, not assumed.
 
-  Observed format (fail2ban 0.11.1, logtarget = /var/log/fail2ban.log):
-    2026-08-31 21:20:11,500 fail2ban.actions        [2368444]: NOTICE  [zimbra-admin] Ban 203.0.113.45
-    2026-08-31 21:24:32,814 fail2ban.actions        [2368444]: NOTICE  [zimbra-admin] Unban 203.0.113.45
-    2026-08-31 21:03:00,269 fail2ban.filter         [2368444]: INFO    [zimbra-webmail] Found 203.0.113.45 . 2026-08-31 21:03:00
-    2026-08-31 21:25:00,100 fail2ban.actions        [2368444]: WARNING [sshd] 203.0.113.45 already banned
+  fail2ban can write to four targets (logtarget in fail2ban.conf). The visible
+  text after Wazuh pre-decoding, measured on 4.14.7:
 
-  Pre-decoding eats more of this line than it looks like it should. Measured on
-  4.14.7 by probing one pattern at a time: the string a decoder sees contains
-  neither the date nor the word "fail2ban" nor the severity, so anchoring on any
-  of them matches nothing. Only the tail, from the jail name onward, is visible.
-  The prematch therefore describes the shape of that tail and carries no anchor.
+    FILE (default, /var/log/fail2ban.log; format helpers.py:269 in 1.1.1,
+    "%(asctime)s %(name)-24s[%(process)d]: %(levelname)-7s %(message)s"):
+      2026-08-31 21:20:11,500 fail2ban.actions        [2368444]: NOTICE  [sshd] Ban 203.0.113.45
+      pre-decoding removes the time AND the module name (taken as host name), so a
+      decoder sees "       [2368444]: NOTICE  [sshd] Ban 203.0.113.45". The level
+      name is visible; the module is not.
+    SYSLOG (no time, no padding, server.py:690-760):
+      Oct 11 10:00:00 host1 fail2ban.actions[1234]: NOTICE [sshd] Ban 192.0.2.1
+    SYSTEMD-JOURNAL (JournalHandler(SYSLOG_IDENTIFIER='fail2ban'), message only,
+    no level name; Wazuh journald collection or rsyslog writes):
+      Oct 11 10:00:00 host1 fail2ban[1234]: [sshd] Ban 192.0.2.1
+    SYSOUT / STDERR under systemd (also every startup error of the client part):
+      Oct 11 10:00:00 host1 fail2ban-server[1234]: fail2ban.actions        [1234]: NOTICE  [sshd] Ban 192.0.2.1
 
-  Because that shape alone could occur in another product log, the base rule
-  additionally requires the event to come from a file named fail2ban. The decoder
-  identifies the format; the rule identifies the source.
+  Two top-level decoders share the name "fail2ban" (measured: Wazuh accepts it
+  when only one of them has a prematch, and the children below attach to both):
+  one recognises the file shape by "[pid]: LEVEL", the other the program name.
+  A top-level decoder without <program_name> is never tried on an event that
+  has a program name, which is why the syslog shapes need the second one.
 
-  There is one child decoder, not several. Measured: when the first child's regex
-  fails, Wazuh does not go on to try the next one, so a set of siblings only ever
-  works for whichever form happens to be listed first. All four verbs are
-  therefore matched by a single expression.
+  Children are chosen by their own prematch, first match in this order. Each
+  child is a set of same-name siblings: every sibling's regex runs and adds what
+  it finds, so a failed srcip match no longer loses the jail and the verb.
 
-  "[jail] address already banned" is deliberately not decoded. Its address comes
-  before the verb, which no single <order> can express alongside the other forms,
-  and it carries nothing the original ban alert did not already report. Such
-  lines still match the base rule and stay silent.
+  srcip is filled only with something that is an address (IPv4, or IPv6 with a
+  colon; a ::ffff: prefix is stripped so IPv4 CIDR rules and active response
+  work). Whatever fail2ban banned is always in f2b.id: filters with <F-ID> ban
+  user names or mail addresses, and "Found 198.51.100.7, bad - ..." (observer.py:402)
+  used to give srcip "198.51.100.7," with the comma.
 
-  The address is extracted as srcip, the field Wazuh treats as the source of an
-  event. That is what lets these rules correlate with the rest of the ruleset,
-  and what an active response command would read.
-
-  The verb is stored as f2b_action rather than action: action is one of Wazuh
-  static field names, and a rule matching on it is refused at load time with
-  "Field action is static". Renaming avoids the whole class of collision.
+  The verb is stored as f2b_action (kept from 1.2) rather than action: action is
+  a Wazuh static field and a rule matching on it is refused at load time.
 -->
+
 <decoder name="fail2ban">
-  <prematch type="pcre2">\[[\w.\- ]+\]\s+(?:Ban|Unban|Restore Ban|Found)\s+\S</prematch>
+  <prematch type="pcre2">^(?:fail2ban\.\w+)?\s*\[\d+\]:\s+(?:CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG)\s</prematch>
 </decoder>
 
-<decoder name="fail2ban-action">
+<decoder name="fail2ban">
+  <program_name type="pcre2">^fail2ban(?:\.\w+|-server|-client)?$</program_name>
+</decoder>
+
+<!-- Ticket events: "[jail] Ban x", "Restore Ban", "Unban", "Repeal Ban" (1.1.1+),
+     "Increase Ban x (n # time -> end)", "Reban x", "Found x", "Ignore x by ip".
+     actions.py:507/580/708, observer.py:402/497, filter.py:556/732 (1.1.1).
+     "Found a match but no valid date/time" is not a ticket (filter.py:916). -->
+<decoder name="fail2ban-ticket">
   <parent>fail2ban</parent>
-  <regex type="pcre2">\[([^\]]+)\]\s+(Ban|Unban|Restore Ban|Found)\s+(\S+)</regex>
-  <order>jail, f2b_action, srcip</order>
+  <prematch type="pcre2">\[[^\]\s]+\]\s+(?:Restore Ban|Repeal Ban|Increase Ban|Ban|Unban|Reban|Found|Ignore)\s+(?!a match )\S</prematch>
+  <regex type="pcre2">\[([^\]\s]+)\]\s+(Restore Ban|Repeal Ban|Increase Ban|Ban|Unban|Reban|Found|Ignore)\s+(\S+?),?(?:\s|$)</regex>
+  <order>jail, f2b_action, f2b.id</order>
+</decoder>
+
+<decoder name="fail2ban-ticket">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">\]\s+(?:Restore Ban|Repeal Ban|Increase Ban|Ban|Unban|Reban|Found|Ignore)\s+(?:::ffff:)?(\d{1,3}(?:\.\d{1,3}){3})(?:[\s,]|$)</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="fail2ban-ticket">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">\]\s+(?:Restore Ban|Repeal Ban|Increase Ban|Ban|Unban|Reban|Found|Ignore)\s+([0-9A-Fa-f]{0,4}:[0-9A-Fa-f:]*[0-9A-Fa-f])(?:[\s,]|$)</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="fail2ban-ticket">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">Increase Ban \S+ \((\d+) # (.+?) -\x3e ([^)]+)\)</regex>
+  <order>f2b.bancount, f2b.bantime, f2b.banend</order>
+</decoder>
+
+<decoder name="fail2ban-ticket">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">\]\s+Ignore \S+ by (\S.*)$</regex>
+  <order>f2b.ignored_by</order>
+</decoder>
+
+<decoder name="fail2ban-ticket">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">(?:^|\]:)\s*(CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG)\s</regex>
+  <order>f2b.level</order>
+</decoder>
+
+<!-- "[jail] x already banned" (actions.py:541): DEBUG under 3 s after the ban,
+     NOTICE under 60 s, WARNING after 60 s ("something may be wrong"). The
+     address comes before the words, hence a child of its own. -->
+<decoder name="fail2ban-already">
+  <parent>fail2ban</parent>
+  <prematch type="pcre2">\[[^\]\s]+\]\s+\S+ already banned</prematch>
+  <regex type="pcre2">\[([^\]\s]+)\]\s+(\S+) already banned</regex>
+  <order>jail, f2b.id</order>
+</decoder>
+
+<decoder name="fail2ban-already">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">\]\s+(?:::ffff:)?(\d{1,3}(?:\.\d{1,3}){3}) already banned</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="fail2ban-already">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">\]\s+([0-9A-Fa-f]{0,4}:[0-9A-Fa-f:]*[0-9A-Fa-f]) already banned</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="fail2ban-already">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">(?:^|\]:)\s*(CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG)\s</regex>
+  <order>f2b.level</order>
+</decoder>
+
+<!-- Action failures, actions.py:312/335/517/617/661/716 (1.1.1):
+       Failed to execute ban jail 'sshd' action 'nftables' info 'ActionInfo({'ip': '198.51.100.7', ...})': Error banning 198.51.100.7
+       Failed to execute unban jail '...' action '...' info '...': ...
+       Failed to start jail 'sshd' action 'nftables': ...
+       Failed to stop jail '...' action '...': ...
+       Failed to flush bans in jail '...' action '...': ...                 -->
+<decoder name="fail2ban-actionerr">
+  <parent>fail2ban</parent>
+  <prematch type="pcre2">Failed to (?:execute ban|execute unban|start|stop|flush bans in) jail '</prematch>
+  <regex type="pcre2">Failed to (execute ban|execute unban|start|stop|flush bans in) jail '([^']+)' action '([^']+)'</regex>
+  <order>f2b.failed, jail, f2b.ban_action</order>
+</decoder>
+
+<decoder name="fail2ban-actionerr">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">'ip': '(?:::ffff:)?(\d{1,3}(?:\.\d{1,3}){3})'</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="fail2ban-actionerr">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">'ip': '([0-9A-Fa-f]{0,4}:[0-9A-Fa-f:]*[0-9A-Fa-f])'</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="fail2ban-actionerr">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">(?:^|\]:)\s*(CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG)\s</regex>
+  <order>f2b.level</order>
+</decoder>
+
+<!-- Jail life cycle, jail.py:327/348 and jailreader.py:257/297 (1.1.1):
+       Jail 'sshd' started / Jail 'sshd' stopped
+       Jail 'sshd' skipped, because of missing log files.               -->
+<decoder name="fail2ban-jail">
+  <parent>fail2ban</parent>
+  <prematch type="pcre2">Jail '[^']+' (?:started|stopped|skipped)</prematch>
+  <regex type="pcre2">Jail '([^']+)' (started|stopped|skipped)</regex>
+  <order>jail, f2b.state</order>
+</decoder>
+
+<decoder name="fail2ban-jail">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">(?:^|\]:)\s*(CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG)\s</regex>
+  <order>f2b.level</order>
+</decoder>
+
+<!-- Server start, server.py:140: "Starting Fail2ban v1.1.1". -->
+<decoder name="fail2ban-version">
+  <parent>fail2ban</parent>
+  <prematch type="pcre2">Starting Fail2ban v\d</prematch>
+  <regex type="pcre2">Starting Fail2ban v(\S+)</regex>
+  <order>f2b.version</order>
+</decoder>
+
+<!-- Any other jail message, "[jail] text" (time problems, flush, ...). -->
+<decoder name="fail2ban-jailmsg">
+  <parent>fail2ban</parent>
+  <prematch type="pcre2">\[[\w.\-]+\]\s+\S</prematch>
+  <regex type="pcre2">\[([\w.\-]+)\]\s+\S</regex>
+  <order>jail</order>
+</decoder>
+
+<decoder name="fail2ban-jailmsg">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">(?:^|\]:)\s*(CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG)\s</regex>
+  <order>f2b.level</order>
+</decoder>
+
+<!-- Everything else: only the level. -->
+<decoder name="fail2ban-msg">
+  <parent>fail2ban</parent>
+  <regex type="pcre2">(?:^|\]:)\s*(CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG)\s</regex>
+  <order>f2b.level</order>
 </decoder>

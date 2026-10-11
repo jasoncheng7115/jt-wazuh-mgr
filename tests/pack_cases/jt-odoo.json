@@ -518,9 +518,9 @@
   {
    "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.5 - - [11/Oct/2026 03:00:00] \"POST /web/database/backup HTTP/1.1\" 200 - 5 0.004 0.020",
    "location": "/var/log/odoo/odoo-server.log",
-   "expect_rule": "132341",
+   "expect_rule": "132355",
    "expect_level": 12,
-   "note": "synthesized from the Odoo source (werkzeug request line, Database.backup route)"
+   "note": "synthesized from the Odoo source (Database.backup route; 1.2: from a public address, level 12)"
   },
   {
    "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.5 - - [11/Oct/2026 03:00:00] \"POST /web/database/drop HTTP/1.1\" 303 - 5 0.004 0.020",
@@ -539,9 +539,9 @@
   {
    "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.5 - - [11/Oct/2026 03:00:00] \"GET /web/database/selector HTTP/1.1\" 200 - 5 0.004 0.020",
    "location": "/var/log/odoo/odoo-server.log",
-   "expect_rule": "132340",
-   "expect_level": 8,
-   "note": "synthesized from the Odoo source (near-miss for 132341: selector page)"
+   "expect_rule": "132356",
+   "expect_level": 3,
+   "note": "synthesized from the Odoo source (selector page, allowed by the deployment guide; 1.2: level 8 -> 3)"
   },
   {
    "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 198.51.100.20 - - [11/Oct/2026 03:00:00] \"POST /web/database/restore HTTP/1.1\" 200 - 5 0.004 0.020",
@@ -611,15 +611,15 @@
    "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.service.db: DUMP DB: prod format zip ",
    "location": "/var/log/odoo/odoo-server.log",
    "expect_rule": "132345",
-   "expect_level": 10,
-   "note": "synthesized from the Odoo source (18.0 dump_db)"
+   "expect_level": 7,
+   "note": "synthesized from the Odoo source (18.0 dump_db); 1.2: level 10 -> 7, the request line says where it went"
   },
   {
    "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.service.db: DUMP DB: prod format zip with filestore ",
    "location": "/var/log/odoo/odoo-server.log",
    "expect_rule": "132345",
-   "expect_level": 10,
-   "note": "synthesized from the Odoo source (19.0 dump_db)"
+   "expect_level": 7,
+   "note": "synthesized from the Odoo source (19.0 dump_db); 1.2: level 10 -> 7, the request line says where it went"
   },
   {
    "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.service.db: RESTORE DB: prod2 ",
@@ -879,9 +879,9 @@
   {
    "log": "203.0.113.5 - - [11/Oct/2026:03:00:00 +0800] \"GET /web/database/selector?debug=1 HTTP/1.1\" 200 4512 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
    "location": "/var/log/nginx/access.log",
-   "expect_rule": "132395",
-   "expect_level": 8,
-   "note": "synthesized; with a query string the built-in rule stays at 31100"
+   "expect_rule": "132399",
+   "expect_level": 3,
+   "note": "synthesized; selector through the web server (1.2: level 8 -> 3)"
   },
   {
    "log": "203.0.113.5 - - [11/Oct/2026:03:00:00 +0800] \"POST /web/database/drop HTTP/1.1\" 303 4512 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
@@ -938,6 +938,675 @@
    "expect_rule": "2501",
    "expect_level": 5,
    "note": "near-miss for jt-odoo-syslog: the tag is not odoo, so the setup step asks for SyslogIdentifier=odoo"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.60 - - [11/Oct/2026 03:00:00] \"POST /json/2/res.partner/search_read HTTP/1.1\" 401 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132329",
+   "expect_level": 3,
+   "note": "synthesized from the 19.0 source (ir_http._auth_method_bearer raises Unauthorized \"Invalid apikey\"; external_api docs show the 401)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.60 - - [11/Oct/2026 03:00:00] \"POST /json/2/res.partner/search_read HTTP/1.1\" 401 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132339",
+   "expect_level": 10,
+   "note": "synthesized: ten refused JSON-2 calls from one address in five minutes",
+   "repeat": 10
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.60 - - [11/Oct/2026 03:00:00] \"POST /json/2/res.partner/search_read HTTP/1.1\" 401 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132329",
+   "expect_level": 3,
+   "note": "near-miss for 132339: nine refused calls stay at level 3",
+   "repeat": 9
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: ::ffff:203.0.113.61 - - [11/Oct/2026 03:00:00] \"POST /json/2/res.partner/search_read HTTP/1.1\" 401 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132339",
+   "expect_level": 10,
+   "note": "synthesized: the same from an IPv4-mapped address (prefix dropped by the decoder)",
+   "repeat": 10
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.60 - - [11/Oct/2026 03:00:00] \"POST /json/2/res.partner/search_read HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132329: an accepted JSON-2 read"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.60 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/res.partner/web_search_read HTTP/1.1\" 401 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132329: a 401 outside /json/2/"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.40 - - [11/Oct/2026 03:00:00] \"POST /web/database/backup HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132354",
+   "expect_level": 10,
+   "note": "synthesized from the Odoo source (policy: first backup from a private address, fts-new: level 10)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.40 - - [11/Oct/2026 03:00:00] \"POST /web/database/backup HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132353",
+   "expect_level": 7,
+   "note": "synthesized (policy: a nightly backup from the same private address is level 7 after the first)",
+   "repeat": 2
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.40 - - [11/Oct/2026 03:00:00] \"POST /web/database/backup HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132353",
+   "expect_level": 7,
+   "note": "near-miss for 132342: five backups from one address in ten minutes (several databases) do not count as master password guessing",
+   "repeat": 5
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 127.0.0.1 - - [11/Oct/2026 03:00:00] \"POST /web/database/backup HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132354",
+   "expect_level": 10,
+   "note": "synthesized: curl on the Odoo host itself"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: ::ffff:192.168.0.41 - - [11/Oct/2026 03:00:00] \"POST /web/database/backup HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132354",
+   "expect_level": 10,
+   "note": "synthesized: IPv4-mapped private address, prefix dropped by jt-odoo-dbbackup"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 198.51.100.30 - - [11/Oct/2026 03:00:00] \"POST /web/database/backup HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132355",
+   "expect_level": 12,
+   "note": "synthesized: backup from a public address"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: ::1 - - [11/Oct/2026 03:00:00] \"POST /web/database/backup HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132340",
+   "expect_level": 8,
+   "note": "synthesized: IPv6 loopback: the decoder leaves srcip empty, so neither private nor public; stays at the generic manager rule"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.40 - - [11/Oct/2026 03:00:00] \"GET /web/database/backup HTTP/1.1\" 405 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132340",
+   "expect_level": 8,
+   "note": "near-miss for 132353: a GET is not a backup"
+  },
+  {
+   "log": "Oct 11 03:00:00 odoo1 odoo[812]: 2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.42 - - [11/Oct/2026 03:00:00] \"POST /web/database/backup HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/syslog",
+   "expect_rule": "132354",
+   "expect_level": 10,
+   "note": "synthesized: the same through syslog (jt-odoo-syslog-dbbackup)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.40 - - [11/Oct/2026 03:00:00] \"GET /web/database/manager HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132340",
+   "expect_level": 8,
+   "note": "near-miss for 132356: the manager page stays at level 8"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 198.51.100.31 - - [11/Oct/2026 03:00:00] \"POST /xmlrpc/2/db HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132357",
+   "expect_level": 10,
+   "note": "synthesized: ten XML-RPC database service calls from one address in five minutes (ODOO-SA-2017-01-27-1 enumeration)",
+   "repeat": 10
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 198.51.100.31 - - [11/Oct/2026 03:00:00] \"POST /xmlrpc/2/db HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132343",
+   "expect_level": 6,
+   "note": "near-miss for 132357: nine calls",
+   "repeat": 9
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.70 - - [11/Oct/2026 03:00:00] \"POST /base_import_module/login_upload HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132364",
+   "expect_level": 12,
+   "note": "synthesized from addons/base_import_module/controllers/main.py (module imported over HTTP)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.70 - - [11/Oct/2026 03:00:00] \"POST /base_import_module/login_upload HTTP/1.1\" 500 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132365",
+   "expect_level": 8,
+   "note": "synthesized: the controller answers 500 for a wrong password or a non-administrator"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.70 - - [11/Oct/2026 03:00:00] \"GET /base_import_module/login_upload HTTP/1.1\" 405 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132364/132365: the route only takes POST"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base_import_module.models.ir_module: Successfully imported module 'x_backdoor' ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132366",
+   "expect_level": 10,
+   "note": "synthesized from base_import_module/models/ir_module.py 17.0-19.0"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base_import_module.models.ir_module: module x_backdoor: loading data/ir_cron.xml ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132366",
+   "expect_level": 10,
+   "note": "synthesized from base_import_module/models/ir_module.py 16.0-19.0 (the only trace in 16.0)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_module: Downloading module `sale_extra` from OpenERP Apps ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132366",
+   "expect_level": 10,
+   "note": "synthesized from 16.0 ir_module.install_from_urls"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.modules.loading: loading sale/views/sale_views.xml ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132366: the core module loader"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.modules.loading: Module sale: loading demo ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132367",
+   "expect_level": 8,
+   "note": "synthesized from odoo/modules/loading.py 16.0-19.0"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.modules.loading: Module sale demo data failed to install, installed without demo data ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132367"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for db:prod login:demo from 192.168.0.200 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132307",
+   "expect_level": 10,
+   "note": "synthesized: demo data account (password demo, res_users_demo.xml)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for login:portal from 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132307",
+   "expect_level": 10,
+   "note": "synthesized: demo data portal account from a public address (19.0 login form)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for db:prod login:demo2 from 192.168.0.200 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132306",
+   "expect_level": 3,
+   "note": "near-miss for 132307: an ordinary account whose login starts with demo"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/ir.actions.server/web_save HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132368",
+   "expect_level": 7,
+   "note": "synthesized from orm_service.js 17.0/18.0 (server action saved from the web client)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/ir.cron/web_save#ir.cron.web_save HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132368",
+   "expect_level": 7,
+   "note": "synthesized from 19.0 server.py log_request (path plus #model.method)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/res.groups/write HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132368",
+   "expect_level": 7,
+   "note": "synthesized (16.0 write on groups)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.80 - - [11/Oct/2026 03:00:00] \"POST /xmlrpc/2/object#ir.rule.create HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132368",
+   "expect_level": 7,
+   "note": "synthesized from 19.0 service/model.py (XML-RPC execute_kw names model and method)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.80 - - [11/Oct/2026 03:00:00] \"POST /json/2/base.automation/create HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132368",
+   "expect_level": 7,
+   "note": "synthesized: JSON-2 (19.0)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.80 - - [11/Oct/2026 03:00:00] \"POST /json/2/ir.actions.server/create HTTP/1.1\" 403 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132368: JSON-2 refused it (403)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/ir.cron/web_read HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132368: reading a scheduled job"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/sale.order/web_save HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132368/132369: ordinary business record"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/ir.config_parameter/web_save HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132369",
+   "expect_level": 5,
+   "note": "synthesized: system parameter saved"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/ir.mail_server/create HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132369",
+   "expect_level": 5,
+   "note": "synthesized: outgoing mail server created"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/mail.template/web_save#mail.template.web_save HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132369",
+   "expect_level": 5,
+   "note": "synthesized: 19.0 mail template saved"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/ir.config_parameter/get_param HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132369: reading a parameter"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/res.partner.bank/web_save HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132358",
+   "expect_level": 5,
+   "note": "synthesized: bank account edited on its own form"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.80 - - [11/Oct/2026 03:00:00] \"POST /xmlrpc/2/object#res.partner.bank.write HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132358",
+   "expect_level": 5,
+   "note": "synthesized: 19.0 XML-RPC write on bank accounts"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/res.partner.bank/web_read HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132358: reading a bank account"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.0.2.168 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/res.partner/web_save HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132358: a contact saved (bank accounts added in the contact form are not visible)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 7 exported 15 'sale.order' records from 192.168.0.200. Fields: name,partner_id/name,amount_total. Domain: [('state', '=', 'sale')] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132375",
+   "expect_level": 2,
+   "note": "synthesized from web/controllers/export.py 16.0-19.0 (a small export is recorded only)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 7 exported 3 'sale.order' records from 192.168.0.200. Fields: name. IDs sample: [1, 2, 3] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132375",
+   "expect_level": 2,
+   "note": "synthesized: export of selected records (IDs sample)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 7 exported 999 'res.partner' records from 192.168.0.200. Fields: name,email. Domain: [] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132375",
+   "expect_level": 2,
+   "note": "near-miss for 132376: 999 records"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 7 exported 1500 'res.partner' records from 192.168.0.200. Fields: name,email. Domain: [] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132376",
+   "expect_level": 6,
+   "note": "synthesized: 1,000 or more records"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 7 exported 15234 'res.partner' records from 203.0.113.5. Fields: name,email,phone. Domain: [] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132377",
+   "expect_level": 8,
+   "note": "synthesized: 10,000 or more records"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 2 exported 12 'res.users' records from 192.168.0.200. Fields: login,name,oauth_access_token. Domain: [] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132378",
+   "expect_level": 12,
+   "note": "synthesized: the CVE-2024-12368 pattern (OAuth tokens through export)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 2 exported 2 'ir.mail_server' records from 192.168.0.200. Fields: name,smtp_host,smtp_user,smtp_pass. Domain: [] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132378",
+   "expect_level": 12,
+   "note": "synthesized: mail server passwords exported"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 2 exported 40 'sale.order' records from 192.168.0.200. Fields: name,access_token. Domain: [] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132378",
+   "expect_level": 12,
+   "note": "synthesized: portal access tokens exported"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 2 exported 12 'res.users' records from 192.168.0.200. Fields: login,name,password_write_date. Domain: [] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132379",
+   "expect_level": 6,
+   "note": "near-miss for 132378: a column that only starts with password; still an export of accounts"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 2 exported 30 'ir.config_parameter' records from 192.168.0.200. Fields: key,value. Domain: [] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132379",
+   "expect_level": 6,
+   "note": "synthesized: system parameters exported (database.secret signs sessions)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 7 exported 15 'sale.order' records from 192.168.0.200. Fields: name. Domain: [] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132388",
+   "expect_level": 7,
+   "note": "synthesized: ten small exports by one user in ten minutes",
+   "repeat": 10
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 7 exported 15 'sale.order' records from 192.168.0.200. Fields: name. Domain: [] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132375",
+   "expect_level": 2,
+   "note": "near-miss for 132388: nine exports",
+   "repeat": 9
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 10 exported 15 'sale.order' records from 192.168.0.200. Fields: name. Domain: [] \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 11 exported 15 'sale.order' records from 192.168.0.200. Fields: name. Domain: [] \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 12 exported 15 'sale.order' records from 192.168.0.200. Fields: name. Domain: [] \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 13 exported 15 'sale.order' records from 192.168.0.200. Fields: name. Domain: [] \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 14 exported 15 'sale.order' records from 192.168.0.200. Fields: name. Domain: [] \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 15 exported 15 'sale.order' records from 192.168.0.200. Fields: name. Domain: [] \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 16 exported 15 'sale.order' records from 192.168.0.200. Fields: name. Domain: [] \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 17 exported 15 'sale.order' records from 192.168.0.200. Fields: name. Domain: [] \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 18 exported 15 'sale.order' records from 192.168.0.200. Fields: name. Domain: [] \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 19 exported 15 'sale.order' records from 192.168.0.200. Fields: name. Domain: [] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132375",
+   "expect_level": 2,
+   "note": "near-miss for 132388: ten exports by ten different users"
+  },
+  {
+   "log": "Oct 11 03:00:00 odoo1 odoo[812]: 2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.web.controllers.export: User 7 exported 2500 'res.partner' records from 192.168.0.200. Fields: name. Domain: []",
+   "location": "/var/log/syslog",
+   "expect_rule": "132376",
+   "expect_level": 6,
+   "note": "synthesized: the same through syslog"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.http: forbidden opcode(s) in 'import os\\nos.system(\"id\")': IMPORT_NAME ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132384",
+   "expect_level": 10,
+   "note": "synthesized from tools/safe_eval.py assert_valid_codeobj (ValidationError logged by odoo.http as WARNING)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 ERROR prod odoo.http: Exception during request handling. Traceback (most recent call last):   File \"/usr/lib/python3/dist-packages/odoo/http.py\", line 2577, in __call__     response = request._serve_db()   File \"/usr/lib/python3/dist-packages/odoo/tools/safe_eval.py\", line 219, in assert_no_dunder_name     raise NameError('Access to forbidden name %r (%r)' % (name, expr)) NameError: Access to forbidden name '__import__' (\"__import__('os').system('id')\") ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132384",
+   "expect_level": 10,
+   "note": "synthesized from tools/safe_eval.py assert_no_dunder_name (NameError, traceback joined by the agent group)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.http: forbidden opcode(s) in 'class A: pass': LOAD_BUILD_CLASS ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132385",
+   "expect_level": 5,
+   "note": "synthesized: another forbidden opcode"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:Access to forbidden name '__x' from 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132315",
+   "expect_level": 5,
+   "note": "near-miss for 132384: the text inside a login name is a failed login"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.http: Invalid field 'foo' on model 'res.partner' ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132385: another validation warning"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_cron: Manually starting job `Mail: Email Queue Manager`. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132386",
+   "expect_level": 5,
+   "note": "synthesized from ir_cron.py 16.0/17.0"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) started manually ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132386",
+   "expect_level": 5,
+   "note": "synthesized from ir_cron.py 18.0"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_button/ir.cron/method_direct_trigger#ir.cron.method_direct_trigger HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132386",
+   "expect_level": 5,
+   "note": "synthesized from 19.0 (no service line; request line with #model.method)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.168.0.50 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_button/ir.cron/method_direct_trigger HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132386: 18.0 request line (the service line is the alert there)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_cron: Job 'Mail: Email Queue Manager' (3) done ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132386: end of a manual run"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.addons.base.models.ir_actions: Forbidden server action 'Mark as paid' executed while the user jdoe@example.com does not have access to account.move. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132387",
+   "expect_level": 7,
+   "note": "synthesized from ir_actions.py 16.0-19.0"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.addons.base.models.ir_actions: Forbidden server action 'Mark as paid' executed while the user jdoe@example.com does not have access to account.move(12, 13). ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132387",
+   "expect_level": 7,
+   "note": "synthesized: record-level variant"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.http: You don't have enough access rights to run this action. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132387"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.0.2.40 - - [11/Oct/2026 03:00:00] \"POST /xmlrpc/2/object#res.partner.search_read HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132394",
+   "expect_level": 3,
+   "note": "synthesized from 19.0 rpc/controllers (XML-RPC deprecated, removal in Odoo 22)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.0.2.40 - - [11/Oct/2026 03:00:00] \"POST /jsonrpc#sale.order.read HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132394",
+   "expect_level": 3,
+   "note": "synthesized: JSON-RPC in 19.0"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.addons.rpc.controllers.xmlrpc: The /xmlrpc, /xmlrpc/2 and /jsonrpc endpoints are deprecated in Odoo 19 and scheduled for removal in Odoo 22. Please report the problem to the client making the request. Mute this logger: --log-handler odoo.addons.rpc.controllers.xmlrpc:ERROR https://www.odoo.com/documentation/latest/developer/reference/external_api.html#migrating-from-xml-rpc-json-rpc ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized: the per-request WARNING (dropped by the agent group) is quiet on the manager too"
+  },
+  {
+   "log": "192.168.0.40 - - [11/Oct/2026:03:00:00 +0800] \"POST /web/database/backup HTTP/1.1\" 200 734003 \"-\" \"curl/8.5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "132397",
+   "expect_level": 7,
+   "note": "synthesized nginx combined line: nightly backup from a private address"
+  },
+  {
+   "log": "198.51.100.30 - - [11/Oct/2026:03:00:00 +0800] \"POST /web/database/backup HTTP/1.1\" 200 734003 \"-\" \"curl/8.5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "132398",
+   "expect_level": 12,
+   "note": "synthesized: backup through the proxy from a public address"
+  },
+  {
+   "log": "::1 - - [11/Oct/2026:03:00:00 +0800] \"POST /web/database/backup HTTP/1.1\" 200 734003 \"-\" \"curl/8.5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "132395",
+   "expect_level": 8,
+   "note": "near-miss for 132398: IPv6 loopback is not a public address"
+  },
+  {
+   "log": "198.51.100.30 - - [11/Oct/2026:03:00:00 +0800] \"POST /web/database/backup HTTP/1.1\" 403 153 \"-\" \"curl/8.5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "near-miss for 132398: refused at the proxy is left to the built-in 4xx rules"
+  },
+  {
+   "fim": {
+    "path": "/etc/odoo/odoo.conf",
+    "type": "modified",
+    "changed": [
+     "size",
+     "sha256"
+    ],
+    "mode": "realtime"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: odoo.conf edited (realtime watch from the odoo group): built-in 550, no diff (report_changes off)"
+  },
+  {
+   "fim": {
+    "path": "/etc/odoo/odoo.conf",
+    "type": "modified",
+    "changed": [
+     "size",
+     "sha256"
+    ],
+    "process": "/usr/bin/vim",
+    "mode": "whodata"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: odoo.conf edited by hand (whodata, vim)"
+  },
+  {
+   "fim": {
+    "path": "/etc/odoo/odoo.conf",
+    "type": "modified",
+    "changed": [
+     "size",
+     "md5",
+     "sha1",
+     "sha256"
+    ],
+    "process": "/usr/bin/python3.12",
+    "mode": "whodata"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: Odoo itself rewrites odoo.conf when a master password is set through the database manager (tools/config.py save): the only trace of that change"
+  },
+  {
+   "fim": {
+    "path": "/etc/odoo/odoo.conf",
+    "type": "modified",
+    "changed": [
+     "mtime"
+    ],
+    "mode": "realtime"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: touch on odoo.conf (the verify step of the setup guide) is enough for 550"
+  },
+  {
+   "fim": {
+    "path": "/etc/odoo/odoo.conf",
+    "type": "modified",
+    "changed": [
+     "permission"
+    ],
+    "perm": "rw-rw-rw-",
+    "mode": "realtime"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: odoo.conf made world-writable (it holds admin_passwd and db_password)"
+  },
+  {
+   "fim": {
+    "path": "/etc/odoo/odoo.conf.dpkg-new",
+    "type": "added",
+    "mode": "realtime"
+   },
+   "expect_rule": "554",
+   "expect_level": 5,
+   "note": "fim: new file in /etc/odoo (package upgrade leaves .dpkg-new)"
+  },
+  {
+   "fim": {
+    "path": "/etc/odoo/odoo.conf",
+    "type": "deleted",
+    "mode": "realtime"
+   },
+   "expect_rule": "553",
+   "expect_level": 7,
+   "note": "fim: odoo.conf deleted"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo: Using configuration file at /etc/odoo/odoo.conf ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for the FIM cases: Odoo naming its configuration file at start (odoo/cli/server.py 16.0-19.0) is a log line, not a change"
   }
  ]
 }

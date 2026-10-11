@@ -3,19 +3,33 @@
   Rule range 132400-132499. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
 
   The zz- prefix makes this file load after the built-in ruleset: some rules
-  are children of built-in ones (syslog 2501, ClamAV 52501/52502/52509,
-  Postfix 3320/3395, systemd 40700/40704, web access 31100/31108).
+  are children of built-in ones (syslog 2501, ClamAV 52501/52502/52507/52509,
+  Postfix 3300/3303/3320/3395, systemd 40700/40704, web access 31100/31108).
 
-  Modules
-    132400-132409  logins to the web interface and API
-    132490-132499  logins: superuser, first login, login after failures
+  Modules (the range is full, so later additions sit in the free gaps)
+    132400-132409, 132490-132497  logins: failures, second factor, brute
+                   force and spraying, superuser, first login, after failures
     132410-132419  tasks (root shell, service stop, cluster, failures)
-    132420-132429  mail filter: viruses, outgoing virus and spam, filter errors
-    132430-132439  quarantine releases
-    132440-132449  cluster sync, LDAP sync, policy daemon, certificate renewal
-    132450-132459  ClamAV updates, Postfix to filter path, TLS, DNS blocklists
-    132460-132479  configuration changes and public-address logins (pmgproxy access log)
-    132480-132489  service failures (systemd)
+    132420-132429, 132434-132439, 132446-132449, 132499
+                   mail filter: viruses and ClamAV heuristics, outgoing virus
+                   and spam, attachments, broken MIME, BCC copies, DKIM,
+                   filter errors
+    132475-132479, 132483-132484
+                   mail filter: SpamAssassin verdicts tied to delivery,
+                   outgoing volume
+    132430-132433  quarantine releases
+    132440-132445  cluster sync, LDAP sync, policy daemon, certificate renewal
+    132450-132459, 132485-132488
+                   ClamAV updates, Postfix to filter path, TLS, DNS
+                   blocklists, Postfix process crashes and smuggling evidence
+    132460-132474, 132489, 132498
+                   configuration changes, exploit attempts, backup downloads
+                   and public-address logins (pmgproxy access log)
+    132480-132482  service failures (systemd)
+
+  Built against pmg-api 9.1.4 source and PMG 9.1 logs. The strings used have
+  not changed since PMG 6/7 except where a rule says so (TFA lockout since
+  8.0.2, quarantine receiver since 8.1.7, broken-MIME lines since 9.0.4).
 
   What PMG writes for routine mail (accepted, marked, quarantined spam, SPF,
   greylisting, postscreen decisions) is left at level 0: on the gateway this
@@ -55,9 +69,62 @@
   <rule id="132404" level="5">
     <if_sid>132400</if_sid>
     <match type="pcre2">^(?:openid connect )?authentication failure; rhost=</match>
-    <description>PMG: login failed for $(dstuser) from $(srcip)</description>
+    <description>PMG: login failed for $(dstuser) from $(srcip): $(pmg.msg)</description>
     <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <!--
+    Second factor. PMG checks the second factor only after the password was
+    right (AccessControl.pm create_or_verify_ticket, pmg-api 9.1.4), so
+    "msg=failed 2nd factor" means someone has the account's password. The
+    TOTP factor locks after repeated wrong codes, all factors after many more
+    (messages since pmg-api 8.0.2, the fix for CVE-2023-43320, TOTP guessing):
+      ... msg=failed 2nd factor
+      ... msg=failed 2nd factor: TOTP limit reached, locked
+      ... msg=failed 2nd factor: TFA limit reached, user locked out
+    Defined before 132405 so a second-factor failure keeps its own alert at
+    the same level. These events are not counted by the brute-force rule:
+    the lockout is the signal for guessed codes.
+  -->
+  <rule id="132409" level="10">
+    <if_sid>132404</if_sid>
+    <field name="pmg.msg" type="pcre2">^(?:failed 2nd factor|2nd factor failed)</field>
+    <description>[WARN] PMG: $(dstuser) gave the right password from $(srcip) but failed the second factor</description>
+    <mitre>
+      <id>T1078</id>
       <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="132495" level="12">
+    <if_sid>132409</if_sid>
+    <field name="pmg.msg" type="pcre2">limit reached</field>
+    <description>[HIGH] PMG: second factor of $(dstuser) locked after repeated wrong codes from $(srcip): the password is known to someone ($(pmg.msg))</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <!--
+    A disabled or expired account. Both are checked before the password
+    (AccessControl.pm check_user_enabled, UserConfig.pm authenticate_user),
+    so this says that old credentials are being tried, not that they work:
+      ... msg=Permission check failed (user 'old@pmg' is disabled)
+      ... msg=account expired
+    A user of the pam realm other than root gets the "disabled" message too.
+  -->
+  <rule id="132497" level="6">
+    <if_sid>132404</if_sid>
+    <field name="pmg.msg" type="pcre2">^(?:Permission check failed \(user '[^']*' is disabled\)|account expired)</field>
+    <description>PMG: login attempt to the disabled or expired account $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
     </mitre>
     <group>authentication_failed,</group>
   </rule>
@@ -70,12 +137,30 @@
     <group>authentication_failed,</group>
   </rule>
 
+  <!--
+    Password spraying: six failures from one address within 10 minutes, each
+    for an account other than the latest one's; "no such user" failures
+    count (guessing account names). Loaded before 132405 (same level): a
+    burst against many accounts is reported as spraying, a burst against one
+    account as 132405, never both.
+  -->
+  <rule id="132496" level="10" frequency="6" timeframe="600">
+    <if_matched_sid>132404</if_matched_sid>
+    <same_source_ip />
+    <different_user />
+    <description>[WARN] PMG: failed logins for many different accounts from $(srcip) (password spraying)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,</group>
+  </rule>
+
   <rule id="132405" level="10" frequency="6" timeframe="300">
     <if_matched_sid>132404</if_matched_sid>
     <same_source_ip />
     <description>[WARN] PMG: repeated failed logins to the web interface from $(srcip)</description>
     <mitre>
-      <id>T1110</id>
+      <id>T1110.001</id>
     </mitre>
     <group>authentication_failures,</group>
   </rule>
@@ -250,6 +335,19 @@
   </rule>
 
   <!--
+    Update and backup tasks. pmg-daily runs aptupdate once a day; when it
+    fails no package (security) updates are offered any more, and nothing
+    else on the gateway says so. backup / pbs_backup are the configuration
+    backups (local and to Proxmox Backup Server), avupdate / saupdate the
+    ClamAV and SpamAssassin rule updates started from the web interface.
+  -->
+  <rule id="132419" level="7">
+    <if_sid>132416</if_sid>
+    <field name="pmg.task" type="pcre2">^(?:aptupdate|avupdate|saupdate|backup|pbs_backup)$</field>
+    <description>PMG: update or backup task $(pmg.task) failed on $(pmg.node): $(pmg.status)</description>
+  </rule>
+
+  <!--
     Viruses. pmg-smtp-filter writes one "virus detected" line per mail, inbound
     or outgoing alike (the line does not say which). A ClamAV heuristic
     (Heuristics.*) is not treated as a virus by PMG: it only adds to the spam
@@ -258,17 +356,57 @@
   <rule id="132420" level="7">
     <if_sid>132400</if_sid>
     <match type="pcre2">^[0-9A-F]+: virus detected: </match>
-    <description>PMG: virus $(pmg.virus) found in mail $(pmg.logid) ($(pmg.scanner))</description>
+    <description>PMG: virus $(pmg.virus) found in mail $(pmg.logid) ($(pmg.scanner)); PMG applies its virus rules to it</description>
     <mitre>
       <id>T1566.001</id>
     </mitre>
     <group>virus,</group>
   </rule>
 
+  <!--
+    ClamAV heuristics. pmg-smtp-filter (9.1.4, lines 748-752) logs the hit
+    but does not treat it as a virus: it only adds clamav_heuristic_score
+    (default 3) to the spam score, so the mail is usually delivered. Which
+    heuristic it was matters (names from libclamav):
+      Broken.Executable, Zip.OverlappingFiles, PDF.ObfuscatedNameObject,
+      W32.*, Trojan.*    malformed or packed content typical of droppers: 7
+      Phishing.*         spoofed link targets, blocked URL domains: 5
+      Encrypted.*        an archive or document ClamAV could not open (an
+                         unscanned attachment, T1027.013): 5
+      anything else      (limits exceeded, macros, broken media): 3
+  -->
   <rule id="132421" level="3">
     <if_sid>132420</if_sid>
     <field name="pmg.virus" type="pcre2">^Heuristics\.</field>
-    <description>PMG: ClamAV heuristic $(pmg.virus) in mail $(pmg.logid), counted as spam</description>
+    <description>PMG: ClamAV heuristic $(pmg.virus) in mail $(pmg.logid): added to the spam score, not blocked as a virus</description>
+  </rule>
+
+  <rule id="132434" level="7">
+    <if_sid>132421</if_sid>
+    <field name="pmg.virus" type="pcre2">^Heuristics\.(?:Broken\.Executable|Zip\.OverlappingFiles|PDF\.ObfuscatedNameObject|W32\.|Trojan\.)</field>
+    <description>PMG: malformed executable or archive ($(pmg.virus)) in mail $(pmg.logid): not blocked as a virus, PMG only adds to the spam score</description>
+    <mitre>
+      <id>T1566.001</id>
+    </mitre>
+    <group>virus,</group>
+  </rule>
+
+  <rule id="132435" level="5">
+    <if_sid>132421</if_sid>
+    <field name="pmg.virus" type="pcre2">^Heuristics\.Phishing\.</field>
+    <description>PMG: phishing heuristic $(pmg.virus) in mail $(pmg.logid): not blocked as a virus, PMG only adds to the spam score</description>
+    <mitre>
+      <id>T1566.002</id>
+    </mitre>
+  </rule>
+
+  <rule id="132436" level="5">
+    <if_sid>132421</if_sid>
+    <field name="pmg.virus" type="pcre2">^Heuristics\.Encrypted\.</field>
+    <description>PMG: encrypted attachment ($(pmg.virus)) in mail $(pmg.logid) could not be scanned for viruses</description>
+    <mitre>
+      <id>T1027</id>
+    </mitre>
   </rule>
 
   <!--
@@ -279,12 +417,12 @@
     names, "Virus Alert" (active by default) and "Block outgoing Spam"
     (inactive by default); add yours if you renamed or translated them.
     One line per recipient: ignore="60" keeps a mass mailing to one alert a
-    minute.
+    minute. 132422 also takes "removed attachment" lines (132447).
   -->
   <rule id="132422" level="0">
     <if_sid>132400</if_sid>
-    <match type="pcre2">^[0-9A-F]+: (?:block mail to|moved mail for) \x3c</match>
-    <description>PMG: a filter rule blocked or quarantined a mail</description>
+    <match type="pcre2">^[0-9A-F]+: (?:block mail to \x3c|moved mail for \x3c|removed attachment )</match>
+    <description>PMG: a filter rule blocked or quarantined a mail or removed an attachment</description>
   </rule>
 
   <rule id="132423" level="12" ignore="60">
@@ -303,8 +441,34 @@
     <description>[WARN] PMG: outgoing spam stopped by rule $(pmg.rule) (mail $(pmg.logid) to $(pmg.rcpt)): an internal account or host may be compromised</description>
     <mitre>
       <id>T1586.002</id>
+      <id>T1078</id>
     </mitre>
     <group>spam,</group>
+  </rule>
+
+  <!--
+    Dangerous attachments. PMG's default rule "Block Dangerous Files" removes
+    executables, scripts and similar files by type and name (RuleDB/Remove.pm):
+      1E0B...: removed attachment 3 ('invoice.pdf.exe', rule: Block Dangerous Files)
+      1E0B...: moved mail for <user@example.com> to attachment quarantine - 1E0C... (rule: ...)
+    One is the gateway doing its job (level 3, with the file name); twenty
+    within 10 minutes is a campaign against the users (132448).
+  -->
+  <rule id="132447" level="3">
+    <if_sid>132422</if_sid>
+    <match type="pcre2">^[0-9A-F]+: (?:removed attachment |moved mail for \x3c[^\x3e]*\x3e to attachment quarantine )</match>
+    <description>PMG: rule $(pmg.rule) removed attachment $(pmg.file) or quarantined mail $(pmg.logid) for its attachments</description>
+    <mitre>
+      <id>T1566.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="132448" level="7" frequency="20" timeframe="600" ignore="3600">
+    <if_matched_sid>132447</if_matched_sid>
+    <description>PMG: many mails with dangerous attachments within 10 minutes: a malware or phishing campaign against this domain</description>
+    <mitre>
+      <id>T1566.001</id>
+    </mitre>
   </rule>
 
   <!--
@@ -351,30 +515,195 @@
   </rule>
 
   <!--
+    Broken or ambiguous MIME structure (MailQueue.pm parse_mail, since
+    9.0.4; PSA-2026-00005-1: duplicate Content-Type headers let mails slip
+    past content-type rules). By default (accept-broken-mime off) such a
+    mail is refused with a temporary error and its sender retries:
+      1E0B...: unable to parse message - <reason>
+      1E0B...: message has ambiguous content
+    With accept-broken-mime on, the mail is delivered with a warning header:
+      1E0B...: message caused errors during parsing: <reason> adding header
+      1E0B...: message has ambiguous content - adding header
+  -->
+  <rule id="132439" level="3">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">^[0-9A-F]+: (?:unable to parse message|message has ambiguous content|message caused errors during parsing: )</match>
+    <description>PMG: mail $(pmg.logid) has a broken or ambiguous MIME structure</description>
+    <mitre>
+      <id>T1566.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="132499" level="5">
+    <if_sid>132439</if_sid>
+    <match type="pcre2">adding header$</match>
+    <description>PMG: mail $(pmg.logid) with a broken MIME structure was accepted (accept-broken-mime is on): content-type rules may not have applied to it</description>
+    <mitre>
+      <id>T1566.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="132446" level="7" frequency="10" timeframe="600" ignore="3600">
+    <if_matched_sid>132439</if_matched_sid>
+    <description>PMG: many mails with broken MIME structure within 10 minutes: crafted mails probing the parser</description>
+    <mitre>
+      <id>T1566.001</id>
+    </mitre>
+  </rule>
+
+  <!--
+    BCC copies (RuleDB/BCC.pm). A BCC action is the gateway's transport rule:
+    someone with administrator access can copy every mail to an outside
+    address (T1114.003, the same idea as Elastic's rule on Exchange transport
+    rule creation, re-implemented here). First time a gateway copies mail to
+    an address: level 8 (first-time-seen, once per address). A BCC target
+    written as a macro (for example __SENDER__) alerts once for each new
+    address it produces; such a rule is unusual. Config changes to the rules
+    themselves are 132462 (pmgproxy access log).
+  -->
+  <rule id="132437" level="8">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">^[0-9A-F]+: bcc to \x3c</match>
+    <if_fts />
+    <description>PMG: mail is being copied (BCC) to $(pmg.rcpt) for the first time, by rule $(pmg.rule)</description>
+    <mitre>
+      <id>T1114.003</id>
+    </mitre>
+  </rule>
+
+  <rule id="132438" level="5">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">^[0-9A-F]+: bcc to \x3c[^\x3e]*\x3e \(rule: .+\) failed$</match>
+    <description>PMG: BCC copy of mail $(pmg.logid) to $(pmg.rcpt) failed (rule $(pmg.rule))</description>
+  </rule>
+
+  <!--
+    DKIM signing broken (RuleDB/Accept.pm and BCC.pm; Utils.pm for mail PMG
+    itself sends). Outgoing mail leaves unsigned and fails DMARC at the
+    receivers. One alert an hour. "DKIM signing: no domain found" (spam
+    reports to local recipients) is routine and stays at level 0.
+  -->
+  <rule id="132449" level="6" ignore="3600">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">Could not create DKIM-Signature - disabling Signing: |^Could not DKIM-Sign local mail: </match>
+    <description>PMG: DKIM signing failed, outgoing mail is sent unsigned</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <!--
+    SpamAssassin verdicts tied to delivery. The "SA score=..." line comes
+    before the delivery line of the same mail, both carry the PMG log ID, and
+    hits= lists the tests that fired (RuleDB/Spam.pm). A phishing or malware
+    URL listed by Spamhaus DBL or SURBL (rules/25_uribl.cf), or a sender
+    domain with DMARC p=reject or p=quarantine whose check failed
+    (rules/25_dmarc.cf), is recorded at level 2; the alert comes only if the
+    same mail is then accepted for delivery (132476, 132478). A quarantined
+    or blocked mail does not alert.
+  -->
+  <rule id="132475" level="2">
+    <if_sid>132400</if_sid>
+    <field name="pmg.sa_hits" type="pcre2">(?:^|,)(?:URIBL_DBL_PHISH|URIBL_DBL_MALWARE|URIBL_DBL_ABUSE_PHISH|URIBL_DBL_ABUSE_MALW|URIBL_PH_SURBL|URIBL_MW_SURBL)\(</field>
+    <description>PMG: mail $(pmg.logid) contains a URL listed for phishing or malware (SpamAssassin score $(pmg.sa_score))</description>
+  </rule>
+
+  <rule id="132477" level="2">
+    <if_sid>132400</if_sid>
+    <field name="pmg.sa_hits" type="pcre2">(?:^|,)DMARC_(?:REJECT|QUAR)\(</field>
+    <description>PMG: mail $(pmg.logid) failed DMARC for a domain that asks for rejection or quarantine (SpamAssassin score $(pmg.sa_score))</description>
+  </rule>
+
+  <rule id="132476" level="7" timeframe="300">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">^[0-9A-F]+: accept mail to \x3c</match>
+    <if_matched_sid>132475</if_matched_sid>
+    <same_field>pmg.logid</same_field>
+    <description>PMG: mail $(pmg.logid) with a phishing or malware URL was delivered to $(pmg.rcpt)</description>
+    <mitre>
+      <id>T1566.002</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+  <rule id="132478" level="6" timeframe="300">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">^[0-9A-F]+: accept mail to \x3c</match>
+    <if_matched_sid>132477</if_matched_sid>
+    <same_field>pmg.logid</same_field>
+    <description>PMG: mail $(pmg.logid) that failed the sender domain's DMARC reject or quarantine policy was delivered to $(pmg.rcpt)</description>
+    <mitre>
+      <id>T1566</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+  <!--
+    SpamAssassin's DNS list queries refused: Spamhaus and URIBL answer
+    "blocked" to queries from public or shared resolvers and above the free
+    volume (rules/20_dnsbl_tests.cf, 25_uribl.cf, "ADMINISTRATOR NOTICE").
+    The filter then scores without those lists. Postscreen's own lookups are
+    132456. One alert an hour.
+  -->
+  <rule id="132479" level="7" ignore="3600">
+    <if_sid>132400</if_sid>
+    <field name="pmg.sa_hits" type="pcre2">(?:^|,)(?:URIBL_BLOCKED|URIBL_ZEN_BLOCKED|URIBL_DBL_BLOCKED|RCVD_IN_ZEN_BLOCKED|SURBL_BLOCKED|RCVD_IN_VALIDITY_[A-Z]+_BLOCKED)(?:_OPENDNS)?\(</field>
+    <description>PMG: SpamAssassin's DNS blocklist queries are refused (a public resolver or too many queries): spam scoring runs without those lists</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <!--
+    Outgoing mail volume. pmg-smtp-filter takes outgoing and trusted mail on
+    127.0.0.1:10023 and inbound mail on 10024 (admin guide 10.3) and logs
+    every connection (Net::Server):
+      2026/10/11-11:15:08 CONNECT TCP Peer: "[127.0.0.1]:36714" Local: "[127.0.0.1]:10023"
+    This counts outgoing transactions per gateway without relying on rule
+    names: 250 within 10 minutes is far above what a small or mid-size site
+    sends in normal operation and is what a hijacked account or a spam bot
+    on an internal host produces. A site that normally relays more than about
+    25 mails a minute should raise the frequency (site overwrite).
+  -->
+  <rule id="132483" level="1">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">CONNECT TCP Peer: "[^"]*" Local: "\[[^"\]]*\]:10023"$</match>
+    <description>PMG: outgoing or trusted mail handed to the filter</description>
+  </rule>
+
+  <rule id="132484" level="10" frequency="250" timeframe="600" ignore="3600">
+    <if_matched_sid>132483</if_matched_sid>
+    <description>[WARN] PMG: unusually many outgoing mails within 10 minutes: a hijacked account or an infected internal host may be sending spam</description>
+    <mitre>
+      <id>T1586.002</id>
+      <id>T1078</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+  <!--
     Quarantine releases (pmgdaemon). The line does not say who released it:
     end users release their own spam from the spam report, while the virus
     and attachment quarantines are only open to administrators. The access log
     line "POST /api2/.../quarantine/content" just before names the account.
+    The recipient is in the line only since pmg-api 8.1.7; on 8.0 to 8.1.6
+    it is empty and the rules still apply.
   -->
   <rule id="132430" level="3">
     <if_sid>132400</if_sid>
     <field name="pmg.quarantine" type="pcre2">^spam$</field>
     <match type="pcre2">^delivered quarantined mail '</match>
-    <description>PMG: mail released from the spam quarantine to $(pmg.rcpt)</description>
+    <description>PMG: mail $(pmg.quarantine_id) released from the spam quarantine, recipient: $(pmg.rcpt)</description>
   </rule>
 
   <rule id="132431" level="5">
     <if_sid>132400</if_sid>
     <field name="pmg.quarantine" type="pcre2">^attachment$</field>
     <match type="pcre2">^delivered quarantined mail '</match>
-    <description>PMG: mail released from the attachment quarantine to $(pmg.rcpt)</description>
+    <description>PMG: mail $(pmg.quarantine_id) released from the attachment quarantine, recipient: $(pmg.rcpt)</description>
   </rule>
 
   <rule id="132432" level="10">
     <if_sid>132400</if_sid>
     <field name="pmg.quarantine" type="pcre2">^virus$</field>
     <match type="pcre2">^delivered quarantined mail '</match>
-    <description>[WARN] PMG: mail released from the VIRUS quarantine to $(pmg.rcpt)</description>
+    <description>[WARN] PMG: mail $(pmg.quarantine_id) released from the VIRUS quarantine, recipient: $(pmg.rcpt)</description>
   </rule>
 
   <!--
@@ -451,10 +780,45 @@
     <description>ClamAV: signature update failed</description>
   </rule>
 
+  <!--
+    Refused or failed downloads (libfreshclam.c, ClamAV 1.0 to 1.5): 403 is a
+    blocked address or an outdated freshclam, 429 a rate limit; after either
+    freshclam stops trying until the cool-down ends, and "Can't query
+    current.cvd.clamav.net" is the DNS version check failing. freshclam
+    writes each warning twice (syslog without the prefix, stderr through the
+    journal with it); the prefixed copy is used.
+  -->
   <rule id="132451" level="7" ignore="3600">
     <if_sid>52501,52509</if_sid>
-    <match type="pcre2">^WARNING: (?:FreshClam received error code (?:403|429)|Can't download \S+ from )</match>
-    <description>ClamAV: signature download refused or failed (blocked or rate limited by the mirror)</description>
+    <match type="pcre2">^WARNING: (?:FreshClam (?:previously )?received error code (?:403|429)|Can't download \S+ from |You are (?:still )?on cool-down until after: |Can't query current\.cvd\.clamav\.net)</match>
+    <description>ClamAV: signature download refused or failed (blocked, rate limited or DNS check failing)</description>
+  </rule>
+
+  <!--
+    The ClamAV engine is older than the version ClamAV recommends. freshclam
+    says so on every update check (libfreshclam.c 636-637):
+      WARNING: Your ClamAV installation is OUTDATED!
+      WARNING: Local version: 1.4.2 Recommended version: 1.4.3
+    The engine's own parsers are an attack surface for every mail scanned
+    (ClamAV 1.4.6 / 1.5.4 fixed CVE-2026-20213 and CVE-2026-20337 to 20339,
+    PE parsing). Both copies (with and without the prefix) match; one alert
+    a day.
+  -->
+  <rule id="132459" level="5" ignore="86400">
+    <if_sid>52501</if_sid>
+    <match type="pcre2">^(?:WARNING: )?Local version: \S+ Recommended version: </match>
+    <description>ClamAV: the engine is outdated, a newer ClamAV version is available</description>
+  </rule>
+
+  <!--
+    freshclam checks for updates every hour (PMG: Checks 24 in its template
+    gives one per hour), and the built-in 52507 raises every check to level
+    3: 24 alerts a day per gateway, 48 when both copies are read. Failures
+    are 132450 / 132451.
+  -->
+  <rule id="132485" level="2">
+    <if_sid>52507</if_sid>
+    <description>ClamAV: signature update check started (routine)</description>
   </rule>
 
   <!--
@@ -510,6 +874,69 @@
   <rule id="132458" level="7" frequency="10" timeframe="1800" ignore="3600">
     <if_matched_sid>132457</if_matched_sid>
     <description>Postfix postscreen: DNS blocklist lookups keep timing out, screening runs without them</description>
+  </rule>
+
+  <!--
+    A Postfix daemon crashing (master/master_spawn.c):
+      warning: process /usr/lib/postfix/sbin/smtpd pid 1234 killed by signal 11
+      warning: process /usr/lib/postfix/sbin/smtpd pid 1234 exit status 1
+      warning: /usr/lib/postfix/sbin/smtpd: bad command startup (two dashes) throttling
+    The built-in rules leave these at 3395 (level 0). A crashing smtpd drops
+    the SMTP sessions it carries (Postfix 3.10.9 fixed CVE-2026-43964, a
+    crash on crafted enhanced status codes); throttling means the service
+    no longer starts. One alert per 10 minutes. Applies to any Postfix host.
+  -->
+  <rule id="132486" level="7" ignore="600">
+    <if_sid>3395</if_sid>
+    <match type="pcre2">^warning: (?:process \S+ pid \d+ (?:killed by signal \d+|exit status \d+)|\S+: bad command startup -- throttling)</match>
+    <description>Postfix: a mail daemon crashed or cannot start</description>
+    <mitre>
+      <id>T1499</id>
+    </mitre>
+    <group>service_availability,</group>
+  </rule>
+
+  <!--
+    SMTP smuggling evidence: a client sent a bare newline, which smuggling
+    (CVE-2023-51764 and later variants) relies on. PMG sets
+    smtpd_forbid_bare_newline = normalize, which logs nothing; with "note"
+    the disconnect line ends in notes=bare_lf, with "reject" the client is
+    refused (smtpd/smtpd.c, smtpd_check.c log_whatsup):
+      NOQUEUE: reject: DATA from unknown[192.0.2.7]: bare <LF> received; from=<...> to=<...> proto=ESMTP helo=<...>
+      disconnect from unknown[192.0.2.7] ehlo=1 mail=1 rcpt=1 data=1 quit=1 commands=5 notes=bare_lf
+    Some old mailers send bare newlines too; the source address is in the
+    alert. Applies to any Postfix host that logs it.
+  -->
+  <rule id="132487" level="5">
+    <if_sid>3300,3320</if_sid>
+    <match type="pcre2">: bare \x3cLF\x3e received;| notes=bare_lf$</match>
+    <description>Postfix: an SMTP client sent bare newlines (SMTP smuggling technique or a broken mailer), from $(srcip)</description>
+    <mitre>
+      <id>T1566</id>
+    </mitre>
+  </rule>
+
+  <!--
+    reject_unknown_client_hostname from the internet: the client's address
+    has no matching name. That is ordinary spam filtering (PMG's "reject
+    unknown clients"), and one sender with broken DNS retries every few
+    minutes for days: measured 449 lines in 30 days on one gateway, most
+    from one host. The built-in 3303 calls every 450 "Sender domain is not
+    found" at level 5. From a public address it is recorded at level 2; from
+    a private one it stays at 3303. The same reply for an internal host
+    ("cannot find your reverse hostname") is jt-zimbra's 100872.
+  -->
+  <rule id="132488" level="2">
+    <if_sid>3303</if_sid>
+    <match>Client host rejected: cannot find your hostname</match>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>Postfix: mail from an internet host without a matching DNS name refused (temporary, routine), from $(srcip)</description>
   </rule>
 
   <!--
@@ -678,6 +1105,49 @@
   </rule>
 
   <!--
+    Read requests the agent group keeps on purpose (all other GET and HEAD
+    requests are dropped on the agent).
+    APT changelog option injection (PSA-2026-00001-1, fixed in pmg-api 9.0.3:
+    "check for odd package name and ensure arguments are separated from
+    options"): before the fix a package name starting with "-" became an
+    apt-get option, and an administrator could run code as www-data. A
+    package name never starts with "-". Any status: on a fixed gateway the
+    request is refused (400), the attempt is still the signal.
+  -->
+  <rule id="132489" level="10">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol>GET</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/apt/changelog\?(?:[^ ]*\x26)?name=(?:-|%2[dD])</url>
+    <description>[WARN] PMG API: APT changelog request with an option as package name (PSA-2026-00001-1 exploit attempt) from $(srcip): $(url)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059.004</id>
+    </mitre>
+    <group>pmg_api,attack,</group>
+  </rule>
+
+  <!--
+    A configuration backup downloaded. Backups made before pmg-api 9.1.3
+    contain the key that signs API tickets ("backup: skip the key and
+    certificate files used for the generation of API tickets"), so whoever
+    holds such a file can forge a login for any account; all backups hold
+    the user database and the mail filter configuration.
+  -->
+  <rule id="132498" level="8">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol>GET</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/backup/[^/?]+(?:\?|$)</url>
+    <description>PMG API: configuration backup downloaded ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1552.001</id>
+    </mitre>
+    <group>pmg_api,</group>
+  </rule>
+
+  <!--
     Login requests from a public address. The success line in syslog has no
     client address, so the access log is the only place it is written. The
     agent group keeps the ticket requests that were answered with 2xx (it drops
@@ -701,6 +1171,7 @@
     <description>PMG: web interface or API login from the public address $(srcip)</description>
     <mitre>
       <id>T1078</id>
+      <id>T1133</id>
     </mitre>
     <group>pmg_api,</group>
   </rule>

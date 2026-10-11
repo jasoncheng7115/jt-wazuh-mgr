@@ -503,6 +503,10 @@ async function run() {
     const offered = await page.evaluate(() => [...document.querySelectorAll('#packs-panel tr')]
       .some(tr => /jt-portable-detect/.test(tr.textContent) && [...tr.querySelectorAll('button')].some(b => /Update/.test(b.textContent))));
     check('an outdated install offers Update', offered);
+    const row = await page.evaluate(() => [...document.querySelectorAll('#packs-panel tr')]
+      .filter(tr => /jt-portable-detect/.test(tr.textContent)).map(tr => tr.textContent).join(' '));
+    check('the row shows the installed and the available version', /3\.1/.test(row) && /3\.\d/.test(row.replace('3.1', '')) && /Update available/.test(row), row.slice(0, 200));
+    check('the list counts the updates', /update\(s\) available/.test(await page.$eval('#packsStatus', e => e.textContent)));
     await page.evaluate(() => updatePack('jt-portable-detect'));
     await wait(1800);
     const plan = await page.$eval('#modalBody', e => e.innerText);
@@ -522,7 +526,7 @@ async function run() {
     await wait(1500);
     const after = await page.evaluate(() => [...document.querySelectorAll('#packs-panel tr')]
       .filter(tr => /jt-portable-detect/.test(tr.textContent)).map(tr => tr.textContent).join(' '));
-    check('the list no longer offers an update', !/update 3\.1/.test(after) && /Installed/.test(after), after.slice(0, 160));
+    check('the list no longer offers an update', !/Update available/.test(after) && !/3\.1/.test(after) && /Installed/.test(after), after.slice(0, 160));
   });
 
   await journey('J23 a pack response is switched on and off for every node', async () => {

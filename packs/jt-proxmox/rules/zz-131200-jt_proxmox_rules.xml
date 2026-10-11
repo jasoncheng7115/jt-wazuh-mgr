@@ -3,15 +3,24 @@
   Rule range 131200-131299. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
 
   The zz- prefix makes this file load after the built-in ruleset: it extends
-  the built-in Proxmox rules (87200-87203) and the syslog rules (2501).
+  the built-in Proxmox rules (87200-87203), the PAM rules (5503), the syslog
+  rules (2501) and the file integrity rules (550, 553, 554).
 
   Modules
-    131200-131209  logins: routine service accounts, expired tickets
-    131210-131229  tasks: guest destroy, rollback, node shell, failures, backups
+    131200-131209  logins: routine accounts, expired tickets, second factors, PAM copies
+    131210-131229  tasks: guest destroy, rollback, node shell, failures, backups,
+                   storage and Ceph destruction, cluster create/join
     131230-131239  high availability
-    131240-131249  corosync
+    131240-131249  corosync, the cluster file system, the firewall daemon
     131250-131259  Ceph health
-    131260-131279  REST API: failed logins and changes (pveproxy access log)
+    131260-131279  REST API (pveproxy access log): logins and changes
+    131280-131289  cluster log messages: guest configuration, passwords, cluster
+                   membership, OpenID logins, first change from a new address
+    131290-131299  file integrity of /etc/pve and the snippets directories
+
+  Source references are to the Proxmox VE 9.2 packages (pve-manager 9.2.21,
+  qemu-server 9.2.10, libpve-access-control 9.1.2, pve-cluster 9.1.6,
+  pve-firewall 6.0.6, libpve-http-server-perl 6.0.5) and Ceph 19.2.
 -->
 
 <group name="proxmox,jt_proxmox,">
@@ -22,13 +31,13 @@
     into tens of thousands of alerts a day (measured: 20,880 a day on one cluster,
     all from one monitoring account, against 7 root logins). A successful login is
     not an alert by itself: an ordinary account's login is recorded at level 2,
-    root's stays visible at 3, and a login right after repeated failures for the
+    root@pam's stays visible at 3, and a login right after repeated failures for the
     same account is level 12. pvedaemon's success line carries no client address,
     and its decoder is Wazuh's, so neither "from outside" nor "first time from
-    this address" can be told here; the pveproxy access log rules below see the
-    address of failed logins.
+    this address" can be told here; the pveproxy access log rules below can.
     The built-in decoder keeps the user name without its realm, and only for the
-    pam and pve realms; a login through another realm (LDAP, AD, OpenID) has no
+    pam and pve realms (root@pam and root@pve both decode as "root", so root@pam is
+    matched by its text); a login through another realm (LDAP, AD, OpenID) has no
     decoded user and is matched by its text.
     etc/lists/jt-pve-service-accounts is optional tuning: listed accounts drop to
     level 0. (A CDB lookup on the decoded user names the field "user": "dstuser"
@@ -42,15 +51,15 @@
 
   <rule id="131203" level="2">
     <if_sid>87203</if_sid>
-    <user type="pcre2">^(?!root$).+</user>
-    <description>Proxmox VE: login of $(user)</description>
+    <match type="pcre2">successful auth for user '(?!root@pam')[^']+@(?:pam|pve)'</match>
+    <description>Proxmox VE: login of $(dstuser)</description>
     <group>authentication_success,</group>
   </rule>
 
   <rule id="131204" level="3">
     <if_sid>87203</if_sid>
-    <user>^root$</user>
-    <description>Proxmox VE: root logged in</description>
+    <match>successful auth for user 'root@pam'</match>
+    <description>Proxmox VE: root@pam logged in</description>
     <group>authentication_success,</group>
   </rule>
 
@@ -61,13 +70,60 @@
     <group>authentication_success,</group>
   </rule>
 
+  <!--
+    Second factor. pve-access-control (PVE/AccessControl.pm) ends a TFA login
+    with "failed 2nd factor" when the password was right and the code was not,
+    and locks the account after too many tries: "failed 2nd factor: TOTP limit
+    reached, locked" (TOTP) and "failed 1nd factor: TFA limit reached, user
+    locked out" (all factors). Both reach pvedaemon's "authentication failure;
+    ... msg=" line. A correct password is the part an attacker already has;
+    CVE-2023-43320 was a TOTP brute force of exactly this step.
+    These events no longer count towards 87202 and 131202 (the brute-force rules
+    count events that ended at 87201); each one is an alert of its own.
+  -->
+  <rule id="131208" level="10">
+    <if_sid>87201</if_sid>
+    <match type="pcre2">msg=failed (?:2nd factor: TOTP|1nd factor: TFA) limit reached</match>
+    <description>[WARN] Proxmox VE: account locked out of its second factor after repeated failures ($(dstuser))</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,</group>
+  </rule>
+
+  <rule id="131207" level="8">
+    <if_sid>87201</if_sid>
+    <match type="pcre2">msg=failed 2nd factor(?!:)</match>
+    <description>Proxmox VE: correct password but wrong second factor for $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <!--
+    A wrong password for a pam realm account is logged a second time by PAM
+    itself (pam_unix, service proxmox-ve-auth, program IPCC.xs on PVE 9), which
+    the built-in rule 5503 reports at level 5. pvedaemon's line (87201) already
+    reports it with the account and the address, and 87202 / 131202 count it.
+    Real pair, a cluster node 2026-10-04:
+      IPCC.xs[2457682]: pam_unix(proxmox-ve-auth:auth): authentication failure; ... user=root
+      pvedaemon[2310392]: authentication failure; rhost=::ffff:a.b.c.d user=root@pam msg=Authentication failure
+  -->
+  <rule id="131209" level="2">
+    <if_sid>5503</if_sid>
+    <match>pam_unix(proxmox-ve-auth:auth): authentication failure</match>
+    <description>PAM: failed Proxmox VE login (reported by rule 87201)</description>
+  </rule>
+
   <!-- Repeated failures for one account: the built-in 87202 counts by address,
        and pvedaemon's success line has none, so the success that follows can only
        be tied to the failures by account. -->
   <rule id="131202" level="10" frequency="6" timeframe="300">
     <if_matched_sid>87201</if_matched_sid>
     <same_user />
-    <description>[WARN] Proxmox VE: repeated failed logins for $(user)</description>
+    <description>[WARN] Proxmox VE: repeated failed logins for $(dstuser)</description>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -78,7 +134,7 @@
     <if_sid>131200,131203,131204</if_sid>
     <if_matched_sid>131202</if_matched_sid>
     <same_user />
-    <description>[HIGH] Proxmox VE: $(user) logged in right after repeated failed logins for that account</description>
+    <description>[HIGH] Proxmox VE: $(dstuser) logged in right after repeated failed logins for that account</description>
     <mitre>
       <id>T1110</id>
       <id>T1078</id>
@@ -160,16 +216,79 @@
     <description>Proxmox VE: guest $(pve.vmid) created ($(pve.task)) by $(pve.user)</description>
   </rule>
 
+  <!-- qmtunnel / vzmtunnel: the receiving end of a migration from another
+       cluster (remote migration). PSA-2026-00039-1 was a QEMU command-line
+       injection through it, fixed in qemu-server 9.2.3 / 8.4.9. -->
   <rule id="131218" level="3">
     <if_sid>131211</if_sid>
-    <field name="pve.task" type="pcre2">^(?:qmigrate|vzmigrate|hamigrate|qmremote|vzremote)$</field>
+    <field name="pve.task" type="pcre2">^(?:qmigrate|vzmigrate|hamigrate|qmremote|vzremote|qmtunnel|vzmtunnel)$</field>
     <description>Proxmox VE: guest $(pve.vmid) migrated ($(pve.task)) by $(pve.user)</description>
   </rule>
 
+  <!-- File transfers and volume deletion. ociregistrypull (PVE 9) pulls a
+       container image from a registry: PSA-2026-00046-1, a malicious OCI image
+       could run commands as root on the host before pve-container 6.1.14. -->
   <rule id="131219" level="3">
     <if_sid>131211</if_sid>
-    <field name="pve.task" type="pcre2">^(?:push_file|imgcopy|download|aptinstall)$</field>
+    <field name="pve.task" type="pcre2">^(?:push_file|imgcopy|download|aptinstall|ociregistrypull|imgdel)$</field>
     <description>Proxmox VE: $(pve.task) $(pve.vmid) by $(pve.user)</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Destruction of storage and of Ceph. Task types from pve-manager 9.2
+    (API2/Disks.pm wipedisk, Disks/ZFS.pm zfsremove, Disks/LVM.pm lvmremove,
+    Disks/LVMThin.pm lvmthinremove, Disks/Directory.pm dirremove,
+    Ceph/Pool.pm cephdestroypool, Ceph/FS.pm cephdestroyfs, Ceph/OSD.pm
+    cephdestroyosd, Ceph/MON.pm cephdestroymon); the id field names the disk,
+    pool or daemon. They come from syslog, so they work without the agent group.
+  -->
+  <rule id="131225" level="8">
+    <if_sid>131211</if_sid>
+    <field name="pve.task" type="pcre2">^(?:wipedisk|zfsremove|lvmremove|lvmthinremove|dirremove)$</field>
+    <description>Proxmox VE: storage $(pve.vmid) wiped or removed ($(pve.task)) by $(pve.user) on $(pve.node)</description>
+    <mitre>
+      <id>T1485</id>
+      <id>T1561</id>
+    </mitre>
+  </rule>
+
+  <rule id="131226" level="10">
+    <if_sid>131211</if_sid>
+    <field name="pve.task" type="pcre2">^(?:cephdestroypool|cephdestroyfs)$</field>
+    <description>[WARN] Proxmox VE: Ceph pool or file system $(pve.vmid) destroyed by $(pve.user)</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+  </rule>
+
+  <rule id="131227" level="6">
+    <if_sid>131211</if_sid>
+    <field name="pve.task" type="pcre2">^(?:cephdestroyosd|cephdestroymon|cephdestroymgr|cephdestroymds)$</field>
+    <description>Proxmox VE: Ceph daemon $(pve.vmid) destroyed ($(pve.task)) by $(pve.user)</description>
+  </rule>
+
+  <!-- prunebackups (API2/Storage/PruneBackups.pm, id "<vmid>@<storage>")
+       deletes backups by a retention given in the call: a short one removes
+       every older restore point. Scheduled backup jobs prune inside vzdump. -->
+  <rule id="131228" level="5">
+    <if_sid>131211</if_sid>
+    <field name="pve.task" type="pcre2">^prunebackups$</field>
+    <description>Proxmox VE: backups pruned on $(pve.vmid) by $(pve.user)</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
+  </rule>
+
+  <!-- A cluster created on this node, or this node joined to one: from then on
+       every member's root trusts every other member (API2/ClusterConfig.pm,
+       CLI/pvecm.pm). -->
+  <rule id="131229" level="8">
+    <if_sid>131211</if_sid>
+    <field name="pve.task" type="pcre2">^(?:clustercreate|clusterjoin)$</field>
+    <description>Proxmox VE: $(pve.task) on $(pve.node) by $(pve.user)</description>
   </rule>
 
   <!--
@@ -276,8 +395,58 @@
   </rule>
 
   <!--
+    The cluster file system (pmxcfs). It loses its corosync connection when
+    corosync stops, restarts (package upgrades) or crashes, and then logs a
+    dozen "crit" lines; the quorum one is reported once per event. The
+    corosync crash CVE-2026-35091 / CVE-2026-35092 (malformed packets, fixed
+    in corosync 3.1.10-pve2) would show up here. "[status] notice: received
+    log" (about 20,000 a day on one node) stays at the base rule.
+  -->
+  <rule id="131246" level="0">
+    <decoded_as>jt-pmxcfs</decoded_as>
+    <description>Proxmox VE cluster file system messages</description>
+  </rule>
+
+  <rule id="131245" level="5">
+    <if_sid>131246</if_sid>
+    <match>[quorum] crit: quorum_dispatch failed</match>
+    <description>Proxmox VE: the cluster file system lost its connection to corosync (corosync stopped, restarted or crashed)</description>
+  </rule>
+
+  <!--
+    pve-firewall removes every rule it generated when the service stops
+    (PVE/Service/pve_firewall.pm, "clear PVE-generated firewall rules"). A
+    restart after an upgrade is a HUP and logs "server shutdown (restart)"
+    instead, so this line means the node runs without its firewall until the
+    service starts again, or that the node is shutting down.
+  -->
+  <rule id="131248" level="0">
+    <decoded_as>jt-pve-firewall</decoded_as>
+    <description>Proxmox VE firewall daemon messages</description>
+  </rule>
+
+  <rule id="131247" level="6">
+    <if_sid>131248</if_sid>
+    <match>clear PVE-generated firewall rules</match>
+    <description>Proxmox VE: the firewall service stopped and removed its rules on $(hostname)</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+  </rule>
+
+  <!--
     Ceph health, from the cluster log. Only WRN and above reach the manager:
     the pack's agent group drops [DBG] lines and "overall HEALTH_OK" there.
+    Every monitor node writes the whole cluster log, so each event arrives once
+    per monitor node that runs the agent.
+    Ceph 19.2 src/mon/Monitor.cc logs a health check when it starts ("Health
+    check failed: <summary> (<CODE>)"), when its summary changes ("Health check
+    update:"), and when it ends ("Health check cleared:"). While a warning
+    lasts it also repeats "overall HEALTH_WARN ..." or "Health detail: ..."
+    every ten minutes (mon_health_to_clog_interval), and the clock check repeats
+    "N clock skew 0.07s > max 0.05s". Only the start of a check alerts; the
+    repeats are recorded below the alert level (a 40-minute clock skew on one
+    cluster was 23 alerts at level 7, now 2).
   -->
   <rule id="131250" level="0">
     <decoded_as>jt-ceph-cluster</decoded_as>
@@ -287,12 +456,14 @@
   <rule id="131251" level="7">
     <if_sid>131250</if_sid>
     <field name="ceph.severity" type="pcre2">^WRN$</field>
+    <field name="ceph.message" type="pcre2">^Health check failed: </field>
     <description>Ceph health warning: $(ceph.message)</description>
   </rule>
 
   <rule id="131252" level="10">
     <if_sid>131250</if_sid>
     <field name="ceph.severity" type="pcre2">^ERR$</field>
+    <field name="ceph.message" type="pcre2">^Health check failed: </field>
     <description>[WARN] Ceph health error: $(ceph.message)</description>
   </rule>
 
@@ -308,6 +479,27 @@
     <description>[HIGH] Ceph: $(ceph.message)</description>
   </rule>
 
+  <rule id="131257" level="3">
+    <if_sid>131250</if_sid>
+    <field name="ceph.severity" type="pcre2">^WRN$</field>
+    <field name="ceph.message" type="pcre2">^Health check update: </field>
+    <description>Ceph health warning changed: $(ceph.message)</description>
+  </rule>
+
+  <rule id="131258" level="7">
+    <if_sid>131250</if_sid>
+    <field name="ceph.severity" type="pcre2">^ERR$</field>
+    <field name="ceph.message" type="pcre2">^Health check update: </field>
+    <description>Ceph health error changed: $(ceph.message)</description>
+  </rule>
+
+  <rule id="131256" level="2">
+    <if_sid>131250</if_sid>
+    <field name="ceph.severity" type="pcre2">^(?:WRN|ERR)$</field>
+    <field name="ceph.message" type="pcre2">^(?!Health check (?:failed|update): )</field>
+    <description>Ceph cluster log: $(ceph.message)</description>
+  </rule>
+
   <rule id="131255" level="3">
     <if_sid>131250</if_sid>
     <match type="pcre2">Health check cleared: </match>
@@ -319,8 +511,10 @@
     these lines with the program name jt-pveproxy, so the pack's own decoder reads
     them (see the decoder file for why: the client address). GET and HEAD are
     dropped on the agent (about 240,000 lines a day on one node), and so are
-    successful login ticket requests, which monitoring systems make every few
-    seconds; failed ones (401) are kept.
+    successful login ticket requests from private addresses, which monitoring
+    systems make every few seconds; failed ones (401) and successful ones from
+    public addresses are kept. pveproxy logs the login request before the
+    account is known, so its user field is "-".
   -->
   <rule id="131279" level="0">
     <decoded_as>jt-pveproxy-access</decoded_as>
@@ -350,6 +544,61 @@
     <group>authentication_failures,pve_auth,</group>
   </rule>
 
+  <!--
+    Successful login from a public address (the agent group keeps only these).
+    The web interface renews its ticket with the same request every few
+    minutes, so only the first login from an address alerts (fts: first time
+    seen); later ones are level 3. Private: 10/8, 172.16/12, 192.168/16, 127/8,
+    100.64/10, fc00::/7, fe80::/10 (one negated srcip each: "in none of these").
+  -->
+  <rule id="131268" level="5">
+    <if_sid>131279</if_sid>
+    <if_fts />
+    <protocol>POST</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/access/ticket$</url>
+    <id type="pcre2">^2\d\d$</id>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>Proxmox VE: login to the web interface or API from $(srcip), a public address not seen before</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pve_auth,</group>
+  </rule>
+
+  <rule id="131269" level="3">
+    <if_sid>131279</if_sid>
+    <protocol>POST</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/access/ticket$</url>
+    <id type="pcre2">^2\d\d$</id>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>Proxmox VE: login to the web interface or API from the public address $(srcip)</description>
+    <group>authentication_success,pve_auth,</group>
+  </rule>
+
+  <rule id="131270" level="12" timeframe="600">
+    <if_sid>131268,131269</if_sid>
+    <if_matched_sid>131267</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] Proxmox VE: login from $(srcip) right after repeated failed logins from that address</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pve_auth,</group>
+  </rule>
+
   <!-- Changes count when the answer was a success. -->
   <rule id="131260" level="8">
     <if_sid>131279</if_sid>
@@ -369,6 +618,18 @@
     <description>[WARN] Proxmox VE API: an API token was created or changed ($(protocol) $(url)) from $(srcip)</description>
     <mitre>
       <id>T1098.001</id>
+    </mitre>
+    <group>pve_api,</group>
+  </rule>
+
+  <!-- DELETE /access/tfa/{userid}/{id} (API2/TFA.pm): a second factor removed. -->
+  <rule id="131276" level="10">
+    <if_sid>131260</if_sid>
+    <protocol>DELETE</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/access/tfa/[^/]+/[^/?]+</url>
+    <description>[WARN] Proxmox VE API: a second factor was removed ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1556.006</id>
     </mitre>
     <group>pve_api,</group>
   </rule>
@@ -397,12 +658,28 @@
     <group>pve_api,</group>
   </rule>
 
+  <!-- The datacenter firewall options are where the firewall is switched on
+       and off for the whole cluster (the request body is not logged). -->
+  <rule id="131277" level="8">
+    <if_sid>131263</if_sid>
+    <protocol>PUT</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/cluster/firewall/options$</url>
+    <description>Proxmox VE API: datacenter firewall options changed (this is where it is switched off) from $(srcip)</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>pve_api,</group>
+  </rule>
+
   <rule id="131264" level="5">
     <if_sid>131279</if_sid>
     <id type="pcre2">^2\d\d$</id>
     <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
     <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/storage/[^/]+/(?:upload|download-url)</url>
     <description>Proxmox VE API: file uploaded to storage ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
     <group>pve_api,</group>
   </rule>
 
@@ -410,9 +687,280 @@
     <if_sid>131279</if_sid>
     <id type="pcre2">^2\d\d$</id>
     <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
-    <url type="pcre2">^/api2/(?:json|extjs)/(?:cluster/(?:backup|ha|replication|sdn|options|acme|jobs)|storage(?:/|$)|nodes/[^/]+/(?:dns|hosts|time|certificates|subscription))</url>
+    <url type="pcre2">^/api2/(?:json|extjs)/(?:cluster/(?:backup|ha|replication|sdn|options|acme|jobs|notifications|mapping|metrics)|storage(?:/|$)|nodes/[^/]+/(?:dns|hosts|time|certificates|subscription|apt/repositories))</url>
     <description>Proxmox VE API: cluster configuration changed ($(protocol) $(url)) from $(srcip)</description>
     <group>pve_api,</group>
+  </rule>
+
+  <rule id="131272" level="8">
+    <if_sid>131265</if_sid>
+    <protocol>DELETE</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/cluster/backup/[^/?]+</url>
+    <description>Proxmox VE API: a backup job was deleted ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
+    <group>pve_api,</group>
+  </rule>
+
+  <!-- DELETE /nodes/{node}/storage/{storage}/content/{volume} with a backup
+       volume ("<storage>:backup/...", URL-encoded by the web interface). -->
+  <rule id="131271" level="8">
+    <if_sid>131279</if_sid>
+    <id type="pcre2">^2\d\d$</id>
+    <protocol>DELETE</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/storage/[^/]+/content/[^/?]*?(?::|%3[Aa])backup(?:/|%2[Ff])</url>
+    <description>Proxmox VE API: a backup was deleted ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
+    <group>pve_api,</group>
+  </rule>
+
+  <!-- QEMU guest agent calls (API2/Qemu/Agent.pm): run a command or write a
+       file inside the guest as its root/SYSTEM, or set a guest OS password.
+       CVE-2024-21545 used agent/exec to read host files. -->
+  <rule id="131273" level="6">
+    <if_sid>131279</if_sid>
+    <id type="pcre2">^2\d\d$</id>
+    <protocol>POST</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/qemu/\d+/agent/(?:exec|file-write)$</url>
+    <description>Proxmox VE API: command or file sent into a guest through its agent ($(url)) by $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1651</id>
+    </mitre>
+    <group>pve_api,</group>
+  </rule>
+
+  <rule id="131274" level="8">
+    <if_sid>131279</if_sid>
+    <id type="pcre2">^2\d\d$</id>
+    <protocol>POST</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/qemu/\d+/agent/set-user-password$</url>
+    <description>Proxmox VE API: a guest OS password was set through the guest agent ($(url)) by $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>pve_api,</group>
+  </rule>
+
+  <!--
+    Cluster log messages that are not tasks (decoder jt-pvedaemon-guest-config
+    under pvedaemon, jt-pve-cluster-msg for the command-line tools).
+  -->
+  <rule id="131280" level="0">
+    <decoded_as>jt-pve-cluster-msg</decoded_as>
+    <description>Proxmox VE cluster log message</description>
+  </rule>
+
+  <!--
+    "update VM <vmid>: -<option> <value> ..." (qemu-server API2/Qemu.pm, the
+    options sorted, only cipassword hidden). A hookscript runs on the host as
+    root at every start and stop of the guest; it must be a <storage>:snippets/
+    volume (PVE/GuestHelpers.pm). "args" passes raw options to QEMU (root@pam
+    only) and can attach host files and devices. Container configuration is not
+    logged by Proxmox VE at all; see the file integrity rules below.
+    The description is not printed: on some sites it holds passwords.
+  -->
+  <rule id="131281" level="10">
+    <if_sid>87200,131280</if_sid>
+    <field name="pve.params" type="pcre2">(?:^|\s)-hookscript\s+[^\s:]+:snippets/\S+</field>
+    <description>[WARN] Proxmox VE: hookscript set on VM $(pve.vmid) by $(pve.actor), it runs as root on the host</description>
+    <mitre>
+      <id>T1546</id>
+    </mitre>
+  </rule>
+
+  <rule id="131282" level="8">
+    <if_sid>87200,131280</if_sid>
+    <field name="pve.params" type="pcre2">(?:^|\s)-args\s+-\S</field>
+    <description>Proxmox VE: raw QEMU arguments set on VM $(pve.vmid) by $(pve.actor)</description>
+  </rule>
+
+  <!-- pve-access-control API2/AccessControl.pm: "changed password for user
+       '<userid>'", always logged as root@pam whoever made the change.
+       PSA-2026-00050-1 let users change other users' passwords before
+       libpve-access-control 9.1.2. -->
+  <rule id="131283" level="8">
+    <if_sid>87200,131280</if_sid>
+    <match>changed password for user 'root@pam'</match>
+    <description>Proxmox VE: the root@pam password was changed</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131284" level="5">
+    <if_sid>87200,131280</if_sid>
+    <match type="pcre2">changed password for user '(?!root@pam')[^']+'</match>
+    <description>Proxmox VE: password of an account was changed</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!-- pve-manager API2/ClusterConfig.pm, on the node that accepted the join. -->
+  <rule id="131285" level="10">
+    <if_sid>87200,131280</if_sid>
+    <match type="pcre2">adding node \S+ to cluster</match>
+    <description>[WARN] Proxmox VE: a node was added to the cluster</description>
+  </rule>
+
+  <rule id="131286" level="6">
+    <if_sid>87200,131280</if_sid>
+    <match type="pcre2">deleting node \S+ from cluster</match>
+    <description>Proxmox VE: a node was removed from the cluster</description>
+  </rule>
+
+  <!-- API2/OpenId.pm logs "successful openid auth for user '...'", which the
+       built-in 87203 does not match. Recorded like any other routine login. -->
+  <rule id="131287" level="2">
+    <if_sid>87200</if_sid>
+    <match>successful openid auth for user '</match>
+    <description>Proxmox VE: login through an OpenID realm</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!--
+    First change made by an account from an address (fts on account and
+    address of the access log). A polling integration or an administrator's
+    workstation alerts once, ever; a stolen ticket or token used from somewhere
+    new shows up. Only requests that change something reach the manager, and a
+    change that matches one of the rules above is reported by that rule.
+  -->
+  <rule id="131289" level="5">
+    <if_sid>131279</if_sid>
+    <if_fts />
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <id type="pcre2">^2\d\d$</id>
+    <user>^root@pam$</user>
+    <description>Proxmox VE API: root@pam made a change from $(srcip) for the first time</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>pve_api,</group>
+  </rule>
+
+  <rule id="131288" level="3">
+    <if_sid>131279</if_sid>
+    <if_fts />
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <id type="pcre2">^2\d\d$</id>
+    <user type="pcre2">^(?!root@pam$|-$).+</user>
+    <description>Proxmox VE API: $(dstuser) made a change from $(srcip) for the first time</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>pve_api,</group>
+  </rule>
+
+  <!--
+    File integrity of /etc/pve. Every Linux agent watches /etc by default, and
+    /etc/pve is pmxcfs, a database exposed as a file system: it gives a file a
+    new inode number when it rewrites it, touches modification times, keeps
+    status files (.vmlist, .rrd, .version, .clusterlog, .members) that change
+    all the time, and writes through temporary .tmp.N files. The HA stack
+    rewrites its state files (lrm_status, ha/manager_status) every ten seconds:
+    on one cluster 79 per cent of all FIM alerts until the agents ignored them,
+    which the agent group now does as well. vzdump adds and
+    removes "lock: backup" in every guest's configuration at each backup.
+    Measured on one cluster, 4 days: about 2,500 FIM alerts a day from /etc/pve
+    at level 5 and 7 (870 without any content change, 190 temporary files, 50
+    status files, 1,220 guest configurations), and the daily rotation of the
+    ticket signing key. They are recorded below the alert level, which leaves
+    the files that matter: tokens, users, realms, second factors, root's SSH
+    keys, the cluster CA, corosync.conf, firewall and backup jobs.
+    A cluster-wide file is reported by every node: in real time by the node
+    that wrote it, by the others at their next scheduled scan.
+  -->
+  <rule id="131290" level="0">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/etc/pve/</field>
+    <field name="changed_fields" type="pcre2">^(?:inode|mtime)(?:,(?:inode|mtime))?$</field>
+    <description>Proxmox VE: $(file) renumbered or touched by the cluster file system, content unchanged</description>
+  </rule>
+
+  <rule id="131291" level="0">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/etc/pve/(?:\.(?:vmlist|rrd|version|clusterlog|members|debug)$|.+\.tmp\.\d+$|nodes/[^/]+/lrm_status$|ha/(?:manager_status|crm_commands)$)</field>
+    <description>Proxmox VE: cluster file system status, HA state or temporary file $(file)</description>
+  </rule>
+
+  <rule id="131292" level="2">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/etc/pve/(?:nodes/[^/]+/(?:qemu-server|lxc|openvz)/\d+\.conf$|priv/authkey\.key$|authkey\.pub(?:\.old)?$)</field>
+    <description>Proxmox VE: routine change of $(file) (guest configuration or the daily key rotation)</description>
+  </rule>
+
+  <rule id="131294" level="10">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/etc/pve/(?:priv/(?:token\.cfg|authorized_keys|pve-root-ca\.key)|pve-root-ca\.pem)$</field>
+    <field name="changed_fields" type="pcre2">size|md5|sha1|sha256</field>
+    <description>[WARN] Proxmox VE: $(file) changed (API token secrets, the cluster-wide root SSH keys or the cluster CA)</description>
+    <mitre>
+      <id>T1098.001</id>
+      <id>T1098.004</id>
+    </mitre>
+  </rule>
+
+  <rule id="131295" level="8">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/etc/pve/corosync\.conf$</field>
+    <field name="changed_fields" type="pcre2">size|md5|sha1|sha256</field>
+    <description>Proxmox VE: the cluster configuration (corosync.conf) changed</description>
+  </rule>
+
+  <rule id="131296" level="8">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/etc/pve/(?:user|domains)\.cfg$</field>
+    <field name="changed_fields" type="pcre2">size|md5|sha1|sha256</field>
+    <description>Proxmox VE: $(file) changed (users, groups, permissions, tokens or authentication realms)</description>
+    <mitre>
+      <id>T1098</id>
+      <id>T1556</id>
+    </mitre>
+  </rule>
+
+  <rule id="131297" level="6">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/etc/pve/priv/(?:tfa|shadow)\.cfg$</field>
+    <field name="changed_fields" type="pcre2">size|md5|sha1|sha256</field>
+    <description>Proxmox VE: $(file) changed (second factors or pve realm passwords)</description>
+    <mitre>
+      <id>T1556.006</id>
+    </mitre>
+  </rule>
+
+  <rule id="131298" level="6">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/etc/pve/(?:firewall/cluster\.fw|nodes/[^/]+/host\.fw)$</field>
+    <field name="changed_fields" type="pcre2">size|md5|sha1|sha256</field>
+    <description>Proxmox VE: datacenter or node firewall configuration changed ($(file))</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+  </rule>
+
+  <rule id="131299" level="6">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/etc/pve/(?:jobs\.cfg|vzdump\.cron)$</field>
+    <field name="changed_fields" type="pcre2">size|md5|sha1|sha256</field>
+    <description>Proxmox VE: backup jobs changed ($(file))</description>
+    <mitre>
+      <id>T1490</id>
+    </mitre>
+  </rule>
+
+  <!-- Snippets (the agent group watches /var/lib/vz/snippets; network storages
+       mount under /mnt/pve). Hookscripts and cloud-init user data must live
+       here, and run as root on the host or inside the guest. -->
+  <rule id="131293" level="6">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?:/var/lib/vz|/mnt/pve/[^/]+)/snippets/[^/]+$</field>
+    <description>Proxmox VE: snippet $(file) added or changed (hookscripts and cloud-init files run from here)</description>
+    <mitre>
+      <id>T1546</id>
+    </mitre>
   </rule>
 
 </group>

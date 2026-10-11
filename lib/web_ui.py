@@ -732,6 +732,11 @@ HTML_TEMPLATE = '''
         .pack-files table { font-size: 13px; }
         .rule-type-badge.custom { background: #f39c12; color: #000; }
         .rule-type-badge.builtin { background: #555; color: #ccc; }
+        .rule-type-badge.pack-installed { background: #28a745; color: #fff; }
+        .rule-type-badge.pack-update { background: #fd7e14; color: #000; }
+        .rule-type-badge.pack-untracked { background: #3a4a6a; color: #ddd; }
+        .pack-ver-new { color: #fd7e14; font-weight: bold; }
+        .pack-ver-note { display: block; color: #888; font-size: 11px; }
         .rules-group-tags { display: flex; flex-wrap: wrap; gap: 2px; max-width: 250px; }
         .rules-group-tag { display: inline-block; padding: 1px 4px; border-radius: 3px; font-size: 10px; background: #0f3460; color: #4fc3f7; white-space: nowrap; }
         .rules-toolbar-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -1324,12 +1329,13 @@ HTML_TEMPLATE = '''
                         <th style="width:230px;">Pack</th>
                         <th>Description</th>
                         <th style="width:120px;">Rule IDs</th>
-                        <th style="width:80px;">Version</th>
-                        <th style="width:110px;">Status</th>
+                        <th style="width:90px;" title="Version installed on this Wazuh manager">Installed version</th>
+                        <th style="width:90px;" title="Version shipped with this jt-wazuh-mgr">Available version</th>
+                        <th style="width:120px;">Status</th>
                         <th style="width:200px;">Actions</th>
                     </tr></thead>
                     <tbody id="packsBody">
-                        <tr><td colspan="6" style="text-align:center;color:#888;padding:40px;">Loading...</td></tr>
+                        <tr><td colspan="7" style="text-align:center;color:#888;padding:40px;">Loading...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -6664,29 +6670,41 @@ HTML_TEMPLATE = '''
         async function refreshPacks() {
             const body = document.getElementById('packsBody');
             const status = document.getElementById('packsStatus');
-            body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;"><div class="loading"><div class="spinner"></div>Loading...</div></td></tr>';
+            body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;"><div class="loading"><div class="spinner"></div>Loading...</div></td></tr>';
             const data = await api('/packs');
             if (!data || data.error) {
-                body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#e94560;padding:30px;">' +
+                body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#e94560;padding:30px;">' +
                     escapeHtml((data && data.error) || 'Failed to load packs') + '</td></tr>';
                 return;
             }
             packsData = data.packs || [];
             const installed = packsData.filter(p => p.installed).length;
-            status.textContent = packsData.length + ' packs, ' + installed + ' installed';
+            const updates = packsData.filter(p => p.update_available).length;
+            status.innerHTML = '<span>' + packsData.length + ' packs, ' + installed + ' installed</span>' +
+                (updates ? ' &middot; <span class="pack-ver-new">' + updates + ' update(s) available</span>' : '');
             if (!packsData.length) {
-                body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;padding:30px;">No packs available.</td></tr>';
+                body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;padding:30px;">No packs available.</td></tr>';
                 return;
             }
             body.innerHTML = packsData.map(p => {
-                const badge = p.installed
-                    ? '<span class="rule-type-badge custom">Installed</span>'
-                    : (p.untracked
-                        ? '<span class="rule-type-badge custom" title="Files are in place but there is no install record"><span>Installed (untracked)</span></span>'
-                        : '<span class="rule-type-badge builtin">Not installed</span>');
-                const update = p.update_available
-                    ? ' <span style="color:#fd7e14;font-size:11px;">update ' + escapeHtml(p.installed_version || '') + ' &rarr; ' + escapeHtml(p.version) + '</span>'
-                    : '';
+                const vs = p.version_status || (p.installed ? 'current' : (p.untracked ? 'untracked' : 'not-installed'));
+                const badge = {
+                    'update': '<span class="rule-type-badge pack-update" title="This jt-wazuh-mgr ships a newer version"><span>Update available</span></span>',
+                    'current': '<span class="rule-type-badge pack-installed">Installed</span>',
+                    'newer': '<span class="rule-type-badge pack-installed">Installed</span>',
+                    'untracked': '<span class="rule-type-badge pack-untracked" title="Files are in place but there is no install record"><span>Installed (untracked)</span></span>',
+                }[vs] || '<span class="rule-type-badge builtin">Not installed</span>';
+                // the version on the manager, then the one this tool can install
+                let have = '<span style="color:#666;">&mdash;</span>';
+                if (p.installed_version) {
+                    have = escapeHtml(p.installed_version);
+                    if (vs === 'untracked') have += '<span class="pack-ver-note">files match, not recorded</span>';
+                } else if (vs === 'untracked') {
+                    have = '<span style="color:#888;">Unknown</span><span class="pack-ver-note">files differ from this version</span>';
+                }
+                let ship = escapeHtml(p.version);
+                if (vs === 'update') ship = '<span class="pack-ver-new">' + ship + '</span>';
+                if (vs === 'newer') ship += '<span class="pack-ver-note">older than installed</span>';
                 const actions =
                     '<button class="btn btn-sm" onclick="showPackDetail(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-file-text"/></svg>Details</button>' +
                     (p.has_setup
@@ -6703,7 +6721,8 @@ HTML_TEMPLATE = '''
                         '<span style="color:#888;font-size:11px;font-family:monospace;">' + escapeHtml(p.id) + '</span></td>' +
                     '<td style="font-size:12px;color:#ccc;">' + escapeHtml(packLang(p.summary, p.summary_zh)) + '</td>' +
                     '<td style="font-family:monospace;font-size:12px;">' + escapeHtml(p.rule_id_range) + '</td>' +
-                    '<td>' + escapeHtml(p.version) + update + '</td>' +
+                    '<td style="font-family:monospace;">' + have + '</td>' +
+                    '<td style="font-family:monospace;">' + ship + '</td>' +
                     '<td>' + badge + '</td>' +
                     '<td>' + actions + '</td></tr>';
             }).join('');
@@ -6817,6 +6836,25 @@ HTML_TEMPLATE = '''
                 ' &nbsp; rules ' + d.rule_count + ' &nbsp; ID range ' + escapeHtml(m.rule_id_range || '') +
                 (tested ? ' &nbsp; <span>Tested with Wazuh</span> ' + escapeHtml(tested) : '') +
                 '<br>' + escapeHtml(m.author || '') + ' &nbsp; ' + escapeHtml(m.license || '') + '</div></div>';
+
+            if (d.installed) {
+                const vs = d.version_status;
+                const when = (d.state && (d.state.updated_at || d.state.installed_at)) ? ' &nbsp; <span style="color:#888;">' + escapeHtml(String(d.state.updated_at || d.state.installed_at)) + '</span>' : '';
+                if (vs === 'update') {
+                    html += '<div class="alert alert-warning" style="display:flex;align-items:center;gap:10px;">' +
+                        '<div style="flex:1;"><div><span>Update available</span>: ' +
+                        '<span>Installed version</span> <code>' + escapeHtml(d.installed_version || '') + '</code> &rarr; ' +
+                        '<span>Available version</span> <code>' + escapeHtml(m.version || '') + '</code>' + when + '</div></div>' +
+                        '<button class="btn btn-sm btn-warning" onclick="updatePack(\\'' + escapeHtml(packId) + '\\')"><svg class="icon"><use href="#icon-refresh"/></svg><span>Update</span></button></div>';
+                } else if (vs === 'newer') {
+                    html += '<div class="alert alert-info"><span>The manager has a newer version of this pack than this jt-wazuh-mgr ships.</span> ' +
+                        '<span>Installed version</span> <code>' + escapeHtml(d.installed_version || '') + '</code>, ' +
+                        '<span>Available version</span> <code>' + escapeHtml(m.version || '') + '</code>' + when + '</div>';
+                } else {
+                    html += '<div class="pack-meta" style="margin-bottom:10px;"><span>Installed version</span> <code>' +
+                        escapeHtml(d.installed_version || '') + '</code> &nbsp; <span>Up to date</span>' + when + '</div>';
+                }
+            }
 
             const pres = d.presence || {};
             if (!d.installed && pres.present) {
@@ -8107,6 +8145,17 @@ _I18N_SCRIPT = r"""
       'Rule ID conflict with rules in other files:': '與其他檔案中的規則 ID 衝突：',
       'Update': '更新',
       'Update pack': '更新套件',
+      'Installed version': '已安裝版本',
+      'Available version': '可用版本',
+      'Version installed on this Wazuh manager': '這台 Wazuh manager 上安裝的版本',
+      'Version shipped with this jt-wazuh-mgr': '這份 jt-wazuh-mgr 內附的版本',
+      'Update available': '可更新',
+      'This jt-wazuh-mgr ships a newer version': '這份 jt-wazuh-mgr 內附較新的版本',
+      'files match, not recorded': '檔案相同，未登記',
+      'files differ from this version': '檔案與此版本不同',
+      'older than installed': '比已安裝的舊',
+      'The manager has a newer version of this pack than this jt-wazuh-mgr ships.': 'Manager 上的套件版本比這份 jt-wazuh-mgr 內附的還新。',
+      'Up to date': '已是最新版',
       'Rules of this pack that this manager overrides (overwrite="yes"), which stays in effect:': '這台 manager 以 overwrite="yes" 改寫了本套件的這些規則，改寫會繼續有效：',
       'Files on the manager': 'Manager 上的檔案',
       'Will be updated': '將更新',
@@ -8859,6 +8908,17 @@ _I18N_SCRIPT = r"""
       'Rule ID conflict with rules in other files:': '他のファイルのルール ID と競合しています：',
       'Update': '更新',
       'Update pack': 'パックを更新',
+      'Installed version': 'インストール済みバージョン',
+      'Available version': '利用可能なバージョン',
+      'Version installed on this Wazuh manager': 'この Wazuh マネージャーにインストールされているバージョン',
+      'Version shipped with this jt-wazuh-mgr': 'この jt-wazuh-mgr に同梱されているバージョン',
+      'Update available': '更新あり',
+      'This jt-wazuh-mgr ships a newer version': 'この jt-wazuh-mgr にはより新しいバージョンが同梱されています',
+      'files match, not recorded': 'ファイル一致・未登録',
+      'files differ from this version': 'このバージョンとファイルが異なる',
+      'older than installed': 'インストール済みより古い',
+      'The manager has a newer version of this pack than this jt-wazuh-mgr ships.': 'マネージャー上のパックは、この jt-wazuh-mgr 同梱のバージョンより新しいものです。',
+      'Up to date': '最新です',
       'Rules of this pack that this manager overrides (overwrite="yes"), which stays in effect:': 'このマネージャーが overwrite="yes" で上書きしているこのパックのルール（上書きは引き続き有効です）：',
       'Files on the manager': 'マネージャー上のファイル',
       'Will be updated': '更新されます',
@@ -9351,6 +9411,7 @@ _I18N_SCRIPT = r"""
       [/^Ruleset reloaded on (\d+) node\(s\)$/, function (m) { return '已在 ' + m[1] + ' 個節點重新載入規則集'; }],
       [/^(\d+) difference\(s\) found$/, function (m) { return '發現 ' + m[1] + ' 處差異'; }],
       [/^(\d+) packs, (\d+) installed$/, function (m) { return m[1] + ' 個套件，已安裝 ' + m[2] + ' 個'; }],
+      [/^(\d+) update\(s\) available$/, function (m) { return '有 ' + m[1] + ' 個可更新'; }],
       [/^Install pack "(.+)"\? Files are backed up and rolled back if the ruleset fails to validate\.$/, function (m) { return '要安裝套件「' + m[1] + '」嗎？檔案會先備份，規則集驗證失敗時自動回滾。'; }],
       [/^Remove pack "(.+)"\? Files it replaced are restored\.$/, function (m) { return '要移除套件「' + m[1] + '」嗎？被它覆蓋的檔案會還原。'; }],
       [/^Rule ID conflict: (.+)\. Update anyway\?$/, function (m) { return '規則 ID 衝突：' + m[1] + '。仍要更新嗎？'; }],
@@ -9480,6 +9541,7 @@ _I18N_SCRIPT = r"""
       [/^Ruleset reloaded on (\d+) node\(s\)$/, function (m) { return m[1] + ' 個のノードでルールセットを再読み込みしました'; }],
       [/^(\d+) difference\(s\) found$/, function (m) { return m[1] + ' 件の差分が見つかりました'; }],
       [/^(\d+) packs, (\d+) installed$/, function (m) { return 'パック ' + m[1] + ' 件、うち ' + m[2] + ' 件インストール済み'; }],
+      [/^(\d+) update\(s\) available$/, function (m) { return m[1] + ' 件の更新あり'; }],
       [/^Install pack "(.+)"\? Files are backed up and rolled back if the ruleset fails to validate\.$/, function (m) { return 'パック「' + m[1] + '」をインストールしますか？ ファイルはバックアップされ、ルールセットの検証に失敗した場合は自動的に元に戻されます。'; }],
       [/^Remove pack "(.+)"\? Files it replaced are restored\.$/, function (m) { return 'パック「' + m[1] + '」を削除しますか？ 上書きされていたファイルは復元されます。'; }],
       [/^Rule ID conflict: (.+)\. Update anyway\?$/, function (m) { return 'ルール ID が競合しています：' + m[1] + '。それでも更新しますか？'; }],
@@ -14251,6 +14313,27 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         """Numeric parts of a version, so 3.10 sorts after 3.9."""
         return tuple(int(x) for x in re.findall(r'\d+', str(version or ''))) or (0,)
 
+    def _pack_version_status(state, manifest, presence):
+        """Where the copy on this manager stands against the one this tool ships.
+
+        'update': an older version is installed; 'current': the same one;
+        'newer': the manager has a later version than this tool (the tool was
+        rolled back, or another copy installed it); 'untracked': the files are
+        in place without an install record; 'not-installed'.
+        Trailing zeros do not count, so 1.2 and 1.2.0 are the same version.
+        """
+        if not state:
+            return 'untracked' if presence and presence.get('present') else 'not-installed'
+
+        def norm(v):
+            key = list(_version_key(v))
+            while len(key) > 1 and key[-1] == 0:
+                key.pop()
+            return tuple(key)
+
+        have, ship = norm(state.get('version')), norm(manifest.get('version'))
+        return 'update' if ship > have else ('newer' if ship < have else 'current')
+
     def _original_backup(state, dest_rel):
         """Where the site's own file lives that the pack replaced at dest_rel, if any."""
         path = (state.get('originals') or {}).get(dest_rel)
@@ -14688,6 +14771,9 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     continue
                 state = _installed_state(entry)
                 presence = _pack_presence(manifest) if not state else None
+                version_status = _pack_version_status(state, manifest, presence)
+                untracked_identical = bool(presence and presence['total']
+                                           and presence['identical'] == presence['total'])
                 packs.append({
                     'id': manifest.get('id', entry),
                     'name': manifest.get('name', entry),
@@ -14700,19 +14786,24 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     'rule_id_range': manifest.get('rule_id_range', ''),
                     'file_count': len(manifest.get('files', [])),
                     'installed': bool(state),
-                    'installed_version': (state or {}).get('version'),
+                    # the version on the manager, from its install record; for
+                    # files in place without one, only known when every file
+                    # matches the version shipped here
+                    'installed_version': (state or {}).get('version') or
+                                         (manifest.get('version') if untracked_identical else None),
                     'installed_at': (state or {}).get('installed_at'),
-                    'update_available': bool(state) and state.get('version') != manifest.get('version'),
+                    'version_status': version_status,
+                    'update_available': version_status == 'update',
                     # files in place but no install record: copied by hand, or
                     # installed before the tool kept records
                     'untracked': bool(presence and presence['present']),
-                    'untracked_identical': bool(presence and presence['total']
-                                                and presence['identical'] == presence['total']),
+                    'untracked_identical': untracked_identical,
                     'has_setup': bool(manifest.get('setup')),
                     'active_response_count': len(_ar_definitions(manifest)),
                     'active_response_enabled': len((state or {}).get('active_response') or {}),
                 })
-            return jsonify({'packs': packs, 'total': len(packs)})
+            return jsonify({'packs': packs, 'total': len(packs),
+                            'updates': sum(1 for p in packs if p['update_available'])})
         except Exception as e:
             logger.error(f"PACK LIST ERROR: {e}")
             return jsonify({'error': str(e)}), 500
@@ -14754,6 +14845,8 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 'conflicts': conflicts,
                 'overrides': overrides,
                 'installed': bool(state),
+                'installed_version': (state or {}).get('version'),
+                'version_status': _pack_version_status(state, manifest, _pack_presence(manifest)),
                 'undeclared_nodes': (state or {}).get('undeclared_nodes') or [],
                 'state': state,
                 'presence': _pack_presence(manifest),

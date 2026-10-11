@@ -11,8 +11,14 @@
   do not reach the Odoo logins; files that sort after this one do.
 
   Message texts are the ones in the Odoo source, 16.0 to 19.0 (res_users.py,
-  service/db.py, web/controllers/database.py, auth_totp, auth_signup,
-  ir_module.py, ir_model.py, ir_rule.py, ir_cron.py, models.py, netsvc.py).
+  service/db.py, web/controllers/database.py, web/controllers/export.py,
+  auth_totp, auth_signup, ir_module.py, base_import_module, ir_model.py,
+  ir_rule.py, ir_cron.py, ir_actions.py, tools/safe_eval.py, modules/loading.py,
+  models.py, http.py, service/server.py, netsvc.py, rpc/controllers in 19.0).
+  Odoo publishes its advisories as GitHub issues labelled Security
+  (https://github.com/odoo/odoo/issues?q=label%3ASecurity); none is in the CISA
+  KEV catalog (checked 2026-10-11). SigmaHQ, Elastic detection-rules, Splunk
+  security_content and the Wazuh ruleset have no Odoo content to compare with.
 
   The two top-level rules are level 0: Wazuh tries top-level rules at level 0
   first and the rest from the highest level down (measured on 4.14.7), so a
@@ -23,13 +29,18 @@
     132300-132304  bases: file and syslog, request lines, errors, other records
     132305-132321, 132326, 132327  logins, Odoo's login throttle, password attacks
     132322-132325, 132328          password reset, new device and signup mails
-    132330-132339  two-factor authentication, API keys
-    132340-132359  database manager
-    132360-132369  modules
-    132370-132379  access denials, deletions
-    132380-132389  errors, scheduled jobs, server start
-    132390-132394  request lines: scanning
+    132329, 132339                 JSON-2 API calls refused for a missing or wrong key (19.0)
+    132330-132338  two-factor authentication, API keys
+    132340-132357  database manager
+    132358         bank accounts changed
+    132360-132367  modules, module upload, demo data
+    132368, 132369 configuration changes through the web client and the APIs
+    132370-132379, 132388  access denials, deletions, exports
+    132380-132387  errors, code refused by the sandbox, scheduled jobs, server start,
+                   forbidden server actions
+    132390, 132391, 132394  request lines: scanning, deprecated RPC (19.0)
     132395-132399  the web server in front of Odoo (combined log format)
+    Free: 132359, 132389, 132392, 132393.
 -->
 
 <group name="odoo,jt_odoo,">
@@ -84,7 +95,7 @@
            first time this account uses the address  level 3, once (fts)
          administrator (Odoo's built-in "admin")  level 3, external 8
          any account from a public address        level 5
-         Odoo's system and template accounts      level 10
+         Odoo's system, template and demo accounts  level 10
          right after failed logins                level 12 / 13
        The lists only tune this: jt-odoo-service-accounts silences an
        account's successful logins, jt-odoo-admin-accounts adds logins
@@ -175,11 +186,16 @@
   <!-- __system__ (uid 1, the superuser), public, default and portaltemplate
        are created inactive and without a password, and Odoo's login search
        skips inactive users: a successful login means someone activated the
-       account and gave it a password. -->
+       account and gave it a password. demo and portal are the accounts demo
+       data creates, with the passwords demo and portal
+       (odoo/addons/base/data/res_users_demo.xml, 16.0 to 19.0); Odoo's
+       deployment guide: "Do not install demo data on internet-facing servers.
+       Databases with demo data contain default logins and passwords"
+       (CVE-2021-45111 let a low-privileged user load demo data). -->
   <rule id="132307" level="10">
     <if_sid>132312,132313</if_sid>
-    <user type="pcre2">^(?:__system__|public|default|portaltemplate)$</user>
-    <description>[WARN] Odoo: login of the built-in account $(dstuser) from $(srcip), which is inactive and has no password by default</description>
+    <user type="pcre2">^(?:__system__|public|default|portaltemplate|demo|portal)$</user>
+    <description>[WARN] Odoo: login of the built-in account $(dstuser) from $(srcip): a system or template account (no password by default) or a demo data account (published password)</description>
     <mitre>
       <id>T1078.001</id>
       <id>T1098</id>
@@ -190,7 +206,7 @@
   <!-- Optional tuning: administrators listed in etc/lists/jt-odoo-admin-accounts. -->
   <rule id="132305" level="3">
     <if_sid>132312</if_sid>
-    <user type="pcre2">^(?!(?:admin|__system__|public|default|portaltemplate)$)</user>
+    <user type="pcre2">^(?!(?:admin|__system__|public|default|portaltemplate|demo|portal)$)</user>
     <list field="user" lookup="match_key">etc/lists/jt-odoo-admin-accounts</list>
     <description>Odoo: administrator login of $(dstuser) from $(srcip) to database $(odoo.db)</description>
     <mitre>
@@ -201,7 +217,7 @@
 
   <rule id="132309" level="8">
     <if_sid>132313</if_sid>
-    <user type="pcre2">^(?!(?:admin|__system__|public|default|portaltemplate)$)</user>
+    <user type="pcre2">^(?!(?:admin|__system__|public|default|portaltemplate|demo|portal)$)</user>
     <list field="user" lookup="match_key">etc/lists/jt-odoo-admin-accounts</list>
     <description>Odoo: administrator login of $(dstuser) from the public address $(srcip) to database $(odoo.db)</description>
     <mitre>
@@ -216,7 +232,7 @@
        once. -->
   <rule id="132306" level="3">
     <if_sid>132312</if_sid>
-    <user type="pcre2">^(?!(?:admin|__system__|public|default|portaltemplate)$)</user>
+    <user type="pcre2">^(?!(?:admin|__system__|public|default|portaltemplate|demo|portal)$)</user>
     <list field="user" lookup="not_match_key">etc/lists/jt-odoo-admin-accounts</list>
     <if_fts />
     <description>Odoo: first login of $(dstuser) from $(srcip)</description>
@@ -340,7 +356,28 @@
     <if_sid>132304</if_sid>
     <field name="odoo.message" type="pcre2">^The rate-limited IP address \S+ is classified as private</field>
     <description>Odoo: login throttle hit the private address $(srcip), probably the reverse proxy: check proxy_mode</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
     <group>configuration,</group>
+  </rule>
+
+  <!-- JSON-2 (19.0, /json/2/<model>/<method>, bearer API key). A wrong or
+       missing key is refused with werkzeug's Unauthorized ("Invalid apikey",
+       or "User not authenticated, use an API Key with a Bearer Authorization
+       header.": odoo/addons/base/models/ir_http.py _auth_method_bearer, 19.0).
+       odoo.http does not log an HTTPException, so the request line with 401 is
+       all that remains; a valid key writes no login line at all. One refused
+       call is a broken integration as often as a guess. -->
+  <rule id="132329" level="3">
+    <if_sid>132302</if_sid>
+    <url type="pcre2">^/json/2/</url>
+    <id>^401$</id>
+    <description>Odoo: JSON-2 API call from $(srcip) refused for a missing or wrong API key: $(url)</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failed,</group>
   </rule>
 
   <!-- ==============================================================
@@ -351,6 +388,9 @@
     <if_sid>132304</if_sid>
     <field name="odoo.message" type="pcre2">^Password reset email sent for user </field>
     <description>Odoo: password reset mail sent to $(dstuser)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
     <group>account_changed,</group>
   </rule>
 
@@ -379,6 +419,9 @@
     <if_sid>132304</if_sid>
     <field name="odoo.message" type="pcre2">^Signup email sent for user </field>
     <description>Odoo: account $(dstuser) signed up</description>
+    <mitre>
+      <id>T1136</id>
+    </mitre>
     <group>adduser,</group>
   </rule>
 
@@ -487,6 +530,19 @@
     <group>authentication_failed,</group>
   </rule>
 
+  <!-- Ten refused JSON-2 calls from one address in five minutes: API keys
+       being guessed, or an integration still using a revoked key (its calls
+       all fail either way). -->
+  <rule id="132339" level="10" frequency="10" timeframe="300" ignore="600">
+    <if_matched_sid>132329</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] Odoo: repeated JSON-2 API calls with a missing or wrong API key from $(srcip): key guessing or a revoked key still in use</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_11.4,</group>
+  </rule>
+
   <!-- ==============================================================
        Database manager (/web/database/*, master password protected).
        It can download, drop, restore and create whole databases;
@@ -505,16 +561,92 @@
     <group>web,attack,</group>
   </rule>
 
+  <!-- drop, restore, duplicate, create and change_password answer 303 (a
+       redirect) when they were carried out and 200 (the manager page with an
+       error) when Odoo refused them (web/controllers/database.py, 16.0 to
+       19.0). Backups are below. -->
   <rule id="132341" level="12">
     <if_sid>132340</if_sid>
     <protocol type="pcre2">^POST$</protocol>
-    <url type="pcre2">^/web/database/(?:backup|drop|restore|duplicate|create|change_password)\b</url>
-    <description>[HIGH] Odoo: database manager action $(url) requested from $(srcip) (HTTP $(id))</description>
+    <url type="pcre2">^/web/database/(?:drop|restore|duplicate|create|change_password)\b</url>
+    <description>[HIGH] Odoo: database manager action $(url) requested from $(srcip) (HTTP $(id): 303 means it was carried out, 200 that Odoo showed an error)</description>
     <mitre>
       <id>T1190</id>
       <id>T1485</id>
     </mitre>
     <group>web,attack,</group>
+  </rule>
+
+  <!-- Backups. Many sites back up nightly with curl on the Odoo host or a
+       backup server, so a backup from a private address is level 7, and the
+       first one from each address level 10 (first-time-seen on the address,
+       decoder jt-odoo-dbbackup): a backup from a machine that has never made
+       one before stands out, the routine one does not. From a public address
+       it is level 12: the whole database leaving through the internet. Odoo
+       answers 200 whether the master password was right or not; a wrong one
+       is also rule 132351. CVE-2026-25137 (NixOS packaging: database manager
+       reachable without a master password) names requests to /web/database
+       in the access log as its indicator. -->
+  <rule id="132353" level="7">
+    <if_sid>132340</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/web/database/backup\b</url>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <description>Odoo: database backup requested through the database manager from $(srcip) (HTTP $(id))</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+    <group>web,database,</group>
+  </rule>
+
+  <rule id="132354" level="10">
+    <if_sid>132353</if_sid>
+    <if_fts />
+    <description>[WARN] Odoo: first database backup through the database manager from $(srcip) (HTTP $(id))</description>
+    <mitre>
+      <id>T1005</id>
+      <id>T1190</id>
+    </mitre>
+    <group>web,database,</group>
+  </rule>
+
+  <rule id="132355" level="12">
+    <if_sid>132340</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/web/database/backup\b</url>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <!-- the address must be one: for ::1 or a name the decoder leaves srcip
+         empty, and an empty srcip is "in none of the ranges" -->
+    <field name="odoo.message" type="pcre2">^(?:::ffff:)?(?!::1 )[0-9A-Fa-f.:]+ - - </field>
+    <description>[HIGH] Odoo: database backup requested through the database manager from the public address $(srcip) (HTTP $(id))</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1005</id>
+    </mitre>
+    <group>web,database,attack,</group>
+  </rule>
+
+  <!-- The database selector: Odoo's deployment guide allows it when the rest
+       of /web/database is blocked, and a server with several databases sends
+       users through it. -->
+  <rule id="132356" level="3">
+    <if_sid>132340</if_sid>
+    <protocol type="pcre2">^GET$</protocol>
+    <url type="pcre2">^/web/database/selector\b</url>
+    <description>Odoo: database selector requested from $(srcip)</description>
+    <group>web,</group>
   </rule>
 
   <!-- Five database manager requests from one address in ten minutes: someone
@@ -542,6 +674,21 @@
     </mitre>
   </rule>
 
+  <!-- Ten calls in five minutes from one address: the 2017 mass scan
+       (ODOO-SA-2017-01-27-1) enumerated databases this way, and master
+       password guessing over XML-RPC looks the same. A client library that
+       asks for the server version once per run stays below this. -->
+  <rule id="132357" level="10" frequency="10" timeframe="300" ignore="600">
+    <if_matched_sid>132343</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] Odoo: repeated XML-RPC calls to the database service from $(srcip): database enumeration or master password guessing</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1110.001</id>
+    </mitre>
+    <group>web,attack,</group>
+  </rule>
+
   <!-- What the service did (odoo.service.db, INFO). -->
   <rule id="132344" level="12">
     <if_sid>132304</if_sid>
@@ -553,10 +700,12 @@
     <group>database,</group>
   </rule>
 
-  <rule id="132345" level="10">
+  <!-- A dump has no address: the backup request line before it (132353 to
+       132355) says where it went. Routine nightly backups write one each. -->
+  <rule id="132345" level="7">
     <if_sid>132304</if_sid>
     <field name="odoo.message" type="pcre2">^DUMP DB: </field>
-    <description>[WARN] Odoo: database $(odoo.target_db) dumped (backup downloaded or written)</description>
+    <description>Odoo: database $(odoo.target_db) dumped (backup downloaded or written)</description>
     <mitre>
       <id>T1005</id>
     </mitre>
@@ -594,6 +743,9 @@
     <if_sid>132304</if_sid>
     <field name="odoo.message" type="pcre2">^(?:DROP|RENAME) DB: .* failed:</field>
     <description>Odoo: database drop or rename of $(odoo.target_db) failed</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
     <group>database,</group>
   </rule>
 
@@ -651,6 +803,9 @@
     <if_sid>132304</if_sid>
     <field name="odoo.message" type="pcre2">^ALLOW access to module\.(?:button_upgrade|button_immediate_upgrade) </field>
     <description>Odoo: module upgrade $(odoo.modules) by $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1505</id>
+    </mitre>
     <group>config_changed,</group>
   </rule>
 
@@ -672,6 +827,139 @@
       <id>T1068</id>
     </mitre>
     <group>access_denied,</group>
+  </rule>
+
+  <!-- Module upload over HTTP: /base_import_module/login_upload
+       (addons/base_import_module/controllers/main.py, 16.0 to 19.0: auth none,
+       no CSRF token, takes a login, a password and a zip file). It installs a
+       data module in one request; odoo-bin deploy uses it, and so did the
+       2017 mass compromise (ODOO-SA-2017-01-27-1: admin/admin, then modules
+       installed by "Zip Install"). 200 means the module was imported, 500
+       that the login failed, the account is not an administrator or needs
+       two-factor authentication (the controller answers every error with 500);
+       the login itself is also a login line. -->
+  <rule id="132364" level="12">
+    <if_sid>132302</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/base_import_module/login_upload\b</url>
+    <id>^200$</id>
+    <description>[HIGH] Odoo: module uploaded and imported over HTTP from $(srcip) (/base_import_module/login_upload)</description>
+    <mitre>
+      <id>T1505</id>
+      <id>T1190</id>
+    </mitre>
+    <group>web,attack,config_changed,</group>
+  </rule>
+
+  <rule id="132365" level="8">
+    <if_sid>132302</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/base_import_module/login_upload\b</url>
+    <id type="pcre2">^(?!200$)\d+$</id>
+    <description>Odoo: module upload over HTTP from $(srcip) refused (HTTP $(id): wrong password, not an administrator, or two-factor authentication)</description>
+    <mitre>
+      <id>T1505</id>
+      <id>T1190</id>
+    </mitre>
+    <group>web,attack,</group>
+  </rule>
+
+  <!-- A module imported from a zip file, through the upload above or Apps >
+       Import Module: "Successfully imported module '%s'" (17.0 to 19.0) and
+       "module %s: loading %s" for each data file (16.0 to 19.0, the only trace
+       in 16.0), both from base_import_module; in 16.0 also "Downloading module
+       `%s` from OpenERP Apps" (ir_module.install_from_urls). An imported module
+       can carry views, server actions and scheduled jobs: code that runs
+       inside Odoo. Once per import (ignore 600). -->
+  <rule id="132366" level="10" ignore="600">
+    <if_sid>132304</if_sid>
+    <field name="odoo.logger" type="pcre2">^odoo\.addons\.base(?:_import_module)?\.models\.ir_module$</field>
+    <field name="odoo.message" type="pcre2">^(?:Successfully imported module '|module \S+: loading |Downloading module \x60\S+\x60 from OpenERP Apps)</field>
+    <description>[WARN] Odoo: module code imported from a file or downloaded, database $(odoo.db): $(odoo.message)</description>
+    <mitre>
+      <id>T1505</id>
+    </mitre>
+    <group>config_changed,</group>
+  </rule>
+
+  <!-- "Module %s: loading demo" (odoo/modules/loading.py, 16.0 to 19.0): demo
+       data is going into a database, with the accounts demo/demo and
+       portal/portal. Odoo's deployment guide: "Do not install demo data on
+       internet-facing servers". Up to 18.0 odoo-bin loads demo data unless
+       without_demo is set; 19.0 only with with_demo. Once an hour. -->
+  <rule id="132367" level="8" ignore="3600">
+    <if_sid>132304</if_sid>
+    <field name="odoo.logger" type="pcre2">^odoo\.modules\.loading$</field>
+    <field name="odoo.message" type="pcre2">^Module \S+: loading demo\s*$</field>
+    <description>Odoo: demo data loaded into database $(odoo.db) ($(odoo.message)): it creates accounts with published passwords</description>
+    <mitre>
+      <id>T1078.001</id>
+      <id>T1136</id>
+    </mitre>
+    <group>config_changed,</group>
+  </rule>
+
+  <!-- ==============================================================
+       Configuration changes through the web client and the APIs.
+       The web client calls /web/dataset/call_kw/<model>/<method> (and
+       call_button) for every ORM call; JSON-2 (19.0) is
+       /json/2/<model>/<method>; 19.0 appends #<model>.<method> to
+       XML-RPC and JSON-RPC request lines. Up to 18.0 the web client's
+       path is chosen by the client (the body is what runs) and XML-RPC
+       lines carry no model. The line has the address, not the user.
+       2xx/3xx only: a refused JSON-2 call (4xx) changed nothing.
+       ============================================================== -->
+
+  <!-- Code and access control: server actions, automation rules and
+       scheduled jobs run Python in the safe_eval sandbox (the 2021 sandbox
+       escapes CVE-2021-44547, -23186 and -23166 needed only such a record),
+       views are QWeb templates, and access rights, record rules and groups
+       decide who sees what. -->
+  <rule id="132368" level="7">
+    <if_sid>132302</if_sid>
+    <field name="odoo.rpc_model" type="pcre2">^(?:ir\.actions\.server|base\.automation|ir\.cron|ir\.ui\.view|ir\.model\.access|ir\.rule|res\.groups)$</field>
+    <field name="odoo.rpc_method" type="pcre2">^(?:create|write|web_save|web_save_multi|unlink|copy)$</field>
+    <id type="pcre2">^[23]\d\d$</id>
+    <description>Odoo: $(odoo.rpc_method) on $(odoo.rpc_model) from $(srcip): code, a scheduled job or access rights changed</description>
+    <mitre>
+      <id>T1059.006</id>
+      <id>T1053</id>
+      <id>T1098</id>
+    </mitre>
+    <group>config_changed,</group>
+  </rule>
+
+  <!-- Settings that hold credentials or redirect mail and logins: system
+       parameters (database.secret signs sessions; base.login_cooldown_after
+       is the login throttle), outgoing and incoming mail servers, OAuth
+       providers, mail templates (rendered as templates). -->
+  <rule id="132369" level="5">
+    <if_sid>132302</if_sid>
+    <field name="odoo.rpc_model" type="pcre2">^(?:ir\.config_parameter|ir\.mail_server|fetchmail\.server|auth\.oauth\.provider|mail\.template)$</field>
+    <field name="odoo.rpc_method" type="pcre2">^(?:create|write|web_save|web_save_multi|unlink|copy)$</field>
+    <id type="pcre2">^[23]\d\d$</id>
+    <description>Odoo: $(odoo.rpc_method) on $(odoo.rpc_model) from $(srcip): system parameters, mail servers, OAuth providers or mail templates changed</description>
+    <mitre>
+      <id>T1562.001</id>
+      <id>T1114.003</id>
+    </mitre>
+    <group>config_changed,</group>
+  </rule>
+
+  <!-- Bank accounts edited on their own (Contacts > Configuration > Bank
+       Accounts, or an API call): where a vendor is paid. A bank account added
+       inside a contact's form is saved with the contact and is not visible
+       here. -->
+  <rule id="132358" level="5">
+    <if_sid>132302</if_sid>
+    <field name="odoo.rpc_model" type="pcre2">^res\.partner\.bank$</field>
+    <field name="odoo.rpc_method" type="pcre2">^(?:create|write|web_save|web_save_multi|unlink|copy)$</field>
+    <id type="pcre2">^[23]\d\d$</id>
+    <description>Odoo: bank account changed from $(srcip) ($(odoo.rpc_method) on res.partner.bank): where a partner is paid</description>
+    <mitre>
+      <id>T1565.001</id>
+    </mitre>
+    <group>config_changed,</group>
   </rule>
 
   <!-- ==============================================================
@@ -728,6 +1016,81 @@
     </mitre>
   </rule>
 
+  <!-- Exports (web/controllers/export.py, 16.0 to 19.0, INFO): "User %d
+       exported %d %r records from %s. Fields: %s. Domain: %s" (or "IDs
+       sample"), with the uid, the number of records, the model, the address
+       and the exported columns. Every export is recorded; the size, the
+       columns and the model decide the level. CVE-2024-12368 (15.0 and older)
+       leaked OAuth tokens through exactly this feature. Exports made with
+       export_data over XML-RPC are not logged by Odoo. -->
+  <rule id="132375" level="2">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^User \d+ exported \d+ '</field>
+    <description>Odoo: user #$(odoo.uid) exported $(odoo.count) $(odoo.model) records from $(srcip)</description>
+    <mitre>
+      <id>T1213</id>
+    </mitre>
+  </rule>
+
+  <rule id="132376" level="6">
+    <if_sid>132375</if_sid>
+    <field name="odoo.count" type="pcre2">^\d{4}$</field>
+    <description>Odoo: user #$(odoo.uid) exported $(odoo.count) $(odoo.model) records from $(srcip) (1,000 or more)</description>
+    <mitre>
+      <id>T1213</id>
+    </mitre>
+    <group>data_export,</group>
+  </rule>
+
+  <rule id="132377" level="8">
+    <if_sid>132375</if_sid>
+    <field name="odoo.count" type="pcre2">^\d{5,}$</field>
+    <description>Odoo: user #$(odoo.uid) exported $(odoo.count) $(odoo.model) records from $(srcip) (10,000 or more)</description>
+    <mitre>
+      <id>T1213</id>
+      <id>T1005</id>
+    </mitre>
+    <group>data_export,</group>
+  </rule>
+
+  <!-- Columns that hold secrets: passwords (res.users password, the mail
+       servers' smtp_pass, fetchmail password), *_token (OAuth access tokens,
+       signup and portal access tokens), *secret*, *api_key*. Field paths
+       ("user_ids/oauth_access_token") count as well. -->
+  <rule id="132378" level="12">
+    <if_sid>132375</if_sid>
+    <field name="odoo.fields" type="pcre2">(?:^|[,/])\w*(?:password|passwd|_pass|secret|secret_key|api_?key|_token)(?:,|/|$)</field>
+    <description>[HIGH] Odoo: user #$(odoo.uid) exported credential columns of $(odoo.model) from $(srcip): $(odoo.fields)</description>
+    <mitre>
+      <id>T1552</id>
+      <id>T1213</id>
+    </mitre>
+    <group>data_export,</group>
+  </rule>
+
+  <rule id="132379" level="6">
+    <if_sid>132375</if_sid>
+    <field name="odoo.model" type="pcre2">^(?:res\.users|res\.users\.apikeys|ir\.config_parameter|ir\.mail_server|fetchmail\.server|auth\.oauth\.provider)$</field>
+    <description>Odoo: user #$(odoo.uid) exported $(odoo.count) $(odoo.model) records from $(srcip): accounts or system configuration</description>
+    <mitre>
+      <id>T1087</id>
+      <id>T1213</id>
+    </mitre>
+    <group>data_export,</group>
+  </rule>
+
+  <!-- Many small exports instead of one big one: ten by one user in ten
+       minutes. Exports already raised by a rule above do not count. -->
+  <rule id="132388" level="7" frequency="10" timeframe="600" ignore="600">
+    <if_matched_sid>132375</if_matched_sid>
+    <same_field>odoo.uid</same_field>
+    <description>Odoo: user #$(odoo.uid) made many exports in ten minutes, last $(odoo.count) $(odoo.model) records from $(srcip)</description>
+    <mitre>
+      <id>T1213</id>
+    </mitre>
+    <group>data_export,</group>
+  </rule>
+
   <!-- ==============================================================
        Errors, scheduled jobs, server start
        ============================================================== -->
@@ -759,6 +1122,65 @@
     <description>Odoo: server started, version $(odoo.version)</description>
   </rule>
 
+  <!-- Code refused by Odoo's sandbox (odoo/tools/safe_eval.py, 16.0 to
+       19.0). Saving a server action, automation rule or scheduled job checks
+       its code: "forbidden opcode(s) in %r: %s" comes back as a validation
+       error that odoo.http logs as a WARNING; "Access to forbidden name %r
+       (%r)" (a name with two underscores, or a frame or code attribute) is a
+       NameError and arrives as an ERROR with its traceback. The same texts
+       appear when such code is evaluated (QWeb, domains, cron). An import or a
+       dunder or frame access is how the 2021 sandbox escapes (CVE-2021-44547,
+       -23186, -23166, -44476) started. The res_users loggers are left out: a
+       login name is free text. -->
+  <rule id="132384" level="10">
+    <if_sid>132303,132304</if_sid>
+    <field name="odoo.logger" type="pcre2">^(?!odoo\.addons\.\w+\.models\.res_users$)</field>
+    <field name="odoo.message" type="pcre2">forbidden opcode\(s\) in .*\bIMPORT_(?:NAME|FROM|STAR)\b|Access to forbidden name '</field>
+    <description>[WARN] Odoo: code with an import or a forbidden name refused by the sandbox, database $(odoo.db): code injection attempt in a server action, automation, scheduled job or template</description>
+    <mitre>
+      <id>T1059.006</id>
+      <id>T1068</id>
+    </mitre>
+    <group>attack,</group>
+  </rule>
+
+  <rule id="132385" level="5">
+    <if_sid>132303,132304</if_sid>
+    <field name="odoo.logger" type="pcre2">^(?!odoo\.addons\.\w+\.models\.res_users$)</field>
+    <field name="odoo.message" type="pcre2">^(?!.*(?:\bIMPORT_(?:NAME|FROM|STAR)\b|Access to forbidden name ')).*forbidden opcode\(s\) in </field>
+    <description>Odoo: code refused by the sandbox (forbidden opcode), database $(odoo.db)</description>
+    <mitre>
+      <id>T1059.006</id>
+    </mitre>
+  </rule>
+
+  <!-- A scheduled job run by hand ("Run Manually"): its code runs at once as
+       the job's user. 16.0 and 17.0 "Manually starting job `%s`.", 18.0 "Job
+       %r (%s) started manually" (ir_cron.py); 19.0 writes no such line, its
+       request line ends in #ir.cron.method_direct_trigger. -->
+  <rule id="132386" level="5">
+    <if_sid>132302,132304</if_sid>
+    <field name="odoo.message" type="pcre2">^(?:Manually starting job \x60|Job .+ \(\d+\) started manually\s*$|\S+ - - \[[^\]]*\] "POST /web/dataset/call_button/ir\.cron/method_direct_trigger#)</field>
+    <description>Odoo: scheduled job started by hand: $(odoo.job)$(url)</description>
+    <mitre>
+      <id>T1053</id>
+    </mitre>
+    <group>config_changed,</group>
+  </rule>
+
+  <!-- ir_actions.run: "Forbidden server action %r executed while the user %s
+       does not have access to %s." (16.0 to 19.0, WARNING): someone ran a
+       server action on a model or records they may not write. -->
+  <rule id="132387" level="7">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^Forbidden server action .+ executed while the user .* does not have access to </field>
+    <description>Odoo: $(dstuser) ran the server action $(odoo.action) without write access to $(odoo.target)</description>
+    <mitre>
+      <id>T1068</id>
+    </mitre>
+    <group>access_denied,</group>
+  </rule>
+
   <!-- ==============================================================
        Request lines: scanning. Every 404 is recorded below the alert
        level; twenty from one address in a minute alert.
@@ -781,6 +1203,17 @@
     <group>web,attack,</group>
   </rule>
 
+  <!-- 19.0 logs a 5-line WARNING for every XML-RPC and JSON-RPC request
+       ("The /xmlrpc, /xmlrpc/2 and /jsonrpc endpoints are deprecated in Odoo
+       19 and scheduled for removal in Odoo 22", addons/rpc/controllers); the
+       agent group drops it and this reports the use once a day instead, from
+       the request lines (only 19.0 appends #<model>.<method>). -->
+  <rule id="132394" level="3" ignore="86400">
+    <if_sid>132302</if_sid>
+    <url type="pcre2">^/(?:xmlrpc(?:/2)?/\w+|jsonrpc)#</url>
+    <description>Odoo 19: an integration at $(srcip) uses XML-RPC or JSON-RPC ($(url)), deprecated and scheduled for removal in Odoo 22: move it to JSON-2</description>
+  </rule>
+
   <!-- ==============================================================
        The web server in front of Odoo: its access log in the combined
        format, read by the built-in web access log decoder. It has the
@@ -792,7 +1225,7 @@
 
   <rule id="132395" level="8">
     <if_sid>31100,31108</if_sid>
-    <url type="pcre2">^/web/database/(?:manager|selector|list|backup|drop|restore|duplicate|create|change_password)\b</url>
+    <url type="pcre2">^/web/database/(?:manager|list|backup|drop|restore|duplicate|create|change_password)\b</url>
     <id type="pcre2">^[23]\d\d$</id>
     <description>Odoo: database manager reached through the web server from $(srcip): $(url)</description>
     <mitre>
@@ -804,13 +1237,64 @@
   <rule id="132396" level="12">
     <if_sid>132395</if_sid>
     <protocol type="pcre2">^POST$</protocol>
-    <url type="pcre2">^/web/database/(?:backup|drop|restore|duplicate|create|change_password)\b</url>
-    <description>[HIGH] Odoo: database manager action $(url) through the web server from $(srcip) (HTTP $(id))</description>
+    <url type="pcre2">^/web/database/(?:drop|restore|duplicate|create|change_password)\b</url>
+    <description>[HIGH] Odoo: database manager action $(url) through the web server from $(srcip) (HTTP $(id): 303 means it was carried out)</description>
     <mitre>
       <id>T1190</id>
       <id>T1485</id>
     </mitre>
     <group>web,attack,</group>
+  </rule>
+
+  <!-- Backups through the web server, as 132353 and 132355 (the built-in
+       access log decoder cannot carry a first-time-seen key). -->
+  <rule id="132397" level="7">
+    <if_sid>132395</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/web/database/backup\b</url>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <description>Odoo: database backup through the web server from $(srcip) (HTTP $(id))</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+    <group>web,database,</group>
+  </rule>
+
+  <rule id="132398" level="12">
+    <if_sid>132395</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/web/database/backup\b</url>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <!-- ::1 cannot be in the private list (in 4.14.7 a rule srcip of ::1
+         matches every IPv4 address), so the loopback is left out here -->
+    <regex type="pcre2">^(?!::1 )</regex>
+    <description>[HIGH] Odoo: database backup through the web server from the public address $(srcip) (HTTP $(id))</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1005</id>
+    </mitre>
+    <group>web,database,attack,</group>
+  </rule>
+
+  <!-- The database selector, as 132356. -->
+  <rule id="132399" level="3">
+    <if_sid>31100,31108</if_sid>
+    <url type="pcre2">^/web/database/selector\b</url>
+    <id type="pcre2">^[23]\d\d$</id>
+    <description>Odoo: database selector reached through the web server from $(srcip)</description>
+    <group>web,</group>
   </rule>
 
 </group>

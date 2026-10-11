@@ -2,25 +2,32 @@
  "id": "jt-portable-detect",
  "name": "Portable Executable Detection",
  "name_zh": "可攜式程式偵測",
- "version": "3.4.1",
+ "version": "3.5",
  "summary": "Detects portable/no-install executables being dropped and run on Windows, Linux and macOS.",
  "summary_zh": "偵測免安裝執行檔在 Windows、Linux、macOS 上的落地與執行。",
  "rule_id_range": "906100-906299",
  "notes_zh": [
   "Windows：程式從使用者資料夾、家目錄根層、家目錄底下自建的資料夾、使用者或系統的 Temp、ProgramData、非系統磁碟或網路共享執行時告警；直接在壓縮檔裡雙擊執行也會告警。",
   "Windows：從 C:\\Windows 底下一般使用者可寫入的資料夾執行程式（Tasks、tracing、spool\\drivers\\color 等公開的 AppLocker 繞過清單）為 level 12（906174）。正常軟體不會從這些地方執行，在這裡核准清單也不會降級。",
-  "Windows：從 C: 或 D: 根目錄下自建的資料夾（C:\\Tools\\）執行程式為 level 3（906177），因為 C:\\Python312、C:\\msys64、C:\\tools 也是同樣形狀；遠端控制與穿隧工具在這裡仍會升到 level 12。從資源回收筒執行程式為 level 10（906178）。",
+  "Windows：從 C: 或 D: 根目錄下自建的資料夾（C:\\Tools\\）執行程式為 level 5（906177），因為 C:\\Python312、C:\\msys64、C:\\tools 也是同樣形狀；遠端控制與穿隧工具在這裡仍會升到 level 12。3.4.1 以前是 level 3，而 Wazuh 內建的「父程序是 cmd /c、PsExec 或腳本主機」規則（level 3、4，先載入）會先搶走事件，底下的遠端控制規則永遠到不了。從資源回收筒或仿冒的 RECYCLER.BIN 執行程式為 level 10（906178）。",
   "Windows：處理程序建立的規則也一併掛在共用 Sysmon 事件 1 的內建 level 0 規則底下（父程序為 WmiPrvSE 的 92069，以及 92025、92028、92042）。3.4 之前，經由 WMI 啟動的程式 —— 在另一台主機上執行東西的常見方式 —— 不會觸發本套件任何位置規則。",
-  "Windows：從上述位置執行的免安裝遠端控制工具（AnyDesk、RustDesk、TeamViewer QuickSupport 等，依檔案內的產品名稱判斷，不看檔名），以及穿隧工具（ngrok、cloudflared、frp、plink、Tor），一律 level 12。",
+  "Windows：從上述位置執行的免安裝遠端控制工具一律 level 12：依檔案內的產品名稱判斷（906175：AnyDesk、RustDesk、TeamViewer QuickSupport、Alpemix、Aspia 等），3.5 起也依 LOLRMM 記載的執行檔名稱判斷（906179：ToDesk、向日葵 SunLogin、AweSun、HopToDesk、Action1、SimpleHelp、LiteManager、ISL Light、NinjaOne、Syncro、TightVNC 等）。穿隧工具（ngrok、cloudflared、frp、chisel、plink、Tor、dev tunnels）依檔名（906176），改了檔名則依命令列（906152）。廠商正式安裝在 ProgramData 的遠端管理代理程式（NinjaOne、BeyondTrust、SimpleHelp）不算。",
   "Windows：非 PowerShell 的程序（sftp、SMB、從 USB 複製）把執行檔寫進下載、桌面、文件；執行檔與壓縮檔的下載標記；搭配 Sysmon 15 時，執行檔內容被存成非執行檔名稱（偽裝）。",
   "Linux／macOS：家目錄裡的檔案被設成可執行、/tmp、/var/tmp、/dev/shm 出現執行檔、AppImage／.run／.bin 檔案；有 auditd 時，偵測從這些位置實際執行的程式與腳本。",
   "Linux：從建置或測試工具自己的暫存目錄執行程式（pytest、go-build、cargo 等，與 906234 對檔案列出的相同）降為 level 3（906237）；在暫存目錄建立的 Python 虛擬環境中，數百 bytes 的 pip／wheel 入口腳本降為 level 3（906238），同名但體積正常的真實程式維持 level 10。3.4 起 auditd 規則檔另外監看 /var/crash（Ubuntu／Debian 上任何人可寫入）與 /run/user/<uid>（每次登入掛載、沒有 noexec 的 tmpfs）。",
-  "核准工具：加進 etc/lists/jt-approved-portable（以原始檔名或完整路徑），核准後降為 level 3，遠端控制與穿隧規則也會放過該工具。",
+  "核准工具：加進 etc/lists/jt-approved-portable（以原始檔名或完整路徑），核准後降為 level 3，遠端控制、穿隧與雙用途工具規則（906175、906176、906179、906152、906154、906155）也會放過該工具；但「不該有人從那裡執行」的資料夾（906174、906157、906158）與雙副檔名（906156）不受核准影響。",
   "部分規則需要管理端無法代勞的 agent 端設定：Windows 的 Sysmon 過濾條件、Linux 的 auditd、以及把 agent 加入 portable-detect 群組。「部署說明」列出每一步與檢查方式。",
   "906160-906167 調校 Wazuh 內建的 Sysmon 檔案建立偵測，而不是重複寫一份。906167 修正內建規則 92213：它的副檔名比對沒有結尾錨點，把 .json 當成 .js，30 天內它的 level 15 告警有 82% 根本不是執行檔。",
   "3.0 起 Linux 規則各自帶路徑條件。舊的共用父規則 906200 會讓沒有子規則命中的事件停在 level 1，等於把 /root、/home、/tmp 的內建檔案完整性告警全部靜音；它已退役，不得再出現。",
   "內建規則 92213（level 15）底下的固定形狀：NSIS 安裝程式把外掛解到 Temp\\nsXXXX.tmp 降為 level 3（906125）；PowerShell Add-Type 在 Temp 編譯 8 碼檔名的 DLL 降為 level 6（906126；以 SYSTEM 執行的同一件事為 906129）—— 看得到但不寄信，因為惡意的 PowerShell 也會用 Add-Type；git 把 repository 簽出到 Temp 為 level 3（906127），從裡面執行任何東西都會被 906102 抓到；透過 SSH 上傳到 Temp 的腳本或執行檔為 level 10（906128）。",
-  "Windows：Wazuh agent 只在啟動時訂閱一次事件通道。Microsoft Defender 每次開機與平台更新都會重建自己的通道，Sysmon 升級時也一樣，之後這些事件就默默地不再送到 manager。套件附有一支監看腳本，遇到這種情形會重啟 agent 並以規則 906190 回報；安裝方式見部署指南。"
+  "Windows：Wazuh agent 只在啟動時訂閱一次事件通道。Microsoft Defender 每次開機與平台更新都會重建自己的通道，Sysmon 升級時也一樣，之後這些事件就默默地不再送到 manager。套件附有一支監看腳本，遇到這種情形會重啟 agent 並以規則 906190 回報；安裝方式見部署指南。",
+  "Windows（3.5 起）：直接從 Outlook 附件執行的程式（INetCache\\Content.Outlook，906157，level 12）、以雙副檔名偽裝成文件的程式，例如 invoice.pdf.exe（906156，level 12），以及從 Windows 內從不放程式的資料夾執行的程式：C:\\PerfLogs、Windows\\Fonts、debug、Help、Media 等（906158，level 10）。C:\\Windows\\IME 刻意不列：中日韓語系的 Windows 在那裡放輸入法程式。",
+  "Windows（3.5 起）：濫用壓縮檔解壓。WinRAR 或 7-Zip 把檔案寫進「啟動」資料夾，即 WinRAR CVE-2025-8088 與 CVE-2025-6218 的路徑穿越（906159，level 12；CISA KEV），以及 CVE-2023-38831 的形狀：WinRAR 從自己的 Rar$ 暫存資料夾開啟一個「name.pdf .cmd」的檔案（906185，level 12）。直接從壓縮檔裡執行程式（906170）現在涵蓋 WinRAR 所有暫存資料夾種類（Rar$EX、Rar$DI）。",
+  "Windows（3.5 起）：入侵者會用、系統管理員也會用的工具，從使用者可寫入的位置執行，依檔案內的版本資訊辨識，改檔名也藏不住：rclone、Advanced IP Scanner、SoftPerfect Network Scanner（906154）、AdFind（906155）。level 10，看得到但不寄信，核准清單適用。Program Files 以外的程式連到穿隧服務（Cloudflare Tunnel、ngrok、Microsoft dev tunnels）為 level 10（906153），依 Sysmon DNS 事件判斷，與程式名稱無關。",
+  "Windows（3.5 起）：Microsoft Defender 攻擊面縮減（ASR）對未核准程式的判定（普及度、USB、郵件內容、腳本啟動下載內容、PsExec／WMI、複製的系統工具這幾條規則）：封鎖（事件 1121）為 level 8（906186），稽核（1122）為 level 3（906187）。Wazuh 4.14 沒有這兩個事件的規則。AppLocker 的腳本與安裝程式事件 8006／8007 也有了規則（906112 level 8、906113 level 5）。",
+  "3.5 起群組只收需要的 AppLocker 事件（8003、8004、8006、8007）。之前整個通道都收，照本套件的部署說明開啟 AppLocker 稽核後，Wazuh 的 67011 會對每一次被允許的程式執行產生一筆 level 3 告警。906180（Sysmon 事件 29 的基礎規則）由 level 0 改為 1，讓 jt-malware-hash「已知惡意檔案寫入磁碟」的規則先被試。",
+  "3.5 去除的雜訊，每一項都綁在作業系統或工具自己產生的形狀上：containerd 的暫時映像掛載 /tmp/containerd-mount<數字>（906239，群組的檔案監控也一併忽略；一台 Docker 主機一天 202 筆 level 10）、Windows Update 暫存 Defender 特徵碼增量包與 Windows Installer 快取 MSI（內建 92217 底下的 906136、906137；10 天約 60 筆 level 6）。Linux 上 906213 把動態載入器也當成直譯器：/lib64/ld-linux-x86-64.so.2 /tmp/tool 能執行沒有執行權限的檔案。",
+  "906130-906135 讀取定期盤點腳本產出的 NDJSON（使用者資料夾內執行檔的簽章狀態）。套件不附這支腳本；沒有站台自己的盤點腳本時，這幾條規則不會觸發。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -32,13 +39,13 @@
    "type": "rule",
    "name": "zz-906100-jt_portable_rules.xml",
    "dest": "etc/rules/zz-906100-jt_portable_rules.xml",
-   "sha256": "07b558b1ffeb7684f59a11d8a422763d645c0356becc76306058a497fae8a673"
+   "sha256": "b15a152c69cfa6f4bc27b671704bcbc67ec10c0a60b0c097c672f6fe46ad0be7"
   },
   {
    "type": "rule",
    "name": "zz-906200-jt_portable_nix_rules.xml",
    "dest": "etc/rules/zz-906200-jt_portable_nix_rules.xml",
-   "sha256": "8e07be3441ab9a215106ae046fd67972fd9699110dac7e7a510c9be7a2ed066f"
+   "sha256": "8ccc444b28d37e789198b764cdec50beaec73001a9c45e503404db11c4db2cc3"
   },
   {
    "type": "list",
@@ -60,18 +67,25 @@
  "notes": [
   "Windows: alerts when a program runs from a user folder, the user profile root, a custom folder in the profile, the user or system Temp directory, ProgramData, a non-system drive or a network share, and when it is run directly from inside an archive.",
   "Windows: a program run from a folder inside C:\\Windows that ordinary users can write to (Tasks, tracing, spool\\drivers\\color and the rest of the published AppLocker-bypass list) is a level 12 (906174). Nothing legitimate runs from those folders, and approving a tool does not lower it there.",
-  "Windows: a program run from a folder of its own at the root of C: or D: (C:\\Tools\\) is level 3 (906177), because C:\\Python312, C:\\msys64 and C:\\tools look the same; remote-access and tunnelling tools still rise to level 12 there. A program run from the Recycle Bin is level 10 (906178).",
+  "Windows: a program run from a folder of its own at the root of C: or D: (C:\\Tools\\) is level 5 (906177), because C:\\Python312, C:\\msys64 and C:\\tools look the same; remote-access and tunnelling tools still rise to level 12 there. It was level 3 until 3.4.1, where Wazuh's own rules for a parent cmd /c, PsExec or a script host (level 3 and 4, loaded first) took the event and the remote-access rules underneath were never reached. A program run from the Recycle Bin, or a fake RECYCLER.BIN, is level 10 (906178).",
   "Windows: the process-creation rules are also attached to the built-in level 0 rules that share Sysmon event 1 (92069 for a WmiPrvSE parent, 92025, 92028, 92042). Before 3.4, a program started through WMI, a common way to run something on another host, raised none of this pack's location rules.",
-  "Windows: a portable remote-access tool (AnyDesk, RustDesk, TeamViewer QuickSupport and others, recognised by the product name in the file, not its file name) or a tunnelling tool (ngrok, cloudflared, frp, plink, Tor) run from those places is a level 12.",
+  "Windows: a portable remote-access tool run from those places is a level 12: recognised by the product name in the file (906175: AnyDesk, RustDesk, TeamViewer QuickSupport, Alpemix, Aspia and others) or, since 3.5, by the executable names LOLRMM records (906179: ToDesk, SunLogin, AweSun, HopToDesk, Action1, SimpleHelp, LiteManager, ISL Light, NinjaOne, Syncro, TightVNC and others). Tunnelling tools (ngrok, cloudflared, frp, chisel, plink, Tor, dev tunnels) are recognised by file name (906176) and, when renamed, by their command line (906152). RMM agents that a vendor installs into ProgramData (NinjaOne, BeyondTrust, SimpleHelp) are left out.",
   "Windows: executables written into Downloads, Desktop or Documents by anything other than PowerShell (sftp, SMB, a copy from USB), download marks on executables and archives, and, with Sysmon 15, executable content saved under a non-executable name.",
   "Linux and macOS: files made executable in a home directory, executables appearing in /tmp, /var/tmp or /dev/shm, AppImage/.run/.bin files, and with auditd, programs and scripts actually run from those places.",
   "Linux: programs run from a build or test tool's own temporary directory (pytest, go-build, cargo and the others 906234 already lists for files) drop to level 3 (906237), and a Python virtual environment's pip and wheel entry points created in a temporary directory drop to level 3 when they are a few hundred bytes (906238); a real program under those names stays level 10. The auditd file also watches /var/crash (world-writable on Ubuntu and Debian) and /run/user/<uid> (the per-login tmpfs, mounted without noexec) since 3.4.",
-  "Approve a tool by adding it to etc/lists/jt-approved-portable (by its original file name, or by full path); approved runs drop to level 3. Approval also silences the remote-access and tunnelling rules for that tool.",
+  "Approve a tool by adding it to etc/lists/jt-approved-portable (by its original file name, or by full path); approved runs drop to level 3. Approval also silences the remote-access, tunnelling and dual-use tool rules for that tool (906175, 906176, 906179, 906152, 906154, 906155). It does not lower the rules for folders nobody should run from (906174, 906157, 906158) or for a double extension (906156).",
   "Several rules depend on agent-side configuration the manager cannot apply for you: Sysmon filters on Windows, auditd on Linux, and assigning agents to the portable-detect group. The deployment guide lists each step and how to check it.",
   "Rules 906160-906167 tune Wazuh's own Sysmon file-creation detections instead of duplicating them. 906167 corrects built-in rule 92213, whose extension match has no end anchor and so treats .json as .js: 82 per cent of its level 15 alerts in thirty days were not executables.",
   "Since 3.0 every Linux rule carries its own path condition. The old shared parent, 906200, ended unmatched events at level 1, which silently suppressed every built-in file-integrity alert under /root, /home and /tmp; it is retired and must not come back.",
   "Fixed shapes under the built-in rule 92213 (level 15): an NSIS installer unpacking its plug-ins into Temp\\nsXXXX.tmp is level 3 (906125); PowerShell Add-Type compiling an eight-character DLL into Temp is level 6 (906126, and 906129 for the same compile running as SYSTEM) — visible, not mailed, because malicious PowerShell uses Add-Type too; git checking out a repository into Temp is level 3 (906127), since running anything from it is caught by 906102; a script or executable uploaded over SSH into Temp is level 10 (906128).",
-  "Windows: the Wazuh agent subscribes to an event channel only once, when it starts. Microsoft Defender re-creates its channel at every boot and platform update, and Sysmon does the same when upgraded, after which their events silently stop reaching the manager. The pack ships a watchdog script that restarts the agent when that happens and reports it as rule 906190; the deployment guide shows how to install it."
+  "Windows: the Wazuh agent subscribes to an event channel only once, when it starts. Microsoft Defender re-creates its channel at every boot and platform update, and Sysmon does the same when upgraded, after which their events silently stop reaching the manager. The pack ships a watchdog script that restarts the agent when that happens and reports it as rule 906190; the deployment guide shows how to install it.",
+  "Windows, since 3.5: a program run directly from an Outlook attachment (INetCache\\Content.Outlook, 906157, level 12), a program disguised as a document by a double extension such as invoice.pdf.exe (906156, level 12), and a program run from a Windows folder that never holds programs: C:\\PerfLogs, Windows\\Fonts, debug, Help, Media and the like (906158, level 10). C:\\Windows\\IME is left out on purpose: CJK editions keep input-method programs there.",
+  "Windows, since 3.5: archive extraction abuse. WinRAR or 7-Zip writing into a Startup folder, the path traversal of WinRAR CVE-2025-8088 and CVE-2025-6218 (906159, level 12; CISA KEV), and the CVE-2023-38831 shape, WinRAR opening a \"name.pdf .cmd\" file from its Rar$ temporary folder (906185, level 12). Running a program straight from an archive (906170) now covers every WinRAR temporary folder kind (Rar$EX, Rar$DI).",
+  "Windows, since 3.5: tools that intrusions use and administrators also use, run from a user-writable place and recognised by the version information in the file, so renaming does not hide them: rclone, Advanced IP Scanner and SoftPerfect Network Scanner (906154), AdFind (906155). Level 10, visible but not mailed, and the approval list applies. A program outside Program Files that contacts a tunnelling service (Cloudflare Tunnel, ngrok, Microsoft dev tunnels) is level 10 (906153), from Sysmon DNS events, whatever its name.",
+  "Windows, since 3.5: Microsoft Defender attack surface reduction verdicts on unapproved programs (rules for prevalence, USB, email content, scripts launching downloads, PsExec/WMI and copied system tools): block (event 1121) is level 8 (906186), audit (1122) is level 3 (906187). Wazuh 4.14 has no rule for these events. AppLocker script and installer events 8006/8007 now have rules too (906112 level 8, 906113 level 5).",
+  "Since 3.5 the group collects only the AppLocker events that matter (8003, 8004, 8006, 8007). Before, the whole channels were read and Wazuh's rule 67011 raised a level 3 alert for every program AppLocker allowed, once a site had followed this pack's own setup step. Rule 906180 (Sysmon event 29 base) is level 1 instead of 0, so the jt-malware-hash rule for a known-malware file written to disk is tried first.",
+  "Noise removed in 3.5, each tied to a shape the operating system or tool generates: containerd's temporary image mounts /tmp/containerd-mount<digits> (906239, and ignored by the group's file monitoring; 202 level 10 alerts in one day on one Docker host), Windows Update staging Defender signature deltas and Windows Installer caching an MSI under rule 92217 (906136, 906137; about 60 level 6 alerts in ten days). On Linux the dynamic loader counts as an interpreter for 906213: /lib64/ld-linux-x86-64.so.2 /tmp/tool runs a file without its execute bit.",
+  "Rules 906130-906135 read the NDJSON of a periodic inventory script (signature status of executables in user folders). The pack does not ship that script; without one of your own these rules stay silent."
  ],
  "agent_group": {
   "name": "portable-detect",
@@ -101,23 +115,24 @@
    "required": true,
    "title": "Assign agents to the portable-detect group",
    "title_zh": "把 agent 加入 portable-detect 群組",
-   "body": "The pack creates the group but never assigns agents to it: which hosts carry the monitoring cost is your decision. If the group already existed, the installer leaves its agent.conf untouched; compare it with the pack's copy (below) and update it yourself. A group status of 'synced' only means the agent received the file. File-integrity settings apply after the agent restarts, so restart it and check that data actually changes.",
-   "body_zh": "套件會建立群組，但不會替你把 agent 加進去：哪些主機要承擔監控成本由你決定。群組若早已存在，安裝程式不會覆蓋它的 agent.conf，請與下方套件版本比對後自行更新。群組狀態顯示 synced 只代表 agent 收到檔案；檔案完整性的設定要 agent 重啟才生效，請重啟後確認資料確實有變化。",
+   "body": "The pack creates the group but never assigns agents to it: which hosts carry the monitoring cost is your decision. If the group already existed, the installer leaves its agent.conf untouched; compare it with the pack's copy (below) and update it yourself. A group status of 'synced' only means the agent received the file. File-integrity settings apply after the agent restarts, so restart it and check that data actually changes. Version 3.5 changes the group's agent.conf: it reads only the AppLocker events the rules use and ignores containerd's temporary mounts. An update replaces the group file unless it was edited; restart the Windows agents afterwards for the event filter to apply.",
+   "body_zh": "套件會建立群組，但不會替你把 agent 加進去：哪些主機要承擔監控成本由你決定。群組若早已存在，安裝程式不會覆蓋它的 agent.conf，請與下方套件版本比對後自行更新。群組狀態顯示 synced 只代表 agent 收到檔案；檔案完整性的設定要 agent 重啟才生效，請重啟後確認資料確實有變化。3.5 版修改了群組的 agent.conf：只收規則用得到的 AppLocker 事件，並忽略 containerd 的暫時掛載。更新時若群組檔案未被修改就會直接取代；之後請重啟 Windows agent，事件過濾才會生效。",
    "file": "agent/agent.conf",
-   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g portable-detect\n/var/ossec/bin/agent_control -R -u <agent_id>"
+   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g portable-detect\n/var/ossec/bin/agent_control -R -u <agent_id>",
+   "since": "3.5"
   },
   {
    "platform": "windows",
    "required": true,
    "title": "Merge the Sysmon filters",
    "title_zh": "合併 Sysmon 過濾條件",
-   "body": "Process creation, file creation and download marks come from Sysmon, whose own configuration decides what is recorded. Merge the filters below into the configuration the host already uses. Executable-content detection (906180-906183) needs Sysmon 15.0 or later and schemaversion 4.90 or later at the top of the configuration; without it only those four rules stay silent. The file is also delivered to agents in the group, under the agent's shared directory. Version 3.4 adds process-creation filters for folders inside C:\\Windows that users can write to, folders at the root of C: and the Recycle Bin: on hosts that already merged an earlier version, merge it again.",
-   "body_zh": "處理程序建立、檔案建立與下載標記都來自 Sysmon，記錄什麼由 Sysmon 自己的設定檔決定。請把下方的過濾條件合併進主機現用的設定檔。可執行檔內容偵測（906180-906183）需要 Sysmon 15.0 以上，且設定檔開頭的 schemaversion 為 4.90 以上；缺少時只有這四條規則不會觸發。此檔也會隨群組送到 agent 的 shared 目錄。3.4 版新增處理程序建立的過濾條件（C:\\Windows 內使用者可寫入的資料夾、C: 根目錄的資料夾、資源回收筒）：已經合併過舊版的主機請再合併一次。",
+   "body": "Process creation, file creation and download marks come from Sysmon, whose own configuration decides what is recorded. Merge the filters below into the configuration the host already uses. Executable-content detection (906180-906184) needs Sysmon 15.0 or later and schemaversion 4.90 or later at the top of the configuration; without it only those rules stay silent. The file is also delivered to agents in the group, under the agent's shared directory. Version 3.5 adds process creation in Windows folders that never hold programs (906158), file creation in Startup folders (906159) and executable content written into the user-writable folders inside C:\\Windows (906184): on hosts that already merged an earlier version, merge it again. The DNS rule for tunnelling services (906153) needs DNS query logging (event 22), which most configurations already have; the fragment does not add it, because an include group would narrow a configuration that logs every query.",
+   "body_zh": "處理程序建立、檔案建立與下載標記都來自 Sysmon，記錄什麼由 Sysmon 自己的設定檔決定。請把下方的過濾條件合併進主機現用的設定檔。可執行檔內容偵測（906180-906184）需要 Sysmon 15.0 以上，且設定檔開頭的 schemaversion 為 4.90 以上；缺少時只有這幾條規則不會觸發。此檔也會隨群組送到 agent 的 shared 目錄。3.5 版新增：Windows 內從不放程式的資料夾的處理程序建立（906158）、啟動資料夾的檔案建立（906159）、C:\\Windows 內使用者可寫入資料夾的可執行檔內容（906184）：已經合併過舊版的主機請再合併一次。穿隧服務的 DNS 規則（906153）需要 Sysmon 記錄 DNS 查詢（事件 22），多數設定檔本來就有；片段不加這一段，因為 include 群組會讓「記錄全部查詢」的設定變窄。",
    "file": "agent/sysmon-jt-portable.xml",
    "code": "Sysmon64.exe -c C:\\path\\to\\your-config.xml\nSysmon64.exe -c",
    "verify": "Copy C:\\Windows\\System32\\notepad.exe to your Downloads folder as test.pdf. Expect rule 906183 (level 10) on the manager. Delete the file afterwards.",
    "verify_zh": "把 C:\\Windows\\System32\\notepad.exe 複製到「下載」並命名為 test.pdf，管理端應出現規則 906183（level 10）。測完刪除該檔。",
-   "since": "3.4"
+   "since": "3.5"
   },
   {
    "platform": "windows",
@@ -137,17 +152,29 @@
    "required": false,
    "title": "AppLocker in audit mode (optional)",
    "title_zh": "AppLocker 稽核模式（選用）",
-   "body": "Rules 906110 and 906111 read AppLocker events, which the group collects. They need an AppLocker policy in audit-only mode with the default rules, and the Application Identity service set to start automatically; Windows Enterprise or Education is required for enforcement. Without a policy the channels stay empty and nothing else is affected.",
-   "body_zh": "906110／906111 讀取 AppLocker 事件，群組設定已會收集。前提是設定 AppLocker 原則為「僅稽核」並套用預設規則，且 Application Identity 服務設為自動啟動；強制模式需要 Windows 企業版或教育版。沒有原則時通道是空的，不影響其他規則。",
+   "body": "Rules 906110-906113 read AppLocker events, which the group collects (since 3.5 only 8003, 8004, 8006 and 8007: the allowed-run events 8002/8005 are not read). They need an AppLocker policy in audit-only mode with the default rules, and the Application Identity service set to start automatically; Windows Enterprise or Education is required for enforcement. Without a policy the channels stay empty and nothing else is affected.",
+   "body_zh": "906110-906113 讀取 AppLocker 事件，群組設定已會收集（3.5 起只收 8003、8004、8006、8007，不收「允許執行」的 8002／8005）。前提是設定 AppLocker 原則為「僅稽核」並套用預設規則，且 Application Identity 服務設為自動啟動；強制模式需要 Windows 企業版或教育版。沒有原則時通道是空的，不影響其他規則。",
    "code": "sc.exe config AppIDSvc start= auto\nsc.exe start AppIDSvc"
+  },
+  {
+   "platform": "windows",
+   "required": false,
+   "title": "Defender attack surface reduction (optional)",
+   "title_zh": "Defender 攻擊面縮減（選用）",
+   "body": "Rules 906186 and 906187 read Microsoft Defender events 1121 (blocked) and 1122 (audited) from the Defender Operational channel, which this group does not collect: most estates already read it in a Windows group, and reading it twice would duplicate every event. They cover six ASR rules: executables that fail the prevalence, age or trusted-list test, untrusted programs from USB, executable content from email, scripts launching downloaded content, PsExec and WMI process creation, and copied or impersonated system tools. Start in audit mode: on a developer machine the prevalence rule reports every freshly built program. Without ASR the rules stay silent.",
+   "body_zh": "906186、906187 讀取 Microsoft Defender Operational 通道的事件 1121（封鎖）與 1122（稽核）。本群組不收這個通道：多數環境已在 Windows 群組收它，收兩次會讓每筆事件重複。涵蓋六條 ASR 規則：未通過普及度、存在時間或信任清單的可執行檔、從 USB 執行的未受信任程式、郵件裡的可執行內容、腳本啟動下載的內容、PsExec 與 WMI 建立的程序、複製或冒充的系統工具。請先用稽核模式：在開發機上，普及度規則會對每個剛編譯出來的程式報一次。沒有啟用 ASR 時這兩條不會觸發。",
+   "code": "# audit mode, elevated PowerShell (one line per rule; Enabled instead of AuditMode to block)\nAdd-MpPreference -AttackSurfaceReductionRules_Ids 01443614-cd74-433a-b99e-2ecdc07bfc25 -AttackSurfaceReductionRules_Actions AuditMode\nAdd-MpPreference -AttackSurfaceReductionRules_Ids b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4 -AttackSurfaceReductionRules_Actions AuditMode",
+   "verify": "Get-MpPreference | Select-Object AttackSurfaceReductionRules_Ids, AttackSurfaceReductionRules_Actions lists the rules; a program the prevalence rule audits appears as rule 906187 (level 3).",
+   "verify_zh": "Get-MpPreference | Select-Object AttackSurfaceReductionRules_Ids, AttackSurfaceReductionRules_Actions 會列出規則；普及度規則稽核到的程式會出現規則 906187（level 3）。",
+   "since": "3.5"
   },
   {
    "platform": "linux",
    "required": false,
    "title": "auditd for execution evidence",
    "title_zh": "auditd：取得「真的執行了」的證據",
-   "body": "File-integrity rules can only say a file appeared. Rules 906210-906213 prove a program ran, and need auditd with the pack's rules loaded; the rules file is delivered to agents in the group. auditd usually cannot run inside an LXC container; there only the file rules work. To catch scripts run through an interpreter (906213), also uncomment the interpreter lines in the file. Version 3.4 adds /var/crash and /run/user to the file: on hosts that already have it, copy it again and reload.",
-   "body_zh": "檔案完整性規則只能說「檔案出現了」。906210-906213 證明程式真的執行了，需要 auditd 並載入套件的規則檔；該檔會隨群組送到 agent。LXC 容器內通常無法執行 auditd，那裡只有檔案類規則有作用。若要抓「用直譯器執行的腳本」（906213），另外把檔案中直譯器那幾行取消註解。3.4 版在檔案中新增 /var/crash 與 /run/user：已經裝過的主機請重新複製並重新載入。",
+   "body": "File-integrity rules can only say a file appeared. Rules 906210-906213 prove a program ran, and need auditd with the pack's rules loaded; the rules file is delivered to agents in the group. auditd usually cannot run inside an LXC container; there only the file rules work. To catch scripts run through an interpreter (906213), also uncomment the interpreter lines in the file. Version 3.4 adds /var/crash and /run/user to the file: on hosts that already have it, copy it again and reload. Since 3.5, 906213 also treats the dynamic loader as an interpreter; the file has a commented line for it.",
+   "body_zh": "檔案完整性規則只能說「檔案出現了」。906210-906213 證明程式真的執行了，需要 auditd 並載入套件的規則檔；該檔會隨群組送到 agent。LXC 容器內通常無法執行 auditd，那裡只有檔案類規則有作用。若要抓「用直譯器執行的腳本」（906213），另外把檔案中直譯器那幾行取消註解。3.4 版在檔案中新增 /var/crash 與 /run/user：已經裝過的主機請重新複製並重新載入。 3.5 起 906213 也把動態載入器當成直譯器；檔案裡有一行對應的註解範例。",
    "file": "agent/jt-portable.rules",
    "code": "apt install auditd        # or: dnf install audit\ncp /var/ossec/etc/shared/jt-portable.rules /etc/audit/rules.d/\naugenrules --load\nauditctl -l | grep jt_portable",
    "verify": "cp /bin/true /tmp/jt-portable-test && /tmp/jt-portable-test; rm /tmp/jt-portable-test  — expect rule 906211 (level 12).",
@@ -168,9 +195,9 @@
    "required": false,
    "title": "Approve tools you allow",
    "title_zh": "核准允許使用的工具",
-   "body": "Add one line per tool to etc/lists/jt-approved-portable, then reload the ruleset. The key is either the original file name from the alert (win.eventdata.originalFileName) or the full image path exactly as the alert shows it, in double quotes because a Windows path contains a colon.",
-   "body_zh": "每個工具一行，加進 etc/lists/jt-approved-portable 後重新載入規則集。鍵值可以是告警中的原始檔名（win.eventdata.originalFileName），或是與告警顯示完全相同的完整路徑；Windows 路徑含冒號，必須用雙引號包起來。",
-   "code": "PuTTY:approved\n\"C:\\\\Users\\\\Public\\\\Tools\\\\putty.exe\":approved"
+   "body": "Add one line per tool to etc/lists/jt-approved-portable, then reload the ruleset. The key is either the original file name from the alert (win.eventdata.originalFileName) or the full image path exactly as the alert shows it, in double quotes because a Windows path contains a colon. Approval lowers the location rules to level 3 and also applies to the remote-access, tunnelling and dual-use tool rules (906175, 906176, 906179, 906152, 906154, 906155), for example an administrator's Advanced IP Scanner.",
+   "body_zh": "每個工具一行，加進 etc/lists/jt-approved-portable 後重新載入規則集。鍵值可以是告警中的原始檔名（win.eventdata.originalFileName），或是與告警顯示完全相同的完整路徑；Windows 路徑含冒號，必須用雙引號包起來。核准會把位置規則降為 level 3，也適用於遠端控制、穿隧與雙用途工具規則（906175、906176、906179、906152、906154、906155），例如系統管理員自己的 Advanced IP Scanner。",
+   "code": "PuTTY:approved\n\"C:\\\\Users\\\\Public\\\\Tools\\\\putty.exe\":approved\nadvanced_ip_scanner.exe:approved"
   }
  ]
 }

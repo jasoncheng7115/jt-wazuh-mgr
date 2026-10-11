@@ -4,24 +4,31 @@
 
   The zz- prefix makes this file load after the built-in ruleset: it extends the
   built-in FreeIPA grouping rule (82202), which receives every jt-ipam line
-  (see the decoder file), and the systemd rule 40704. The built-in correlation
+  (see the decoder file), the systemd rule 40704, and the built-in web server
+  rules 31101, 31120, 31123 and 31301 (jt-ipam's own nginx). The built-in correlation
   rules 40111 / 40112 load earlier and are not attached to these rules even
   though they carry the authentication groups (sandbox, 4.14.7), so the pack
   has its own brute-force and success-after-failures rules.
 
-  Two layers, because jt-ipam's records reach Wazuh by two roads:
+  Layers, by the road the records take to Wazuh:
 
     131600-131629  service messages from the journal. Work as soon as the
                    agent reads journald or /var/log/syslog, with no change on
                    the host: failed logins and brute force by source address,
                    console connection failures, SSH and directory activity of
                    the integrations, audit chain verification, backups.
-    131630-131689  the audit trail, relayed by rsyslog as jt-ipam-audit lines
+                   131625-131626 authorization failures (403), 131627-131629
+                   guacd, the console engine (also from the journal).
+    131630-131681  the audit trail, relayed by rsyslog as jt-ipam-audit lines
                    (setup guide).
                    Account names, reasons, roles, permissions, API tokens,
                    revealed secrets, console sessions, settings, export and
                    import. jt-ipam records only successful sessions here;
                    failures to connect are in the journal layer.
+                   131654 and 131690-131697 were added in 1.2.
+    131682-131685  jt-ipam's nginx: routine noise in the built-in web rules.
+    131686-131689  PostgreSQL's log (agent group, 1.2): refused changes to
+                   the audit table, database password failures.
 
   A successful login or console session is not an alert by itself. An
   ordinary account from a private address is recorded at level 2. It alerts
@@ -95,11 +102,13 @@
   </rule>
 
   <!-- The phpIPAM-compatible API logs in with HTTP basic authentication on
-       POST /api/<app id>/user/. -->
+       POST /api/phpipam/<app id>/user/ (backend/app/main.py mounts the
+       router at /api/phpipam; api/phpipam/endpoints/user.py). Before 1.2 the
+       rule looked for /api/<app id>/user/ and could never fire. -->
   <rule id="131604" level="3">
     <if_sid>131601</if_sid>
     <protocol type="pcre2">^POST$</protocol>
-    <url type="pcre2">^/api/(?!v1/)[^/]+/user/?$</url>
+    <url type="pcre2">^/api/phpipam/[^/]+/user/?$</url>
     <id type="pcre2">^401$</id>
     <description>jt-ipam: failed login to the phpIPAM-compatible API from $(srcip)</description>
     <mitre>
@@ -149,7 +158,7 @@
 
   <rule id="131607" level="6">
     <if_sid>131601</if_sid>
-    <url type="pcre2">^/api/(?:v1/auth/(?:login|mfa/verify)|(?!v1/)[^/]+/user/?)$</url>
+    <url type="pcre2">^/api/(?:v1/auth/(?:login|mfa/verify)|phpipam/[^/]+/user/?)$</url>
     <id type="pcre2">^429$</id>
     <description>jt-ipam: login attempts from $(srcip) throttled (more than 10 a minute)</description>
     <mitre>
@@ -325,6 +334,70 @@
     <description>jt-ipam: the daily backup failed</description>
   </rule>
 
+  <!--
+    Authorization failures. jt-ipam answers 403 when a logged-in account or an
+    API token asks for something its role does not allow; it does not write an
+    audit record for that (OWASP ASVS 5.0 V16.3.2 asks for one). One 403 is
+    recorded only: the web interface itself causes a few for accounts without
+    administrator rights (measured: 4 in 30 days on one installation, two of
+    them in the same second). Ten from one address within a minute is someone
+    walking the API for objects or functions the account may not use.
+  -->
+  <rule id="131625" level="2">
+    <if_sid>131601</if_sid>
+    <id type="pcre2">^403$</id>
+    <description>jt-ipam: request refused for lack of permission: $(protocol) $(url) from $(srcip)</description>
+  </rule>
+
+  <rule id="131626" level="8" frequency="10" timeframe="60" ignore="600">
+    <if_matched_sid>131625</if_matched_sid>
+    <same_source_ip />
+    <description>jt-ipam: 10 requests refused for lack of permission within a minute from $(srcip), last $(protocol) $(url)</description>
+  </rule>
+
+  <!--
+    guacd, the console engine (the jt-ipam-guacd service, program guacd in the
+    journal). guacd has no authentication of its own: jt-ipam's backend is its
+    only client, binds it to 127.0.0.1, and opens a new connection for every
+    console session. jt-ipam (1.0.6) never joins a connection that is already
+    running, so "Joining existing connection" means a second party is
+    attaching to someone's live RDP, VNC or SSH session through guacd: session
+    shadowing. Measured: 0 joins in 30 days on one installation; every one of
+    its 144 sessions said "(1 users now present)". If the same manager also
+    receives the log of a full Apache Guacamole server whose users share
+    connections on purpose, this rule fires for those shares as well.
+    Idea from the Sigma rule "Guacamole Two Users Sharing Session Anomaly"
+    (https://github.com/SigmaHQ/sigma/blob/master/rules/linux/builtin/guacamole/lnx_guacamole_susp_guacamole.yml),
+    implemented on guacd's own message. guacd writes each message twice (see
+    the decoder file); only the syslog copy, which starts with the message
+    itself, is matched, so each join alerts once.
+  -->
+  <rule id="131627" level="0">
+    <decoded_as>jt-ipam-guacd</decoded_as>
+    <description>guacd messages</description>
+  </rule>
+
+  <rule id="131628" level="10">
+    <if_sid>131627</if_sid>
+    <match type="pcre2">^Joining existing connection "</match>
+    <description>[WARN] guacd: a second party joined the running console session $(jtipam.connection) (session shadowing)</description>
+    <mitre>
+      <id>T1563</id>
+      <id>T1021.001</id>
+    </mitre>
+  </rule>
+
+  <!-- A request to join a connection ID that does not exist: someone talking
+       to guacd directly and guessing or replaying a connection ID. -->
+  <rule id="131629" level="7">
+    <if_sid>131627</if_sid>
+    <match type="pcre2">^Connection "[^"]*" does not exist$</match>
+    <description>guacd: request to join console session $(jtipam.connection), which does not exist</description>
+    <mitre>
+      <id>T1563</id>
+    </mitre>
+  </rule>
+
   <!-- =============================================================
        Audit layer (jt-ipam-audit lines, see the setup guide)
        ============================================================= -->
@@ -460,7 +533,7 @@
     <field name="_action" type="pcre2">^refresh_token_reuse$</field>
     <description>[WARN] jt-ipam: a used refresh token was presented again for account $(_object_id) from $(srcip)</description>
     <mitre>
-      <id>T1550</id>
+      <id>T1550.001</id>
     </mitre>
   </rule>
 
@@ -625,6 +698,7 @@
     <description>jt-ipam: secret revealed ($(_action) $(_object_type) $(jtipam.setting)$(jtipam.name)) by $(_actor_user_id) from $(srcip)</description>
     <mitre>
       <id>T1555</id>
+      <id>T1555.005</id>
     </mitre>
   </rule>
 
@@ -638,19 +712,60 @@
   </rule>
 
   <!-- Certificate agents fetch the bundle (including the key) after each
-       renewal: routine, measured 31 downloads by 12 agents in one renewal. -->
-  <rule id="131657" level="3">
+       renewal: routine machine traffic, measured 31 downloads by 12 agents in
+       one renewal day. Recorded only (level 3 before 1.2). jt-ipam writes
+       these records without an acting account (cert_agents.py: actor_user_id
+       None, user agent cert-agent/<name>): only an agent's key fetches them. -->
+  <rule id="131657" level="2">
     <if_sid>131630</if_sid>
     <field name="_action" type="pcre2">^cert_bundle_download$</field>
     <description>jt-ipam: certificate $(jtipam.part) delivered to a certificate agent at $(srcip)</description>
   </rule>
 
-  <rule id="131658" level="10">
+  <!-- A certificate agent's key used from outside the private networks: the
+       private key of a certificate leaves the site, or the agent key was
+       copied. -->
+  <rule id="131696" level="5">
+    <if_sid>131657</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>jt-ipam: certificate $(jtipam.part) delivered to a certificate agent outside the private networks: $(srcip)</description>
+    <mitre>
+      <id>T1552.004</id>
+    </mitre>
+  </rule>
+
+  <!--
+    A full system export holds every stored secret of jt-ipam in plaintext
+    (console passwords and keys, integration tokens, certificate keys) inside
+    one envelope sealed with the passphrase the exporting administrator chose
+    (backend/app/services/system_transfer/exporter.py and crypto.py). Creating
+    it is level 7; each download of the file is level 12 (level 10 before 1.2).
+    Measured: none in 30 days on one installation (a migration tool).
+  -->
+  <rule id="131654" level="7">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">^system$</field>
+    <field name="_action" type="pcre2">^export$</field>
+    <description>jt-ipam: full system export (all data and every stored secret) created by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1213</id>
+      <id>T1555.005</id>
+    </mitre>
+  </rule>
+
+  <rule id="131658" level="12">
     <if_sid>131630</if_sid>
     <field name="_action" type="pcre2">^system_export_download$</field>
-    <description>[WARN] jt-ipam: full system export downloaded by $(_actor_user_id) from $(srcip)</description>
+    <description>[HIGH] jt-ipam: full system export (all data and every stored secret) downloaded by $(_actor_user_id) from $(srcip)</description>
     <mitre>
-      <id>T1005</id>
+      <id>T1213</id>
+      <id>T1555.005</id>
     </mitre>
   </rule>
 
@@ -674,6 +789,31 @@
     </mitre>
   </rule>
 
+  <!--
+    Data exports: CSV of a subnet's addresses or of devices, a table the
+    browser built (export_events.py, reported by the web interface), a PDF
+    report. Each record carries the number of rows. 1,000 rows or more is
+    level 5. Measured: none in 30 days on one installation.
+  -->
+  <rule id="131692" level="3">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^(?:export_csv|export_client|export_report_pdf)$</field>
+    <description>jt-ipam: $(_object_type) data exported ($(_action)) by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1213</id>
+    </mitre>
+  </rule>
+
+  <rule id="131693" level="5">
+    <if_sid>131692</if_sid>
+    <field name="_diff" type="pcre2">"rows": \d{4,}[,}]</field>
+    <description>jt-ipam: bulk export of 1,000 rows or more ($(_object_type), $(_action)) by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1213</id>
+      <id>T1567</id>
+    </mitre>
+  </rule>
+
   <!-- Console sessions -->
 
   <!-- A console session that connected. Ordinary ones from a private address
@@ -685,6 +825,7 @@
     <mitre>
       <id>T1021</id>
     </mitre>
+    <group>jt_ipam_session_open,</group>
   </rule>
 
   <!-- A console session as root or a Windows or directory administrator: the
@@ -703,23 +844,52 @@
     <srcip>fe80::/10</srcip>
     <description>jt-ipam: $(_action) to $(jtipam.host) as privileged account '$(dstuser)' by $(_actor_user_id) from $(srcip)</description>
     <mitre>
-      <id>T1021</id>
+      <id>T1021.001</id>
+      <id>T1021.004</id>
+      <id>T1021.005</id>
       <id>T1078.003</id>
     </mitre>
+    <group>jt_ipam_session_open,</group>
   </rule>
 
+  <!--
+    The same, with a password or key typed in for this session instead of a
+    credential jt-ipam stores ("credential_id": null in the record; SSH, RDP
+    and VNC sessions carry the field, SFTP sessions do not). A privileged
+    account whose password lives outside the vault is what privileged access
+    tools call an unmanaged privileged account (idea from CyberArk PTA,
+    https://docs.cyberark.com/Product-Doc/OnlineHelp/PAS/Latest/en/Content/PTA/What-Does-PTA-Detect.htm).
+    Measured: 7 in 90 days on one installation, all root SSH.
+  -->
+  <rule id="131690" level="5">
+    <if_sid>131662</if_sid>
+    <field name="_diff" type="pcre2">"credential_id": null</field>
+    <description>jt-ipam: $(_action) to $(jtipam.host) as privileged account '$(dstuser)' with a typed-in password, not a stored credential, by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+    <group>jt_ipam_session_open,</group>
+  </rule>
+
+  <!-- RustDesk: a remote desktop in the browser, or the user's own RustDesk
+       client opened on the peer through jt-ipam (rustdesk.local_client_open,
+       addresses.py; the connection then runs outside jt-ipam). -->
   <rule id="131663" level="2">
     <if_sid>131630</if_sid>
-    <field name="_action" type="pcre2">^rustdesk\.web_session_open$</field>
-    <description>jt-ipam: RustDesk remote desktop to peer $(jtipam.peer) by $(_actor_user_id) from $(srcip)</description>
+    <field name="_action" type="pcre2">^rustdesk\.(?:web_session_open|local_client_open)$</field>
+    <description>jt-ipam: RustDesk remote desktop ($(_action)) to peer $(jtipam.peer) by $(_actor_user_id) from $(srcip)</description>
     <mitre>
       <id>T1219</id>
     </mitre>
+    <group>jt_ipam_session_open,</group>
   </rule>
 
-  <!-- A console session opened from a browser outside the private networks. -->
+  <!-- A console session opened from a browser outside the private networks.
+       One rule per parent (131697 for RustDesk, split from 131660 in 1.2):
+       a rule with two parents is counted twice as often by the group
+       correlation of 131691. -->
   <rule id="131660" level="5">
-    <if_sid>131665,131663</if_sid>
+    <if_sid>131665</if_sid>
     <srcip negate="yes">10.0.0.0/8</srcip>
     <srcip negate="yes">172.16.0.0/12</srcip>
     <srcip negate="yes">192.168.0.0/16</srcip>
@@ -727,10 +897,27 @@
     <srcip negate="yes">100.64.0.0/10</srcip>
     <srcip negate="yes">fc00::/7</srcip>
     <srcip negate="yes">fe80::/10</srcip>
-    <description>jt-ipam: $(_action) to $(jtipam.host)$(jtipam.peer) by $(_actor_user_id) from outside the private networks: $(srcip)</description>
+    <description>jt-ipam: $(_action) to $(jtipam.host) by $(_actor_user_id) from outside the private networks: $(srcip)</description>
     <mitre>
       <id>T1021</id>
     </mitre>
+    <group>jt_ipam_session_open,</group>
+  </rule>
+
+  <rule id="131697" level="5">
+    <if_sid>131663</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>jt-ipam: RustDesk remote desktop ($(_action)) to peer $(jtipam.peer) by $(_actor_user_id) from outside the private networks: $(srcip)</description>
+    <mitre>
+      <id>T1219</id>
+    </mitre>
+    <group>jt_ipam_session_open,</group>
   </rule>
 
   <rule id="131664" level="8">
@@ -740,6 +927,33 @@
     <mitre>
       <id>T1021</id>
       <id>T1078.003</id>
+    </mitre>
+    <group>jt_ipam_session_open,</group>
+  </rule>
+
+  <!--
+    One jt-ipam account opening console sessions to many different targets in
+    a short time: lateral movement through the console, or a stolen session
+    working through the host list. Counted per jt-ipam account (the acting
+    account's id) over every session rule above (group jt_ipam_session_open);
+    a session counts when its target (remote host or RustDesk peer) differs
+    from the target of the newest one, so repeated sessions to one or two
+    hosts never add up. Measured on one installation (30 days): at most 3 host
+    sessions, and 6 sessions to different targets with RustDesk, by one
+    account in any 10 minutes.
+    frequency="15" means 8 sessions: through if_matched_group Wazuh 4.14.7
+    counts each earlier session twice, because the built-in FreeIPA rule 82202
+    above them has two parents (sandbox: 7 earlier sessions + this one fire
+    at 15, not at 16). That is also why every session rule has one parent.
+  -->
+  <rule id="131691" level="10" frequency="15" timeframe="600" ignore="1800">
+    <if_matched_group>jt_ipam_session_open</if_matched_group>
+    <same_field>_actor_user_id</same_field>
+    <different_field>jtipam.target</different_field>
+    <description>[WARN] jt-ipam: account $(_actor_user_id) opened 8 console sessions within 10 minutes, 7 of them to other targets than the last ($(_action) to $(jtipam.target) from $(srcip))</description>
+    <mitre>
+      <id>T1021</id>
+      <id>T1078</id>
     </mitre>
   </rule>
 
@@ -802,7 +1016,7 @@
     <field name="_diff" type="pcre2">"setting": "audit_forward"</field>
     <description>[WARN] jt-ipam: audit forwarding changed by $(_actor_user_id) from $(srcip)</description>
     <mitre>
-      <id>T1562</id>
+      <id>T1562.006</id>
     </mitre>
   </rule>
 
@@ -810,6 +1024,31 @@
     <if_sid>131630</if_sid>
     <field name="_action" type="pcre2">^(?:chain_repair|chain_selftest)$</field>
     <description>[WARN] jt-ipam: audit records repaired or re-verified by maintenance ($(_action))</description>
+    <mitre>
+      <id>T1070</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Records kept outside the audit trail removed by hand: the AI assistant's
+    chat history (ai.py purge_chat_history, which the record counts) and the AI
+    auditor's findings (ai_audit.py clear). The automatic retention job
+    (change_plan_purge) stays at the base rule. Measured: none in 30 days.
+  -->
+  <rule id="131694" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^(?:purge_chat_history|clear)$</field>
+    <field name="_object_type" type="pcre2">^(?:ai|ai_audit)$</field>
+    <description>jt-ipam: $(_object_type) records deleted by hand ($(_action)) by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1070</id>
+    </mitre>
+  </rule>
+
+  <rule id="131695" level="3">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^set_chat_retention$</field>
+    <description>jt-ipam: retention of the AI assistant's chat history changed by $(_actor_user_id) from $(srcip)</description>
     <mitre>
       <id>T1070</id>
     </mitre>
@@ -838,6 +1077,124 @@
     <if_sid>131630</if_sid>
     <field name="_action" type="pcre2">^(?:mcp_tool_exec|ai_tool_exec)$</field>
     <description>jt-ipam: $(_action) by $(_actor_user_id) from $(srcip)</description>
+  </rule>
+
+  <!-- =============================================================
+       jt-ipam's nginx (built-in web server rules)
+       ============================================================= -->
+
+  <!--
+    jt-ipam's own traffic floods the built-in web server rules. Measured on one
+    installation over 10 days: 31120 (5xx, level 5) 2,915 alerts, 31301 (nginx
+    error, level 3) 2,933 and 31101 (4xx, level 5) 1,093, together about 43 %
+    of that host's alerts. Two causes, both routine:
+      - 502 Bad Gateway while the backend restarts (103 restarts in 10 days,
+        typically 30 to 45 seconds, about 26 failed requests each): the web
+        interface, scan agents and RustDesk agents keep polling.
+      - 401 on the web interface's background requests (notifications, own
+        profile, version) from a browser tab whose session expired: 861.
+    These children cover only jt-ipam's own API paths (from the product's
+    router and nginx configuration) in an nginx log, so the same answers of
+    other applications keep the built-in levels. A 502 or an upstream error is
+    recorded at level 2; the error log rule 131685 reports the backend being
+    unreachable for longer than a restart.
+  -->
+  <rule id="131682" level="0">
+    <if_sid>31101</if_sid>
+    <location>nginx</location>
+    <protocol type="pcre2">^GET$</protocol>
+    <id type="pcre2">^401$</id>
+    <url type="pcre2">^/api/v1/(?:notifications|auth/me|me/preferences|system/(?:version|online-grace))(?:\?|$)</url>
+    <description>jt-ipam: background request of an expired browser session (401)</description>
+  </rule>
+
+  <rule id="131683" level="2">
+    <if_sid>31120,31123</if_sid>
+    <location>nginx</location>
+    <id type="pcre2">^50[234]$</id>
+    <url type="pcre2">^(?:/api/v1/(?:auth/(?:realms|me|login|refresh)|notifications|scan-agents/|rustdesk/|lookup/|addresses/[0-9a-fA-F-]{36}/|system/|me/|health|change-impact|racks/|client/)|/api/auth/realms|/api/phpipam/|/readyz)</url>
+    <description>jt-ipam: nginx could not reach the backend ($(id)) for $(protocol) $(url)</description>
+  </rule>
+
+  <rule id="131684" level="2">
+    <if_sid>31301</if_sid>
+    <location>nginx</location>
+    <regex type="pcre2">^\S+ \S+ \[error\] \S+ \*\d+ (?:connect\(\) failed \(111: Connection refused\) while connecting to upstream|recv\(\) failed \(104: Connection reset by peer\) while reading response header from upstream|upstream prematurely closed connection while reading response header from upstream|upstream timed out \(110: Connection timed out\) while (?:connecting to|reading response header from) upstream|no live upstreams while connecting to upstream), client: \S+, server: \S*, request: "[A-Z]+ (?:/api/v1/(?:auth/(?:realms|me|login|refresh)|notifications|scan-agents/|rustdesk/|lookup/|addresses/[0-9a-fA-F-]{36}/|system/|me/|health|change-impact|racks/|client/)|/api/auth/realms|/api/phpipam/|/readyz)</regex>
+    <description>jt-ipam: nginx could not reach the backend (request from $(srcip))</description>
+  </rule>
+
+  <!-- 40 in 5 minutes on one host: longer than a restart (8 such episodes in
+       10 days on one installation, against 103 restarts). Once per 30
+       minutes while it lasts. -->
+  <rule id="131685" level="7" frequency="40" timeframe="300" ignore="1800">
+    <if_matched_sid>131684</if_matched_sid>
+    <same_location />
+    <description>jt-ipam: nginx could not reach the backend 40 times within 5 minutes (backend down for longer than a restart)</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <!-- =============================================================
+       PostgreSQL log (jt-ipam agent group, 1.2)
+       ============================================================= -->
+
+  <!--
+    The agent group reads PostgreSQL's log restricted to ERROR, FATAL and
+    PANIC lines (measured on one installation: about 780 lines a day in all,
+    98 % of them checkpoint and lost-client LOG lines, which the agent drops;
+    about 9 ERROR lines a day remain, mostly deadlocks, which stay here).
+  -->
+  <rule id="131686" level="0">
+    <decoded_as>jt-ipam-pgsql</decoded_as>
+    <description>PostgreSQL messages</description>
+  </rule>
+
+  <!--
+    A change to jt-ipam's audit table refused by the database. The table is
+    append-only: triggers raise "audit_logs is append-only: <operation> is not
+    allowed" for UPDATE, DELETE and TRUNCATE (alembic 0149 and 0201), and from
+    jt-ipam 1.0.6 the application's role holds only SELECT and INSERT, so its
+    attempts end with "permission denied for table audit_logs" first. Either
+    means someone tried to change or remove audit records. Measured on one
+    installation: 8 such lines in 30 days, from 4 manual checks of the
+    protection (an UPDATE and a DELETE each); each line alerts. A superuser
+    who disables the triggers first leaves no line here (see the setup guide).
+    The end of the message is anchored, because the user name in the line
+    prefix is whatever a client sent.
+  -->
+  <rule id="131687" level="12">
+    <if_sid>131686</if_sid>
+    <field name="jtipam.pg_severity" type="pcre2">^ERROR$</field>
+    <regex type="pcre2"> ERROR:  (?:audit_logs is append-only: (?:UPDATE|DELETE|TRUNCATE) is not allowed(?: \(id=\d+\))?|permission denied for table audit_logs)$</regex>
+    <description>[HIGH] jt-ipam: the database refused a change to the audit trail (by database user '$(dstuser)'): records were to be altered or deleted</description>
+    <mitre>
+      <id>T1070</id>
+      <id>T1565.001</id>
+    </mitre>
+  </rule>
+
+  <!-- Database login with a wrong password (PostgreSQL src/backend/libpq/auth.c:
+       "password authentication failed for user", also Peer and Ident). The
+       log line has no client address. Matched on the end of the line only:
+       a user name containing "@" and a severity word would otherwise move the
+       decoded severity and hide the failure (sandbox case). -->
+  <rule id="131688" level="5">
+    <if_sid>131686</if_sid>
+    <regex type="pcre2"> FATAL:  (?:password|Peer|Ident) authentication failed for user "[^"]*"$</regex>
+    <description>PostgreSQL: login as database user '$(dstuser)' failed</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="131689" level="10" frequency="5" timeframe="300" ignore="600">
+    <if_matched_sid>131688</if_matched_sid>
+    <same_location />
+    <description>[WARN] PostgreSQL: 5 failed database logins within 5 minutes, last as '$(dstuser)'</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,</group>
   </rule>
 
 </group>

@@ -1,0 +1,126 @@
+{
+ "id": "jt-docker",
+ "name": "Docker Engine Detection Suite",
+ "name_zh": "Docker Engine 偵測套組",
+ "version": "1.0",
+ "summary": "Docker exec without the healthcheck flood (healthchecks and repeated commands quiet, shells, secret dumps, download-and-run, reverse shells, escape techniques and miners visible), host network, daemon reloads and lost listeners, dockerd log in any time zone (unauthenticated TCP API, runc breakout attempts, old engine), daemon configuration file integrity, and an optional posture check for privileged containers, socket and host mounts, capabilities and host namespaces.",
+ "summary_zh": "去除健康檢查洪流的 docker exec 偵測（健康檢查與重複指令安靜；shell、讀取機密、下載後執行、反向 shell、逃逸手法與挖礦程式會顯示）、主機網路、daemon 重新載入與監聽中斷、任何時區的 dockerd 記錄（未驗證的 TCP API、runc 擋下的逃逸、過舊的版本）、daemon 設定檔完整性，以及選用的狀態檢查：特權容器、socket 與主機掛載、capability 與主機命名空間。",
+ "rule_id_range": "132600-132699",
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.7"
+ ],
+ "notes": [
+  "Docker exec. Every docker exec is a level 3 alert in Wazuh (87907), and most of them are the daemon's own healthchecks: at one site 92% of 481,000 exec events in 11 days, one container every 3 seconds. Healthcheck-shaped commands drop to level 1 (132601): an HTTP probe of the container itself, a program named *health*, pg_isready, mysqladmin ping, redis-cli ping and similar, with nothing else in the command line. The same command repeated in the same container within an hour drops to level 2 (132602); the first one stays at level 3.",
+  "What stays visible from docker exec: interactive shells the built-in rule does not list (132603, level 5: ash, zsh, login shells, busybox sh, su), environment and secret dumps (132604, level 6), network scanners, sniffers and listeners (132606, level 6), package installs in a running container (132605, level 7), and at level 12 download-and-run or decode-and-run commands (132607), reverse shells (132608), container escape techniques such as nsenter into PID 1, mounting a host disk, cgroup release_agent or core_pattern, or the Docker socket (132609), and cryptominers (132610). These are tried before the quiet rules, so a probe-shaped command that pipes into a shell still alerts.",
+  "Docker events never say whether a container is privileged, what it mounts from the host or which capabilities it has: the daemon attaches only labels, image and name (moby daemon/events.go). For those, the pack ships an optional posture check (agent/jt-docker-posture.sh) that reads docker inspect and docker info once an hour through a local wodle command. Privileged containers, the Docker or containerd socket mounted, a host system directory mounted writable (level 10), host PID namespace or SYS_ADMIN-class capabilities (level 8), host directories mounted read-only or confinement disabled (level 6), host network, IPC, UTS or user namespace (level 5) alert once per agent, container name and setting (first time seen), and again only when a setting changes. A container that lives only for minutes between two checks is not seen.",
+  "Other Docker events: a container joining the host network (132620, level 5, from the network connect event, which does carry it), the daemon configuration reloaded (132621, level 5) and reloaded with insecure registries (132622, level 8), docker-listener losing the daemon (132623, level 5), miner images created, started or pulled (132627, 132628, level 12). Routine stops drop from the built-in level 7 to level 3: a clean exit (code 0 or 143) and a kill with an ordinary stop signal (132625, 132626); SIGKILL and other exit codes stay at level 7. Image creation, which the built-in 87901 calls \"Container created\", gets its own description (132629).",
+  "dockerd log. Wazuh's built-in docker decoder only accepts UTC timestamps, so on a host that is not set to UTC every dockerd line ends as \"No decoder matched\" and the built-in rules 86000-86006 never see it. The pack adds a third decoder with the same name that accepts a time zone offset, so the built-in rules work there too. Rules: the API listening on TCP without TLS client verification (132640, level 12; loopback only, 132641, level 8), any TCP listener (132642, level 5), runc refusing a container breakout (132643, CVE-2024-21626 technique, and 132644, CVE-2025-31133 technique, level 12), and Docker Engine older than 29.8.2 (132645, level 5; distribution packages may carry backported fixes).",
+  "File integrity of the daemon configuration through the agent group, in real time and with diffs: daemon.json, containerd's config.toml and /etc/default or /etc/sysconfig docker (132660, level 8), systemd units and overrides of docker and containerd (132661, level 8), any of them adding a tcp:// listener in the diff (132662, level 12), other files under /etc/docker and /etc/containerd (132663, level 5). Registry certificates and keys get no diff, and no file ending in .key or -key.pem on these agents does.",
+  "On a host with auditd, Wazuh's built-in 80710 (\"Device enables promiscuous mode\", level 10) fires for every container start and stop, because it also matches old_prom=256 (leaving promiscuous mode) and Docker bridges every container's veth. Records of dockerd itself for a veth interface drop to level 2 (132650); everything else stays at level 10.",
+  "Deliberately not covered: what a process inside a container does on its own (a web shell in an application) does not pass through the Docker API and is in none of these sources; that needs process telemetry on the host (auditd, Falco, Tetragon). Nothing here depends on a site list, host name or account. No active response is offered: none of these events carries an attacker address.",
+  "Prerequisites: the agent on the docker host in the docker group, Python 3 and the Python docker module on that host for the docker-listener wodle, the dockerd log collected through the host's syslog or journal, and for the posture check, the script installed and a local wodle command. A poller that runs docker exec all day keeps producing one level 3 alert per hour on a quiet manager and one every few minutes on a busy one (the correlation memory, not the one hour timeframe, is the limit there): give it a site rule."
+ ],
+ "notes_zh": [
+  "docker exec：Wazuh 對每一次 docker exec 都發 level 3 告警（87907），而大多數其實是 daemon 自己執行的健康檢查：某站台 11 天 48.1 萬筆 exec 中有 92% 是健康檢查，其中一個容器每 3 秒一次。形狀屬於健康檢查的指令降為 level 1（132601）：對容器自己的 HTTP 探測、名稱含 health 的程式、pg_isready、mysqladmin ping、redis-cli ping 等，且指令列中沒有其他東西。同一容器在一小時內重複執行相同指令降為 level 2（132602），第一次仍是 level 3。",
+  "docker exec 仍會顯示的：內建規則沒列到的互動式 shell（132603，level 5：ash、zsh、登入 shell、busybox sh、su）、讀取環境變數或機密（132604，level 6）、網路掃描、側錄與監聽工具（132606，level 6）、在執行中的容器裡安裝套件（132605，level 7），以及 level 12 的下載後執行或解碼後執行（132607）、反向 shell（132608）、容器逃逸手法如 nsenter 進 PID 1、掛載主機磁碟、cgroup release_agent 或 core_pattern、Docker socket（132609）、挖礦程式（132610）。這些規則先於安靜規則比對，所以形狀像健康檢查但接到 shell 的指令仍會告警。",
+  "Docker 事件從不說明容器是否為特權模式、掛載了主機的哪些路徑、有哪些 capability：daemon 只附上標籤、映像與名稱（moby daemon/events.go）。為此套件提供選用的狀態檢查（agent/jt-docker-posture.sh），透過本機的 wodle command 每小時讀一次 docker inspect 與 docker info。特權容器、掛載 Docker 或 containerd socket、可寫入地掛載主機系統目錄（level 10），共用主機 PID 命名空間或 SYS_ADMIN 等級的 capability（level 8），唯讀掛載主機目錄或關閉 seccomp／AppArmor／SELinux 限制（level 6），共用主機網路、IPC、UTS 或使用者命名空間（level 5），在每個 agent、容器名稱與設定組合第一次出現時告警一次，之後只在設定改變時再告警。在兩次檢查之間只存在幾分鐘的容器看不到。",
+  "其他 Docker 事件：容器加入主機網路（132620，level 5，network connect 事件確實帶有這項資訊）、daemon 設定重新載入（132621，level 5）以及載入後含不安全的 registry（132622，level 8）、docker-listener 失去與 daemon 的連線（132623，level 5）、建立、啟動或拉取挖礦映像（132627、132628，level 12）。一般的停止從內建的 level 7 降為 level 3：正常結束（代碼 0 或 143）與以一般停止訊號送出的 kill（132625、132626）；SIGKILL 與其他結束代碼維持 level 7。建立映像在內建 87901 會寫成「Container created」，這裡另給正確的描述（132629）。",
+  "dockerd 記錄：Wazuh 內建的 docker 解碼器只接受 UTC 時間戳，所以在時區不是 UTC 的主機上，每一行 dockerd 記錄都是「No decoder matched」，內建規則 86000-86006 完全看不到。套件新增同名的第三個解碼器，接受帶時區偏移的時間，內建規則在這些主機上也能運作。規則：API 在 TCP 上監聽而沒有 TLS 用戶端驗證（132640，level 12；只在 loopback 時 132641，level 8）、任何 TCP 監聽（132642，level 5）、runc 擋下容器逃逸（132643 為 CVE-2024-21626 手法、132644 為 CVE-2025-31133 手法，level 12），以及 Docker Engine 早於 29.8.2（132645，level 5；發行版套件可能已回補修正）。",
+  "透過 agent 群組即時監控 daemon 設定的檔案完整性並保留差異：daemon.json、containerd 的 config.toml 與 /etc/default 或 /etc/sysconfig 的 docker（132660，level 8）、docker 與 containerd 的 systemd unit 與覆寫檔（132661，level 8）、差異中新增 tcp:// 監聽（132662，level 12）、/etc/docker 與 /etc/containerd 下的其他檔案（132663，level 5）。registry 憑證與金鑰不保留差異，這些 agent 上結尾為 .key 或 -key.pem 的檔案也都不保留。",
+  "在有 auditd 的主機上，Wazuh 內建的 80710（「Device enables promiscuous mode」，level 10）每次容器啟動或停止都會觸發：它也比中 old_prom=256（離開混雜模式），而 Docker 會把每個容器的 veth 接上 bridge。dockerd 自己對 veth 介面產生的記錄降為 level 2（132650），其他一律維持 level 10。",
+  "刻意不涵蓋：容器內的程序自行做的事（例如應用程式裡的 web shell）不經過 Docker API，不在上述任何來源裡；那需要主機上的程序遙測（auditd、Falco、Tetragon）。套件不依賴任何站台清單、主機名稱或帳號。不提供主動回應：這些事件都不帶攻擊者位址。",
+  "前提：docker 主機上的 agent 加入 docker 群組；該主機有 Python 3 與 Python docker 模組供 docker-listener wodle 使用；dockerd 記錄經由主機的 syslog 或 journal 收集；狀態檢查則要安裝腳本並設定本機 wodle command。整天以 docker exec 輪詢的程式，在負載低的 manager 上每小時仍會產生一筆 level 3，在忙碌的 manager 上每幾分鐘一筆（那裡的上限是關聯記憶，而不是一小時的時間窗）：請為它寫站台規則。"
+ ],
+ "files": [
+  {
+   "type": "decoder",
+   "name": "jt-docker_decoders.xml",
+   "dest": "etc/decoders/jt-docker_decoders.xml",
+   "sha256": "e63fdb1297a12b36e4b73ac049bf10d6127079f172e2adae4aa673d600cf3719"
+  },
+  {
+   "type": "rule",
+   "name": "zz-132600-jt_docker_rules.xml",
+   "dest": "etc/rules/zz-132600-jt_docker_rules.xml",
+   "sha256": "fea40f10a1110f35f6c66638fa3da5f5aba6a8d8b610eaf3ce8ef36b14d138e5"
+  }
+ ],
+ "agent_group": {
+  "name": "docker",
+  "config": "agent.conf",
+  "files": [
+   "jt-docker-posture.sh"
+  ],
+  "description": "The docker-listener wodle (Docker API events), real-time file integrity with diffs of the daemon configuration, and the optional posture check script"
+ },
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset on every node",
+   "title_zh": "安裝套件並在所有節點重新載入規則集",
+   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule and decoder files but does not reload the workers. The pack works on built-in Docker rules (87900-87958, 86000-86006) and needs no list.",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則與解碼器檔案，不會重載 worker。套件掛在內建的 Docker 規則（87900-87958、86000-86006）上，不需要任何清單。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Install the Python docker module on each docker host",
+   "title_zh": "在每台 docker 主機安裝 Python docker 模組",
+   "body": "The docker-listener wodle in the group is a Python 3 script that needs the docker module, which the agent package does not install. Versions as Wazuh documents them for 4.14. Python 3.11 and later (Debian 12, Ubuntu 24.04) refuse a system-wide pip install unless --break-system-packages is given (PEP 668); a distribution package (python3-docker) also works. Without the module the wodle writes \"'docker' module needs to be installed\" to the agent's ossec.log and stops after five attempts; nothing reaches the manager. The wodle runs as root and uses /var/run/docker.sock; rootless Docker is not supported.",
+   "body_zh": "群組裡的 docker-listener wodle 是 Python 3 腳本，需要 docker 模組，agent 套件不會安裝它。版本依 Wazuh 4.14 文件。Python 3.11 以後（Debian 12、Ubuntu 24.04）除非加上 --break-system-packages，否則拒絕在系統層 pip 安裝（PEP 668）；也可以用發行版套件（python3-docker）。沒有這個模組時，wodle 會在 agent 的 ossec.log 寫入「'docker' module needs to be installed」，嘗試五次後停止，manager 收不到任何事件。wodle 以 root 執行並使用 /var/run/docker.sock；不支援 rootless Docker。",
+   "code": "python3 --version\npip3 install docker==7.1.0 urllib3==1.26.20 requests==2.32.2\n# Python 3.11 or later:\npip3 install docker==7.1.0 urllib3==1.26.20 requests==2.32.2 --break-system-packages\n# or: apt install python3-docker",
+   "verify": "python3 -c 'import docker; print(docker.__version__)' prints a version.",
+   "verify_zh": "python3 -c 'import docker; print(docker.__version__)' 會印出版本。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Assign the docker hosts to the docker group",
+   "title_zh": "把 docker 主機加入 docker 群組",
+   "body": "The group starts the docker-listener wodle and monitors /etc/docker, the systemd overrides of docker and containerd, /etc/containerd and /etc/default or /etc/sysconfig docker in real time with diffs. If the agent's own ossec.conf already has a docker-listener block, remove it so only one runs. Registry certificates and keys get no diff, and on these agents no file ending in .key or -key.pem does (a global FIM option). The agent applies a new group configuration after a restart.",
+   "body_zh": "群組會啟動 docker-listener wodle，並即時監控 /etc/docker、docker 與 containerd 的 systemd 覆寫檔、/etc/containerd，以及 /etc/default 或 /etc/sysconfig 的 docker，保留差異。若 agent 自己的 ossec.conf 已有 docker-listener 區塊，請移除，只保留一個。registry 憑證與金鑰不保留差異；在這些 agent 上所有結尾為 .key 或 -key.pem 的檔案都不保留差異（這是全域的 FIM 選項）。agent 重新啟動後才會套用新的群組設定。",
+   "file": "agent/agent.conf",
+   "code": "/var/ossec/bin/agent_groups -a -i <AGENT_ID> -g docker -q\n/var/ossec/bin/agent_control -R -u <AGENT_ID>",
+   "verify": "On the docker host: docker exec <container> sh then exit. Expect rule 87908 (level 5). A container's own healthcheck produces rule 132601 (level 1, archives only).",
+   "verify_zh": "在 docker 主機上：docker exec <容器> sh 後離開。應出現規則 87908（level 5）。容器自己的健康檢查會產生 132601（level 1，只在 archives）。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Make sure the dockerd log reaches the manager",
+   "title_zh": "確認 dockerd 記錄有送到 manager",
+   "body": "Rules 132640-132645 read the dockerd and containerd log. A default agent reads it through /var/log/syslog or /var/log/messages, or the journal. A host with neither (journald only, no rsyslog, and an agent configuration without a journald block) sends nothing: add the block below to the agent's ossec.conf, or to the group if every docker host is like that. Do not add it where syslog is already read, or every line arrives twice. A daemon started with log-format json is not decoded by this pack.",
+   "body_zh": "規則 132640-132645 讀取 dockerd 與 containerd 的記錄。預設的 agent 會透過 /var/log/syslog、/var/log/messages 或 journal 讀到。兩者都沒有的主機（只有 journald、沒有 rsyslog，且 agent 設定沒有 journald 區塊）不會送出任何東西：把下面的區塊加進該 agent 的 ossec.conf；若每台 docker 主機都是這樣，也可以加進群組。已經讀取 syslog 的主機不要加，否則每一行會送兩次。以 log-format json 啟動的 daemon，本套件不解碼。",
+   "code": "<localfile>\n  <log_format>journald</log_format>\n  <location>journald</location>\n  <filter field=\"_SYSTEMD_UNIT\">^docker.service$|^containerd.service$</filter>\n</localfile>",
+   "verify": "systemctl restart docker (a short outage of every container unless live-restore is on), then look for rule 132645 or 86001 from that host. Without a restart: grep dockerd /var/log/syslog on the host.",
+   "verify_zh": "systemctl restart docker（除非啟用 live-restore，否則所有容器會短暫中斷），之後應看到該主機的 132645 或 86001。不重啟的話：在主機上 grep dockerd /var/log/syslog。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Optional: the posture check for privileged containers and host mounts",
+   "title_zh": "選用：檢查特權容器與主機掛載的狀態檢查",
+   "body": "Docker events do not say whether a container is privileged, which host paths it mounts or which capabilities it has. The script reads docker info and docker inspect (read-only) and prints one line per running container for rules 132680-132690; each setting alerts once per agent and container. The group delivers the script to /var/ossec/etc/shared. Copy it to a root-owned place and run it from the agent's own ossec.conf: a wodle command in the group's agent.conf only runs with wazuh_command.remote_commands=1 on the agent, which lets anyone who controls the manager's group files run commands as root there.",
+   "body_zh": "Docker 事件不會說明容器是否為特權模式、掛載了哪些主機路徑或有哪些 capability。這個腳本唯讀地讀取 docker info 與 docker inspect，每個執行中的容器印一行，交給規則 132680-132690；每項設定在每個 agent、每個容器只告警一次。群組會把腳本送到 /var/ossec/etc/shared。請複製到 root 擁有的位置，並由 agent 自己的 ossec.conf 執行：放在群組 agent.conf 的 wodle command 只有在 agent 設了 wazuh_command.remote_commands=1 時才會執行，而那等於讓能控制 manager 群組檔案的人在該主機以 root 執行指令。",
+   "file": "agent/jt-docker-posture.sh",
+   "code": "install -m 0750 -o root -g root /var/ossec/etc/shared/jt-docker-posture.sh /usr/local/sbin/\n# add inside <ossec_config> of /var/ossec/etc/ossec.conf:\n<wodle name=\"command\">\n  <disabled>no</disabled>\n  <tag>jt-docker-posture</tag>\n  <command>/bin/sh /usr/local/sbin/jt-docker-posture.sh</command>\n  <interval>1h</interval>\n  <run_on_start>yes</run_on_start>\n  <timeout>120</timeout>\n  <ignore_output>no</ignore_output>\n</wodle>\nsystemctl restart wazuh-agent",
+   "verify": "/bin/sh /usr/local/sbin/jt-docker-posture.sh prints a daemon line and one container line per running container. After the agent restart, a privileged test container (docker run -d --rm --privileged --name jt-posture-test alpine sleep 7200) gives rule 132684 at the next run; remove it with docker rm -f jt-posture-test.",
+   "verify_zh": "/bin/sh /usr/local/sbin/jt-docker-posture.sh 會印出一行 daemon 與每個執行中容器一行。agent 重啟後，以特權測試容器（docker run -d --rm --privileged --name jt-posture-test alpine sleep 7200）在下一次執行時應出現 132684；用 docker rm -f jt-posture-test 移除。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "Optional: quiet a site's own pollers",
+   "title_zh": "選用：讓站台自己的輪詢程式安靜",
+   "body": "A host-side job that runs the same docker exec all day is quieted by 132602 only while the first run is still in analysisd's correlation memory: one level 3 alert per hour on a quiet manager, one every few minutes on a busy one. Give such a job a site rule: a child of 87907 that matches its exact command and container name, at level 0, in a site file (not in this pack, so updates keep it). Keep it exact: a broad pattern at level 0 is tried before every other child of 87907, including the level 12 rules here.",
+   "body_zh": "主機端整天執行同一個 docker exec 的工作，只有在第一次執行仍留在 analysisd 關聯記憶中時才會被 132602 壓下：負載低的 manager 上每小時一筆 level 3，忙碌的 manager 上每幾分鐘一筆。請為這類工作寫站台規則：87907 的子規則，比對它的完整指令與容器名稱，level 0，放在站台自己的檔案（不放在本套件，更新時才會保留）。條件要精確：level 0 的寬鬆樣式會比 87907 底下所有其他子規則先比對，包括這裡的 level 12 規則。",
+   "code": "<group name=\"local,docker,\">\n  <rule id=\"100690\" level=\"0\">\n    <if_sid>87907</if_sid>\n    <field name=\"docker.Actor.Attributes.name\">^CONTAINER_NAME$</field>\n    <field name=\"docker.Action\" type=\"pcre2\">^exec_start: EXACT COMMAND$</field>\n    <description>Site: scheduled docker exec</description>\n  </rule>\n</group>"
+  }
+ ]
+}

@@ -19,15 +19,16 @@
 
   What each part feeds
   ────────────────────
-    ProcessCreate (event 1)          906100-906106, 906170-906178   — most
+    ProcessCreate (event 1)          906100-906106, 906152-906158, 906170-906179,
+                                     906185   — most
                                      configurations already log every
                                      process; if yours includes rather than
                                      excludes, make sure these paths are in.
-    FileCreate (event 11)            906124 and the built-in 92200-92217
+    FileCreate (event 11)            906124, 906159 and the built-in 92200-92217
     FileCreateStreamHash (event 15)  906121-906123 — the download mark. Sysmon
                                      records the Zone.Identifier contents
                                      itself, which is what 906122 reads.
-    FileExecutableDetected (29)      906180-906183. Needs Sysmon 15.0 or
+    FileExecutableDetected (29)      906180-906184. Needs Sysmon 15.0 or
                                      later and schemaversion 4.90 or later at
                                      the top of the configuration. Without it
                                      those four rules stay silent and nothing
@@ -52,6 +53,8 @@
         <Image condition="excludes">C:\</Image>
         <!-- folders inside C:\Windows that ordinary users can write to (906174) -->
         <Image condition="contains any">C:\Windows\Tasks\;C:\Windows\tracing\;C:\Windows\Registration\CRMLog\;\System32\Tasks\;\SysWOW64\Tasks\;\System32\FxsTmp\;\SysWOW64\FxsTmp\;\System32\com\dmp\;\SysWOW64\com\dmp\;\Microsoft\Crypto\RSA\MachineKeys\;\spool\drivers\color\;\spool\PRINTERS\;\spool\SERVERS\</Image>
+        <!-- folders inside C:\Windows that never hold programs (906158, since 3.5) -->
+        <Image condition="contains any">C:\Windows\addins\;C:\Windows\AppReadiness\;C:\Windows\Cursors\;C:\Windows\debug\;C:\Windows\Fonts\;C:\Windows\Help\;C:\Windows\L2Schemas\;C:\Windows\Media\;C:\Windows\Offline Web Pages\;C:\Windows\PLA\;C:\Windows\Prefetch\;C:\Windows\repair\;C:\Windows\schemas\;C:\Windows\security\</Image>
         <!-- anything on the system drive outside Windows and Program Files:
              folders of their own at the root (906177), the Recycle Bin (906178) -->
         <Rule groupRelation="and">
@@ -64,6 +67,8 @@
 
     <RuleGroup name="jt-portable: executables written to download locations" groupRelation="or">
       <FileCreate onmatch="include">
+        <!-- anything written into a Startup folder (906159, since 3.5) -->
+        <TargetFilename condition="contains">\Start Menu\Programs\Startup\</TargetFilename>
         <Rule groupRelation="and">
           <TargetFilename condition="contains any">\Downloads\;\Desktop\;\Documents\</TargetFilename>
           <TargetFilename condition="end with">.exe</TargetFilename>
@@ -116,6 +121,8 @@
           <TargetFilename condition="excludes">\AppData\</TargetFilename>
         </Rule>
         <TargetFilename condition="excludes">C:\</TargetFilename>
+        <!-- folders inside C:\Windows that ordinary users can write to (906184, since 3.5) -->
+        <TargetFilename condition="contains any">C:\Windows\Tasks\;C:\Windows\tracing\;C:\Windows\Registration\CRMLog\;\System32\Tasks\;\SysWOW64\Tasks\;\System32\FxsTmp\;\SysWOW64\FxsTmp\;\System32\com\dmp\;\SysWOW64\com\dmp\;\Microsoft\Crypto\RSA\MachineKeys\;\spool\drivers\color\;\spool\PRINTERS\;\spool\SERVERS\</TargetFilename>
       </FileExecutableDetected>
     </RuleGroup>
 

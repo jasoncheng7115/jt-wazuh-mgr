@@ -14,15 +14,29 @@
   with an address has.
 
   Modules
-    132100-132109  bases, export test event, unclassified actions
+    132100-132105  bases, export test event, unclassified actions
+    132106         audit file line in a shape this pack does not know
+    132107-132108  first sign-in of a pair from a public address
+    132109         an account acting from an address it never signed in from
     132110-132119  sign-in
-    132120-132129  failed sign-in
-    132130-132139  accounts and second factor
+    132120-132125  failed sign-in, repeated second-factor failures
+    132130-132137  accounts and second factor
+    132138-132139  sensitive administration from a public address
     132140-132149  settings
-    132150-132159  correlation: brute force, success after brute force
+    132150-132156  correlation: brute force, spraying, stuffing, success after
     132160-132169  recordings, transcripts, audit export
-    132170-132179  meetings (routine)
+    132170-132172  meetings (routine)
+    132174-132177  bulk downloads and deletions by one account
     132180-132189  listed accounts (site allowlist)
+    132190-132192  docker events of the portal's container (built-in 87907)
+    132195-132196  file integrity: the JaaS private key, the settings file
+
+  Since 1.2 the file also refines two built-in rule families, always as
+  children so the built-in result stays when nothing here matches: docker
+  exec events (87907, from the docker-listener wodle) and file integrity
+  events (550, 553, 554). The children only match the portal's own fixed
+  paths and commands inside its image (/var/www/html, /var/jaas-data) and
+  directories named after the product (jt-vc-portal, jaas-auth).
 
   The sign-in rules are deliberately not in Wazuh's authentication_success or
   authentication_failed groups. Built-in rules hang off those groups as
@@ -89,6 +103,19 @@
     <description>jt-vc-portal: unclassified audit action $(action) by $(actor)</description>
   </rule>
 
+  <!-- A prefixed line that is not a portal record in the shape the decoder
+       and every rule below expect (the key order of jt-vc-portal 1.0 to
+       1.19, a known result). A future portal version that reorders its keys
+       would otherwise vanish without a trace; so would a line cut short when
+       the portal's retention clean-up rewrites the file under the agent.
+       Sample data ("demo":true) stays silent. A sibling of 132100, which is
+       level 0 and so always tried first: only lines it rejects get here. -->
+  <rule id="132106" level="3">
+    <decoded_as>jt-vc-portal</decoded_as>
+    <regex type="pcre2">^jt-vc-portal: (?!.*,"demo":true}$)</regex>
+    <description>jt-vc-portal: audit line in a shape this pack does not know (new portal version or a damaged line)</description>
+  </rule>
+
 
   <!-- Sign-in. A successful sign-in is not an alert in itself: an ordinary
        account from a private address is recorded at level 2 (it still counts
@@ -99,7 +126,7 @@
            the prefixed audit file and of CEF)                  level 3
          any sign-in from a public address                      level 5
          an administrator from a public address                 level 8
-         a sign-in after repeated failures (132152, 132153)     level 11-12
+         a sign-in after repeated failures (132152/3/6)         level 11-12
        Private: 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, ::1, fc00::/7,
        fe80::/10, also with the ::ffff: prefix. The address is the one the
        portal recorded (behind a reverse proxy the client from X-Real-IP).
@@ -169,6 +196,31 @@
       <id>T1078</id>
     </mitre>
     <group>jtvc_login_success,pci_dss_10.2.5,gdpr_IV_32.2,tsc_CC6.8,</group>
+  </rule>
+
+  <!-- The same first-seen check on a sign-in from a public address, at the
+       level the sign-in has anyway (5, an administrator 8). Their purpose is
+       to record the pair: 132109 alerts when an account acts from an address
+       it never signed in from, and without these a session opened from a
+       public address would look like a stolen one at its first action. -->
+  <rule id="132107" level="5">
+    <if_sid>132115</if_sid>
+    <if_fts />
+    <description>jt-vc-portal: first sign-in of $(actor) from the public address $(ip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jtvc_login_success,pci_dss_10.2.5,gdpr_IV_32.2,tsc_CC6.8,</group>
+  </rule>
+
+  <rule id="132108" level="8">
+    <if_sid>132116</if_sid>
+    <if_fts />
+    <description>jt-vc-portal: first sign-in of administrator $(actor) from the public address $(ip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jtvc_login_success,pci_dss_10.2.2,pci_dss_10.2.5,gdpr_IV_32.2,tsc_CC6.8,</group>
   </rule>
 
   <!-- The syslog export has neither role nor address: the portal's built-in
@@ -252,6 +304,9 @@
     <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^sso_fail$</action>
     <description>jt-vc-portal: single sign-on failed for $(actor)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
     <group>pci_dss_10.2.4,gdpr_IV_32.2,tsc_CC6.8,</group>
   </rule>
 
@@ -259,6 +314,22 @@
     <if_sid>132123</if_sid>
     <field name="detail" type="pcre2">^oidc test: </field>
     <description>jt-vc-portal: identity provider connection test failed on the settings page</description>
+  </rule>
+
+  <!-- Second-factor guessing: the password of the account is known (a wrong
+       code is only asked for after a correct password), and the codes are
+       being tried. 3 in 15 minutes for one account; a person who mistypes a
+       code gets it right on the second try. Measured: no second-factor
+       failure at all in 144 days of one installation. -->
+  <rule id="132125" level="10" frequency="3" timeframe="900">
+    <if_matched_sid>132121</if_matched_sid>
+    <same_field>actor</same_field>
+    <description>[WARN] jt-vc-portal: repeated wrong second-factor codes after a correct password for $(actor)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1111</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,gdpr_IV_35.7.d,gdpr_IV_32.2,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,</group>
   </rule>
 
 
@@ -368,6 +439,9 @@
     <if_sid>132140</if_sid>
     <field name="detail" type="pcre2">^(登入路徑已變更|Login path changed|ログインパスを変更)</field>
     <description>jt-vc-portal: $(actor) changed the sign-in path</description>
+    <mitre>
+      <id>T1556</id>
+    </mitre>
     <group>pci_dss_10.2.7,gdpr_IV_32.2,tsc_CC8.1,</group>
   </rule>
 
@@ -483,6 +557,45 @@
     <group>authentication_failures,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,gdpr_IV_35.7.d,gdpr_IV_32.2,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,</group>
   </rule>
 
+  <!-- Password spraying from one address: the failures that set off 132150
+       were for different accounts. A child of 132150, so it only refines an
+       address that already counts as brute force: the portal locks an
+       address after its fifth failure, so one address never gets more than
+       five tries per lock, and spraying from it looks like this. Wazuh's
+       different_field compares each earlier failure with the current one
+       only: the alert means the last account tried differs from the four
+       before it, not that all five differ. A success afterwards from the
+       same address is 132156. -->
+  <rule id="132154" level="11" frequency="5" timeframe="600">
+    <if_sid>132150</if_sid>
+    <if_matched_sid>132120</if_matched_sid>
+    <field name="ip" type="pcre2">^[0-9A-Fa-f.:]+$</field>
+    <same_field>ip</same_field>
+    <different_field>actor</different_field>
+    <description>[WARN] jt-vc-portal: failed sign-ins for different accounts from $(ip) (password spraying)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,gdpr_IV_35.7.d,gdpr_IV_32.2,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,</group>
+  </rule>
+
+  <!-- Credential stuffing from many addresses. Each address can fail at
+       most five times before the portal locks it (attempts while locked are
+       login_locked and do not count here), so 20 failed password sign-ins in
+       10 minutes come from four addresses or more: a list of stolen
+       passwords tried through a pool of addresses, each staying under the
+       per-address threshold. Measured: at most one failed sign-in in any
+       10 minutes in 144 days of one installation. No active response: the
+       address of the twentieth failure is only one of many. -->
+  <rule id="132155" level="10" frequency="20" timeframe="600">
+    <if_matched_sid>132120</if_matched_sid>
+    <description>[WARN] jt-vc-portal: many failed sign-ins in 10 minutes across addresses (credential stuffing), the latest for $(actor) from $(ip)</description>
+    <mitre>
+      <id>T1110.004</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,gdpr_IV_35.7.d,gdpr_IV_32.2,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,</group>
+  </rule>
+
   <!-- A successful sign-in after repeated failures: from an address that set
        off 132150 within the hour (level 12), or for an account that set off
        132151 within the hour (level 11). Children of every sign-in rule, the
@@ -492,7 +605,7 @@
        level 10 alert are skipped by a level 10 rule that refers to it, so
        132153 at level 10 never fired. -->
   <rule id="132152" level="12" timeframe="3600">
-    <if_sid>132110,132111,132112,132113,132115,132116,132117,132118,132119</if_sid>
+    <if_sid>132107,132108,132110,132111,132112,132113,132115,132116,132117,132118,132119</if_sid>
     <if_matched_sid>132150</if_matched_sid>
     <field name="ip" type="pcre2">^[0-9A-Fa-f.:]+$</field>
     <same_field>ip</same_field>
@@ -505,10 +618,27 @@
   </rule>
 
   <rule id="132153" level="11" timeframe="3600">
-    <if_sid>132110,132111,132112,132113,132115,132116,132117,132118,132119</if_sid>
+    <if_sid>132107,132108,132110,132111,132112,132113,132115,132116,132117,132118,132119</if_sid>
     <if_matched_sid>132151</if_matched_sid>
     <same_field>actor</same_field>
     <description>[WARN] jt-vc-portal: $(actor) signed in after repeated failed sign-ins for that account</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1110</id>
+    </mitre>
+    <group>pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,gdpr_IV_35.7.d,gdpr_IV_32.2,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,</group>
+  </rule>
+
+  <!-- The same after password spraying (132154). Measured on 4.14.7: an
+       event joins the correlation list of the rule it finally ends at, not
+       of its parents, so a spraying event is not one of 132150's and 132152
+       does not see it. -->
+  <rule id="132156" level="12" timeframe="3600">
+    <if_sid>132107,132108,132110,132111,132112,132113,132115,132116,132117,132118,132119</if_sid>
+    <if_matched_sid>132154</if_matched_sid>
+    <field name="ip" type="pcre2">^[0-9A-Fa-f.:]+$</field>
+    <same_field>ip</same_field>
+    <description>[HIGH] jt-vc-portal: $(actor) signed in from $(ip) after failed sign-ins for different accounts from that address</description>
     <mitre>
       <id>T1078</id>
       <id>T1110</id>
@@ -549,6 +679,9 @@
     <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^transcript_delete$</action>
     <description>jt-vc-portal: $(actor) deleted a meeting transcript: $(detail)</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
   </rule>
 
   <!-- The portal removes a transcript by itself when its recording is gone. -->
@@ -580,6 +713,9 @@
     <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^audit_export$</action>
     <description>jt-vc-portal: $(actor) exported the audit log: $(detail)</description>
+    <mitre>
+      <id>T1213</id>
+    </mitre>
   </rule>
 
   <!-- Opening a transcript is the normal way to use one. -->
@@ -587,6 +723,37 @@
     <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^transcript_view$</action>
     <description>jt-vc-portal: $(actor) opened a meeting transcript</description>
+  </rule>
+
+
+  <!-- Sensitive administration from a public address: creating an
+       administrator, granting the role, single sign-on, the sign-in path,
+       importing or exporting the settings (every secret in clear text) and
+       exporting the audit log. Administration is done from the inside: in
+       144 days of one installation every one of these came from a private
+       address. Children of each rule, two levels or more above it; the
+       public test is the one of 132115 (::1, 0.0.0.0 and private ranges are
+       not public). The security event export has its own rule (132139). -->
+  <rule id="132138" level="10">
+    <if_sid>132131,132133,132141,132142,132147,132148,132168</if_sid>
+    <field name="ip" type="pcre2">^(?!(?:::ffff:)?(?:0\.|10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|(?i:::1?$|f[cd][0-9a-f]{0,2}:|fe[89ab][0-9a-f]?:))[0-9A-Fa-f.:]*[0-9A-Fa-f]$</field>
+    <description>[WARN] jt-vc-portal: $(actor) made a sensitive administrative change from the public address $(ip): $(action) $(detail)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1098</id>
+    </mitre>
+    <group>pci_dss_10.2.2,pci_dss_10.2.7,gdpr_IV_32.2,tsc_CC6.1,tsc_CC8.1,</group>
+  </rule>
+
+  <rule id="132139" level="12">
+    <if_sid>132144</if_sid>
+    <field name="ip" type="pcre2">^(?!(?:::ffff:)?(?:0\.|10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|(?i:::1?$|f[cd][0-9a-f]{0,2}:|fe[89ab][0-9a-f]?:))[0-9A-Fa-f.:]*[0-9A-Fa-f]$</field>
+    <description>[HIGH] jt-vc-portal: $(actor) changed the security event export from the public address $(ip): $(detail)</description>
+    <mitre>
+      <id>T1562.006</id>
+      <id>T1078</id>
+    </mitre>
+    <group>pci_dss_10.2.6,pci_dss_10.5.2,gdpr_IV_32.2,tsc_CC7.2,</group>
   </rule>
 
 
@@ -611,6 +778,58 @@
   </rule>
 
 
+  <!-- Bulk activity by one account. One download or deletion is ordinary
+       work (level 5); ten downloads or five deletions in an hour by the same
+       account is someone collecting the meetings, or removing them. Measured
+       on one installation over 144 days: at most 8 transcript downloads in
+       an hour (test automation), one recording download, 4 recording
+       deletions. The portal records only explicit downloads: watching a
+       recording in the browser is not recorded, so this does not see
+       streaming. Records by the portal itself (system, an empty actor) are
+       not a person and are not counted. A manager remembers recent events
+       only up to its memory size (8,192 by default): on a busy manager the
+       hour is shorter in practice. -->
+  <rule id="132174" level="8" frequency="10" timeframe="3600">
+    <if_matched_sid>132160</if_matched_sid>
+    <same_field>actor</same_field>
+    <field name="actor" type="pcre2">^(?!(?:system|cli|-)$).</field>
+    <description>jt-vc-portal: $(actor) downloaded many meeting recordings within an hour</description>
+    <mitre>
+      <id>T1213</id>
+    </mitre>
+  </rule>
+
+  <rule id="132175" level="8" frequency="10" timeframe="3600">
+    <if_matched_sid>132162</if_matched_sid>
+    <same_field>actor</same_field>
+    <field name="actor" type="pcre2">^(?!(?:system|cli|-)$).</field>
+    <description>jt-vc-portal: $(actor) downloaded many meeting transcripts or summaries within an hour</description>
+    <mitre>
+      <id>T1213</id>
+    </mitre>
+  </rule>
+
+  <rule id="132176" level="8" frequency="5" timeframe="3600">
+    <if_matched_sid>132161</if_matched_sid>
+    <same_field>actor</same_field>
+    <field name="actor" type="pcre2">^(?!(?:system|cli|-)$).</field>
+    <description>jt-vc-portal: $(actor) deleted many meeting recordings within an hour</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+  </rule>
+
+  <rule id="132177" level="8" frequency="5" timeframe="3600">
+    <if_matched_sid>132163</if_matched_sid>
+    <same_field>actor</same_field>
+    <field name="actor" type="pcre2">^(?!(?:system|cli|-)$).</field>
+    <description>jt-vc-portal: $(actor) deleted many meeting transcripts within an hour</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+  </rule>
+
+
   <!-- Optional tuning, listed accounts: transcript downloads and speaker
        edits of test automation. Failures, accounts, settings, exports and
        deletion of recordings are never quieted. -->
@@ -618,6 +837,129 @@
     <if_sid>132162,132165</if_sid>
     <list field="actor" lookup="match_key">etc/lists/jt-vc-portal-quiet-accounts</list>
     <description>jt-vc-portal: routine action of a listed account</description>
+  </rule>
+
+
+  <!-- A session used from an address it was not opened from: an account
+       acts (creates a room, downloads, changes something) from an address it
+       never signed in from. The sign-in rules record every (account,
+       address) pair they see in the first-seen key (132117, 132107, 132108);
+       an action whose pair is new means the session cookie travelled, or a
+       phone changed network in the middle of a session. Measured on one
+       installation: one such action in 144 days. Only the prefixed audit file
+       and CEF carry the key; elsewhere this rule cannot match.
+
+       A child of every action rule of level 6 or less, at level 7, so it
+       never lowers a level: siblings above 7 (an administrator created, a
+       single sign-on change, the security event export, bulk activity) are
+       tried first and keep their own level, and level 7 siblings were loaded
+       earlier and win. Jobs of the portal itself (system, cli), records
+       without an address and listed accounts are left out. Right after this
+       pack is installed or updated, every session already open produces this
+       once, at its first action from each address. -->
+  <rule id="132109" level="7">
+    <if_sid>132114,132130,132132,132134,132135,132136,132137,132140,132149,132160,132161,132162,132163,132165,132166,132168,132169,132170,132172</if_sid>
+    <field name="actor" type="pcre2">^(?!(?:system|cli|-)$).</field>
+    <field name="ip" type="pcre2">^[0-9A-Fa-f.:]*[0-9A-Fa-f]$</field>
+    <list field="actor" lookup="not_match_key">etc/lists/jt-vc-portal-quiet-accounts</list>
+    <if_fts />
+    <description>jt-vc-portal: $(actor) acted from $(ip), an address this account has not signed in from: $(action) $(detail)</description>
+    <mitre>
+      <id>T1550.004</id>
+      <id>T1539</id>
+    </mitre>
+    <group>pci_dss_10.2.5,gdpr_IV_32.2,tsc_CC6.8,</group>
+  </rule>
+
+
+  <!-- Docker events of the portal's container, from Wazuh's docker-listener
+       wodle on the docker host (built-in 87907, level 3: a command started
+       in a container). The image is php:apache with the portal in
+       /var/www/html and its data volume on /var/jaas-data; those paths are
+       fixed by the image, the container's name is not.
+
+       132190: the transcript worker. The portal's setup guide schedules
+       "docker exec ... php /var/www/html/transcribe-worker.php" every minute
+       from the host's crontab: 1,440 level 3 alerts a day on one host, all
+       the same command. Only that exact command is dropped. -->
+  <rule id="132190" level="0">
+    <if_sid>87907</if_sid>
+    <field name="docker.Action" type="pcre2">^exec_start: (?:/usr/local/bin/|/usr/bin/)?php /var/www/html/transcribe-worker\.php$</field>
+    <description>jt-vc-portal: scheduled transcript worker run in container $(docker.Actor.Attributes.name)</description>
+    <group>docker,</group>
+  </rule>
+
+  <!-- The portal's emergency command line tools, run inside the container:
+       login-path.php reset / set (the secret sign-in path; this tool writes
+       no audit record at all, so this event is its only trace) and
+       sso-cli.php disable / disable-sso-only (turns single sign-on off and
+       restores password sign-in, also recorded as 132141). Meant for an
+       administrator who is locked out; anyone with docker access can use
+       them to reopen password sign-in or move the sign-in page. "show" only
+       reads and stays at the built-in level. -->
+  <rule id="132191" level="8">
+    <if_sid>87907</if_sid>
+    <field name="docker.Action" type="pcre2">[\s/](?:login-path|sso-cli)\.php +(?:reset|set|disable)\b</field>
+    <description>jt-vc-portal: emergency command for the sign-in path or single sign-on run in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
+    <mitre>
+      <id>T1609</id>
+      <id>T1556</id>
+    </mitre>
+    <group>docker,pci_dss_10.2.7,gdpr_IV_32.2,tsc_CC8.1,</group>
+  </rule>
+
+  <!-- Any other command in a container that names the portal's data
+       directory: users.json holds the password hashes and second-factor
+       secrets, settings.json every stored secret (identity provider, mail,
+       JaaS and recording service tokens). The portal itself never needs a
+       command for this; an operator reading or repairing data does, and so
+       does someone collecting the secrets. Seen on one installation: two in
+       a day, an administrator reading settings. -->
+  <rule id="132192" level="6">
+    <if_sid>87907</if_sid>
+    <field name="docker.Action" type="pcre2">/var/jaas-data(?![\w.-])</field>
+    <description>jt-vc-portal: command touching the portal's data directory run in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
+    <mitre>
+      <id>T1609</id>
+      <id>T1552.001</id>
+    </mitre>
+    <group>docker,gdpr_IV_32.2,</group>
+  </rule>
+
+
+  <!-- File integrity (syscheck from the agent group; logtest cannot replay
+       these). Paths: a directory whose name contains jt-vc-portal or
+       jaas-auth, as in the portal's documented locations
+       (/opt/jt-vc-portal/keys, /var/www/jt-vc-portal/keys,
+       /opt/jt-vc-portal/data, /var/jaas-data).
+
+       132195: the JaaS private key (keys/private.key). Whoever holds it can
+       sign meeting tokens for every room with moderator rights; a changed
+       file is either a planned key rotation or a swapped signing key. -->
+  <rule id="132195" level="10">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">(?:jt-vc-portal|jaas-auth)[^/]*/keys/</field>
+    <description>[WARN] jt-vc-portal: the meeting token signing key directory changed: $(file)</description>
+    <mitre>
+      <id>T1552.004</id>
+      <id>T1606</id>
+    </mitre>
+    <group>syscheck,pci_dss_10.5.5,pci_dss_11.5,gdpr_II_5.1.f,tsc_PI1.4,tsc_PI1.5,tsc_CC6.1,</group>
+  </rule>
+
+  <!-- 132196: settings.json. Every save on the settings pages changes it and
+       is also in the audit log (132140 and its children), so this is level 5,
+       below the built-in 7. Its value is the change that has no audit record
+       next to it: the file edited on the host, or by login-path.php. -->
+  <rule id="132196" level="5">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">(?:jt-vc-portal|jaas)[^/]*/(?:data/)?settings\.json$</field>
+    <description>jt-vc-portal: the portal's settings file changed (compare with its settings record in the audit log): $(file)</description>
+    <mitre>
+      <id>T1556</id>
+      <id>T1562</id>
+    </mitre>
+    <group>syscheck,pci_dss_10.5.5,pci_dss_11.5,gdpr_II_5.1.f,tsc_PI1.4,tsc_PI1.5,</group>
   </rule>
 
 </group>

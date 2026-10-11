@@ -7,13 +7,16 @@
 
   Modules
     132500-132504  base rules, one per line shape (all level 0)
+    132505-132509  Prosody and Jicofo starts, outdated Prosody, crash loops
     132510-132519  Prosody: JWT (token) authentication
     132520-132529  Prosody: refused actions, rate limits, accounts, logins
-    132530-132539  Prosody: configuration, TLS, ports
+    132530-132539  Prosody: configuration, modules, TLS, ports
     132540-132549  XMPP connections of Jicofo, Videobridge, Jibri; bridges
-    132550-132559  Videobridge health and ICE
+    132550-132554  Videobridge health and ICE
+    132555-132559  kicks, repeated XMPP disconnects, videobridge starts
     132560-132579  recording (Jibri, and Jicofo's side of it), lobby
     132580-132589  web server in front of Jitsi (signalling endpoints)
+    132590-132599  Prosody: further refused actions, connection limits
 
   Every child below is written against the message text with <match> or
   <regex>, not against decoded fields, so the same rule serves the lines that
@@ -57,6 +60,72 @@
   </rule>
 
   <!--
+    Component starts: Prosody's banner (util/startup.lua, "Hello and welcome
+    to Prosody version %s", the same in 0.12 and 13), Jicofo ("Starting
+    Jicofo.", Main.java) and the videobridge (132558 below). Recorded below
+    the alert level; three starts of one component within ten minutes are a
+    crash loop (s6 in the docker images and systemd restart a component that
+    dies). One rule per component, so that a restart of the whole stack, which
+    the syslog and journald shapes write to one file, counts once for each.
+    same_field cannot do this: an event without the field never correlates
+    (sandbox, 4.14.7), and the docker json-file shape decodes no jitsi field.
+    Jibri is left out on purpose: in single-use mode it restarts after every
+    recording.
+  -->
+  <rule id="132505" level="2">
+    <if_sid>132500,132501</if_sid>
+    <match>Hello and welcome to Prosody version </match>
+    <description>Jitsi Meet: Prosody started</description>
+  </rule>
+
+  <!--
+    Prosody security advisory 2026-04-29 (https://prosody.im/security/advisory_735dd9d3/):
+    CVE-2026-43506 and CVE-2026-43507, memory exhaustion by unauthenticated
+    connections, and CVE-2026-43504 and CVE-2026-43505, unauthenticated relay
+    through mod_proxy65. Fixed in 0.12.6 and 13.0.5; every earlier 0.x
+    release (0.11 and older) is affected too. The advisory adds that LuaExpat
+    must be linked against libexpat 2.7.2 or later (CVE-2025-59375), which the
+    banner does not show ("prosodyctl about" does). A distribution package
+    that backports the fix keeps its old version number: check its changelog.
+    "(?!\d)" keeps 13.0.1 from matching the start of 13.0.10. A start that
+    lands here is not counted by 132507; each one alerts on its own.
+  -->
+  <rule id="132506" level="7">
+    <if_sid>132505</if_sid>
+    <regex type="pcre2">Hello and welcome to Prosody version (?:0\.(?:\d|1[01])\.\d+|0\.12\.[0-5]|13\.0\.[0-4])(?!\d)</regex>
+    <description>Jitsi Meet: Prosody older than 13.0.5 or 0.12.6 started (unauthenticated memory exhaustion and proxy65 relay, CVE-2026-43504 to 43507)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1499</id>
+    </mitre>
+    <group>vulnerability,</group>
+  </rule>
+
+  <rule id="132507" level="8" frequency="3" timeframe="600" ignore="1800">
+    <if_matched_sid>132505</if_matched_sid>
+    <same_location />
+    <description>Jitsi Meet: Prosody started three times in ten minutes (crash loop)</description>
+    <mitre>
+      <id>T1499</id>
+    </mitre>
+  </rule>
+
+  <rule id="132508" level="2">
+    <if_sid>132502,132503</if_sid>
+    <regex type="pcre2">Main\.main#\d+: Starting Jicofo\.</regex>
+    <description>Jitsi Meet: Jicofo started</description>
+  </rule>
+
+  <rule id="132509" level="8" frequency="3" timeframe="600" ignore="1800">
+    <if_matched_sid>132508</if_matched_sid>
+    <same_location />
+    <description>Jitsi Meet: Jicofo started three times in ten minutes (crash loop)</description>
+    <mitre>
+      <id>T1499</id>
+    </mitre>
+  </rule>
+
+  <!--
     JWT authentication (mod_auth_token, Prosody host of the meeting domain).
     The line names the error and the reason, the room and the user agent, but
     not the client address: docker-jitsi-meet's Prosody sees every client
@@ -69,6 +138,11 @@
     carry. Expired tokens are not counted. On 4.14.7 if_matched_group counts
     every event twice (tested in the sandbox, also with the group on one rule
     only): frequency="15" fires on the eighth failure and not on the seventh.
+    Until 1.1 the reason rules required a space after the reason. jitsi-meet
+    before about stable-9xxx logs "Error verifying token err:%s, reason:%s"
+    with nothing after it (stable/jitsi-meet_8922, mod_auth_token.lua:83), so
+    a forged token there stayed at 132510. A reason now ends at a space, at
+    the end of the line or at the "\n" of the docker json-file shape.
   -->
   <rule id="132510" level="5">
     <if_sid>132500,132501</if_sid>
@@ -86,7 +160,7 @@
 
   <rule id="132512" level="8">
     <if_sid>132510</if_sid>
-    <regex type="pcre2">reason:(?:Invalid signature|Invalid or incorrect alg|Algorithm not supported|Invalid typ|Invalid token|Invalid header|Invalid body|bad token format|invalid 'iss' claim|'iss' claim is missing|invalid 'aud' claim|'aud' claim is missing|'kid' claim|'alg' claim is missing|exp must be number|nbf must be number|sub claim is missing|room claim is missing) </regex>
+    <regex type="pcre2">reason:(?:Invalid signature|Invalid or incorrect alg|Algorithm not supported|Invalid typ|Invalid token|Invalid header|Invalid body|bad token format|invalid 'iss' claim|'iss' claim is missing|invalid 'aud' claim|'aud' claim is missing|'kid' claim|'alg' claim is missing|exp must be number|nbf must be number|sub claim is missing|room claim is missing)(?: |\\n|$)</regex>
     <description>Jitsi Meet: JWT rejected as not signed by this server or malformed</description>
     <mitre>
       <id>T1606</id>
@@ -96,21 +170,21 @@
 
   <rule id="132513" level="5">
     <if_sid>132510</if_sid>
-    <match>reason:token required </match>
+    <regex type="pcre2">reason:token required(?: |\\n|$)</regex>
     <description>Jitsi Meet: connection without a JWT refused (meeting opened without its token issuer)</description>
     <group>authentication_failed,jitsi_token_failure,</group>
   </rule>
 
   <rule id="132514" level="7">
     <if_sid>132510</if_sid>
-    <regex type="pcre2">reason:(?:could not obtain public key|signature verification key is missing) </regex>
+    <regex type="pcre2">reason:(?:could not obtain public key|signature verification key is missing)(?: |\\n|$)</regex>
     <description>Jitsi Meet: JWT verification key unavailable (ASAP key server or secret), every join fails</description>
     <group>authentication_failed,jitsi_token_failure,</group>
   </rule>
 
   <rule id="132519" level="5">
     <if_sid>132510</if_sid>
-    <regex type="pcre2">reason:(?:Not acceptable by nbf|jwt missing required context claim) </regex>
+    <regex type="pcre2">reason:(?:Not acceptable by nbf|jwt missing required context claim)(?: |\\n|$)</regex>
     <description>Jitsi Meet: JWT not yet valid or without its context claim (clock skew between token issuer and server?)</description>
     <group>authentication_failed,jitsi_token_failure,</group>
   </rule>
@@ -160,6 +234,9 @@
     <if_sid>132500,132501</if_sid>
     <match>Filtering jibri start recording, stanza:</match>
     <description>Jitsi Meet: recording or live stream refused, participant not allowed</description>
+    <mitre>
+      <id>T1125</id>
+    </mitre>
   </rule>
 
   <rule id="132521" level="6">
@@ -168,10 +245,16 @@
     <description>Jitsi Meet: recording or live stream requests over the rate limit</description>
   </rule>
 
+  <!--
+    One message for several moderator-only actions: ending the meeting for
+    everyone (mod_end_conference), breakout rooms (mod_muc_breakout_rooms),
+    audio and video moderation (mod_av_moderation_component) and room
+    metadata ("this operation(%s)", mod_room_metadata_component).
+  -->
   <rule id="132522" level="6">
     <if_sid>132500,132501</if_sid>
     <match>is not moderator and not allowed this operation</match>
-    <description>Jitsi Meet: participant without moderator role tried to end the meeting for all</description>
+    <description>Jitsi Meet: moderator-only action refused (end meeting, breakout rooms, A/V moderation or room metadata)</description>
   </rule>
 
   <rule id="132523" level="6">
@@ -214,6 +297,7 @@
     <description>Jitsi Meet: XMPP account or server administration</description>
     <mitre>
       <id>T1098</id>
+      <id>T1136</id>
     </mitre>
     <group>account_changed,</group>
   </rule>
@@ -303,6 +387,42 @@
   </rule>
 
   <!--
+    A module that does not load (core/modulemanager.lua: "Unable to load
+    module '%s': %s", "Error initializing module '%s' on '%s': %s", Prosody
+    0.12 and 13). Prosody keeps running without it. For the Jitsi modules
+    that enforce something this fails open: token checks on joins, the lobby,
+    the recording and dial-out filters, rate limits, the MUC resource and
+    meeting id checks, bans, room passwords.
+  -->
+  <rule id="132537" level="5">
+    <if_sid>132500,132501</if_sid>
+    <regex type="pcre2">Unable to load module '[^']+': |Error initializing module '[^']+' on '</regex>
+    <description>Jitsi Meet: Prosody module failed to load</description>
+  </rule>
+
+  <rule id="132538" level="8">
+    <if_sid>132537</if_sid>
+    <regex type="pcre2">module '(?:auth_token|token_verification|token_affiliation|muc_lobby_rooms|filter_iq_jibri|filter_iq_rayo|rate_limit|muc_rate_limit|muc_resource_validate|muc_meeting_id|end_conference|muc_auth_ban|muc_password_check|limits)'</regex>
+    <description>Jitsi Meet: Prosody security module failed to load (token checks, lobby, recording filter or rate limits may be off)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
+  <!--
+    mod_admin_telnet (service "console", default 127.0.0.1:5582) is an admin
+    shell without authentication for anyone who can reach the port: on
+    docker-jitsi-meet that is every process in the Prosody container.
+    Commented out in docker-jitsi-meet's prosody.cfg.lua; core/portmanager.lua
+    logs "Activated service '%s' on %s" at every start.
+  -->
+  <rule id="132539" level="5">
+    <if_sid>132500,132501</if_sid>
+    <regex type="pcre2">Activated service 'console' on \[</regex>
+    <description>Jitsi Meet: Prosody telnet admin console enabled (no authentication)</description>
+  </rule>
+
+  <!--
     XMPP connections of the Java components. Jicofo, the Videobridge and
     Jibri each keep a client connection to Prosody; a Jibri or Videobridge on
     another host keeps it across the network. A lost connection is one alert
@@ -340,6 +460,9 @@
     <if_sid>132502,132503</if_sid>
     <regex type="pcre2">Disabling certificate verification!|Disabling TLS certificate verification!</regex>
     <description>Jitsi Meet: component connects to XMPP without verifying the server certificate</description>
+    <mitre>
+      <id>T1557</id>
+    </mitre>
   </rule>
 
   <!-- Jicofo's view of the videobridges. -->
@@ -410,6 +533,59 @@
   </rule>
 
   <!--
+    Jicofo, "Member kicked: <nick>" (JitsiMeetConferenceImpl.java:1038, stable
+    11031); the room is in the logging context and decoded as jitsi.room
+    (not in the docker json-file shape). A moderator removing several
+    participants within minutes is usually clearing out intruders (meeting
+    bombing, https://jitsi.org/security/). Counted per log, not per room:
+    same_field on jitsi.room would never correlate the json-file shape.
+  -->
+  <rule id="132555" level="3">
+    <if_sid>132502,132503</if_sid>
+    <match>Member kicked: </match>
+    <description>Jitsi Meet: participant kicked from a meeting</description>
+  </rule>
+
+  <rule id="132556" level="7" frequency="3" timeframe="300" ignore="900">
+    <if_matched_sid>132555</if_matched_sid>
+    <same_location />
+    <description>Jitsi Meet: three participants kicked within five minutes (intruders being removed?)</description>
+  </rule>
+
+  <!--
+    A component that keeps losing its XMPP connection. For Jicofo this is
+    the symptom of the crafted-stanza denial of service in JSA-2022-0002,
+    JSA-2023-0002 and JSA-2025-0001 (jicofo XML parsing, fixed in 1.0-940,
+    1.0-1050 and 1.0-1133), otherwise an unstable Prosody or network. One
+    outage gives one or two 132540 lines per component (measured on two
+    recording hosts over 4.7 months: never three in ten minutes).
+  -->
+  <rule id="132557" level="10" frequency="3" timeframe="600" ignore="1800">
+    <if_matched_sid>132540</if_matched_sid>
+    <same_location />
+    <description>[WARN] Jitsi Meet: component lost its XMPP connection three times in ten minutes</description>
+    <mitre>
+      <id>T1499</id>
+    </mitre>
+  </rule>
+
+  <!-- Videobridge starts ("Starting jitsi-videobridge version %s", Main.kt:82), as 132508. -->
+  <rule id="132558" level="2">
+    <if_sid>132502,132503</if_sid>
+    <match>Starting jitsi-videobridge version </match>
+    <description>Jitsi Meet: videobridge started</description>
+  </rule>
+
+  <rule id="132559" level="8" frequency="3" timeframe="600" ignore="1800">
+    <if_matched_sid>132558</if_matched_sid>
+    <same_location />
+    <description>Jitsi Meet: videobridge started three times in ten minutes (crash loop)</description>
+    <mitre>
+      <id>T1499</id>
+    </mitre>
+  </rule>
+
+  <!--
     Recording and live streaming (Jibri), and Jicofo's side of it. A start
     and a stop are level 3 (who recorded which meeting is in the full log);
     a live stream sends the meeting to an outside service and is level 5.
@@ -426,6 +602,7 @@
     <description>Jitsi Meet: live stream started</description>
     <mitre>
       <id>T1125</id>
+      <id>T1567</id>
     </mitre>
   </rule>
 
@@ -507,12 +684,64 @@
     <if_sid>132502,132503</if_sid>
     <match>Ignored Jibri request from non-moderator.</match>
     <description>Jitsi Meet: recording request from a participant without moderator role ignored</description>
+    <mitre>
+      <id>T1125</id>
+    </mitre>
   </rule>
 
   <rule id="132574" level="3">
     <if_sid>132502,132503</if_sid>
     <match>Lobby is now disabled.</match>
     <description>Jitsi Meet: lobby turned off in a meeting</description>
+  </rule>
+
+  <!--
+    Jicofo's side of a failed recording, for a site whose Jibri hosts have no
+    agent: "Got Jibri status update: Jibri <jid> has status <status> and
+    failure reason <reason>" (JibriSession.java:650). Status and reason are
+    the lower-case names of jitsi-xmpp-extensions' JibriIq enums; "busy" makes
+    Jicofo try another Jibri, "error" is a failure. With an agent on the
+    Jibri host too, 132564 reports the same failure from there.
+  -->
+  <rule id="132575" level="5">
+    <if_sid>132502,132503</if_sid>
+    <regex type="pcre2">Got Jibri status update: Jibri \S+ has status \w+ and failure reason error</regex>
+    <description>Jitsi Meet: Jibri reported a recording or stream failure to Jicofo</description>
+  </rule>
+
+  <!--
+    Live stream to a destination outside Jibri's jibri.streaming.rtmp-allow-list
+    (the default list allows everything, so this needs a site list). Jibri
+    since 2026-09 (RtmpUrlValidator.kt, commit 02964b9) logs "Rejecting the
+    request: The RTMP URL is not allowed"; earlier versions logged
+    "RTMP url <url> is not allowed" (StreamingJibriService.kt, 2021 to 2026).
+    Someone tried to send a meeting to a service the site did not approve.
+  -->
+  <rule id="132576" level="8">
+    <if_sid>132502,132503</if_sid>
+    <regex type="pcre2">Rejecting the request: The RTMP URL is not allowed|RTMP url \S+ is not allowed</regex>
+    <description>Jitsi Meet: live stream to a destination outside the RTMP allow-list refused</description>
+    <mitre>
+      <id>T1567</id>
+      <id>T1125</id>
+    </mitre>
+  </rule>
+
+  <!--
+    A stream URL that is not rtmp or rtmps (file:, http:, a local path) is
+    not a typing error of the web client, which only offers stream keys and
+    rtmp URLs: it is a crafted request aimed at Jibri's ffmpeg.
+  -->
+  <rule id="132577" level="6">
+    <if_sid>132502,132503</if_sid>
+    <match>Rejecting the request: The RTMP URL scheme must be rtmp or rtmps</match>
+    <description>Jitsi Meet: live stream request with a non-RTMP URL refused</description>
+  </rule>
+
+  <rule id="132578" level="3">
+    <if_sid>132502,132503</if_sid>
+    <regex type="pcre2">Rejecting the request: (?!The RTMP URL is not allowed|The RTMP URL scheme must be)</regex>
+    <description>Jitsi Meet: Jibri refused an invalid recording or stream request</description>
   </rule>
 
   <!--
@@ -523,6 +752,8 @@
     Jitsi servers. The docker web container's own access log arrives as a
     json-file or journald line, which the built-in decoder does not take;
     it is not covered, and it sees the host proxy as the client anyway.
+    /colibri-ws/ is gone from docker-jitsi-meet stable-11146 (the videobridge
+    websocket was removed); the branch stays for older installations.
   -->
   <rule id="132580" level="5">
     <if_sid>31120,31123</if_sid>
@@ -535,6 +766,124 @@
     <if_matched_sid>132580</if_matched_sid>
     <same_location />
     <description>[WARN] Jitsi Meet: Prosody or videobridge unreachable behind the web server</description>
+  </rule>
+
+  <!--
+    A JWT in the access log: the Jitsi client sends its token in the query
+    string of /http-bind and /xmpp-websocket, so a web server that logs the
+    full request URI writes every participant's credential to disk, and the
+    agent ships it to the manager. docker-jitsi-meet's own nginx logs
+    "[params_redacted]" instead; the setup guide has the same map for a web
+    server in front. One alert a day per manager node (the alert carries the
+    token as well), until the log format is fixed. Only 2xx, 3xx and 101
+    answers reach this rule; an error answer stays at the built-in 4xx/5xx rule.
+  -->
+  <rule id="132582" level="5" ignore="86400">
+    <if_sid>31100,31108</if_sid>
+    <url type="pcre2">^/(?:[^/?]+/)?(?:http-bind|xmpp-websocket)\?(?:[^#]*\x26)?token=eyJ</url>
+    <description>Jitsi Meet: JWT written to the web server access log (redact the token parameter)</description>
+    <mitre>
+      <id>T1552.001</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Prosody, refused actions added in 1.2. jitsi-meet stable 11248
+    (mod_muc_meeting_id.lua:215/221) refuses a role or affiliation change
+    aimed at the focus (Jicofo), which is how a participant would take the
+    meeting over; mod_visitors_component logs forged visitor messages
+    (request_promotion and transcription_languages since 11031,
+    recording_metadata since 11248); mod_muc_message_moderation (11248)
+    refuses message moderation by a non-moderator and corrections of another
+    participant's message. The web client never sends these.
+  -->
+  <rule id="132590" level="8">
+    <if_sid>132500,132501</if_sid>
+    <regex type="pcre2">Blocking attempt to modify \S+ in room </regex>
+    <description>Jitsi Meet: attempt to kick or demote the meeting focus (Jicofo) refused</description>
+  </rule>
+
+  <rule id="132591" level="8">
+    <if_sid>132500,132501</if_sid>
+    <regex type="pcre2">Received forged \w+ message: </regex>
+    <description>Jitsi Meet: forged visitor or recording metadata message refused</description>
+  </rule>
+
+  <rule id="132592" level="5">
+    <if_sid>132500,132501</if_sid>
+    <regex type="pcre2">Rejected moderation of \S+ from non-moderator |Rejected correction of \S+ from \S+, authored by </regex>
+    <description>Jitsi Meet: chat message moderation or correction by a participant without the right refused</description>
+  </rule>
+
+  <!--
+    In-band registration abuse (Prosody mod_register_limits, "Adding ip %s to
+    registration blocklist"): an address that registered too many accounts.
+    A Jitsi server with token or secure-domain authentication has no
+    in-band registration, so this is 0 there.
+  -->
+  <rule id="132593" level="6">
+    <if_sid>132500,132501</if_sid>
+    <match>to registration blocklist</match>
+    <description>Jitsi Meet: address put on Prosody's registration blocklist (account creation flood)</description>
+    <mitre>
+      <id>T1136</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Prosody 13.0.5 and later, mod_limits with max_connections_per_ip set (not
+    the default): "Rejecting stream from %s (%d of %d current connections)".
+    The address is the socket peer: the client for direct XMPP (5222, 5269),
+    the web container or proxy for BOSH and websocket. This is the per-address
+    limit the 2026-04-29 advisory introduced against connection floods.
+  -->
+  <rule id="132594" level="5">
+    <if_sid>132500,132501</if_sid>
+    <regex type="pcre2">Rejecting stream from \S+ \(\d+ of \d+ current connections\)</regex>
+    <description>Jitsi Meet: connection over Prosody's per-address limit refused</description>
+    <mitre>
+      <id>T1499</id>
+    </mitre>
+  </rule>
+
+  <rule id="132595" level="10" frequency="10" timeframe="120" ignore="600">
+    <if_matched_sid>132594</if_matched_sid>
+    <same_location />
+    <description>[WARN] Jitsi Meet: connection flood against Prosody (ten refusals in two minutes)</description>
+    <mitre>
+      <id>T1499</id>
+    </mitre>
+  </rule>
+
+  <!--
+    core/stanza_router.lua: a stanza whose to or from address does not
+    parse. A single one is a buggy client and is recorded below the alert
+    level; ten in two minutes point to a crafted client probing Prosody.
+  -->
+  <rule id="132596" level="2">
+    <if_sid>132500,132501</if_sid>
+    <regex type="pcre2">Received stanza with invalid (?:destination|source) JID: </regex>
+    <description>Jitsi Meet: stanza with an invalid address</description>
+  </rule>
+
+  <rule id="132597" level="5" frequency="10" timeframe="120" ignore="600">
+    <if_matched_sid>132596</if_matched_sid>
+    <same_location />
+    <description>Jitsi Meet: many stanzas with invalid addresses (crafted client?)</description>
+  </rule>
+
+  <!--
+    mod_proxy65 (XEP-0065 file transfer proxy, default port 5000). Jitsi does
+    not use it and docker-jitsi-meet does not enable it; before 0.12.6 and
+    13.0.5 it relays traffic without authentication (CVE-2026-43504/43505).
+  -->
+  <rule id="132598" level="5">
+    <if_sid>132500,132501</if_sid>
+    <regex type="pcre2">Activated service 'proxy65' on \[</regex>
+    <description>Jitsi Meet: Prosody SOCKS5 file transfer proxy (proxy65) enabled</description>
+    <mitre>
+      <id>T1090</id>
+    </mitre>
   </rule>
 
 </group>

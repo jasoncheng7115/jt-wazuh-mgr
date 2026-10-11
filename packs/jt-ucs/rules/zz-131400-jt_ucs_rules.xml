@@ -4,21 +4,25 @@
 
   The zz- prefix makes this file load after the built-in ruleset: it extends
   the built-in OpenLDAP (2507, 2508), PAM (5503, 5557), sshd (5715), syslog
-  (2501), systemd (40700), smbd (13100) and web access (31100, 31101, 31108)
-  rules.
+  (2501), systemd (40700), file integrity (550, 553, 554) and web access
+  (31100, 31101, 31108) rules.
 
   Modules
     131400-131409  OpenLDAP connections and binds (131406-131409: successful binds)
+    131465         OpenLDAP: password spraying
     131410-131427  OpenLDAP writes: users, groups, computers, passwords
     131428         OpenLDAP: a machine account binding (recorded, for 131402)
+    131429         DNS wildcard, WPAD or ISATAP record created (UCS directory or Samba audit)
     131430-131439  management console logins through PAM, PAM noise of domain accounts
     131440-131443  UCS directory logger
     131444-131449  machine account SSH logins, PAM and file share sessions
-    131450-131459  domain controller services
-    131460-131469  management console logins seen by the web server
-    131470-131489  OPTIONAL: Samba JSON audit (authentication, passwords, groups)
+    131450-131456  domain controller services
+    131457-131459, 131468  UCS files (file integrity monitoring)
+    131460-131464  management console logins seen by the web server
+    131466-131467  UCS configuration registry changes (agent group)
+    131469-131489, 131494-131499  OPTIONAL: Samba JSON audit (logons, Netlogon,
+                   Kerberos service tickets, passwords, groups, directory changes)
     131490-131493  OPTIONAL: UCS Admin Diary
-    131494-131495  OPTIONAL: Samba JSON audit, successful logons (continued)
 
   Successful logins follow one policy everywhere: an ordinary account from a
   private address is level 2 (recorded, never an alert); a built-in admin-class
@@ -109,6 +113,25 @@
     <description>[WARN] OpenLDAP: repeated bind failures from $(srcip) (last account '$(dstuser)')</description>
     <mitre>
       <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,jt_ucs_bruteforce,</group>
+  </rule>
+
+  <!--
+    Password spraying against the directory: one address failing binds for
+    several different accounts. different_user counts the earlier failures
+    from that address whose account differs from the current one, so one
+    account mistyped many times never fires this (131404 covers that), and a
+    low rate per account still does. Measured on one domain: four bind
+    failures in 30 days.
+  -->
+  <rule id="131465" level="10" frequency="5" timeframe="300" ignore="300">
+    <if_matched_group>jt_ucs_ldap_bind_failure</if_matched_group>
+    <same_source_ip />
+    <different_user />
+    <description>[WARN] OpenLDAP: failed binds for several different accounts from $(srcip) (password spraying; last account '$(dstuser)')</description>
+    <mitre>
+      <id>T1110.003</id>
     </mitre>
     <group>authentication_failures,jt_ucs_bruteforce,</group>
   </rule>
@@ -271,7 +294,7 @@
     <field name="ucs.dn" type="pcre2">^(?i)cn=(?:Domain Admins|Enterprise Admins|Schema Admins|Administrators|Account Operators|Backup Operators|Server Operators|Print Operators|DnsAdmins|Group Policy Creator Owners|Domain Controllers|Enterprise Domain Controllers|Read-only Domain Controllers|Enterprise Read-only Domain Controllers|Key Admins|Enterprise Key Admins|DC Backup Hosts|DC Slave Hosts|Backup Join|Slave Join),cn=(?:groups|builtin),</field>
     <description>[HIGH] UCS directory: privileged group written ($(ucs.ldap_op)): $(ucs.dn) (conn $(id), bound as '$(dstuser)')</description>
     <mitre>
-      <id>T1098.007</id>
+      <id>T1098</id>
     </mitre>
     <group>jt_ucs_privileged_group,</group>
   </rule>
@@ -282,6 +305,9 @@
     <field name="ucs.ldap_op" type="pcre2">^ADD$</field>
     <field name="ucs.dn" type="pcre2">^(?i)cn=[^,]+,(?:cn=[^,]+,)*cn=computers,</field>
     <description>UCS directory: computer account created (domain join): $(ucs.dn) (conn $(id), bound as '$(dstuser)')</description>
+    <mitre>
+      <id>T1136.002</id>
+    </mitre>
   </rule>
 
   <rule id="131421" level="10">
@@ -374,6 +400,9 @@
     <if_sid>131430</if_sid>
     <match type="pcre2">: user \S+ authenticated as \S+</match>
     <description>UCS management console: '$(dstuser)' logged in (Kerberos)</description>
+    <mitre>
+      <id>T1078.002</id>
+    </mitre>
     <group>authentication_success,</group>
   </rule>
 
@@ -475,6 +504,9 @@
     <if_sid>5715</if_sid>
     <user type="pcre2">\$$</user>
     <description>Machine account '$(dstuser)' logged in over SSH from $(srcip) (domain controller replication)</description>
+    <mitre>
+      <id>T1021.004</id>
+    </mitre>
   </rule>
 
   <rule id="131445" level="8">
@@ -508,6 +540,9 @@
     <if_sid>5501,5502</if_sid>
     <match type="pcre2">pam_unix\(samba:session\): session (?:opened|closed) for user </match>
     <description>Samba: file share session of '$(dstuser)'</description>
+    <mitre>
+      <id>T1021.002</id>
+    </mitre>
   </rule>
 
   <rule id="131448" level="3">
@@ -542,7 +577,7 @@
     <field name="ucs.dn" type="pcre2">^(?i)cn=(?:Domain Admins|Enterprise Admins|Schema Admins|Administrators|Account Operators|Backup Operators|Server Operators|Print Operators|DnsAdmins|Group Policy Creator Owners|Domain Controllers|Enterprise Domain Controllers|Read-only Domain Controllers|Enterprise Read-only Domain Controllers|Key Admins|Enterprise Key Admins|DC Backup Hosts|DC Slave Hosts|Backup Join|Slave Join),cn=(?:groups|builtin),</field>
     <description>[HIGH] UCS directory logger: privileged group $(ucs.dn) changed by $(ucs.modifier) (transaction $(ucs.txid))</description>
     <mitre>
-      <id>T1098.007</id>
+      <id>T1098</id>
     </mitre>
     <group>jt_ucs_privileged_group,</group>
   </rule>
@@ -605,6 +640,92 @@
     <if_sid>40700</if_sid>
     <match type="pcre2">^univention-management-console-server\.service: Failed with result </match>
     <description>UCS management console server failed on $(hostname)</description>
+  </rule>
+
+  <!--
+    UCS files seen by file integrity monitoring (the agent's default /etc
+    scan; the agent group adds the replication directory). UCS rewrites
+    several of its own files on a schedule: the configuration registry and
+    its .bak copy at every change (the updater writes one key every day),
+    the S4 connector's caches, BIND's statistics, the updater's user agent
+    file, the LDAP server's Diffie-Hellman parameters (ldap/tls/dh/cron) and
+    the machine password (every 21 days, server/password/interval). Each was
+    a level 7 alert of the built-in rule 550: about 70 a day on two DCs.
+    Configuration registry changes are audited instead by 131466 and 131467
+    (agent group), which name the key.
+  -->
+  <rule id="131457" level="2">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/etc/(?:univention/base(?:-ldap|-forced|-schedule|-defaults)?\.conf(?:\.bak)?|univention/connector/[^/]+\.sqlite|bind/named\.stats|apt/apt\.conf\.d/55user_agent|apt/sources\.list\.d/\d+_ucs-online-component\.list|ldap/dh_2048\.pem|machine\.secret)$</field>
+    <description>UCS: routine rewrite of $(file)</description>
+  </rule>
+
+  <!-- The component repository list is rewritten with the same content
+       every few hours; a change of content means a repository was added or
+       removed (App Center apps and components bring their own). -->
+  <rule id="131458" level="5">
+    <if_sid>131457</if_sid>
+    <field name="file" type="pcre2">_ucs-online-component\.list$</field>
+    <field name="changed_fields" type="pcre2">md5|sha1|sha256</field>
+    <description>UCS: software repository components changed: $(file)</description>
+    <mitre>
+      <id>T1195.002</id>
+    </mitre>
+  </rule>
+
+  <!-- The directory's administrative password (cn=admin, root-equivalent
+       on every UCS host), the backup copy of it, and the domain's
+       certificate authority key and certificate. None of them changes in
+       normal operation (unchanged since installation on the measured
+       Primary). -->
+  <rule id="131459" level="12">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/etc/(?:ldap\.secret|ldap-backup\.secret|univention/ssl/ucsCA/CAcert\.pem|univention/ssl/ucsCA/private/CAkey\.pem)$</field>
+    <description>[HIGH] UCS: domain credential or certificate authority file changed, added or deleted: $(file)</description>
+    <mitre>
+      <id>T1552.004</id>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!-- On a Backup or Replica Directory Node, failed.ldif means the
+       replication listener could not apply a change and stopped: the node
+       no longer receives directory changes until an administrator resolves
+       it (Univention help article 6432). -->
+  <rule id="131468" level="10">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">^/var/lib/univention-directory-replication/failed\.ldif$</field>
+    <description>[WARN] UCS: LDAP replication to this directory node stopped ($(file) appeared)</description>
+    <mitre>
+      <id>T1489</id>
+    </mitre>
+  </rule>
+
+  <!--
+    UCS configuration registry changes, from config-registry.replog (agent
+    group, out_format program name ucr-replog). Every set and unset is
+    recorded at level 2; measured on one Primary: about one a day, the
+    updater's statistics key. Keys that switch off auditing or weaken
+    authentication are level 8: the logging this pack depends on (LDAP
+    stats level, the directory logger, the replog itself, Samba's log
+    level and audit routing), NTLM, LDAP and SMB signing settings, weak
+    Kerberos crypto, SSH root and password login, the firewall switch and
+    default policy, PAM access lists, account lockout (auth/faillog), LDAP
+    ACL switches and the password quality policy. App installation can set
+    PAM access keys (auth/...) too; check those against the change log.
+  -->
+  <rule id="131466" level="2">
+    <decoded_as>jt-ucs-ucr</decoded_as>
+    <description>UCS configuration registry: $(ucs.ucr_action) $(ucs.ucr_key)</description>
+  </rule>
+
+  <rule id="131467" level="8">
+    <if_sid>131466</if_sid>
+    <field name="ucs.ucr_key" type="pcre2">^(?:ucr/replog/enabled|ldap/debug/level|ldap/logging(?:/.+)?|samba/debug/level|samba/global/options/.+|samba/ntlm/auth|samba/ldap/server/require/strong/auth|samba/server/signing|samba/min/protocol|kerberos/allow/weak/crypto|kerberos/defaults/enctypes/.+|(?i:sshd/(?:permitroot|passwordauthentication|permitemptypasswords|authorizedkeysfile|authorizedkeyscommand))|security/packetfilter/(?:disabled|defaultpolicy)|auth/methods|auth/sudo|auth/faillog(?:/.+)?|auth/[^/]+/(?:restrict|accessfile|user/.+|group/.+)|ldap/acl/.+|password/quality/.+)$</field>
+    <description>UCS configuration registry: security or audit setting $(ucs.ucr_key) changed ($(ucs.ucr_action)) to '$(ucs.ucr_value)', was '$(ucs.ucr_old)'</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
   </rule>
 
   <!--
@@ -671,29 +792,26 @@
 
   <!--
     OPTIONAL: Samba JSON audit. Nothing arrives until the site enables it
-    (setup guide). auth_json_audit at level 2 logs failures only; at level 3
-    it adds every successful logon, which 131472 drops.
+    (setup guide); the agent group then sends each audit file with the
+    program name samba-audit. auth_json_audit at level 2 logs failed logons
+    (Kerberos, NTLM, Netlogon); at level 3 it adds every successful logon
+    and every Kerberos service ticket (KDC Authorization), which is high
+    volume. Record types this pack does not use (Authorization at level 4,
+    replicatedUpdate, dsdbTransaction) stay at level 0 or are not decoded.
   -->
   <rule id="131470" level="0">
     <decoded_as>jt-samba-audit</decoded_as>
     <description>Samba audit: $(samba.type)</description>
   </rule>
 
-  <rule id="131471" level="0">
-    <if_sid>13100</if_sid>
-    <field name="samba.type" type="pcre2">^(?:Authentication|Authorization|passwordChange|groupChange)$</field>
-    <description>Samba audit (smbd): $(samba.type)</description>
-  </rule>
-
   <!--
     Successful logons appear only at auth_json_audit:3 (every Kerberos ticket
     and NTLM logon: high volume). They are level 2; admin-class accounts,
-    external addresses, a first (account, address) pair (131494, Kerberos and
-    NTLM through the samba process only: the smbd path has no fts) and a
+    external addresses, a first (account, address) pair (131494) and a
     success after failures from the same address (131495) alert.
   -->
   <rule id="131472" level="2">
-    <if_sid>131470,131471</if_sid>
+    <if_sid>131470</if_sid>
     <field name="samba.type" type="pcre2">^(?:Authentication|Authorization)$</field>
     <field name="samba.status" type="pcre2">^NT_STATUS_OK$</field>
     <description>Samba audit: successful $(samba.service) logon of '$(dstuser)' from $(srcip)</description>
@@ -714,6 +832,9 @@
     <if_fts />
     <user type="pcre2">^(?i)(?![^\\@]*\\?(?:administrator|admin|root)(?:@\S*)?$).+$</user>
     <description>Samba AD: first logon of '$(dstuser)' from $(srcip) ($(samba.service))</description>
+    <mitre>
+      <id>T1078.002</id>
+    </mitre>
   </rule>
 
   <rule id="131488" level="5">
@@ -740,6 +861,10 @@
     </mitre>
   </rule>
 
+  <!--
+    A failed Kerberos, NTLM or Netlogon logon. samba.status is Samba's
+    NTSTATUS name (NT_STATUS_WRONG_PASSWORD, NT_STATUS_NO_SUCH_USER, ...).
+  -->
   <rule id="131473" level="5">
     <if_sid>131470</if_sid>
     <field name="samba.type" type="pcre2">^Authentication$</field>
@@ -783,29 +908,28 @@
   </rule>
 
   <!--
-    The same failure written by smbd (SMB and NTLM to the DC). Kept as rules of
-    their own under 131471: a failure rule with two parents would be counted
-    twice by 131477 and break its ignore window.
+    Zerologon-class attacks (CVE-2020-1472, in CISA's Known Exploited
+    Vulnerabilities catalogue). Samba logs every NetrServerAuthenticate3 with
+    serviceDescription NETLOGON and authDescription ServerAuthenticate
+    (source4/rpc_server/netlogon/dcerpc_netlogon.c, Samba 4.21). Samba 4.8 and
+    later refuse the attack by default (server schannel = yes), but the public
+    exploits still send about 2,000 attempts in a few seconds, each one a
+    logged failure. A real client authenticates its secure channel once.
+    if_matched_group, not if_matched_sid 131473: an event whose rule is the
+    target of an if_matched_sid is kept only in that rule's list and no
+    longer in its groups' lists, which silently broke 131469, 131477 and
+    131495 (verified in the sandbox).
   -->
-  <rule id="131478" level="5">
-    <if_sid>131471</if_sid>
-    <field name="samba.type" type="pcre2">^Authentication$</field>
-    <field name="samba.status" type="pcre2">^NT_STATUS_(?!OK$)\w+$</field>
-    <description>Samba AD: $(samba.service) authentication failed for '$(dstuser)' from $(srcip): $(samba.status)</description>
+  <rule id="131471" level="12" frequency="20" timeframe="10" ignore="300">
+    <if_matched_group>jt_ucs_samba_auth_failure</if_matched_group>
+    <field name="samba.service" type="pcre2">^NETLOGON$</field>
+    <same_source_ip />
+    <same_field>samba.service</same_field>
+    <description>[HIGH] Samba AD: burst of failed Netlogon secure channel authentications from $(srcip) (last account '$(dstuser)'): a Zerologon-style attack (CVE-2020-1472)</description>
     <mitre>
-      <id>T1110</id>
+      <id>T1210</id>
     </mitre>
-    <group>authentication_failed,jt_ucs_samba_auth_failure,pci_dss_10.2.4,pci_dss_10.2.5,nist_800_53_AC.7,</group>
-  </rule>
-
-  <rule id="131479" level="8">
-    <if_sid>131478</if_sid>
-    <user type="pcre2">^(?i)(?:[^\\@]+\\)?(?:administrator|krbtgt|join-backup|join-slave)(?:@\S*)?$</user>
-    <description>Samba AD: $(samba.service) authentication failed for privileged account '$(dstuser)' from $(srcip): $(samba.status)</description>
-    <mitre>
-      <id>T1110</id>
-    </mitre>
-    <group>authentication_failed,jt_ucs_samba_auth_failure,</group>
+    <group>authentication_failures,jt_ucs_bruteforce,</group>
   </rule>
 
   <!-- After the failure rules, for the same reason as 131439. -->
@@ -819,6 +943,24 @@
     </mitre>
   </rule>
 
+  <!--
+    Password spraying: one source failing for several different accounts.
+    different_user counts the earlier failures from that address whose
+    account differs from the current one, so a single account mistyped many
+    times never fires this (131477 covers that). Tools such as kerbrute try
+    one password against many accounts over Kerberos pre-authentication.
+  -->
+  <rule id="131469" level="10" frequency="6" timeframe="300" ignore="300">
+    <if_matched_group>jt_ucs_samba_auth_failure</if_matched_group>
+    <same_source_ip />
+    <different_user />
+    <description>[WARN] Samba AD: failed logons for several different accounts from $(srcip) (password spraying; last account '$(dstuser)')</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,jt_ucs_bruteforce,</group>
+  </rule>
+
   <rule id="131477" level="10" frequency="10" timeframe="300" ignore="300">
     <if_matched_group>jt_ucs_samba_auth_failure</if_matched_group>
     <same_source_ip />
@@ -829,9 +971,39 @@
     <group>authentication_failures,jt_ucs_bruteforce,</group>
   </rule>
 
+  <!--
+    Kerberos service tickets (KDC Authorization, auth_json_audit:3 only).
+    Samba logs every TGS-REQ with the requested service principal in
+    serviceDescription (source4/kdc/hdb-samba4.c, hdb_samba4_tgs_audit, Samba
+    4.21); the ticket's encryption type is not logged, so an RC4 request
+    cannot be told apart. 131479 looks for the Kerberoasting pattern instead:
+    one user account asking for tickets to many different services within a
+    minute. Machine accounts (ending in $) are left out: a computer starting
+    up asks for several tickets at once.
+    Idea from the Kerberoasting detections of Elastic and SigmaHQ, written
+    for Samba's log: https://attack.mitre.org/techniques/T1558/003/
+  -->
+  <rule id="131478" level="1">
+    <if_sid>131470</if_sid>
+    <field name="samba.type" type="pcre2">^KDC Authorization$</field>
+    <field name="samba.status" type="pcre2">^NT_STATUS_OK$</field>
+    <description>Samba KDC: service ticket for $(samba.service) issued to '$(dstuser)' from $(srcip)</description>
+  </rule>
+
+  <rule id="131479" level="10" frequency="12" timeframe="60" ignore="600">
+    <if_matched_sid>131478</if_matched_sid>
+    <user type="pcre2">[^$]$</user>
+    <same_user />
+    <different_field>samba.service</different_field>
+    <description>[WARN] Samba KDC: '$(dstuser)' requested service tickets for many different services within a minute from $(srcip) (possible Kerberoasting; last $(samba.service))</description>
+    <mitre>
+      <id>T1558.003</id>
+    </mitre>
+  </rule>
+
   <!-- Password changes and resets (dsdb_password_json_audit). -->
   <rule id="131480" level="3">
-    <if_sid>131470,131471</if_sid>
+    <if_sid>131470</if_sid>
     <field name="samba.type" type="pcre2">^passwordChange$</field>
     <field name="samba.action" type="pcre2">^Change$</field>
     <field name="samba.status_code" type="pcre2">^0$</field>
@@ -839,7 +1011,7 @@
   </rule>
 
   <rule id="131481" level="5">
-    <if_sid>131470,131471</if_sid>
+    <if_sid>131470</if_sid>
     <field name="samba.type" type="pcre2">^passwordChange$</field>
     <field name="samba.action" type="pcre2">^Reset$</field>
     <field name="samba.status_code" type="pcre2">^0$</field>
@@ -865,7 +1037,7 @@
   </rule>
 
   <rule id="131484" level="5">
-    <if_sid>131470,131471</if_sid>
+    <if_sid>131470</if_sid>
     <field name="samba.type" type="pcre2">^passwordChange$</field>
     <field name="samba.status_code" type="pcre2">^[1-9]\d*$</field>
     <description>Samba AD: password $(samba.action) rejected for $(samba.dn) from $(srcip): $(samba.status)</description>
@@ -873,10 +1045,13 @@
 
   <!-- Group membership changes (dsdb_group_json_audit). Changes replicated from another DC are logged there too. -->
   <rule id="131485" level="3">
-    <if_sid>131470,131471</if_sid>
+    <if_sid>131470</if_sid>
     <field name="samba.type" type="pcre2">^groupChange$</field>
     <field name="samba.status_code" type="pcre2">^0$</field>
     <description>Samba AD: $(samba.member) $(samba.action) group $(samba.group) (by $(samba.actor_sid) from $(srcip))</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
   </rule>
 
   <rule id="131486" level="12">
@@ -884,9 +1059,117 @@
     <field name="samba.group" type="pcre2">^(?i)CN=(?:Domain Admins|Enterprise Admins|Schema Admins|Administrators|Account Operators|Backup Operators|Server Operators|Print Operators|DnsAdmins|Group Policy Creator Owners|Domain Controllers|Enterprise Domain Controllers|Read-only Domain Controllers|Enterprise Read-only Domain Controllers|Key Admins|Enterprise Key Admins|DC Backup Hosts|DC Slave Hosts|Backup Join|Slave Join),</field>
     <description>[HIGH] Samba AD: $(samba.member) $(samba.action) privileged group $(samba.group) (by $(samba.actor_sid) from $(srcip))</description>
     <mitre>
-      <id>T1098.007</id>
+      <id>T1098</id>
     </mitre>
     <group>jt_ucs_privileged_group,</group>
+  </rule>
+
+  <!--
+    Directory changes made on the Samba side (dsdb_json_audit:5), the Samba
+    equivalent of Windows event 5136. Each record names the operation, the
+    object, the acting SID and the client address, and lists the attributes
+    with their values (secret attributes redacted, values over 1024 bytes
+    truncated: source4/dsdb/samdb/ldb_modules/audit_log.c and audit_util.c,
+    Samba 4.21). The rules match on the attribute name, never on a value
+    that could be truncated. Everything else (DNS dynamic updates,
+    lastLogonTimestamp, bad password counters, S4 connector writes) stays at
+    level 0. Changes replicated in from another DC are logged as
+    replicatedUpdate, which is not decoded: each change is reported by the DC
+    where it was made.
+    Ideas from SigmaHQ (DCSync rights backdoor, DC Shadow), Splunk
+    (AdminSDHolder ACL modified, domain replication ACL addition) and
+    Elastic (SPN attribute modified), re-implemented for Samba's record:
+    https://github.com/SigmaHQ/sigma/tree/master/rules/windows/builtin/security
+    https://github.com/splunk/security_content/tree/develop/detections/endpoint
+    https://www.elastic.co/docs/reference/security/prebuilt-rules
+  -->
+
+  <!-- The access control list of the domain root or of AdminSDHolder: the
+       usual way to grant an account DCSync rights or a persistent admin
+       ACE. Rare in normal operation (samba-tool domain functionalprep and
+       schema upgrades change the domain root's ACL too). -->
+  <rule id="131496" level="12">
+    <if_sid>131470</if_sid>
+    <field name="samba.type" type="pcre2">^dsdbChange$</field>
+    <field name="samba.operation" type="pcre2">^Modify$</field>
+    <field name="samba.status_code" type="pcre2">^0$</field>
+    <field name="samba.dn" type="pcre2">^(?i)(?:CN=AdminSDHolder,CN=System,)?DC=[^,]+(?:,DC=[^,]+)*$</field>
+    <match type="pcre2">(?i)"nTSecurityDescriptor": \{"actions": \[\{"action": "(?:add|replace)"</match>
+    <description>[HIGH] Samba AD: access control list of $(samba.dn) changed by $(samba.actor_sid) from $(srcip) (DCSync rights or AdminSDHolder persistence?)</description>
+    <mitre>
+      <id>T1222.001</id>
+      <id>T1003.006</id>
+    </mitre>
+  </rule>
+
+  <!-- A service principal name put on an account that is not a computer
+       makes its password hash crackable offline through a service ticket
+       (targeted Kerberoasting); a delegation attribute lets another account
+       impersonate users to it (resource-based constrained delegation).
+       The dns-<host> account Samba creates for each DC is left out. -->
+  <rule id="131497" level="8">
+    <if_sid>131470</if_sid>
+    <field name="samba.type" type="pcre2">^dsdbChange$</field>
+    <field name="samba.operation" type="pcre2">^Modify$</field>
+    <field name="samba.status_code" type="pcre2">^0$</field>
+    <match type="pcre2">(?i)"dn": "(?!CN=dns-)(?![^"]*,(?:OU=Domain Controllers|CN=Computers),)[^"]*", .*"servicePrincipalName": \{"actions": \[\{"action": "(?:add|replace)"|"msDS-AllowedTo(?:ActOnBehalfOfOtherIdentity|DelegateTo)": \{"actions": \[\{"action": "(?:add|replace)"</match>
+    <description>Samba AD: service principal name or Kerberos delegation set on $(samba.dn) by $(samba.actor_sid) from $(srcip)</description>
+    <mitre>
+      <id>T1558.003</id>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!-- A new NTDS Settings object registers a domain controller. DCShadow
+       adds one for a few seconds, and puts the global catalog or directory
+       replication SPN on its own computer object. A real DC join (also
+       reported on the UCS side by 131421) is level 12 too: it is rare and
+       worth a confirmation. -->
+  <rule id="131498" level="12">
+    <if_sid>131470</if_sid>
+    <field name="samba.type" type="pcre2">^dsdbChange$</field>
+    <field name="samba.status_code" type="pcre2">^0$</field>
+    <match type="pcre2">(?i)"operation": "Add", .*?"dn": "CN=NTDS Settings,CN=[^,"]+,CN=Servers,CN=[^,"]+,CN=Sites,CN=Configuration,|"dn": "(?![^"]*,OU=Domain Controllers,)[^"]*", .*"servicePrincipalName": \{"actions": \[\{"action": "(?:add|replace)", "values": \[[^\]]*"value": "(?:GC|E3514235-4B06-11D1-AB04-00C04FC2DCD2)/</match>
+    <description>[HIGH] Samba AD: domain controller registration ($(samba.operation) $(samba.dn), by $(samba.actor_sid) from $(srcip)): a new DC or a rogue one (DCShadow)</description>
+    <mitre>
+      <id>T1207</id>
+    </mitre>
+  </rule>
+
+  <!-- Group Policy: a policy container under CN=Policies,CN=System written,
+       or a policy linked to a domain or OU (gPLink). A GPO can run code on
+       every computer it applies to. -->
+  <rule id="131499" level="8">
+    <if_sid>131470</if_sid>
+    <field name="samba.type" type="pcre2">^dsdbChange$</field>
+    <field name="samba.status_code" type="pcre2">^0$</field>
+    <match type="pcre2">(?i)"dn": "(?:[^"]*,)?CN=\{[0-9a-f-]{36}\},CN=Policies,CN=System,DC=|"gPLink": \{"actions": \[\{"action": "(?:add|replace|delete)"</match>
+    <description>Samba AD: Group Policy changed ($(samba.operation) $(samba.dn), by $(samba.actor_sid) from $(srcip))</description>
+    <mitre>
+      <id>T1484.001</id>
+    </mitre>
+  </rule>
+
+  <!--
+    ADIDNS spoofing: a DNS record named *, wpad or isatap. Any authenticated
+    domain user may create DNS records in an Active Directory zone by
+    default; a wildcard answers for every name that does not exist and a
+    wpad record hands out a proxy configuration, so one host can take over
+    other machines' traffic. Seen in two places: the UCS directory, where
+    the S4 connector writes the records it syncs from Samba (slapd:
+    ADD dn="relativeDomainName=wpad,zoneName=example.com,cn=dns,..."), and
+    the optional Samba directory audit (Add of DC=wpad,DC=example.com,
+    CN=MicrosoftDNS,...). Measured on one domain: five DNS record additions
+    in 30 days, none of these names.
+    https://attack.mitre.org/techniques/T1557/
+  -->
+  <rule id="131429" level="10">
+    <if_sid>131410,131470</if_sid>
+    <match type="pcre2">(?i)^conn=\d+ op=\d+ ADD dn="relativeDomainName=(?:\*|wpad|isatap),zoneName=[^,"]+,cn=dns,|"operation": "Add", .*?"dn": "DC=(?:\*|wpad|isatap),DC=[^,"]+,CN=MicrosoftDNS,</match>
+    <description>[WARN] DNS record $(ucs.dn)$(samba.dn) created: a wildcard, WPAD or ISATAP name lets one host answer for other names (ADIDNS spoofing)</description>
+    <mitre>
+      <id>T1557</id>
+    </mitre>
   </rule>
 
   <!--
@@ -912,7 +1195,7 @@
     <match type="pcre2">"args": \{[^}]*"(?i:Domain Admins|Enterprise Admins|Schema Admins|Administrators|Account Operators|Backup Operators|Server Operators|Print Operators|DnsAdmins|Group Policy Creator Owners|Domain Controllers|DC Backup Hosts|DC Slave Hosts|Backup Join|Slave Join)"</match>
     <description>[HIGH] UCS Admin Diary: privileged group $(args.group)$(args.name) changed ($(event)) by $(username)</description>
     <mitre>
-      <id>T1098.007</id>
+      <id>T1098</id>
     </mitre>
     <group>jt_ucs_privileged_group,</group>
   </rule>

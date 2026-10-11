@@ -8,10 +8,12 @@
     dd/mm/yyyy HH:MM:SS [  pid] [LEVEL] [user] message
   for example
     11/10/2026 11:14:13 [12810] [ INFO] [jdoe@example.com] cmd='Ping' ... from='198.51.100.23' ... httpcode='200'
-  INFO and WARN are padded to five characters ("[ INFO]"); [user] is
-  [authuser#mailbox] when the login and the mailbox differ, and [#mailbox] when
-  the request carried no credentials. The level, the timestamp and the pid
-  are not a syslog header, so Wazuh's pre-decoder leaves the line whole.
+  (lib/log/filelog.php BuildLogString, unchanged from Z-Push 2.4 to 2.7.6 and
+  in grommunio-sync). INFO and WARN are padded to five characters ("[ INFO]");
+  [user] is [authuser#mailbox] when the login and the mailbox differ, and
+  [#mailbox] when the request carried no credentials. The level, the
+  timestamp and the pid are not a syslog header, so Wazuh's pre-decoder
+  leaves the line whole.
 
   The same line also arrives through syslog when rsyslog's imfile module tails
   the file with a tag. A tag without a colon ("host zpush 11/10/2026 ...") is
@@ -20,12 +22,24 @@
   colon becomes the program name, and Wazuh then tries only decoders that
   name a program: the second decoder takes tags starting with zpush or
   z-push, and also Z-Push's own syslog backend (LOGBACKEND syslog: program
-  "z-push/core", no timestamp, no pid).
+  "z-push/core" or "z-push/<backend>", no timestamp, no pid in the message).
 
   One child decoder per message kind (the first one whose prematch matches
   wins); the last one is the fallback that only takes the level and the user.
-  The user in the [..] prefix is the login the request authenticated with,
-  decoded as dstuser, so that same_user groups attempts on one account.
+  Every child takes the pid (zpush.pid) when the line has one: the rules use
+  it to tie the lines of one request together. The user in the [..] prefix is
+  the login the request authenticated with, decoded as dstuser, so that
+  same_user groups attempts on one account.
+
+  Login names are not filtered by Z-Push (lib/request/request.php: "getUser
+  is unfiltered", "authUser & authPassword are unfiltered!"), so a client
+  chooses every character of them, quotes and brackets included. The
+  decoders therefore read the fields Z-Push does filter (the address, the
+  HTTP code, the device type and id) from the end of the line, and take the
+  login as whatever lies between: a name with a quote no longer makes the
+  line undecodable, and a name that imitates the rest of the line
+  ("x' from='192.0.2.1' ... httpcode='200") cannot choose the decoded
+  address or result.
 -->
 
 <decoder name="jt-zpush">
@@ -38,87 +52,117 @@
 </decoder>
 
 <!--
-  The request summary, one per request, written when the request ends:
+  The request summary, one per request, written when the request ends
+  (index.php):
     cmd='Sync' memory='..' time='0.10s' devType='iPhone' devId='..' getUser='..' from='..' idle='0s' version='..' method='POST' httpcode='200'
   It is the only line with both the client address and the result. Z-Push reads
   its version from a file and keeps the trailing newline, so in the file the
   line breaks after version='x.y.z; the agent group joins the two lines, and
   rsyslog's imfile writes the break as a literal \n. Without the join the
   method and the HTTP code are on a line of their own and stay undecoded.
-  The agent's multi-line join leaves a trailing space on every event, hence
-  the \s*$ at the end of the patterns below. A dual-stack web server can hand
-  PHP an IPv4 client as ::ffff:a.b.c.d; the prefix is dropped so that srcip
-  matches IPv4 networks.
+  The agent's multi-line join leaves a trailing space on every event, and
+  rsyslog's "message repeated" form ends with "]", hence the \]?\s*$ at the
+  end. A dual-stack web server can hand PHP an IPv4 client as
+  ::ffff:a.b.c.d; the prefix is dropped so that srcip matches IPv4 networks.
+  cmd, devType and devId are letters and digits only (filterEvilInput), the
+  address is checked by inet_pton (filterIP), so only getUser and the [..]
+  prefix can hold a quote; getUser is taken greedily up to the last
+  " from='" and the [..] prefix lazily up to the first "] cmd='".
   fts (first time seen) is the pair account and device id: rule 132260 and
   132261 fire the first time this manager sees a device used by an account.
 -->
 <decoder name="jt-zpush-request">
   <parent>jt-zpush</parent>
-  <prematch type="pcre2">\] cmd='[^']*' memory='</prematch>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^\]#]*)(?:#[^\]]*)?\](?: ?\[[^\]]*\])? cmd='([^']*)' memory='[^']*' time='([^']*)' devType='([^']*)' devId='(([^']*))' getUser='([^']*)' from='(?:::ffff:)?([^']*)' idle='[^']*' version='[^']*'(?: method='(\w*)' httpcode='(\d*)')?</regex>
-  <order>zpush.level, dstuser, zpush.cmd, zpush.time, zpush.devtype, zpush.devid, system_name, zpush.getuser, srcip, protocol, id</order>
+  <prematch type="pcre2">\] cmd='\w*' memory='</prematch>
+  <regex type="pcre2">(?:\[\s*(\d+)\] )?\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^#]*?)(?:#.*?)?\](?: ?\[[^\]]*\])? cmd='(\w*)' memory='[^']*' time='([^']*)' devType='(\w*)' devId='((\w*))' getUser='(.*)' from='(?:::ffff:)?([^']*)' idle='[^']*' version='[^']*'(?: method='(\w*)' httpcode='(\d*)')?\]?\s*$</regex>
+  <order>zpush.pid, zpush.level, dstuser, zpush.cmd, zpush.time, zpush.devtype, zpush.devid, system_name, zpush.getuser, srcip, protocol, id</order>
   <fts>name, dstuser, system_name</fts>
 </decoder>
 
-<!-- Autodiscover (autodiscover.log), backends whose Logon() returns false. -->
+<!-- Autodiscover (autodiscover.log), backends whose Logon() returns false
+     (autodiscover/autodiscover.php getLogin). The address is REMOTE_ADDR. -->
 <decoder name="jt-zpush-autodiscover-fail">
   <parent>jt-zpush</parent>
   <prematch type="pcre2">\] ZPushAutodiscover-\x3egetLogin\(\): Login failed for user '</prematch>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? ZPushAutodiscover-\x3egetLogin\(\): Login failed for user '([^']*)' from IP (?:::ffff:)?([0-9A-Fa-f:.]+?)\.?\]?\s*$</regex>
-  <order>zpush.level, dstuser, srcip</order>
+  <regex type="pcre2">(?:\[\s*(\d+)\] )?\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? ZPushAutodiscover-\x3egetLogin\(\): Login failed for user '(.*)' from IP (?:::ffff:)?([0-9A-Fa-f:.]+?)\.?\]?\s*$</regex>
+  <order>zpush.pid, zpush.level, dstuser, srcip</order>
 </decoder>
 
 <!-- Autodiscover with LOGAUTHFAIL, the only failure line that has the address
-     when the backend throws instead of returning false (the Zimbra backend). -->
+     when the backend throws instead of returning false (the Zimbra backend).
+     The address in it is REMOTE_ADDR; the e-mail address comes from the
+     request body. -->
 <decoder name="jt-zpush-autodiscover-authfail">
   <parent>jt-zpush</parent>
   <prematch type="pcre2">\] Unable to complete autodiscover because login failed for user with email '</prematch>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? Unable to complete autodiscover because login failed for user with email '([^']*)' from IP (?:::ffff:)?([0-9A-Fa-f:.]+?)\.?\]?\s*$</regex>
-  <order>zpush.level, dstuser, srcip</order>
+  <regex type="pcre2">(?:\[\s*(\d+)\] )?\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? Unable to complete autodiscover because login failed for user with email '(.*)' from IP (?:::ffff:)?([0-9A-Fa-f:.]+?)\.?\]?\s*$</regex>
+  <order>zpush.pid, zpush.level, dstuser, srcip</order>
 </decoder>
 
 <!-- ActiveSync with LOGAUTHFAIL ("for fail2ban"). -->
 <decoder name="jt-zpush-authfail">
   <parent>jt-zpush</parent>
   <prematch type="pcre2">\] IP: \S+ failed to authenticate user '</prematch>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? IP: (?:::ffff:)?(\S+) failed to authenticate user '([^']*)'</regex>
-  <order>zpush.level, srcip, dstuser</order>
+  <regex type="pcre2">(?:\[\s*(\d+)\] )?\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? IP: (?:::ffff:)?(\S+) failed to authenticate user '(.*)'\]?\s*$</regex>
+  <order>zpush.pid, zpush.level, srcip, dstuser</order>
 </decoder>
 
 <!-- First authenticated request of a device: Z-Push links it to the user. -->
 <decoder name="jt-zpush-device">
   <parent>jt-zpush</parent>
   <prematch type="pcre2">\] Linking device ID '</prematch>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? Linking device ID '([^']*)' to user '([^']*)'</regex>
-  <order>zpush.level, zpush.devid, dstuser</order>
+  <regex type="pcre2">(?:\[\s*(\d+)\] )?\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? Linking device ID '(\w*)' to user '(.*)'\]?\s*$</regex>
+  <order>zpush.pid, zpush.level, zpush.devid, dstuser</order>
 </decoder>
 
 <!-- Remote wipe state changes. Z-Push spells it "sucessfully". -->
 <decoder name="jt-zpush-wipe">
   <parent>jt-zpush</parent>
   <prematch type="pcre2">\] ASDevice id '[^']*' was .+ remote wiped on </prematch>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^\]#]*)(?:#[^\]]*)?\](?: ?\[[^\]]*\])? ASDevice id '([^']*)' was (requested to be|\w+) remote wiped on .*? Action requested by user '([^']*)'</regex>
-  <order>zpush.level, dstuser, zpush.devid, zpush.wipe, zpush.wipe_by</order>
+  <regex type="pcre2">(?:\[\s*(\d+)\] )?\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^\]#]*)(?:#[^\]]*)?\](?: ?\[[^\]]*\])? ASDevice id '([^']*)' was (requested to be|\w+) remote wiped on .*? Action requested by user '([^']*)'</regex>
+  <order>zpush.pid, zpush.level, dstuser, zpush.devid, zpush.wipe, zpush.wipe_by</order>
 </decoder>
 
 <decoder name="jt-zpush-wipe-other">
   <parent>jt-zpush</parent>
   <prematch type="pcre2">\] User '[^']*' has requested a remote wipe for this device</prematch>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^\]#]*)(?:#[^\]]*)?\](?: ?\[[^\]]*\])? User '([^']*)' has requested a remote wipe</regex>
-  <order>zpush.level, dstuser, zpush.wipe_by</order>
+  <regex type="pcre2">(?:\[\s*(\d+)\] )?\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^\]#]*)(?:#[^\]]*)?\](?: ?\[[^\]]*\])? User '([^']*)' has requested a remote wipe</regex>
+  <order>zpush.pid, zpush.level, dstuser, zpush.wipe_by</order>
 </decoder>
 
-<!-- The exception that ended a request: "Exception: (ClassName) - message". -->
+<!--
+  The exception that ended a request: "Exception: (ClassName) - message"
+  (index.php, autodiscover.php). The [..] prefix is read strictly here (no
+  "]" inside), unlike in the request summary: a login name that contains
+  "] Exception: (" can make this line show a message of its choosing, but
+  then the account decoded here differs from the one decoded from the
+  summary, and rule 132223 (same_user) does not tie the two.
+-->
 <decoder name="jt-zpush-exception">
   <parent>jt-zpush</parent>
   <prematch type="pcre2">\] Exception: \(\w+\) - </prematch>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^\]#]*)(?:#[^\]]*)?\](?: ?\[[^\]]*\])? Exception: \((\w+)\) - (.*?)\s*$</regex>
-  <order>zpush.level, dstuser, zpush.exception, zpush.message</order>
+  <regex type="pcre2">(?:\[\s*(\d+)\] )?\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^\]#]*)(?:#[^\]]*)?\](?: ?\[[^\]]*\])? Exception: \((\w+)\) - (.*?)\s*$</regex>
+  <order>zpush.pid, zpush.level, dstuser, zpush.exception, zpush.message</order>
+</decoder>
+
+<!--
+  The client's user agent, written before every exception and for every GET
+  request (index.php: "User-agent: '%s'"). The header is taken as sent. It
+  is decoded twice: as zpush.useragent to read, and as extra_data, a static
+  field, so that fts can hold the pair account and user agent (rule 132270
+  fires the first time an account is used by a scripting tool).
+-->
+<decoder name="jt-zpush-useragent">
+  <parent>jt-zpush</parent>
+  <prematch type="pcre2">\] User-agent: '</prematch>
+  <regex type="pcre2">(?:\[\s*(\d+)\] )?\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^#]*?)(?:#.*?)?\](?: ?\[[^\]]*\])? User-agent: '((.*))'\]?\s*$</regex>
+  <order>zpush.pid, zpush.level, dstuser, zpush.useragent, extra_data</order>
+  <fts>name, dstuser, extra_data</fts>
 </decoder>
 
 <!-- Everything else: the level, the user and the message. -->
 <decoder name="jt-zpush-message">
   <parent>jt-zpush</parent>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^\]#]*)(?:#[^\]]*)?\](?: ?\[[^\]]*\])? (.*?)\s*$</regex>
-  <order>zpush.level, dstuser, zpush.message</order>
+  <regex type="pcre2">(?:\[\s*(\d+)\] )?\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^\]#]*)(?:#[^\]]*)?\](?: ?\[[^\]]*\])? (.*?)\s*$</regex>
+  <order>zpush.pid, zpush.level, dstuser, zpush.message</order>
 </decoder>

@@ -8,6 +8,9 @@
     - 解碼器 zimbra-proxy-access（decoders/0001-zimbra_decoders.xml，3.0 起隨套件提供）
     - CDB 清單 etc/lists/zimbra-internal-networks（3.1 起為選用：私有網段已寫進規則）
   3.0 起不再引用其他套件的清單（100991 已移除，見該處說明）。
+  3.2: PAM and sudoers FIM (100936, 100938, 100939), ClientUploader (100994),
+       CVE-2020-7796 (100995), exploit URLs answered 404 (100997); 100963 at
+       level 5; 100976 and 100977 descriptions corrected; 100979 can fire.
 -->
 
 <!-- ==========================================================
@@ -140,15 +143,51 @@
     </mitre>
   </rule>
 
+  <!-- 3.2: PAM and sudoers (the group's agent.conf monitors /etc/pam.d,
+       /etc/sudoers and /etc/sudoers.d with whodata and report_changes).
+       After CVE-2026-73570, attackers added a pam_exec hook to
+       /etc/pam.d/sudo and a "NOPASSWD: ALL" line for the zimbra account
+       (Microsoft Threat Intelligence, 2026-09-30). Zimbra's own installer
+       writes /etc/sudoers.d/02_zimbra-* on install and upgrade, so expect
+       these at an upgrade. Writes by the package manager end at 100937. -->
+  <rule id="100938" level="13">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/etc/pam\.d/</field>
+    <description>[HIGH] PAM configuration changed, a way to capture passwords or bypass authentication: $(file) process: $(process_name)</description>
+    <mitre>
+      <id>T1556.003</id>
+    </mitre>
+  </rule>
+
+  <rule id="100939" level="13">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/etc/sudoers$|^/etc/sudoers\.d/</field>
+    <description>[HIGH] sudo configuration changed, a way to escalate privileges: $(file) process: $(process_name)</description>
+    <mitre>
+      <id>T1548.003</id>
+    </mitre>
+  </rule>
+
+  <!-- The diff (report_changes) shows a rule granting every command
+       without a password. Zimbra's own sudoers lines name each command. -->
+  <rule id="100936" level="14">
+    <if_sid>100939</if_sid>
+    <field name="changed_content" type="pcre2">(?m)^\x3e.*NOPASSWD:\s*ALL\b</field>
+    <description>[HIGH] A sudo rule granting every command without a password was added: $(file) process: $(process_name)</description>
+    <mitre>
+      <id>T1548.003</id>
+    </mitre>
+  </rule>
+
   <!-- 3.0: the package manager and snapd install cron entries and units
        too. In 41 days on two servers every 100940/100941 was one of them
        (a snap refresh rewrites its units, a package added a cron.daily
        script). Only events that NAME the writer are lowered: whodata must be
        working; a realtime event with no process stays at level 13. -->
   <rule id="100937" level="5">
-    <if_sid>100940,100941</if_sid>
+    <if_sid>100940,100941,100938,100939</if_sid>
     <field name="process_name" type="pcre2">^/usr/bin/dpkg$|^/usr/bin/apt(?:-get)?$|^/usr/lib/apt/|/usr/bin/unattended-upgrade$|^/snap/snapd/\d+/usr/lib/snapd/snapd$|^/usr/lib/snapd/snapd$</field>
-    <description>Scheduled task or systemd unit installed by the package manager or snapd: $(file) process: $(process_name)</description>
+    <description>Scheduled task, systemd unit, PAM or sudo file installed by the package manager or snapd: $(file) process: $(process_name)</description>
   </rule>
 
   <rule id="100942" level="14">
@@ -177,12 +216,23 @@
      ========================================================== -->
 <group name="zimbra,defense_evasion,">
 
+  <!-- 3.2: this rule never fired: its level 0 sibling 100800 took every
+       web-root event first. Once 100800 became level 1 (3.2), it would have
+       raised level 13 for every modification, because a content change
+       always changes mtime as well. It now takes only what backdating looks
+       like to FIM: a non-stock executable artefact (jsp, jspx, class, jar,
+       war) in the web root whose ONLY change is the modification time, the
+       touch -r / touch -d an attacker uses to make a planted file look as old
+       as its neighbours. A stock file with only its mtime changed stays at
+       100801 (level 0). lib/ext is left to 100806 (level 15 for any
+       non-stock file there). -->
   <rule id="100960" level="13">
     <if_sid>550</if_sid>
-    <field name="file" type="pcre2">^/opt/zimbra/(jetty_base|jetty)/webapps/|^/opt/zimbra/lib/ext/</field>
-    <field name="changed_fields" type="pcre2">mtime</field>
+    <field name="file" type="pcre2">^/opt/zimbra/(?:jetty_base|jetty)/webapps/.*\.(?:jsp|jspx|class|war|jar)$</field>
+    <field name="changed_fields" type="pcre2">^mtime$</field>
+    <list field="file" lookup="not_match_key">etc/lists/zimbra-webfiles</list>
     <options>no_full_log</options>
-    <description>[HIGH] Timestamp modified on a file in the Zimbra web directory, suggesting timestomping: $(file)</description>
+    <description>[HIGH] Only the modification time changed on a non-stock executable file in the Zimbra web directory, suggesting timestomping: $(file)</description>
     <mitre>
       <id>T1070.006</id>
     </mitre>
@@ -197,9 +247,14 @@
     </mitre>
   </rule>
 
-  <rule id="100963" level="14">
+  <!-- 3.2: level 14 to 5 and no Zimbra wording: the built-in parents are
+       503 (agent started) and 504 (agent disconnected) for EVERY agent, not
+       only Zimbra servers; at 14 a laptop going to sleep was mailed (3 to
+       36 a day measured on one manager). The ID and parents stay, because
+       a site rule may count it (if_matched_sid 100963). -->
+  <rule id="100963" level="5">
     <if_sid>503,504</if_sid>
-    <description>[HIGH] Wazuh agent state abnormal, stopped or disconnected, detection coverage may have been removed</description>
+    <description>Wazuh agent started or disconnected, its monitoring was interrupted</description>
     <mitre>
       <id>T1562.001</id>
     </mitre>
@@ -213,31 +268,42 @@
      ========================================================== -->
 <group name="zimbra,exploit_attempt,">
 
-  <!-- CVE-2022-27925 / CVE-2022-37042：mboximport 任意檔案上傳 -->
+  <!-- CVE-2022-27925 / CVE-2022-37042：mboximport 任意檔案上傳
+       Any status counts: Volexity (2022-08-10) saw the exploit request
+       return 401 and still write the shell. A 404 (the backup extension is
+       not installed, as on every FOSS server) ends at 100997 instead. -->
   <rule id="100975" level="14">
     <if_sid>100820</if_sid>
     <url type="pcre2">/service/extension/backup/mboximport</url>
-    <description>[HIGH] mboximport endpoint accessed, matches the CVE-2022-27925 and CVE-2022-37042 exploitation pattern: $(srcip)</description>
+    <description>[HIGH] mboximport endpoint accessed, matches the CVE-2022-27925 and CVE-2022-37042 exploitation pattern (a 401 does not mean it failed): $(url) status: $(id) from: $(srcip)</description>
     <mitre>
       <id>T1190</id>
     </mitre>
   </rule>
 
-  <!-- CVE-2025-68645 等：路徑穿越／LFI -->
+  <!-- 路徑穿越／LFI
+       3.2: case-insensitive, and the forms Jetty and nginx decode
+       differently: "..;/" (path parameter), "..%2f", "%2e./", ".%2e",
+       a backslash, double encoding (%252e) and overlong UTF-8 (%c0%ae).
+       The description no longer names CVE-2025-68645, which is the
+       /h/rest file inclusion of 100977, not a traversal in the path. -->
   <rule id="100976" level="13">
     <if_sid>100820</if_sid>
-    <url type="pcre2">(\.\./|%2e%2e|%252e%252e)</url>
-    <description>[HIGH] Path traversal attempt, LFI of the CVE-2025-68645 class: $(url) from: $(srcip)</description>
+    <url type="pcre2">(?i)\.\.(?:/|;|%2f|%5c|\x5c)|%2e(?:%2e|\.)|\.%2e|%252e%252e|%c0%ae</url>
+    <description>[HIGH] Path traversal attempt in a request to Zimbra: $(url) from: $(srcip)</description>
     <mitre>
+      <id>T1190</id>
       <id>T1083</id>
     </mitre>
   </rule>
 
-  <!-- CVE-2024-54663 / CVE-2025-27914：/h/rest 端點濫用 -->
+  <!-- /h/rest 端點濫用：CVE-2025-68645 (unauthenticated file inclusion
+       through RestFilter, CISA KEV 2026-01-22, fixed in 10.1.13),
+       CVE-2024-54663 and CVE-2025-27914 (fixed in 10.1.3). -->
   <rule id="100977" level="12">
     <if_sid>100820</if_sid>
     <url type="pcre2">/h/rest\?</url>
-    <description>[HIGH] /h/rest endpoint accessed, related to CVE-2024-54663 and CVE-2025-27914: $(url) from: $(srcip)</description>
+    <description>[HIGH] /h/rest endpoint accessed, the CVE-2025-68645 (KEV), CVE-2024-54663 and CVE-2025-27914 entry point: $(url) from: $(srcip)</description>
     <mitre>
       <id>T1190</id>
     </mitre>
@@ -254,16 +320,59 @@
   <rule id="100978" level="13">
     <if_sid>100820</if_sid>
     <url type="pcre2">(?i)/service/proxy\?(?:.*\x26)?target=(?:https?(?::|%3A)(?://|%2F%2F))?(?:[^/\x26%]*(?:@|%40))?(?:localhost|127\.|0\.0\.0\.0|\[?::1|\[?%3A%3A1|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|169\.254\.|[^/\x26%?]*(?::|%3A)(?:7071|7073|7025|7110|7143|7993|7995|8080|8443|11211)\b)</url>
-    <description>[HIGH] proxyservlet SSRF attempt aimed at the server or the internal network, CVE-2019-9621: $(url) from: $(srcip)</description>
+    <description>[HIGH] proxyservlet SSRF attempt aimed at an internal target (the server itself or the internal network), CVE-2019-9621: $(url) from: $(srcip)</description>
     <mitre>
       <id>T1190</id>
     </mitre>
   </rule>
 
+  <!-- 3.2: ClientUploader, the upload step of the 2019 chain (XXE
+       CVE-2019-9670 in Autodiscover, then the proxy servlet SSRF
+       CVE-2019-9621 for an admin token, then a JSP uploaded here). The
+       extension was removed in 10.0.1, so on a current server every request
+       is an attempt (a 404 ends at 100997). -->
+  <rule id="100994" level="12">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">(?i)/service/extension/clientUploader/upload</url>
+    <description>[HIGH] Request to Zimbra's ClientUploader upload endpoint, the file-planting step after CVE-2019-9670 and CVE-2019-9621: $(url) status: $(id) from: $(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1505.003</id>
+    </mitre>
+  </rule>
+
+  <!-- 3.2: CVE-2020-7796 (CISA KEV 2026-02-17), server-side request
+       forgery through the WebEx zimlet's httpPost.jsp. A 404 (zimlet not
+       deployed) ends at 100997. -->
+  <rule id="100995" level="12">
+    <if_sid>100820</if_sid>
+    <url type="pcre2">(?i)/service/zimlet/com_zimbra_webex/httpPost\.jsp</url>
+    <description>[HIGH] Request to the WebEx zimlet's httpPost.jsp, the CVE-2020-7796 SSRF entry point (KEV): $(url) status: $(id) from: $(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!-- 3.2: the endpoint of an exploit attempt does not exist on this
+       server (HTTP 404): an attempt, not a compromise. -->
+  <rule id="100997" level="8">
+    <if_sid>100975,100994,100995</if_sid>
+    <id>^404$</id>
+    <description>Exploit attempt against an endpoint this Zimbra server does not have (HTTP 404): $(url) from: $(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>exploit_attempt,</group>
+  </rule>
+
   <!-- ★ CVE-2022-41352 類：郵件觸發寫檔 —— 完全無 HTTP 痕跡的入侵管道
-         此規則可直接回答「入侵管道為何」，前提是 whodata 必須真的啟用 -->
+         此規則可直接回答「入侵管道為何」，前提是 whodata 必須真的啟用
+       3.2: a child of 100803, not of 100802. As a sibling of 100803 (both
+       level 15, 100803 loaded first from 01-) it never fired: every web
+       shell written by a named process ended at 100803 (verified with a
+       synthetic whodata event, writer /usr/bin/perl). -->
   <rule id="100979" level="15">
-    <if_sid>100802</if_sid>
+    <if_sid>100803</if_sid>
     <field name="process_name" type="pcre2">(?i)(amavis|cpio|unrar|tar|pax|perl|clam)</field>
     <description>[CRITICAL] File in the web directory written by a mail-handling process, assessed as a mail-triggered file drop of the CVE-2022-41352 class: $(file) process: $(process_name)</description>
     <mitre>

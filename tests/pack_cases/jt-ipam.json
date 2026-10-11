@@ -68,18 +68,25 @@
    "note": "synthesized from the real login line; endpoint from auth.py"
   },
   {
-   "log": "Oct 11 10:55:39 ipam-example jt-ipam-backend[3302819]: {\"method\": \"POST\", \"path\": \"/api/myapp/user/\", \"status\": 401, \"duration_ms\": 30.5, \"request_id\": \"7c1f0a52-2222-4a0b-9c3e-2a6f5d1e0b02\", \"client_ip\": \"10.0.1.13\", \"event\": \"request\", \"level\": \"info\", \"timestamp\": \"2026-10-11T02:55:39.944624Z\"}",
+   "log": "Oct 11 10:55:39 ipam-example jt-ipam-backend[3302819]: {\"method\": \"POST\", \"path\": \"/api/phpipam/myapp/user/\", \"status\": 401, \"duration_ms\": 30.5, \"request_id\": \"7c1f0a52-2222-4a0b-9c3e-2a6f5d1e0b02\", \"client_ip\": \"10.0.1.13\", \"event\": \"request\", \"level\": \"info\", \"timestamp\": \"2026-10-11T02:55:39.944624Z\"}",
    "location": "journald",
    "expect_rule": "131604",
    "expect_level": 3,
-   "note": "synthesized: phpIPAM-compatible login (api/phpipam/endpoints/user.py)"
+   "note": "synthesized from api/phpipam/endpoints/user.py + main.py prefix /api/phpipam (1.1 bug: never fired)"
   },
   {
    "log": "Oct 11 10:55:39 ipam-example jt-ipam-backend[3302819]: {\"method\": \"POST\", \"path\": \"/api/myapp/user/\", \"status\": 401, \"duration_ms\": 30.5, \"request_id\": \"7c1f0a52-2222-4a0b-9c3e-2a6f5d1e0b02\", \"client_ip\": \"10.0.1.13\", \"event\": \"request\", \"level\": \"info\", \"timestamp\": \"2026-10-11T02:55:39.944624Z\"}",
    "location": "journald",
+   "expect_rule": "131601",
+   "expect_level": 0,
+   "note": "near miss: /api/<app>/user/ is not a jt-ipam path (the 1.1 rule looked for it)"
+  },
+  {
+   "log": "Oct 11 10:55:39 ipam-example jt-ipam-backend[3302819]: {\"method\": \"POST\", \"path\": \"/api/phpipam/myapp/user/\", \"status\": 401, \"duration_ms\": 30.5, \"request_id\": \"7c1f0a52-2222-4a0b-9c3e-2a6f5d1e0b02\", \"client_ip\": \"10.0.1.13\", \"event\": \"request\", \"level\": \"info\", \"timestamp\": \"2026-10-11T02:55:39.944624Z\"}",
+   "location": "journald",
    "expect_rule": "131605",
    "expect_level": 10,
-   "note": "synthesized x5: phpIPAM API brute force (AR rule)",
+   "note": "synthesized x5: phpIPAM API brute force (AR rule) (path fixed in 1.2: /api/phpipam/<app>/user/)",
    "repeat": 5
   },
   {
@@ -140,7 +147,7 @@
    "note": "real: RDP console requested"
   },
   {
-   "log": "Oct  5 06:59:47 ipam-example jt-ipam-backend[1062470]: {\"event\": \"rustdesk-web: 開始 peer=299822267 server=rd1 user=c76abeee-1363-474f-9034-19f7665c4a9a transport=tcp\", \"level\": \"info\", \"timestamp\": \"2026-10-04T22:59:47.856861Z\"}",
+   "log": "Oct  5 06:59:47 ipam-example jt-ipam-backend[1062470]: {\"event\": \"rustdesk-web: 開始 peer=299822267 server=rd-example user=c76abeee-1363-474f-9034-19f7665c4a9a transport=tcp\", \"level\": \"info\", \"timestamp\": \"2026-10-04T22:59:47.856861Z\"}",
    "location": "journald",
    "expect_rule": "131610",
    "expect_level": 2,
@@ -631,7 +638,7 @@
    "note": "synthesized from api/phpipam/endpoints/user.py:96"
   },
   {
-   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit view_agent_key rustdesk_server/eafcfac3-b5c0-43a1-b549-19e9f6e68083\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"view_agent_key\", \"_object_type\": \"rustdesk_server\", \"_object_id\": \"eafcfac3-b5c0-43a1-b549-19e9f6e68083\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_request_id\": \"7be11778-e355-4ef1-25b1-b23ffe37c9df\", \"_ts\": \"2026-10-04T12:58:50.019529+00:00\", \"_diff\": \"{\\\"name\\\": \\\"rd1\\\"}\"}",
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit view_agent_key rustdesk_server/eafcfac3-b5c0-43a1-b549-19e9f6e68083\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"view_agent_key\", \"_object_type\": \"rustdesk_server\", \"_object_id\": \"eafcfac3-b5c0-43a1-b549-19e9f6e68083\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_request_id\": \"7be11778-e355-4ef1-25b1-b23ffe37c9df\", \"_ts\": \"2026-10-04T12:58:50.019529+00:00\", \"_diff\": \"{\\\"name\\\": \\\"rd-example\\\"}\"}",
    "location": "/var/log/jt-ipam-audit.log",
    "expect_rule": "131655",
    "expect_level": 8,
@@ -645,11 +652,11 @@
    "note": "synthesized from system_settings.py:1073"
   },
   {
-   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit cert_bundle_download certificate/9ba10bf3-8311-49c9-b694-09ba0468787c\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"cert_bundle_download\", \"_object_type\": \"certificate\", \"_object_id\": \"9ba10bf3-8311-49c9-b694-09ba0468787c\", \"_actor_ip\": \"10.0.1.56\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"agent\\\": \\\"pdm1\\\", \\\"fingerprint\\\": \\\"e5da07b35321e8ac877135ccf1ccba06d90de62309ff6c8bc7c437ebc5291f90\\\", \\\"part\\\": \\\"key\\\"}\"}",
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit cert_bundle_download certificate/9ba10bf3-8311-49c9-b694-09ba0468787c\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"cert_bundle_download\", \"_object_type\": \"certificate\", \"_object_id\": \"9ba10bf3-8311-49c9-b694-09ba0468787c\", \"_actor_ip\": \"10.0.1.56\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"agent\\\": \\\"web-example\\\", \\\"fingerprint\\\": \\\"e5da07b35321e8ac877135ccf1ccba06d90de62309ff6c8bc7c437ebc5291f90\\\", \\\"part\\\": \\\"key\\\"}\"}",
    "location": "/var/log/jt-ipam-audit.log",
    "expect_rule": "131657",
-   "expect_level": 3,
-   "note": "real row 4263 (database): key delivered to a cert agent"
+   "expect_level": 2,
+   "note": "real row 4263 (database): key delivered to a cert agent (level 3 -> 2 in 1.2)"
   },
   {
    "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit cert_export certificate/9ba10bf3-8311-49c9-b694-09ba0468787c\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"cert_export\", \"_object_type\": \"certificate\", \"_object_id\": \"9ba10bf3-8311-49c9-b694-09ba0468787c\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"fmt\\\": \\\"pfx\\\", \\\"fingerprint\\\": \\\"e5da07b35321e8ac877135ccf1ccba06d90de62309ff6c8bc7c437ebc5291f90\\\"}\"}",
@@ -662,8 +669,8 @@
    "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit system_export_download system\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"system_export_download\", \"_object_type\": \"system\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"task_id\\\": \\\"t1\\\"}\"}",
    "location": "/var/log/jt-ipam-audit.log",
    "expect_rule": "131658",
-   "expect_level": 10,
-   "note": "synthesized from system_transfer.py:202"
+   "expect_level": 12,
+   "note": "synthesized from system_transfer.py:202 (level 10 -> 12 in 1.2)"
   },
   {
    "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit import system\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"import\", \"_object_type\": \"system\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"mode\\\": \\\"replace\\\", \\\"tables\\\": 41}\"}",
@@ -715,18 +722,18 @@
    "note": "real line, root session from outside"
   },
   {
-   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rustdesk.web_session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rustdesk.web_session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.13\", \"_ts\": \"2026-10-10T13:41:27.467029+00:00\", \"_this_hash\": \"2b38ff2da605895ec613d06787300ca8e73a79dee563b98e14760fa83bc0917d\", \"_prev_hash\": \"333cb8893b9de23ed516ff3bac4de0a64826c3e8b3387097812c395b797c7940\", \"_diff\": \"{\\\"peer_id\\\": \\\"186472622\\\", \\\"server_id\\\": \\\"eafcfac3-b5c0-43a1-b549-19e9f6e68083\\\", \\\"server_name\\\": \\\"rd1\\\", \\\"transport\\\": \\\"tcp\\\", \\\"hbbs_address\\\": \\\"10.0.1.73:21116\\\", \\\"kind\\\": \\\"desktop\\\"}\"}",
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rustdesk.web_session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rustdesk.web_session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.13\", \"_ts\": \"2026-10-10T13:41:27.467029+00:00\", \"_this_hash\": \"2b38ff2da605895ec613d06787300ca8e73a79dee563b98e14760fa83bc0917d\", \"_prev_hash\": \"333cb8893b9de23ed516ff3bac4de0a64826c3e8b3387097812c395b797c7940\", \"_diff\": \"{\\\"peer_id\\\": \\\"186472622\\\", \\\"server_id\\\": \\\"eafcfac3-b5c0-43a1-b549-19e9f6e68083\\\", \\\"server_name\\\": \\\"rd-example\\\", \\\"transport\\\": \\\"tcp\\\", \\\"hbbs_address\\\": \\\"10.0.1.73:21116\\\", \\\"kind\\\": \\\"desktop\\\"}\"}",
    "location": "/var/log/jt-ipam-audit.log",
    "expect_rule": "131663",
    "expect_level": 2,
    "note": "real (Graylog): recorded only"
   },
   {
-   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rustdesk.web_session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rustdesk.web_session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"198.18.0.9\", \"_ts\": \"2026-10-10T13:41:27.467029+00:00\", \"_this_hash\": \"2b38ff2da605895ec613d06787300ca8e73a79dee563b98e14760fa83bc0917d\", \"_prev_hash\": \"333cb8893b9de23ed516ff3bac4de0a64826c3e8b3387097812c395b797c7940\", \"_diff\": \"{\\\"peer_id\\\": \\\"186472622\\\", \\\"server_id\\\": \\\"eafcfac3-b5c0-43a1-b549-19e9f6e68083\\\", \\\"server_name\\\": \\\"rd1\\\", \\\"transport\\\": \\\"tcp\\\", \\\"hbbs_address\\\": \\\"10.0.1.73:21116\\\", \\\"kind\\\": \\\"desktop\\\"}\"}",
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rustdesk.web_session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rustdesk.web_session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"198.18.0.9\", \"_ts\": \"2026-10-10T13:41:27.467029+00:00\", \"_this_hash\": \"2b38ff2da605895ec613d06787300ca8e73a79dee563b98e14760fa83bc0917d\", \"_prev_hash\": \"333cb8893b9de23ed516ff3bac4de0a64826c3e8b3387097812c395b797c7940\", \"_diff\": \"{\\\"peer_id\\\": \\\"186472622\\\", \\\"server_id\\\": \\\"eafcfac3-b5c0-43a1-b549-19e9f6e68083\\\", \\\"server_name\\\": \\\"rd-example\\\", \\\"transport\\\": \\\"tcp\\\", \\\"hbbs_address\\\": \\\"10.0.1.73:21116\\\", \\\"kind\\\": \\\"desktop\\\"}\"}",
    "location": "/var/log/jt-ipam-audit.log",
-   "expect_rule": "131660",
+   "expect_rule": "131697",
    "expect_level": 5,
-   "note": "real line, RustDesk session from outside"
+   "note": "real line, RustDesk session from outside (RustDesk branch split to 131697 in 1.2)"
   },
   {
    "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit sftp_open ip/51d012d8-cf8f-4b10-946b-af7e7710a803\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"sftp_open\", \"_object_type\": \"ip\", \"_object_id\": \"51d012d8-cf8f-4b10-946b-af7e7710a803\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-04T01:36:46.203446+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.111\\\", \\\"port\\\": 22, \\\"username\\\": \\\"root\\\", \\\"via_jump_host\\\": null, \\\"via_kind\\\": null}\"}",
@@ -813,14 +820,14 @@
    "note": "real (Graylog): integration created"
   },
   {
-   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rotate_agent_key rustdesk_server/eafcfac3-b5c0-43a1-b549-19e9f6e68083\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rotate_agent_key\", \"_object_type\": \"rustdesk_server\", \"_object_id\": \"eafcfac3-b5c0-43a1-b549-19e9f6e68083\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_ts\": \"2026-10-04T12:30:25.804511+00:00\", \"_diff\": \"{\\\"name\\\": \\\"rd1\\\", \\\"reason\\\": \\\"switch to the dedicated RustDesk agent\\\"}\"}",
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rotate_agent_key rustdesk_server/eafcfac3-b5c0-43a1-b549-19e9f6e68083\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rotate_agent_key\", \"_object_type\": \"rustdesk_server\", \"_object_id\": \"eafcfac3-b5c0-43a1-b549-19e9f6e68083\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_ts\": \"2026-10-04T12:30:25.804511+00:00\", \"_diff\": \"{\\\"name\\\": \\\"rd-example\\\", \\\"reason\\\": \\\"switch to the dedicated RustDesk agent\\\"}\"}",
    "location": "/var/log/jt-ipam-audit.log",
    "expect_rule": "131676",
    "expect_level": 5,
    "note": "real (Graylog)"
   },
   {
-   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rustdesk.peer_deleted rustdesk_server/eafcfac3-b5c0-43a1-b549-19e9f6e68083\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rustdesk.peer_deleted\", \"_object_type\": \"rustdesk_server\", \"_object_id\": \"eafcfac3-b5c0-43a1-b549-19e9f6e68083\", \"_actor_ip\": \"10.0.1.73\", \"_request_id\": \"b9cd75e8-49b6-92ab-03a4-2b517e3ba4b5\", \"_ts\": \"2026-10-05T04:18:59.086178+00:00\", \"_diff\": \"{\\\"name\\\": \\\"rd1\\\", \\\"ids\\\": [\\\"1203047448\\\", \\\"1429018617\\\", \\\"1437106044\\\"], \\\"count\\\": 3, \\\"skipped_online\\\": 0, \\\"not_found\\\": 0, \\\"failed\\\": 0}\"}",
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rustdesk.peer_deleted rustdesk_server/eafcfac3-b5c0-43a1-b549-19e9f6e68083\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rustdesk.peer_deleted\", \"_object_type\": \"rustdesk_server\", \"_object_id\": \"eafcfac3-b5c0-43a1-b549-19e9f6e68083\", \"_actor_ip\": \"10.0.1.73\", \"_request_id\": \"b9cd75e8-49b6-92ab-03a4-2b517e3ba4b5\", \"_ts\": \"2026-10-05T04:18:59.086178+00:00\", \"_diff\": \"{\\\"name\\\": \\\"rd-example\\\", \\\"ids\\\": [\\\"1203047448\\\", \\\"1429018617\\\", \\\"1437106044\\\"], \\\"count\\\": 3, \\\"skipped_online\\\": 0, \\\"not_found\\\": 0, \\\"failed\\\": 0}\"}",
    "location": "/var/log/jt-ipam-audit.log",
    "expect_rule": "131630",
    "expect_level": 2,
@@ -869,11 +876,501 @@
    "note": "near-miss: free text must not be taken by generic rules 1002/1007"
   },
   {
-   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rustdesk.web_session_close ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rustdesk.web_session_close\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.13\", \"_ts\": \"2026-10-10T13:42:08.410643+00:00\", \"_this_hash\": \"c720bfe484b9a43444282e548137902f153ac7110f4a7bcc18acffa7862443d3\", \"_prev_hash\": \"32c7582f65e4cd444878d9ebddc8712f7de3214fecd8b4acbc0f83c235a9e667\", \"_diff\": \"{\\\"peer_id\\\": \\\"186472622\\\", \\\"server_id\\\": \\\"eafcfac3-b5c0-43a1-b549-19e9f6e68083\\\", \\\"server_name\\\": \\\"rd1\\\", \\\"transport\\\": \\\"tcp\\\", \\\"hbbs_address\\\": \\\"10.0.1.73:21116\\\", \\\"kind\\\": \\\"desktop\\\", \\\"end_reason\\\": \\\"browser_close\\\", \\\"error_detail\\\": null, \\\"started_at\\\": \\\"2026-10-10T13:41:27.460464+00:00\\\", \\\"ended_at\\\": \\\"2026-10-10T13:42:08.405220+00:00\\\", \\\"duration_seconds\\\": 40.9, \\\"paired\\\": true, \\\"relay_server\\\": \\\"rd1.example.com:21117\\\", \\\"relay_address\\\": \\\"10.0.1.73:21117\\\", \\\"via_request_relay\\\": false, \\\"restarted\\\": false, \\\"login_results\\\": [{\\\"ok\\\": true, \\\"error\\\": \\\"\\\", \\\"at\\\": \\\"2026-10-10T13:41:28.484583+00:00\\\"}], \\\"login_results_source\\\": \\\"browser\\\", \\\"saved_password_used\\\": true, \\\"bytes_up\\\": 8948, \\\"bytes_down\\\": 2313807}\"}",
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rustdesk.web_session_close ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rustdesk.web_session_close\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.13\", \"_ts\": \"2026-10-10T13:42:08.410643+00:00\", \"_this_hash\": \"c720bfe484b9a43444282e548137902f153ac7110f4a7bcc18acffa7862443d3\", \"_prev_hash\": \"32c7582f65e4cd444878d9ebddc8712f7de3214fecd8b4acbc0f83c235a9e667\", \"_diff\": \"{\\\"peer_id\\\": \\\"186472622\\\", \\\"server_id\\\": \\\"eafcfac3-b5c0-43a1-b549-19e9f6e68083\\\", \\\"server_name\\\": \\\"rd-example\\\", \\\"transport\\\": \\\"tcp\\\", \\\"hbbs_address\\\": \\\"10.0.1.73:21116\\\", \\\"kind\\\": \\\"desktop\\\", \\\"end_reason\\\": \\\"browser_close\\\", \\\"error_detail\\\": null, \\\"started_at\\\": \\\"2026-10-10T13:41:27.460464+00:00\\\", \\\"ended_at\\\": \\\"2026-10-10T13:42:08.405220+00:00\\\", \\\"duration_seconds\\\": 40.9, \\\"paired\\\": true, \\\"relay_server\\\": \\\"rd-example.example.com:21117\\\", \\\"relay_address\\\": \\\"10.0.1.73:21117\\\", \\\"via_request_relay\\\": false, \\\"restarted\\\": false, \\\"login_results\\\": [{\\\"ok\\\": true, \\\"error\\\": \\\"\\\", \\\"at\\\": \\\"2026-10-10T13:41:28.484583+00:00\\\"}], \\\"login_results_source\\\": \\\"browser\\\", \\\"saved_password_used\\\": true, \\\"bytes_up\\\": 8948, \\\"bytes_down\\\": 2313807}\"}",
    "location": "/var/log/jt-ipam-audit.log",
    "expect_rule": "131666",
    "expect_level": 2,
    "note": "real (Graylog): 1.3 KB line with error_detail"
+  },
+  {
+   "log": "Sep 27 08:24:06 ipam-example jt-ipam-backend[2613049]: {\"method\": \"GET\", \"path\": \"/api/phpipam/myapp/user/\", \"status\": 401, \"duration_ms\": 91.88, \"request_id\": \"83848d11-4c9f-39f2-1ef8-ffb811a53cf3\", \"client_ip\": \"10.0.1.183\", \"event\": \"request\", \"level\": \"info\", \"timestamp\": \"2026-09-27T00:24:06.869057Z\"}",
+   "location": "journald",
+   "expect_rule": "131601",
+   "expect_level": 0,
+   "note": "near miss: GET /api/phpipam/<app>/user/ 401 is a token check, not a login"
+  },
+  {
+   "log": "Sep 27 08:24:06 ipam-example jt-ipam-backend[2613049]: {\"method\": \"GET\", \"path\": \"/api/v1/system/integration-presence\", \"status\": 403, \"duration_ms\": 91.88, \"request_id\": \"83848d11-4c9f-39f2-1ef8-ffb811a53cf3\", \"client_ip\": \"10.0.1.183\", \"event\": \"request\", \"level\": \"info\", \"timestamp\": \"2026-09-27T00:24:06.869057Z\"}",
+   "location": "journald",
+   "expect_rule": "131625",
+   "expect_level": 2,
+   "note": "real (journald, sanitized): 403 for a non-admin account"
+  },
+  {
+   "log": "Sep 27 08:24:06 ipam-example jt-ipam-backend[2613049]: {\"method\": \"GET\", \"path\": \"/api/v1/system/integration-presence\", \"status\": 404, \"duration_ms\": 91.88, \"request_id\": \"83848d11-4c9f-39f2-1ef8-ffb811a53cf3\", \"client_ip\": \"10.0.1.183\", \"event\": \"request\", \"level\": \"info\", \"timestamp\": \"2026-09-27T00:24:06.869057Z\"}",
+   "location": "journald",
+   "expect_rule": "131601",
+   "expect_level": 0,
+   "note": "near miss: 404 is not an authorization failure"
+  },
+  {
+   "log": "Sep 27 08:24:06 ipam-example jt-ipam-backend[2613049]: {\"method\": \"GET\", \"path\": \"/api/v1/system/integration-presence\", \"status\": 403, \"duration_ms\": 91.88, \"request_id\": \"83848d11-4c9f-39f2-1ef8-ffb811a53cf3\", \"client_ip\": \"10.0.1.183\", \"event\": \"request\", \"level\": \"info\", \"timestamp\": \"2026-09-27T00:24:06.869057Z\"}",
+   "location": "journald",
+   "expect_rule": "131626",
+   "expect_level": 8,
+   "note": "real line x10: 10 refused requests in a minute from one address",
+   "repeat": 10
+  },
+  {
+   "log": "Sep 27 08:24:06 ipam-example jt-ipam-backend[2613049]: {\"method\": \"GET\", \"path\": \"/api/v1/system/integration-presence\", \"status\": 403, \"duration_ms\": 91.88, \"request_id\": \"83848d11-4c9f-39f2-1ef8-ffb811a53cf3\", \"client_ip\": \"10.0.1.183\", \"event\": \"request\", \"level\": \"info\", \"timestamp\": \"2026-09-27T00:24:06.869057Z\"}",
+   "location": "journald",
+   "expect_rule": "131625",
+   "expect_level": 2,
+   "note": "near miss x9: below the burst threshold",
+   "repeat": 9
+  },
+  {
+   "log": "Oct 01 14:14:13 ipam-example guacd[4027938]: Joining existing connection \"$a2c30ccc-f1a7-4f67-b483-f5042e610830\"",
+   "location": "journald",
+   "expect_rule": "131628",
+   "expect_level": 10,
+   "note": "synthesized from guacamole-server 1.6.0 src/guacd/connection.c:291 (syslog copy)"
+  },
+  {
+   "log": "Oct 01 14:14:13 ipam-example guacd[4027938]: guacd[4027938]: INFO:\tJoining existing connection \"$a2c30ccc-f1a7-4f67-b483-f5042e610830\"",
+   "location": "journald",
+   "expect_rule": "131627",
+   "expect_level": 0,
+   "note": "near miss: the stderr copy of the same message (log.c writes both); must not alert twice"
+  },
+  {
+   "log": "Oct 01 14:14:13 ipam-example guacd[4027938]: User \"@978734c5-6d5b-42bc-8778-381a6549cab8\" joined connection \"$a2c30ccc-f1a7-4f67-b483-f5042e610830\" (1 users now present)",
+   "location": "journald",
+   "expect_rule": "131627",
+   "expect_level": 0,
+   "note": "real (journal, syslog copy): an ordinary jt-ipam session"
+  },
+  {
+   "log": "Oct 01 14:14:13 ipam-example guacd[4027938]: guacd[4027938]: INFO:\tCreating new client for protocol \"rdp\"",
+   "location": "journald",
+   "expect_rule": "131627",
+   "expect_level": 0,
+   "note": "real (journal, stderr copy): new session"
+  },
+  {
+   "log": "Oct 01 14:14:13 ipam-example guacd[4027938]: Connection \"$0f1e2d3c-4b5a-4968-8778-695a4b3c2d1e\" does not exist",
+   "location": "journald",
+   "expect_rule": "131629",
+   "expect_level": 7,
+   "note": "synthesized from src/guacd/connection.c:285: join request for an unknown connection ID"
+  },
+  {
+   "log": "Oct 01 14:14:13 ipam-example guacd[4027938]: Connection \"$a2c30ccc-f1a7-4f67-b483-f5042e610830\" removed.",
+   "location": "journald",
+   "expect_rule": "131627",
+   "expect_level": 0,
+   "note": "real (journal, syslog copy): session ended"
+  },
+  {
+   "log": "Oct 01 14:14:13 ipam-example guacd[4027938]: guacd[4027938]: ERROR:\tHandshake failed, \"connect\" instruction was not received.",
+   "location": "journald",
+   "expect_rule": "131627",
+   "expect_level": 0,
+   "note": "real (journal): jt-ipam's health probe of guacd, about every 2 minutes"
+  },
+  {
+   "log": "10.0.1.200 - - [11/Oct/2026:00:06:09 +0800] \"GET /api/v1/notifications?unread_only=false&page=1&page_size=20 HTTP/2.0\" 401 37 \"https://ipam.example.com/dns\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131682",
+   "expect_level": 0,
+   "note": "real (nginx, sanitized): expired session polling notifications"
+  },
+  {
+   "log": "10.0.1.200 - - [11/Oct/2026:00:06:09 +0800] \"GET /api/v1/auth/me HTTP/2.0\" 401 37 \"https://ipam.example.com/\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131682",
+   "expect_level": 0,
+   "note": "real shape: expired session, own profile"
+  },
+  {
+   "log": "10.0.1.200 - - [11/Oct/2026:00:06:09 +0800] \"POST /api/v1/auth/login HTTP/2.0\" 401 37 \"https://ipam.example.com/login\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "near miss: a failed login keeps the built-in 4xx level"
+  },
+  {
+   "log": "10.0.1.200 - - [11/Oct/2026:00:06:09 +0800] \"GET /api/v1/notifications HTTP/2.0\" 401 37 \"-\" \"Mozilla/5.0\"",
+   "location": "/var/log/apache2/access.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "near miss: same path in a log that is not nginx"
+  },
+  {
+   "log": "10.0.1.73 - - [11/Oct/2026:08:51:08 +0800] \"POST /api/v1/rustdesk/agent/poll HTTP/1.1\" 502 150 \"-\" \"Python-urllib/3.12\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131683",
+   "expect_level": 2,
+   "note": "real (nginx, sanitized): 502 while the backend restarts"
+  },
+  {
+   "log": "10.0.1.144 - - [01/Oct/2026:20:55:50 +0800] \"GET /api/v1/scan-agents/jobs?wait=25 HTTP/1.1\" 502 150 \"-\" \"Python-urllib/3.12\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131683",
+   "expect_level": 2,
+   "note": "real (nginx, sanitized): scan agent long poll, query string"
+  },
+  {
+   "log": "10.0.1.200 - - [01/Oct/2026:20:55:50 +0800] \"GET /api/v1/auth/realms HTTP/2.0\" 503 150 \"https://ipam.example.com/login\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131683",
+   "expect_level": 2,
+   "note": "real path, 503 (child of 31123)"
+  },
+  {
+   "log": "10.0.1.200 - - [01/Oct/2026:20:55:50 +0800] \"GET /api/v1/devices HTTP/2.0\" 502 150 \"-\" \"Mozilla/5.0\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "31120",
+   "expect_level": 5,
+   "note": "near miss: a path outside the listed jt-ipam route families keeps the built-in level"
+  },
+  {
+   "log": "10.0.1.144 - - [11/Sep/2026:02:55:13 +0800] \"POST /api/v1/scan-agents/report HTTP/1.1\" 500 21 \"-\" \"Python-urllib/3.12\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "31122",
+   "expect_level": 5,
+   "note": "near miss (real): an application error (500) keeps the built-in level"
+  },
+  {
+   "log": "2026/10/01 20:55:50 [error] 4018803#4018803: *277512 recv() failed (104: Connection reset by peer) while reading response header from upstream, client: 10.0.1.144, server: ipam.example.com, request: \"GET /api/v1/scan-agents/jobs?wait=25 HTTP/1.1\", upstream: \"http://127.0.0.1:8000/api/v1/scan-agents/jobs?wait=25\", host: \"ipam.example.com\"",
+   "location": "/var/log/nginx/error.log",
+   "expect_rule": "131684",
+   "expect_level": 2,
+   "note": "real (nginx error log, sanitized)"
+  },
+  {
+   "log": "2026/10/01 20:55:54 [error] 4018803#4018803: *277514 connect() failed (111: Connection refused) while connecting to upstream, client: 127.0.0.1, server: ipam.example.com, request: \"GET /readyz HTTP/2.0\", upstream: \"http://127.0.0.1:8000/readyz\", host: \"127.0.0.1\"",
+   "location": "/var/log/nginx/error.log",
+   "expect_rule": "131684",
+   "expect_level": 2,
+   "note": "real (nginx error log, sanitized): readiness probe"
+  },
+  {
+   "log": "2026/10/08 11:20:01 [error] 4018803#4018803: *280001 upstream timed out (110: Connection timed out) while reading upstream, client: 10.0.1.200, server: ipam.example.com, request: \"POST /api/v1/ai/chat/stream HTTP/2.0\", upstream: \"http://127.0.0.1:8000/api/v1/ai/chat/stream\", host: \"ipam.example.com\"",
+   "location": "/var/log/nginx/error.log",
+   "expect_rule": "31301",
+   "expect_level": 3,
+   "note": "near miss (real shape): a slow AI stream is not the backend being down"
+  },
+  {
+   "log": "2026/10/01 20:55:54 [error] 4018803#4018803: *277514 connect() failed (111: Connection refused) while connecting to upstream, client: 10.0.1.5, server: shop.example.com, request: \"GET /cart HTTP/1.1\", upstream: \"http://127.0.0.1:9000/cart\", host: \"shop.example.com\"",
+   "location": "/var/log/nginx/error.log",
+   "expect_rule": "31301",
+   "expect_level": 3,
+   "note": "near miss: another application on the same nginx"
+  },
+  {
+   "log": "2026/10/01 20:55:50 [error] 4018803#4018803: *277512 recv() failed (104: Connection reset by peer) while reading response header from upstream, client: 10.0.1.144, server: ipam.example.com, request: \"GET /api/v1/scan-agents/jobs?wait=25 HTTP/1.1\", upstream: \"http://127.0.0.1:8000/api/v1/scan-agents/jobs?wait=25\", host: \"ipam.example.com\"",
+   "location": "/var/log/nginx/error.log",
+   "expect_rule": "131685",
+   "expect_level": 7,
+   "note": "real line x40: backend unreachable longer than a restart",
+   "repeat": 40
+  },
+  {
+   "log": "2026/10/01 20:55:50 [error] 4018803#4018803: *277512 recv() failed (104: Connection reset by peer) while reading response header from upstream, client: 10.0.1.144, server: ipam.example.com, request: \"GET /api/v1/scan-agents/jobs?wait=25 HTTP/1.1\", upstream: \"http://127.0.0.1:8000/api/v1/scan-agents/jobs?wait=25\", host: \"ipam.example.com\"",
+   "location": "/var/log/nginx/error.log",
+   "expect_rule": "131684",
+   "expect_level": 2,
+   "note": "near miss x39: a normal restart",
+   "repeat": 39
+  },
+  {
+   "log": "2026-09-23 06:12:13.835 UTC [1750547] jt_ipam@jt_ipam ERROR:  audit_logs is append-only: UPDATE is not allowed (id=4411)",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131687",
+   "expect_level": 12,
+   "note": "real (PostgreSQL log, ipam host)"
+  },
+  {
+   "log": "2026-09-23 06:12:13.838 UTC [1750547] jt_ipam@jt_ipam ERROR:  audit_logs is append-only: DELETE is not allowed (id=4411)",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131687",
+   "expect_level": 12,
+   "note": "real (PostgreSQL log, ipam host)"
+  },
+  {
+   "log": "2026-10-11 03:00:00.100 UTC [2001] jt_ipam@jt_ipam ERROR:  audit_logs is append-only: TRUNCATE is not allowed",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131687",
+   "expect_level": 12,
+   "note": "synthesized from alembic 0201_audit_logs_no_truncate.py:30 + real prefix"
+  },
+  {
+   "log": "2026-10-11 03:00:00.100 UTC [2002] jt_ipam@jt_ipam ERROR:  permission denied for table audit_logs",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131687",
+   "expect_level": 12,
+   "note": "synthesized: hardened install (1.0.6 audit-harden.sql), PostgreSQL message as in the real line below"
+  },
+  {
+   "log": "2026-09-26 19:31:08.768 UTC [2629234] jt_ipam@jt_ipam ERROR:  permission denied for table ip_device_autolink_backup_20260806",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131686",
+   "expect_level": 0,
+   "note": "near miss (real): permission denied on another table"
+  },
+  {
+   "log": "2026-09-23 06:12:13.835 UTC [1750547] jt_ipam@jt_ipam CONTEXT:  PL/pgSQL function audit_logs_append_only() line 3 at RAISE",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131686",
+   "expect_level": 0,
+   "note": "near miss (real): the CONTEXT line of the same error"
+  },
+  {
+   "log": "2026-10-08 01:02:03.004 UTC [1999] jt_ipam@jt_ipam ERROR:  deadlock detected",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131686",
+   "expect_level": 0,
+   "note": "real: routine deadlock"
+  },
+  {
+   "log": "2026-10-03 16:04:31.567 UTC [426] LOG:  checkpoint starting: time",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131686",
+   "expect_level": 0,
+   "note": "real: checkpoint (the agent restrict drops it)"
+  },
+  {
+   "log": "2026-10-11 03:00:00.100 UTC [2003] x@y ERROR:  audit_logs is append-only: DELETE is not allowed (id=1)@jt_ipam FATAL:  password authentication failed for user \"x@y ERROR:  audit_logs is append-only: DELETE is not allowed (id=1)\"",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131688",
+   "expect_level": 5,
+   "note": "near miss: forged user name carrying the message; must not reach 131687"
+  },
+  {
+   "log": "2026-10-11 03:00:00.100 UTC [2004] jt_ipam@jt_ipam FATAL:  password authentication failed for user \"jt_ipam\"",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131688",
+   "expect_level": 5,
+   "note": "synthesized from PostgreSQL src/backend/libpq/auth.c + real prefix"
+  },
+  {
+   "log": "2026-10-11 00:02:46.991 UTC [3290666] select key from system_config where key @-c FATAL:  Peer authentication failed for user \"select key from system_config where key \"",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131688",
+   "expect_level": 5,
+   "note": "real (shortened): psql command typed as the user name"
+  },
+  {
+   "log": "2026-08-23 13:23:17.919 UTC [1024706] postgres@jtipam FATAL:  database \"jtipam\" does not exist",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131686",
+   "expect_level": 0,
+   "note": "near miss (real): wrong database name"
+  },
+  {
+   "log": "2026-10-11 03:00:00.100 UTC [2004] jt_ipam@jt_ipam FATAL:  password authentication failed for user \"jt_ipam\"",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131689",
+   "expect_level": 10,
+   "note": "x5: database password guessing",
+   "repeat": 5
+  },
+  {
+   "log": "2026-10-11 03:00:00.100 UTC [2004] jt_ipam@jt_ipam FATAL:  password authentication failed for user \"jt_ipam\"",
+   "location": "/var/log/postgresql/postgresql-16-main.log",
+   "expect_rule": "131688",
+   "expect_level": 5,
+   "note": "near miss x4",
+   "repeat": 4
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit export system\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"export\", \"_object_type\": \"system\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"scope\\\": [\\\"ipam\\\", \\\"settings\\\"], \\\"counts\\\": {\\\"ip_addresses\\\": 5120, \\\"users\\\": 5}, \\\"bytes\\\": 1048576}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131654",
+   "expect_level": 7,
+   "note": "synthesized from api/v1/endpoints/system_transfer.py:166 (export created)"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit export subnet/3f0c2b1a-0000-4000-8000-000000000001\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"export\", \"_object_type\": \"subnet\", \"_object_id\": \"3f0c2b1a-0000-4000-8000-000000000001\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"rows\\\": 12}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131630",
+   "expect_level": 2,
+   "note": "near miss: \"export\" on another object type"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit cert_bundle_download certificate/9ba10bf3-8311-49c9-b694-09ba0468787c\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"cert_bundle_download\", \"_object_type\": \"certificate\", \"_object_id\": \"9ba10bf3-8311-49c9-b694-09ba0468787c\", \"_actor_ip\": \"203.0.113.80\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"agent\\\": \\\"web-example\\\", \\\"fingerprint\\\": \\\"e5da07b35321e8ac877135ccf1ccba06d90de62309ff6c8bc7c437ebc5291f90\\\", \\\"part\\\": \\\"key\\\"}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131696",
+   "expect_level": 5,
+   "note": "synthesized from cert_agents.py:557: a certificate agent outside the private networks"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit export_csv subnet/3f0c2b1a-0000-4000-8000-000000000001\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"export_csv\", \"_object_type\": \"subnet\", \"_object_id\": \"3f0c2b1a-0000-4000-8000-000000000001\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"rows\\\": 12}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131692",
+   "expect_level": 3,
+   "note": "synthesized from addresses.py:399"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit export_client export\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"export_client\", \"_object_type\": \"export\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"source\\\": \\\"addresses\\\", \\\"format\\\": \\\"xlsx\\\", \\\"rows\\\": 2500, \\\"filename\\\": \\\"addresses.xlsx\\\", \\\"reported_by\\\": \\\"browser\\\"}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131693",
+   "expect_level": 5,
+   "note": "synthesized from export_events.py:53: 2,500 rows"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit export_report_pdf export\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"export_report_pdf\", \"_object_type\": \"export\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"title\\\": \\\"Subnet report\\\", \\\"filename\\\": \\\"report.pdf\\\", \\\"rows\\\": 999}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131692",
+   "expect_level": 3,
+   "note": "near miss: 999 rows (reports.py:52)"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit export_csv device\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"export_csv\", \"_object_type\": \"device\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"filename\\\": \\\"devices.csv\\\", \\\"rows\\\": 1000}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131693",
+   "expect_level": 5,
+   "note": "boundary: 1,000 rows (device_import.py:45)"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit purge_chat_history ai\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"purge_chat_history\", \"_object_type\": \"ai\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"removed\\\": 42, \\\"retention_days\\\": 30}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131694",
+   "expect_level": 5,
+   "note": "synthesized from ai.py:475"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit clear ai_audit\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"clear\", \"_object_type\": \"ai_audit\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"count\\\": 17}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131694",
+   "expect_level": 5,
+   "note": "synthesized from ai_audit.py:263"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit change_plan_purge change_plan\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"change_plan_purge\", \"_object_type\": \"change_plan\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"removed\\\": 3}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131630",
+   "expect_level": 2,
+   "note": "near miss: the automatic retention job"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit set_chat_retention ai\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"set_chat_retention\", \"_object_type\": \"ai\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"retention_days\\\": 7}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131695",
+   "expect_level": 3,
+   "note": "synthesized from ai.py:454"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rustdesk.local_client_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rustdesk.local_client_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"ip\\\": \\\"10.0.1.30\\\", \\\"peer_id\\\": \\\"186472622\\\", \\\"server\\\": \\\"rd-example\\\"}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131663",
+   "expect_level": 2,
+   "note": "synthesized from addresses.py:799: own RustDesk client opened, private address"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rustdesk.local_client_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rustdesk.local_client_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"203.0.113.50\", \"_ts\": \"2026-10-11T03:00:00.000000+00:00\", \"_diff\": \"{\\\"ip\\\": \\\"10.0.1.30\\\", \\\"peer_id\\\": \\\"186472622\\\", \\\"server\\\": \\\"rd-example\\\"}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131697",
+   "expect_level": 5,
+   "note": "same from outside the private networks"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit ssh.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"ssh.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.36\\\", \\\"port\\\": 22, \\\"username\\\": \\\"root\\\", \\\"auth\\\": \\\"password\\\", \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"credential_id\\\": null}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131690",
+   "expect_level": 5,
+   "note": "real shape (audit row, sanitized): root SSH with a typed password"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.175\\\", \\\"username\\\": \\\"alice\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": null}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131665",
+   "expect_level": 2,
+   "note": "near miss (real shape): ordinary account, typed password"
+  },
+  {
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit ssh.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"ssh.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.36\\\", \\\"port\\\": 22, \\\"username\\\": \\\"root\\\", \\\"auth\\\": \\\"password\\\", \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131662",
+   "expect_level": 3,
+   "note": "near miss: root with a stored credential"
+  }
+ ],
+ "sequences": [
+  {
+   "before": [
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.20\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.21\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.22\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.23\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.24\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.25\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.26\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}"
+   ],
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.27\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131691",
+   "expect_level": 10,
+   "note": "8 RDP sessions to 8 hosts by one account in 10 minutes"
+  },
+  {
+   "before": [
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit ssh.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"ssh.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.20\\\", \\\"port\\\": 22, \\\"username\\\": \\\"root\\\", \\\"auth\\\": \\\"password\\\", \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.21\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rustdesk.web_session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rustdesk.web_session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"peer_id\\\": \\\"111111111\\\", \\\"server_id\\\": \\\"eafcfac3-b5c0-43a1-b549-19e9f6e68083\\\", \\\"server_name\\\": \\\"rd-example\\\", \\\"transport\\\": \\\"tcp\\\", \\\"hbbs_address\\\": \\\"10.0.1.73:21116\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"203.0.113.50\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.22\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit ssh.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"ssh.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.23\\\", \\\"port\\\": 22, \\\"username\\\": \\\"root\\\", \\\"auth\\\": \\\"password\\\", \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"credential_id\\\": null}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rustdesk.web_session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rustdesk.web_session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"peer_id\\\": \\\"222222222\\\", \\\"server_id\\\": \\\"eafcfac3-b5c0-43a1-b549-19e9f6e68083\\\", \\\"server_name\\\": \\\"rd-example\\\", \\\"transport\\\": \\\"tcp\\\", \\\"hbbs_address\\\": \\\"10.0.1.73:21116\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.24\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}"
+   ],
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit ssh.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"ssh.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.25\\\", \\\"port\\\": 22, \\\"username\\\": \\\"root\\\", \\\"auth\\\": \\\"password\\\", \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131691",
+   "expect_level": 10,
+   "note": "mixed session rules (131662, 131665, 131663, 131660, 131690): counted the same"
+  },
+  {
+   "before": [
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.20\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.21\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.22\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.23\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.24\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.25\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}"
+   ],
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.26\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131665",
+   "expect_level": 2,
+   "note": "near miss: 7 sessions to 7 hosts"
+  },
+  {
+   "before": [
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.20\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.21\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.20\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.21\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.20\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.21\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.20\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.21\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.20\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.21\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.20\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}"
+   ],
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"c76abeee-1363-474f-9034-19f7665c4a9a\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.21\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131665",
+   "expect_level": 2,
+   "note": "near miss: 12 sessions alternating between two hosts"
+  },
+  {
+   "before": [
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"0a3c2b1e-0000-4000-8000-000000000000\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.20\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"0a3c2b1e-0000-4000-8000-000000000001\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.21\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"0a3c2b1e-0000-4000-8000-000000000000\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.22\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"0a3c2b1e-0000-4000-8000-000000000001\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.23\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"0a3c2b1e-0000-4000-8000-000000000000\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.24\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"0a3c2b1e-0000-4000-8000-000000000001\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.25\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+    "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"0a3c2b1e-0000-4000-8000-000000000000\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.26\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}"
+   ],
+   "log": "Oct 11 03:00:00 ipam-example jt-ipam-audit: {\"version\": \"1.1\", \"host\": \"ipam-example\", \"short_message\": \"audit rdp.session_open ip/9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"level\": 6, \"_app\": \"jt-ipam\", \"_action\": \"rdp.session_open\", \"_object_type\": \"ip\", \"_object_id\": \"9674cbf8-cb5e-40c5-8f2d-93a627c4fcef\", \"_actor_user_id\": \"0a3c2b1e-0000-4000-8000-000000000000\", \"_actor_ip\": \"10.0.1.200\", \"_ts\": \"2026-10-06T02:58:45.648273+00:00\", \"_diff\": \"{\\\"host\\\": \\\"10.0.1.27\\\", \\\"username\\\": \\\"carol\\\", \\\"domain\\\": null, \\\"via_jump_host\\\": null, \\\"via_kind\\\": null, \\\"size\\\": \\\"1740x999\\\", \\\"engine\\\": \\\"guacd\\\", \\\"credential_id\\\": \\\"0277045d-6ed0-411d-95ff-6260598009f6\\\"}\"}",
+   "location": "/var/log/jt-ipam-audit.log",
+   "expect_rule": "131665",
+   "expect_level": 2,
+   "note": "near miss: 8 hosts but two different accounts"
   }
  ]
 }

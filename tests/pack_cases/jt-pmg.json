@@ -138,9 +138,9 @@
   {
    "log": "Oct 11 03:01:05 pmg1 pmg-daily[1402416]: end task UPID:pmg1:00156633:338F2C99:6ACA8B6E:aptupdate::root@pam: command 'apt-get update' failed: exit code 100",
    "location": null,
-   "expect_rule": "132416",
-   "expect_level": 5,
-   "note": "real (fails daily on the site)"
+   "expect_rule": "132419",
+   "expect_level": 7,
+   "note": "real (fails daily on the site); was 132416 level 5 in 1.1: no package updates are arriving"
   },
   {
    "log": "Oct 11 03:01:05 pmg1 pmg-daily[1402416]: end task UPID:pmg1:00156633:338F2C99:6ACA8B6E:aptupdate::root@pam: OK",
@@ -214,9 +214,9 @@
   {
    "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: virus detected: Heuristics.Phishing.Email.SpoofedDomain (clamav)",
    "location": null,
-   "expect_rule": "132421",
-   "expect_level": 3,
-   "note": "synthesized; heuristics count as spam, not virus"
+   "expect_rule": "132435",
+   "expect_level": 5,
+   "note": "synthesized from libclamav names; phishing heuristic, was 132421 level 3 in 1.1"
   },
   {
    "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: block mail to <user@example.com> (rule: Virus Alert)",
@@ -890,6 +890,586 @@
    "location": null,
    "expect_rule": "none",
    "note": "real"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=alice@pmg msg=failed 2nd factor",
+   "location": null,
+   "expect_rule": "132409",
+   "expect_level": 10,
+   "note": "synthesized from AccessControl.pm (pmg-api 9.1.4 L168): right password, wrong second factor"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=alice@pmg msg=failed 2nd factor: TOTP limit reached, locked",
+   "location": null,
+   "expect_rule": "132495",
+   "expect_level": 12,
+   "note": "synthesized from AccessControl.pm L160: TOTP locked"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=failed 2nd factor: TFA limit reached, user locked out",
+   "location": null,
+   "expect_rule": "132495",
+   "expect_level": 12,
+   "note": "synthesized from AccessControl.pm L164: all factors locked"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=alice@pmg msg=invalid credentials",
+   "location": null,
+   "expect_rule": "132404",
+   "expect_level": 5,
+   "note": "near miss: a wrong password is not a second-factor failure (UserConfig.pm L353)"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=old@pmg msg=Permission check failed (user 'old@pmg' is disabled)",
+   "location": null,
+   "expect_rule": "132497",
+   "expect_level": 6,
+   "note": "synthesized from AccessControl.pm check_user_enabled + PVE::Exception raise_perm_exc"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=bob@pmg msg=account expired",
+   "location": null,
+   "expect_rule": "132497",
+   "expect_level": 6,
+   "note": "synthesized from UserConfig.pm L349"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=nobody@pmg msg=no such user ('nobody@pmg')",
+   "location": null,
+   "expect_rule": "132404",
+   "expect_level": 5,
+   "note": "near miss: an unknown account stays at 132404 (it counts for brute force and spraying)"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.60 user=u6@pmg msg=no such user ('u6@pmg')",
+   "location": null,
+   "expect_rule": "132496",
+   "expect_level": 10,
+   "note": "six failures for six accounts from one address: password spraying",
+   "before": [
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.60 user=u1@pmg msg=no such user ('u1@pmg')",
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.60 user=u2@pmg msg=no such user ('u2@pmg')",
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.60 user=u3@pmg msg=no such user ('u3@pmg')",
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.60 user=u4@pmg msg=no such user ('u4@pmg')",
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.60 user=u5@pmg msg=no such user ('u5@pmg')"
+   ]
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.60 user=u5@pmg msg=no such user ('u5@pmg')",
+   "location": null,
+   "expect_rule": "132404",
+   "expect_level": 5,
+   "note": "near miss: five accounts",
+   "before": [
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.60 user=u1@pmg msg=no such user ('u1@pmg')",
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.60 user=u2@pmg msg=no such user ('u2@pmg')",
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.60 user=u3@pmg msg=no such user ('u3@pmg')",
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.60 user=u4@pmg msg=no such user ('u4@pmg')"
+   ]
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.66 user=u6@pmg msg=no such user ('u6@pmg')",
+   "location": null,
+   "expect_rule": "132404",
+   "expect_level": 5,
+   "note": "near miss: six accounts from six addresses",
+   "before": [
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.61 user=u1@pmg msg=no such user ('u1@pmg')",
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.62 user=u2@pmg msg=no such user ('u2@pmg')",
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.63 user=u3@pmg msg=no such user ('u3@pmg')",
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.64 user=u4@pmg msg=no such user ('u4@pmg')",
+    "Oct 12 10:00:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.65 user=u5@pmg msg=no such user ('u5@pmg')"
+   ]
+  },
+  {
+   "log": "2026-10-11T11:16:05.123456+08:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=auth failed: Authentication failure",
+   "location": null,
+   "expect_rule": "132404",
+   "expect_level": 5,
+   "note": "RFC 3339 timestamp (PMG 8+ default): same decoding"
+  },
+  {
+   "log": "2026-10-11T11:16:05.123456+08:00 pmg1 pmgdaemon[1393207]: successful auth for user 'root@pam'",
+   "location": null,
+   "expect_rule": "132491",
+   "expect_level": 3,
+   "note": "RFC 3339 timestamp"
+  },
+  {
+   "log": "2026-10-11T11:16:05.123456+08:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: virus detected: Win.Test.EICAR_HDB-1 (clamav)",
+   "location": null,
+   "expect_rule": "132420",
+   "expect_level": 7,
+   "note": "RFC 3339 timestamp"
+  },
+  {
+   "log": "2026-10-11T11:16:05.123456+08:00 pmg1 pmgdaemon[765]: delivered quarantined mail 'C2R7T9' (/var/spool/pmg/virus/A1/1E0B3F6ACAA13BE1B36) to user@example.com",
+   "location": null,
+   "expect_rule": "132432",
+   "expect_level": 10,
+   "note": "RFC 3339 timestamp"
+  },
+  {
+   "log": "Oct 11 03:01:05 pmg1 pmgdaemon[1402416]: end task UPID:pmg1:00156633:338F2C99:6ACA8B6E:pbs_backup::root@pam: command 'proxmox-backup-client backup' failed: exit code 255",
+   "location": null,
+   "expect_rule": "132419",
+   "expect_level": 7,
+   "note": "synthesized from PBS/Job.pm (task pbs_backup)"
+  },
+  {
+   "log": "Oct 11 03:01:05 pmg1 pmgdaemon[1402416]: end task UPID:pmg1:00156633:338F2C99:6ACA8B6E:srvrestart:postfix:root@pam: command 'systemctl restart postfix' failed: exit code 1",
+   "location": null,
+   "expect_rule": "132416",
+   "expect_level": 5,
+   "note": "near miss: other failed tasks stay at 132416"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[765]: delivered quarantined mail 'C1R2T3' (/var/spool/pmg/spam/A1/1E0B3F6ACAA13BE1B34)",
+   "location": null,
+   "expect_rule": "132430",
+   "expect_level": 3,
+   "note": "pmg-api before 8.1.7 (commit db2b1f6 added \" to <receiver>\"): fixed in 1.2, 1.1 never matched"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[765]: delivered quarantined mail 'C1R2T4' (/var/spool/pmg/attachment/A1/1E0B3F6ACAA13BE1B35)",
+   "location": null,
+   "expect_rule": "132431",
+   "expect_level": 5,
+   "note": "pmg-api before 8.1.7"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[765]: delivered quarantined mail 'C2R7T9' (/var/spool/pmg/cluster/2/virus/A1/1E0B3F6ACAA13BE1B36)",
+   "location": null,
+   "expect_rule": "132432",
+   "expect_level": 10,
+   "note": "pmg-api before 8.1.7, cluster spool path"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: virus detected: Heuristics.Broken.Executable (clamav)",
+   "location": null,
+   "expect_rule": "132434",
+   "expect_level": 7,
+   "note": "synthesized from libclamav heuristic names (AlertBrokenExecutables is on in PMG clamd.conf)"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: virus detected: Heuristics.Zip.OverlappingFiles (clamav)",
+   "location": null,
+   "expect_rule": "132434",
+   "expect_level": 7,
+   "note": "synthesized from libclamav"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: virus detected: Heuristics.Encrypted.Zip (clamav)",
+   "location": null,
+   "expect_rule": "132436",
+   "expect_level": 5,
+   "note": "synthesized from libclamav (AlertEncrypted follows archiveblockencrypted)"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: virus detected: Heuristics.Limits.Exceeded.MaxFileSize (clamav)",
+   "location": null,
+   "expect_rule": "132421",
+   "expect_level": 3,
+   "note": "near miss: other heuristics stay at 132421"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: removed attachment 3 ('invoice.pdf.exe', rule: Block Dangerous Files)",
+   "location": null,
+   "expect_rule": "132447",
+   "expect_level": 3,
+   "note": "synthesized from RuleDB/Remove.pm L182"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: moved mail for <user@example.com> to attachment quarantine - 1E0CF96ACAA13BE1B37 (rule: Block Dangerous Files)",
+   "location": null,
+   "expect_rule": "132447",
+   "expect_level": 3,
+   "note": "synthesized from RuleDB/Remove.pm L259"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: removed attachment 3 ('invoice.pdf.exe', rule: Block Dangerous Files)",
+   "location": null,
+   "expect_rule": "132448",
+   "expect_level": 7,
+   "note": "twenty within 10 minutes: a campaign",
+   "repeat": 20
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: removed attachment 3 ('invoice.pdf.exe', rule: Block Dangerous Files)",
+   "location": null,
+   "expect_rule": "132447",
+   "expect_level": 3,
+   "note": "near miss: nineteen",
+   "repeat": 19
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: unable to parse message - Multipart boundary syntax error",
+   "location": null,
+   "expect_rule": "132439",
+   "expect_level": 3,
+   "note": "synthesized from MailQueue.pm L420 (refused, sender retries)"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: message has ambiguous content",
+   "location": null,
+   "expect_rule": "132439",
+   "expect_level": 3,
+   "note": "synthesized from MailQueue.pm L431"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: message caused errors during parsing: Multipart boundary syntax error adding header",
+   "location": null,
+   "expect_rule": "132499",
+   "expect_level": 5,
+   "note": "synthesized from MailQueue.pm L416 (accept-broken-mime on: delivered)"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: message has ambiguous content - adding header",
+   "location": null,
+   "expect_rule": "132499",
+   "expect_level": 5,
+   "note": "synthesized from MailQueue.pm L428"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: message has ambiguous content",
+   "location": null,
+   "expect_rule": "132446",
+   "expect_level": 7,
+   "note": "ten within 10 minutes",
+   "repeat": 10
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: message has ambiguous content",
+   "location": null,
+   "expect_rule": "132439",
+   "expect_level": 3,
+   "note": "near miss: nine",
+   "repeat": 9
+  },
+  {
+   "log": "Oct 11 04:34:03 pmg1 pmg-smtp-filter[1364522]: 1E05C56ACAA129D3B11: bcc to <archive@example.com> (rule: Copy to archive, C57921E0BDC)",
+   "location": null,
+   "expect_rule": "132437",
+   "expect_level": 8,
+   "note": "real shape (one gateway, 45 a month to one target; rule name and address sanitized): first copy to this address"
+  },
+  {
+   "log": "Oct 11 04:34:03 pmg1 pmg-smtp-filter[1364522]: 1E05C56ACAA129D3B12: bcc to <archive@example.com> (rule: Copy to archive, C57921E0BDD)",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: the next copy to the same address is silent (first-time-seen)",
+   "before": [
+    "Oct 11 04:34:03 pmg1 pmg-smtp-filter[1364522]: 1E05C56ACAA129D3B11: bcc to <archive@example.com> (rule: Copy to archive, C57921E0BDC)"
+   ]
+  },
+  {
+   "log": "Oct 11 04:34:03 pmg1 pmg-smtp-filter[1364522]: 1E05C56ACAA129D3B13: bcc to <outside@example.net> (rule: Copy to archive, C57921E0BDE)",
+   "location": null,
+   "expect_rule": "132437",
+   "expect_level": 8,
+   "note": "a new address after a known one alerts",
+   "before": [
+    "Oct 11 04:34:03 pmg1 pmg-smtp-filter[1364522]: 1E05C56ACAA129D3B11: bcc to <archive@example.com> (rule: Copy to archive, C57921E0BDC)"
+   ]
+  },
+  {
+   "log": "Oct 11 04:34:03 pmg1 pmg-smtp-filter[1364522]: 1E05C56ACAA129D3B12: bcc to <archive@example.com> (rule: Copy to archive) failed",
+   "location": null,
+   "expect_rule": "132438",
+   "expect_level": 5,
+   "note": "synthesized from RuleDB/BCC.pm L68"
+  },
+  {
+   "log": "Oct 11 04:34:03 pmg1 pmg-smtp-filter[1364522]: 1E05C56ACAA129D3B12: bcc to <> (rule: Notify sender, ignored)",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: BCC.pm L120, a bounce: nothing sent"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: Could not create DKIM-Signature - disabling Signing: unable to read private key /etc/pmg/dkim/default.private",
+   "location": null,
+   "expect_rule": "132449",
+   "expect_level": 6,
+   "note": "synthesized from RuleDB/Accept.pm L107"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgqm[2000]: Could not DKIM-Sign local mail: unable to read private key",
+   "location": null,
+   "expect_rule": "132449",
+   "expect_level": 6,
+   "note": "synthesized from Utils.pm L275"
+  },
+  {
+   "log": "Oct 11 02:00:01 pmg1 pmgqm[1400000]: DKIM signing: no domain found in ''",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: real, routine (spam report to a local recipient)"
+  },
+  {
+   "log": "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: SA score=4/5 time=1.643 bayes=undefined autolearn=disabled hits=DKIM_SIGNED(0.1),DKIM_VALID(-0.1),HTML_MESSAGE(0.001),SPF_PASS(-0.001),URIBL_DBL_PHISH(2.5)",
+   "location": null,
+   "expect_rule": "132475",
+   "expect_level": 2,
+   "note": "real SA line shape (RuleDB/Spam.pm L484) with a hit from rules/25_uribl.cf: recorded, no alert"
+  },
+  {
+   "log": "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: accept mail to <user@example.com> (459381E0560) (rule: default-accept)",
+   "location": null,
+   "expect_rule": "132476",
+   "expect_level": 7,
+   "note": "real accept line shape: the mail with the phishing URL was delivered",
+   "before": [
+    "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: SA score=4/5 time=1.643 bayes=undefined autolearn=disabled hits=DKIM_SIGNED(0.1),DKIM_VALID(-0.1),HTML_MESSAGE(0.001),SPF_PASS(-0.001),URIBL_DBL_PHISH(2.5)"
+   ]
+  },
+  {
+   "log": "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD9: accept mail to <user@example.com> (459381E0560) (rule: default-accept)",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: another mail is delivered",
+   "before": [
+    "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: SA score=4/5 time=1.643 bayes=undefined autolearn=disabled hits=DKIM_SIGNED(0.1),DKIM_VALID(-0.1),HTML_MESSAGE(0.001),SPF_PASS(-0.001),URIBL_DBL_PHISH(2.5)"
+   ]
+  },
+  {
+   "log": "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: moved mail for <user@example.com> to spam quarantine - 1E0CF96ACAA13BE1B34 (rule: Quarantine/Mark Spam (Level 5))",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: the phishing mail was quarantined",
+   "before": [
+    "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: SA score=4/5 time=1.643 bayes=undefined autolearn=disabled hits=DKIM_SIGNED(0.1),DKIM_VALID(-0.1),HTML_MESSAGE(0.001),SPF_PASS(-0.001),URIBL_DBL_PHISH(2.5)"
+   ]
+  },
+  {
+   "log": "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: SA score=4/5 time=1.643 bayes=undefined autolearn=disabled hits=DMARC_REJECT(0.1),HTML_MESSAGE(0.001),SPF_FAIL(0.919),SPF_HELO_NONE(0.001)",
+   "location": null,
+   "expect_rule": "132477",
+   "expect_level": 2,
+   "note": "SA line with DMARC_REJECT (rules/25_dmarc.cf): recorded"
+  },
+  {
+   "log": "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: accept mail to <user@example.com> (459381E0560) (rule: default-accept)",
+   "location": null,
+   "expect_rule": "132478",
+   "expect_level": 6,
+   "note": "the DMARC-failing mail was delivered",
+   "before": [
+    "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: SA score=4/5 time=1.643 bayes=undefined autolearn=disabled hits=DMARC_REJECT(0.1),HTML_MESSAGE(0.001),SPF_FAIL(0.919),SPF_HELO_NONE(0.001)"
+   ]
+  },
+  {
+   "log": "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E05C56ACAA129D3B11: accept mail to <user@example.com> (459381E0560) (rule: default-accept)",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: real DMARC_NONE line, then delivery",
+   "before": [
+    "Oct 11 04:34:03 pmg1 pmg-smtp-filter[1364522]: 1E05C56ACAA129D3B11: SA score=3/5 time=17.760 bayes=undefined autolearn=disabled hits=DKIM_ADSP_NXDOMAIN(0.8),DMARC_NONE(0.1),HTML_MESSAGE(0.001),SPF_HELO_NONE(0.001),SPF_NONE(0.001)"
+   ]
+  },
+  {
+   "log": "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: SA score=4/5 time=1.643 bayes=undefined autolearn=disabled hits=HTML_MESSAGE(0.001),RCVD_IN_ZEN_BLOCKED_OPENDNS(0.001),URIBL_DBL_BLOCKED_OPENDNS(0.001),URIBL_ZEN_BLOCKED_OPENDNS(0.001)",
+   "location": null,
+   "expect_rule": "132479",
+   "expect_level": 7,
+   "note": "SA hits from rules/20_dnsbl_tests.cf and 25_uribl.cf when Spamhaus refuses a public resolver"
+  },
+  {
+   "log": "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: SA score=4/5 time=1.643 bayes=undefined autolearn=disabled hits=HTML_MESSAGE(0.001),URIBL_BLOCKED(0.001)",
+   "location": null,
+   "expect_rule": "132479",
+   "expect_level": 7,
+   "note": "URIBL refusing (rules/25_uribl.cf)"
+  },
+  {
+   "log": "Oct 10 23:30:27 pmg1 pmg-smtp-filter[1363677]: 2026/10/10-23:30:27 CONNECT TCP Peer: \"[127.0.0.1]:59336\" Local: \"[127.0.0.1]:10023\"",
+   "location": null,
+   "expect_rule": "132483",
+   "expect_level": 1,
+   "note": "real: one outgoing transaction, recorded at level 1 (70 in 30 days on the site)"
+  },
+  {
+   "log": "Oct 10 23:30:27 pmg1 pmg-smtp-filter[1363677]: 2026/10/10-23:30:27 CONNECT TCP Peer: \"[127.0.0.1]:59336\" Local: \"[127.0.0.1]:10023\"",
+   "location": null,
+   "expect_rule": "132484",
+   "expect_level": 10,
+   "note": "250 outgoing transactions within 10 minutes",
+   "repeat": 250
+  },
+  {
+   "log": "Oct 10 23:30:27 pmg1 pmg-smtp-filter[1363677]: 2026/10/10-23:30:27 CONNECT TCP Peer: \"[127.0.0.1]:59336\" Local: \"[127.0.0.1]:10023\"",
+   "location": null,
+   "expect_rule": "132483",
+   "expect_level": 1,
+   "note": "near miss: 249",
+   "repeat": 249
+  },
+  {
+   "log": "Oct 11 11:15:08 pmg1 pmg-smtp-filter[1413102]: 2026/10/11-11:15:08 CONNECT TCP Peer: \"[127.0.0.1]:36714\" Local: \"[127.0.0.1]:10024\"",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: real, 250 INBOUND connections (port 10024)",
+   "repeat": 250
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 freshclam[700]: WARNING: Local version: 1.4.2 Recommended version: 1.4.3",
+   "location": null,
+   "expect_rule": "132459",
+   "expect_level": 5,
+   "note": "synthesized from libfreshclam.c L637 (journal copy with the prefix)"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 freshclam[700]: Local version: 1.4.2 Recommended version: 1.4.3",
+   "location": null,
+   "expect_rule": "132459",
+   "expect_level": 5,
+   "note": "the syslog copy without the prefix"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 freshclam[700]: WARNING: Your ClamAV installation is OUTDATED!",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: the line before carries no version (the next line alerts)"
+  },
+  {
+   "log": "Oct 11 10:37:05 pmg1 freshclam[695]: ClamAV update process started at Sun Oct 11 10:37:05 2026",
+   "location": null,
+   "expect_rule": "132485",
+   "expect_level": 2,
+   "note": "real (hourly, twice): was built-in 52507 level 3"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 freshclam[700]: WARNING: You are on cool-down until after: 2026-10-12 11:00:00",
+   "location": null,
+   "expect_rule": "132451",
+   "expect_level": 7,
+   "note": "synthesized from libfreshclam.c L768"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 freshclam[700]: WARNING: Can't query current.cvd.clamav.net",
+   "location": null,
+   "expect_rule": "132451",
+   "expect_level": 7,
+   "note": "synthesized from libfreshclam/dns.c L74"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 postfix/master[900]: warning: process /usr/lib/postfix/sbin/smtpd pid 1234 killed by signal 11",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132486",
+   "expect_level": 7,
+   "note": "synthesized from master/master_spawn.c L340"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 postfix/master[900]: warning: process /usr/lib/postfix/sbin/smtpd pid 1234 exit status 1",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132486",
+   "expect_level": 7,
+   "note": "synthesized from master_spawn.c L332"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 postfix/master[900]: warning: /usr/lib/postfix/sbin/smtpd: bad command startup -- throttling",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132486",
+   "expect_level": 7,
+   "note": "synthesized from master_spawn.c"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 postfix/master[900]: warning: master_wakeup_timer_event: service pickup(public/pickup): Connection refused",
+   "location": "/var/log/mail.log",
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: another master warning"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 postfix/smtpd[1000]: NOQUEUE: reject: DATA from unknown[198.51.100.7]: bare <LF> received; from=<a@example.org> to=<b@example.com> proto=ESMTP helo=<x.example.org>",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132487",
+   "expect_level": 5,
+   "note": "synthesized from smtpd/smtpd.c L3951 + smtpd_check.c log_whatsup (smtpd_forbid_bare_newline = reject)"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 postfix/smtpd[1000]: disconnect from unknown[198.51.100.7] ehlo=1 mail=1 rcpt=1 data=1 quit=1 commands=5 notes=bare_lf",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132487",
+   "expect_level": 5,
+   "note": "synthesized from smtpd.c L6394 (smtpd_forbid_bare_newline = note)"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 postfix/smtpd[1000]: disconnect from unknown[198.51.100.7] ehlo=1 mail=1 rcpt=1 data=1 quit=1 commands=5",
+   "location": "/var/log/mail.log",
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: real shape, an ordinary disconnect"
+  },
+  {
+   "log": "Oct 11 17:38:14 pmg1 postfix/smtpd[1494740]: NOQUEUE: reject: RCPT from unknown[198.51.100.134]: 450 4.7.25 Client host rejected: cannot find your hostname, [198.51.100.134]; from=<root@host.example.org> to=<service@example.com> proto=ESMTP helo=<host.example.org>",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132488",
+   "expect_level": 2,
+   "note": "real (449 in 30 days on the site, most from one sender retrying): was built-in 3303 level 5"
+  },
+  {
+   "log": "Oct 11 17:38:14 pmg1 postfix/smtpd[1494740]: NOQUEUE: reject: RCPT from unknown[192.168.0.134]: 450 4.7.25 Client host rejected: cannot find your hostname, [192.168.0.134]; from=<root@host.example.org> to=<service@example.com> proto=ESMTP helo=<host.example.org>",
+   "location": "/var/log/mail.log",
+   "expect_rule": "3303",
+   "expect_level": 5,
+   "note": "near miss: from a private address it stays at 3303"
+  },
+  {
+   "log": "Oct 11 17:38:14 pmg1 postfix/smtpd[1494740]: NOQUEUE: reject: RCPT from unknown[198.51.100.134]: 450 4.7.25 Client host rejected: cannot find your reverse hostname, [198.51.100.134]; from=<root@host.example.org> to=<service@example.com> proto=ESMTP helo=<host.example.org>",
+   "location": "/var/log/mail.log",
+   "expect_rule": "3303",
+   "expect_level": 5,
+   "note": "near miss: another 450 reason from the internet stays at 3303"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"GET /api2/extjs/nodes/pmg1/apt/changelog?name=-oAPT::Changelogs::Server=http://192.0.2.9/ HTTP/1.1\" 200 13",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132489",
+   "expect_level": 10,
+   "note": "synthesized from APT.pm (pmg-api before 9.0.3, PSA-2026-00001-1): option as package name"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"GET /api2/json/nodes/pmg1/apt/changelog?version=1&name=%2DoAPT::Get::x HTTP/1.1\" 400 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132489",
+   "expect_level": 10,
+   "note": "URL-encoded dash, refused by a fixed gateway (400): still alerts"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"GET /api2/extjs/nodes/pmg1/apt/changelog?name=postfix HTTP/1.1\" 200 4200",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: an ordinary changelog view"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"GET /api2/json/nodes/pmg1/backup/pmg-backup_2026_10_11_6ACA0000.tgz HTTP/1.1\" 200 81233",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132498",
+   "expect_level": 8,
+   "note": "synthesized from Backup.pm (GET {filename}: download)"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"GET /api2/json/nodes/pmg1/backup HTTP/1.1\" 200 312",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "expect_level": null,
+   "note": "near miss: listing the backups"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"GET /api2/json/nodes/pmg1/backup/pmg-backup_2026_10_11_6ACA0000.tgz HTTP/1.1\" 403 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "near miss: a refused download stays with the built-in 4xx rule"
   }
  ],
  "sequences": [

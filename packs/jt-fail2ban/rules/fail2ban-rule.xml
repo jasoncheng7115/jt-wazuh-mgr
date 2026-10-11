@@ -1,38 +1,51 @@
 <!--
-  fail2ban detection rules
+  fail2ban detection rules (jt-fail2ban 1.3)
   ID range: 131000-131099
   Wazuh ships nothing for fail2ban; this pack maintains the decoder and the rules.
   Companion decoder: etc/decoders/fail2ban-decoder.xml
 
+  Message formats are quoted from the fail2ban source (git tag 1.1.1, file:line
+  in each comment; 0.11.1, the Ubuntu 20.04 version, uses the same strings
+  unless noted). No public detection content covers fail2ban (SigmaHQ, Elastic
+  detection-rules, Splunk security_content and the Wazuh ruleset were checked
+  in 2026-10); the ideas for "security tool stopped" follow Sigma
+  lnx_syslog_security_tools_disabling_syslog.yml and Elastic
+  defense_evasion_attempt_to_disable_iptables_or_firewall.toml, re-implemented
+  here, nothing copied.
+
   What is worth an alert:
-    A ban is a control that fired, and so is the unban that ends it. Both are
-    reported. The pair is what makes an incident readable afterwards: when the
-    block started, and when it lifted.
+    A ban is the control working. On a host facing the internet that is tens to
+    hundreds of times a day, so a ban of an outside address is level 3 (visible,
+    not notable). Escalation comes from what a single ban cannot show: the same
+    address banned again and again (131010), on several hosts (131017), by
+    several jails (131018), a ban storm (131019), and bans of inside addresses
+    (131002, 131011, 131016).
 
-    A ban of an RFC 1918 address is treated more seriously than a ban of an
-    external one. An outside address failing authentication is the internet
-    being the internet; an inside host doing it is either a client left with a
-    stale password or a machine working through a credential list, and both
-    want looking at. That rule is a child of the ban rule rather than its
-    sibling, because sibling evaluation order under one parent is unpredictable
-    and a sibling would sometimes lose.
+    The second half of the pack is about fail2ban not doing its job, which
+    nothing else on the manager would notice: a ban that was logged but not
+    applied (131025), failures still arriving long after the ban (131024),
+    the firewall rules fail2ban relies on disappearing (131028, 131029),
+    fail2ban or a jail stopping or failing to start (131033-131037, 131050-131053),
+    a jail that went blind (131038-131042), and an opt-in liveness check
+    (131070-131073) for a fail2ban that died without a word.
 
-    "Found" is a filter match that has not reached the ban threshold. It is high
-    volume and says nothing on its own, so it stays silent and feeds correlation.
-
-  Levels are deliberately below 12: fail2ban has already blocked the source, so
-  nothing here is an emergency. The escalation is a host that keeps earning bans.
+    "Restore Ban" (a restart re-applying bans from its database) is not a new
+    ban and no longer counts towards 131010 (1.2 raised a false level 10 when
+    one restart restored one address in four jails).
 
   srcip and action are Wazuh static field names. A rule matching them with
-  <field name="..."> is refused at load time ("Field srcip is static"), so the
-  address is matched with the dedicated <srcip> tag. It takes one CIDR each and
-  refuses a comma or pipe separated list, so the ranges are listed as repeated
-  tags, which are evaluated as alternatives. Correlation uses
-  <same_source_ip /> rather than <same_field>. The decoder
-  stores the verb as f2b_action for the same reason.
+  <field name="..."> is refused at load time, so addresses are matched with the
+  <srcip> tag: several positive tags are alternatives, several negated tags all
+  have to hold. ::1 is never used in a negated <srcip> (it excludes every IPv4
+  address on 4.14.7). IPv4 loopback and CGNAT count as internal.
+
+  Siblings under one parent are evaluated level first (high to low), then in
+  load order. Specific error rules are therefore also children of the error
+  catch-all 131060, so they win whichever is tried first.
 -->
 <group name="fail2ban,">
 
+  <!-- Base: the file target, /var/log/fail2ban.log. -->
   <rule id="131000" level="0">
     <decoded_as>fail2ban</decoded_as>
     <location>fail2ban</location>
@@ -40,10 +53,23 @@
     <options>no_full_log</options>
   </rule>
 
-  <rule id="131001" level="5">
-    <if_sid>131000</if_sid>
-    <field name="f2b_action">^Ban$|^Restore Ban$</field>
-    <description>fail2ban: $(jail) banned $(srcip)</description>
+  <!-- Base: logtarget = SYSLOG, SYSTEMD-JOURNAL, SYSOUT/STDERR under systemd,
+       and the client part's startup errors (program fail2ban, fail2ban.<module>,
+       fail2ban-server, fail2ban-client). -->
+  <rule id="131005" level="0">
+    <decoded_as>fail2ban</decoded_as>
+    <program_name type="pcre2">^fail2ban</program_name>
+    <description>fail2ban event (syslog or journal)</description>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- ===== Tickets ===== -->
+
+  <!-- actions.py:507 "[%s] %sBan %s" with an empty prefix. -->
+  <rule id="131001" level="3">
+    <if_sid>131000,131005</if_sid>
+    <field name="f2b_action">^Ban$</field>
+    <description>fail2ban: $(jail) banned $(f2b.id)</description>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -56,9 +82,13 @@
   <rule id="131002" level="7">
     <if_sid>131001</if_sid>
     <srcip>10.0.0.0/8</srcip>
-    <srcip>192.168.0.0/16</srcip>
     <srcip>172.16.0.0/12</srcip>
-    <description>[WARN] fail2ban: internal host $(srcip) was banned by $(jail), check the host</description>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <description>fail2ban: internal address $(srcip) was banned by $(jail); check the host, or a proxy/NAT address that would lock out every client behind it</description>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -66,24 +96,457 @@
     <group>fail2ban,authentication_failures,</group>
   </rule>
 
-  <rule id="131003" level="3">
-    <if_sid>131000</if_sid>
+  <!-- The stock "recidive" jail (jail.conf) bans an address that earned
+       several bans in a day, normally for a week. Mutually exclusive with
+       131002 through the negated private ranges. -->
+  <rule id="131012" level="7">
+    <if_sid>131001</if_sid>
+    <field name="jail">^recidive$</field>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>fail2ban: $(srcip) is a repeat offender, banned by the recidive jail</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+  <rule id="131013" level="10">
+    <if_sid>131002</if_sid>
+    <field name="jail">^recidive$</field>
+    <description>[WARN] fail2ban: internal address $(srcip) is a repeat offender, banned by the recidive jail</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+  <!-- actions.py:507 with the prefix "Restore ": a restart re-applies the
+       bans kept in fail2ban's database. Recorded, not counted as a ban. -->
+  <rule id="131006" level="2">
+    <if_sid>131000,131005</if_sid>
+    <field name="f2b_action">^Restore Ban$</field>
+    <description>fail2ban: $(jail) restored the ban of $(f2b.id) after a restart</description>
+    <options>no_full_log</options>
+    <group>fail2ban,</group>
+  </rule>
+
+  <!-- actions.py:708 "[%s] %s %s" with "Unban". An administrator's unbanip
+       is logged exactly like a ban that expired. -->
+  <rule id="131003" level="2">
+    <if_sid>131000,131005</if_sid>
     <field name="f2b_action">^Unban$</field>
-    <description>fail2ban: $(jail) unbanned $(srcip)</description>
+    <description>fail2ban: $(jail) unbanned $(f2b.id)</description>
     <options>no_full_log</options>
     <group>fail2ban,</group>
   </rule>
 
+  <rule id="131007" level="3">
+    <if_sid>131003</if_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <description>fail2ban: $(jail) lifted the ban of internal address $(srcip)</description>
+    <options>no_full_log</options>
+    <group>fail2ban,</group>
+  </rule>
+
+  <!-- "Repeal Ban" (1.1.1+, actions.py:644, bans lifted because the jail
+       stops) and "Reban" (actions.py:580, re-applied after a repair). -->
+  <rule id="131008" level="2">
+    <if_sid>131000,131005</if_sid>
+    <field name="f2b_action">^Repeal Ban$|^Reban$</field>
+    <description>fail2ban: $(jail) $(f2b_action) $(f2b.id) (jail stop or firewall repair)</description>
+    <options>no_full_log</options>
+    <group>fail2ban,</group>
+  </rule>
+
+  <!-- actions.py:657 "[%s] Flush ticket(s) with %s": part of every jail stop. -->
+  <rule id="131009" level="2">
+    <if_sid>131000,131005</if_sid>
+    <match>] Flush ticket(s) with </match>
+    <description>fail2ban: $(jail) flushed its bans</description>
+    <options>no_full_log</options>
+    <group>fail2ban,</group>
+  </rule>
+
+  <!-- filter.py:732 "[%s] Found %s - %s" and observer.py:402 "[%s] Found %s,
+       bad - ..." (a known offender). A failure below the ban threshold: high
+       volume, says nothing on its own. -->
   <rule id="131004" level="0">
-    <if_sid>131000</if_sid>
+    <if_sid>131000,131005</if_sid>
     <field name="f2b_action">^Found$</field>
-    <description>fail2ban: $(jail) matched $(srcip), below the ban threshold</description>
+    <description>fail2ban: $(jail) matched $(f2b.id), below the ban threshold</description>
     <options>no_full_log</options>
     <group>fail2ban,</group>
   </rule>
 
+  <!-- observer.py:497 "[%s] Increase Ban %s (%d # %s -> %s)" (bantime.increment):
+       logged next to the Ban of a known offender, so recorded only. -->
+  <rule id="131014" level="2">
+    <if_sid>131000,131005</if_sid>
+    <field name="f2b_action">^Increase Ban$</field>
+    <description>fail2ban: $(jail) extended the ban of $(f2b.id) (ban number $(f2b.bancount), $(f2b.bantime))</description>
+    <options>no_full_log</options>
+    <group>fail2ban,</group>
+  </rule>
 
-  <!-- One source earning repeated bans is no longer a passing scan. -->
+  <rule id="131015" level="7">
+    <if_sid>131014</if_sid>
+    <regex type="pcre2">Increase Ban \S+ \((?:[5-9]|[1-9]\d+) # |# permanent -\x3e</regex>
+    <description>fail2ban: $(jail) banned repeat offender $(f2b.id) again (ban number $(f2b.bancount), now $(f2b.bantime) until $(f2b.banend))</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+  <!-- filter.py:556 "[%s] Ignore %s by %s" (ip, dns, ip-set, command,
+       ignoreself rule): a failure from an ignoreip address, logged for every
+       failure and never banned. ("Ignore %s, expired bantime" has no "by".) -->
+  <rule id="131020" level="2">
+    <if_sid>131000,131005</if_sid>
+    <field name="f2b_action">^Ignore$</field>
+    <field name="f2b.ignored_by">\S</field>
+    <description>fail2ban: $(jail) ignored a failure of whitelisted $(f2b.id) ($(f2b.ignored_by))</description>
+    <options>no_full_log</options>
+    <group>fail2ban,</group>
+  </rule>
+
+  <!-- A whitelisted address failing ten times in ten minutes would have been
+       banned long ago; a compromised admin workstation looks like this. A
+       probe that fails by design does too: ignore keeps it to one an hour. -->
+  <rule id="131021" level="5" frequency="10" timeframe="600" ignore="3600">
+    <if_matched_sid>131020</if_matched_sid>
+    <same_source_ip />
+    <description>fail2ban: whitelisted address $(srcip) keeps failing in $(jail) and will never be banned</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+  <!-- ===== Bans that do not hold ===== -->
+
+  <!-- actions.py:541 "[%s] %s already banned". DEBUG under 3 s, NOTICE under
+       60 s after the ban (latency); the journal target carries no level. -->
+  <rule id="131022" level="2">
+    <if_sid>131000,131005</if_sid>
+    <match> already banned</match>
+    <field name="jail">\S</field>
+    <description>fail2ban: $(jail) saw another failure from already banned $(f2b.id)</description>
+    <options>no_full_log</options>
+    <group>fail2ban,</group>
+  </rule>
+
+  <!-- WARNING: the failure came more than 60 s after the ban ("something may be
+       wrong"). One can be a late log line; recorded here, counted by 131024. -->
+  <rule id="131023" level="2">
+    <if_sid>131022</if_sid>
+    <field name="f2b.level">^WARNING$</field>
+    <description>fail2ban: $(jail) still sees failures from $(f2b.id) more than 60 s after banning it</description>
+    <options>no_full_log</options>
+    <group>fail2ban,</group>
+  </rule>
+
+  <!-- Three failures from the same banned address more than a minute after the
+       ban: the block does not reach the traffic. A proxy or NAT in front (the
+       service sees the client address, the firewall sees the proxy), the wrong
+       port or chain, IPv6 not covered, or a flushed ruleset. -->
+  <rule id="131024" level="7" frequency="3" timeframe="600" ignore="3600">
+    <if_matched_sid>131023</if_matched_sid>
+    <same_source_ip />
+    <description>fail2ban: the ban of $(srcip) in $(jail) is not effective, its failures keep arriving</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- ===== Errors (ERROR / CRITICAL lines), catch-all first ===== -->
+
+  <!-- Any other error fail2ban reports. The specific rules below are also its
+       children, so they win in either evaluation order. -->
+  <rule id="131060" level="5">
+    <if_sid>131000,131005</if_sid>
+    <field name="f2b.level">^ERROR$|^CRITICAL$</field>
+    <description>fail2ban reported an error</description>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- actions.py:517 (and :617 for prolong): "Failed to execute ban jail '%s'
+       action '%s' info '%r': %s". fail2ban logs "Ban" BEFORE running the
+       action, so the ban alert alone would report a block that never happened.
+       Real shape: github.com/fail2ban/fail2ban/issues/3925. ignore: a broken
+       firewall fails every ban; one alert per 10 minutes is enough. -->
+  <rule id="131025" level="10" ignore="600">
+    <if_sid>131000,131005,131060</if_sid>
+    <field name="f2b.failed">^execute ban$</field>
+    <description>[WARN] fail2ban could not apply the ban of $(srcip) in $(jail) (action $(f2b.ban_action)): the address is NOT blocked</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- actions.py:335 "Failed to start jail '%s' action '%s': %s": the jail
+       runs but its action cannot block anything. -->
+  <rule id="131026" level="10">
+    <if_sid>131000,131005,131060</if_sid>
+    <field name="f2b.failed">^start$</field>
+    <description>[WARN] fail2ban: action $(f2b.ban_action) of jail $(jail) failed to start, the jail cannot block</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- actions.py:716 unban, :661 flush, :312 stop; action.py:987 / actions.py:668
+       "Invariant check failed. Unban is impossible." / "Flush is impossible.":
+       a block may stay in place (an address that should be free is locked out). -->
+  <rule id="131027" level="5">
+    <if_sid>131000,131005,131060</if_sid>
+    <regex type="pcre2">Failed to (?:execute unban|flush bans in|stop) jail '|Invariant check failed\. (?:Unban|Flush) is impossible</regex>
+    <description>fail2ban could not remove a ban or its firewall rules: an address may stay blocked</description>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- action.py:922 "Invariant check failed. Trying to restore a sane
+       environment": the chain/set fail2ban created is gone (a firewall reload,
+       nft flush ruleset, another tool). Bans made before may be lost. -->
+  <rule id="131028" level="7">
+    <if_sid>131000,131005,131060</if_sid>
+    <match>Invariant check failed. Trying to restore a sane environment</match>
+    <description>fail2ban: its firewall rules disappeared and are being restored; existing bans may be lost</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- action.py:931/946 CRITICAL "Unable to restore environment". -->
+  <rule id="131029" level="10">
+    <if_sid>131000,131005,131060</if_sid>
+    <match>Unable to restore environment</match>
+    <description>[WARN] fail2ban could not restore its firewall rules: bans are not enforced</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- utils.py:209 "%x [double dash] timed out after %s seconds." -->
+  <rule id="131030" level="5">
+    <if_sid>131000,131005,131060</if_sid>
+    <match> -- timed out after </match>
+    <description>fail2ban: an action command timed out</description>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- utils.py:276 "%x [double dash] returned %i" and the stderr / stdout lines:
+       context for the failure reported by 131025-131030. -->
+  <rule id="131031" level="2">
+    <if_sid>131000,131005,131060</if_sid>
+    <regex type="pcre2">\s[0-9a-f]+ -- (?:returned \d+|stderr: |stdout: |exec: )</regex>
+    <description>fail2ban: action command output</description>
+    <group>fail2ban,</group>
+  </rule>
+
+  <!-- jailreader.py:257/297 sent as config-error and logged as ERROR by the
+       server (transmitter.py:152): "Jail '%s' skipped, because of wrong
+       configuration: ..." / "... because of missing log files." (1.1.1
+       skip_if_nologs). The server runs; this jail does not. -->
+  <rule id="131034" level="10">
+    <if_sid>131000,131005,131060</if_sid>
+    <field name="f2b.state">^skipped$</field>
+    <description>[WARN] fail2ban: jail $(jail) was skipped and is not running</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- fail2bancmdline.py:297 "Failed during configuration: %s",
+       fail2banclient.py:243 "Async configuration of server failed",
+       fail2banserver.py:233 "Could not start %s", server.py:178 "Could not
+       start server: %s", and Python import errors such as Ubuntu 24.04's
+       1.0.2-3 on Python 3.12: "ERROR No module named 'asynchat'"
+       (bugs.launchpad.net/bugs/2055114, real line). The server exits 255,
+       which systemd does not restart (RestartPreventExitStatus=0 255). -->
+  <rule id="131037" level="10">
+    <if_sid>131000,131005,131060</if_sid>
+    <regex type="pcre2">Failed during configuration: |Async configuration of server failed|Could not start (?:fail2ban-server|server)|ERROR\s+No module named |Have not found any log file for </regex>
+    <description>[WARN] fail2ban failed to start: the host has no ban protection</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- filter.py:761 "Too many errors at once (%s), going idle" and
+       filterpoll.py:170 "Too many errors. Remove file %r from monitoring
+       process": the jail stops reading (part of) its log. -->
+  <rule id="131038" level="10">
+    <if_sid>131000,131005,131060</if_sid>
+    <regex type="pcre2">Too many errors at once \(\d+\), going idle|Too many errors\. Remove file \S+ from monitoring process</regex>
+    <description>[WARN] fail2ban: a jail stopped reading its log and bans nothing from it</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- filter.py:1127/1132 "Unable to open %s" / "Error opening %s". -->
+  <rule id="131039" level="7" ignore="3600">
+    <if_sid>131000,131005,131060</if_sid>
+    <regex type="pcre2">(?:Unable to open|Error opening) /</regex>
+    <description>fail2ban cannot open a log file it watches: that jail is blind</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- database.py:189/218/235 "Error connecting to / Error opening fail2ban
+       persistent database '%s': %s", "Database update failed to achieve
+       version"; and sqlite errors in any error line. Bans are not kept over a
+       restart and bantime.increment loses its history. -->
+  <rule id="131046" level="5">
+    <if_sid>131000,131005,131060</if_sid>
+    <regex type="pcre2">(?:Error connecting to|Error opening) fail2ban persistent database|Database update failed|database disk image is malformed|database is locked</regex>
+    <description>fail2ban: its ban database is not usable, bans will not survive a restart</description>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- ===== Life cycle ===== -->
+
+  <!-- jail.py:327 "Jail %r started". -->
+  <rule id="131032" level="2">
+    <if_sid>131000,131005</if_sid>
+    <field name="f2b.state">^started$</field>
+    <description>fail2ban: jail $(jail) started</description>
+    <group>fail2ban,</group>
+  </rule>
+
+  <!-- jail.py:348 "Jail %r stopped": one per jail at every stop or restart, and
+       alone when one jail is stopped (fail2ban-client stop sshd). -->
+  <rule id="131033" level="3">
+    <if_sid>131000,131005</if_sid>
+    <field name="f2b.state">^stopped$</field>
+    <description>fail2ban: jail $(jail) stopped</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- server.py:140 "Starting Fail2ban v%s": records the version. -->
+  <rule id="131035" level="2">
+    <if_sid>131000,131005</if_sid>
+    <field name="f2b.version">\S</field>
+    <description>fail2ban $(f2b.version) starting</description>
+    <group>fail2ban,</group>
+  </rule>
+
+  <!-- server.py:234 "Exiting Fail2ban": no new bans until it starts again.
+       Reboots and package upgrades do this too; a restart is followed by
+       131035 within seconds. -->
+  <rule id="131036" level="5">
+    <if_sid>131000,131005</if_sid>
+    <match>Exiting Fail2ban</match>
+    <description>fail2ban stopped: no new bans until it starts again</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- ===== Jails that went blind (WARNING lines, "[jail] " prefix in 1.x) ===== -->
+
+  <!-- filterpoll.py:155 "Log %r seems to be down: %s". -->
+  <rule id="131040" level="5" ignore="3600">
+    <if_sid>131000,131005</if_sid>
+    <match>' seems to be down: </match>
+    <description>fail2ban: a log file it watches is missing</description>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- filter.py:691 (1.0.1+) "Detected a log entry %s %s the current time in
+       operation mode. This looks like a %s problem. Treating such entries as if
+       they just happened." and 0.11.2 filter.py:653 "Simulate NOW in operation
+       since found time has too large deviation". Logged once a day per jail.
+       Bans still work, timed as "now". -->
+  <rule id="131041" level="3">
+    <if_sid>131000,131005</if_sid>
+    <regex type="pcre2">Detected a log entry .+ the current time in operation mode|Simulate NOW in operation since found time has too large deviation</regex>
+    <description>fail2ban: $(jail) sees log times far from the current time (timezone or latency problem)</description>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- filter.py:916 (1.x) "[%s] Found a match but no valid date/time found for
+       %r." and 0.11.1 filter.py:840 "Found a match for %r but no valid date/time
+       found for %r.": such failures are dropped. -->
+  <rule id="131042" level="7">
+    <if_sid>131000,131005</if_sid>
+    <regex type="pcre2">Found a match (?:for .+ )?but no valid date/time found</regex>
+    <description>fail2ban drops failures because it cannot read their time stamp: that jail misses attacks</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- filter.py:706 "Ignoring all log entries older than %ss; these are probably
+       messages generated while fail2ban was not running.": routine at start. -->
+  <rule id="131043" level="2">
+    <if_sid>131000,131005</if_sid>
+    <match>Ignoring all log entries older than </match>
+    <description>fail2ban: $(jail) skipped old log entries at start</description>
+    <group>fail2ban,</group>
+  </rule>
+
+  <!-- ===== Ban input ===== -->
+
+  <!-- ipdns.py:149 WARNING "Determined IP using DNS Lookup: %s = %s"
+       (usedns = warn, the default): the filter captured a host name, not an
+       address, and fail2ban resolved it. Whoever controls that name's DNS
+       chooses who gets banned. Logged per failure: ignore keeps it hourly. -->
+  <rule id="131044" level="5" ignore="3600">
+    <if_sid>131000,131005</if_sid>
+    <match>Determined IP using DNS Lookup: </match>
+    <description>fail2ban: a ban address came from a DNS lookup of a logged host name, which an attacker can steer (set usedns = no)</description>
+    <group>fail2ban,fail2ban_health,</group>
+  </rule>
+
+  <!-- ipdns.py:111 "Unable to find a corresponding IP address for %s: %s":
+       an unresolvable logged host name, or an ignoreip host name that no longer
+       resolves (that whitelist entry is void). Per failure: recorded only. -->
+  <rule id="131045" level="2">
+    <if_sid>131000,131005</if_sid>
+    <match>Unable to find a corresponding IP address for </match>
+    <description>fail2ban: a host name in a log or in ignoreip does not resolve</description>
+    <group>fail2ban,</group>
+  </rule>
+
+  <!-- ===== Correlation ===== -->
+
+  <!-- One external source earning repeated bans, on any host or jail. -->
   <rule id="131010" level="10" frequency="4" timeframe="1800">
     <if_matched_sid>131001</if_matched_sid>
     <same_source_ip />
@@ -95,18 +558,167 @@
     <group>fail2ban,authentication_failures,</group>
   </rule>
 
-  <!-- An internal host earning repeated bans is treated as a possible
-       compromise rather than a misconfigured client. -->
-  <rule id="131011" level="12" frequency="3" timeframe="1800">
+  <!-- The same external address banned on three different hosts within the
+       hour: a campaign against the estate, not one service. -->
+  <rule id="131017" level="10" frequency="3" timeframe="3600">
+    <if_matched_sid>131001</if_matched_sid>
+    <same_source_ip />
+    <different_location />
+    <description>[WARN] fail2ban: $(srcip) was banned on several hosts within an hour</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+  <!-- The same address banned by three different jails of one host within the
+       hour: one attacker trying several services. -->
+  <rule id="131018" level="10" frequency="3" timeframe="3600">
+    <if_matched_sid>131001</if_matched_sid>
+    <same_source_ip />
+    <same_location />
+    <different_field>jail</different_field>
+    <description>[WARN] fail2ban: $(srcip) was banned by several jails of one host within an hour</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+  <!-- Twenty bans of any addresses on one host in five minutes: a distributed
+       attack, or a broken filter banning legitimate users. -->
+  <rule id="131019" level="10" frequency="20" timeframe="300" ignore="1800">
+    <if_matched_sid>131001</if_matched_sid>
+    <same_location />
+    <description>[WARN] fail2ban: ban storm, 20 or more bans within five minutes on one host</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+  <!-- An internal address banned three times within 30 minutes. A client with
+       a stale password does this too, hence level 10, not 12 (1.2 had 12). -->
+  <rule id="131011" level="10" frequency="3" timeframe="1800">
     <if_matched_sid>131002</if_matched_sid>
     <same_source_ip />
-    <description>[HIGH] fail2ban: internal host $(srcip) keeps earning bans, treat as a possibly compromised host</description>
+    <description>[WARN] fail2ban: internal address $(srcip) keeps earning bans, check that host</description>
     <mitre>
       <id>T1110</id>
       <id>T1078</id>
     </mitre>
     <options>no_full_log</options>
     <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+  <!-- The same internal address banned on two different hosts within the hour:
+       an inside machine trying credentials across servers. -->
+  <rule id="131016" level="12" frequency="2" timeframe="3600">
+    <if_matched_sid>131002</if_matched_sid>
+    <same_source_ip />
+    <different_location />
+    <description>[HIGH] fail2ban: internal address $(srcip) was banned on several hosts, treat it as a possibly compromised host</description>
+    <mitre>
+      <id>T1110.003</id>
+      <id>T1078</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>fail2ban,authentication_failures,</group>
+  </rule>
+
+</group>
+
+<!-- ===== systemd's view of fail2ban.service (journald or /var/log/syslog) =====
+     Children of the built-in 40700 (program systemd). Siblings 40703/40704 are
+     level 5, so these are above 5 to be tried first. Unit file:
+     files/fail2ban.service.in (1.1.1): Restart=on-failure,
+     RestartPreventExitStatus=0 255. Real shapes: bugs.launchpad.net/bugs/2055114. -->
+<group name="fail2ban,systemd,">
+
+  <rule id="131050" level="10">
+    <if_sid>40700</if_sid>
+    <match type="pcre2">(?i)^fail2ban\.service: main process exited, code=exited, status=255/</match>
+    <description>[WARN] fail2ban.service exited with status 255 (configuration or start error), systemd will not restart it</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>fail2ban_health,</group>
+  </rule>
+
+  <rule id="131051" level="6">
+    <if_sid>40700</if_sid>
+    <match type="pcre2">(?i)^fail2ban\.service: main process exited, code=(?:killed|dumped|exited, status=(?!255/))</match>
+    <description>fail2ban.service failed, systemd restarts it</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>fail2ban_health,</group>
+  </rule>
+
+  <rule id="131052" level="10">
+    <if_sid>40700</if_sid>
+    <match type="pcre2">(?i)^fail2ban\.service: start request repeated too quickly|start request repeated too quickly for fail2ban\.service</match>
+    <description>[WARN] fail2ban.service keeps failing, systemd gave up restarting it</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>fail2ban_health,</group>
+  </rule>
+
+  <rule id="131053" level="5">
+    <if_sid>40700</if_sid>
+    <match type="pcre2">^Stopped fail2ban\.service|^Stopped Fail2Ban Service\.</match>
+    <description>fail2ban.service stopped</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>fail2ban_health,</group>
+  </rule>
+
+</group>
+
+<!-- ===== Opt-in liveness check (setup step "since 1.3") =====
+     An agent <localfile> with log_format command, alias fail2ban-health,
+     running "fail2ban-client status || echo fail2ban-client failed" (the
+     command runs through a shell; its stderr is not collected, hence the
+     echo when fail2ban-client exits non-zero). Output lines arrive as
+     "ossec: output: 'fail2ban-health': <line>" under the built-in 530.
+     fail2banclient.py:151 "Failed to access socket path: %s. Is fail2ban
+     running?", :145 "Unable to contact server. Is it running?";
+     server.py:614 status "Number of jail:". -->
+<group name="fail2ban,fail2ban_health,">
+
+  <rule id="131070" level="0">
+    <if_sid>530</if_sid>
+    <match>ossec: output: 'fail2ban-health': </match>
+    <description>fail2ban liveness check output</description>
+  </rule>
+
+  <rule id="131072" level="10">
+    <if_sid>131070</if_sid>
+    <regex type="pcre2">\x27fail2ban-health\x27: fail2ban-client failed$|Failed to access socket path|Unable to contact server</regex>
+    <description>[WARN] fail2ban is not running on this host (liveness check)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="131073" level="10">
+    <if_sid>131070</if_sid>
+    <regex type="pcre2">Number of jail:\s+0\s*$</regex>
+    <description>[WARN] fail2ban runs with no jail at all (liveness check)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="131071" level="5">
+    <if_sid>131070</if_sid>
+    <regex type="pcre2">\sERROR\s</regex>
+    <description>fail2ban liveness check reported an error</description>
   </rule>
 
 </group>

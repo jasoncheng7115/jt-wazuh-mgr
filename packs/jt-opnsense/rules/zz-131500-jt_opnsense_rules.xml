@@ -10,7 +10,15 @@
   package changes, gateway alarms, CARP, IPsec and CrowdSec had no decoder at all.
 
   The file is named zz- because rules here are children of built-in rules
-  (6100, 81800, 81803, 81804, 1004, 510), which must be loaded first.
+  (6100, 81800, 81803, 81804, 1004, 510, 530, 86601), which must be loaded first.
+
+  1.2 (2026-10): forged audit lines (GHSA-jjm2-jg4p-3v9q), LDAP filter injection at
+  login (CVE-2026-34578), NAT, logging, cron, account, API key and trust store
+  changes, logging or detection stopped, blocked addresses released, daemon
+  crashes, daily pkg audit and version checks, and grading of Suricata alerts.
+  Ideas compared with CrowdSec's opnsense-gui-logs and opnsense-gui-bf scenarios
+  (https://github.com/crowdsecurity/hub) and Elastic's pfsense integration; no
+  rule text was copied.
 -->
 
 <group name="opnsense,jt_opnsense,">
@@ -142,6 +150,61 @@
     <group>authentication_success,pci_dss_10.2.5,pci_dss_11.4,</group>
   </rule>
 
+  <!-- Audit log injection, GHSA-jjm2-jg4p-3v9q (fixed in 26.7.4 and 26.4.2p1):
+       https://github.com/opnsense/core/security/advisories/GHSA-jjm2-jg4p-3v9q
+       The web interface logs the posted user name as it is. A line feed in it
+       forges audit lines; before the fix it splits the record, after it the
+       pieces stay on one line. What a genuine line never has, and what forging
+       leaves behind:
+         - the leftover piece "<attacker text>' from <real address>" without the
+           "/index.php: " prefix (decoder jt-opnsense-gui-injected), which holds the
+           attacker's real address;
+         - a login or failed-login line with two "' from" clauses (the forged one
+           and the real one the web server appends), the shape after the fix.
+       The same decoder puts the last address, the real one, in srcip.
+       A carefully built payload can still produce one clean forged failure line
+       with an address of the attacker's choosing, which then counts towards
+       131503: see the setup guide before enabling the brute-force response. -->
+  <rule id="131539" level="10">
+    <if_sid>6100,131501,131537,131533,131536,131534,131535,131502</if_sid>
+    <match type="pcre2">^(?!\S+: (?:Web GUI authentication error for|Successful login for user|Session timed out for user|User logged out for user) ').*' from:? (?:::ffff:)?[0-9A-Fa-f:.]+(?:%\w+)?$|^\S+: (?:Web GUI authentication error for|Successful login for user) '.*' from:? .*' from:? </match>
+    <description>[WARN] OPNsense: forged audit log line, a web interface user name carried a line break (GHSA-jjm2-jg4p-3v9q), sent from $(srcip)</description>
+    <mitre>
+      <id>T1562.006</id>
+      <id>T1190</id>
+    </mitre>
+    <group>attack,log_tampering,pci_dss_10.5.2,</group>
+  </rule>
+
+  <!-- LDAP filter injection in the login name, CVE-2026-34578 (GHSA-jpm7-f59c-mp54,
+       fixed in 26.1.6): with an LDAP authentication server, an unauthenticated user
+       name such as "admin*" or "x)(|(uid=x" changes the LDAP search.
+       https://github.com/opnsense/core/security/advisories/GHSA-jpm7-f59c-mp54
+       Local and directory account names do not contain * ( ) | &. A failure with
+       them is level 8, not higher: people also type a password into the user name
+       field by mistake. A successful login with them is level 12. -->
+  <rule id="131547" level="8">
+    <if_sid>131502</if_sid>
+    <user type="pcre2">[*()|\x26]</user>
+    <description>OPNsense: failed web interface login with LDAP filter characters in the user name ($(dstuser)) from $(srcip), CVE-2026-34578 probing or a password typed as the user name</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,attack,pci_dss_10.2.4,</group>
+  </rule>
+
+  <rule id="131548" level="12">
+    <if_sid>131501,131537,131533,131536,131534,131535</if_sid>
+    <user type="pcre2">[*()|\x26]</user>
+    <description>[HIGH] OPNsense: web interface login with LDAP filter characters in the user name ($(dstuser)) from $(srcip), CVE-2026-34578 authentication bypass</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,attack,pci_dss_10.2.5,</group>
+  </rule>
+
   <!-- "User logged out for user '%s' from: %s" / "Session timed out for user ..." -->
   <rule id="131505" level="2">
     <if_sid>6100</if_sid>
@@ -159,6 +222,9 @@
     <if_sid>6100</if_sid>
     <match type="pcre2">^user \S+ authenticated successfully for WebGui \[using </match>
     <description>OPNsense: $(dstuser) authenticated for $(opnsense.service) ($(opnsense.authenticator))</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
     <group>authentication_success,</group>
   </rule>
 
@@ -170,7 +236,7 @@
   <rule id="131507" level="2">
     <if_sid>6100</if_sid>
     <match type="pcre2">^user \S+ authenticated successfully for (?!WebGui )\S+ \[using </match>
-    <description>OPNsense: $(dstuser) logged in to $(opnsense.service) ($(opnsense.authenticator))</description>
+    <description>OPNsense: $(dstuser) logged in (service $(opnsense.service), $(opnsense.authenticator))</description>
     <mitre>
       <id>T1078</id>
     </mitre>
@@ -180,7 +246,7 @@
   <rule id="131528" level="3">
     <if_sid>131507</if_sid>
     <user type="pcre2">^root$</user>
-    <description>OPNsense: the superuser root logged in to $(opnsense.service) ($(opnsense.authenticator))</description>
+    <description>OPNsense: the superuser root logged in (service $(opnsense.service), $(opnsense.authenticator))</description>
     <mitre>
       <id>T1078.003</id>
     </mitre>
@@ -191,7 +257,7 @@
   <rule id="131529" level="3">
     <if_sid>131507</if_sid>
     <if_fts />
-    <description>OPNsense: first login of $(dstuser) on this firewall ($(opnsense.service))</description>
+    <description>OPNsense: first login of $(dstuser) on this firewall (service $(opnsense.service))</description>
     <mitre>
       <id>T1078</id>
     </mitre>
@@ -215,6 +281,9 @@
     <if_sid>6100</if_sid>
     <match type="pcre2">^user \S+ failed authentication for WebGui on </match>
     <description>OPNsense: $(dstuser) failed authentication for $(opnsense.service) via $(opnsense.authenticator)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
   </rule>
 
   <rule id="131510" level="5">
@@ -260,6 +329,9 @@
     <if_sid>6100</if_sid>
     <match type="pcre2">^no active session, user not found \(called "</match>
     <description>OPNsense: request for $(url) without a session from $(srcip)</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
   </rule>
 
   <rule id="131514" level="6" frequency="20" timeframe="60" ignore="600">
@@ -331,6 +403,9 @@
     <if_sid>6100</if_sid>
     <match type="pcre2">^user \(\S+\) changed configuration to </match>
     <description>OPNsense: configuration changed by a local process ($(opnsense.system_user)) in $(url)</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
     <group>config_changed,pci_dss_10.2.7,</group>
   </rule>
 
@@ -357,11 +432,15 @@
     <group>config_changed,account_changed,pci_dss_10.2.7,pci_dss_8.1.2,</group>
   </rule>
 
-  <!-- Saved by a person (web interface or API key): "<user>@<address>". -->
+  <!-- Saved by a person (web interface or API key): "<user>@<address>", or an
+       account whose name contains "@" (then no address is logged). The children
+       below are mutually exclusive by the page or API path ($(url)). URI forms
+       of both the legacy pages (24.x, 25.x) and the MVC API (25.1 and later; the
+       router accepts set_rule and setRule, so the API patterns ignore case). -->
   <rule id="131521" level="5">
     <if_sid>6100</if_sid>
     <match type="pcre2">^user [^(\s]\S* (?:\([^)]*\) )?changed configuration to </match>
-    <description>OPNsense: configuration changed by $(dstuser) from $(srcip) in $(url)</description>
+    <description>OPNsense: configuration changed by $(opnsense.account) in $(url)</description>
     <mitre>
       <id>T1562.004</id>
     </mitre>
@@ -372,9 +451,26 @@
   <rule id="131522" level="7">
     <if_sid>131521</if_sid>
     <url type="pcre2">^/api/auth/|^/system_(?:usermanager|groupmanager|authservers)</url>
-    <description>OPNsense: accounts, privileges or authentication servers changed by $(dstuser) from $(srcip) ($(url))</description>
+    <description>OPNsense: accounts, privileges or authentication servers changed by $(opnsense.account) ($(url))</description>
     <mitre>
       <id>T1098</id>
+      <id>T1556.004</id>
+    </mitre>
+    <group>config_changed,account_changed,pci_dss_10.2.7,pci_dss_8.1.2,</group>
+  </rule>
+
+  <!-- A new account, imported accounts, or a new API key
+       (OPNsense/Auth/Api/UserController.php addAction, uploadAction,
+       addApiKeyAction; MVC user manager since 25.1). An API key logs in without
+       the second factor and without the web interface's login protection.
+       CVE-2026-44194 (fixed in 26.1.8) also ran through the user manager. -->
+  <rule id="131554" level="8">
+    <if_sid>131522</if_sid>
+    <url type="pcre2">(?i)^/api/auth/user/(?:add_?api_?key|add|upload)(?:[/?]|$)</url>
+    <description>OPNsense: account or API key created by $(opnsense.account) ($(url))</description>
+    <mitre>
+      <id>T1136.001</id>
+      <id>T1098.001</id>
     </mitre>
     <group>config_changed,account_changed,pci_dss_10.2.7,pci_dss_8.1.2,</group>
   </rule>
@@ -383,9 +479,11 @@
   <rule id="131523" level="7">
     <if_sid>131521</if_sid>
     <url type="pcre2">^/system_advanced_admin\.php</url>
-    <description>OPNsense: administrative access settings (web interface, SSH, console) changed by $(dstuser) from $(srcip)</description>
+    <description>OPNsense: administrative access settings (web interface, SSH, console) changed by $(opnsense.account)</description>
     <mitre>
       <id>T1562.004</id>
+      <id>T1556.004</id>
+      <id>T1021.004</id>
     </mitre>
     <group>config_changed,pci_dss_10.2.7,</group>
   </rule>
@@ -395,20 +493,88 @@
   <rule id="131524" level="7">
     <if_sid>131521</if_sid>
     <url type="pcre2">^/diag_backup\.php|^/api/core/backup/revert</url>
-    <description>OPNsense: configuration restored or reverted by $(dstuser) from $(srcip) ($(url))</description>
+    <description>OPNsense: configuration restored or reverted by $(opnsense.account) ($(url))</description>
     <mitre>
       <id>T1562.004</id>
     </mitre>
     <group>config_changed,pci_dss_10.2.7,</group>
   </rule>
 
-  <!-- High availability: the primary pushes its configuration to the backup through
-       XMLRPC, which the backup records as a change. -->
-  <rule id="131525" level="3">
+  <!-- XMLRPC: how the HA primary pushes its configuration to the backup, which
+       records it as a change; also the path of CVE-2026-44193
+       (opnsense.restore_config_section, remote code execution, fixed in 26.1.7).
+       Level 5 (was 3 in 1.1): an HA pair sees one per change on the primary, a
+       firewall without a peer should see none. -->
+  <rule id="131525" level="5">
     <if_sid>131521</if_sid>
     <url type="pcre2">^/xmlrpc\.php</url>
-    <description>OPNsense: configuration synchronised from the HA peer $(srcip)</description>
+    <description>OPNsense: configuration changed through XMLRPC by $(opnsense.account) (HA synchronisation from the peer; on a firewall without a peer, investigate)</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
     <group>config_changed,</group>
+  </rule>
+
+  <!-- NAT and "disable all packet filtering". A port forward exposes an inside
+       host; outbound NAT, 1:1 NAT and NPTv6 change what leaves under which
+       address. Firewall > Settings > Advanced (system_advanced_firewall.php)
+       holds "Disable Firewall", which turns pf off (pfctl -d) without a log line
+       of its own. Legacy NAT pages until 25.7; MVC d_nat (port forward, 26.1
+       and later), source_nat, one_to_one and npt (Firewall/Api/*Controller.php). -->
+  <rule id="131549" level="7">
+    <if_sid>131521</if_sid>
+    <url type="pcre2">(?i)^/firewall_nat(?:_out|_1to1|_npt)?(?:_edit)?\.php|^/system_advanced_firewall\.php|^/api/firewall/(?:d_nat|source_nat|one_to_one|npt)/</url>
+    <description>OPNsense: NAT or firewall-wide settings changed by $(opnsense.account) ($(url)), check for new port forwards or disabled filtering</description>
+    <mitre>
+      <id>T1562.004</id>
+      <id>T1599.001</id>
+    </mitre>
+    <group>config_changed,firewall_changed,pci_dss_1.1.1,pci_dss_10.2.7,</group>
+  </rule>
+
+  <!-- Logging and detection settings: remote syslog destinations
+       (Syslog/Api/SettingsController.php), intrusion detection general settings
+       (IDS/Api/SettingsController.php setAction: enable, interfaces, IPS mode),
+       the Wazuh agent plugin (WazuhAgent/Api/SettingsController.php) and the
+       CrowdSec plugin. Attackers switch these off before acting. IDS rule and
+       policy tuning (set_rule, toggle_rule, policies) is left out on purpose. -->
+  <rule id="131552" level="8">
+    <if_sid>131521</if_sid>
+    <url type="pcre2">(?i)^/api/(?:syslog/settings|wazuhagent|crowdsec)/|^/api/ids/settings/set(?:[/?]|$)</url>
+    <description>OPNsense: logging or detection settings changed by $(opnsense.account) ($(url))</description>
+    <mitre>
+      <id>T1562.006</id>
+      <id>T1562.001</id>
+    </mitre>
+    <group>config_changed,log_tampering,pci_dss_10.2.7,pci_dss_10.5.2,</group>
+  </rule>
+
+  <!-- Cron jobs (Cron/Api/SettingsController.php add/set/del/toggle job). A job
+       runs a configd action as root on a schedule: persistence. The same path
+       carried the command injection CVE-2023-39008 (fixed in 23.1.8). -->
+  <rule id="131553" level="6">
+    <if_sid>131521</if_sid>
+    <url type="pcre2">(?i)^/api/cron/settings/(?:add|set|del|toggle)_?job</url>
+    <description>OPNsense: scheduled job added or changed by $(opnsense.account) ($(url))</description>
+    <mitre>
+      <id>T1053.003</id>
+    </mitre>
+    <group>config_changed,pci_dss_10.2.7,</group>
+  </rule>
+
+  <!-- Trust store (Trust/Api/CaController.php, CrlController.php; legacy pages
+       before the MVC trust store). A new certificate authority lets TLS and VPN
+       trust certificates it signs; a removed CRL lets revoked certificates back
+       in (GHSA-vw8q-pqq7-2q7v let read-only users do that, fixed in 26.7.1).
+       Certificates themselves stay at 131521. -->
+  <rule id="131557" level="7">
+    <if_sid>131521</if_sid>
+    <url type="pcre2">(?i)^/api/trust/ca/(?:add|set|del)|^/api/trust/crl/del|^/system_(?:camanager|crlmanager)\.php</url>
+    <description>OPNsense: certificate authorities or revocation lists changed by $(opnsense.account) ($(url))</description>
+    <mitre>
+      <id>T1553.004</id>
+    </mitre>
+    <group>config_changed,pci_dss_10.2.7,</group>
   </rule>
 
   <!-- ==============================================================
@@ -436,10 +602,16 @@
     <group>system_shutdown,</group>
   </rule>
 
+  <!-- "executed a security audit", "locked package %s", "unlocked package %s"
+       (1.1 also listed "executed a health", which FirmwareController never writes). -->
   <rule id="131532" level="3">
     <if_sid>6100</if_sid>
-    <match type="pcre2">^\[Firmware\] User \S+ (?:executed a security audit|executed a health|locked package|unlocked package)</match>
+    <match type="pcre2">^\[Firmware\] User \S+ (?:executed a security audit$|locked package |unlocked package )</match>
     <description>OPNsense: $(dstuser) $(opnsense.action)</description>
+    <mitre>
+      <id>T1072</id>
+    </mitre>
+    <group>software_changed,</group>
   </rule>
 
   <!-- ==============================================================
@@ -460,7 +632,10 @@
     <if_sid>131540</if_sid>
     <field name="opnsense.action" type="pcre2">^firmware\.(?:update|upgrade|install|remove|reinstall|sync|resync)$</field>
     <match type="pcre2">^action allowed </match>
-    <description>OPNsense: firmware action $(opnsense.action) started</description>
+    <description>OPNsense: firmware action $(opnsense.action) started by configd (from the web interface, the audit line names the person)</description>
+    <mitre>
+      <id>T1072</id>
+    </mitre>
     <group>software_changed,</group>
   </rule>
 
@@ -519,6 +694,44 @@
     <description>OPNsense: configd action $(opnsense.action) does not exist (called by $(dstuser))</description>
   </rule>
 
+  <!-- Logging and detection switched off, or evidence removed, through configd
+       (src/opnsense/service/conf/actions.d: actions_syslog.conf [stop] and
+       [reset] "Reset syslog files", actions_ids.conf [stop]; plugins:
+       actions_wazuh_agent.conf [stop], actions_crowdsec.conf [stop] and
+       [decisions-delete]). A restart is not a stop and stays at level 0.
+       Disabling intrusion detection in the web interface calls ids.stop. -->
+  <rule id="131558" level="7">
+    <if_sid>131540</if_sid>
+    <field name="opnsense.action" type="pcre2">^(?:syslog\.(?:stop|reset)|ids\.stop|wazuh_agent\.stop|crowdsec\.(?:stop|decisions-delete))$</field>
+    <match type="pcre2">^action allowed </match>
+    <description>OPNsense: $(opnsense.action) run by configd, logging or detection stopped or evidence removed</description>
+    <mitre>
+      <id>T1562.001</id>
+      <id>T1562.006</id>
+      <id>T1070.002</id>
+    </mitre>
+    <group>log_tampering,pci_dss_10.5.2,</group>
+  </rule>
+
+  <!-- An address taken out of a blocking table, or the table emptied
+       (actions_filter.conf [delete.table] "delete entry from pf table ( %s / %s )",
+       [kill.table] "kill pf table ( %s )"), for the tables that hold blocked
+       attackers: sshlockout and virusprot (OPNsense login protection and
+       connection limits), __wazuh_agent_drop (the os-wazuh-agent plugin's active
+       response), crowdsec_blocklists and crowdsec6_blocklists (os-crowdsec).
+       Those tools expire their entries with pfctl, not configd, so this line
+       means a person or a script removed them (Firewall > Diagnostics > Aliases
+       or the API). Other tables are aliases the site maintains and stay quiet. -->
+  <rule id="131559" level="8">
+    <if_sid>131540</if_sid>
+    <field name="opnsense.message" type="pcre2">^(?:delete entry from pf table \( |kill pf table \( )(?:sshlockout|virusprot|__wazuh_agent_drop|crowdsec6?_blocklists) </field>
+    <description>OPNsense: blocked address released or block table emptied ($(opnsense.message))</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>firewall_changed,active_response,</group>
+  </rule>
+
   <!-- ==============================================================
        Packages (pkg, pkg-static). A firmware update writes one line per
        package (136 lines in one measured update), so upgrades are recorded
@@ -570,7 +783,7 @@
     <if_sid>131507,131528,131529,131508</if_sid>
     <if_matched_sid>131556</if_matched_sid>
     <same_user />
-    <description>[HIGH] OPNsense: $(dstuser) logged in to $(opnsense.service) right after repeated failed logins for that account</description>
+    <description>[HIGH] OPNsense: $(dstuser) logged in (service $(opnsense.service)) right after repeated failed logins for that account</description>
     <mitre>
       <id>T1110</id>
       <id>T1078</id>
@@ -689,6 +902,7 @@
     <description>OPNsense: OpenVPN user $(srcuser) authenticated</description>
     <mitre>
       <id>T1078</id>
+      <id>T1133</id>
     </mitre>
     <group>authentication_success,pci_dss_10.2.5,</group>
   </rule>
@@ -732,6 +946,9 @@
     <decoded_as>jt-opnsense-dpinger</decoded_as>
     <field name="opnsense.to" type="pcre2">^down$</field>
     <description>OPNsense: gateway $(opnsense.gateway) ($(dstip)) is down</description>
+    <mitre>
+      <id>T1498</id>
+    </mitre>
     <group>availability,</group>
   </rule>
 
@@ -772,6 +989,27 @@
   </rule>
 
   <!-- ==============================================================
+       Crashes: "pid %d (%s), jid %d, uid %d: exited on signal %d%s"
+       (FreeBSD sys/kern/kern_sig.c sigexit()). Only signals that dump core
+       are logged (segmentation fault, bus error, illegal instruction, abort),
+       never a normal stop. On a firewall that is a bug or a memory corruption
+       exploit against a daemon that parses network input (dhclient: FreeBSD
+       SA-26:12 and SA-26:15; ppp: SA-26:60; lighttpd and php-cgi: the web
+       interface; OpenSSH: SA-24:04). Measured: none in 30 days on two firewalls.
+       ============================================================== -->
+  <rule id="131573" level="6">
+    <decoded_as>kernel</decoded_as>
+    <field name="opnsense.signal" type="pcre2">^\d+$</field>
+    <field name="opnsense.process" type="pcre2">.</field>
+    <description>OPNsense: process $(opnsense.process) (pid $(opnsense.pid), uid $(opnsense.uid)) crashed with signal $(opnsense.signal)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1499.004</id>
+    </mitre>
+    <group>process_crash,availability,</group>
+  </rule>
+
+  <!-- ==============================================================
        IPsec (strongSwan charon)
        ============================================================== -->
 
@@ -785,6 +1023,9 @@
     <if_sid>131580</if_sid>
     <match type="pcre2">IKE_SA \S+ established between </match>
     <description>IPsec: tunnel $(opnsense.ike_sa) up with $(srcip) ($(opnsense.remote_id))</description>
+    <mitre>
+      <id>T1133</id>
+    </mitre>
     <group>vpn,</group>
   </rule>
 
@@ -828,6 +1069,7 @@
     <description>IPsec: remote access user $(dstuser) logged in on $(opnsense.ipsec_conn)</description>
     <mitre>
       <id>T1078</id>
+      <id>T1133</id>
     </mitre>
     <group>authentication_success,vpn,</group>
   </rule>
@@ -838,6 +1080,7 @@
     <description>IPsec: first remote access login of $(dstuser) on this firewall ($(opnsense.ipsec_conn))</description>
     <mitre>
       <id>T1078</id>
+      <id>T1133</id>
     </mitre>
     <group>authentication_success,vpn,</group>
   </rule>
@@ -943,6 +1186,119 @@
     <action>delete</action>
     <description>OPNsense: $(srcip) removed from the Wazuh blocklist alias</description>
     <group>active_response,</group>
+  </rule>
+
+  <!-- ==============================================================
+       Daily checks from the agent group (agent/agent.conf), when the plugin's
+       remote commands are allowed. Children of the built-in 530
+       ("ossec: output: ...", level 0), which records every other output line.
+       ============================================================== -->
+
+  <!-- pkg audit -F (freebsd/pkg src/audit.c): "%u problem(s) in %u package(s) found."
+       FreeBSD's VuXML lists the third-party software OPNsense ships (OpenSSL,
+       OpenSSH, PHP, lighttpd, strongSwan, OpenVPN, Suricata, unbound ...). Once a
+       day per firewall while a fix is pending, so level 5. The vulnerable package
+       names are in the output lines before it (System > Firmware > Status, Audit). -->
+  <rule id="131578" level="5">
+    <if_sid>530</if_sid>
+    <field name="opnsense.problems" type="pcre2">^[1-9]\d*$</field>
+    <description>OPNsense: pkg audit reports vulnerable software ($(opnsense.problems) problems in $(opnsense.packages) packages)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>vulnerability,pci_dss_6.2,pci_dss_11.2.1,</group>
+  </rule>
+
+  <!-- opnsense-version, community releases (YY.1 and YY.7 series) older than 26.1.8.
+       OPNsense's own advisories are not in VuXML, so pkg audit cannot see them:
+         CVE-2026-44193 XMLRPC restore_config_section, code execution, fixed in 26.1.7
+           https://www.sentinelone.com/vulnerability-database/cve-2026-44193/
+         CVE-2026-44194 user manager e-mail field, code execution as root, fixed in 26.1.8
+           https://zeropath.com/blog/cve-2026-44194-opnsense-root-rce-email-username-injection
+         CVE-2026-45158 DHCP settings command injection, fixed in 26.1.8
+           https://www.sentinelone.com/vulnerability-database/cve-2026-45158/
+         CVE-2026-34578 LDAP filter injection at login, fixed in 26.1.6
+           https://github.com/opnsense/core/security/advisories/GHSA-jpm7-f59c-mp54
+       Business Edition numbers (YY.4, YY.10) are not matched: their fix versions
+       differ. When a later advisory raises the bar, change the pattern. -->
+  <rule id="131579" level="7">
+    <if_sid>530</if_sid>
+    <field name="opnsense.product" type="pcre2">^OPNsense$</field>
+    <field name="opnsense.version" type="pcre2">^(?:(?:1\d|2[0-5])\.[17](?:[._]\S*)?|26\.1(?:\.[0-7])?(?:_\d+)?)$</field>
+    <description>OPNsense: version $(opnsense.version) is older than 26.1.8, with known remote code execution vulnerabilities (CVE-2026-44193, CVE-2026-44194, CVE-2026-45158)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>vulnerability,pci_dss_6.2,</group>
+  </rule>
+
+</group>
+
+<!-- Suricata grading: a group of its own, so the alerts keep the built-in
+     "ids" and "suricata" groups that dashboards filter on. -->
+<group name="ids,suricata,jt_opnsense,">
+
+  <!-- ==============================================================
+       Suricata (the plugin's "Suricata eve log" option: /var/log/suricata/eve.json,
+       decoded by Wazuh's json decoder). The built-in 86601 gives every IDS alert
+       level 3, whatever it is. These children grade them by what the alert itself
+       says: its classification (Suricata etc/classification.config, the class
+       names ET Open and most rule sets use), its priority (alert.severity, 1 is
+       the highest) and Proofpoint ET's own signature_severity metadata. They apply
+       to every Suricata eve.json source on the manager, not only OPNsense.
+       Measured on one internet-facing firewall, 41 days: 1,052 alerts, 82% of them
+       marked Informational by ET (a "same SRC/DST" rule alone: 618), none in the
+       compromise classes, none from an inside address.
+       The built-in 99915-99918 (level 9, malicious-ioc lists) are siblings and win
+       over the level 2 rule below.
+       ============================================================== -->
+
+  <!-- Low priority: priority 3 or 4 (not-suspicious, unknown, string-detect,
+       network-scan, protocol-command-decode, misc-activity, icmp-event,
+       tcp-connection), or ET signature_severity "Informational". Wazuh rule
+       conditions are all AND, so the OR is one pattern on the event text (Suricata
+       writes compact JSON). The compromise classes of 131599 are excluded. -->
+  <rule id="131596" level="2">
+    <if_sid>86601</if_sid>
+    <match type="pcre2">"severity":\s*[34]\s*[,}]|"signature_severity":\s*\[\s*"Informational"</match>
+    <field name="alert.category" type="pcre2">^(?!A Network Trojan was detected$|Malware Command and Control Activity Detected$|Domain Observed Used for C2 Detected$|Successful |Exploit Kit Activity Detected$|Crypto Currency Mining Activity Detected$)</field>
+    <description>Suricata: $(alert.signature) ($(alert.category)), low priority</description>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- An inside address (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7,
+       fe80::/10, in Suricata's compressed or expanded IPv6 form) sending an
+       attack: exploitation, privilege gain, web attacks, default-login and
+       suspicious-login attempts, denial of service. Blocked or not, the inside
+       host did it. Scans and "potentially bad" or policy classes are left out:
+       inventory scanners and normal browsing raise them. -->
+  <rule id="131500" level="7">
+    <if_sid>86601</if_sid>
+    <field name="alert.category" type="pcre2">^(?:Attempted Administrator Privilege Gain|Attempted User Privilege Gain|Unsuccessful User Privilege Gain|Web Application Attack|Executable code was detected|Targeted Malicious Activity was Detected|Attempted Denial of Service|Denial of Service|Detection of a Denial of Service Attack|Misc Attack|Attempt to login by a default username and password|An attempted login using a suspicious username was detected)$</field>
+    <field name="src_ip" type="pcre2">^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|f[cd][0-9a-fA-F]{0,2}:|fe[89abAB][0-9a-fA-F]?:)</field>
+    <description>Suricata: inside host $(src_ip) sent an attack to $(dest_ip): $(alert.signature) ($(alert.category), $(alert.action))</description>
+    <mitre>
+      <id>T1210</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>attack,</group>
+  </rule>
+
+  <!-- Classes that mean a host is already compromised or its user was: trojan
+       and command-and-control traffic, C2 domains, credentials sent to a
+       phishing page, a successful privilege gain, exploit kit delivery, coin
+       mining. Blocked or not: a blocked call home still means an infected host. -->
+  <rule id="131599" level="10">
+    <if_sid>86601</if_sid>
+    <field name="alert.category" type="pcre2">^(?:A Network Trojan was detected|Malware Command and Control Activity Detected|Domain Observed Used for C2 Detected|Successful Credential Theft Detected|Successful Administrator Privilege Gain|Successful User Privilege Gain|Exploit Kit Activity Detected|Crypto Currency Mining Activity Detected)$</field>
+    <description>[WARN] Suricata: $(alert.signature) between $(src_ip) and $(dest_ip), a sign of a compromised host ($(alert.category), $(alert.action))</description>
+    <mitre>
+      <id>T1071</id>
+      <id>T1189</id>
+      <id>T1496</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>attack,</group>
   </rule>
 
 </group>

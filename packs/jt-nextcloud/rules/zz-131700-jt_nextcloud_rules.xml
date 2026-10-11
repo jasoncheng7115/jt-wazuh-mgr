@@ -6,7 +6,9 @@
   prefix "jt-nextcloud: " (decoder jt-nextcloud, which also sets srcip from
   remoteAddr). Nextcloud lines collected the way the built-in decoder's
   comments describe (log_format json, label @source) are not touched: they
-  stay with the built-in rules 88200-88216.
+  stay with the built-in rules 88200-88216. The file integrity rules at the
+  end (131768, 131769, 131779) read the agent's own FIM events for the paths
+  the group adds.
 
   What the built-in rules get wrong on a current Nextcloud (33), measured on
   one server over 10 days:
@@ -16,22 +18,32 @@
     count towards 88203, which also has no per-address condition: four typos
     by one user in 44 seconds raised the level 10 "brute force" alert.
   - 88213-88215 look for "File accessed:", "File created:", "File deleted:";
-    the audit app writes "File with id ... deleted:", so they never match.
+    the audit app writes "File with id ... deleted:" since Nextcloud 30, so
+    they never match.
   - No rule has srcip, so nothing can count per address or block one.
+
+  Versions: written for Nextcloud 33 and checked against the source of 28 to
+  35 (server stable28..stable35, admin_audit of each). What changed:
+  - 35 writes the failed login of a client (WebDAV, app password, API) to
+    nextcloud.log at debug level only. The audit log has it in every version
+    from 30 on, so for 35 its copy is the one counted (131719).
+  - 28 and 29 write "File deleted:" and "File renamed:" instead of "File with
+    id ...", and have no audit line for failed logins.
 
   Children of one parent are tried from the highest level down (measured on
   4.14.7) and the first match wins. Every group of siblings below is mutually
   exclusive anyway, so no result depends on that order.
 
   Modules
-    131700-131709  base, Nextcloud log levels, operational noise
+    131700-131709  base, Nextcloud log levels, operational noise, version
     131710-131719  failed logins, brute force, second factor, tokens
-    131720-131729  successful logins, Nextcloud brute-force protection
+    131720-131729  successful logins, brute-force protection, impersonation
     131770-131779  successful logins by account, address and first sight
-    131730-131739  users and groups
+    131730-131739  users and groups, suspicious logins
     131740-131749  apps and occ commands
-    131750-131759  sharing
-    131760-131769  files
+    131780-131789  occ commands (more)
+    131750-131759  sharing, apps
+    131760-131769  files, antivirus, file integrity
 -->
 
 <group name="nextcloud,jt_nextcloud,">
@@ -110,15 +122,43 @@
   </rule>
 
   <!--
+    The audit log's copies of failures. Before 35 every failure is also in
+    nextcloud.log at warning level and that copy is the one counted (131710).
+    From 35 on, a failure of a client (WebDAV, app password, API) is written
+    to nextcloud.log at debug level only (lib/private/User/Session.php,
+    handleLoginFailed), which the agent group drops; only the login page
+    still writes a warning (Login/LoggedInCheckCommand.php). So for 35 and
+    later the audit copy of a failure outside the login page goes on to
+    131719 and is counted through 131710; the copy of a login page failure
+    stays here. Each failure is counted once in every version.
+  -->
+  <rule id="131716" level="2">
+    <if_sid>131702</if_sid>
+    <field name="app" type="pcre2">^admin_audit$</field>
+    <field name="message" type="pcre2">^(?:Login failed: |Failed two factor attempt by user )</field>
+    <options>no_full_log</options>
+    <description>Nextcloud audit copy: $(message)</description>
+  </rule>
+
+  <rule id="131719" level="2">
+    <if_sid>131716</if_sid>
+    <field name="message" type="pcre2">^Login failed: </field>
+    <field name="version" type="pcre2">^(?:3[5-9]|[4-9]\d|[1-9]\d{2,})\.</field>
+    <url type="pcre2">^(?!(?:/[^/?]+)?/(?:index\.php/)?login(?:$|[/?]))</url>
+    <options>no_full_log</options>
+    <description>Nextcloud audit: failed client login from $(srcip) (not in nextcloud.log from Nextcloud 35 on)</description>
+  </rule>
+
+  <!--
     Failed login, as Nextcloud core writes it to nextcloud.log at the default
     log level: "Login failed: alice (Remote IP: 203.0.113.5)" from the login
     page, "Login failed: 'alice' (Remote IP: '203.0.113.5')" from clients and
-    WebDAV. The audit log reports the same failure again (131716); only this
-    one is counted.
+    WebDAV (before 35). Through 131719 also the audit copy of a client
+    failure on 35 and later: "Login failed: "alice"".
   -->
   <rule id="131710" level="5">
-    <if_sid>131703</if_sid>
-    <field name="message" type="pcre2">^Login failed: .* \(Remote IP: </field>
+    <if_sid>131703,131719</if_sid>
+    <field name="message" type="pcre2">^Login failed: </field>
     <options>no_full_log</options>
     <description>Nextcloud: failed login from $(srcip): $(message)</description>
     <mitre>
@@ -185,15 +225,9 @@
     <field name="message" type="pcre2">^Password reset token check failed</field>
     <options>no_full_log</options>
     <description>Nextcloud: invalid or expired password reset link opened from $(srcip)</description>
-  </rule>
-
-  <!-- The audit log's copies of failures already counted from nextcloud.log. -->
-  <rule id="131716" level="2">
-    <if_sid>131702</if_sid>
-    <field name="app" type="pcre2">^admin_audit$</field>
-    <field name="message" type="pcre2">^(?:Login failed: |Failed two factor attempt by user )</field>
-    <options>no_full_log</options>
-    <description>Nextcloud audit: $(message) (counted from nextcloud.log)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
   </rule>
 
   <rule id="131717" level="2">
@@ -216,6 +250,38 @@
   </rule>
 
   <!--
+    The impersonate app lets administrators (and group administrators for
+    their groups) act as another account without its password. It writes two
+    warnings (apps/impersonate SettingsController, the same text from the
+    version for Nextcloud 28 to the current one): "User A trying to
+    impersonate user B" for every attempt, including refused ones, and
+    "Changing to user B" when the switch happens. The acting account is the
+    user field of both lines.
+  -->
+  <rule id="131728" level="4">
+    <if_sid>131703</if_sid>
+    <field name="app" type="pcre2">^impersonate$</field>
+    <field name="message" type="pcre2">^User .+ trying to impersonate user </field>
+    <options>no_full_log</options>
+    <description>Nextcloud: impersonation requested by $(dstuser) from $(srcip): $(message)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131729" level="8">
+    <if_sid>131703</if_sid>
+    <field name="app" type="pcre2">^impersonate$</field>
+    <field name="message" type="pcre2">^Changing to user </field>
+    <options>no_full_log</options>
+    <description>Nextcloud: $(dstuser) now acts as another account (impersonate app) from $(srcip): $(message)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!--
     Successful logins (admin_audit "Login successful").
 
     Nextcloud writes the line for every request that authenticates with a
@@ -229,9 +295,10 @@
     - the first time an account authenticates from an address (fts): 3;
     - a success after 8 failures from that address: 12 (131726, 131727).
     Administrator accounts are recognised by the names Nextcloud installers
-    use for the built-in administrator (admin, administrator, root, ncadmin).
-    The line does not say whether an account is in the admin group, so other
-    members of that group count as ordinary accounts.
+    use for the built-in administrator (admin, administrator, root, ncadmin,
+    and ncp, the one NextcloudPi creates). The line does not say whether an
+    account is in the admin group, so other members of that group count as
+    ordinary accounts.
 
     The requests of sync clients, apps and API callers (131777) repeat all day,
     so for them the address and account levels apply the first time the pair
@@ -255,10 +322,11 @@
   </rule>
 
   <!-- The two children of 131720 are exclusive by URL: login page or single
-       sign-on callback, or anything else. -->
+       sign-on callback, or anything else. The optional first path segment is
+       an installation in a subdirectory (/nextcloud/login). -->
   <rule id="131721" level="2">
     <if_sid>131720</if_sid>
-    <url type="pcre2">^/(?:index\.php/)?(?:login(?:$|[/?])|apps/user_saml/saml/acs|apps/user_oidc/code)</url>
+    <url type="pcre2">^(?:/[^/?]+)?/(?:index\.php/)?(?:login(?:$|[/?])|apps/user_saml/saml/acs|apps/user_oidc/code)</url>
     <options>no_full_log</options>
     <description>Nextcloud: $(dstuser) logged in from $(srcip)</description>
     <group>authentication_success,pci_dss_10.2.5,gdpr_IV_32.2,hipaa_164.312.b,nist_800_53_AU.14,nist_800_53_AC.7,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,tsc_CC7.3,</group>
@@ -266,7 +334,7 @@
 
   <rule id="131777" level="2">
     <if_sid>131720</if_sid>
-    <url type="pcre2">^(?!/(?:index\.php/)?(?:login(?:$|[/?])|apps/user_saml/saml/acs|apps/user_oidc/code))</url>
+    <url type="pcre2">^(?!(?:/[^/?]+)?/(?:index\.php/)?(?:login(?:$|[/?])|apps/user_saml/saml/acs|apps/user_oidc/code))</url>
     <options>no_full_log</options>
     <description>Nextcloud: request authenticated with a password or app password by $(dstuser) from $(srcip)</description>
     <group>authentication_success,</group>
@@ -275,7 +343,7 @@
   <!-- Logins. The four children of 131721 are exclusive by account and address. -->
   <rule id="131770" level="3">
     <if_sid>131721</if_sid>
-    <user type="pcre2">(?i)^(?:admin|administrator|root|ncadmin)$</user>
+    <user type="pcre2">(?i)^(?:admin|administrator|root|ncadmin|ncp)$</user>
     <srcip>10.0.0.0/8</srcip>
     <srcip>172.16.0.0/12</srcip>
     <srcip>192.168.0.0/16</srcip>
@@ -293,7 +361,7 @@
 
   <rule id="131771" level="8">
     <if_sid>131721</if_sid>
-    <user type="pcre2">(?i)^(?:admin|administrator|root|ncadmin)$</user>
+    <user type="pcre2">(?i)^(?:admin|administrator|root|ncadmin|ncp)$</user>
     <srcip negate="yes">10.0.0.0/8</srcip>
     <srcip negate="yes">172.16.0.0/12</srcip>
     <srcip negate="yes">192.168.0.0/16</srcip>
@@ -311,7 +379,7 @@
 
   <rule id="131772" level="5">
     <if_sid>131721</if_sid>
-    <user type="pcre2">(?i)^(?!(?:admin|administrator|root|ncadmin)$)</user>
+    <user type="pcre2">(?i)^(?!(?:admin|administrator|root|ncadmin|ncp)$)</user>
     <srcip negate="yes">10.0.0.0/8</srcip>
     <srcip negate="yes">172.16.0.0/12</srcip>
     <srcip negate="yes">192.168.0.0/16</srcip>
@@ -329,7 +397,7 @@
 
   <rule id="131778" level="2">
     <if_sid>131721</if_sid>
-    <user type="pcre2">(?i)^(?!(?:admin|administrator|root|ncadmin)$)</user>
+    <user type="pcre2">(?i)^(?!(?:admin|administrator|root|ncadmin|ncp)$)</user>
     <srcip>10.0.0.0/8</srcip>
     <srcip>172.16.0.0/12</srcip>
     <srcip>192.168.0.0/16</srcip>
@@ -366,7 +434,7 @@
 
   <rule id="131775" level="5">
     <if_sid>131774</if_sid>
-    <user type="pcre2">(?i)^(?!(?:admin|administrator|root|ncadmin)$)</user>
+    <user type="pcre2">(?i)^(?!(?:admin|administrator|root|ncadmin|ncp)$)</user>
     <srcip negate="yes">10.0.0.0/8</srcip>
     <srcip negate="yes">172.16.0.0/12</srcip>
     <srcip negate="yes">192.168.0.0/16</srcip>
@@ -384,7 +452,7 @@
 
   <rule id="131776" level="8">
     <if_sid>131774</if_sid>
-    <user type="pcre2">(?i)^(?:admin|administrator|root|ncadmin)$</user>
+    <user type="pcre2">(?i)^(?:admin|administrator|root|ncadmin|ncp)$</user>
     <srcip negate="yes">10.0.0.0/8</srcip>
     <srcip negate="yes">172.16.0.0/12</srcip>
     <srcip negate="yes">192.168.0.0/16</srcip>
@@ -524,6 +592,9 @@
     <field name="message" type="pcre2">^User (?:enabled|disabled): </field>
     <options>no_full_log</options>
     <description>Nextcloud: $(message), by $(dstuser)</description>
+    <mitre>
+      <id>T1531</id>
+    </mitre>
     <group>account_changed,</group>
   </rule>
 
@@ -578,6 +649,24 @@
   </rule>
 
   <!--
+    The suspicious_login app compares each login with what it learned about
+    the account's addresses and flags the unusual ones (apps/suspicious_login
+    Service/LoginClassifier.php): "Detected a login from a suspicious login.
+    user=alice ip=203.0.113.5 strategy=ipv4". It is an info message: it needs
+    loglevel 1 or the log.condition entry in the setup.
+  -->
+  <rule id="131739" level="8">
+    <if_sid>131702</if_sid>
+    <field name="message" type="pcre2">^Detected a login from a suspicious login\. </field>
+    <options>no_full_log</options>
+    <description>Nextcloud suspicious_login app flagged a login: $(message)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!--
     Apps. Enabling an app runs its code on the server; installing one from
     the app store enables it, so both write "enabled".
   -->
@@ -592,12 +681,56 @@
     </mitre>
   </rule>
 
+  <!--
+    Children of 131740, exclusive by app: the two apps that by design let an
+    administrator run commands on the server (workflow_script, "Run script"
+    flows) or act as any account without its password (impersonate); and the
+    apps that add a way to authenticate (LDAP, SAML, OpenID Connect) or mount
+    other storage, including the server's own file system (files_external).
+  -->
+  <rule id="131758" level="10">
+    <if_sid>131740</if_sid>
+    <field name="message" type="pcre2">^App "(?:workflow_script|impersonate)" enabled</field>
+    <options>no_full_log</options>
+    <description>[WARN] Nextcloud: an app that can run commands or switch accounts was enabled: $(message), by $(dstuser)</description>
+    <mitre>
+      <id>T1505</id>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131759" level="7">
+    <if_sid>131740</if_sid>
+    <field name="message" type="pcre2">^App "(?:user_ldap|user_saml|user_oidc|files_external)" enabled</field>
+    <options>no_full_log</options>
+    <description>Nextcloud: authentication backend or external storage app enabled: $(message), by $(dstuser)</description>
+    <mitre>
+      <id>T1556</id>
+    </mitre>
+  </rule>
+
   <rule id="131741" level="4">
     <if_sid>131702</if_sid>
     <field name="app" type="pcre2">^admin_audit$</field>
     <field name="message" type="pcre2">^App "(?!admin_audit")[^"]*" disabled$</field>
     <options>no_full_log</options>
     <description>Nextcloud: $(message), by $(dstuser)</description>
+  </rule>
+
+  <!--
+    A protection switched off for every account at once: second-factor
+    providers (every app named twofactor_), the suspicious login detection,
+    the antivirus scanner, the password policy, server-side encryption and
+    the file access control rules.
+  -->
+  <rule id="131757" level="10">
+    <if_sid>131741</if_sid>
+    <field name="message" type="pcre2">^App "(?:twofactor_[a-z0-9_]+|suspicious_login|files_antivirus|password_policy|encryption|files_accesscontrol)" disabled$</field>
+    <options>no_full_log</options>
+    <description>[WARN] Nextcloud: a security app was disabled: $(message), by $(dstuser)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
   </rule>
 
   <!-- The last line the audit log writes before it stops. -->
@@ -623,7 +756,9 @@
   <!--
     occ commands. Commands that change users, groups or apps also write their
     own audit line above, so they stay at level 3 here. The children of 131744
-    are exclusive by command name.
+    are exclusive by command name. The line repeats the command line without
+    "occ" itself, so options typed before the command name (occ -n, occ -q,
+    occ with no-warnings) come first: every pattern allows them.
   -->
   <rule id="131744" level="3">
     <if_sid>131702</if_sid>
@@ -633,10 +768,17 @@
     <description>Nextcloud occ: $(message)</description>
   </rule>
 
-  <!-- Routine and read-only commands, often run from cron. -->
+  <!--
+    Routine and read-only commands, often run from cron or as services:
+    background-job:worker and taskprocessing:worker are long-running workers
+    that systemd restarts (occ_system.rst); on one server the task processing
+    worker alone wrote 280 lines a day. log:manage and log:file without
+    options only print the settings; so do encryption:status,
+    security:certificates and user:auth-tokens:list.
+  -->
   <rule id="131745" level="2">
     <if_sid>131744</if_sid>
-    <field name="message" type="pcre2">^Console command executed: (?:preview:|files:scan|files:cleanup|files:repair-tree|background-job:|background:|status\b|check\b|app:list\b|config:list\b|config:(?:system|app):get\b|user:list\b|user:info\b|user:lastseen\b|group:list\b|log:|db:add-missing-|maintenance:repair\b|integrity:check-|update:check\b|activity:send-mails\b|dav:send-event-reminders\b)</field>
+    <field name="message" type="pcre2">^Console command executed: (?:-\S+ )*(?:preview:|files:scan|files:cleanup|files:repair-tree|background-job:|background:|taskprocessing:worker\b|status\b|check\b|app:list\b|config:list\b|config:(?:system|app):get\b|user:list\b|user:info\b|user:lastseen\b|group:list\b|log:(?:tail|watch)\b|log:(?:manage|file)$|encryption:(?:status|list-modules|show-key-storage-root)\b|security:certificates$|user:auth-tokens:list\b|db:add-missing-|maintenance:repair\b|integrity:check-|update:check\b|activity:send-mails\b|dav:send-event-reminders\b)</field>
     <options>no_full_log</options>
     <description>Nextcloud occ: $(message)</description>
   </rule>
@@ -644,7 +786,7 @@
   <!-- 2FA switched off for a user, its data removed, or enforcement ended. -->
   <rule id="131746" level="10">
     <if_sid>131744</if_sid>
-    <field name="message" type="pcre2">^Console command executed: twofactorauth:(?:disable\b|cleanup\b|enforce\b.*--off\b)</field>
+    <field name="message" type="pcre2">^Console command executed: (?:-\S+ )*twofactorauth:(?:disable\b|cleanup\b|enforce\b.*--off\b)</field>
     <options>no_full_log</options>
     <description>[WARN] Nextcloud: two-factor authentication removed or no longer enforced: $(message)</description>
     <mitre>
@@ -655,7 +797,7 @@
   <!-- Changes that have no audit line of their own. -->
   <rule id="131747" level="5">
     <if_sid>131744</if_sid>
-    <field name="message" type="pcre2">^Console command executed: (?:config:(?:system|app|import)\b(?!:(?:get|list)\b)|security:|encryption:|maintenance:mode\b|twofactorauth:enable\b|twofactorauth:enforce\b(?!.*--off\b)|files:transfer-ownership\b|user:setting\b|user:auth-tokens|user:resetpassword\b|ldap:(?!show-|search\b|check-|test-)|upgrade\b|db:convert-)</field>
+    <field name="message" type="pcre2">^Console command executed: (?:-\S+ )*(?:config:(?:system|app|import)\b(?!:(?:get|list)\b)|security:(?!certificates$)|encryption:(?!status\b|list-modules\b|show-key-storage-root\b)|maintenance:mode\b|twofactorauth:enable\b|twofactorauth:enforce\b(?!.*--off\b)|files:transfer-ownership\b|user:setting\b|user:auth-tokens(?!:list\b)|user:resetpassword\b|ldap:(?!show-|search\b|check-|test-)|user_oidc:provider\b(?!$)|saml:config:(?!get\b)|files_external:(?:create|import|config|option|applicable|delete)\b|log:(?:manage|file) |upgrade\b|db:convert-)</field>
     <options>no_full_log</options>
     <description>Nextcloud occ: $(message)</description>
   </rule>
@@ -666,7 +808,7 @@
   -->
   <rule id="131748" level="10">
     <if_sid>131747</if_sid>
-    <field name="message" type="pcre2">^Console command executed: config:system:(?:set|delete) (?:auth\.bruteforce\.protection\.enabled|auth\.bruteforce\.max-attempts|log_type_audit|logfile_audit)\b</field>
+    <field name="message" type="pcre2">^Console command executed: (?:-\S+ )*config:system:(?:set|delete) (?:auth\.bruteforce\.protection\.enabled|auth\.bruteforce\.max-attempts|log_type_audit|logfile_audit)\b</field>
     <options>no_full_log</options>
     <description>[WARN] Nextcloud: brute-force protection or audit log setting changed: $(message)</description>
     <mitre>
@@ -676,7 +818,7 @@
 
   <rule id="131749" level="7">
     <if_sid>131747</if_sid>
-    <field name="message" type="pcre2">^Console command executed: config:system:(?:set|delete) (?:loglevel|log_type|logfile|log\.condition|trusted_proxies|forwarded_for_headers)\b</field>
+    <field name="message" type="pcre2">^Console command executed: (?:-\S+ )*(?:config:system:(?:set|delete) (?:loglevel|log_type|logfile|log\.condition|trusted_proxies|forwarded_for_headers)\b|log:(?:manage|file) )</field>
     <options>no_full_log</options>
     <description>Nextcloud: logging or client address setting changed: $(message)</description>
     <mitre>
@@ -685,16 +827,76 @@
   </rule>
 
   <!--
+    More children of 131747. 131781: an address added to the brute-force
+    protection's allow list (app config "bruteForce", keys whitelist_N, see
+    lib/private/Security/Ip/BruteforceAllowList.php), the protection's test
+    mode, server-side encryption switched off or all files decrypted, and
+    the places Nextcloud loads apps from (appstoreurl, apps_paths).
+    131782: settings that widen access: a trusted root certificate added, an
+    external storage mount, the sharing policy (core shareapi_ settings: link
+    passwords, expiry, who may share; the idea of Elastic's rule for weakened
+    SharePoint sharing policies), debug mode, requests to local addresses,
+    local external storage, app passwords made for an account, and the
+    configuration of LDAP, SAML and OpenID Connect login.
+  -->
+  <rule id="131781" level="10">
+    <if_sid>131747</if_sid>
+    <field name="message" type="pcre2">^Console command executed: (?:-\S+ )*(?:config:app:set bruteForce whitelist_|config:system:(?:set|delete) (?:auth\.bruteforce\.protection\.testing|appstoreurl|apps_paths)\b|encryption:(?:disable|decrypt-all)\b)</field>
+    <options>no_full_log</options>
+    <description>[WARN] Nextcloud: protection weakened or app source changed with occ: $(message)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="131782" level="7">
+    <if_sid>131747</if_sid>
+    <field name="message" type="pcre2">^Console command executed: (?:-\S+ )*(?:security:certificates:import\b|files_external:|config:app:(?:set|delete) core shareapi_|config:system:(?:set|delete) (?:debug|allow_local_remote_servers|files_external_allow_create_new_local)\b|user:auth-tokens:add\b|ldap:(?:set-config|create-empty-config|delete-config|copy-config)\b|user_oidc:provider\b(?!$)|saml:config:(?!get\b))</field>
+    <options>no_full_log</options>
+    <description>Nextcloud: setting that widens access changed with occ: $(message)</description>
+    <mitre>
+      <id>T1556</id>
+    </mitre>
+  </rule>
+
+  <!--
     Sharing (admin_audit). Public links and shares to outside recipients are
     level 5: they are how files leave the organisation. Shares between users
-    of the server are recorded below the alert level.
+    of the server are recorded below the alert level. The permissions of a
+    link are a bit mask (1 read, 2 update, 4 create, 8 delete, 16 share):
+    131750 takes the links without update or delete (read only, file drop),
+    131755 the ones with which anyone who has the link can change or delete
+    files.
   -->
   <rule id="131750" level="5">
     <if_sid>131702</if_sid>
     <field name="app" type="pcre2">^admin_audit$</field>
-    <field name="message" type="pcre2">^The .* has been shared via link with permissions </field>
+    <field name="message" type="pcre2">^The .* has been shared via link with permissions "(?:[0145]|1[67]|2[01])" </field>
     <options>no_full_log</options>
     <description>Nextcloud: public link created by $(dstuser): $(message)</description>
+    <mitre>
+      <id>T1567</id>
+    </mitre>
+  </rule>
+
+  <rule id="131755" level="6">
+    <if_sid>131702</if_sid>
+    <field name="app" type="pcre2">^admin_audit$</field>
+    <field name="message" type="pcre2">^The .* has been shared via link with permissions "(?!(?:[0145]|1[67]|2[01])")\d+" </field>
+    <options>no_full_log</options>
+    <description>Nextcloud: public link that lets anyone change or delete files, created by $(dstuser): $(message)</description>
+    <mitre>
+      <id>T1567</id>
+      <id>T1080</id>
+    </mitre>
+  </rule>
+
+  <!-- Many links in a short time: someone handing out a whole account. -->
+  <rule id="131756" level="10" frequency="10" timeframe="600">
+    <if_matched_sid>131750</if_matched_sid>
+    <same_user />
+    <options>no_full_log</options>
+    <description>[WARN] Nextcloud: $(dstuser) created 10 public links in 10 minutes</description>
     <mitre>
       <id>T1567</id>
     </mitre>
@@ -725,6 +927,9 @@
     <field name="message" type="pcre2">^The expiration date of the publicly shared .* has been removed$</field>
     <options>no_full_log</options>
     <description>Nextcloud: a public link no longer expires, by $(dstuser): $(message)</description>
+    <mitre>
+      <id>T1567</id>
+    </mitre>
   </rule>
 
   <rule id="131754" level="2">
@@ -739,12 +944,13 @@
     Deleted files. One deletion is recorded below the alert level; many by one
     account in a short time is what ransomware on a synced computer, or
     someone wiping an account, looks like. Deletions without a user (two
-    dashes: background jobs, occ) are not counted.
+    dashes: background jobs, occ) are not counted. Nextcloud 28 and 29 write
+    "File deleted:", later versions "File with id ... deleted:".
   -->
   <rule id="131760" level="2">
     <if_sid>131702</if_sid>
     <field name="app" type="pcre2">^admin_audit$</field>
-    <field name="message" type="pcre2">^File with id "\d+" deleted: </field>
+    <field name="message" type="pcre2">^File (?:with id "\d+" )?deleted: </field>
     <user type="pcre2">^(?!--$).</user>
     <options>no_full_log</options>
     <description>Nextcloud: $(dstuser) deleted a file</description>
@@ -759,6 +965,134 @@
       <id>T1485</id>
       <id>T1486</id>
     </mitre>
+  </rule>
+
+  <!--
+    Renamed files: "File renamed with id "N" from "<old>" to "<new>"" (30 and
+    later), "File renamed: "<old>" to "<new>"" (28, 29). Ransomware on a
+    synced computer encrypts each file and gives it an extra extension, which
+    the sync client uploads as a rename of that file in place:
+    /bob/files/a.docx to /bob/files/a.docx.locked. 131763 is exactly that
+    shape (the new path is the old one plus a dot and more); a person does it
+    now and then (a.txt.bak), twenty in five minutes is the pattern of
+    Elastic's high-frequency rename rule and of the old ransomware_protection
+    app. One server: 18 renames in 9 days, none of this shape.
+  -->
+  <rule id="131762" level="2">
+    <if_sid>131702</if_sid>
+    <field name="app" type="pcre2">^admin_audit$</field>
+    <field name="message" type="pcre2">^File renamed(?: with id "\d+" from|:) "</field>
+    <user type="pcre2">^(?!--$).</user>
+    <options>no_full_log</options>
+    <description>Nextcloud: $(dstuser) renamed or moved a file</description>
+  </rule>
+
+  <rule id="131763" level="2">
+    <if_sid>131762</if_sid>
+    <field name="message" type="pcre2">^File renamed(?: with id "\d+" from|:) "([^"]+)" to "\1\.[^"/]+"$</field>
+    <options>no_full_log</options>
+    <description>Nextcloud: $(dstuser) added an extension to a file name: $(message)</description>
+  </rule>
+
+  <rule id="131764" level="12" frequency="20" timeframe="300">
+    <if_matched_sid>131763</if_matched_sid>
+    <same_user />
+    <options>no_full_log</options>
+    <description>[HIGH] Nextcloud: 20 files of $(dstuser) renamed to the same name plus an extension in 5 minutes (ransomware on a synced computer?)</description>
+    <mitre>
+      <id>T1486</id>
+    </mitre>
+  </rule>
+
+  <!--
+    files_antivirus (ClamAV). At upload the file is refused and two lines are
+    written, a warning and an error (lib/AvirWrapper.php); the warning copy is
+    recorded below the alert level. The background scan writes one error,
+    "Infected file found" when the app is set to only log, "Infected file
+    deleted" when it removes the file (lib/Item.php).
+  -->
+  <rule id="131765" level="10">
+    <if_sid>131704</if_sid>
+    <field name="message" type="pcre2">^Infected file found</field>
+    <options>no_full_log</options>
+    <description>[WARN] Nextcloud antivirus found an infected file that is still stored: $(message)</description>
+    <mitre>
+      <id>T1080</id>
+    </mitre>
+  </rule>
+
+  <rule id="131766" level="8">
+    <if_sid>131704</if_sid>
+    <field name="message" type="pcre2">^Infected file deleted</field>
+    <options>no_full_log</options>
+    <description>Nextcloud antivirus removed an infected file: $(message)</description>
+    <mitre>
+      <id>T1080</id>
+    </mitre>
+  </rule>
+
+  <rule id="131767" level="2">
+    <if_sid>131703</if_sid>
+    <field name="message" type="pcre2">^Infected file deleted\. </field>
+    <options>no_full_log</options>
+    <description>Nextcloud antivirus: $(message) (counted from its error line)</description>
+  </rule>
+
+  <!--
+    File integrity events for the paths the agent group adds (realtime,
+    without content diffs: config.php holds the database password and the
+    instance secret). Nextcloud reads every *.config.php in its config
+    directory on every request, after config.php (config.sample.php), so a
+    new one can switch off the brute-force protection, change the log file or
+    point apps_paths elsewhere without occ and without an audit line.
+    config.php itself is rewritten by occ config:system:set, maintenance mode
+    and upgrades. The web root entry points change only with an upgrade;
+    .user.ini can make PHP run another file before every request
+    (auto_prepend_file).
+  -->
+  <rule id="131768" level="10">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">/config/[^/]+\.config\.php$</field>
+    <description>[WARN] Nextcloud: new configuration file $(file), loaded on every request</description>
+    <mitre>
+      <id>T1505</id>
+      <id>T1562.001</id>
+    </mitre>
+    <group>syscheck,syscheck_entry_added,syscheck_file,</group>
+  </rule>
+
+  <rule id="131769" level="7">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">/config/(?:[^/]+\.)?config\.php$</field>
+    <description>Nextcloud configuration changed: $(file)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>syscheck,syscheck_entry_modified,syscheck_file,</group>
+  </rule>
+
+  <rule id="131779" level="7">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">(?i)/nextcloud[^/]*/(?:\.user\.ini|\.htaccess|index\.php|remote\.php|public\.php|status\.php|cron\.php|console\.php|occ|ocs/v[12]\.php)$</field>
+    <description>Nextcloud entry point changed (upgrade or backdoor): $(file)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>syscheck,syscheck_entry_modified,syscheck_file,</group>
+  </rule>
+
+  <!--
+    An end-of-life version. Every log line carries the server version; 32 and
+    older get no security fixes any more (32 ended 2026-09, see the release
+    schedule in the nextcloud/server wiki). Checked on the frequent routine
+    lines (client requests, routine occ commands), once a day. Update the
+    pattern when a major version reaches its end of life (33: 2027-02).
+  -->
+  <rule id="131709" level="5" ignore="86400">
+    <if_sid>131777,131745</if_sid>
+    <field name="version" type="pcre2">^(?:[1-9]|[12]\d|3[0-2])\.</field>
+    <options>no_full_log</options>
+    <description>Nextcloud $(version) is past its end of life and gets no security fixes</description>
   </rule>
 
 </group>

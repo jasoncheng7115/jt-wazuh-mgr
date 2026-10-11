@@ -1,0 +1,122 @@
+# Security Configuration Assessment
+# jt-odoo: Odoo server configuration (odoo.conf)
+# Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+#
+# Based on the security section of Odoo's deployment guide (18.0):
+# https://www.odoo.com/documentation/18.0/administration/on_premise/deploy.html#security
+# Option names and values from odoo/tools/config.py (16.0 to 19.0): booleans
+# are read as True/true and False/false.
+#
+# File content checks only (no commands), so the policy can be delivered with
+# the agent group without sca.remote_commands. Agents without
+# /etc/odoo/odoo.conf (the deb package and the official image) skip it.
+# Check ids 132301 to 132307 follow the pack's rule range; they are SCA check
+# ids, not rule ids. A failed check raises the built-in SCA rules (19007).
+
+policy:
+  id: "jt_odoo_conf"
+  file: "jt-odoo-sca.yml"
+  name: "jt-odoo: Odoo server configuration"
+  description: "Checks /etc/odoo/odoo.conf against the security recommendations of Odoo's deployment guide: database manager, master password, database filter, proxy mode, worker processes and log level."
+  references:
+    - https://www.odoo.com/documentation/18.0/administration/on_premise/deploy.html#security
+    - https://www.odoo.com/documentation/18.0/developer/reference/cli.html
+
+requirements:
+  title: "Odoo configuration file /etc/odoo/odoo.conf"
+  description: "The policy applies to hosts with an Odoo configuration file in the deb package location."
+  condition: any
+  rules:
+    - 'f:/etc/odoo/odoo.conf'
+
+checks:
+  - id: 132301
+    title: "Ensure the database manager is disabled (list_db = False)."
+    description: "The database manager (/web/database/) can download, drop, restore and create every database with only the master password."
+    rationale: "Odoo's deployment guide: it is strongly recommended to disable the Database Manager for any internet-facing system; it is not designed for use in production. list_db = False also hides the database list."
+    remediation: "Set list_db = False in the [options] section of /etc/odoo/odoo.conf (set db_name or dbfilter so users still reach their database) and restart Odoo. Make backups with pg_dump and a copy of the filestore instead."
+    references:
+      - https://www.odoo.com/documentation/18.0/administration/on_premise/deploy.html#database-manager-security
+    compliance:
+      - mitre_techniques: ["T1190", "T1485"]
+    condition: all
+    rules:
+      - 'f:/etc/odoo/odoo.conf -> r:^\s*list_db\s*=\s*False|^\s*list_db\s*=\s*false'
+
+  - id: 132302
+    title: "Ensure a master password is set and is not the default (admin_passwd)."
+    description: "admin_passwd protects every database manager operation. Its default is admin, and while it is the default the first master password submitted to the database manager becomes the master password."
+    rationale: "Odoo's deployment guide: the admin_passwd setting must be changed from its admin default; it should be generated randomly."
+    remediation: "Set admin_passwd in /etc/odoo/odoo.conf to a long random value (python3 -c 'import base64, os; print(base64.b64encode(os.urandom(24)))'), or set it once through the database manager so Odoo stores it hashed, then restart Odoo."
+    references:
+      - https://www.odoo.com/documentation/18.0/administration/on_premise/deploy.html#database-manager-security
+    compliance:
+      - mitre_techniques: ["T1078.001", "T1110"]
+    condition: all
+    rules:
+      - 'f:/etc/odoo/odoo.conf -> r:^\s*admin_passwd\s*=\s*\S'
+      - 'not f:/etc/odoo/odoo.conf -> r:^\s*admin_passwd\s*=\s*admin\s*$'
+
+  - id: 132303
+    title: "Ensure the master password is stored hashed."
+    description: "Odoo stores the master password as a $pbkdf2- hash when it is set through the database manager; a value written by hand stays in clear text in the file."
+    rationale: "Anyone who can read odoo.conf (backups, configuration management, support copies) gets a clear-text master password; a hash has to be cracked first."
+    remediation: "Change the master password once through the database manager (Odoo then writes the hash), or write a hash produced with passlib's pbkdf2_sha512 into admin_passwd. Restrict odoo.conf to the user Odoo runs as (chmod 640)."
+    compliance:
+      - mitre_techniques: ["T1552.001"]
+    condition: all
+    rules:
+      - 'f:/etc/odoo/odoo.conf -> r:^\s*admin_passwd\s*=\s*\$pbkdf2-'
+
+  - id: 132304
+    title: "Ensure databases are filtered (dbfilter or db_name)."
+    description: "Without dbfilter or db_name every database on the PostgreSQL server is reachable through every host name Odoo answers."
+    rationale: "Odoo's deployment guide: use appropriate database filters (--db-filter) to restrict the visibility of your databases according to the hostname, or -d with your own list."
+    remediation: "Set dbfilter (for example dbfilter = ^%d$ to map each host name to its database) or db_name in /etc/odoo/odoo.conf and restart Odoo."
+    references:
+      - https://www.odoo.com/documentation/18.0/administration/on_premise/deploy.html#dbfilter
+    compliance:
+      - mitre_techniques: ["T1190"]
+    condition: any
+    rules:
+      - 'f:/etc/odoo/odoo.conf -> r:^\s*dbfilter\s*=\s*\S'
+      - 'f:/etc/odoo/odoo.conf -> r:^\s*db_name\s*=\s*\S'
+
+  - id: 132305
+    title: "Ensure proxy mode is on (proxy_mode = True)."
+    description: "Odoo should run behind a web server that terminates HTTPS, with proxy_mode on so that Odoo records and throttles the real client address."
+    rationale: "Odoo's deployment guide: run Odoo behind a web server providing HTTPS termination, then enable the proxy mode option. Without it every address in Odoo's log is the proxy's: the login throttle and brute force detection count all users together. Leave it off only when clients reach Odoo directly (they could then claim any address)."
+    remediation: "Put a reverse proxy in front of Odoo that sends X-Forwarded-For, X-Forwarded-Host and X-Forwarded-Proto, set proxy_mode = True in /etc/odoo/odoo.conf and restart Odoo."
+    references:
+      - https://www.odoo.com/documentation/18.0/administration/on_premise/deploy.html#https
+    compliance:
+      - mitre_techniques: ["T1110", "T1557"]
+    condition: all
+    rules:
+      - 'f:/etc/odoo/odoo.conf -> r:^\s*proxy_mode\s*=\s*True|^\s*proxy_mode\s*=\s*true'
+
+  - id: 132306
+    title: "Ensure Odoo runs in multi-process mode (workers > 0)."
+    description: "With workers = 0 (the default) Odoo runs one multi-threaded process without the per-request memory and time limits."
+    rationale: "Odoo's deployment guide: configure your server in multi-process mode with proper limits matching your typical usage (memory, CPU, timeouts); the multi-threaded server is primarily meant for development and demonstrations."
+    remediation: "Set workers (for example 2 per CPU core plus 1) together with limit_memory_soft, limit_memory_hard, limit_time_cpu and limit_time_real in /etc/odoo/odoo.conf, route /websocket to the gevent port at the proxy, and restart Odoo."
+    references:
+      - https://www.odoo.com/documentation/18.0/administration/on_premise/deploy.html#builtin-server
+    compliance:
+      - mitre_techniques: ["T1499"]
+    condition: all
+    rules:
+      - 'f:/etc/odoo/odoo.conf -> n:^\s*workers\s*=\s*(\d+) compare > 0'
+
+  - id: 132307
+    title: "Ensure Odoo logs at level info or more (log_level)."
+    description: "Logins, failed logins, exports, module installations and database manager requests are written at level info, the default."
+    rationale: "log_level = warn, error or critical silences the audit trail of logins and administrative actions, and most of the jt-odoo detection rules."
+    remediation: "Remove log_level from /etc/odoo/odoo.conf or set log_level = info, and restart Odoo."
+    references:
+      - https://www.odoo.com/documentation/18.0/developer/reference/cli.html
+    compliance:
+      - mitre_techniques: ["T1562.002"]
+    condition: none
+    rules:
+      - 'f:/etc/odoo/odoo.conf -> r:^\s*log_level\s*=\s*warn|^\s*log_level\s*=\s*error|^\s*log_level\s*=\s*critical'

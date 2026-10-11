@@ -23,11 +23,19 @@
     odoo.level odoo.db odoo.logger odoo.message   every record
     dstuser srcip                                 logins (jt-odoo-login, with fts), throttling,
                                                   2FA, API keys, module access
-    srcip protocol url id                         werkzeug request lines (id = HTTP status)
+    srcip protocol url id                         werkzeug request lines (id = HTTP status);
+                                                  database backups through jt-odoo-dbbackup (fts)
+    odoo.rpc_model odoo.rpc_method                the model and method a request line calls:
+                                                  /web/dataset/call_kw|call_button/<model>/<method>
+                                                  (16.0 to 19.0), /json/2/<model>/<method> (19.0),
+                                                  and the "#<model>.<method>" that 19.0 appends to
+                                                  XML-RPC and JSON-RPC request lines
     odoo.uid odoo.model odoo.operation            access denials, deletions
+    odoo.uid odoo.count odoo.model odoo.fields    exports (web/controllers/export.py)
     odoo.method odoo.modules                      module install / upgrade / uninstall
     odoo.target_db                                database manager actions
-    odoo.job                                      failed scheduled jobs
+    odoo.job                                      failed and manually started scheduled jobs
+    odoo.action dstuser odoo.target               forbidden server actions
     odoo.version                                  server start
 -->
 
@@ -57,6 +65,22 @@
   <fts>name, user, srcip</fts>
 </decoder>
 
+<!--
+  A database backup requested through the database manager (werkzeug request
+  line "POST /web/database/backup"). Many sites back up with curl from cron, so
+  the rules keep a backup from a private address at level 7 and use this
+  decoder's first-time-seen key (decoder name and address) to raise the first
+  one from each address: a uniquely named decoder, for the same reason as
+  jt-odoo-login. It extracts every field the werkzeug rules use.
+-->
+<decoder name="jt-odoo-dbbackup">
+  <parent>jt-odoo</parent>
+  <prematch type="pcre2">^INFO \S+ werkzeug: \S+ - - \[[^\]]*\] "POST /web/database/backup[\s?]</prematch>
+  <regex type="pcre2">^(INFO) (\S+) (werkzeug): ((?:(?:::ffff:)?(?!::1 )([0-9A-Fa-f.:]+)|\S+) - - \[[^\]]*\] "(POST) (/web/database/backup\S*) [^"]*" (\d{3}).*)$</regex>
+  <order>odoo.level, odoo.db, odoo.logger, odoo.message, srcip, protocol, url, id</order>
+  <fts>name, srcip</fts>
+</decoder>
+
 <decoder name="jt-odoo-fields">
   <parent>jt-odoo</parent>
   <regex type="pcre2">^(DEBUG|INFO|WARNING|ERROR|CRITICAL) ([A-Za-z0-9_.?-]+) ([A-Za-z0-9_.]+): (.*)$</regex>
@@ -77,11 +101,40 @@
   <order>srcip</order>
 </decoder>
 
-<!-- werkzeug request line; the address is the client only with proxy_mode -->
+<!-- werkzeug request line; the address is the client only with proxy_mode.
+     An IPv4-mapped "::ffff:" prefix (Odoo listening on ::) is dropped, so a
+     block command gets a plain IPv4 address. -->
 <decoder name="jt-odoo-fields">
   <parent>jt-odoo</parent>
-  <regex type="pcre2">werkzeug: (\S+) - - \[[^\]]*\] "([A-Z]+) (\S+) [^"]*" (\d{3})</regex>
+  <regex type="pcre2">werkzeug: (?:::ffff:)?(\S+) - - \[[^\]]*\] "([A-Z]+) (\S+) [^"]*" (\d{3})</regex>
   <order>srcip, protocol, url, id</order>
+</decoder>
+
+<!-- The model and method a request calls. The web client puts them in the path
+     (addons/web/static/src/core/orm_service.js, 16.0 to 19.0: the client chooses
+     the path, the request body is what Odoo runs); JSON-2 (19.0) routes on them;
+     19.0 also appends "#<model>.<method>" to XML-RPC and JSON-RPC request lines
+     (odoo/service/server.py log_request, thread_local.rpc_model_method). -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">werkzeug: \S+ - - \[[^\]]*\] "[A-Z]+ (?|/web/dataset/call_(?:kw|button)/([\w.]+)/(\w+)(?=[\s#?])|/json/2/([\w.]+)/(\w+)(?=[\s#?])|/\S*?#([\w.]+)\.(\w+)(?=\s))</regex>
+  <order>odoo.rpc_model, odoo.rpc_method</order>
+</decoder>
+
+<!-- web/controllers/export.py (16.0 to 19.0): "User 7 exported 15234 'res.partner'
+     records from 203.0.113.5. Fields: name,email. Domain: []" (or "IDs sample: [...]") -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: User (\d+) exported (\d+) '([\w.]+)' records from (?:::ffff:)?(\S+)\. Fields: (.*?)\. (?:Domain|IDs sample): </regex>
+  <order>odoo.uid, odoo.count, odoo.model, srcip, odoo.fields</order>
+</decoder>
+
+<!-- ir_actions.run (16.0 to 19.0): "Forbidden server action 'Mark done' executed while
+     the user jdoe@example.com does not have access to sale.order." -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: Forbidden server action (.+?) executed while the user (.*?) does not have access to (.+?)\.\s*$</regex>
+  <order>odoo.action, dstuser, odoo.target</order>
 </decoder>
 
 <!-- auth_totp: "2FA check: FAIL for res.users(7,) 'jdoe'", "2FA check (mail): ..." (19.0) -->
@@ -144,14 +197,17 @@
   <order>odoo.target_db</order>
 </decoder>
 
-<!-- odoo: "Odoo version 18.0" at start -->
 <!-- ir_cron: "Job 'name' (12) server action #345 failed", "Job 'name' (12) timed out"
-     (18.0, 19.0) and "Call from cron name for server action #345 failed in Job #12" (16.0, 17.0) -->
+     (18.0, 19.0) and "Call from cron name for server action #345 failed in Job #12" (16.0, 17.0);
+     run by hand: "Manually starting job `name`." (16.0, 17.0), "Job 'name' (12) started
+     manually" (18.0) -->
 <decoder name="jt-odoo-fields">
   <parent>jt-odoo</parent>
-  <regex type="pcre2">: (?|Job ['"](.+?)['"] \(\d+\) (?:server action|timed out)|Call from cron (.+?) for server action #)</regex>
+  <regex type="pcre2">: (?|Job ['"](.+?)['"] \(\d+\) (?:server action|timed out|started manually)|Call from cron (.+?) for server action #|Manually starting job \x60(.+?)\x60\.)</regex>
   <order>odoo.job</order>
 </decoder>
+
+<!-- odoo: "Odoo version 18.0" at start -->
 
 <decoder name="jt-odoo-fields">
   <parent>jt-odoo</parent>
@@ -179,6 +235,14 @@
   <fts>name, user, srcip</fts>
 </decoder>
 
+<decoder name="jt-odoo-syslog-dbbackup">
+  <parent>jt-odoo-syslog</parent>
+  <prematch type="pcre2">^\S+ \S+ \d+ INFO \S+ werkzeug: \S+ - - \[[^\]]*\] "POST /web/database/backup[\s?]</prematch>
+  <regex type="pcre2">^\S+ \S+ \d+ (INFO) (\S+) (werkzeug): ((?:(?:::ffff:)?(?!::1 )([0-9A-Fa-f.:]+)|\S+) - - \[[^\]]*\] "(POST) (/web/database/backup\S*) [^"]*" (\d{3}).*)$</regex>
+  <order>odoo.level, odoo.db, odoo.logger, odoo.message, srcip, protocol, url, id</order>
+  <fts>name, srcip</fts>
+</decoder>
+
 <decoder name="jt-odoo-syslog-fields">
   <parent>jt-odoo-syslog</parent>
   <regex type="pcre2">^\S+ \S+ \d+ (DEBUG|INFO|WARNING|ERROR|CRITICAL) ([A-Za-z0-9_.?-]+) ([A-Za-z0-9_.]+): (.*)$</regex>
@@ -200,8 +264,26 @@
 
 <decoder name="jt-odoo-syslog-fields">
   <parent>jt-odoo-syslog</parent>
-  <regex type="pcre2">werkzeug: (\S+) - - \[[^\]]*\] "([A-Z]+) (\S+) [^"]*" (\d{3})</regex>
+  <regex type="pcre2">werkzeug: (?:::ffff:)?(\S+) - - \[[^\]]*\] "([A-Z]+) (\S+) [^"]*" (\d{3})</regex>
   <order>srcip, protocol, url, id</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">werkzeug: \S+ - - \[[^\]]*\] "[A-Z]+ (?|/web/dataset/call_(?:kw|button)/([\w.]+)/(\w+)(?=[\s#?])|/json/2/([\w.]+)/(\w+)(?=[\s#?])|/\S*?#([\w.]+)\.(\w+)(?=\s))</regex>
+  <order>odoo.rpc_model, odoo.rpc_method</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: User (\d+) exported (\d+) '([\w.]+)' records from (?:::ffff:)?(\S+)\. Fields: (.*?)\. (?:Domain|IDs sample): </regex>
+  <order>odoo.uid, odoo.count, odoo.model, srcip, odoo.fields</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: Forbidden server action (.+?) executed while the user (.*?) does not have access to (.+?)\.\s*$</regex>
+  <order>odoo.action, dstuser, odoo.target</order>
 </decoder>
 
 <decoder name="jt-odoo-syslog-fields">
@@ -252,11 +334,10 @@
   <order>odoo.target_db</order>
 </decoder>
 
-<!-- ir_cron: "Job 'name' (12) server action #345 failed", "Job 'name' (12) timed out"
-     (18.0, 19.0) and "Call from cron name for server action #345 failed in Job #12" (16.0, 17.0) -->
+<!-- ir_cron: failed jobs and jobs started by hand, as above -->
 <decoder name="jt-odoo-syslog-fields">
   <parent>jt-odoo-syslog</parent>
-  <regex type="pcre2">: (?|Job ['"](.+?)['"] \(\d+\) (?:server action|timed out)|Call from cron (.+?) for server action #)</regex>
+  <regex type="pcre2">: (?|Job ['"](.+?)['"] \(\d+\) (?:server action|timed out|started manually)|Call from cron (.+?) for server action #|Manually starting job \x60(.+?)\x60\.)</regex>
   <order>odoo.job</order>
 </decoder>
 

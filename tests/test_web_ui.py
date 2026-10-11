@@ -1660,6 +1660,59 @@ class TestPackUpdate(PackFixture):
         with io.open(self.path('etc/jt-packs/jt-test.json'), encoding='utf-8') as fh:
             return json.load(fh)
 
+    def listed(self):
+        r = self.client.get('/api/packs')
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        body = r.get_json()
+        return body, next(p for p in body['packs'] if p['id'] == 'jt-test')
+
+    def set_installed_version(self, version):
+        st = self.state()
+        st['version'] = version
+        self.write('etc/jt-packs/jt-test.json', json.dumps(st))
+
+    def test_the_list_shows_the_installed_and_the_available_version(self):
+        body, p = self.listed()
+        self.assertEqual((p['version_status'], p['installed_version'], p['update_available']),
+                         ('not-installed', None, False))
+        self.install()
+        body, p = self.listed()
+        self.assertEqual((p['version_status'], p['installed_version'], p['version']),
+                         ('current', '1.0', '1.0'))
+        self.assertEqual(body['updates'], 0)
+        self.write_version('1.1')
+        body, p = self.listed()
+        self.assertEqual((p['version_status'], p['installed_version'], p['version'], p['update_available']),
+                         ('update', '1.0', '1.1', True))
+        self.assertEqual(body['updates'], 1)
+        d = self.client.get('/api/packs/jt-test').get_json()
+        self.assertEqual((d['version_status'], d['installed_version']), ('update', '1.0'))
+
+    def test_an_older_copy_in_the_tool_is_not_offered_as_an_update(self):
+        # 3.10 is newer than 3.9, and a tool rolled back to an older catalogue
+        # must not call going back an "update"
+        self.install()
+        self.set_installed_version('1.10')
+        self.write_version('1.1')
+        body, p = self.listed()
+        self.assertEqual((p['version_status'], p['update_available']), ('newer', False))
+        self.assertEqual(body['updates'], 0)
+        self.set_installed_version('1.0.0')
+        self.write_version('1.0')
+        self.assertEqual(self.listed()[1]['version_status'], 'current')
+
+    def test_files_in_place_without_a_record_show_the_version_they_match(self):
+        import shutil as _sh
+        pdir = os.path.join(self.cat, 'jt-test')
+        for name, sub in (('zz-990000-test.xml', 'rules'), ('zz-990100-old.xml', 'rules'),
+                          ('jt-test-approved', 'lists'), ('jt-test-old', 'lists')):
+            _sh.copy(os.path.join(pdir, sub, name), self.path('etc/%s/%s' % (sub, name)))
+        p = self.listed()[1]
+        self.assertEqual((p['version_status'], p['installed_version']), ('untracked', '1.0'))
+        self.write('etc/rules/zz-990000-test.xml', '<group name="x,"></group>\n')
+        p = self.listed()[1]
+        self.assertEqual((p['version_status'], p['installed_version']), ('untracked', None))
+
     def test_the_plan_names_what_happens_to_every_file(self):
         self.install()
         self.write('etc/lists/jt-test-approved', 'site-approved:x\n')
@@ -2481,6 +2534,55 @@ class TestShippedPacks(unittest.TestCase):
 
     SUBDIR = {'rule': 'rules', 'list': 'lists', 'decoder': 'decoders'}
 
+    def test_hash_lookups_on_sysmon_hang_off_every_level_0_rule_on_their_path(self):
+        """analysisd tries a level-0 child before every other child of the same
+        parent (rules.c stores level 0 as 99 while loading). The per-event Sysmon
+        rules are level-0 children of 61600, and 0800-sysmon_id_1.xml hangs four
+        more level-0 rules on every process start, so a lookup placed beside them
+        is never reached: in a sandbox only event 29 matched before the fix."""
+        import xml.etree.ElementTree as ET
+        path = os.path.join(self.packs_dir, 'jt-malware-hash', 'rules', 'jasontools-malware-rule.xml')
+        with io.open(path, encoding='utf-8') as fh:
+            root = ET.fromstring('<r>' + fh.read() + '</r>')
+        need = {'61603': {'61603', '92025', '92028', '92042', '92069'}, '61608': {'61608'}, '61609': {'61609'},
+                '61617': {'61617'}, '61651': {'61651'}, '61654': {'61654'}}
+        seen = set()
+        for rule in root.iter('rule'):
+            lists = [l.get('field') for l in rule.iter('list')]
+            if not any(f in ('win.eventdata.hashes', 'win.eventdata.hash') for f in lists):
+                continue
+            parents = {s.strip() for el in rule.iter('if_sid') for s in el.text.split(',')}
+            with self.subTest(rule=rule.get('id')):
+                if parents == {'61600'}:
+                    eids = [f.text for f in rule.iter('field') if f.get('name') == 'win.system.eventID']
+                    self.assertEqual(eids, ['^29$'], 'under 61600 only an event with no built-in level-0 rule is reached')
+                    continue
+                for event_rule, required in need.items():
+                    if event_rule in parents:
+                        self.assertTrue(required <= parents, sorted(required - parents))
+                        seen.add(event_rule)
+        self.assertEqual(seen, set(need))
+
+    def test_mitre_ids_exist_in_the_manager_database(self):
+        # An id the manager's MITRE database does not know (sub-techniques added
+        # to ATT&CK after Wazuh 4.14.7 froze its copy) makes analysisd write a
+        # warning for every alert of that rule. Five such ids slipped into the
+        # packs at once in 2026-10.
+        here = os.path.dirname(os.path.abspath(__file__))
+        with io.open(os.path.join(here, 'mitre_techniques_4.14.7.txt'), encoding='utf-8') as fh:
+            known = {l.strip() for l in fh if l.strip() and not l.startswith('#')}
+        for pdir, m in self.packs:
+            for entry in m.get('files', []):
+                if entry['type'] != 'rule':
+                    continue
+                with io.open(os.path.join(pdir, 'rules', entry['name']), encoding='utf-8') as fh:
+                    # every <id> inside <mitre>, so a tactic id (TA0011) is caught too
+                    used = {i.strip() for block in re.findall(r'<mitre>(.*?)</mitre>', fh.read(), re.S)
+                            for i in re.findall(r'<id>(.*?)</id>', block)}
+                with self.subTest(pack=m['id'], file=entry['name']):
+                    self.assertEqual(sorted(used - known), [],
+                                     'not in the Wazuh 4.14.7 MITRE database; use the parent technique')
+
     def test_every_manifest_file_exists_and_matches_its_hash(self):
         import hashlib
         for pdir, m in self.packs:
@@ -3106,10 +3208,10 @@ class TestMalwareHashUpdater(unittest.TestCase):
             zf.writestr('full.csv', body)
         return path
 
-    def row(self, sha, signature='n/a', ftype='exe'):
-        return ('"2026-10-01 00:00:00", "%s", "%s", "%s", "someone", "x.exe", "%s", '
-                '"application/x-dosexec", "%s", "n/a", "n/a", "n/a", "n/a", "n/a"'
-                % (sha, 'a' * 32, 'b' * 40, ftype, signature))
+    def row(self, sha, signature='n/a', ftype='exe', first='2026-10-01 00:00:00', imphash='n/a'):
+        return ('"%s", "%s", "%s", "%s", "someone", "x.exe", "%s", '
+                '"application/x-dosexec", "%s", "n/a", "n/a", "%s", "n/a", "n/a"'
+                % (first, sha, 'a' * 32, 'b' * 40, ftype, signature, imphash))
 
     def test_labels_come_from_the_signature_column_not_the_mime_type(self):
         a, b = '1' * 64, '2' * 64
@@ -3128,6 +3230,76 @@ class TestMalwareHashUpdater(unittest.TestCase):
         hashes = self.mod.extract_hashes(self._zip([self.row('4' * 64, 'Agent:Tesla"x')]))
         self.assertNotIn(':', hashes['4' * 64])
         self.assertNotIn('"', hashes['4' * 64])
+
+    def test_sysmon_keys_are_the_string_sysmon_prints(self):
+        """A CDB lookup compares the whole Hashes field, so the key must be byte for
+        byte what Sysmon writes: its own order, upper case, 32 zeros for no imphash.
+        The values are cmd.exe 10.0.26100.9278 as Sysmon printed it on a site."""
+        rec = {'sha1': 'd1682ea6d9ece5c98560048d22f1af6960ead9a9', 'md5': 'ce396564392fafaad5c07a5e2dade4e6',
+               'sha256': '97ac98b1a92c286054cce55239cfccdfc23a5517bd07fe693072c9ca96c7dabb',
+               'imphash': '010b165e4c37f484601d3dbd700c9423'}
+        shape, = self.mod.sysmon_formats('*')
+        self.assertEqual(self.mod.sysmon_key(shape, rec),
+                         'SHA1=D1682EA6D9ECE5C98560048D22F1AF6960EAD9A9,MD5=CE396564392FAFAAD5C07A5E2DADE4E6,'
+                         'SHA256=97AC98B1A92C286054CCE55239CFCCDFC23A5517BD07FE693072C9CA96C7DABB,'
+                         'IMPHASH=010B165E4C37F484601D3DBD700C9423')
+        self.assertEqual(self.mod.sysmon_formats('sha256,MD5; SHA256'), [('MD5', 'SHA256'), ('SHA256',)])
+        self.assertTrue(self.mod.sysmon_key(('SHA256', 'IMPHASH'), dict(rec, imphash=None)).endswith('=' + '0' * 32))
+        self.assertIsNone(self.mod.sysmon_key(('MD5', 'SHA256'), dict(rec, md5=None)))
+        with self.assertRaises(ValueError):
+            self.mod.sysmon_formats('SHA512')
+
+    def test_only_recent_samples_get_sysmon_keys(self):
+        labels, extras = self.mod.extract_records(
+            self._zip([self.row('1' * 64, first='2026-10-01 00:00:00'), self.row('2' * 64, first='2019-01-01 00:00:00')]),
+            '2025-10-11 00:00:00')
+        self.assertEqual(set(labels), {'1' * 64, '2' * 64})
+        self.assertEqual(set(extras), {'1' * 64})
+        lines = self.mod.build_lines(labels, extras, self.mod.sysmon_formats('*'), {'1' * 64})
+        self.assertEqual(set(lines), {'2' * 64}, 'an allowlisted hash leaves both of its keys out')
+
+    def test_the_48_hour_merge_adds_new_keys_and_drops_allowlisted_ones(self):
+        import tempfile
+        d = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__('shutil').rmtree(d))
+        path = os.path.join(d, 'malware_hash')
+        with open(path, 'w') as fh:
+            fh.write('%s:A\n%s:B\nSHA256=%s:B\n' % ('1' * 64, '2' * 64, '2' * 64))
+        added, removed = self.mod.merge_list(path, {'1' * 64: 'A', '3' * 64: 'C'}, {'2' * 64}, d)
+        self.assertEqual((added, removed), (1, 2))
+        with open(path) as fh:
+            self.assertEqual(sorted(l.split(':')[0] for l in fh), ['1' * 64, '3' * 64])
+        self.assertEqual(self.mod.merge_list(path, {'1' * 64: 'A'}, set(), d), (0, 0))
+
+    def test_a_refusal_reaches_the_queue_without_the_key(self):
+        """abuse.ch answers 401 for a bad key (probed 2026-10-11). The updater must
+        say so as an alert (rule 100192) and must never put the key in it."""
+        sent = []
+
+        class Sock:
+            def __init__(self, *a): pass
+            def connect(self, p): pass
+            def send(self, data): sent.append(data.decode())
+            def close(self): pass
+        real = self.mod.socket.socket
+        self.mod.socket.socket = Sock
+        self.mod._QUEUE, self.mod._SECRET = '/nonexistent/queue', 'K3Y-123'
+        try:
+            self.mod.report_failure('refused', 'HTTP 401 for https://x/v2/files/exports/K3Y-123/full.zip')
+        finally:
+            self.mod.socket.socket = real
+            self.mod._QUEUE = self.mod._SECRET = None
+        self.assertEqual(len(sent), 1)
+        self.assertTrue(sent[0].startswith('1:jt-malware-hash:jt-malware-hash: ERROR refused: '))
+        self.assertNotIn('K3Y-123', sent[0])
+
+    def test_every_shipped_list_is_a_placeholder(self):
+        for name in ('malware_hash', 'malware_hash_local', 'malware_hash_allow', 'vulnerable_driver_hash'):
+            with io.open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'packs', 'jt-malware-hash', 'lists', name), encoding='utf-8') as fh:
+                lines = [l for l in fh.read().splitlines() if l.strip()]
+            with self.subTest(list=name):
+                self.assertEqual(len(lines), 1)
+                self.assertRegex(lines[0], r'^PLACEHOLDER-[A-Z0-9-]+:placeholder$')
 
     def test_the_shipped_list_is_a_placeholder_key_not_a_comment(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

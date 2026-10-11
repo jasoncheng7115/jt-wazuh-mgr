@@ -19,7 +19,21 @@ Case file format, tests/pack_cases/<pack-id>.json:
 expect_rule "none" means no rule above level 0 may match. repeat sends the
 line that many times in one logtest session (for frequency rules) and judges
 the last event; "before" lines (or a "log" holding several lines) run first
-in the same session.
+in the same session. A "before" entry may also be {"log": "...", "location":
+"..."}, for correlations across hosts or files (wazuh-logtest -l gives one
+location to a whole session, so such cases go through the logtest socket).
+
+File integrity rules cannot be replayed by wazuh-logtest (syscheck events never
+pass the decoders). A case with "fim" instead of "log" is sent as a syscheck
+event to analysisd's own queue and judged by the alert it produces:
+    {"fim": {"path": "/etc/pam.d/sudo", "type": "added|modified|deleted",
+             "sha256": "...", "changed": ["size", "sha256"], "diff": "...",
+             "process": "/usr/bin/vim", "perm": "rw-r--r--", "size": 120, "tags": "x"},
+     "expect_rule": "100938", "expect_level": 13}
+The sandbox logs alerts from level 1, so a quiet level-1/2 rule can be named;
+"none" means no alert at all (the event ended at level 0 or matched nothing).
+"before" lines of a fim case go into the same live analysisd first (for a
+correlation such as "updater started, then the binary changed").
 """
 
 import json
@@ -113,6 +127,8 @@ def install(pack):
         if entry['type'] == 'list' and entry.get('declare'):
             lists.append(entry['dest'])
     conf = run(['docker', 'exec', name, 'cat', OSSEC + '/etc/ossec.conf']).stdout
+    # fim cases are judged from alerts.json; log quiet levels too (logtest is unaffected)
+    conf = re.sub(r'<log_alert_level>\d+</log_alert_level>', '<log_alert_level>1</log_alert_level>', conf, count=1)
     for rel in lists:
         tag = '<list>%s</list>' % rel
         if tag not in conf:
@@ -164,6 +180,128 @@ def logtest(name, lines, location=None):
     return results
 
 
+# Runs inside the container with the manager's own Python: one logtest
+# session over the socket, each event with its own location.
+SOCKET_LOGTEST = r'''
+import json, socket, struct, sys
+def req(msg):
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.connect('/var/ossec/queue/sockets/logtest')
+    data = json.dumps(msg).encode()
+    s.sendall(struct.pack('<I', len(data)) + data)
+    size = struct.unpack('<I', s.recv(4))[0]
+    buf = b''
+    while len(buf) < size:
+        buf += s.recv(size - len(buf))
+    s.close()
+    return json.loads(buf)
+token = None
+for line in sys.stdin:
+    ev = json.loads(line)
+    p = {'event': ev['log'], 'log_format': 'syslog', 'location': ev['location']}
+    if token:
+        p['token'] = token
+    d = req({'version': 1, 'origin': {'name': 'jt-sandbox', 'module': 'jt-sandbox'},
+             'command': 'log_processing', 'parameters': p}).get('data', {})
+    token = d.get('token', token)
+    rule = (d.get('output') or {}).get('rule') or {}
+    print(json.dumps([str(rule.get('id', 'none')), int(rule.get('level', 0) or 0),
+                      rule.get('description', '')]))
+'''
+
+
+def logtest_located(name, events):
+    """events: [(location, line), ...] in one session; returns the results per event."""
+    data = ''.join(json.dumps({'log': line, 'location': loc}) + '\n' for loc, line in events)
+    r = run(['docker', 'exec', '-i', name, OSSEC + '/framework/python/bin/python3', '-c',
+             SOCKET_LOGTEST], data=data, check=False)
+    results = []
+    for line in r.stdout.splitlines():
+        try:
+            results.append(tuple(json.loads(line)))
+        except ValueError:
+            pass
+    if not results:
+        sys.stderr.write(r.stderr[-500:])
+    return results
+
+
+# Runs inside the container: one syscheck event into analysisd's queue, then the
+# alert for that path (or nothing) from alerts.json.
+FIM_EVENT = r'''
+import json, socket, sys, time
+spec, wait = json.loads(sys.argv[1]), float(sys.argv[2])
+path, kind = spec["path"], spec.get("type", "added")
+alerts = "/var/ossec/logs/alerts/alerts.json"
+with open(alerts) as fh:
+    start = fh.seek(0, 2)
+attrs = {"type": "file", "size": spec.get("size", 120), "perm": spec.get("perm", "rw-r--r--"),
+         "uid": "0", "gid": "0", "user_name": "root", "group_name": "root", "inode": 4242,
+         "mtime": int(time.time()), "hash_md5": "1" * 32, "hash_sha1": "2" * 40,
+         "hash_sha256": spec.get("sha256", "3" * 64), "checksum": "4" * 40}
+data = {"path": path, "version": 2.0, "mode": spec.get("mode", "realtime"), "type": kind,
+        "timestamp": int(time.time()), "attributes": attrs}
+if kind == "modified":
+    changed = spec.get("changed") or ["size", "md5", "sha1", "sha256"]
+    old = dict(attrs)
+    for c in changed:
+        if c == "size": old["size"] = attrs["size"] + 1
+        elif c in ("md5", "sha1", "sha256"): old["hash_" + c] = "0" * len(attrs["hash_" + c])
+        elif c == "mtime": old["mtime"] = attrs["mtime"] - 86400
+        elif c == "permission": old["perm"] = "rwxrwxrwx"
+        elif c in ("uid", "gid", "inode"): old[c] = "1" if c != "inode" else 4241
+    data["old_attributes"], data["changed_attributes"] = old, changed
+if spec.get("diff"):
+    data["content_changes"] = spec["diff"]
+if spec.get("tags"):
+    data["tags"] = spec["tags"]          # <directories tags="..."> on the agent; rules see it as "tag"
+if spec.get("process"):
+    data["audit"] = {"user_id": "0", "user_name": "root", "process_name": spec["process"],
+                     "process_id": 4242, "ppid": 1, "effective_uid": "0", "effective_name": "root",
+                     "group_id": "0", "group_name": "root", "audit_uid": "1000", "audit_name": "admin1",
+                     "parent_name": "/usr/bin/bash", "parent_cwd": "/root", "cwd": "/root"}
+s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+s.connect("/var/ossec/queue/sockets/queue")
+# log lines that must be in analysisd's correlation memory first ("1:" = a
+# log line, as logcollector sends it); logtest sessions never reach it
+for ev in spec.get("before") or []:
+    if isinstance(ev, str):
+        ev = {"log": ev}
+    s.send(("1:%s:%s" % (ev.get("location") or "jt-sandbox", ev["log"])).encode())
+    time.sleep(0.3)
+if spec.get("before"):
+    time.sleep(1)
+s.send(("8:syscheck:" + json.dumps({"type": "event", "data": data})).encode())
+end = time.time() + wait
+while time.time() < end:
+    time.sleep(0.5)
+    with open(alerts) as fh:
+        fh.seek(start)
+        for line in fh:
+            try:
+                a = json.loads(line)
+            except ValueError:
+                continue
+            if (a.get("syscheck") or {}).get("path") == path:
+                r = a.get("rule", {})
+                print(json.dumps([str(r.get("id")), int(r.get("level", 0)), r.get("description", "")]))
+                sys.exit(0)
+print(json.dumps(["none", 0, ""]))
+'''
+
+
+def fim_case(name, spec, expect_alert):
+    # an expected alert gets time under load; a quiet one only needs to stay quiet
+    wait = '15' if expect_alert else '4'
+    r = run(['docker', 'exec', name, OSSEC + '/framework/python/bin/python3', '-c', FIM_EVENT,
+             json.dumps(spec), wait], check=False)
+    try:
+        return [tuple(json.loads(r.stdout.strip().splitlines()[-1]))]
+    except (ValueError, IndexError):
+        sys.stderr.write(r.stderr[-500:])
+        return []
+
+
 def test(pack):
     name = name_of(pack)
     with open(os.path.join(ROOT, 'tests', 'pack_cases', pack + '.json'), encoding='utf-8') as fh:
@@ -172,8 +310,19 @@ def test(pack):
     cases = data['cases'] + data.get('sequences', [])
     failed = 0
     for i, case in enumerate(cases, 1):
-        lines = list(case.get('before', [])) + [case['log']] * int(case.get('repeat', 1))
-        results = logtest(name, lines, case.get('location'))
+        before = case.get('before', [])
+        if 'fim' in case:
+            spec = dict(case['fim'], before=before) if before else case['fim']
+            results = fim_case(name, spec, str(case['expect_rule']) != 'none')
+        elif any(isinstance(b, dict) for b in before):
+            default = case.get('location') or 'jt-sandbox'
+            events = [(b.get('location') or default, b['log']) if isinstance(b, dict) else (default, b)
+                      for b in before]
+            events += [(default, case['log'])] * int(case.get('repeat', 1))
+            results = logtest_located(name, events)
+        else:
+            lines = list(before) + [case['log']] * int(case.get('repeat', 1))
+            results = logtest(name, lines, case.get('location'))
         got_rule, got_level, desc = results[-1] if results else ('none', 0, '')
         want_rule, want_level = str(case['expect_rule']), case.get('expect_level')
         if want_rule == 'none':

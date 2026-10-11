@@ -27,16 +27,21 @@
   ── 模組對照 ──
     A  906100-906109  Sysmon Process Create（EID 1）── 位置
        906168-906174  A 項的排除與延伸（壓縮檔內執行、家目錄自建資料夾、C:\Windows 內可寫入的資料夾）
-    B  906110-906119  AppLocker 稽核（EID 8003／8004）        ※ 可獨立停用
+    B  906110-906113  AppLocker 稽核（EID 8003／8004／8006／8007）        ※ 可獨立停用
     C  906120-906129  FIM 檔案落地 ＋ Sysmon EID 15
-    D  906130-906139  定期主動盤點（NDJSON）
+    D  906130-906135  定期主動盤點（NDJSON，需要站台自備的盤點腳本，套件不附）
+       906136-906137  內建 92217 的調校（Windows Update、Windows Installer 的暫存）
     E  906140-906142  核准清單覆寫（等級壓降）
        906143-906149  ★ 保留給客戶端自訂的排除規則
-       906150-906159  關聯規則
+       906150-906151  關聯規則
+       906152-906159  G-2 項（3.5）：改名的穿隧工具、穿隧服務 DNS、雙用途工具、雙副檔名、
+                      Outlook 附件、Windows 內從不放程式的資料夾、壓縮工具寫入啟動資料夾
        906160-906167  內建 Sysmon 事件 11 偵測（92200-92217）的調校
-       906175-906176  G 項：遠端控制與穿隧工具
+       906175-906176, 906179  G 項：遠端控制與穿隧工具（906179 以 LOLRMM 的檔名辨識）
        906177-906178  A 項的延伸（續）：磁碟根目錄的自建資料夾、資源回收筒
-       906180-906189  F 項：Sysmon 事件 29（偵測到可執行檔）
+       906180-906184  F 項：Sysmon 事件 29（偵測到可執行檔）
+       906185         WinRAR CVE-2023-38831 的執行形狀
+       906186-906187  Microsoft Defender ASR 對未知程式的判定（事件 1121／1122）
        906190-906199  H 項：收集健康度（事件通道訂閱失效後重啟 agent）
 
   ── ★ 內建的 level 0 規則也是同層（2026-10-09 實測）──
@@ -50,7 +55,13 @@
 
   ── ★ 同層規則的評估順序 ──
     Wazuh 依序嘗試同一父規則下的子規則，第一個命中的勝出並往下走，其餘同層規則
-    不再評估；順序實務上無法依賴。因此本檔案的原則是：
+    不再評估。順序（4.14.7 rules_list.c，2026-10-11 更正）：level 0 的先試，其餘依 level
+    由高到低，同 level 依載入順序 ── 內建規則先載入，所以同 level 時內建的贏。
+    後果（3.5 修正）：906177 原為 level 3，與內建 92032（cmd /C 啟動）、92068（PsExec）
+    同 level、與 92000（腳本主機啟動，level 4）相比更低，被它們搶先，掛在底下的遠端控制
+    與穿隧工具規則因此永遠到不了；改為 level 5（沒有任何內建同層規則是 level 5）。
+    level 低於父規則的子規則會「降低」告警，所以 level 10 的子規則不掛在 level 12 的父規則下。
+    即使順序可以推算，本檔案的原則仍是：
       ‧ 同層的告警規則，條件必須互斥（例如 906102 與 906170 以路徑區分）。
       ‧ 要「蓋過」別條規則的覆寫（核准清單、排除），寫成那條規則的子規則；
         若可能有多條規則先命中，就把它們全部列進 if_sid。
@@ -135,8 +146,8 @@
   <!--
     A-2：非系統碟執行 ── 視為可移除式儲存裝置
     ※ 預設涵蓋 E: ～ Z:，已排除 C: 與 D:
-      （D: 常為光碟機或第二硬碟；若客戶環境 D: 為資料碟且需納管，
-        將 [E-Z] 改為 [D-Z] 即可，見 docs/TUNING.md 第 5 節）
+      （D: 常為光碟機或第二硬碟，由 906177 以根目錄資料夾處理；若客戶環境的 E: 以後
+        是固定資料碟，請在 906143-906149 自訂排除，不要改這條）
   -->
   <rule id="906101" level="10">
     <if_sid>61603,92025,92028,92042,92069</if_sid>
@@ -153,7 +164,11 @@
     A-3：使用者 Temp 目錄執行
     ※ 刻意「不」涵蓋整個 AppData\Local ── Chrome／Edge／Teams／Slack／
       Zoom／VS Code 的更新程序均自該處執行，會產生大量誤報。
-      若要擴大範圍，須先收集至少 7 日 baseline，見 docs/TUNING.md 第 2 節。
+      若要擴大範圍，須先收集至少 7 日 baseline。
+    ★ 2026-10-11（3.5）：WinRAR 的暫存目錄不只 Rar$EX（從壓縮檔內執行），還有 Rar$DI
+      （從壓縮檔內開啟檔案，CVE-2023-38831 走的就是這條）等，名稱都是 Rar$ ＋ 兩個大寫字母
+      ＋ 小寫字母 ＋ 數字（WinRAR temporary folder artefacts, Digital Investigation 2010）。
+      906102 與 906170 的這段寫法必須一字不差。
 
     ★ 2026-09-28：壓縮工具解壓到 Temp 再執行的目錄（Rar$EX…、7z…、
       Temp1_<名稱>.zip、wz…）排除在外，改由 906170 負責 ── 兩條是同層規則，
@@ -164,7 +179,7 @@
   -->
   <rule id="906102" level="10">
     <if_sid>61603,92025,92028,92042,92069</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+(?!\\|(Rar\$EX[a-z]{1,3}[0-9.]+|7z[A-Z0-9]{3,}|Temp[0-9]+_[^\\]+\.zip|wz[0-9A-F]{3,})\\)</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+(?!\\|(Rar\$[A-Z]{2}[a-z]{0,3}[0-9.]+|7z[A-Z0-9]{3,}|Temp[0-9]+_[^\\]+\.zip|wz[0-9A-F]{3,})\\)</field>
     <description>[WARN] Portable executable run from the user Temp directory - $(win.eventdata.image) user: $(win.eventdata.user) hash: $(win.eventdata.hashes)</description>
     <mitre>
       <id>T1204.002</id>
@@ -356,35 +371,110 @@
   <!--
     系統磁碟根目錄下自建的資料夾（2026-10-09 新增）。Authenticated Users 預設可以在
     C:\ 底下建立資料夾，免安裝工具常被解壓到 C:\Tools\ 這類位置。但 C:\Python312、
-    C:\msys64、C:\tools（Chocolatey）、C:\PHP 也是這個形狀，所以只給 level 3：留下紀錄、
-    讓遠端控制與穿隧工具（906175／906176）在這裡照樣升到 level 12，但不打擾人。
+    C:\msys64、C:\tools（Chocolatey）、C:\PHP 也是這個形狀，所以等級低：留下紀錄、
+    讓遠端控制與穿隧工具（906175／906176／906179）在這裡照樣升到 level 12，但不打擾人。
     排除的是 Windows 自己管理的根目錄；Users、ProgramData 由其他規則處理，
-    資源回收筒由 906178 處理。D: 一併涵蓋（常是資料分割區），E: 以後由 906101 處理。
+    資源回收筒（含假的 RECYCLER.BIN）由 906178 處理，PerfLogs 由 906158 處理。
+    D: 一併涵蓋（常是資料分割區），E: 以後由 906101 處理。
     一週正式資料只有 26 筆，全是測試用資料夾。
+    ★ 3.5：level 3 → 5。level 3 與內建的 92032（父程序 cmd /C）、92068（PsExec）同 level，
+      內建規則先載入、先被試，事件就停在內建規則，底下的遠端控制、穿隧工具規則永遠到不了；
+      92000（父程序是 wscript／cscript，level 4）也一樣。一週正式資料 4 筆是這樣被搶走的
+      （C:\<自建資料夾>\Python312\python.exe 經 cmd /c 啟動）。沒有內建同層規則是 level 5，
+      906171（家目錄內的自建資料夾）也是 5。
   -->
-  <rule id="906177" level="3">
+  <rule id="906177" level="5">
     <if_sid>61603,92025,92028,92042,92069</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)^[CD]:\\+((?!(Windows|Program Files|Program Files \(x86\)|ProgramData|Users|\$Recycle\.Bin|System Volume Information|Recovery|\$WinREAgent|\$Windows\.~BT|\$Windows\.~WS|Windows\.old|\$SysReset|\$GetCurrent|Config\.Msi)\\)[^\\]+\\+|[^\\]+$)</field>
-    <description>Program run from a folder of its own at the root of a local drive - $(win.eventdata.image)</description>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[CD]:\\+((?!(Windows|Program Files|Program Files \(x86\)|ProgramData|Users|\$Recycle\.Bin|RECYCLERS?\.BIN|PerfLogs|System Volume Information|Recovery|\$WinREAgent|\$Windows\.~BT|\$Windows\.~WS|Windows\.old|\$SysReset|\$GetCurrent|Config\.Msi)\\)[^\\]+\\+|[^\\]+$)</field>
+    <description>Program run from a folder of its own at the root of a local drive - $(win.eventdata.image) user: $(win.eventdata.user)</description>
     <options>no_full_log</options>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
     <group>jt_portable_exec,</group>
   </rule>
 
   <!--
     從資源回收筒執行程式（2026-10-09 新增）。被刪除的檔案改名成 $Rxxxxxx.exe 留在
     \$Recycle.Bin\<SID>\ 底下；正常操作不會從這裡執行任何東西，拿它藏東西則是老手法。
-    也掛在 906101 底下：E: 以後的磁碟由 906101 處理，同層誰先評估不可預期，
+    也掛在 906101 底下：E: 以後的磁碟由 906101 處理，兩條同為 level 10，
     這樣不論哪條先命中，最後都會落在這條。
+    3.5：一併涵蓋仿冒的 RECYCLER.BIN／RECYCLERS.BIN（USB 散播的惡意程式藏身處，
+    Mandiant 2023 USB 感染報告；SigmaHQ proc_creation_win_susp_recycle_bin_fake_execution）。
   -->
   <rule id="906178" level="10">
     <if_sid>61603,92025,92028,92042,92069,906101</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+\$Recycle\.Bin\\+</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+(\$Recycle\.Bin|RECYCLERS?\.BIN)\\+</field>
     <description>[WARN] Program run from the Recycle Bin - $(win.eventdata.image)</description>
     <mitre>
       <id>T1564.001</id>
       <id>T1204.002</id>
     </mitre>
     <group>jt_portable_exec,</group>
+  </rule>
+
+  <!--
+    A-12（3.5）：直接從 Outlook 附件執行。
+    Outlook（傳統版）開啟附件時，先把它存到 OutlookSecureTempFolder，預設是
+    %LOCALAPPDATA%\Microsoft\Windows\INetCache\Content.Outlook\<隨機>\（舊版為
+    Temporary Internet Files\Content.Outlook）。在這裡執行的程式，就是使用者在郵件裡
+    雙擊了一個執行檔。位置在 AppData 之內，其他位置規則都不涵蓋，所以與它們互斥。
+    來源：Microsoft Learn「Outlook secure temp folder」；SigmaHQ
+    proc_creation_win_office_outlook_execution_from_temp（概念重寫，非照抄）。
+    不掛核准清單：核准的工具從郵件附件直接執行，一樣可疑。
+  -->
+  <rule id="906157" level="12">
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Microsoft\\+Windows\\+(INetCache|Temporary Internet Files)\\+Content\.Outlook\\+</field>
+    <description>[HIGH] Program run directly from an Outlook attachment - $(win.eventdata.image) user: $(win.eventdata.user) parent: $(win.eventdata.parentImage)</description>
+    <mitre>
+      <id>T1566.001</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_email,</group>
+  </rule>
+
+  <!--
+    A-13（3.5）：Windows 自己管理、從來不放程式的資料夾。
+    C:\PerfLogs 與 C:\Windows 底下的 Fonts、debug、Help、Media、addins、security、Cursors、
+    schemas、L2Schemas、PLA、Prefetch、Offline Web Pages、AppReadiness、repair：只有系統管理員
+    寫得進去，裡面也從來沒有執行檔，所以在這裡執行程式的，是有管理員權限、想把東西藏在
+    看起來很正常的地方的人。與 906174（一般使用者可寫入的資料夾，level 12）不同，這裡要先有
+    管理員權限，給 level 10。IME 刻意不列：中日韓語系的 Windows 在 C:\Windows\IME 底下有
+    輸入法自己的執行檔。PerfLogs 原本落在 906177（根目錄的自建資料夾），已從那裡排除。
+    來源：SigmaHQ proc_creation_win_susp_execution_path、Elastic「Process Execution from an
+    Unusual Directory」（概念重寫）；ATT&CK T1036.005。一週正式資料：0 筆。
+  -->
+  <rule id="906158" level="10">
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+(PerfLogs|Windows\\+(addins|AppReadiness|Cursors|debug|Fonts|Help|L2Schemas|Media|Offline Web Pages|PLA|Prefetch|repair|schemas|security))\\+</field>
+    <description>[WARN] Program run from a Windows folder that never holds programs - $(win.eventdata.image) user: $(win.eventdata.user)</description>
+    <mitre>
+      <id>T1036.005</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,</group>
+  </rule>
+
+  <!--
+    906185（3.5）：WinRAR CVE-2023-38831（WinRAR 6.23 修正，CISA KEV 2023-08）。壓縮檔裡放一個
+    "invoice.pdf " 與同名資料夾 "invoice.pdf \invoice.pdf .cmd"；使用者在 WinRAR 裡雙擊那份
+    「文件」，WinRAR 把它解到 Temp\Rar$DI…\ 並執行的卻是 .cmd。形狀：父程序是 WinRAR，命令列指向
+    Rar$ 暫存目錄裡一個「副檔名前面多一個空白」的檔名。來源：Group-IB 2023-08 公告、
+    knight0x07 的分析；比對想法參考 SigmaHQ CVE-2023-38831 規則（概念重寫）。
+    程序本身多半是 System32 的 cmd.exe，不在任何位置規則內；若是 Rar$ 目錄裡的 .exe，906170
+    （level 10）也成立，這條 level 12 先被試。
+  -->
+  <rule id="906185" level="12">
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\+WinRAR\.exe$</field>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)\\+AppData\\+Local\\+Temp\\+Rar\$[A-Z]{2}[^\\]*\\+.*\.[a-z0-9]{1,5} \.[a-z0-9]{1,4}</field>
+    <description>[HIGH] WinRAR opened a file that ran as a script or program, the CVE-2023-38831 shape - $(win.eventdata.commandLine)</description>
+    <mitre>
+      <id>T1203</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_archive,</group>
   </rule>
 
   <!-- Defender 本體就住在 ProgramData；其他站台的 Sysmon 設定不一定會濾掉它。 -->
@@ -402,19 +492,22 @@
 
     在檔案總管或解壓縮工具裡「雙擊壓縮檔內的 .exe」，工具會先把檔案解到 Temp 底下
     一個自己命名的目錄再執行：
-        WinRAR    Temp\Rar$EXa1234.5678\
+        WinRAR    Temp\Rar$EXa1234.5678\（執行）、Temp\Rar$DIa1234.5678\（開啟）
         7-Zip     Temp\7zO1A2B3C4\
         Windows   Temp\Temp1_<壓縮檔名>.zip\
         WinZip    Temp\wz1A2B\
     這是免安裝工具最典型的「沒解壓、直接跑」用法，而且執行完臨時目錄就消失，
     事後在磁碟上找不到。與 906102 互斥（906102 以 lookahead 排除這些目錄）。
+    T1553.005：從壓縮檔內直接執行，正是下載標記容易遺失的路徑（7-Zip 24.09 以前不把
+    巢狀壓縮檔的下載標記傳給解出的檔案，CVE-2025-0411，CISA KEV 2025-02-06）。
   -->
   <rule id="906170" level="10">
     <if_sid>61603,92025,92028,92042,92069</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+(Rar\$EX[a-z]{1,3}[0-9.]+|7z[A-Z0-9]{3,}|Temp[0-9]+_[^\\]+\.zip|wz[0-9A-F]{3,})\\+</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Users\\+[^\\]+\\+AppData\\+Local\\+Temp\\+(Rar\$[A-Z]{2}[a-z]{0,3}[0-9.]+|7z[A-Z0-9]{3,}|Temp[0-9]+_[^\\]+\.zip|wz[0-9A-F]{3,})\\+</field>
     <description>[WARN] Program run directly from inside an archive - $(win.eventdata.image) user: $(win.eventdata.user) parent: $(win.eventdata.parentImage)</description>
     <mitre>
       <id>T1204.002</id>
+      <id>T1553.005</id>
     </mitre>
     <group>jt_portable_exec,jt_portable_archive,</group>
   </rule>
@@ -467,10 +560,15 @@
      掛在 A 項所有「位置」規則之下（含 906106），所以不論 Wazuh 先評估哪一條同層
      規則，都還會往下走到這裡。已核准的工具以 not_match_key 排除，與 E 項互斥 ──
      公司若正式使用 RustDesk 這類工具，把它加進 jt-approved-portable 即可。
+
+     3.5：產品名稱補上 LOLRMM 記載 PE 產品名稱的 Alpemix、Aspia、RemSupp、Getscreen.me；
+     穿隧工具補上 Microsoft dev tunnels 的 devtunnel.exe、VS Code 的 code-tunnel.exe，
+     cloudflared 也接受發行檔原名（cloudflared-windows-amd64.exe）。父規則加上 906157、906158。
+     正式 Windows 主機上的 RustDesk 裝在 Program Files，不在任何位置規則內，所以不會觸發。
   -->
   <rule id="906175" level="12">
-    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174,906177,906178</if_sid>
-    <field name="win.eventdata.product" type="pcre2">(?i)\b(AnyDesk|TeamViewer|RustDesk|ScreenConnect|Splashtop|NetSupport|UltraViewer|Supremo|Ammyy|Radmin|Remote Utilities|DWAgent|MeshCentral|Mesh Agent|Tactical RMM|RemotePC|Zoho Assist|LogMeIn|Atera|Chrome Remote Desktop|Parsec)\b</field>
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174,906177,906178,906157,906158</if_sid>
+    <field name="win.eventdata.product" type="pcre2">(?i)\b(AnyDesk|TeamViewer|RustDesk|ScreenConnect|Splashtop|NetSupport|UltraViewer|Supremo|Ammyy|Radmin|Remote Utilities|DWAgent|MeshCentral|Mesh Agent|Tactical RMM|RemotePC|Zoho Assist|LogMeIn|Atera|Chrome Remote Desktop|Parsec|Alpemix|Aspia|RemSupp|Getscreen\.me)\b</field>
     <list field="win.eventdata.originalFileName" lookup="not_match_key">etc/lists/jt-approved-portable</list>
     <list field="win.eventdata.image" lookup="not_match_key">etc/lists/jt-approved-portable</list>
     <description>[HIGH] Portable remote access tool run from a user-writable location - $(win.eventdata.product) $(win.eventdata.image) user: $(win.eventdata.user)</description>
@@ -482,8 +580,8 @@
   </rule>
 
   <rule id="906176" level="12">
-    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174,906177,906178</if_sid>
-    <field name="win.eventdata.image" type="pcre2">(?i)(\\+(ngrok|cloudflared|frpc|frps|chisel|plink|ligolo[^\\]*|bore|localtonet|zrok|tor)\.exe$|\\+Tor Browser\\+)</field>
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174,906177,906178,906157,906158</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)(\\+(ngrok|cloudflared[^\\]*|frpc|frps|chisel|plink|ligolo[^\\]*|bore|localtonet|zrok|tor|devtunnel|code-tunnel)\.exe$|\\+Tor Browser\\+)</field>
     <list field="win.eventdata.originalFileName" lookup="not_match_key">etc/lists/jt-approved-portable</list>
     <list field="win.eventdata.image" lookup="not_match_key">etc/lists/jt-approved-portable</list>
     <description>[HIGH] Tunnelling or anonymising tool run from a user-writable location - $(win.eventdata.image) user: $(win.eventdata.user)</description>
@@ -495,25 +593,156 @@
   </rule>
 
 
+  <!--
+    906179（3.5）：以檔名辨識的遠端控制工具。906175 看 PE 的產品名稱，但很多遠端控制工具
+    不在那份清單、或產品名稱太普通不能用。這裡用 LOLRMM（https://lolrmm.io，
+    InstallationPaths 欄位）記載的執行檔名稱，只取不會撞名、也不在 906175 產品清單內的工具
+    （ToDesk、向日葵 SunLogin、AweSun、HopToDesk、Action1、SimpleHelp、Level、LiteManager、
+    ISL Light、GotoHTTP、AeroAdmin、Iperius、NinjaOne、Syncro、Pulseway、BeyondTrust、
+    DameWare、TightVNC／UltraVNC／RealVNC、NoMachine、rport…）。改了檔名就看不到，與 906176 相同限制。
+    幾個產品的正式安裝位置就在 ProgramData（NinjaRMMAgent、bomgar-scc-<識別碼>、
+    JWrapper-Remote Access），已排除，否則受管理的代理程式每次啟動都是 level 12。
+    CISA AA23-025A：攻擊者偏好免安裝版的遠端控制工具，因為不需要管理員權限、也不經過軟體控管。
+  -->
+  <rule id="906179" level="12">
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174,906177,906178,906157,906158</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^(?!.*\\+ProgramData\\+(NinjaRMMAgent|bomgar-(scc|pac)-[^\\]*|JWrapper-Remote (Access|Support))\\).*\\+(action1_(agent|remote|connector)|aeroadmin|awesun|aweray_remote[^\\]*|basup(app|srvc)[^\\]*|bomgar-(scc|pac)[^\\]*|dwrcst?|fixmeitclient[^\\]*|fleetdeck_agent_svc|getscreen|gotohttp[^\\]*|gotoresolve[^\\]*|hoptodesk[^\\]*|iperiusremote|isllight(client)?|level-windows-amd64|level-remote-control-ffmpeg|lmnoipserver|romserver|romviewer|romfusclient|ltsvc|lttray|mikogo[^\\]*|ninjarmmagent[^\\]*|ninjarmm-cli|nomachine[^\\]*|orayremoteservice|orayremoteshell|pcmonitorsrv|pcmonitormanager|remotely_(agent|desktop)|rport|showmypc[^\\]*|simplegatewayservice|simplehelpcustomer|sunlogin[^\\]*|syncro\.app\.runner|syncrolive\.agent[^\\]*|todesk(_service)?|tvnserver|vncserver|winvnc[0-9]?)\.exe$</field>
+    <list field="win.eventdata.originalFileName" lookup="not_match_key">etc/lists/jt-approved-portable</list>
+    <list field="win.eventdata.image" lookup="not_match_key">etc/lists/jt-approved-portable</list>
+    <description>[HIGH] Portable remote access tool run from a user-writable location - $(win.eventdata.image) user: $(win.eventdata.user)</description>
+    <mitre>
+      <id>T1219</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_remote_access,</group>
+  </rule>
+
+  <!--
+    906152（3.5）：以命令列辨識的穿隧工具，抓的是改了檔名的 ngrok／cloudflared／chisel／frp／
+    plink／VS Code tunnel／devtunnel ── 這些工具的參數格式是固定的，檔名可以改、參數不能。
+    參數格式出自各工具的官方文件（ngrok docs、Cloudflare Tunnel docs、chisel README、frp README、
+    PuTTY plink 文件、Microsoft dev tunnels docs），比對想法參考 SigmaHQ 的 proc_creation_win_pua_ngrok、
+    _pua_chisel、_pua_frp、_cloudflared_tunnel_run、_cloudflared_quicktunnel_execution、
+    _plink_susp_tunneling、_vscode_tunnel_execution（概念重寫，非照抄）。
+    第二個欄位排除 906176 的檔名，兩條互斥。只掛在位置規則底下：裝在 Program Files、以服務
+    執行的公司版 cloudflared 不會觸發。
+  -->
+  <rule id="906152" level="12">
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174,906177,906178,906157,906158</if_sid>
+    <field name="win.eventdata.commandLine" type="pcre2">(?i)(\s(tcp|tls)\s+[0-9]{2,5}\b|\s(config\s+add-)?authtoken\s|\sstart\s+--all\b|\stunnel\s+(run\s+)?--(token|url|credentials-file|credentials-contents)\s|\stunnel\s+--accept-server-license-terms|\s(client|server)\s.*(--reverse|--socks5|\sR:[^\s]|:socks\b)|\s-c\s+\S*frp[cs]\.(ini|toml|ya?ml|json)|\s-[RL]\s+\S*:3389\b|\shost\s.*--allow-anonymous)</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)^(?!.*(\\+(ngrok|cloudflared[^\\]*|frpc|frps|chisel|plink|ligolo[^\\]*|bore|localtonet|zrok|tor|devtunnel|code-tunnel)\.exe$|\\+Tor Browser\\+))</field>
+    <list field="win.eventdata.originalFileName" lookup="not_match_key">etc/lists/jt-approved-portable</list>
+    <list field="win.eventdata.image" lookup="not_match_key">etc/lists/jt-approved-portable</list>
+    <description>[HIGH] Tunnelling tool recognised by its command line, run from a user-writable location - $(win.eventdata.image) $(win.eventdata.commandLine)</description>
+    <mitre>
+      <id>T1572</id>
+      <id>T1036.003</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_tunnel,</group>
+  </rule>
+
+  <!--
+    906154／906155（3.5）：入侵者愛用的雙用途工具，以 PE 版本資訊辨識（改檔名改不掉）。
+    CISA 的 #StopRansomware 公告（AA24-109A Akira、AA24-131A Black Basta、AA25-071A Medusa）
+    一再列出 rclone（外洩）、Advanced IP Scanner 與 SoftPerfect Network Scanner（掃描）、
+    AdFind（網域探索）。系統管理員也會用，所以是 level 10、不寄信，而且接受核准清單；
+    從使用者可寫入的位置以免安裝方式執行，正是本套件要回答的問題。
+    比對值出自 SigmaHQ proc_creation_win_pua_rclone_execution（Description「Rsync for cloud
+    storage」）、_pua_advanced_ip_scanner、_pua_netscan（Description「Application for scanning
+    networks」）、_renamed_adfind（OriginalFileName AdFind.exe）。
+    不掛在 level 12 的位置規則（906103、906174、906157）底下：level 10 的子規則會把告警降級。
+  -->
+  <rule id="906154" level="10">
+    <if_sid>906100,906101,906102,906104,906105,906106,906170,906171,906177,906178,906158</if_sid>
+    <field name="win.eventdata.description" type="pcre2">(?i)(Rsync for cloud storage|Application for scanning networks|Advanced IP Scanner)</field>
+    <list field="win.eventdata.originalFileName" lookup="not_match_key">etc/lists/jt-approved-portable</list>
+    <list field="win.eventdata.image" lookup="not_match_key">etc/lists/jt-approved-portable</list>
+    <description>[WARN] Network discovery or cloud sync tool often used in intrusions, run from a user-writable location - $(win.eventdata.description) $(win.eventdata.image) user: $(win.eventdata.user)</description>
+    <mitre>
+      <id>T1046</id>
+      <id>T1567.002</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_dual_use,</group>
+  </rule>
+
+  <rule id="906155" level="10">
+    <if_sid>906100,906101,906102,906104,906105,906106,906170,906171,906177,906178,906158</if_sid>
+    <field name="win.eventdata.originalFileName" type="pcre2">(?i)^AdFind\.exe$</field>
+    <list field="win.eventdata.originalFileName" lookup="not_match_key">etc/lists/jt-approved-portable</list>
+    <list field="win.eventdata.image" lookup="not_match_key">etc/lists/jt-approved-portable</list>
+    <description>[WARN] Active Directory enumeration tool AdFind run from a user-writable location - $(win.eventdata.image) $(win.eventdata.commandLine)</description>
+    <mitre>
+      <id>T1087.002</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_dual_use,</group>
+  </rule>
+
+  <!--
+    906156（3.5）：偽裝成文件的雙副檔名（invoice.pdf.exe、photo.jpg     .exe）。
+    正常軟體不會這樣命名；這是寄給人雙擊的誘餌。ATT&CK T1036.007；比對想法參考 SigmaHQ
+    proc_creation_win_susp_double_extension（概念重寫）。不接受核准清單。一週正式資料：0 筆。
+  -->
+  <rule id="906156" level="12">
+    <if_sid>906100,906101,906102,906103,906104,906105,906106,906170,906171,906174,906177,906178,906157,906158</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)(\.(pdf|docx?|xlsx?|pptx?|rtf|txt|csv|jpe?g|png|gif|svg|mp3|mp4|mkv|mov)(\s+|_{3,})?|\s{5,}|_{6,})\.(exe|scr|com|pif)$</field>
+    <description>[HIGH] Program disguised as a document by a double extension, run from a user-writable location - $(win.eventdata.image) user: $(win.eventdata.user)</description>
+    <mitre>
+      <id>T1036.007</id>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_masquerade,</group>
+  </rule>
+
+  <!--
+    906153（3.5）：穿隧服務的 DNS 查詢（Sysmon 事件 22），不管程式叫什麼名字、放在哪裡。
+    只列穿隧「代理程式」自己會查的主機名稱，瀏覽器看網頁不會查到：
+      cloudflared  *.argotunnel.com、*.cftunnel.com（Cloudflare「Tunnel with firewall」文件）、
+                   api.trycloudflare.com（免帳號的 quick tunnel）
+      ngrok        *.ngrok-agent.com（ngrok「Agent Connect URLs」文件，connect.<區域>.ngrok-agent.com）
+      dev tunnels  *.rel.tunnels.api.visualstudio.com（Microsoft「Dev tunnels security」文件）
+    排除 Program Files 與 VS Code 的每使用者安裝目錄：那是公司安裝的版本，與「免安裝」無關。
+    前提：主機的 Sysmon 設定有記錄 DNS 查詢（sysmon-modular、SwiftOnSecurity 都有）。
+    一週正式資料 1,822 筆查詢：0 筆命中。
+  -->
+  <rule id="906153" level="10">
+    <if_sid>61650</if_sid>
+    <field name="win.eventdata.queryName" type="pcre2">(?i)((^|\.)(argotunnel\.com|cftunnel\.com|ngrok-agent\.com|rel\.tunnels\.api\.visualstudio\.com)|^api\.trycloudflare\.com)\.?$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)^(?![A-Z]:\\+(Program Files( \(x86\))?|Users\\+[^\\]+\\+AppData\\+Local\\+Programs\\+Microsoft VS Code( Insiders)?)\\)</field>
+    <description>[WARN] Tunnelling service contacted by a program outside Program Files - $(win.eventdata.queryName) by $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1572</id>
+      <id>T1090</id>
+    </mitre>
+    <group>jt_portable_tunnel,</group>
+  </rule>
+
+
 <!--
   ══════════════════════════════════════════════════════════════════════
    B 項：AppLocker 稽核模式  ※ 可選模組
    ══════════════════════════════════════════════════════════════════════
    前提：
-     1. Windows Enterprise／Education 版（Pro 版功能受限，見 docs/APPLOCKER.md）
+     1. Windows Enterprise／Education 版（強制模式需要；Pro 版只能稽核）
      2. Application Identity（AppIDSvc）服務須設為自動啟動
      3. 已套用「預設規則」且設定為「僅稽核」模式
-   父規則：67012（EID 8003）／67013（EID 8004）── Wazuh 內建
+   父規則：67012（EID 8003）／67013（EID 8004）── Wazuh 內建；
+           8006／8007（MSI 與腳本）沒有內建規則，掛在 60010／60011（警告／錯誤分類）。
    不需要 AppLocker 的環境：整段註解掉即可，A／C／D 項不受影響。
+
+   ★ 3.5：群組設定只收 8003／8004／8006／8007。原本整個通道都收，而「允許執行」的 8002
+     是內建 67011（level 3）：照本套件的部署說明開啟 AppLocker 稽核後，每一次正常的程式
+     執行都是一筆告警。8006（MSI／腳本本應被封鎖）原本停在 60010 的 level 0，完全無聲。
 
    ★★ 欄位名稱待實機驗證 ★★
    description 中使用的 win.ruleAndFileData.filePath 與 .targetUser
    「尚未經實機驗證」。Wazuh 內建的 AppLocker 規則（67011-67013）
    僅使用了 win.ruleAndFileData.ruleName 一個欄位，其餘欄位名無內建規則佐證。
 
-   部署後請務必依 docs/APPLOCKER.md 第 5 節驗證：
+   部署後請以一筆真實事件驗證（套件的 live verification 清單）：
    若告警訊息中該兩欄位顯示為空白，代表欄位名不正確，
-   請以實際事件的欄位名替換（驗證指令見該文件）。
+   請以實際事件的欄位名替換。
    ※ 欄位名錯誤只影響「告警訊息可讀性」，不影響規則是否觸發。
 -->
 
@@ -533,6 +762,35 @@
     <description>AppLocker enforcement blocked an execution - $(win.ruleAndFileData.filePath) user: $(win.ruleAndFileData.targetUser)</description>
     <mitre>
       <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_applocker,</group>
+  </rule>
+
+  <!-- B-3／B-4（3.5）：MSI 與腳本的同一組事件。8006＝稽核模式下本應被封鎖（警告），
+       8007＝強制模式下遭封鎖（錯誤）。Microsoft Learn「Using Event Viewer with AppLocker」；
+       SigmaHQ win_applocker_application_would_have_been_blocked 也把 8006 列為同一類。 -->
+  <rule id="906112" level="8">
+    <if_sid>60010</if_sid>
+    <field name="win.system.providerName">^Microsoft-Windows-AppLocker$</field>
+    <field name="win.system.eventID">^8006$</field>
+    <description>[WARN] AppLocker audit mode saw a script or installer it would have blocked - $(win.ruleAndFileData.filePath) user: $(win.ruleAndFileData.targetUser)</description>
+    <options>no_full_log</options>
+    <mitre>
+      <id>T1204.002</id>
+      <id>T1059</id>
+    </mitre>
+    <group>jt_portable_applocker,</group>
+  </rule>
+
+  <rule id="906113" level="5">
+    <if_sid>60011</if_sid>
+    <field name="win.system.providerName">^Microsoft-Windows-AppLocker$</field>
+    <field name="win.system.eventID">^8007$</field>
+    <description>AppLocker enforcement blocked a script or installer - $(win.ruleAndFileData.filePath) user: $(win.ruleAndFileData.targetUser)</description>
+    <options>no_full_log</options>
+    <mitre>
+      <id>T1204.002</id>
+      <id>T1059</id>
     </mitre>
     <group>jt_portable_applocker,</group>
   </rule>
@@ -631,6 +889,32 @@
     <if_sid>92207</if_sid>
     <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Users\\+Public\\+Desktop\\+[^\\]+\.lnk$</field>
     <description>Excluded: installer writing a shortcut to the Public desktop</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <!--
+    906136／906137（3.5）：內建 92217（level 6，「可執行檔落在 Windows 目錄」）最常見的兩個
+    作業系統形狀，依 10 天正式資料：
+      43 筆  svchost.exe 寫入 Windows\SoftwareDistribution\Download\Install\AM_Delta(_Patch_x).exe
+             ── Windows Update 遞送 Defender 特徵碼的增量包，每次更新都有
+      16 筆  msiexec.exe 把安裝包快取成 Windows\Installer\<十六進位>.msi ── 每次安裝 MSI 都有
+    兩條都同時比對寫入者與工具自己產生的路徑形狀；這兩個位置只有 SYSTEM 寫得進去。
+  -->
+  <rule id="906136" level="0">
+    <if_sid>92217</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+System32\\+svchost\.exe$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Windows\\+SoftwareDistribution\\+Download\\+Install\\+AM_Delta(_Patch_[0-9.]+)?\.exe$</field>
+    <description>Excluded: Windows Update staging a Defender signature update</description>
+    <options>no_full_log</options>
+    <group>jt_portable,false_positive,</group>
+  </rule>
+
+  <rule id="906137" level="0">
+    <if_sid>92217</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)^[A-Z]:\\+Windows\\+(System32|SysWOW64)\\+msiexec\.exe$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Windows\\+Installer\\+[0-9a-f]+\.ms[ip]$</field>
+    <description>Excluded: Windows Installer caching the package it is installing</description>
     <options>no_full_log</options>
     <group>jt_portable,false_positive,</group>
   </rule>
@@ -752,10 +1036,15 @@
 
     906121 本身降為 level 3：大部分下載標記是 ZoneId=3（網際網路），會往下走到
     906122；留在 906121 的只剩本機、內部網路與信任網站來源。
+
+    ★ 3.5：副檔名補上近年的初始入侵載體：MSIX／AppX／.appinstaller、ClickOnce 的
+      .application、OneNote 的 .one、.chm、.cpl、Excel 增益集 .xll、.wsf／.jse／.vbe／.wsh、
+      .pif／.com、.msp、.reg、.rdp（2024 年的 RDP 附件釣魚）、.url、.library-ms、.search-ms、
+      .settingcontent-ms、.cab。一週正式資料只有 9 筆事件 15，成本可以忽略。
   -->
   <rule id="906121" level="3">
     <if_sid>61617</if_sid>
-    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Users\\+.+\.(exe|dll|msi|scr|ps1|jar|bat|cmd|vbs|js|hta|lnk|iso|img|vhdx?|zip|7z|rar):Zone\.Identifier$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Users\\+.+\.(exe|dll|msi|msp|msix|msixbundle|appx|appxbundle|appinstaller|application|scr|com|pif|cpl|xll|ps1|jar|bat|cmd|vbs|vbe|js|jse|wsf|wsh|hta|chm|one|reg|rdp|url|library-ms|search-ms|settingcontent-ms|lnk|iso|img|vhdx?|zip|7z|rar|cab):Zone\.Identifier$</field>
     <description>Download mark written for an executable or archive in a user directory - $(win.eventdata.targetFilename) by: $(win.eventdata.image)</description>
     <mitre>
       <id>T1204.002</id>
@@ -811,13 +1100,40 @@
   </rule>
 
 
+  <!--
+    C-5（3.5）：壓縮工具把檔案寫進「啟動」資料夾。
+    WinRAR 7.12 以前的 CVE-2025-8088（透過替代資料流的路徑穿越，ESET 2025-08 發現 RomCom
+    利用，CISA KEV 2025-08-12）與 CVE-2025-6218，解壓時把檔案放進
+    %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup，下次登入就執行。內建 92225
+    只看全體使用者的 ProgramData\...\StartUp，而且只在 PowerShell 寫入時升級；
+    每使用者的 Startup 沒有任何內建規則。正常解壓縮不會寫到這裡。
+    比對想法參考 SigmaHQ file_event_win_winrar_file_creation_in_startup_folder（概念重寫）；
+    7-Zip 一併納入（同類的路徑穿越：CVE-2025-11001／11002）。
+    前提：主機的 Sysmon 設定記錄啟動資料夾的檔案建立（套件的 Sysmon 片段 3.5 起有）。
+  -->
+  <rule id="906159" level="12">
+    <if_sid>61613</if_sid>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\+(WinRAR|Rar|UnRAR|7z|7zG|7zFM|7za)\.exe$</field>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)\\+Start Menu\\+Programs\\+Startup\\+</field>
+    <description>[HIGH] Archive tool wrote a file into a Startup folder, a path traversal on extraction - $(win.eventdata.targetFilename) by $(win.eventdata.image)</description>
+    <mitre>
+      <id>T1547.001</id>
+      <id>T1203</id>
+    </mitre>
+    <group>jt_portable_file,jt_portable_archive,</group>
+  </rule>
+
+
 <!--
   ══════════════════════════════════════════════════════════════════════
    D 項：定期主動盤點
    ══════════════════════════════════════════════════════════════════════
    資料來源：jt-portable-inventory.ps1 產出的 NDJSON
              （Agent 端以 <log_format>json</log_format> 收集）
-   欄位規格見 docs/FIELDS.md
+   ★ 套件「不」附這支腳本：沒有站台自己的盤點腳本時，906130-906135 永遠不會觸發。
+     欄位（以一筆真實 NDJSON 為準）：scan_type（inventory／summary）、path、size、sha256、
+     signed（Get-AuthenticodeSignature 的狀態）、signer、company、product、file_version、
+     created、last_write、skipped_hash；summary 另有 scanned_count、error_count、duration_sec。
 -->
 
   <!-- D-0：基礎規則 -->
@@ -1010,13 +1326,17 @@
    見套件的 agent/sysmon-jt-portable.xml 與「部署說明」。
    沒有這些設定時本區塊安靜無聲，其他區塊不受影響。
 
-   三條子規則刻意互斥，避免同層競爭：
+   四條子規則刻意互斥，避免同層競爭：
      906183  名稱不是執行檔 ── 不論是誰、寫到哪裡
      906181  名稱是執行檔，寫入者是遠端檔案傳輸
      906182  名稱是執行檔，寫到 E:～Z:，寫入者不是遠端檔案傳輸
+     906184  名稱是執行檔，寫到 C:\Windows 內一般使用者可寫入的資料夾，寫入者不是遠端檔案傳輸（3.5）
 -->
 
-  <rule id="906180" level="0">
+  <!-- ★ 3.5：level 0 → 1。level 0 的子規則永遠最先被試，這條會把事件 29 整個攔在
+       jt-malware-hash 的 100116（已知惡意雜湊，level 14，同樣掛在 61600）之前。level 1 一樣
+       不產生告警，但讓 level 較高的同層規則先試。 -->
+  <rule id="906180" level="1">
     <if_sid>61600</if_sid>
     <field name="win.system.eventID">^29$</field>
     <description>Sysmon - Event 29: executable file detected (base rule)</description>
@@ -1058,6 +1378,66 @@
       <id>T1204.002</id>
     </mitre>
     <group>jt_portable_file,jt_portable_masquerade,</group>
+  </rule>
+
+
+  <!-- 906184（3.5）：執行檔內容寫進 C:\Windows 內一般使用者可寫入的資料夾（與 906174 同一份清單）。
+       那些資料夾放的是排程定義、色彩設定檔、列印暫存、追蹤記錄，不會有 PE 檔；寫進去就是在準備
+       AppLocker 繞過，執行時 906174 會再以 level 12 告警。Sysmon 片段 3.5 起把這些路徑加進事件 29。 -->
+  <rule id="906184" level="10">
+    <if_sid>906180</if_sid>
+    <field name="win.eventdata.targetFilename" type="pcre2">(?i)^[A-Z]:\\+Windows\\+(Tasks|tracing|Registration\\+CRMLog|(System32|SysWOW64)\\+(Tasks(_Migrated)?|FxsTmp|com\\+dmp|Microsoft\\+Crypto\\+RSA\\+MachineKeys|spool\\+(drivers\\+color|PRINTERS|SERVERS)))\\+.*\.(exe|dll|sys|scr|com|cpl|ocx|msi|msp|mui|drv|efi|ax|tlb|winmd|pyd|node|xll|ime|acm|tsp|tmp|crdownload|part|partial|download|opdownload)$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)^(?!.*\\+OpenSSH\\+(sftp-server|scp)\.exe$)(?!System$).+</field>
+    <description>[WARN] Executable written into a user-writable folder inside the Windows directory - $(win.eventdata.targetFilename) by: $(win.eventdata.image) user: $(win.eventdata.user)</description>
+    <mitre>
+      <id>T1036.005</id>
+      <id>T1105</id>
+    </mitre>
+    <group>jt_portable_file,</group>
+  </rule>
+
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+   906186-906187：Microsoft Defender ASR 對未知程式的判定（3.5）
+   ══════════════════════════════════════════════════════════════════════
+   攻擊面縮減（ASR）規則觸發時 Defender 寫事件 1121（封鎖）或 1122（稽核）。Wazuh 4.14.7 沒有
+   這兩個事件的內建規則，它們停在 62100／62101（level 0），完全無聲。這裡只取與「沒有核准的
+   程式被執行」直接相關的六條 ASR 規則（GUID 出自 Microsoft Learn「ASR rules reference」）：
+     01443614-cd74-433a-b99e-2ecdc07bfc25  依普及度、存在時間或信任清單封鎖可執行檔
+     b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4  封鎖從 USB 執行的未受信任、未簽章程序
+     be9ba2d9-53ea-4cdc-84e5-9b1eeee46550  封鎖電子郵件程式與網頁郵件的可執行內容
+     d3e037e1-3eb8-44c8-a917-57927947596d  封鎖 JavaScript／VBScript 啟動下載的可執行內容
+     d1e49aac-8f56-4280-b9ba-993a6d77406c  封鎖源自 PsExec 與 WMI 命令的程序建立
+     c0033c00-d16d-4114-a5a0-dc9b3a7d2ceb  封鎖複製或冒充的系統工具
+   規則 GUID 在 eventdata 的 ID 欄位（解碼為 iD，只有第一個字母轉小寫）。描述只用 path：
+   4.14 的 agent 把含空白的欄位名照原樣送出（"process Name"），舊版是 processName，兩種都可能。
+   稽核模式在開發機上會對每個剛編譯出來的程式報一次（普及度規則），所以 1122 只給 level 3。
+   不需要 ASR 的環境沒有這些事件，不影響其他規則。
+-->
+
+  <rule id="906186" level="8">
+    <if_sid>62100,62101</if_sid>
+    <field name="win.system.eventID">^1121$</field>
+    <field name="win.eventdata.iD" type="pcre2">(?i)^\{?(01443614-cd74-433a-b99e-2ecdc07bfc25|b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4|be9ba2d9-53ea-4cdc-84e5-9b1eeee46550|d3e037e1-3eb8-44c8-a917-57927947596d|d1e49aac-8f56-4280-b9ba-993a6d77406c|c0033c00-d16d-4114-a5a0-dc9b3a7d2ceb)\}?$</field>
+    <description>Microsoft Defender attack surface reduction blocked an untrusted program - rule $(win.eventdata.iD) path: $(win.eventdata.path)</description>
+    <options>no_full_log</options>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_asr,</group>
+  </rule>
+
+  <rule id="906187" level="3">
+    <if_sid>62100,62101</if_sid>
+    <field name="win.system.eventID">^1122$</field>
+    <field name="win.eventdata.iD" type="pcre2">(?i)^\{?(01443614-cd74-433a-b99e-2ecdc07bfc25|b2b3f03d-6a65-4f7b-a9c7-1c7ef74a9ba4|be9ba2d9-53ea-4cdc-84e5-9b1eeee46550|d3e037e1-3eb8-44c8-a917-57927947596d|d1e49aac-8f56-4280-b9ba-993a6d77406c|c0033c00-d16d-4114-a5a0-dc9b3a7d2ceb)\}?$</field>
+    <description>Microsoft Defender attack surface reduction (audit) would have blocked an untrusted program - rule $(win.eventdata.iD) path: $(win.eventdata.path)</description>
+    <options>no_full_log</options>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+    <group>jt_portable_exec,jt_portable_asr,</group>
   </rule>
 
 

@@ -1,6 +1,6 @@
 <!--
   Zenarmor (OPNsense) detection rules
-  ID range: 130800-130899
+  ID range: 130800-130899 (130809-130813 and 130822 are retired and not reused)
   Decoder: etc/decoders/zenarmor-decoder.xml (program_name zenarmor, JSON after data=,
   plus srcip / dstip / dstport / zenarmor.index / zenarmor.domain / zenarmor.category).
 
@@ -16,14 +16,26 @@
     dns record of the same lookup: median 75 s, 90th percentile 16 min, maximum
     58 min.
 
+  Where the threat category is (measured, Zenarmor 2.x, 1.6)
+    * conn and alert records: security_tags (an array), on blocked and unblocked
+      records alike; an alert record also has alertinfo.signature.
+    * tls and http records: category (one string, the site's category), never
+      security_tags. A TLS session to a phishing site that was not blocked has
+      "category":"Phishing" and is_blocked 0 (130851 to 130853).
+    * dns records: security_tags only when the lookup was blocked. An unblocked
+      lookup has security_tags [] and the category in domain_categories (an
+      array), since release 1.17.4 removed the security category from DNS
+      reports. The 1.5 rules for unblocked lookups read security_tags and could
+      never fire; 1.6 reads domain_categories (130821 and its children).
+
   Grading
     * Not blocked is worse than blocked: an unblocked malicious connection was
-      established (130801, level 12).
+      established (130801 conn, 130851 tls, level 12).
     * A blocked CONNECTION (web, any port but 53) is graded per event from its
-      alert record (130802, 130804, 130820).
+      alert record (130802, 130804, 130820, 130855, 130857).
     * A blocked LOOKUP (port 53) never alerts by itself. Its alert record is
-      recorded (130816, 130817, level 2); its dns record is classified and counted
-      (1.5):
+      recorded (130816, 130817, 130856, 130858, level 2); its dns record is
+      classified and counted:
         resolver style  RD=0 (only a recursive resolver sends it) or qtype PTR,
                         NS or SOA: 130842 / 130843 / 130837 / 130838
         client style    RD=1 and another qtype: 130836 / 130839, unless the same
@@ -38,11 +50,25 @@
       record from the same host within 15 minutes before them.
       82% of the old 130802 alerts were one script name in cron mail
       ("<name>.sh" is a valid TLD) that a mail filter looked up.
-    * A command-and-control name looked up by a client alerts at once from its
-      dns record (130819, level 6).
+    * An UNBLOCKED lookup of a threat name (1.6) is classified the same way and
+      counted by the same rules, but recorded at level 2: measured over 7 days,
+      1,315 such dns records, all from two forwarding resolvers (RD=1 A and AAAA
+      to a public resolver, which looks exactly like a client), 1,035 of them
+      without resolver evidence before them. The peak for one source in any 15
+      minutes was 7 lookups of one name and 7 different names, under the 15 and
+      20 that 130832 and 130833 need. A command-and-control name resolved for a
+      client alerts at once (130864, level 8).
+    * A command-and-control name looked up by a client and blocked alerts at once
+      from its dns record (130819, level 6).
     * Weak categories (Proxy, VPN, Parked) stay at level 5 or below, and at level 3
-      when the policy blocked them (130828). Generic web-filtering blocks (Ads,
-      Social ...) carry no security tag and stay at 130800, level 0.
+      when the policy blocked them (130828, alert record only since 1.6: the conn
+      and tls copies of the same block are 130862, level 2). Generic web-filtering
+      blocks (Ads, Social ...) carry no security tag and stay at 130800, level 0.
+    * Names that betray a tool whatever Zenarmor's category says: out-of-band
+      testing (130840, 130841), crypto-mining pools (130866, 130874), tunnelling
+      services and Tor gateways (130868), Cobalt Strike's default DNS stager
+      (130870). They are matched on the name, on unblocked dns, tls and http
+      records, and need those records in the stream.
 
   Correlation memory (read before tuning any timeframe)
     analysisd keeps correlation history only for the last memory_size events that
@@ -54,19 +80,23 @@
     back as memory reaches".
 
   Read before changing anything (Wazuh 4.14.7, verified)
-    * Sibling rules under one parent are evaluated in an unpredictable order
-      (measured in 2026-08 on an earlier version: 130811 -> 130801 -> 130803
-      -> 130802 for one parent; 130809-130813 were retired then and are not
-      reused), and the first match ends the evaluation. Every sibling set here
-      is mutually exclusive: by is_blocked, by index, by port (53 or not), by
-      qtype, by RD, by CDB lookup (listed or not), or by a negative lookahead on
-      the tag families; an override is a child of what it overrides. 1.3 had an
-      overlap: "Botnet DGA Domains" matched both the malware family (Botnet) and
-      the phishing family (DGA).
+    * Sibling rules under one parent are tried in a fixed order: higher level
+      first, rules of the same level in load order (analysisd rules_list.c,
+      _OS_AddRule; measured in 2026-08: 130811 -> 130801 -> 130803 -> 130802).
+      The first match ends the evaluation. The threat-tag families are mutually
+      exclusive by pcre2 lookahead, in this order of precedence: malware,
+      phishing, DNS tunnel, potentially dangerous, evasion, weak (dynamic DNS,
+      newly registered, first seen), malformed DNS, parked. Elsewhere siblings are
+      exclusive by is_blocked, index, port (53 or not), qtype, RD or CDB lookup.
+      The name rules (OAST, mining, tunnels, stager) rely on the order on
+      purpose: at level 5 to 10 they are tried before the level 2 lookup tree
+      (130821) and the level 0 parked rule, and after the level 12 rules. 1.3 had
+      an overlap: "Botnet DGA Domains" matched both the malware family (Botnet)
+      and the phishing family (DGA).
     * negate="yes" is unreliable. Every exclusion is a positive match: ^0$ / ^1$,
       a pcre2 lookahead, or lookup="not_address_match_key".
-    * security_tags is an array; the field value is its JSON text, ["Phishing"].
-      Do not anchor a tag regex with ^Phishing$.
+    * security_tags and domain_categories are arrays; the field value is their
+      JSON text, ["Phishing"]. Do not anchor a tag regex with ^Phishing$.
     * same_field / different_field need dynamic fields (ip_src_saddr works,
       srcip does not). different_field compares each earlier event with the
       CURRENT one, so two names alternating also count: thresholds allow for it.
@@ -80,13 +110,16 @@
       carries a counted group has exactly one parent; that is why the malware
       and phishing families have their own copies (130815 / 130829 and so on).
     * if_matched_group only sees rules loaded BEFORE the composite rule: the
-      evidence rules are above 130844 / 130847 / 130848 / 130850 on purpose.
-    * A composite without frequency (130844, 130847, 130848, 130850) asks only
-      whether one earlier event of the group exists in the timeframe and does
-      not use it up.
+      evidence rules are above 130844 / 130847 / 130848 / 130850 / 130865 on
+      purpose.
+    * A composite without frequency (130844, 130847, 130848, 130850, 130865) asks
+      only whether one earlier event of the group exists in the timeframe and
+      does not use it up.
     * A composite with if_matched_group and no if_sid becomes a child of every
       rule that carries the group, so it is a sibling of that rule's children.
     * Short words need \b: Tor matches Torrent otherwise.
+    * The decoder's program_name is a substring match: zenarmorngfw[pid] (the
+      program name in the vendor's Splunk guide) decodes too.
 -->
 <group name="zenarmor,">
 
@@ -97,13 +130,17 @@
   </rule>
 
   <!-- ===== Malware, botnet, C2 (security_tags) ===== -->
+  <!-- 1.6: Keyloggers and Monitoring, and Compromised Websites (moved from the
+       evasion family: a compromised site serves drive-by content), are malware. -->
 
-  <!-- Not blocked: the connection was established. -->
+  <!-- Not blocked: the connection was established. A dns record is a lookup, not a
+       connection: since 1.6 it goes to 130821 whichever array carries the tag. -->
   <rule id="130801" level="12">
     <if_sid>130800</if_sid>
-    <field name="security_tags" type="pcre2">(?i)(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|\bWorm\b)</field>
+    <field name="zenarmor.index" type="pcre2">^(?!dns$)\w+$</field>
+    <field name="security_tags" type="pcre2">(?i)(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b)</field>
     <field name="is_blocked">^0$</field>
-    <description>[HIGH] Zenarmor: malicious connection was not blocked - $(security_tags) from: $(srcip) to: $(zenarmor.domain) $(dstip)</description>
+    <description>[HIGH] Zenarmor: malicious connection was not blocked - $(zenarmor.category) from: $(srcip) to: $(zenarmor.domain) $(dstip)</description>
     <mitre>
       <id>T1071</id>
     </mitre>
@@ -116,7 +153,7 @@
        lookups go to the children below. -->
   <rule id="130802" level="7">
     <if_sid>130800</if_sid>
-    <field name="security_tags" type="pcre2">(?i)(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|\bWorm\b)</field>
+    <field name="security_tags" type="pcre2">(?i)(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b)</field>
     <field name="is_blocked">^1$</field>
     <description>Zenarmor: malicious connection blocked - $(zenarmor.category) from: $(srcip) to: $(zenarmor.domain) $(dstip):$(dstport)</description>
     <mitre>
@@ -131,11 +168,12 @@
 
   <rule id="130803" level="10">
     <if_sid>130800</if_sid>
-    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|\bWorm\b)).*(Phishing|Crypto.?Mining|Scam|Fraud|Spam)</field>
+    <field name="zenarmor.index" type="pcre2">^(?!dns$)\w+$</field>
+    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b)).*(Phishing|Crypto.?Mining|Scam|Fraud|Spam)</field>
     <field name="is_blocked">^0$</field>
-    <description>[WARN] Zenarmor: phishing or fraud connection was not blocked - $(security_tags) from: $(srcip) to: $(zenarmor.domain) $(dstip)</description>
+    <description>[WARN] Zenarmor: phishing or fraud connection was not blocked - $(zenarmor.category) from: $(srcip) to: $(zenarmor.domain) $(dstip)</description>
     <mitre>
-      <id>T1566</id>
+      <id>T1566.002</id>
     </mitre>
     <options>no_full_log</options>
     <group>zenarmor,phishing,</group>
@@ -143,11 +181,11 @@
 
   <rule id="130804" level="5">
     <if_sid>130800</if_sid>
-    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|\bWorm\b)).*(Phishing|Crypto.?Mining|Scam|Fraud|Spam)</field>
+    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b)).*(Phishing|Crypto.?Mining|Scam|Fraud|Spam)</field>
     <field name="is_blocked">^1$</field>
     <description>Zenarmor: phishing or fraud connection blocked - $(zenarmor.category) from: $(srcip) to: $(zenarmor.domain) $(dstip):$(dstport)</description>
     <mitre>
-      <id>T1566</id>
+      <id>T1566.002</id>
     </mitre>
     <options>no_full_log</options>
     <group>zenarmor,phishing,blocked,zenarmor_threat_block,</group>
@@ -295,6 +333,9 @@
     <field name="zenarmor.index">^alert$</field>
     <field name="ip_dst_port">^53$</field>
     <description>Zenarmor: lookup of a phishing or fraud domain blocked - $(zenarmor.category) $(zenarmor.domain) from: $(srcip)</description>
+    <mitre>
+      <id>T1566.002</id>
+    </mitre>
     <options>no_full_log</options>
     <group>zenarmor,phishing,blocked,dns,</group>
   </rule>
@@ -314,65 +355,127 @@
     <group>zenarmor,malware,c2,blocked,zenarmor_threat_block,</group>
   </rule>
 
-  <!-- ===== Unblocked lookups ===== -->
-
-  <rule id="130821" level="8">
-    <if_sid>130801</if_sid>
+  <!-- The UDP flow record of an unblocked threat lookup, where the conn record
+       carries the tag: its dst_hostname is the DNS server, and the dns record of
+       the same lookup reports the name (130821). -->
+  <rule id="130824" level="2">
+    <if_sid>130801,130803</if_sid>
+    <field name="zenarmor.index">^conn$</field>
     <field name="ip_dst_port">^53$</field>
-    <description>Zenarmor: a malicious domain was resolved, not blocked - $(security_tags) $(zenarmor.domain) from: $(srcip)</description>
+    <description>Zenarmor: flow record of an unblocked threat lookup, reported by its dns record - from: $(srcip) to: $(dstip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,dns,</group>
+  </rule>
+
+  <!-- ===== Unblocked threat sites in tls and http records (category) ===== -->
+  <!-- 1.6. A tls or http record carries the site's category in "category" and no
+       security_tags, so 130801 and 130803 never see it. Measured: 2 tls records
+       in 7 days, a phishing site reached twice in the same second in which other
+       connections of the same visit were blocked. The blocked copies stay at
+       130800: the alert record of the block reports it. -->
+
+  <rule id="130851" level="12">
+    <if_sid>130800</if_sid>
+    <field name="category" type="pcre2">(?i)(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b)</field>
+    <field name="is_blocked">^0$</field>
+    <description>[HIGH] Zenarmor: session with a malicious site was not blocked - $(category) from: $(srcip) to: $(zenarmor.domain) $(dstip) ($(zenarmor.index) record)</description>
+    <mitre>
+      <id>T1071.001</id>
+      <id>T1189</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,malware,</group>
+  </rule>
+
+  <rule id="130852" level="10">
+    <if_sid>130800</if_sid>
+    <field name="category" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b)).*(Phishing|Crypto.?Mining|Scam|Fraud|Spam)</field>
+    <field name="is_blocked">^0$</field>
+    <description>[WARN] Zenarmor: session with a phishing or fraud site was not blocked - $(category) from: $(srcip) to: $(zenarmor.domain) $(dstip) ($(zenarmor.index) record)</description>
+    <mitre>
+      <id>T1566.002</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,phishing,</group>
+  </rule>
+
+  <rule id="130853" level="6">
+    <if_sid>130800</if_sid>
+    <field name="category" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b|Phishing|Crypto.?Mining|Scam|Fraud|Spam)).*Potentially.?Dangerous</field>
+    <field name="is_blocked">^0$</field>
+    <description>Zenarmor: session with a potentially dangerous site was not blocked - from: $(srcip) to: $(zenarmor.domain) $(dstip) ($(zenarmor.index) record)</description>
+    <mitre>
+      <id>T1189</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,suspicious,</group>
+  </rule>
+
+  <!-- ===== Unblocked lookups of threat names (dns record, domain_categories) ===== -->
+  <!-- 1.6. The same classification as for blocked lookups, all at level 2 and
+       counted by 130832 to 130835, because measured unblocked threat lookups came
+       only from forwarding resolvers (see the header). The tag is read from either
+       array: domain_categories on Zenarmor 1.17.4 and later, security_tags before.
+       The OAST, mining, tunnel and stager name rules further down are tried first
+       (higher level). -->
+
+  <rule id="130821" level="2">
+    <if_sid>130800</if_sid>
+    <field name="zenarmor.index">^dns$</field>
+    <field name="is_blocked">^0$</field>
+    <regex type="pcre2">(?i)"(security_tags|domain_categories)":\s*\[[^\]]*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b|Phishing|Crypto.?Mining|Scam|Fraud|Spam|DNS.?Tunnel)</regex>
+    <description>Zenarmor: a threat-category name was resolved, not blocked - $(zenarmor.category) $(zenarmor.domain) $(qtype) from: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,dns,</group>
+  </rule>
+
+  <rule id="130846" level="2">
+    <if_sid>130821</if_sid>
+    <field name="qtype">^PTR$|^NS$|^SOA$</field>
+    <description>Zenarmor: a $(qtype) lookup of a threat-category name was resolved, not blocked, by a host resolving names for a service - $(zenarmor.category) $(zenarmor.domain) via: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,dns,zenarmor_resolver_evidence,zenarmor_resolver_query,</group>
+  </rule>
+
+  <!-- Client style unless a child shows otherwise. -->
+  <rule id="130863" level="2">
+    <if_sid>130821</if_sid>
+    <field name="qtype" type="pcre2">^(?!(PTR|NS|SOA)$)\w+$</field>
+    <description>Zenarmor: a threat-category name was resolved, not blocked - $(zenarmor.category) $(zenarmor.domain) $(qtype) from: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,dns,zenarmor_client_query,zenarmor_threat_block,</group>
+  </rule>
+
+  <rule id="130845" level="2">
+    <if_sid>130863</if_sid>
+    <field name="is_RD">^0$</field>
+    <description>Zenarmor: a recursive resolver resolved a threat-category name, not blocked, for a client behind it - $(zenarmor.category) $(zenarmor.domain) via: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,dns,zenarmor_resolver_evidence,zenarmor_resolver_query,</group>
+  </rule>
+
+  <rule id="130823" level="2">
+    <if_sid>130863</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/jt-zenarmor-resolvers</list>
+    <description>Zenarmor: a listed resolver resolved a threat-category name, not blocked, for a client behind it - $(zenarmor.category) $(zenarmor.domain) via: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,dns,zenarmor_resolver_query,</group>
+  </rule>
+
+  <!-- A command-and-control or DNS-tunnel name resolved for a client: the
+       controller answered. RD=1 (exclusive with 130845), not listed (exclusive
+       with 130823). Measured: none in 7 days. -->
+  <rule id="130864" level="8">
+    <if_sid>130863</if_sid>
+    <field name="is_RD">^1$</field>
+    <regex type="pcre2">(?i)"(security_tags|domain_categories)":\s*\[[^\]]*(C&amp;C|Command.?and.?Control|\bC2\b|Ransomware|\bBotnet\b(?!\s*DGA)|DNS.?Tunnel)</regex>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/jt-zenarmor-resolvers</list>
+    <description>Zenarmor: a command-and-control domain was resolved, not blocked, check the host - $(zenarmor.category) $(zenarmor.domain) from: $(srcip)</description>
     <mitre>
       <id>T1071.004</id>
     </mitre>
     <options>no_full_log</options>
-    <group>zenarmor,malware,dns,</group>
-  </rule>
-
-  <rule id="130822" level="6">
-    <if_sid>130803</if_sid>
-    <field name="ip_dst_port">^53$</field>
-    <description>Zenarmor: a phishing or fraud domain was resolved, not blocked - $(security_tags) $(zenarmor.domain) from: $(srcip)</description>
-    <options>no_full_log</options>
-    <group>zenarmor,phishing,dns,</group>
-  </rule>
-
-  <!-- Resolved for a client behind a resolver: listed, RD=0, PTR/NS/SOA, or
-       resolver evidence from the same source shortly before (130850). These are
-       not counted by anything, so several parents are fine here. -->
-  <rule id="130823" level="4">
-    <if_sid>130821,130822</if_sid>
-    <field name="zenarmor.index">^dns$</field>
-    <list field="srcip" lookup="address_match_key">etc/lists/jt-zenarmor-resolvers</list>
-    <description>Zenarmor: a listed resolver resolved a threat domain, not blocked, for a client behind it - $(security_tags) $(zenarmor.domain) via: $(srcip)</description>
-    <options>no_full_log</options>
-    <group>zenarmor,dns,</group>
-  </rule>
-
-  <rule id="130845" level="4">
-    <if_sid>130821,130822</if_sid>
-    <field name="zenarmor.index">^dns$</field>
-    <field name="is_RD">^0$</field>
-    <description>Zenarmor: a recursive resolver resolved a threat domain, not blocked, for a client behind it - $(security_tags) $(zenarmor.domain) via: $(srcip)</description>
-    <options>no_full_log</options>
-    <group>zenarmor,dns,zenarmor_resolver_evidence,</group>
-  </rule>
-
-  <rule id="130846" level="4">
-    <if_sid>130821,130822</if_sid>
-    <field name="zenarmor.index">^dns$</field>
-    <field name="qtype">^PTR$|^NS$|^SOA$</field>
-    <description>Zenarmor: a $(qtype) lookup of a threat domain was resolved, not blocked, by a host resolving names for a service - $(security_tags) $(zenarmor.domain) via: $(srcip)</description>
-    <options>no_full_log</options>
-    <group>zenarmor,dns,zenarmor_resolver_evidence,</group>
-  </rule>
-
-  <!-- The UDP flow record of the lookup: its dst_hostname is the DNS server. The
-       dns record of the same lookup carries the name. -->
-  <rule id="130824" level="2">
-    <if_sid>130821,130822</if_sid>
-    <field name="zenarmor.index">^conn$</field>
-    <description>Zenarmor: flow record of an unblocked threat lookup, reported by its dns record - from: $(srcip) to: $(dstip)</description>
-    <options>no_full_log</options>
-    <group>zenarmor,dns,</group>
+    <group>zenarmor,malware,c2,dns,zenarmor_client_query,zenarmor_threat_block,</group>
   </rule>
 
   <!-- ===== Resolver evidence from earlier records =====
@@ -410,49 +513,185 @@
     <group>zenarmor,blocked,dns,zenarmor_resolver_query,</group>
   </rule>
 
-  <rule id="130850" level="4" timeframe="900">
-    <if_sid>130821,130822</if_sid>
-    <field name="zenarmor.index">^dns$</field>
+  <rule id="130850" level="2" timeframe="900">
+    <if_sid>130863</if_sid>
     <if_matched_group>zenarmor_resolver_evidence</if_matched_group>
     <same_field>ip_src_saddr</same_field>
-    <description>Zenarmor: a resolver resolved a threat domain, not blocked, for a client behind it - $(security_tags) $(zenarmor.domain) via: $(srcip)</description>
+    <description>Zenarmor: a resolver resolved a threat-category name, not blocked, for a client behind it - $(zenarmor.category) $(zenarmor.domain) via: $(srcip)</description>
     <options>no_full_log</options>
-    <group>zenarmor,dns,</group>
+    <group>zenarmor,dns,zenarmor_resolver_query,</group>
   </rule>
 
-  <!-- ===== Proxy, anonymizer, VPN ===== -->
+  <rule id="130865" level="4" timeframe="900">
+    <if_sid>130864</if_sid>
+    <if_matched_group>zenarmor_resolver_evidence</if_matched_group>
+    <same_field>ip_src_saddr</same_field>
+    <description>Zenarmor: a resolver resolved a command-and-control domain, not blocked, for a client behind it, check its query log - $(zenarmor.category) $(zenarmor.domain) via: $(srcip)</description>
+    <mitre>
+      <id>T1071.004</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,malware,c2,dns,zenarmor_resolver_query,</group>
+  </rule>
+
+  <!-- ===== DNS tunnelling (premium category "DNS Tunneling") ===== -->
+  <!-- Zenarmor's own verdict on the traffic, so one alert record is enough,
+       whether a client or a resolver relaying the tunnel sent it. The conn and
+       dns copies of the block stay at 130800. Not seen on the measured site
+       (the category needs a premium subscription). -->
+  <rule id="130861" level="10">
+    <if_sid>130800</if_sid>
+    <field name="zenarmor.index">^alert$</field>
+    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b|Phishing|Crypto.?Mining|Scam|Fraud|Spam)).*DNS.?Tunnel</field>
+    <description>[WARN] Zenarmor: DNS tunnelling blocked, a program on or behind the host is carrying data over DNS - $(zenarmor.domain) from: $(srcip) to: $(dstip)</description>
+    <mitre>
+      <id>T1572</id>
+      <id>T1071.004</id>
+      <id>T1048.003</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,dns_tunnel,blocked,</group>
+  </rule>
+
+  <!-- ===== Potentially dangerous sites (security category "Potentially Dangerous Sites") ===== -->
+  <!-- Measured: 9 alert records in 7 days (a URL shortener, and one name server
+       looked up by a resolver). Weaker than phishing, so one level below it. -->
+  <rule id="130855" level="4">
+    <if_sid>130800</if_sid>
+    <field name="zenarmor.index">^alert$</field>
+    <field name="is_blocked">^1$</field>
+    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b|Phishing|Crypto.?Mining|Scam|Fraud|Spam|DNS.?Tunnel)).*Potentially.?Dangerous</field>
+    <description>Zenarmor: potentially dangerous site blocked - from: $(srcip) to: $(zenarmor.domain) $(dstip):$(dstport)</description>
+    <mitre>
+      <id>T1189</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,suspicious,blocked,</group>
+  </rule>
+
+  <rule id="130856" level="2">
+    <if_sid>130855</if_sid>
+    <field name="ip_dst_port">^53$</field>
+    <description>Zenarmor: lookup of a potentially dangerous domain blocked - $(zenarmor.domain) from: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,suspicious,blocked,dns,</group>
+  </rule>
+
+  <!-- A conn record on port 53 is the DNS flow: its dst_hostname is the DNS server. -->
+  <rule id="130854" level="6">
+    <if_sid>130800</if_sid>
+    <field name="is_blocked">^0$</field>
+    <field name="ip_dst_port" type="pcre2">^(?!53$)\d+$</field>
+    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b|Phishing|Crypto.?Mining|Scam|Fraud|Spam|DNS.?Tunnel)).*Potentially.?Dangerous</field>
+    <description>Zenarmor: connection to a potentially dangerous site was not blocked - from: $(srcip) to: $(zenarmor.domain) $(dstip):$(dstport)</description>
+    <mitre>
+      <id>T1189</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,suspicious,</group>
+  </rule>
+
+  <!-- ===== Weak signals blocked by policy: dynamic DNS, newly registered or
+       recovered, first seen ===== -->
+  <!-- Information that the policy did its job, for connections only. Lookups are
+       recorded: measured, all 49 dynamic-DNS blocks in 7 days were resolvers
+       looking up the providers' name servers. Unblocked records of these
+       categories and Dead Sites never alert. -->
+  <rule id="130857" level="3">
+    <if_sid>130800</if_sid>
+    <field name="zenarmor.index">^alert$</field>
+    <field name="is_blocked">^1$</field>
+    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b|Phishing|Crypto.?Mining|Scam|Fraud|Spam|DNS.?Tunnel|Potentially.?Dangerous|Hacking|Proxy|Anonymizer|\bTor\b|\bVPN\b|Suspicious|DNS.?over.?HTTPS|\bDoH\b)).*(Dynamic.?DNS|Newly.?Registered|Newly.?Recovered|Firstly.?Seen)</field>
+    <description>Zenarmor: connection to a dynamic-DNS, newly registered or first-seen site blocked by policy - $(zenarmor.category) from: $(srcip) to: $(zenarmor.domain) $(dstip):$(dstport)</description>
+    <mitre>
+      <id>T1568</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,weak,blocked,</group>
+  </rule>
+
+  <rule id="130858" level="2">
+    <if_sid>130857</if_sid>
+    <field name="ip_dst_port">^53$</field>
+    <description>Zenarmor: lookup of a dynamic-DNS, newly registered or first-seen domain blocked - $(zenarmor.category) $(zenarmor.domain) from: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,weak,blocked,dns,</group>
+  </rule>
+
+  <!-- ===== Malformed DNS packets ===== -->
+  <!-- Zenarmor drops DNS packets it cannot parse and names the reason in
+       alertinfo.match.dst_hostname ("DNS response without query", "Unparseable
+       DNS header"). Measured: about 50 in 7 days from resolvers, a mail gateway, a
+       log server and the firewall, at most 5 from one source in 15 minutes. One
+       host producing many is a broken DNS client or a tunnelling tool. -->
+  <rule id="130859" level="2">
+    <if_sid>130800</if_sid>
+    <field name="zenarmor.index">^alert$</field>
+    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b|Phishing|Crypto.?Mining|Scam|Fraud|Spam|DNS.?Tunnel|Potentially.?Dangerous|Hacking|Proxy|Anonymizer|\bTor\b|\bVPN\b|Suspicious|DNS.?over.?HTTPS|\bDoH\b|Dynamic.?DNS|Newly.?Registered|Newly.?Recovered|Firstly.?Seen)).*Malformed.?DNS</field>
+    <description>Zenarmor: malformed DNS packet dropped - $(zenarmor.domain) from: $(srcip) to: $(dstip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,dns,blocked,</group>
+  </rule>
+
+  <!-- ===== Application control: remote-access and proxy applications blocked ===== -->
+  <!-- An application-category block has alertinfo.category "Application Category",
+       the category in alertinfo.signature and empty security_tags (measured on
+       Ads and Ad Tracker blocks, 4,182 in 7 days, which stay at 130800). A blocked
+       remote-access tool or proxy is shown, because someone tried to run one.
+       The category names are the app_category values of conn records. -->
+  <rule id="130875" level="3">
+    <if_sid>130800</if_sid>
+    <field name="zenarmor.index">^alert$</field>
+    <field name="alertinfo.category" type="pcre2">(?i)Application.?Category</field>
+    <field name="alertinfo.signature" type="pcre2">(?i)\b(Remote.?Access|Proxy)\b</field>
+    <description>Zenarmor: $(zenarmor.category) application blocked by policy - from: $(srcip) to: $(zenarmor.domain) $(dstip):$(dstport)</description>
+    <mitre>
+      <id>T1219</id>
+      <id>T1090</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,evasion,blocked,</group>
+  </rule>
+
+  <!-- ===== Proxy, anonymizer, VPN, DNS over HTTPS ===== -->
+  <!-- 1.6: DNS over HTTPS tags (a blocked DoH resolver) are evasion. The tls
+       category "DNS over HTTPS" of an allowed DoH session is NOT matched by 130806:
+       measured 72 tls records in 7 days from a few clients. -->
 
   <rule id="130805" level="5">
     <if_sid>130800</if_sid>
-    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|\bWorm\b|Phishing|Crypto.?Mining|Scam|Fraud|Spam)).*(Hacking|Proxy|Anonymizer|\bTor\b|\bVPN\b|Compromised|Suspicious)</field>
-    <description>Zenarmor: suspicious or evasive connection - $(security_tags) from: $(srcip) to: $(zenarmor.domain) $(dstip)</description>
+    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b|Phishing|Crypto.?Mining|Scam|Fraud|Spam|DNS.?Tunnel|Potentially.?Dangerous)).*(Hacking|Proxy|Anonymizer|\bTor\b|\bVPN\b|Suspicious|DNS.?over.?HTTPS|\bDoH\b)</field>
+    <description>Zenarmor: suspicious or evasive connection - $(zenarmor.category) from: $(srcip) to: $(zenarmor.domain) $(dstip)</description>
     <mitre>
       <id>T1090</id>
+      <id>T1090.003</id>
     </mitre>
     <options>no_full_log</options>
     <group>zenarmor,evasion,</group>
   </rule>
 
-  <!-- category is the web category of a tls record. In practice a record has either
-       security_tags or a category, not both. -->
+  <!-- category is the web category of a tls or http record. -->
   <rule id="130806" level="5">
     <if_sid>130800</if_sid>
     <field name="category" type="pcre2">(?i)(Hacking|Proxy|Anonymizer|\bTor\b|\bVPN\b)</field>
     <description>Zenarmor: connection in an evasion category - $(category) from: $(srcip) to: $(zenarmor.domain) $(dstip)</description>
     <mitre>
       <id>T1090</id>
+      <id>T1090.003</id>
     </mitre>
     <options>no_full_log</options>
     <group>zenarmor,evasion,</group>
   </rule>
 
   <!-- An evasion category that the policy blocked: the policy did its job, so this
-       is information, below the blocked phishing (5) and malware (7) levels. The
-       three quiet rules below are children of this one as well, so a blocked relay
-       or allowlisted name still ends at level 2 whichever sibling is tried first. -->
+       is information, below the blocked phishing (5) and malware (7) levels. Since
+       1.6 only the alert record (one per block) is shown; the conn and tls copies
+       go to 130862. The three quiet rules below are children of this one as well,
+       so a blocked relay or allowlisted name still ends at level 2. -->
   <rule id="130828" level="3">
     <if_sid>130805,130806</if_sid>
     <field name="is_blocked">^1$</field>
+    <field name="zenarmor.index">^alert$</field>
     <description>Zenarmor: evasion-category connection blocked by policy - $(zenarmor.category) from: $(srcip) to: $(zenarmor.domain)</description>
     <options>no_full_log</options>
     <group>zenarmor,evasion,blocked,</group>
@@ -491,6 +730,17 @@
     <group>zenarmor,evasion,</group>
   </rule>
 
+  <!-- 1.6: the conn and tls copies of a blocked evasion connection. Loaded after
+       130825 to 130827, which win at the same level. -->
+  <rule id="130862" level="2">
+    <if_sid>130805,130806</if_sid>
+    <field name="is_blocked">^1$</field>
+    <field name="zenarmor.index" type="pcre2">^(?!alert$)\w+$</field>
+    <description>Zenarmor: $(zenarmor.index) record of a blocked evasion-category connection, reported by its alert record - from: $(srcip) to: $(zenarmor.domain)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,evasion,blocked,</group>
+  </rule>
+
   <!-- ===== Parked domains: recorded at level 0 ===== -->
   <!-- Measured 2026-08-30: very high false-positive rate. The classifier appears to
        key on the apex having no A record, which also describes CDN-fronted
@@ -498,7 +748,7 @@
        activity carries Zenarmor's Botnet DGA Domains tag instead. -->
   <rule id="130807" level="0">
     <if_sid>130800</if_sid>
-    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|\bWorm\b|Phishing|Crypto.?Mining|Scam|Fraud|Spam|Hacking|Proxy|Anonymizer|\bTor\b|\bVPN\b|Compromised|Suspicious)).*Parked</field>
+    <field name="security_tags" type="pcre2">(?i)^(?!.*(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|Keylogger|Compromised|\bWorm\b|Phishing|Crypto.?Mining|Scam|Fraud|Spam|DNS.?Tunnel|Potentially.?Dangerous|Hacking|Proxy|Anonymizer|\bTor\b|\bVPN\b|Suspicious|DNS.?over.?HTTPS|\bDoH\b|Dynamic.?DNS|Newly.?Registered|Newly.?Recovered|Firstly.?Seen|Malformed.?DNS)).*Parked</field>
     <description>Zenarmor: connection to a parked domain - from: $(srcip) to: $(zenarmor.domain) $(dstip)</description>
     <options>no_full_log</options>
     <group>zenarmor,parked,</group>
@@ -510,6 +760,98 @@
     <description>Zenarmor: connection to a parked domain - from: $(srcip) to: $(zenarmor.domain) $(dstip)</description>
     <options>no_full_log</options>
     <group>zenarmor,parked,</group>
+  </rule>
+
+  <!-- ===== Names that betray a tool, unblocked dns / tls / http records ===== -->
+  <!-- Matched on zenarmor.domain (the query of a dns record, the server name of a
+       tls or http record) whatever Zenarmor's category is, so they need those
+       records in the stream (setup). Measured on the full stream of one site over
+       7 days: no hit for any mining, tunnelling or stager name; OAST only the one
+       interactsh burst described at 130840. A resolver's lookup counts too: some
+       host behind it asked. Blocked records go to the alert-record rules
+       (130840, 130874). -->
+
+  <!-- Out-of-band testing services. Suffix list re-implemented from the idea of
+       SigmaHQ net_dns_external_service_interaction_domains (DRL 1.1, modified
+       2026-08-28): https://github.com/SigmaHQ/sigma/blob/master/rules/network/dns/net_dns_external_service_interaction_domains.yml
+       polling.oastify.com is the Burp client's own polling endpoint, not a
+       callback. -->
+  <rule id="130841" level="10">
+    <if_sid>130800</if_sid>
+    <field name="zenarmor.index" type="pcre2">^(dns|tls|http)$</field>
+    <field name="is_blocked">^0$</field>
+    <field name="zenarmor.domain" type="pcre2">(?i)^(?!polling\.oastify\.com$).*(^|\.)(oast\.(pro|live|site|online|fun|me)|interact\.sh|interactsh\.com|oastify\.com|burpcollaborator\.net|canarytokens\.com|dnslog\.(cn|ink)|ceye\.io|requestbin\.net|dnshook\.site|digimg\.store|gobygo\.net|instances\.httpworkbench\.com|p8\.lol|log\.javaweb\.org|dns\.su18\.org|log\.dnslog\.(pp\.ua|qzz\.io)|log\.dnslogs\.dpdns\.org|log\.nat\.cloudns\.ph|ddns\.(1433|bypass|xn--gg8h)\.eu\.org)$</field>
+    <description>[WARN] Zenarmor: out-of-band testing domain resolved or contacted (not blocked), a host processed an injected payload: $(zenarmor.domain) ($(zenarmor.index) record) from: $(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1595.002</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,oast,</group>
+  </rule>
+
+  <!-- Crypto-mining pools. Zenarmor has no mining category. Suffixes re-implemented
+       from the ideas of SigmaHQ net_dns_pua_cryptocoin_mining_xmr and
+       zeek_dns_mining_pools (DRL 1.1), without their dual-use entries (a dynamic
+       DNS zone, generic names):
+       https://github.com/SigmaHQ/sigma/blob/master/rules/network/zeek/zeek_dns_mining_pools.yml -->
+  <rule id="130866" level="10">
+    <if_sid>130800</if_sid>
+    <field name="zenarmor.index" type="pcre2">^(dns|tls|http)$</field>
+    <field name="is_blocked">^0$</field>
+    <field name="zenarmor.domain" type="pcre2">(?i)(^|\.)(supportxmr\.com|minexmr\.(com|org)|nanopool\.org|hashvault\.pro|c3pool\.com|moneroocean\.stream|2miners\.com|f2pool\.com|herominers\.com|xmrpool\.(eu|net|com)|minergate\.com|monerohash\.com|moneropool\.(com|ru)|monero\.farm|dwarfpool\.com|unmineable\.com|nicehash\.com|crypto-pool\.fr|xmr\.pt|miner\.rocks|cryptoknight\.cc|coinfoundry\.org|semipool\.com|fairhash\.org|xmrget\.com|xmrminerpro\.com|moriaxmr\.com|hashanywhere\.com|monerominers\.net|cryptonotepool\.org|hashcity\.org|litecoinpool\.org)$</field>
+    <description>[WARN] Zenarmor: crypto-mining pool resolved or contacted (not blocked), a host may run a miner: $(zenarmor.domain) ($(zenarmor.index) record) from: $(srcip)</description>
+    <mitre>
+      <id>T1496</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,mining,</group>
+  </rule>
+
+  <!-- Reverse-tunnel services and Tor web gateways: an internal service published
+       to the internet, malware or a phishing kit served from a quick tunnel, or Tor
+       reached through a web gateway. Suffixes from the services' own documentation
+       (Cloudflare quick tunnels, ngrok, localtunnel, serveo, localhost.run,
+       pinggy), the SigmaHQ low-reputation eTLD hunting list (playit, portmap) and
+       the idea of SigmaHQ zeek_dns_torproxy (Tor2web and .onion gateways). A
+       Cloudflare named tunnel (argotunnel.com) is common in companies and is not
+       listed. Level 5: developers use these services too; a fixed name can go in
+       jt-zenarmor-domain-allow (130869). -->
+  <rule id="130868" level="5">
+    <if_sid>130800</if_sid>
+    <field name="zenarmor.index" type="pcre2">^(dns|tls|http)$</field>
+    <field name="is_blocked">^0$</field>
+    <field name="zenarmor.domain" type="pcre2">(?i)(^|\.)(trycloudflare\.com|ngrok(-free)?\.(io|app|dev)|ngrok-agent\.com|loca\.lt|serveo\.net|lhr\.life|localhost\.run|pinggy\.(io|link)|portmap\.(io|host)|ply\.gg|tor2web\.(org|io|com|fi|xyz)|onion\.(ws|ly|pet|to|link|city|cab|sh|top|rip|plus|si|lt|pw|direct|dog|glass|guide|ink|it|lu|mn|network|nu|pt|casa|ca|gq)|t2w\.pw|hiddenservice\.net|torlink\.co|onion)$</field>
+    <description>Zenarmor: tunnelling service or Tor gateway resolved or contacted (not blocked): $(zenarmor.domain) ($(zenarmor.index) record) from: $(srcip)</description>
+    <mitre>
+      <id>T1572</id>
+      <id>T1090.003</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,evasion,tunnel,</group>
+  </rule>
+
+  <rule id="130869" level="2">
+    <if_sid>130868</if_sid>
+    <list field="zenarmor.domain" lookup="match_key">etc/lists/jt-zenarmor-domain-allow</list>
+    <description>Zenarmor: allowlisted tunnelling-service name - from: $(srcip) to: $(zenarmor.domain)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,evasion,tunnel,</group>
+  </rule>
+
+  <!-- Cobalt Strike's default DNS stager names. Idea from SigmaHQ
+       net_dns_mal_cobaltstrike (DRL 1.1). A changed profile does not use them. -->
+  <rule id="130870" level="10">
+    <if_sid>130800</if_sid>
+    <field name="zenarmor.index">^dns$</field>
+    <field name="is_blocked">^0$</field>
+    <field name="zenarmor.domain" type="pcre2">(?i)^aaa\.stage\.|\.stage\.123456\.</field>
+    <description>[WARN] Zenarmor: lookup in the shape of Cobalt Strike's DNS stager, check the host: $(zenarmor.domain) $(qtype) from: $(srcip)</description>
+    <mitre>
+      <id>T1071.004</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,malware,c2,dns,</group>
   </rule>
 
   <!-- ===== Correlation (counts per 15 minutes, see the header) ===== -->
@@ -541,30 +883,32 @@
     <group>zenarmor,malware,blocked,</group>
   </rule>
 
-  <!-- The same blocked threat name looked up again and again by a client: 15 dns
-       records in 15 minutes. A browser asks A, AAAA and HTTPS for one name, so one
-       visit is three records; 15 is a program asking about once a minute. A slower
-       beacon outlasts the correlation memory and is not detected here. -->
+  <!-- The same threat name looked up again and again by a client, blocked or not
+       (1.6): 15 dns records in 15 minutes. A browser asks A, AAAA and HTTPS for one
+       name, so one visit is three records; 15 is a program asking about once a
+       minute. A slower beacon outlasts the correlation memory and is not detected
+       here. -->
   <rule id="130832" level="10" frequency="15" timeframe="900">
     <if_matched_group>zenarmor_client_query</if_matched_group>
     <same_field>ip_src_saddr</same_field>
     <same_field>zenarmor.domain</same_field>
-    <description>[WARN] Zenarmor: one host keeps looking up the same blocked threat domain, a sign of malware beaconing: $(srcip) $(zenarmor.domain) (a forwarding DNS server can be listed in jt-zenarmor-resolvers)</description>
+    <description>[WARN] Zenarmor: one host keeps looking up the same threat domain, a sign of malware beaconing: $(srcip) $(zenarmor.domain) (a forwarding DNS server can be listed in jt-zenarmor-resolvers)</description>
     <mitre>
       <id>T1071.004</id>
+      <id>T1568</id>
     </mitre>
     <options>no_full_log</options>
     <group>zenarmor,malware,c2,</group>
   </rule>
 
-  <!-- Many different blocked threat names from one client within 15 minutes
-       (client-style lookups and blocked connections): DGA malware or a host with
+  <!-- Many different threat names from one client within 15 minutes (client-style
+       lookups, blocked or not, and blocked connections): DGA malware or a host with
        several infections. -->
   <rule id="130833" level="10" frequency="20" timeframe="900">
     <if_matched_group>zenarmor_threat_block</if_matched_group>
     <same_field>ip_src_saddr</same_field>
     <different_field>zenarmor.domain</different_field>
-    <description>[WARN] Zenarmor: one host was blocked from many different threat domains within 15 minutes, possible infection or DGA: $(srcip) last: $(zenarmor.domain) (a forwarding DNS server can be listed in jt-zenarmor-resolvers)</description>
+    <description>[WARN] Zenarmor: one host looked up or was blocked from many different threat domains within 15 minutes, possible infection or DGA: $(srcip) last: $(zenarmor.domain) (a forwarding DNS server can be listed in jt-zenarmor-resolvers)</description>
     <mitre>
       <id>T1568.002</id>
     </mitre>
@@ -572,15 +916,16 @@
     <group>zenarmor,malware,c2,</group>
   </rule>
 
-  <!-- A resolver asking for the same blocked threat name 40 times in 15 minutes:
-       some client behind it is probably beaconing; the resolver's query log names
-       it. A resolver sends one lookup to several servers (measured: 4 to 6 dns
-       records per lookup, peak 12 in 15 minutes). -->
+  <!-- A resolver asking for the same threat name 40 times in 15 minutes: some
+       client behind it is probably beaconing; the resolver's query log names it. A
+       resolver sends one lookup to several servers (measured: 4 to 6 dns records
+       per lookup, peak 12 in 15 minutes for blocked names; unblocked ones are
+       counted too since 1.6, peak 7). -->
   <rule id="130834" level="6" frequency="40" timeframe="900">
     <if_matched_group>zenarmor_resolver_query</if_matched_group>
     <same_field>ip_src_saddr</same_field>
     <same_field>zenarmor.domain</same_field>
-    <description>Zenarmor: a resolver keeps looking up the same blocked threat domain for a client behind it, check its query log: $(zenarmor.domain) via: $(srcip)</description>
+    <description>Zenarmor: a resolver keeps looking up the same threat domain for a client behind it, check its query log: $(zenarmor.domain) via: $(srcip)</description>
     <mitre>
       <id>T1071.004</id>
     </mitre>
@@ -588,15 +933,15 @@
     <group>zenarmor,malware,c2,dns,</group>
   </rule>
 
-  <!-- Many different blocked threat names through one resolver within 15 minutes:
-       a client behind it may run DGA malware (a spam run being filtered looks the
-       same without the resolver's query log). Measured peak of the different_field
-       count on the tuned site: 13. -->
+  <!-- Many different threat names through one resolver within 15 minutes: a client
+       behind it may run DGA malware (a spam run being filtered looks the same
+       without the resolver's query log). Measured peak of the different_field count
+       on the tuned site: 13. -->
   <rule id="130835" level="7" frequency="40" timeframe="900">
     <if_matched_group>zenarmor_resolver_query</if_matched_group>
     <same_field>ip_src_saddr</same_field>
     <different_field>zenarmor.domain</different_field>
-    <description>Zenarmor: a resolver looked up many different blocked threat domains within 15 minutes for clients behind it, check its query log: via: $(srcip) last: $(zenarmor.domain)</description>
+    <description>Zenarmor: a resolver looked up many different threat domains within 15 minutes for clients behind it, check its query log: via: $(srcip) last: $(zenarmor.domain)</description>
     <mitre>
       <id>T1568.002</id>
     </mitre>
@@ -604,7 +949,19 @@
     <group>zenarmor,malware,c2,dns,</group>
   </rule>
 
-  <!-- ===== Out-of-band testing domains ===== -->
+  <!-- Malformed DNS packets from one host, 20 in 15 minutes (measured peak 5). -->
+  <rule id="130860" level="6" frequency="20" timeframe="900">
+    <if_matched_sid>130859</if_matched_sid>
+    <same_field>ip_src_saddr</same_field>
+    <description>Zenarmor: one host keeps sending malformed DNS packets, a broken DNS client or a DNS tunnelling tool: $(srcip) last: $(zenarmor.domain)</description>
+    <mitre>
+      <id>T1572</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,dns,</group>
+  </rule>
+
+  <!-- ===== Names that betray a tool, alert records of blocks ===== -->
   <!-- interactsh, Burp Collaborator, canarytokens and similar services hand out a
        unique name per payload: a lookup means some host processed an injected
        payload (log4j-style lookups, SSRF, a mail header) or opened a canary. Through
@@ -616,27 +973,29 @@
        Measured: a mail gateway resolved one interactsh name 13 times within four
        minutes, which Zenarmor tagged Malware/Virus. -->
   <rule id="130840" level="10">
-    <if_sid>130816,130817,130831,130833</if_sid>
+    <if_sid>130816,130817,130831,130833,130856,130858</if_sid>
     <field name="zenarmor.index">^alert$</field>
-    <field name="zenarmor.domain" type="pcre2">(?i)(^|\.)(oast\.(pro|live|site|online|fun|me)|interact\.sh|interactsh\.com|oastify\.com|burpcollaborator\.net|canarytokens\.com|dnslog\.cn|ceye\.io)$</field>
+    <field name="zenarmor.domain" type="pcre2">(?i)^(?!polling\.oastify\.com$).*(^|\.)(oast\.(pro|live|site|online|fun|me)|interact\.sh|interactsh\.com|oastify\.com|burpcollaborator\.net|canarytokens\.com|dnslog\.(cn|ink)|ceye\.io|requestbin\.net|dnshook\.site|digimg\.store|gobygo\.net|instances\.httpworkbench\.com|p8\.lol|log\.javaweb\.org|dns\.su18\.org|log\.dnslog\.(pp\.ua|qzz\.io)|log\.dnslogs\.dpdns\.org|log\.nat\.cloudns\.ph|ddns\.(1433|bypass|xn--gg8h)\.eu\.org)$</field>
     <description>[WARN] Zenarmor: out-of-band testing domain looked up (blocked), a host processed an injected payload: $(zenarmor.domain) from: $(srcip)</description>
     <mitre>
       <id>T1190</id>
+      <id>T1595.002</id>
     </mitre>
     <options>no_full_log</options>
     <group>zenarmor,oast,blocked,dns,</group>
   </rule>
 
-  <rule id="130841" level="10">
-    <if_sid>130821,130822,130823,130845,130846,130850</if_sid>
-    <field name="zenarmor.index">^dns$</field>
-    <field name="zenarmor.domain" type="pcre2">(?i)(^|\.)(oast\.(pro|live|site|online|fun|me)|interact\.sh|interactsh\.com|oastify\.com|burpcollaborator\.net|canarytokens\.com|dnslog\.cn|ceye\.io)$</field>
-    <description>[WARN] Zenarmor: out-of-band testing domain resolved (not blocked), a host processed an injected payload: $(zenarmor.domain) from: $(srcip)</description>
+  <!-- A blocked mining pool: blocking the pool does not stop the miner. -->
+  <rule id="130874" level="10">
+    <if_sid>130802,130804,130816,130817,130855,130856,130857,130858</if_sid>
+    <field name="zenarmor.index">^alert$</field>
+    <field name="zenarmor.domain" type="pcre2">(?i)(^|\.)(supportxmr\.com|minexmr\.(com|org)|nanopool\.org|hashvault\.pro|c3pool\.com|moneroocean\.stream|2miners\.com|f2pool\.com|herominers\.com|xmrpool\.(eu|net|com)|minergate\.com|monerohash\.com|moneropool\.(com|ru)|monero\.farm|dwarfpool\.com|unmineable\.com|nicehash\.com|crypto-pool\.fr|xmr\.pt|miner\.rocks|cryptoknight\.cc|coinfoundry\.org|semipool\.com|fairhash\.org|xmrget\.com|xmrminerpro\.com|moriaxmr\.com|hashanywhere\.com|monerominers\.net|cryptonotepool\.org|hashcity\.org|litecoinpool\.org)$</field>
+    <description>[WARN] Zenarmor: crypto-mining pool blocked, the host may still run a miner: $(zenarmor.domain) from: $(srcip)</description>
     <mitre>
-      <id>T1190</id>
+      <id>T1496</id>
     </mitre>
     <options>no_full_log</options>
-    <group>zenarmor,oast,dns,</group>
+    <group>zenarmor,mining,blocked,</group>
   </rule>
 
 </group>

@@ -4,6 +4,80 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.14.0 (2026-10-11)
+
+- **The pack list shows both versions.** Next to each pack: the version installed on
+  this Wazuh manager and the version this jt-wazuh-mgr ships. A pack with a newer
+  version here says "Update available" and the list counts them; the detail view
+  names both versions with an Update button. Versions compare by number (3.10 is
+  newer than 3.9, 1.2 equals 1.2.0), so a manager that already has a newer version
+  is no longer offered a "downgrade update". Files copied in by hand show the version
+  they match.
+- **Every pack strengthened from primary sources**, and one new pack, **jt-docker**
+  (23 packs). Each pack was checked against the vendor's documentation, the
+  product's source code for the exact log lines, its security advisories and CVEs
+  (including CISA KEV) and MITRE ATT&CK, and every rule has a case and a near miss
+  in a throwaway Wazuh manager. Highlights:
+  - **jt-alert-digest 1.4:** 1.3 dropped the day's backlog at midnight (the rotated
+    file's tail was never read) and stalled for good above 5,000 pending alerts; it
+    now follows rotation, reads only complete lines and sends a large backlog in
+    parts. Recipients come only from `<global>`. Optional STARTTLS, AUTH and port in
+    the site conf file; Windows and vulnerability alerts show their fields; repeats
+    within the hour are held and summarised, never dropped; a daily summary; failures
+    alert once per state change (131111-131116).
+  - **jt-zpush 1.2 (security fix):** a login name could carry its own `from=`, and
+    1.1 read that one, so the opt-in firewall response could be steered to block
+    any address. Trusted fields are now read from the end of the line. Backend 401s
+    that are not wrong passwords no longer count as failures.
+  - **jt-ioc 1.5:** a high-confidence list (two independent sources, or a curated
+    one) next to the full list; a dead feed, research scanners and non-exit Tor relays
+    removed; Suricata flows checked; feeds with commercial restrictions off by default.
+    On this site: 11,915 alerts in five days become about 100.
+  - **jt-malware-hash 1.6:** Sysmon hash matching (process, image load, driver,
+    download, file write, delete), a Windows FIM group, a site IOC list, an allowlist,
+    vulnerable drivers, Suricata file hashes, and alerts when the update fails or the
+    list goes stale.
+  - **jt-portable-detect 3.5:** on Linux a built-in rule took every Python execution
+    first, so scripts run from temporary places were never seen; RMM tools by the
+    LOLRMM catalogue, renamed tunnel tools, tunnel DNS, WinRAR CVE-2025-8088 /
+    CVE-2025-6218, Defender ASR; an AppLocker flood removed.
+  - **jt-zimbra 3.2:** SMTP command injection (CVE-2026-73570, CVE-2024-45519),
+    administrative changes in audit.log, PAM and sudoers changes, JSP shells outside
+    `/public/`; level-0 rules no longer hide a known malware hash in Zimbra paths.
+  - **jt-ucs 1.2:** the Samba JSON audit path never matched; now ADIDNS wildcard/WPAD
+    records, LDAP and Samba spraying, AdminSDHolder/DCShadow/delegation/GPO changes,
+    Kerberoasting, a Zerologon-style burst and secret/CA file changes.
+  - **jt-opnsense 1.2:** Suricata alerts graded inside the pack, NAT and filter changes,
+    logging tampering, LDAP filter injection (CVE-2026-34578), audit-log forgery
+    (GHSA-jjm2-jg4p-3v9q), daily `pkg audit`.
+  - **jt-proxmox 1.2:** `/etc/pve` file-integrity noise from about 2,500 alerts a day
+    to about one, security files watched, hookscripts and raw QEMU args, second factor,
+    password changes, cluster membership, destructive tasks.
+  - **jt-keycloak 1.2, jt-pbs 1.2, jt-pmg 1.2, jt-synology 1.2, jt-nextcloud 1.2,
+    jt-adguard 1.4, jt-zenarmor 1.6, jt-librenms 1.2, jt-odoo 1.2, jt-jitsi 1.2,
+    jt-fail2ban 1.3, jt-ipam 1.2, jt-vc-portal 1.2:** rules that could never fire are
+    fixed (unblocked Zenarmor threats, Synology account protection, PMG quarantine
+    release before 8.1.7, Jitsi token failures, phpIPAM login failures, Keycloak
+    credential removal, PBS failed logins over syslog, Nextcloud 35 WebDAV brute
+    force), and each gains the attacks its advisories describe (token replay,
+    protected-backup removal, snapshot deletion, BCC rules, exports, module uploads).
+  - **jt-docker 1.0 (new):** healthcheck execs (92% of `docker exec` alerts here) drop
+    below alerting; shells, secret dumps, downloads, reverse shells, escapes and miners
+    inside containers alert; a TCP API without TLS, runc's breakout messages and
+    `daemon.json` changes alert; an optional posture check reports privileged
+    containers and host mounts once each.
+- **Upgrading packs:** jt-alert-digest no longer mails the recipients of `<reports>`
+  and sends a daily summary; reload the ruleset on every node. A site that grades
+  Suricata with its own rules should retire them when installing jt-opnsense 1.2.
+  abuse.ch sources (ThreatFox, Feodo, and MalwareBazaar for jt-malware-hash) are free
+  for non-profit use only; check the terms for a company. A response enabled before
+  the update keeps its old rule list until it is switched off and on.
+- **MITRE ids:** five ids the Wazuh 4.14.7 database does not know (every alert of such
+  a rule logs a warning) were replaced; a test now checks every id against that database.
+- **Sandbox:** `tools/pack_sandbox.py` now tests file-integrity rules (a case sends a
+  syscheck event into the sandbox's analysisd), correlations across hosts (a location
+  per event) and log lines that must precede a file change.
+
 ## v1.13.1 (2026-10-11)
 
 Every pack is now quiet and useful on a fresh install, with its shipped lists

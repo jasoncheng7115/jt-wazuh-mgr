@@ -15,7 +15,7 @@
 ## 執行方式
 
 ```bash
-python3 -m unittest discover -s tests     # 254 項，完全離線
+python3 -m unittest discover -s tests     # 331 項，完全離線
 python3 tools/preflight.py                # 21 項發版前機械檢查
 
 # 系統沒有 Flask 的主機
@@ -129,7 +129,7 @@ plan 走的是 ZAP 的 Automation Framework：spider、被動掃描，並輸出 
 ## 第四層——瀏覽器旅程，自動化
 
 ```bash
-tests/e2e/run.sh          # 23 條旅程、112 項檢查，需要 docker
+tests/e2e/run.sh          # 23 條旅程、114 項檢查，需要 docker
 ```
 
 `tests/e2e/mock_api.py` 讓**真正的應用程式**跑在 mock 過且**有狀態**的 Wazuh API 之上，
@@ -236,9 +236,11 @@ Sysmon 事件 29 的規則還需要真實事件，因為 `wazuh-logtest` 是把�
 `test`、`down`；需要 docker 與 `wazuh/wazuh-manager` 映像）。`install` 遇到 `wazuh-analysisd -t` 的任何錯誤或
 警告都會失敗，因為警告正是 analysisd 回報「這條規則被忽略」的方式。`test` 把 `tests/pack_cases/<套件>.json`
 送進 `wazuh-logtest` 重放：去識別化的真實記錄與合成記錄、每條重要規則都有反例、頻率規則用 `repeat`，
-需要同一段工作階段的多行序列則以換行串在一起。1.13.0 起每個套件發版前都這樣驗過。logtest 看不到的部分
-（`ignore` 間隔、檔案完整性與 auditd 事件、agent 端的 `<ignore>` 與 `out_format`）改由容器自己的
-logcollector 讀檔驗證，或在主機上驗證。
+需要同一段工作階段的多行序列則以換行串在一起。1.13.0 起每個套件發版前都這樣驗過。1.14.0 起案例也可以用
+`"fim"` 取代記錄行：工具把該 syscheck 事件送進容器自己的 analysisd 佇列，以它寫出的告警判讀（沙箱從 level 1
+起記錄告警，安靜的規則也能點名），關聯需要的記錄行可以先送；`before` 的每一行也可以指定自己的來源，
+透過 logtest 的 socket 在同一個工作階段裡驗跨主機的關聯。仍然驗不到的部分（`ignore` 間隔、agent 端的
+`<ignore>` 與 `out_format`）改由容器自己的 logcollector 讀檔驗證，或在主機上驗證。
 
 每個情境都要驗兩面：應該觸發的規則，以及差一點、不應觸發的反例。叢集環境下，
 Windows 的情境要在 worker 上再驗一次，Windows agent 通常由 worker 處理。

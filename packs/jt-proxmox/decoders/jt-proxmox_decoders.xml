@@ -16,7 +16,7 @@
   child of it; the other tools have no decoder at all.
 -->
 <decoder name="jt-pve-task">
-  <program_name type="pcre2">^(pvescheduler|pveupdate|pvesh|pct|qm|vzdump|pve-ha-lrm|pve-ha-crm|pvenode|pveceph|pvesr)$</program_name>
+  <program_name type="pcre2">^(pvescheduler|pveupdate|pvesh|pct|qm|vzdump|pve-ha-lrm|pve-ha-crm|pvenode|pveceph|pvesr|pvecm|pveum)$</program_name>
   <prematch type="pcre2">^\x3c[^\x3e]+\x3e (?:starting|end) task UPID:</prematch>
 </decoder>
 
@@ -31,6 +31,44 @@
   <prematch type="pcre2">^\x3c[^\x3e]+\x3e (?:starting|end) task UPID:</prematch>
   <regex type="pcre2">^\x3c([^\x3e]+)\x3e (starting|end) task UPID:([^:]+):[0-9A-Fa-f]+:[0-9A-Fa-f]+:[0-9A-Fa-f]+:([^:]+):([^:]*):([^:]+):\s?(.*)$</regex>
   <order>pve.actor, pve.phase, pve.node, pve.task, pve.vmid, pve.user, pve.status</order>
+</decoder>
+
+<!--
+  Cluster log messages that are not tasks. PVE::Cluster::log_msg (pve-cluster
+  9.1.6, PVE/Cluster.pm) writes them as "<ident> message", for example
+    <root@pam> update VM 159: -net1 virtio=...,bridge=vmbr10     (qemu-server, API2/Qemu.pm)
+    <root@pam> changed password for user 'alice@pve'           (pve-access-control)
+    <root@pam> adding node pve4 to cluster                      (pve-manager, ClusterConfig.pm)
+  The program is pvedaemon for API calls (a child of the built-in decoder) or
+  the command-line tool that made the call (qm, pvesh, pveum, pvecm ...).
+  The task decoder above is tried first for these programs, so task lines never
+  reach this one.
+-->
+<decoder name="jt-pvedaemon-guest-config">
+  <parent>pvedaemon</parent>
+  <prematch type="pcre2">^\x3c[^\x3e]+\x3e update VM \d+: </prematch>
+  <regex type="pcre2">^\x3c([^\x3e]+)\x3e update VM (\d+): (.*)$</regex>
+  <order>pve.actor, pve.vmid, pve.params</order>
+</decoder>
+
+<decoder name="jt-pve-cluster-msg">
+  <program_name type="pcre2">^(?:qm|pct|pvesh|pveum|pvecm|pvenode|pveceph)$</program_name>
+  <prematch type="pcre2">^\x3c[^\x3e]+\x3e </prematch>
+</decoder>
+
+<decoder name="jt-pve-cluster-msg-fields">
+  <parent>jt-pve-cluster-msg</parent>
+  <regex type="pcre2">^\x3c([^\x3e]+)\x3e (?:update VM (\d+): (.*))?</regex>
+  <order>pve.actor, pve.vmid, pve.params</order>
+</decoder>
+
+<!-- The cluster file system and the firewall daemon. Rules match the text. -->
+<decoder name="jt-pmxcfs">
+  <program_name>^pmxcfs$</program_name>
+</decoder>
+
+<decoder name="jt-pve-firewall">
+  <program_name>^pve-firewall$</program_name>
 </decoder>
 
 <!-- High availability: node and service state changes. -->
@@ -90,12 +128,15 @@
   Line after the header:
   ::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] "PUT /api2/extjs/access/users/x HTTP/1.1" 200 -
 -->
+<!--
+  One decoder, no child: fts (first time seen) is refused (error 2107) on a
+  decoder that has children, and ignored on a child. The key is account and
+  address; a login request carries no account (pveproxy logs it as "-"), so
+  for logins the key is the address alone.
+-->
 <decoder name="jt-pveproxy-access">
   <program_name>^jt-pveproxy$</program_name>
-</decoder>
-
-<decoder name="jt-pveproxy-access-fields">
-  <parent>jt-pveproxy-access</parent>
   <regex type="pcre2">^(?:::ffff:)?(\S+) \S+ (\S+) \[[^\]]*\] "(\S+) (\S+) [^"]*" (\d{3})</regex>
   <order>srcip, user, protocol, url, id</order>
+  <fts>name, user, srcip</fts>
 </decoder>
