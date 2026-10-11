@@ -129,7 +129,7 @@ plan 走的是 ZAP 的 Automation Framework：spider、被動掃描，並輸出 
 ## 第四層——瀏覽器旅程，自動化
 
 ```bash
-tests/e2e/run.sh          # 23 條旅程、114 項檢查，需要 docker
+tests/e2e/run.sh          # 23 條旅程、116 項檢查，需要 docker
 ```
 
 `tests/e2e/mock_api.py` 讓**真正的應用程式**跑在 mock 過且**有狀態**的 Wazuh API 之上，

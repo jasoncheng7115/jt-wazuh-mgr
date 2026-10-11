@@ -737,6 +737,8 @@ HTML_TEMPLATE = '''
         .rule-type-badge.pack-untracked { background: #3a4a6a; color: #ddd; }
         .pack-ver-new { color: #fd7e14; font-weight: bold; }
         .pack-ver-note { display: block; color: #888; font-size: 11px; }
+        .pack-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+        .pack-actions .btn { width: 100%; justify-content: center; white-space: nowrap; margin: 0; }
         .rules-group-tags { display: flex; flex-wrap: wrap; gap: 2px; max-width: 250px; }
         .rules-group-tag { display: inline-block; padding: 1px 4px; border-radius: 3px; font-size: 10px; background: #0f3460; color: #4fc3f7; white-space: nowrap; }
         .rules-toolbar-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -1319,6 +1321,13 @@ HTML_TEMPLATE = '''
         <!-- Stats Panel -->
         <div class="panel" id="packs-panel">
             <div class="toolbar" style="gap:8px;">
+                <input type="search" id="packsFilter" placeholder="Filter by name, description or rule ID" oninput="renderPacks()" style="padding:8px 12px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;min-width:280px;">
+                <select id="packsStateFilter" onchange="renderPacks()">
+                    <option value="">All packs</option>
+                    <option value="update">Update available</option>
+                    <option value="installed">Installed</option>
+                    <option value="not-installed">Not installed</option>
+                </select>
                 <span style="color:#888;font-size:12px;">Rule series maintained by Jason Tools. Each pack bundles rules, decoders and CDB lists, and can be removed again.</span>
                 <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="refreshPacks()" title="Refresh"><svg class="icon"><use href="#icon-refresh"/></svg></button>
                 <span id="packsStatus" style="color:#888;font-size:13px;"></span>
@@ -1329,10 +1338,10 @@ HTML_TEMPLATE = '''
                         <th style="width:230px;">Pack</th>
                         <th>Description</th>
                         <th style="width:120px;">Rule IDs</th>
-                        <th style="width:90px;" title="Version installed on this Wazuh manager">Installed version</th>
-                        <th style="width:90px;" title="Version shipped with this jt-wazuh-mgr">Available version</th>
+                        <th style="width:100px;white-space:nowrap;" title="Version installed on this Wazuh manager">Installed version</th>
+                        <th style="width:100px;white-space:nowrap;" title="Version shipped with this jt-wazuh-mgr">Available version</th>
                         <th style="width:120px;">Status</th>
-                        <th style="width:200px;">Actions</th>
+                        <th style="width:230px;">Actions</th>
                     </tr></thead>
                     <tbody id="packsBody">
                         <tr><td colspan="7" style="text-align:center;color:#888;padding:40px;">Loading...</td></tr>
@@ -6678,15 +6687,45 @@ HTML_TEMPLATE = '''
                 return;
             }
             packsData = data.packs || [];
+            renderPacks();
+        }
+
+        // A pack matches the filter on its name (either language), id or summary,
+        // or, for a number, on the rule ID range that contains it.
+        function packMatchesFilter(p, query, state) {
+            const vs = p.version_status || (p.installed ? 'current' : (p.untracked ? 'untracked' : 'not-installed'));
+            if (state === 'update' && vs !== 'update') return false;
+            if (state === 'installed' && !p.installed && vs !== 'untracked') return false;
+            if (state === 'not-installed' && (p.installed || vs === 'untracked')) return false;
+            if (!query) return true;
+            if (/^\\d{3,6}$/.test(query)) {
+                const m = /^(\\d+)-(\\d+)$/.exec(p.rule_id_range || '');
+                if (m && +query >= +m[1] && +query <= +m[2]) return true;
+            }
+            return [p.id, p.name, p.name_zh, p.summary, p.summary_zh].some(t => (t || '').toLowerCase().includes(query));
+        }
+
+        function renderPacks() {
+            const body = document.getElementById('packsBody');
+            const status = document.getElementById('packsStatus');
+            if (!body || !status) return;
             const installed = packsData.filter(p => p.installed).length;
             const updates = packsData.filter(p => p.update_available).length;
             status.innerHTML = '<span>' + packsData.length + ' packs, ' + installed + ' installed</span>' +
                 (updates ? ' &middot; <span class="pack-ver-new">' + updates + ' update(s) available</span>' : '');
+            const fq = ((document.getElementById('packsFilter') || {}).value || '').trim().toLowerCase();
+            const fs = (document.getElementById('packsStateFilter') || {}).value || '';
+            const shown = packsData.filter(p => packMatchesFilter(p, fq, fs));
+            if (fq || fs) status.innerHTML += ' &middot; <span>Showing ' + shown.length + ' of ' + packsData.length + '</span>';
             if (!packsData.length) {
                 body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;padding:30px;">No packs available.</td></tr>';
                 return;
             }
-            body.innerHTML = packsData.map(p => {
+            if (!shown.length) {
+                body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;padding:30px;">No pack matches the filter.</td></tr>';
+                return;
+            }
+            body.innerHTML = shown.map(p => {
                 const vs = p.version_status || (p.installed ? 'current' : (p.untracked ? 'untracked' : 'not-installed'));
                 const badge = {
                     'update': '<span class="rule-type-badge pack-update" title="This jt-wazuh-mgr ships a newer version"><span>Update available</span></span>',
@@ -6705,17 +6744,17 @@ HTML_TEMPLATE = '''
                 let ship = escapeHtml(p.version);
                 if (vs === 'update') ship = '<span class="pack-ver-new">' + ship + '</span>';
                 if (vs === 'newer') ship += '<span class="pack-ver-note">older than installed</span>';
-                const actions =
-                    '<button class="btn btn-sm" onclick="showPackDetail(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-file-text"/></svg>Details</button>' +
-                    (p.has_setup
-                        ? '<button class="btn btn-sm" style="margin-left:6px;" onclick="showPackSetup(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-settings"/></svg>Setup guide</button>'
-                        : '') +
-                    (p.installed && p.update_available
-                        ? '<button class="btn btn-sm btn-warning" style="margin-left:6px;" onclick="updatePack(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-refresh"/></svg><span>Update</span></button>'
-                        : '') +
+                const pid = escapeHtml(p.id);
+                const btn = (cls, fn, icon, label) => '<button class="btn btn-sm' + cls + '" onclick="' + fn + '(\\'' + pid + '\\')"><svg class="icon"><use href="#icon-' + icon + '"/></svg><span>' + label + '</span></button>';
+                // first row: read; second row: change. An empty cell keeps the rows apart.
+                const actions = '<div class="pack-actions">' +
+                    btn('', 'showPackDetail', 'file-text', 'Details') +
+                    (p.has_setup ? btn('', 'showPackSetup', 'settings', 'Setup guide') : '<span></span>') +
                     (p.installed
-                        ? '<button class="btn btn-sm btn-danger" style="margin-left:6px;" onclick="uninstallPack(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-trash"/></svg>Remove</button>'
-                        : '<button class="btn btn-sm btn-success" style="margin-left:6px;" onclick="installPack(\\'' + escapeHtml(p.id) + '\\')"><svg class="icon"><use href="#icon-download"/></svg>Install</button>');
+                        ? (p.update_available ? btn(' btn-warning', 'updatePack', 'refresh', 'Update') : '') +
+                          btn(' btn-danger', 'uninstallPack', 'trash', 'Remove')
+                        : btn(' btn-success', 'installPack', 'download', 'Install')) +
+                    '</div>';
                 return '<tr>' +
                     '<td><strong>' + escapeHtml(packLang(p.name, p.name_zh)) + '</strong><br>' +
                         '<span style="color:#888;font-size:11px;font-family:monospace;">' + escapeHtml(p.id) + '</span></td>' +
@@ -8156,6 +8195,9 @@ _I18N_SCRIPT = r"""
       'older than installed': '比已安裝的舊',
       'The manager has a newer version of this pack than this jt-wazuh-mgr ships.': 'Manager 上的套件版本比這份 jt-wazuh-mgr 內附的還新。',
       'Up to date': '已是最新版',
+      'All packs': '全部套件',
+      'Filter by name, description or rule ID': '依名稱、說明或規則 ID 篩選',
+      'No pack matches the filter.': '沒有符合篩選條件的套件。',
       'Rules of this pack that this manager overrides (overwrite="yes"), which stays in effect:': '這台 manager 以 overwrite="yes" 改寫了本套件的這些規則，改寫會繼續有效：',
       'Files on the manager': 'Manager 上的檔案',
       'Will be updated': '將更新',
@@ -8919,6 +8961,9 @@ _I18N_SCRIPT = r"""
       'older than installed': 'インストール済みより古い',
       'The manager has a newer version of this pack than this jt-wazuh-mgr ships.': 'マネージャー上のパックは、この jt-wazuh-mgr 同梱のバージョンより新しいものです。',
       'Up to date': '最新です',
+      'All packs': 'すべてのパック',
+      'Filter by name, description or rule ID': '名前・説明・ルール ID で絞り込み',
+      'No pack matches the filter.': '条件に合うパックはありません。',
       'Rules of this pack that this manager overrides (overwrite="yes"), which stays in effect:': 'このマネージャーが overwrite="yes" で上書きしているこのパックのルール（上書きは引き続き有効です）：',
       'Files on the manager': 'マネージャー上のファイル',
       'Will be updated': '更新されます',
@@ -9412,6 +9457,7 @@ _I18N_SCRIPT = r"""
       [/^(\d+) difference\(s\) found$/, function (m) { return '發現 ' + m[1] + ' 處差異'; }],
       [/^(\d+) packs, (\d+) installed$/, function (m) { return m[1] + ' 個套件，已安裝 ' + m[2] + ' 個'; }],
       [/^(\d+) update\(s\) available$/, function (m) { return '有 ' + m[1] + ' 個可更新'; }],
+      [/^Showing (\d+) of (\d+)$/, function (m) { return '顯示 ' + m[1] + ' / ' + m[2] + ' 個'; }],
       [/^Install pack "(.+)"\? Files are backed up and rolled back if the ruleset fails to validate\.$/, function (m) { return '要安裝套件「' + m[1] + '」嗎？檔案會先備份，規則集驗證失敗時自動回滾。'; }],
       [/^Remove pack "(.+)"\? Files it replaced are restored\.$/, function (m) { return '要移除套件「' + m[1] + '」嗎？被它覆蓋的檔案會還原。'; }],
       [/^Rule ID conflict: (.+)\. Update anyway\?$/, function (m) { return '規則 ID 衝突：' + m[1] + '。仍要更新嗎？'; }],
@@ -9542,6 +9588,7 @@ _I18N_SCRIPT = r"""
       [/^(\d+) difference\(s\) found$/, function (m) { return m[1] + ' 件の差分が見つかりました'; }],
       [/^(\d+) packs, (\d+) installed$/, function (m) { return 'パック ' + m[1] + ' 件、うち ' + m[2] + ' 件インストール済み'; }],
       [/^(\d+) update\(s\) available$/, function (m) { return m[1] + ' 件の更新あり'; }],
+      [/^Showing (\d+) of (\d+)$/, function (m) { return m[2] + ' 件中 ' + m[1] + ' 件を表示'; }],
       [/^Install pack "(.+)"\? Files are backed up and rolled back if the ruleset fails to validate\.$/, function (m) { return 'パック「' + m[1] + '」をインストールしますか？ ファイルはバックアップされ、ルールセットの検証に失敗した場合は自動的に元に戻されます。'; }],
       [/^Remove pack "(.+)"\? Files it replaced are restored\.$/, function (m) { return 'パック「' + m[1] + '」を削除しますか？ 上書きされていたファイルは復元されます。'; }],
       [/^Rule ID conflict: (.+)\. Update anyway\?$/, function (m) { return 'ルール ID が競合しています：' + m[1] + '。それでも更新しますか？'; }],
@@ -9704,7 +9751,8 @@ _I18N_SCRIPT = r"""
       '.jtwz-lang-wrap{position:relative;display:inline-flex}' +
       '.jtwz-lang-wrap.fab{position:fixed;top:14px;right:16px;z-index:9999}' +
       '.jtwz-lang-wrap.fab .jtwz-lang-fab{position:static}' +
-      '#langToggle .jtwz-caret{font-size:10px;opacity:.8}' +
+      '#langToggle .jtwz-lang-label{display:inline-flex;align-items:center;gap:3px;line-height:1.2}' +
+      '#langToggle .jtwz-caret{font-size:9px;opacity:.8;line-height:1}' +
       '.jtwz-lang-menu{position:absolute;top:calc(100% + 6px);right:0;min-width:160px;z-index:10000;' +
       'background:#16213e;border:1px solid #4fc3f7;border-radius:8px;padding:6px 0;margin:0;list-style:none;' +
       'box-shadow:0 8px 24px rgba(0,0,0,.45)}' +
@@ -9735,7 +9783,11 @@ _I18N_SCRIPT = r"""
     btn.title = MENU_TITLE[lang] || MENU_TITLE.en;
     btn.setAttribute('aria-haspopup', 'menu');
     btn.setAttribute('aria-expanded', 'false');
-    btn.innerHTML = GLOBE + '<span>' + LANG_SHORT[lang] + '</span><span class="jtwz-caret">&#9662;</span>';
+    // label and caret in one span: in the header the button stacks its children
+    // (icon over text, like Settings and Logout), and a separate caret became a
+    // third row that pushed the button's content out of line with its neighbours
+    btn.innerHTML = GLOBE + '<span class="jtwz-lang-label">' + LANG_SHORT[lang] +
+      '<span class="jtwz-caret">&#9662;</span></span>';
     var menu = document.createElement('div');
     menu.className = 'jtwz-lang-menu';
     menu.setAttribute('role', 'menu');

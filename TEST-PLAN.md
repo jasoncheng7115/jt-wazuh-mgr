@@ -136,7 +136,7 @@ release-time change.
 ## Layer 4 — browser journeys, automated
 
 ```bash
-tests/e2e/run.sh          # 23 journeys, 114 checks, needs docker
+tests/e2e/run.sh          # 23 journeys, 116 checks, needs docker
 ```
 
 `tests/e2e/mock_api.py` serves the real application against a mocked, stateful

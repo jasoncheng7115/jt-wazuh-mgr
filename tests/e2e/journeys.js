@@ -345,6 +345,19 @@ async function run() {
     await tab('packs', 1800);
     const listed = await page.$eval('#packs-panel', e => e.innerText);
     check('packs are listed', /jt-/.test(listed));
+    // the filter: a rule ID finds the pack whose range holds it; a name narrows the list
+    const byRule = await page.evaluate(() => {
+      document.getElementById('packsFilter').value = '131205'; renderPacks();
+      return [...document.querySelectorAll('#packsBody tr')].map(tr => tr.textContent);
+    });
+    check('a rule ID filters to the pack that owns it', byRule.length === 1 && /jt-proxmox/.test(byRule[0]), byRule.length + ' rows');
+    const byName = await page.evaluate(() => {
+      document.getElementById('packsFilter').value = 'zimbra'; renderPacks();
+      const rows = document.querySelectorAll('#packsBody tr').length;
+      document.getElementById('packsFilter').value = ''; renderPacks();
+      return rows;
+    });
+    check('a name narrows the list', byName >= 1 && byName < 5, byName + ' rows');
     const opened = await page.evaluate(() => {
       if (window.showPackDetail) { showPackDetail('jt-ioc'); return true; }
       return false;
@@ -515,7 +528,9 @@ async function run() {
     check('agent-side steps new since the installed version are listed',
       /Agent-side steps new in this version/.test(plan) && /Defender/.test(plan) && /New in 3\.4/.test(plan), plan.slice(-300));
     const title = await page.$eval('#modalTitle', e => e.textContent);
-    check('the dialog names both versions', /3\.1/.test(title) && /3\.4/.test(title), title);
+    // the shipped version moves with every release; read it rather than pin it
+    const shipped = await page.evaluate(async () => ((await api('/packs/jt-portable-detect')) || {}).manifest.version);
+    check('the dialog names both versions', /3\.1/.test(title) && title.includes(shipped), title + ' / ' + shipped);
     await page.evaluate(() => { const b = document.getElementById('packUpdateGo'); if (b) b.click(); });
     await wait(2500);
     const done = await page.$eval('#modalBody', e => e.innerText);

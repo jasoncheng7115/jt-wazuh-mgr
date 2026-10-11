@@ -137,7 +137,7 @@ Medium が 2 件残っているのは、フロントエンド全体が Python �
 ## 第 4 層 —— ブラウザーシナリオ（自動）
 
 ```bash
-tests/e2e/run.sh          # 23 シナリオ、114 チェック、docker が必要
+tests/e2e/run.sh          # 23 シナリオ、116 チェック、docker が必要
 ```
 
 `tests/e2e/mock_api.py` は、モック化され状態を持つ Wazuh API に対して実際の

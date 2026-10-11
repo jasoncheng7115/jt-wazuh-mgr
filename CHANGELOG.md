@@ -4,6 +4,17 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.14.1 (2026-10-11)
+
+- **Rule packs: a filter bar.** Type part of a name, an id or a description, or a rule
+  ID (the pack whose range holds it is shown), and choose all, update available,
+  installed or not installed. The status line says how many are shown.
+- **Rule packs: tidier actions.** The buttons sit in two equal columns: Details and
+  Setup guide on the first row, Update and Remove (or Install) on the second. The
+  version headers no longer wrap.
+- **The language button lines up with Settings and Logout again.** Its menu arrow had
+  become a third row under the label; it now sits next to it.
+
 ## v1.14.0 (2026-10-11)
 
 - **The pack list shows both versions.** Next to each pack: the version installed on
