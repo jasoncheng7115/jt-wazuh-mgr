@@ -1,0 +1,189 @@
+{
+ "id": "jt-ucs",
+ "name": "Univention Corporate Server Domain Controllers",
+ "name_zh": "Univention Corporate Server 網域控制站",
+ "version": "1.0",
+ "summary": "LDAP bind failures, privileged group changes, account and password changes, management console logins and DC service failures on UCS / Samba 4 AD domain controllers, plus optional Samba logon audit.",
+ "summary_zh": "UCS / Samba 4 AD 網域控制站的 LDAP bind 失敗、特權群組變更、帳號與密碼變更、管理主控台登入與 DC 服務失敗，並可選用 Samba 登入稽核。",
+ "rule_id_range": "131400-131499",
+ "notes": [
+  "A UCS domain controller already sends /var/log/syslog and /var/log/auth.log to Wazuh, but Wazuh decodes only the OpenLDAP connection and bind lines. LDAP writes, the UCS directory logger, the management console's PAM lines and the Samba init script arrived undecoded. Meanwhile the built-in rules produced noise: every LDAP connection was a level 3 alert (rule 2508, about 7,000 a day on one UCS primary), and every management console login raised two level 5 authentication failures, because UCS tries the local password before Kerberos.",
+  "LDAP bind failures (err=49) are level 5 with the account and source address. They are level 8 for admin, Administrator, krbtgt or a join account, and level 10 when one address fails eight times in two minutes. A domain controller's own machine account failing is level 3: that happens briefly at each machine password change (measured: two a month per DC). Connection alerts are recorded below the alert level. A child of rule 2508 stops the built-in rule 2509 from ever firing (verified), so rule 131401 takes its place. That applies to every OpenLDAP server that reports to the manager.",
+  "Writes to the UCS directory, read from slapd's stats log (log level 256). Any write to a privileged group is level 12. Those groups are Domain Admins, Enterprise Admins, Schema Admins, Administrators, the built-in operator groups, DnsAdmins, Group Policy Creator Owners, Domain Controllers, and the UCS groups DC Backup Hosts, DC Slave Hosts, Backup Join and Slave Join. A new domain controller object, a change to cn=admin, or the deletion of a privileged account is level 10. A new computer object is level 5. Users created, deleted or renamed and groups created or deleted are level 3. A user's password set or changed is level 5, and a privileged account's is level 10. Machine password changes and ordinary attribute changes are recorded only. Measured on one domain: no write to a privileged group in twelve weeks, and 115 user creations and deletions in 30 days, all from automated test runs. Expect similar churn from your own test tooling and from the S4 connector.",
+  "What a slapd alert can and cannot say. Each line is one LDAP operation. The alert names the operation and the DN, and adds the bound account and source address that Wazuh carries over from earlier lines of the same connection. It cannot say which member was added to a group, and it shows no values. If a client binds twice on one connection, the first identity is reported. Long-lived connections usually show no bound account; one example is the S4 connector, which writes every change made on the Samba side. Local tools connect from the DC itself, so their source address is the DC. A password alert names the connection and operation; the account is the MOD line just before it on that connection.",
+  "With the UCS directory logger enabled (ldap/logging=yes), its syslog line adds the account that committed each change. A privileged group change is level 12 again, this time with that account. A change made by a person (a uid= account, that is the management console or the REST API) is level 3. Changes by services and machines are recorded only. Measured: 0 to 138 lines a day, median 1. Never collect /var/log/univention/directory-logger.log. Its records contain the password hashes of every changed account (userPassword, krb5Key, sambaNTPassword, pwhistory).",
+  "Management console logins. A successful login is level 3: the user comes from PAM and the client address from the web server log. A rejected login (HTTP 401 on /univention/auth) is level 5, and eight rejections from one address in two minutes are level 10. The PAM step that always fails for domain accounts is recorded only.",
+  "List the domain controllers' short host names in etc/lists/jt-ucs-dc-hosts. On those hosts, the local password failures that come before every Kerberos login are recorded below the alert level; sysvol replication alone logs in over SSH about 576 times a day per DC. On those hosts, a root SSH login with a password is level 8. The same names also recognise the DCs' machine accounts in LDAP binds. Until the list has entries, these rules do nothing.",
+  "Services. Samba AD DC stopping is level 5: it stops at every machine password change (every 21 days by default, at 01:00) and at updates. A failed samba-ad-dc or slapd unit is level 10, a failed listener, notifier or S4 connector level 8, a failed management console server level 5. The sssd-pam socket failures seen on UCS 5.2 (about 60 a day) already produce no alert and are left alone.",
+  "What a UCS DC does not log by default, so this pack cannot see it without the optional steps: Kerberos and NTLM logons and their failures (Samba runs at log level 1); password and group membership changes made on the Samba side, with their actor; and the Admin Diary, which goes to the diary backend and is kept out of /var/log/syslog. Account lockout is disabled unless the site sets a lockout threshold (samba-tool domain passwordsettings), so password guessing against Kerberos is neither throttled nor logged.",
+  "Optional and recommended: Samba's JSON audit, routed to files of its own (setup guide). A failed Kerberos or NTLM logon is level 5 with account, service and source address. It is level 6 for a disabled or expired account and level 8 for a privileged account; ten failures from one address in five minutes are level 10. A member added to or removed from a privileged group is level 12, with the member and the acting SID. A password reset is level 5, or level 10 for a privileged account. These rules were written from Samba's documented JSON format and tested on synthesized lines only. Check them against the first real lines.",
+  "Optional: the Admin Diary. One rsyslog rule on the diary backend writes it to a file; it then records who did what through UDM (level 3). A change to a privileged group is level 12, to the Administrator account level 7; machine password changes are recorded only. For group events the object is assumed to be in the argument 'group'.",
+  "Active responses are offered for repeated LDAP bind failures, repeated rejected management console logins and repeated Samba authentication failures from one address. Blocking on a domain controller cuts that address off from Kerberos, LDAP, DNS and file shares on that DC. Read each risk before enabling one."
+ ],
+ "notes_zh": [
+  "UCS 網域控制站本來就會把 /var/log/syslog 與 /var/log/auth.log 送給 Wazuh，但 Wazuh 只解碼 OpenLDAP 的連線與 bind 行。LDAP 寫入、UCS directory logger、管理主控台的 PAM 記錄、Samba 啟動腳本送進來後都沒有解碼。同時內建規則製造雜訊：每一條 LDAP 連線都是 level 3 告警（規則 2508，一台 UCS 主控約每天 7,000 筆）；每次登入管理主控台會產生兩筆 level 5 的驗證失敗，因為 UCS 先試本機密碼、再試 Kerberos。",
+  "LDAP bind 失敗（err=49）為 level 5，附帳號與來源位址。admin、Administrator、krbtgt 或 join 帳號失敗為 level 8；同一位址兩分鐘內失敗八次為 level 10。網域控制站自己的機器帳號失敗為 level 3，那是每次更換機器密碼時短暫發生的現象（實測：每台 DC 每月兩次）。連線告警記錄在告警等級之下。規則 2508 一旦有子規則，內建規則 2509 就永遠不會觸發（已驗證），因此由規則 131401 取代它。這一點對所有回報到此 manager 的 OpenLDAP 伺服器都適用。",
+  "UCS 目錄的寫入，取自 slapd 的 stats 記錄（log level 256）。任何對特權群組的寫入為 level 12。特權群組包括 Domain Admins、Enterprise Admins、Schema Admins、Administrators、內建的各種 Operators 群組、DnsAdmins、Group Policy Creator Owners、Domain Controllers，以及 UCS 的 DC Backup Hosts、DC Slave Hosts、Backup Join、Slave Join。新的網域控制站物件、cn=admin 被修改、特權帳號被刪除為 level 10；新的電腦物件為 level 5；建立、刪除、更名使用者，建立或刪除群組為 level 3。使用者密碼被設定或變更為 level 5，特權帳號為 level 10。機器帳號密碼變更與一般屬性變更只記錄。單一網域實測：十二週內沒有任何特權群組寫入；30 天內 115 次使用者建立與刪除，全部來自自動化測試。貴站自己的測試工具與 S4 connector 也會造成類似的變動量。",
+  "slapd 告警能說什麼、不能說什麼：每一行是一個 LDAP 操作。告警寫出操作與 DN，並加上 Wazuh 從同一連線先前幾行帶過來的 bind 帳號與來源位址。它說不出群組加入或移除了哪個成員，也不顯示任何值。同一連線 bind 兩次的用戶端，回報的是第一次的身分。長時間不斷線的連線（例如會寫入 Samba 端所有變更的 S4 connector）通常沒有 bind 帳號；本機工具從 DC 本身連線，所以來源位址是 DC。密碼告警寫出連線與操作編號；帳號在同一連線緊接在前的 MOD 行。",
+  "啟用 UCS directory logger（ldap/logging=yes）後，它的 syslog 行會補上提交每筆變更的帳號。特權群組變更同樣為 level 12，並附上這個帳號；由人（uid= 帳號，也就是透過管理主控台或 REST API）做的變更為 level 3；服務與機器做的變更只記錄。實測每天 0 到 138 行，中位數 1。絕對不要收集 /var/log/univention/directory-logger.log：其中每筆被變更帳號的記錄都含有密碼雜湊（userPassword、krb5Key、sambaNTPassword、pwhistory）。",
+  "管理主控台登入：成功為 level 3，使用者取自 PAM、用戶端位址取自網頁伺服器記錄；被拒絕的登入（/univention/auth 回應 HTTP 401）為 level 5，同一位址兩分鐘內被拒絕八次為 level 10。網域帳號必然失敗的那一步 PAM 只記錄。",
+  "請把網域控制站的短主機名稱列入 etc/lists/jt-ucs-dc-hosts。在這些主機上，每次 Kerberos 登入之前必然出現的本機密碼失敗會記錄在告警等級之下（光是 sysvol 複寫，每台 DC 每天就以 SSH 登入約 576 次）；root 以密碼透過 SSH 登入則為 level 8。同一份名單也用來辨認 LDAP bind 中的 DC 機器帳號。名單沒有項目時，這些規則不會作用。",
+  "服務：Samba AD DC 停止為 level 5，它在每次更換機器密碼（預設每 21 天、凌晨 01:00）與更新時都會停止。samba-ad-dc 或 slapd 服務失敗為 level 10，listener、notifier 或 S4 connector 失敗為 level 8，管理主控台伺服器失敗為 level 5。UCS 5.2 上的 sssd-pam socket 失敗（每天約 60 次）本來就不產生告警，套件不處理。",
+  "UCS 網域控制站預設不記錄、因此本套件不做選用步驟就看不到的事：Kerberos 與 NTLM 登入及其失敗（Samba 執行在 log level 1）；在 Samba 端做的密碼與群組成員變更以及執行者；Admin Diary（它送到 diary 後端，並被排除在 /var/log/syslog 之外）。除非網站設定了鎖定門檻（samba-tool domain passwordsettings），帳號鎖定是關閉的，所以對 Kerberos 的密碼猜測既不會被限制，也不會被記錄。",
+  "選用、建議啟用：Samba 的 JSON 稽核，寫到各自的檔案（見部署說明）。Kerberos 或 NTLM 登入失敗為 level 5，附帳號、服務與來源位址；停用或過期帳號為 level 6，特權帳號為 level 8；同一位址五分鐘內失敗十次為 level 10。成員加入或移出特權群組為 level 12，附成員與執行者的 SID。密碼重設為 level 5，特權帳號為 level 10。這些規則依 Samba 文件記載的 JSON 格式撰寫，只用合成的記錄行測試過；請以最初的真實記錄核對。",
+  "選用：Admin Diary。在 diary 後端加一條 rsyslog 規則把它寫到檔案後，會記錄誰透過 UDM 做了什麼（level 3）；特權群組變更為 level 12，Administrator 帳號變更為 level 7；機器密碼變更只記錄。群組事件的物件假設放在參數「group」。",
+  "提供三種主動回應：同一位址一再 LDAP bind 失敗、一再被管理主控台拒絕登入、一再 Samba 驗證失敗。在網域控制站上封鎖，會讓該位址在那台 DC 上的 Kerberos、LDAP、DNS 與檔案分享全部中斷；啟用前請先讀各自的風險說明。"
+ ],
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.7"
+ ],
+ "files": [
+  {
+   "type": "decoder",
+   "name": "jt-ucs_decoders.xml",
+   "dest": "etc/decoders/jt-ucs_decoders.xml",
+   "sha256": "a7f4fc68cee17d448999b9a8876484e0f83d2f76eaa4185455a42dfff5377b35"
+  },
+  {
+   "type": "rule",
+   "name": "zz-131400-jt_ucs_rules.xml",
+   "dest": "etc/rules/zz-131400-jt_ucs_rules.xml",
+   "sha256": "bb6c67c64dfd8815765965690c42133e6908633a980bccb5e3b2b8b4e3f52051"
+  },
+  {
+   "type": "list",
+   "name": "jt-ucs-dc-hosts",
+   "dest": "etc/lists/jt-ucs-dc-hosts",
+   "declare": true,
+   "keep": true,
+   "sha256": "f8794cd3c2a62c83a8b3bd8c92e9b7b100b5e0754e13247dde81e8506e502152"
+  }
+ ],
+ "agent_group": {
+  "name": "ucs",
+  "config": "agent.conf",
+  "files": [],
+  "description": "UCS domain controllers: the optional Samba JSON audit files and the Admin Diary copy; syslog, auth.log and the web server log are read by the agent already"
+ },
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset on every node",
+   "title_zh": "安裝套件並在所有節點重新載入規則集",
+   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "List the domain controllers",
+   "title_zh": "列出網域控制站",
+   "body": "One line per domain controller: the short host name as it appears in /var/log/syslog on that DC, which is also the name of its machine account. Reload the ruleset afterwards. The quieting of the PAM failures that come before every Kerberos login, the root password login rule, and the recognition of DC machine accounts in LDAP binds all depend on this list. The file is yours once it exists: updates and removal of the pack leave it alone.",
+   "body_zh": "每台網域控制站一行：該 DC 的 /var/log/syslog 裡出現的短主機名稱，這也是它機器帳號的名稱。加入後重新載入規則集。Kerberos 登入前那幾筆 PAM 失敗的降噪、root 密碼登入規則、以及辨認 LDAP bind 中的 DC 機器帳號，都依賴這份名單。檔案建立後屬於貴站：更新或移除套件都不會動它。",
+   "code": "echo 'dc1-example:dc' >> /var/ossec/etc/lists/jt-ucs-dc-hosts\necho 'dc2-example:dc' >> /var/ossec/etc/lists/jt-ucs-dc-hosts",
+   "verify": "Log in to the management console on a listed DC. Expect rules 131462 and 131431 (level 3), and no level 5 authentication failure for that login.",
+   "verify_zh": "在列入名單的 DC 上登入管理主控台，應出現規則 131462 與 131431（level 3），且這次登入不再出現 level 5 的驗證失敗。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Assign the domain controllers to the ucs group",
+   "title_zh": "把網域控制站加入 ucs 群組",
+   "body": "Most of what the pack uses comes from /var/log/syslog, /var/log/auth.log and /var/log/apache2/access.log, which a Debian agent reads already. The group adds the optional Samba audit and Admin Diary files; until the site creates them, the agent skips them. Never add /var/log/univention/directory-logger.log to any agent configuration: its records contain password hashes.",
+   "body_zh": "套件用到的大部分內容來自 /var/log/syslog、/var/log/auth.log 與 /var/log/apache2/access.log，Debian 上的 agent 本來就有在讀。群組另外加入選用的 Samba 稽核與 Admin Diary 檔案；網站建立這些檔案之前，agent 會略過它們。絕對不要把 /var/log/univention/directory-logger.log 加入任何 agent 設定：其中含有密碼雜湊。",
+   "file": "agent/agent.conf",
+   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g ucs\n/var/ossec/bin/agent_control -R -u <agent_id>"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "OpenLDAP statistics logging (needed for the LDAP rules)",
+   "title_zh": "OpenLDAP 統計記錄（LDAP 規則需要）",
+   "body": "The LDAP bind and write rules need slapd at log level 256 (stats). Check it with ucr get ldap/debug/level. If the value lacks 256, set it and restart slapd. Impact: LDAP on that server is unavailable for a few seconds during the restart, and syslog grows by one line per LDAP operation (measured: about 137,000 lines a day on a busy primary, about 1.6 events a second to the manager; searches stay at level 0).",
+   "body_zh": "LDAP bind 與寫入規則需要 slapd 的 log level 256（stats）。用 ucr get ldap/debug/level 檢查；若不含 256，設定後重新啟動 slapd。影響：重新啟動期間該伺服器的 LDAP 中斷數秒；syslog 每個 LDAP 操作多一行（實測：繁忙的主控每天約 137,000 行，送到 manager 約每秒 1.6 筆；搜尋操作維持 level 0）。",
+   "code": "ucr get ldap/debug/level\nucr set ldap/debug/level=256\nsystemctl restart slapd",
+   "verify": "Bind with a wrong password: ldapsearch -x -H ldap://<dc>:7389 -D uid=<user>,cn=users,<base> -w wrong -b '' -s base. Expect rule 131401 (level 5).",
+   "verify_zh": "以錯誤密碼 bind：ldapsearch -x -H ldap://<dc>:7389 -D uid=<user>,cn=users,<base> -w wrong -b '' -s base，應出現規則 131401（level 5）。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "UCS directory logger (who made each change)",
+   "title_zh": "UCS directory logger（每筆變更由誰做）",
+   "body": "On the Primary Directory Node, the univention-directory-logger listener module writes one syslog line per committed change, with the modifying account. The pack reads only that syslog line. The module's own file, /var/log/univention/directory-logger.log, contains password hashes and must not be collected. Installing the package runs a listener module on the Primary; no service interruption.",
+   "body_zh": "在 Primary Directory Node 上，univention-directory-logger 這個 listener 模組會為每筆已提交的變更寫一行 syslog，附修改者帳號。套件只讀這一行 syslog；模組自己的檔案 /var/log/univention/directory-logger.log 含有密碼雜湊，不可收集。安裝套件會在 Primary 上執行一個 listener 模組，不會中斷服務。",
+   "code": "univention-install univention-directory-logger\nucr get ldap/logging",
+   "verify": "Change a user's description in the management console. Expect rule 131441 (level 3) naming your account.",
+   "verify_zh": "在管理主控台修改某個使用者的描述，應出現規則 131441（level 3），並寫出你的帳號。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Samba JSON audit: Kerberos and NTLM logons, password and group changes",
+   "title_zh": "Samba JSON 稽核：Kerberos 與 NTLM 登入、密碼與群組變更",
+   "body": "Samba (4.21 on UCS 5.2) can write each audit class to a file of its own (class:level@file in log level). Level 2 of auth_json_audit logs failed logons only; level 3 would add every successful logon. debug syslog format = yes makes each record one line, which the pack's decoder needs; it also turns log.samba into single-line records. Set both through UCR, which writes them to /etc/samba/local.config.conf after the global section, so they take precedence over debug level; check with testparm. Add a logrotate rule for the new files. Restart samba-ad-dc one DC at a time: Kerberos, Samba LDAP, DNS updates and file shares on that DC are unavailable for about ten seconds. The volume of failed logons could not be measured beforehand, because nothing logs them today.",
+   "body_zh": "Samba（UCS 5.2 上為 4.21）可以把每一類稽核寫到各自的檔案（log level 中的 class:level@file）。auth_json_audit 的 level 2 只記錄失敗的登入，level 3 會加上每一次成功登入。debug syslog format = yes 讓每筆記錄成為一行，這是套件解碼器所需要的；它也會讓 log.samba 變成單行格式。兩者都透過 UCR 設定：UCR 會把它們寫到 /etc/samba/local.config.conf，排在 global 區段之後，因此優先於 debug level；請用 testparm 確認。為新檔案加上 logrotate 規則。一次只重新啟動一台 DC 的 samba-ad-dc：那台 DC 的 Kerberos、Samba LDAP、DNS 更新與檔案分享會中斷約十秒。失敗登入的數量無法事先測量，因為目前沒有任何東西記錄它們。",
+   "code": "ucr set 'samba/global/options/log level=1 auth_json_audit:2@/var/log/samba/jt-audit-auth.log dsdb_password_json_audit:5@/var/log/samba/jt-audit-password.log dsdb_group_json_audit:5@/var/log/samba/jt-audit-group.log' 'samba/global/options/debug syslog format=yes'\ntestparm -sv 2>/dev/null | grep -E '^\\s*(log level|debug syslog format) ='\ncat > /etc/logrotate.d/jt-samba-audit <<'EOF'\n/var/log/samba/jt-audit-*.log {\n\tweekly\n\trotate 12\n\tcompress\n\tmissingok\n\tnotifempty\n\tcopytruncate\n}\nEOF\nsystemctl restart samba-ad-dc",
+   "verify": "kinit <user> with a wrong password against this DC. Expect rule 131473 (level 5) with the client address. If no line appears in /var/log/samba/jt-audit-auth.log, the option names were not accepted: check testparm.",
+   "verify_zh": "對這台 DC 以錯誤密碼執行 kinit <user>，應出現規則 131473（level 5）並附用戶端位址。若 /var/log/samba/jt-audit-auth.log 沒有出現任何記錄，表示選項名稱未被接受，請檢查 testparm。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Admin Diary to a file (on the diary backend)",
+   "title_zh": "把 Admin Diary 寫到檔案（在 diary 後端）",
+   "body": "UCS sends Admin Diary entries through rsyslog with the tag ADMINDIARY, and the backend's own rule stops them before /var/log/syslog. A rule that sorts before that one (the file name starts with 00-) writes a copy in syslog format to /var/log/univention/jt-admindiary.log. The backend receives the entries of every UCS host in the domain, so this is needed on the backend only. Restarting rsyslog pauses logging for a moment; no service is interrupted.",
+   "body_zh": "UCS 以 rsyslog 的 ADMINDIARY 標籤傳送 Admin Diary 項目，後端自己的規則會在寫入 /var/log/syslog 之前把它們攔下。檔名以 00- 開頭的規則會排在那條規則之前，把一份 syslog 格式的副本寫到 /var/log/univention/jt-admindiary.log。後端會收到網域內所有 UCS 主機的項目，所以只需在後端設定。重新啟動 rsyslog 會讓記錄短暫暫停，不會中斷任何服務。",
+   "code": "cat > /etc/rsyslog.d/00-jt-admindiary.conf <<'EOF'\nif $syslogtag == 'ADMINDIARY:' then action(type=\"omfile\" file=\"/var/log/univention/jt-admindiary.log\" template=\"RSYSLOG_FileFormat\")\nEOF\ncat > /etc/logrotate.d/jt-admindiary <<'EOF'\n/var/log/univention/jt-admindiary.log {\n\tweekly\n\trotate 12\n\tcompress\n\tmissingok\n\tnotifempty\n\tcopytruncate\n}\nEOF\nsystemctl restart rsyslog",
+   "verify": "Create a test user in the management console. Expect rule 131490 (level 3) naming your account.",
+   "verify_zh": "在管理主控台建立一個測試使用者，應出現規則 131490（level 3），並寫出你的帳號。"
+  }
+ ],
+ "active_response": [
+  {
+   "id": "block-ldap-bruteforce",
+   "command": "firewall-drop",
+   "rules_id": [
+    "131404"
+   ],
+   "location": "local",
+   "timeout": 600,
+   "title": "Block an address that keeps failing LDAP binds on a domain controller",
+   "title_zh": "封鎖在網域控制站上一再 LDAP bind 失敗的位址",
+   "body": "After eight failed binds from one address in two minutes, all traffic from that address to the DC where it happened is dropped for 10 minutes (iptables or nftables on the DC). Risk: in a UCS domain most LDAP clients are member servers, applications and the other DCs. A server with a stale service-account password would lose Kerberos, LDAP, DNS and file shares on that DC, and the logons of its users fail. A DC blocking another DC stops replication. Put the DCs, member servers and management networks in the manager's white_list first. UCS rebuilds its firewall rules when univention-firewall restarts, which removes a block early.",
+   "body_zh": "同一位址兩分鐘內 bind 失敗八次後，在發生的那台 DC 上封鎖該位址的所有流量 10 分鐘（DC 上的 iptables 或 nftables）。風險：UCS 網域中多數 LDAP 用戶端是成員伺服器、應用程式與其他 DC。服務帳號密碼過期的伺服器會在那台 DC 上失去 Kerberos、LDAP、DNS 與檔案分享，其使用者的登入也會失敗；DC 封鎖另一台 DC 會使複寫停止。請先把 DC、成員伺服器與管理網段加入 manager 的 white_list。univention-firewall 重新啟動時 UCS 會重建防火牆規則，封鎖會提早解除。"
+  },
+  {
+   "id": "block-umc-bruteforce",
+   "command": "firewall-drop",
+   "rules_id": [
+    "131461"
+   ],
+   "location": "local",
+   "timeout": 600,
+   "title": "Block an address that keeps failing to log in to the management console",
+   "title_zh": "封鎖一再登入管理主控台失敗的位址",
+   "body": "After eight rejected logins from one address in two minutes, all traffic from that address to that DC is dropped for 10 minutes. The block applies to the whole DC, not only to the web interface: a workstation at that address also loses its domain logon, file shares and DNS on that DC. If a reverse proxy sits in front of the management console, every user behind it is blocked. Put the proxy and management networks in the manager's white_list first.",
+   "body_zh": "同一位址兩分鐘內被拒絕登入八次後，在那台 DC 上封鎖該位址的所有流量 10 分鐘。封鎖作用於整台 DC，不只是網頁介面：該位址的工作站也會在那台 DC 上失去網域登入、檔案分享與 DNS。若管理主控台前面有反向代理，代理後的所有使用者都會被擋。請先把代理與管理網段加入 manager 的 white_list。"
+  },
+  {
+   "id": "block-samba-auth-bruteforce",
+   "command": "firewall-drop",
+   "rules_id": [
+    "131477"
+   ],
+   "location": "local",
+   "timeout": 600,
+   "title": "Block an address with repeated Kerberos or NTLM failures (needs the Samba audit)",
+   "title_zh": "封鎖一再 Kerberos 或 NTLM 失敗的位址（需要 Samba 稽核）",
+   "body": "After ten failed logons from one address in five minutes, all traffic from that address to that DC is dropped for 10 minutes. Requires the optional Samba JSON audit. Risk: a legitimate workstation with stale cached credentials (a mapped drive or service still using an old password) fails repeatedly by itself; blocking it means that machine cannot log on to the domain through that DC. A NAT or VPN gateway blocks everyone behind it. Domains with more than one DC let clients fail over, which limits the outage but also the protection. Put servers, gateways and management networks in the manager's white_list first.",
+   "body_zh": "同一位址五分鐘內登入失敗十次後，在那台 DC 上封鎖該位址的所有流量 10 分鐘。需要選用的 Samba JSON 稽核。風險：快取憑證過期的正常工作站（仍用舊密碼的對應磁碟機或服務）會自己一再失敗；封鎖它代表那台電腦無法透過該 DC 登入網域。NAT 或 VPN 閘道會讓其後所有人都被擋。網域有多台 DC 時，用戶端會轉向其他 DC，這減輕了中斷，也削弱了防護。請先把伺服器、閘道與管理網段加入 manager 的 white_list。"
+  }
+ ]
+}

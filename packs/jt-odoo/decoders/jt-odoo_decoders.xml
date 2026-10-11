@@ -1,0 +1,250 @@
+<!--
+  jt-odoo: decoders for the Odoo server log
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  Odoo (odoo/netsvc.py) writes every record as
+    YYYY-MM-DD HH:MM:SS,mmm PID LEVEL DBNAME LOGGER: MESSAGE PERF
+  e.g.
+    2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 203.0.113.5
+    2026-10-11 03:00:00,456 1234 INFO prod werkzeug: 203.0.113.5 - - [11/Oct/2026 03:00:00] "POST /web/login HTTP/1.1" 200 - 12 0.012 0.034
+  DBNAME is "?" outside a database; PERF is empty except on werkzeug request
+  lines (query count, query time, other time), so most lines end in a space.
+  Tracebacks follow on lines of their own; the pack's agent group joins them to
+  their record (multi-line-regex), so one event is one record.
+
+  Wazuh's pre-decoder takes the timestamp AND the next word (the PID) off the
+  line, so a decoder reading the log file sees it from LEVEL on (measured on
+  4.14.7). The same records arriving through syslog or journald (Odoo under
+  docker with the syslog or journald logging driver, or a service without a
+  logfile) keep the whole line as the message of program "odoo...", and are
+  decoded by jt-odoo-syslog below. Both decoders extract the same fields.
+
+  Fields
+    odoo.level odoo.db odoo.logger odoo.message   every record
+    dstuser srcip                                 logins, throttling, 2FA, API keys, module access
+    srcip protocol url id                         werkzeug request lines (id = HTTP status)
+    odoo.uid odoo.model odoo.operation            access denials, deletions
+    odoo.method odoo.modules                      module install / upgrade / uninstall
+    odoo.target_db                                database manager actions
+    odoo.job                                      failed scheduled jobs
+    odoo.version                                  server start
+-->
+
+<!-- ===================== the log file (logfile = ... in odoo.conf) ===================== -->
+
+<decoder name="jt-odoo">
+  <prematch type="pcre2">^(?:DEBUG|INFO|WARNING|ERROR|CRITICAL) [A-Za-z0-9_.?-]+ [A-Za-z0-9_.]+: </prematch>
+</decoder>
+
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">^(DEBUG|INFO|WARNING|ERROR|CRITICAL) ([A-Za-z0-9_.?-]+) ([A-Za-z0-9_.]+): (.*)$</regex>
+  <order>odoo.level, odoo.db, odoo.logger, odoo.message</order>
+</decoder>
+
+<!-- res_users._login: "Login successful|failed for db:%s login:%s from %s"
+     (16.0 to 18.0) and "... for login:%s from %s" (19.0) -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: Login (?:successful|failed) for (?:db:\S* )?login:(.*?) from (\S+)\s*$</regex>
+  <order>dstuser, srcip</order>
+</decoder>
+
+<!-- res_users._assert_can_auth: Odoo's own login throttle -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: Login attempt ignored for (\S+) \(user '?(.*?)'?\) on \S+: (\d+) failures since last success</regex>
+  <order>srcip, dstuser, odoo.failures</order>
+</decoder>
+
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: The rate-limited IP address (\S+) is classified as private</regex>
+  <order>srcip</order>
+</decoder>
+
+<!-- werkzeug request line; the address is the client only with proxy_mode -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">werkzeug: (\S+) - - \[[^\]]*\] "([A-Z]+) (\S+) [^"]*" (\d{3})</regex>
+  <order>srcip, protocol, url, id</order>
+</decoder>
+
+<!-- auth_totp: "2FA check: FAIL for res.users(7,) 'jdoe'", "2FA check (mail): ..." (19.0) -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: 2FA (?:check|enable)\s?(?:\(mail\))?: [A-Z ]+ for res\.users\((\d+),?\) ['"](.*)['"]\s*$</regex>
+  <order>odoo.uid, dstuser</order>
+</decoder>
+
+<!-- "2FA disable: SUCCESS for res.users(7,) ('jdoe') by uid #2" -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: 2FA disable: [A-Z]+ for res\.users\((\d+)[\d, ]*\) \(['"]?(.*?)['"]?\) by uid #(\d+)</regex>
+  <order>odoo.target_uid, dstuser, odoo.uid</order>
+</decoder>
+
+<!-- auth_signup: "Password reset email sent for user <jdoe> to <jdoe@example.com>" -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: (?:Password reset|Signup|New device alert) email sent for user \x3c(.*?)\x3e to \x3c</regex>
+  <order>dstuser</order>
+</decoder>
+
+<!-- "Users API Keys generated: scope: <None> for 'jdoe' (#7) from 203.0.113.5",
+     "API key(s) removed: scope: <['rpc']> for 'jdoe' (#7) from 203.0.113.5" -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: (?:.+? generated|API key\(s\) removed): scope: \x3c(.*?)\x3e for '(.*?)' \(#(\d+)\) from (\S+)</regex>
+  <order>odoo.scope, dstuser, odoo.uid, srcip</order>
+</decoder>
+
+<!-- ir_module: "ALLOW access to module.button_immediate_install on ['Sales'] to user admin #2 via 203.0.113.5"
+     and "DENY access to module.button_install on [...] to user jdoe ID #7 via ..." -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: (?:ALLOW|DENY) access to module\.(\w+) on (\[.*\]) to user (.*?) (?:ID )?#(\d+) via (\S+)\s*$</regex>
+  <order>odoo.method, odoo.modules, dstuser, odoo.uid, srcip</order>
+</decoder>
+
+<!-- ir_model / ir_rule: "Access Denied by ACLs for operation: read, uid: 7, model: hr.employee",
+     "Access Denied by record rules for operation: write on record ids: [12], uid: 7, model: sale.order" -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: Access Denied by (?:ACLs|record rules) for operation: (\w+)(?: on record ids: \[[^\]]*\])?, uid: (\d+), model: ([\w.]+)</regex>
+  <order>odoo.operation, odoo.uid, odoo.model</order>
+</decoder>
+
+<!-- odoo.models.unlink: "User #7 deleted sale.order records with IDs: [12, 13]" -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: User #(\d+) deleted ([\w.]+) records with IDs: </regex>
+  <order>odoo.uid, odoo.model</order>
+</decoder>
+
+<!-- odoo.service.db: "DROP DB: x", "DUMP DB: x format zip", "RESTORE DB: x",
+     "RENAME DB: x -> y", "Create database `x`.", "Duplicate database `x` to `y`." -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: (?:(?:DROP|DUMP|RESTORE|RENAME) DB: |(?:Create|Duplicate) database \x60)([^\x60\s]+)</regex>
+  <order>odoo.target_db</order>
+</decoder>
+
+<!-- odoo: "Odoo version 18.0" at start -->
+<!-- ir_cron: "Job 'name' (12) server action #345 failed", "Job 'name' (12) timed out"
+     (18.0, 19.0) and "Call from cron name for server action #345 failed in Job #12" (16.0, 17.0) -->
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2">: (?|Job ['"](.+?)['"] \(\d+\) (?:server action|timed out)|Call from cron (.+?) for server action #)</regex>
+  <order>odoo.job</order>
+</decoder>
+
+<decoder name="jt-odoo-fields">
+  <parent>jt-odoo</parent>
+  <regex type="pcre2"> odoo: Odoo version (\S+)</regex>
+  <order>odoo.version</order>
+</decoder>
+
+
+<!-- ===================== the same records through syslog or journald ===================== -->
+<!--
+  e.g. "Oct 11 03:00:00 odoo1 odoo[812]: 2026-10-11 03:00:00,123 1 INFO prod odoo...: ..."
+  The program name is the syslog tag: set it to odoo (docker: log-opt tag=odoo;
+  systemd: SyslogIdentifier=odoo). The children repeat the ones above.
+-->
+<decoder name="jt-odoo-syslog">
+  <program_name type="pcre2">^odoo</program_name>
+  <prematch type="pcre2">^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} \d+ (?:DEBUG|INFO|WARNING|ERROR|CRITICAL) </prematch>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">^\S+ \S+ \d+ (DEBUG|INFO|WARNING|ERROR|CRITICAL) ([A-Za-z0-9_.?-]+) ([A-Za-z0-9_.]+): (.*)$</regex>
+  <order>odoo.level, odoo.db, odoo.logger, odoo.message</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: Login (?:successful|failed) for (?:db:\S* )?login:(.*?) from (\S+)\s*$</regex>
+  <order>dstuser, srcip</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: Login attempt ignored for (\S+) \(user '?(.*?)'?\) on \S+: (\d+) failures since last success</regex>
+  <order>srcip, dstuser, odoo.failures</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: The rate-limited IP address (\S+) is classified as private</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">werkzeug: (\S+) - - \[[^\]]*\] "([A-Z]+) (\S+) [^"]*" (\d{3})</regex>
+  <order>srcip, protocol, url, id</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: 2FA (?:check|enable)\s?(?:\(mail\))?: [A-Z ]+ for res\.users\((\d+),?\) ['"](.*)['"]\s*$</regex>
+  <order>odoo.uid, dstuser</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: 2FA disable: [A-Z]+ for res\.users\((\d+)[\d, ]*\) \(['"]?(.*?)['"]?\) by uid #(\d+)</regex>
+  <order>odoo.target_uid, dstuser, odoo.uid</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: (?:Password reset|Signup|New device alert) email sent for user \x3c(.*?)\x3e to \x3c</regex>
+  <order>dstuser</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: (?:.+? generated|API key\(s\) removed): scope: \x3c(.*?)\x3e for '(.*?)' \(#(\d+)\) from (\S+)</regex>
+  <order>odoo.scope, dstuser, odoo.uid, srcip</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: (?:ALLOW|DENY) access to module\.(\w+) on (\[.*\]) to user (.*?) (?:ID )?#(\d+) via (\S+)\s*$</regex>
+  <order>odoo.method, odoo.modules, dstuser, odoo.uid, srcip</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: Access Denied by (?:ACLs|record rules) for operation: (\w+)(?: on record ids: \[[^\]]*\])?, uid: (\d+), model: ([\w.]+)</regex>
+  <order>odoo.operation, odoo.uid, odoo.model</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: User #(\d+) deleted ([\w.]+) records with IDs: </regex>
+  <order>odoo.uid, odoo.model</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: (?:(?:DROP|DUMP|RESTORE|RENAME) DB: |(?:Create|Duplicate) database \x60)([^\x60\s]+)</regex>
+  <order>odoo.target_db</order>
+</decoder>
+
+<!-- ir_cron: "Job 'name' (12) server action #345 failed", "Job 'name' (12) timed out"
+     (18.0, 19.0) and "Call from cron name for server action #345 failed in Job #12" (16.0, 17.0) -->
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2">: (?|Job ['"](.+?)['"] \(\d+\) (?:server action|timed out)|Call from cron (.+?) for server action #)</regex>
+  <order>odoo.job</order>
+</decoder>
+
+<decoder name="jt-odoo-syslog-fields">
+  <parent>jt-odoo-syslog</parent>
+  <regex type="pcre2"> odoo: Odoo version (\S+)</regex>
+  <order>odoo.version</order>
+</decoder>

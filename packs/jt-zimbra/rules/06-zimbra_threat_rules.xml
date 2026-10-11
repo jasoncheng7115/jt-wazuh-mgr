@@ -1,13 +1,13 @@
 <!--
-  Zimbra 威脅偵測規則（資料外洩／持久化／反鑑識／CVE 利用／IOC）
-  檔案：/var/ossec/etc/rules/zimbra_threat_rules.xml
+  Zimbra 威脅偵測規則（資料外洩／持久化／反鑑識／CVE 利用）
+  檔案：etc/rules/06-zimbra_threat_rules.xml
   區段：100920-100999
-  版本：v2.0
+  版本：v3.0（jt-zimbra 3.0）
 
   相依：
-    - 解碼器 zimbra-proxy-access（100820）
-    - CDB 清單 etc/lists/zimbra-webshell-ioc
-    - CDB 清單 etc/lists/jason_tools_threat_ip（既有）
+    - 解碼器 zimbra-proxy-access（decoders/0001-zimbra_decoders.xml，3.0 起隨套件提供）
+    - CDB 清單 etc/lists/zimbra-internal-networks
+  3.0 起不再引用其他套件的清單（100991 已移除，見該處說明）。
 -->
 
 <!-- ==========================================================
@@ -33,16 +33,24 @@
     <description>Mailbox export from an internal network, normal backup or user action</description>
   </rule>
 
+  <!-- 3.0: 100922 had no condition and was a sibling of 100921, so an
+       internal export could come out at level 14. -->
   <rule id="100922" level="14">
     <if_sid>100920</if_sid>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/zimbra-internal-networks</list>
     <description>[HIGH] Full mailbox export from an external source, possible data exfiltration: $(url) from: $(srcip)</description>
     <mitre>
       <id>T1114.001</id>
     </mitre>
+    <group>zimbra_mailbox_export,</group>
   </rule>
 
+  <!-- 3.0: counted through the group; every export ends at a child of
+       100920, so with if_matched_sid 100920 nothing was ever counted. Now
+       a child of 100922: repeated EXTERNAL exports. -->
   <rule id="100923" level="15" frequency="3" timeframe="600">
-    <if_matched_sid>100920</if_matched_sid>
+    <if_sid>100922</if_sid>
+    <if_matched_group>zimbra_mailbox_export</if_matched_group>
     <same_source_ip />
     <description>[CRITICAL] Repeated mailbox exports in a short window, assessed as bulk data theft: $(srcip)</description>
     <mitre>
@@ -75,24 +83,9 @@
   </rule>
   -->
 
-  <!-- 單一帳號大量寄信：帳號遭挾持用於散發或外送資料
-       ※ frequency 必須搭配 if_matched_*，不可與 if_sid 併用（analysisd 會拒絕載入），
-         故需先建立 level>=1 的計數基礎規則（level 0 會在關聯前被丟棄） -->
-  <rule id="100928" level="1">
-    <if_sid>100840</if_sid>
-    <match>SendMsg</match>
-    <options>no_log</options>
-    <description>Zimbra mail send event, counted for correlation</description>
-  </rule>
-
-  <rule id="100925" level="12" frequency="50" timeframe="300">
-    <if_matched_sid>100928</if_matched_sid>
-    <same_user />
-    <description>[HIGH] One account sent a large volume of mail in a short window, the account may be hijacked: $(user)</description>
-    <mitre>
-      <id>T1114.002</id>
-    </mitre>
-  </rule>
+  <!-- 100928 / 100925 (one account sending a burst of mail) moved to
+       08-zimbra_soap_rules.xml in 3.0: they read audit.log, which never
+       logs a send, and so could not fire. -->
 
   <!-- 出向流量遭阻擋（搭配指南 1-3 egress filtering）
        ※ 不掛 <if_sid>4100</if_sid>：實測該父規則參照會被 analysisd 忽略，
@@ -132,6 +125,17 @@
     <mitre>
       <id>T1543.002</id>
     </mitre>
+  </rule>
+
+  <!-- 3.0: the package manager and snapd install cron entries and units
+       too. In 41 days on two servers every 100940/100941 was one of them
+       (a snap refresh rewrites its units, a package added a cron.daily
+       script). Only events that NAME the writer are lowered: whodata must be
+       working; a realtime event with no process stays at level 13. -->
+  <rule id="100937" level="5">
+    <if_sid>100940,100941</if_sid>
+    <field name="process_name" type="pcre2">^/usr/bin/dpkg$|^/usr/bin/apt(?:-get)?$|^/usr/lib/apt/|/usr/bin/unattended-upgrade$|^/snap/snapd/\d+/usr/lib/snapd/snapd$|^/usr/lib/snapd/snapd$</field>
+    <description>Scheduled task or systemd unit installed by the package manager or snapd: $(file) process: $(process_name)</description>
   </rule>
 
   <rule id="100942" level="14">
@@ -226,11 +230,18 @@
     </mitre>
   </rule>
 
-  <!-- CVE-2019-9621：proxyservlet SSRF -->
+  <!-- CVE-2019-9621: proxyservlet SSRF.
+       3.0: the proxy servlet is also how the web client fetches previews
+       for zimlets (an external URL, refused or not by
+       zimbraProxyAllowedDomains); two such requests were reported here at
+       level 13. The exploit points the servlet back at the server itself
+       or the internal network, so only those targets are matched now:
+       loopback, the admin and internal ports, private and link-local
+       addresses (cloud metadata), in plain and URL-encoded form. -->
   <rule id="100978" level="13">
     <if_sid>100820</if_sid>
-    <url type="pcre2">/service/proxy\?target=</url>
-    <description>[HIGH] proxyservlet SSRF attempt, CVE-2019-9621: $(url) from: $(srcip)</description>
+    <url type="pcre2">(?i)/service/proxy\?(?:.*\x26)?target=(?:https?(?::|%3A)(?://|%2F%2F))?(?:[^/\x26%]*(?:@|%40))?(?:localhost|127\.|0\.0\.0\.0|\[?::1|\[?%3A%3A1|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|169\.254\.|[^/\x26%?]*(?::|%3A)(?:7071|7073|7025|7110|7143|7993|7995|8080|8443|11211)\b)</url>
+    <description>[HIGH] proxyservlet SSRF attempt aimed at the server or the internal network, CVE-2019-9621: $(url) from: $(srcip)</description>
     <mitre>
       <id>T1190</id>
     </mitre>
@@ -265,6 +276,16 @@
     </mitre>
   </rule>
 
+  <!-- 3.0: a 404 burst from an internal address is usually a proxy (Z-Push,
+       a reverse proxy) carrying many clients, or a user's own script:
+       the four 100981 alerts in 41 days here were all one internal script.
+       Recorded at level 3 instead of 10. -->
+  <rule id="100984" level="3">
+    <if_sid>100981</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>Many 404 responses for one internal address, often a proxy carrying many clients or a script: $(srcip)</description>
+  </rule>
+
   <!-- 掃描後成功：探測轉為得手 -->
   <rule id="100982" level="14" timeframe="600">
     <if_sid>100823</if_sid>
@@ -297,13 +318,14 @@
     that looks like coverage and provides none is worse than no rule at all.
   -->
 
-  <!-- 沿用既有 jason_tools 惡意 IP 情資，套用於 Zimbra 敏感端點 -->
-  <rule id="100991" level="14">
-    <if_sid>100821,100827,100920</if_sid>
-    <list field="srcip" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
-    <description>[HIGH] Known malicious IP accessed a sensitive Zimbra endpoint: $(srcip) $(url)</description>
-    <group>threat_intelligence,</group>
-  </rule>
+  <!--
+    100991 removed in 3.0. It looked up srcip in the jt-ioc pack's list
+    (etc/lists/jason_tools_threat_ip). Without jt-ioc, analysisd warned that
+    the list could not be loaded and ignored the rule; with jt-ioc, the IOC
+    pack's own rule 906001 already alerts on any event whose srcip is on that
+    list, Zimbra's included, at level 12. Install jt-ioc for known-bad
+    address matching.
+  -->
 
   <!-- 內容特徵掃描結果（由 zimbra-content-scan.sh 產生） -->
   <rule id="100992" level="15">

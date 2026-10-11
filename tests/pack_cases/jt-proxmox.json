@@ -1,0 +1,319 @@
+{
+ "pack": "jt-proxmox",
+ "sandbox_lists": {
+  "jt-pve-service-accounts": "monitoring:service\n"
+ },
+ "cases": [
+  {
+   "log": "Oct 11 00:28:19 pve1 pvedaemon[3802103]: <root@pam> successful auth for user 'monitoring@pve'",
+   "expect_rule": "131200",
+   "expect_level": 0,
+   "note": "real; listed service account"
+  },
+  {
+   "log": "Oct 11 00:28:19 pve1 pvedaemon[3802103]: <root@pam> successful auth for user 'root@pam'",
+   "expect_rule": "87203",
+   "expect_level": 3,
+   "note": "real shape; unlisted account still alerts"
+  },
+  {
+   "log": "Oct  4 00:40:21 pve1 pvedaemon[2310392]: authentication failure; rhost=::ffff:192.0.2.200 user=monitoring@pve msg=Authentication failure",
+   "expect_rule": "87201",
+   "note": "real shape; failures of listed accounts still alert"
+  },
+  {
+   "log": "Oct  4 00:40:20 pve1 pveproxy[2305266]: authentication failure: 401 permission denied - invalid PVE ticket#012",
+   "expect_rule": "131201",
+   "note": "real; expired ticket noise",
+   "expect_level": 2
+  },
+  {
+   "log": "Oct 11 02:00:08 pve1 pvescheduler[4121362]: <root@pam> starting task UPID:pve1:003EE313:3389994E:6ACA7D28:vzdump::root@pam:",
+   "expect_rule": "131211",
+   "expect_level": 0,
+   "note": "real"
+  },
+  {
+   "log": "Oct  4 16:05:07 pve1 pvedaemon[3955268]: <root@pam> end task UPID:pve1:003D4E81:303B087E:6AC205F3:vncproxy:132:root@pam: OK",
+   "expect_rule": "131212",
+   "expect_level": 0,
+   "note": "real"
+  },
+  {
+   "log": "Sep 16 13:43:58 pve1 pvedaemon[3544275]: <root@pam> end task UPID:pve1:00369DC6:26EA1F88:6AAA2C94:vncproxy:202:root@pam: connection timed out",
+   "expect_rule": "131221",
+   "expect_level": 2,
+   "note": "real; console closed"
+  },
+  {
+   "log": "Oct  7 19:59:38 pve1 pvedaemon[3648077]: <root@pam> starting task UPID:pve1:003924A1:31DD1633:6AC6342A:vncshell::root@pam:",
+   "expect_rule": "131215",
+   "expect_level": 5,
+   "note": "real; node shell from the GUI"
+  },
+  {
+   "log": "Oct  4 15:53:23 pve1 pvedaemon[3955268]: <root@pam> starting task UPID:pve1:003D4E81:303B087E:6AC205F3:vncproxy:132:root@pam:",
+   "expect_rule": "131216",
+   "expect_level": 3,
+   "note": "real; guest console"
+  },
+  {
+   "log": "Oct 12 10:00:00 pve1 pvedaemon[1000]: <root@pam> starting task UPID:pve1:00001000:00002000:6ACA0000:termproxy:128:root@pam:",
+   "expect_rule": "131216",
+   "expect_level": 3,
+   "note": "synthesized; container console is not a node shell"
+  },
+  {
+   "log": "Oct 12 10:00:00 pve1 pvedaemon[1000]: <root@pam> starting task UPID:pve1:00001000:00002000:6ACA0000:qmdestroy:105:root@pam:",
+   "expect_rule": "131213",
+   "expect_level": 8,
+   "note": "synthesized from the UPID format"
+  },
+  {
+   "log": "Oct 12 10:00:00 pve1 pvedaemon[1000]: <root@pam> starting task UPID:pve1:00001000:00002000:6ACA0000:qmrollback:105:root@pam:",
+   "expect_rule": "131214",
+   "expect_level": 6,
+   "note": "synthesized"
+  },
+  {
+   "log": "Sep 18 17:30:29 pve1 pvedaemon[518530]: <root@pam> starting task UPID:pve1:0008B94A:28068C81:6AAD04B5:vzcreate:108:root@pam:",
+   "expect_rule": "131217",
+   "expect_level": 3,
+   "note": "real"
+  },
+  {
+   "log": "Sep 16 14:55:09 pve1 pve-ha-lrm[3749591]: <root@pam> starting task UPID:pve1:003936E4:26F0A7D1:6AAA3D4D:qmigrate:147:root@pam:",
+   "expect_rule": "131218",
+   "expect_level": 3,
+   "note": "real; task from pve-ha-lrm"
+  },
+  {
+   "log": "Sep 28 09:44:33 pve1 pct[451931]: <root@pam> starting task UPID:pve1:0006E5B8:2D024035:6AB9C681:push_file:128:root@pam:",
+   "expect_rule": "131219",
+   "expect_level": 3,
+   "note": "real"
+  },
+  {
+   "log": "Oct  1 23:35:47 pve1 pvesh[1249119]: <root@pam> starting task UPID:pve1:00130F68:2ED9DC01:6ABE7DD3:vzsnapshot:128:root@pam:",
+   "expect_rule": "131211",
+   "expect_level": 0,
+   "note": "real; snapshot taken is routine"
+  },
+  {
+   "log": "Oct 12 02:07:23 pve1 pvescheduler[4121362]: <root@pam> end task UPID:pve1:003EE313:3389994E:6ACA7D28:vzdump::root@pam: job errors",
+   "expect_rule": "131222",
+   "expect_level": 10,
+   "note": "synthesized; vzdump's end status on failure"
+  },
+  {
+   "log": "Oct 12 02:01:12 pve1 pvescheduler[4121363]: ERROR: Backup of VM 102 failed - unable to open file '/dev/zvol/x' - No such file",
+   "expect_rule": "131224",
+   "expect_level": 10,
+   "note": "synthesized from vzdump's message format"
+  },
+  {
+   "log": "Oct 11 02:07:23 pve1 pvescheduler[4121363]: INFO: Backup job finished successfully",
+   "expect_rule": "131223",
+   "expect_level": 0,
+   "note": "real"
+  },
+  {
+   "log": "Oct  7 20:04:18 pve1 pve-ha-crm[4698]: node 'pve3': state changed from 'online' => 'unknown'",
+   "expect_rule": "131231",
+   "expect_level": 4,
+   "note": "real"
+  },
+  {
+   "log": "Oct  7 20:04:18 pve1 pve-ha-crm[4698]: node 'pve3': state changed from 'online' => 'unknown'",
+   "repeat": 6,
+   "expect_rule": "131234",
+   "expect_level": 8,
+   "note": "real line, six times in an hour"
+  },
+  {
+   "log": "Oct  7 20:05:00 pve1 pve-ha-crm[4698]: service 'vm:105': state changed from 'started' to 'freeze'",
+   "expect_rule": "131230",
+   "expect_level": 0,
+   "note": "real; freeze during a node restart"
+  },
+  {
+   "log": "Oct 12 10:00:00 pve1 pve-ha-crm[4698]: node 'pve3': state changed from 'unknown' => 'fence'",
+   "expect_rule": "131232",
+   "expect_level": 12,
+   "note": "synthesized from the real state-change format"
+  },
+  {
+   "log": "Oct 12 10:00:00 pve1 pve-ha-crm[4698]: service 'vm:105': state changed from 'started' to 'error'",
+   "expect_rule": "131233",
+   "expect_level": 10,
+   "note": "synthesized from the real format"
+  },
+  {
+   "log": "Oct 11 02:32:50 pve1 corosync[3978881]:   [KNET  ] link: host: 6 link: 1 is down",
+   "expect_rule": "131242",
+   "expect_level": 2,
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 02:32:50 pve1 corosync[3978881]:   [KNET  ] link: host: 6 link: 1 is down",
+   "repeat": 20,
+   "expect_rule": "131243",
+   "expect_level": 7,
+   "note": "real line, a burst"
+  },
+  {
+   "log": "Oct 11 02:30:45 pve1 corosync[3978881]:   [TOTEM ] Retransmit List: 45f315",
+   "expect_rule": "131240",
+   "expect_level": 0,
+   "note": "real noise"
+  },
+  {
+   "log": "Oct  9 10:00:00 pve1 corosync[1500]:   [QUORUM] Members[5]: 1 2 3 4 5",
+   "expect_rule": "131244",
+   "expect_level": 3,
+   "note": "real shape"
+  },
+  {
+   "log": "Oct 12 10:00:00 pve1 corosync[1500]:   [QUORUM] This node is within the non-primary component and will NOT provide any services.",
+   "expect_rule": "131241",
+   "expect_level": 12,
+   "note": "synthesized; corosync's quorum-loss message"
+  },
+  {
+   "log": "2026-10-07T22:03:08.863938+0800 mon.pve1 (mon.0) 2644626 : cluster [WRN] Health check failed: clock skew detected on mon.pve4 (MON_CLOCK_SKEW)",
+   "location": "/var/log/ceph/ceph.log",
+   "expect_rule": "131251",
+   "expect_level": 7,
+   "note": "real"
+  },
+  {
+   "log": "2026-10-12T10:00:00.000000+0800 mon.pve1 (mon.0) 2650000 : cluster [WRN] Health check failed: 1 osds down (OSD_DOWN)",
+   "location": "/var/log/ceph/ceph.log",
+   "expect_rule": "131253",
+   "expect_level": 10,
+   "note": "synthesized from the real format"
+  },
+  {
+   "log": "2026-10-12T10:00:00.000000+0800 mon.pve1 (mon.0) 2650001 : cluster [ERR] Health check failed: 1 full osd(s) (OSD_FULL)",
+   "location": "/var/log/ceph/ceph.log",
+   "expect_rule": "131254",
+   "expect_level": 12,
+   "note": "synthesized"
+  },
+  {
+   "log": "2026-10-07T22:20:00.000000+0800 mon.pve1 (mon.0) 2644900 : cluster [INF] Health check cleared: MON_CLOCK_SKEW (was: clock skew detected on mon.pve4)",
+   "location": "/var/log/ceph/ceph.log",
+   "expect_rule": "131255",
+   "expect_level": 3,
+   "note": "synthesized from Ceph's format"
+  },
+  {
+   "log": "2026-10-11T10:40:00.000119+0800 mon.pve1 (mon.0) 2721919 : cluster [INF] overall HEALTH_OK",
+   "location": "/var/log/ceph/ceph.log",
+   "expect_rule": "131250",
+   "expect_level": 0,
+   "note": "real (dropped on the agent anyway)"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/access/users/admin2%40pve HTTP/1.1\" 200 -",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "131260",
+   "expect_level": 8,
+   "note": "real shape (sent with the agent group header)"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/json/access/users/admin2%40pve/token/t1 HTTP/1.1\" 200 -",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "131261",
+   "expect_level": 10,
+   "note": "synthesized from the API path (sent with the agent group header)"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"GET /api2/json/access/users HTTP/1.1\" 200 512",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "none",
+   "note": "near miss: reading is not changing (sent with the agent group header)"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"DELETE /api2/extjs/nodes/pve1/lxc/105?purge=1&destroy-unreferenced-disks=1 HTTP/1.1\" 200 -",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "131262",
+   "expect_level": 8,
+   "note": "real shape (sent with the agent group header)"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/cluster/firewall/groups/web HTTP/1.1\" 200 -",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "131263",
+   "expect_level": 6,
+   "note": "real shape (sent with the agent group header)"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/json/nodes/pve1/storage/nas3/upload HTTP/1.1\" 200 -",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "131264",
+   "expect_level": 5,
+   "note": "real shape (sent with the agent group header)"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/nodes/pve1/qemu/101/config HTTP/1.1\" 200 -",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "none",
+   "note": "near miss: guest config change is routine (sent with the agent group header)"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/cluster/firewall/groups/web HTTP/1.1\" 200 -",
+   "location": "/var/log/other/access.log",
+   "expect_rule": "none",
+   "note": "near miss: another web server's log"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:192.0.2.200 - - [04/10/2026:00:40:22 +0800] \"POST /api2/json/access/ticket HTTP/1.1\" 401 50",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "131266",
+   "expect_level": 5,
+   "note": "real failed GUI login (a cluster node, 2026-10-04), sanitized"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:192.0.2.200 - - [04/10/2026:00:40:22 +0800] \"POST /api2/json/access/ticket HTTP/1.1\" 401 50",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "131266",
+   "expect_level": 5,
+   "repeat": 5,
+   "note": "near miss: five failures stay at 131266"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:192.0.2.200 - - [04/10/2026:00:40:22 +0800] \"POST /api2/json/access/ticket HTTP/1.1\" 401 50",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "131267",
+   "expect_level": 10,
+   "repeat": 6,
+   "note": "six failures from one address: brute force, the active response's rule"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:192.0.2.68 - - [07/10/2026:07:08:20 +0800] \"POST /api2/json/access/ticket HTTP/1.1\" 200 695",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "none",
+   "note": "near miss: successful ticket (also dropped on the agent)"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/access/users/admin2%40pve HTTP/1.1\" 403 -",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "none",
+   "note": "near miss: a refused change is not a change"
+  },
+  {
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: 192.0.2.201 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/json/access/users/x%40pve/token/t2 HTTP/1.1\" 200 -",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "131261",
+   "expect_level": 10,
+   "note": "plain IPv4 client (IPv4-only listener) decodes too"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/access/users/admin2%40pve HTTP/1.1\" 200 -",
+   "location": "/var/log/pveproxy/access.log",
+   "expect_rule": "none",
+   "note": "without the agent group header the line is the built-in web decoder's, and the pack stays out of it"
+  }
+ ]
+}

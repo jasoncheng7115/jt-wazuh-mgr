@@ -1,0 +1,125 @@
+<!--
+  Zimbra decoders, part 1: the proxy access log and the security audit log.
+  Shipped by the jt-zimbra pack since 3.0. Before 3.0 the pack's rules named
+  these decoders but the pack did not contain them, so the pack only loaded
+  on a manager that already had a hand-made copy; on any other manager
+  wazuh-analysisd refused the whole ruleset ("Invalid decoder name").
+
+  The file name sorts before the built-in decoders (0005- onwards) on purpose:
+  rule and decoder files from every directory are loaded in one name order.
+
+  Every decoder here uses type="pcre2": OS_Regex has no {n,m}, no (?:...) and
+  no lookahead.
+-->
+
+<!-- ==========================================================
+     /opt/zimbra/log/nginx.access.log (Zimbra proxy)
+       198.51.100.7:51234 - - [11/Oct/2026:10:00:00 +0800]  "GET https://mail.example.com/ HTTP/1.1" 200 512 "-" "Mozilla/5.0" "127.0.0.1:8443" "192.0.2.10:8443"
+     The client address carries its port, which is why the built-in
+     web-accesslog decoder never matches this file. The URL is absolute.
+     ========================================================== -->
+
+<decoder name="zimbra-proxy-access">
+  <prematch type="pcre2">^[0-9a-fA-F.:]+:\d+ \S+ \S+ \[\d+/\w+/\d+:\d+:\d+:\d+ [+-]\d+\]\s+"</prematch>
+</decoder>
+
+<decoder name="zimbra-proxy-access-fields">
+  <parent>zimbra-proxy-access</parent>
+  <regex type="pcre2">^([0-9a-fA-F.:]+):(\d+) \S+ \S+ \[[^\]]+\]\s+"(\w+) (\S+) [^"]*" (\d{3}) (\d+) "([^"]*)" "([^"]*)"</regex>
+  <order>srcip, srcport, protocol, url, id, size, referer, user_agent</order>
+</decoder>
+
+<!-- Short form without referer and user agent (some proxy templates). -->
+<decoder name="zimbra-proxy-access-fields">
+  <parent>zimbra-proxy-access</parent>
+  <regex type="pcre2">^([0-9a-fA-F.:]+):(\d+) \S+ \S+ \[[^\]]+\]\s+"(\w+) (\S+) [^"]*" (\d{3}) (\d+)\s*$</regex>
+  <order>srcip, srcport, protocol, url, id, size</order>
+</decoder>
+
+<!-- ==========================================================
+     /opt/zimbra/log/audit.log (logger zimbra.security)
+       2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=192.0.2.10;oip=198.51.100.7;via=192.0.2.10(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=user1@example.com; protocol=imap;
+       2026-10-11 11:26:06,984 INFO  [qtp1-9383:https://mail.example.com:8443/service/soap/] [name=user2@example.com;oip=198.51.100.8, 192.0.2.93;port=48030;ua=Apple-iPhone17C3/2307.90 ZPZB/75;soapId=4bbe9d0e;] security - cmd=Auth; account=user2@example.com; protocol=soap;
+       ... security - cmd=Auth; account=user3@example.com; protocol=soap; error=authentication failed for [user3@example.com], invalid password;
+       ... security - cmd=DelegateAuth; accountId=0000-...; accountName=user4@example.com;
+
+     The same text also reaches syslog when the server has zimbraLogToSyslog
+     set, as "<host> zimbra_audit <the line above>". Both shapes decode here;
+     the rules count only the copy read from the file (see 100840).
+
+     oip is "client" for a direct connection and "client, proxy[, proxy]"
+     when a proxy such as Z-Push or a reverse proxy passed the request on.
+     srcip takes the FIRST address, the real client; zimbra.via_proxy keeps
+     the last hop. Before 3.0 the decoder required a ";" right after the first
+     address, so every proxied line decoded without srcip or user at all.
+
+     Sibling decoders with the same name each add their own fields, so a
+     line missing one item (no oip, no account) still gets the others.
+     ========================================================== -->
+
+<decoder name="zimbra-audit">
+  <prematch type="pcre2">\] security - cmd=\w+;</prematch>
+</decoder>
+
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">\] security - cmd=(\w+);</regex>
+  <order>action</order>
+</decoder>
+
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">\] security - cmd=\w+;.*? account(?:Name)?=([^;\s]+);</regex>
+  <order>user</order>
+</decoder>
+
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">[\[;]oip=([0-9a-fA-F.:]+)[,;]</regex>
+  <order>srcip</order>
+</decoder>
+
+<!-- A direct connection (the admin port, no proxy) has ip= and no oip=. -->
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">^(?!.*[\[;]oip=).*?[\[;]ip=([0-9a-fA-F.:]+);</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">[\[;]oip=[^;\]]*, ?([0-9a-fA-F.:]+);</regex>
+  <order>zimbra.via_proxy</order>
+</decoder>
+
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">[\[;]ua=([^;\]]*)</regex>
+  <order>zimbra.ua</order>
+</decoder>
+
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">\[[^\]:]*:(\w+://[^\]\s]+)\]</regex>
+  <order>url</order>
+</decoder>
+
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">\] security - cmd=\w+;.*? protocol=(\w+);</regex>
+  <order>protocol</order>
+</decoder>
+
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">\] security - cmd=\w+;.*? error=([^;]+);</regex>
+  <order>zimbra.error</order>
+</decoder>
+
+<!-- Logins that saslauthd forwards for SMTP AUTH carry oproto=smtp (and an
+     smtp:// thread URL on the internal admin port 7073). -->
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">[\[;]oproto=(\w+);</regex>
+  <order>zimbra.oproto</order>
+</decoder>

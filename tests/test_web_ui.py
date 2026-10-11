@@ -1837,6 +1837,292 @@ class TestPackUpdate(PackFixture):
         self.assertEqual(self.client.get('/api/packs/no-such-pack/update').status_code, 404)
 
 
+class TestPackActiveResponse(PackFixture):
+    """Active response a pack offers: opt-in, on every node, reversible.
+
+    Blocking is the one thing a pack can do that hurts when a rule is wrong,
+    so the properties under test are the ones that keep a mistake small:
+    nothing happens without an explicit switch, a node that rejects the block
+    puts every node back, disabling leaves ossec.conf exactly as it was, and
+    removing the pack takes its responses with it.
+    """
+
+    CONF = ('<ossec_config>\n  <global>\n    <white_list>127.0.0.1</white_list>\n  </global>\n'
+            '  <ruleset>\n    <list>etc/lists/audit-keys</list>\n  </ruleset>\n'
+            '  <command>\n    <name>firewall-drop</name>\n    <executable>firewall-drop</executable>\n'
+            '    <timeout_allowed>yes</timeout_allowed>\n  </command>\n'
+            '  <!-- <command><name>commented-out</name></command> -->\n'
+            '</ossec_config>\n')
+
+    def setUp(self):
+        super().setUp()
+        import hashlib
+        import shutil
+        import tempfile
+        self.cat = tempfile.mkdtemp(prefix='jtpack-cat-')
+        self.addCleanup(shutil.rmtree, self.cat, True)
+        self.addCleanup(setattr, web_ui, 'PACKS_DIR', web_ui.PACKS_DIR)
+        web_ui.PACKS_DIR = self.cat
+        with io.open(os.path.join(self.tmp, 'etc/ossec.conf'), 'w', encoding='utf-8') as fh:
+            fh.write(self.CONF)
+        pdir = os.path.join(self.cat, 'jt-artest')
+        os.makedirs(os.path.join(pdir, 'rules'))
+        rule = ('<group name="t,">\n  <rule id="990001" level="10">\n    <match>x</match>\n'
+                '    <description>t</description>\n  </rule>\n</group>\n')
+        with io.open(os.path.join(pdir, 'rules', 'zz-990000-t.xml'), 'w', encoding='utf-8') as fh:
+            fh.write(rule)
+        self.manifest = {
+            'id': 'jt-artest', 'name': 'AR test', 'version': '1.0', 'rule_id_range': '990000-990099',
+            'files': [{'type': 'rule', 'name': 'zz-990000-t.xml', 'dest': 'etc/rules/zz-990000-t.xml',
+                       'sha256': hashlib.sha256(rule.encode()).hexdigest()}],
+            'active_response': [
+                {'id': 'block-brute', 'command': 'firewall-drop', 'rules_id': ['990001'],
+                 'location': 'local', 'timeout': 600, 'title': 'Block', 'body': 'Blocks the source.'},
+                {'id': 'one-agent', 'command': 'firewall-drop', 'rules_id': ['990001'],
+                 'location': 'defined-agent', 'timeout': 600, 'title': 'On one agent', 'body': 'b'},
+                {'id': 'needs-cmd', 'command': 'commented-out', 'rules_id': ['990001'],
+                 'location': 'local', 'timeout': 600, 'title': 'Custom', 'body': 'b'},
+                {'id': 'bad--id', 'command': 'firewall-drop', 'rules_id': ['990001'],
+                 'location': 'local', 'timeout': 600},
+                {'id': 'bad-location', 'command': 'firewall-drop', 'rules_id': ['990001'],
+                 'location': 'everywhere', 'timeout': 600},
+            ]}
+        self.write_manifest()
+
+        # The manager's answers: which rules are loaded, which node this is,
+        # when analysisd started. Peer configurations live in self.peer_conf.
+        self.loaded_rules = {'990001'}
+        self.analysisd_started = '2020-01-01T00:00:00+00:00'
+        self.peer_conf, self.peer_valid, self.peer_readable = {}, True, True
+        self.nodes = [{'name': 'node01', 'type': 'master', 'ip': '127.0.0.1'}]
+
+        def fake_request(_self, method, endpoint, data=None, params=None):
+            self.api_calls.append((method, endpoint, params))
+            if endpoint == '/rules':
+                wanted = (params or {}).get('rule_ids', '').split(',')
+                return {'error': 0, 'data': {'affected_items': [
+                    {'id': int(r)} for r in wanted if r in self.loaded_rules]}}
+            if endpoint == '/cluster/local/info':
+                return {'error': 0, 'data': {'affected_items': [{'node': 'node01'}]}}
+            if endpoint.endswith('/daemons/stats'):
+                return {'error': 0, 'data': {'affected_items': [
+                    {'name': 'wazuh-analysisd', 'uptime': self.analysisd_started}]}}
+            if endpoint.endswith('/configuration/validation'):
+                status = 'OK' if self.peer_valid else 'KO'
+                return {'error': 0, 'data': {'affected_items': [
+                    {'name': endpoint.split('/')[2], 'status': status,
+                     'details': [] if self.peer_valid else ['Invalid command']}], 'failed_items': []}}
+            return self.api_reply
+
+        def fake_raw(_self, method, endpoint, body=None, params=None,
+                     content_type='application/octet-stream'):
+            node = endpoint.split('/')[2]
+            if method == 'GET':
+                if not self.peer_readable:
+                    return False, 'node unreachable'
+                return True, self.peer_conf.get(node, self.CONF)
+            self.peer_conf[node] = body
+            return True, 'ok'
+
+        real_request, real_raw = web_ui.WazuhAPISession.request, web_ui.WazuhAPISession.request_raw
+        web_ui.WazuhAPISession.request = fake_request
+        web_ui.WazuhAPISession.request_raw = fake_raw
+        self.addCleanup(setattr, web_ui.WazuhAPISession, 'request_raw', real_raw)
+        web_ui.WazuhAPISession.get_nodes = lambda _self: self.nodes
+
+    def write_manifest(self):
+        with io.open(os.path.join(self.cat, 'jt-artest', 'manifest.json'), 'w', encoding='utf-8') as fh:
+            json.dump(self.manifest, fh)
+
+    def install(self):
+        r = self.client.post('/api/packs/jt-artest/install', json={})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+
+    def switch(self, ar_id, enabled, **extra):
+        return self.client.post('/api/packs/jt-artest/active-response/' + ar_id,
+                                json={'enabled': enabled, **extra})
+
+    def state(self):
+        with io.open(os.path.join(self.tmp, 'etc/jt-packs/jt-artest.json'), encoding='utf-8') as fh:
+            return json.load(fh)
+
+    def two_nodes(self):
+        self.nodes = [{'name': 'node01', 'type': 'master', 'ip': '127.0.0.1'},
+                      {'name': 'node02', 'type': 'worker', 'ip': '192.0.2.2'}]
+
+    def test_installing_the_pack_enables_nothing(self):
+        self.install()
+        self.assertNotIn('<active-response>', self.conf())
+
+    def test_enable_writes_a_marked_block_and_disable_restores_the_file_exactly(self):
+        self.install()
+        before = self.conf()
+        r = self.switch('block-brute', True)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        conf = self.conf()
+        self.assertIn('<!-- jt-wazuh-mgr active-response jt-artest/block-brute begin -->', conf)
+        self.assertIn('<command>firewall-drop</command>', conf)
+        self.assertIn('<rules_id>990001</rules_id>', conf)
+        self.assertIn('<timeout>600</timeout>', conf)
+        self.assertLess(conf.index('<active-response>'), conf.rindex('</ossec_config>'))
+        self.assertEqual(r.get_json()['changed_nodes'], ['node01'])
+        self.assertTrue(r.get_json()['restart_required'])
+        self.assertIn('block-brute', self.state()['active_response'])
+        self.assertEqual(self.state()['ar_restart_pending'], ['node01'])
+
+        again = self.switch('block-brute', True)
+        self.assertEqual(again.get_json()['changed_nodes'], [], 'enabling twice wrote a second block')
+        self.assertEqual(self.conf().count('<active-response>'), 1)
+
+        off = self.switch('block-brute', False)
+        self.assertEqual(off.status_code, 200)
+        self.assertEqual(self.conf(), before, 'disabling did not leave ossec.conf as it was')
+        self.assertNotIn('block-brute', self.state().get('active_response', {}))
+
+    def test_markers_are_valid_xml_comments(self):
+        self.install()
+        self.switch('block-brute', True)
+        for comment in re.findall(r'<!--(.*?)-->', self.conf(), re.S):
+            self.assertNotIn('--', comment, 'an XML comment may not contain "--"')
+
+    def test_enabling_needs_an_installed_pack(self):
+        r = self.switch('block-brute', True)
+        self.assertEqual(r.status_code, 409)
+        self.assertNotIn('<active-response>', self.conf())
+
+    def test_rules_the_manager_has_not_loaded_are_refused(self):
+        self.install()
+        self.loaded_rules = set()
+        r = self.switch('block-brute', True)
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.get_json()['missing_rules'], ['990001'])
+        self.assertNotIn('<active-response>', self.conf())
+
+    def test_a_command_the_node_does_not_define_is_refused(self):
+        """A commented-out <command> does not count as defined."""
+        self.install()
+        r = self.switch('needs-cmd', True)
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.get_json()['missing_command_on'], ['node01'])
+        self.assertNotIn('<active-response>', self.conf())
+
+    def test_block_time_must_be_bounded(self):
+        self.install()
+        for bad in (0, 5, 10 ** 9, 'soon'):
+            r = self.switch('block-brute', True, timeout=bad)
+            self.assertEqual(r.status_code, 400, bad)
+        self.assertNotIn('<active-response>', self.conf())
+        ok = self.switch('block-brute', True, timeout=3600)
+        self.assertEqual(ok.status_code, 200)
+        self.assertIn('<timeout>3600</timeout>', self.conf())
+
+    def test_defined_agent_needs_a_real_agent_id(self):
+        self.install()
+        for bad in (None, '', '000', '1; rm', '../x'):
+            r = self.switch('one-agent', True, agent_id=bad)
+            self.assertEqual(r.status_code, 400, bad)
+        r = self.switch('one-agent', True, agent_id='001')
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertIn('<agent_id>001</agent_id>', self.conf())
+
+    def test_malformed_definitions_are_not_offered(self):
+        self.install()
+        d = self.client.get('/api/packs/jt-artest/active-response').get_json()
+        self.assertEqual(sorted(x['id'] for x in d['responses']), ['block-brute', 'needs-cmd', 'one-agent'])
+        self.assertEqual(self.switch('bad--id', True).status_code, 400)
+        self.assertEqual(self.switch('bad-location', True).status_code, 404)
+
+    def test_enabled_must_be_a_boolean(self):
+        self.install()
+        r = self.client.post('/api/packs/jt-artest/active-response/block-brute', json={'enabled': 'yes'})
+        self.assertEqual(r.status_code, 400)
+
+    def test_a_block_the_manager_rejects_is_taken_out_again(self):
+        self.install()
+        before = self.conf()
+        self._write_analysisd(self.ANALYSISD_BAD)
+        r = self.switch('block-brute', True)
+        self.assertEqual(r.status_code, 422)
+        self.assertEqual(self.conf(), before)
+        self.assertNotIn('active_response', self.state())
+
+    def test_a_peer_that_rejects_the_block_puts_every_node_back(self):
+        self.two_nodes()
+        self.install()
+        before = self.conf()
+        self.peer_valid = False
+        r = self.switch('block-brute', True)
+        self.assertEqual(r.status_code, 422, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()['node'], 'node02')
+        self.assertEqual(self.conf(), before, 'the master kept a block the worker rejected')
+        self.assertEqual(self.peer_conf.get('node02', self.CONF), self.CONF,
+                         'the worker was not put back')
+
+    def test_both_nodes_get_the_block(self):
+        self.two_nodes()
+        self.install()
+        r = self.switch('block-brute', True)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(sorted(r.get_json()['changed_nodes']), ['node01', 'node02'])
+        self.assertIn('jt-artest/block-brute begin', self.peer_conf['node02'])
+
+    def test_an_unreachable_peer_stops_it_unless_asked_for_this_node_only(self):
+        self.two_nodes()
+        self.install()
+        self.peer_readable = False
+        r = self.switch('block-brute', True)
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(r.get_json()['local_only_possible'])
+        self.assertNotIn('<active-response>', self.conf())
+        r = self.switch('block-brute', True, local_only=True)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()['skipped_nodes'], ['node02'])
+        self.assertIn('<active-response>', self.conf())
+
+    def test_status_reports_where_it_is_on_and_a_changed_definition(self):
+        self.install()
+        self.switch('block-brute', True)
+        d = self.client.get('/api/packs/jt-artest/active-response').get_json()
+        brute = [x for x in d['responses'] if x['id'] == 'block-brute'][0]
+        self.assertEqual(brute['enabled_on'], ['node01'])
+        self.assertEqual(brute['stale_on'], [])
+        self.assertEqual(d['nodes'][0]['white_list'], ['127.0.0.1'])
+        self.manifest['active_response'][0]['rules_id'] = ['990001', '990002']
+        self.write_manifest()
+        d = self.client.get('/api/packs/jt-artest/active-response').get_json()
+        brute = [x for x in d['responses'] if x['id'] == 'block-brute'][0]
+        self.assertEqual(brute['stale_on'], ['node01'])
+
+    def test_a_response_the_pack_no_longer_offers_can_still_be_removed(self):
+        self.install()
+        before = self.conf()
+        self.switch('block-brute', True)
+        self.manifest['active_response'] = []
+        self.write_manifest()
+        d = self.client.get('/api/packs/jt-artest/active-response').get_json()
+        self.assertEqual(d['nodes'][0]['leftover'], ['block-brute'])
+        self.assertEqual(self.switch('block-brute', False).status_code, 200)
+        self.assertEqual(self.conf(), before)
+
+    def test_restart_pending_until_analysisd_restarts(self):
+        self.install()
+        self.switch('block-brute', True)
+        d = self.client.get('/api/packs/jt-artest/active-response').get_json()
+        self.assertEqual(d['restart_pending'], ['node01'])
+        self.analysisd_started = '2999-01-01T00:00:00Z'
+        d = self.client.get('/api/packs/jt-artest/active-response').get_json()
+        self.assertEqual(d['restart_pending'], [])
+
+    def test_removing_the_pack_takes_its_responses_out(self):
+        self.install()
+        before = self.conf()
+        self.switch('block-brute', True)
+        r = self.client.delete('/api/packs/jt-artest', json={})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()['ar_removed_on'], ['node01'])
+        self.assertEqual(self.conf(), before)
+
+
 class TestPackDeployment(PackFixture):
     """The deployment guide and the 'already there, no record' state (1.10.0)."""
 
@@ -2206,6 +2492,24 @@ class TestShippedPacks(unittest.TestCase):
                         digest = hashlib.sha256(fh.read()).hexdigest()
                     self.assertEqual(digest, entry.get('sha256'),
                                      'stale sha256 for %s; refresh the manifest' % entry['name'])
+
+    def test_no_decoder_is_a_child_of_the_builtin_json_decoder(self):
+        """A single child of "json" stops field decoding for every JSON event.
+
+        Verified on 4.14.7 (2026-10-11): with one unrelated <parent>json</parent>
+        decoder loaded, a Suricata alert line lost all of its fields and no
+        longer reached 86601. A pack that did this would silence other packs
+        and the built-in JSON rules on the whole manager. JSON lines are left
+        to the built-in decoder and matched on its fields.
+        """
+        for pdir, m in self.packs:
+            for entry in m.get('files', []):
+                if entry['type'] != 'decoder':
+                    continue
+                with io.open(os.path.join(pdir, 'decoders', entry['name']), encoding='utf-8') as fh:
+                    body = re.sub(r'<!--.*?-->', '', fh.read(), flags=re.S)
+                with self.subTest(pack=m['id'], file=entry['name']):
+                    self.assertNotRegex(body, r'<parent>\s*json\s*</parent>')
 
     # mirrors _validate_dest() in web_ui.create_app(), which is nested and not
     # importable; stated here as the contract every shipped manifest must meet
@@ -2600,13 +2904,15 @@ class TestPreflightPrivacyPattern(unittest.TestCase):
 
     def test_flags_real_private_addresses_and_hosts(self):
         for value in ('192.168.1.164', '10.20.30.40', '172.16.5.9',   # preflight:allow-example
-                      'dnsp1', 'edr1', 'someone@realdomain.tw'):      # preflight:allow-example
+                      'dnsp1', 'edr1', 'someone@realdomain.tw',       # preflight:allow-example
+                      'room@meet.realdomain.tw', 'ops@mail.jitsi.org'):  # preflight:allow-example
             with self.subTest(value=value):
                 self.assertTrue(self._flags(value), '%s should be flagged' % value)
 
     def test_leaves_documentation_placeholders_alone(self):
         for value in ('192.168.1.100', '192.168.1.1', '10.0.0.50',
-                      'you@example.com', 'agent-example'):
+                      'you@example.com', 'agent-example', 'root@host1.example.com',
+                      'room@muc.meet.jitsi', 'focus@auth.meet.jitsi', 'user@0.service'):
             with self.subTest(value=value):
                 self.assertFalse(self._flags(value), '%s should not be flagged' % value)
 

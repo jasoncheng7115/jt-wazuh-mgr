@@ -13,7 +13,7 @@ import os
 import glob
 import secrets
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from functools import wraps
 
@@ -708,6 +708,11 @@ HTML_TEMPLATE = '''
         .pack-chip { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid #3a4a6a; color: #9aa3b5; }
         .pack-chip-req { border-color: #fd7e14; color: #fd7e14; }
         .pack-chip-new { border-color: #4fc3f7; color: #4fc3f7; }
+        .pack-chip-on { border-color: #28a745; color: #28a745; }
+        .pack-ar-meta { font-size: 12px; color: #9aa3b5; margin: 6px 0; }
+        .pack-ar-actions { margin-top: 8px; }
+        .pack-ar-form label { display: block; font-size: 13px; color: #ccc; margin: 10px 0 4px; }
+        .pack-ar-form input { width: 160px; }
         .pack-act { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid #3a4a6a; color: #c8cfdc; white-space: nowrap; }
         .pack-act-add, .pack-act-update { border-color: #28a745; color: #5fd47a; }
         .pack-act-replace, .pack-act-remove { border-color: #fd7e14; color: #fd7e14; }
@@ -6835,6 +6840,7 @@ HTML_TEMPLATE = '''
             if ((d.setup || []).length) {
                 html += '<h4 class="pack-h">Setup guide</h4>' + renderPackSetup(packId, d.setup);
             }
+            html += packArSection(packId, m);
 
             // manifests carry both notes (English) and notes_zh; show the reader's own language
             let packNotes = m.notes || [];
@@ -6896,6 +6902,7 @@ HTML_TEMPLATE = '''
                     'An existing group of the same name is never overwritten.</div>';
             }
             body.innerHTML = html + '</div>';
+            if ((m.active_response || []).length) loadPackAr(packId);
             const footer = document.getElementById('modalFooter');
             if (footer) {
                 footer.innerHTML =
@@ -6907,6 +6914,153 @@ HTML_TEMPLATE = '''
                         : '<button class="btn btn-success" onclick="closeModal();installPack(\\'' + escapeHtml(packId) + '\\')"><svg class="icon"><use href="#icon-download"/></svg>Install</button>') +
                     '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>';
             }
+        }
+
+        // ---------- Active response a pack offers ----------
+        // Installing a pack switches none of these on. Each one blocks something,
+        // and says what and where, so the operator reads that first and then
+        // turns it on for every node at once.
+        const packArState = {};
+
+        function packArSection(packId, m) {
+            if (!(m.active_response || []).length) return '';
+            return '<h4 class="pack-h">Active response</h4>' +
+                '<p class="pack-lead">Optional responses this pack offers. Installing the pack switches none of them on. ' +
+                'Each one blocks something, so read what it blocks before you enable it.</p>' +
+                '<div id="packArBox"><div class="loading"><div class="spinner"></div>Loading...</div></div>';
+        }
+
+        function packArIsLoopback(entry) {
+            return /^(127\\.|::1$|\\^?localhost)/.test(entry);
+        }
+
+        async function loadPackAr(packId) {
+            const box = document.getElementById('packArBox');
+            if (!box) return;
+            const d = await api('/packs/' + encodeURIComponent(packId) + '/active-response');
+            if (!box.isConnected) return;
+            if (!d || d.error) {
+                box.innerHTML = '<div class="alert alert-error">' + escapeHtml((d && d.error) || 'Failed to load') + '</div>';
+                return;
+            }
+            packArState[packId] = d;
+            const nodes = d.nodes || [];
+            const pid = escapeHtml(packId);
+            let html = '';
+            if ((d.restart_pending || []).length) {
+                html += '<div class="alert alert-warning"><div>The change takes effect after the manager restarts on: <code>' +
+                    d.restart_pending.map(escapeHtml).join('</code>, <code>') + '</code></div><div style="margin-top:6px;">' +
+                    d.restart_pending.map(n => '<button class="btn btn-sm" style="margin-right:6px;" onclick="restartNodeServices(\\'' +
+                        escapeHtml(n) + '\\')"><svg class="icon"><use href="#icon-restart"/></svg><span>Restart</span> ' + escapeHtml(n) + '</button>').join('') +
+                    '</div></div>';
+            }
+            const unreadable = nodes.filter(n => n.error);
+            if (unreadable.length) {
+                html += '<div class="alert alert-error"><div>Cannot read ossec.conf on these nodes, so their state is unknown:</div>' +
+                    unreadable.map(n => '<div><code>' + escapeHtml(n.name) + '</code> ' + escapeHtml(n.error) + '</div>').join('') + '</div>';
+            }
+            (d.responses || []).forEach(r => {
+                const on = (r.enabled_on || []).length;
+                const readable = nodes.length - unreadable.length;
+                const chip = !on ? '<span class="pack-chip">Not enabled</span>'
+                    : (on >= readable ? '<span class="pack-chip pack-chip-on">Enabled</span>'
+                                      : '<span class="pack-chip pack-chip-req">Enabled on some nodes</span>');
+                const rec = r.record || {};
+                html += '<div class="pack-step">' +
+                    '<div class="pack-step-head"><span class="pack-step-title">' + escapeHtml(packLang(r.title, r.title_zh) || r.id) + '</span>' + chip + '</div>' +
+                    '<div class="pack-step-body">' + escapeHtml(packLang(r.body, r.body_zh)) + '</div>' +
+                    '<div class="pack-ar-meta"><span>Command</span> <code>' + escapeHtml(r.command) + '</code> &nbsp; ' +
+                    '<span>Runs on</span> <code>' + escapeHtml(r.location) + '</code> &nbsp; ' +
+                    '<span>Rules</span> <code>' + (r.rules_id || []).map(escapeHtml).join(', ') + '</code> &nbsp; ' +
+                    '<span>Block time (seconds)</span> <code>' + escapeHtml(String(rec.timeout || r.timeout || 600)) + '</code></div>';
+                if (on) {
+                    html += '<div class="pack-ar-meta"><span>Enabled on</span> <code>' + r.enabled_on.map(escapeHtml).join('</code>, <code>') + '</code>' +
+                        (rec.by ? ' &nbsp; ' + escapeHtml(rec.by) + ' &nbsp; ' + escapeHtml(rec.enabled_at || '') : '') + '</div>';
+                }
+                if ((r.stale_on || []).length) {
+                    html += '<div class="alert alert-warning">This version of the pack defines the response differently from the copy in ossec.conf on <code>' +
+                        r.stale_on.map(escapeHtml).join('</code>, <code>') + '</code>. Disable it and enable it again to apply the new definition.</div>';
+                }
+                if ((r.missing_command_on || []).length) {
+                    html += '<div class="alert alert-info">The command <code>' + escapeHtml(r.command) + '</code> is not defined in ossec.conf on <code>' +
+                        r.missing_command_on.map(escapeHtml).join('</code>, <code>') + '</code>. It cannot be enabled until it is; the setup guide says how.</div>';
+                }
+                const aid = escapeHtml(r.id);
+                html += '<div class="pack-ar-actions">' + (!d.installed
+                    ? '<span style="color:#888;font-size:12px;">Install the pack before enabling its responses.</span>'
+                    : (on ? '<button class="btn btn-sm btn-warning" onclick="disablePackAr(\\'' + pid + '\\', \\'' + aid + '\\')"><svg class="icon"><use href="#icon-xmark"/></svg><span>Disable</span></button>'
+                          : '<button class="btn btn-sm btn-danger" onclick="enablePackAr(\\'' + pid + '\\', \\'' + aid + '\\')"><svg class="icon"><use href="#icon-check"/></svg><span>Enable</span></button>')) +
+                    '</div></div>';
+            });
+            const leftover = [];
+            nodes.forEach(n => (n.leftover || []).forEach(id => { if (!leftover.includes(id)) leftover.push(id); }));
+            if (leftover.length) {
+                html += '<div class="alert alert-warning"><div>ossec.conf still holds responses that this version of the pack no longer offers:</div>' +
+                    leftover.map(id => '<div style="margin-top:4px;"><code>' + escapeHtml(id) + '</code> ' +
+                        '<button class="btn btn-sm" onclick="disablePackAr(\\'' + pid + '\\', \\'' + escapeHtml(id) + '\\')"><span>Remove</span></button></div>').join('') + '</div>';
+            }
+            html += '<details class="pack-files"><summary>Addresses that are never blocked (white_list)</summary>' +
+                '<p class="pack-lead" style="margin-top:8px;">Active response skips these addresses on every rule. If only the manager itself is listed, add the addresses of administrators and of systems that log in often (monitoring, backup), or one mistyped password can lock them out.</p>' +
+                nodes.filter(n => !n.error).map(n => {
+                    const wl = n.white_list || [];
+                    const onlyLocal = !wl.some(w => !packArIsLoopback(w));
+                    return '<div class="pack-ar-meta"><code>' + escapeHtml(n.name) + '</code>: ' +
+                        (wl.length ? wl.map(w => '<code>' + escapeHtml(w) + '</code>').join(' ') : '<span>(none)</span>') +
+                        (onlyLocal ? ' &nbsp; <span class="pack-chip pack-chip-req">Only the manager itself</span>' : '') + '</div>';
+                }).join('') + '</details>';
+            box.innerHTML = html;
+        }
+
+        function enablePackAr(packId, arId) {
+            const d = packArState[packId] || {};
+            const r = (d.responses || []).find(x => x.id === arId);
+            if (!r) return;
+            const range = d.timeout_range || [60, 604800];
+            const pid = escapeHtml(packId), aid = escapeHtml(arId);
+            const body = '<div class="pack-detail pack-ar-form">' +
+                '<div class="pack-step-title" style="margin-bottom:6px;">' + escapeHtml(packLang(r.title, r.title_zh) || r.id) + '</div>' +
+                '<div class="pack-step-body">' + escapeHtml(packLang(r.body, r.body_zh)) + '</div>' +
+                '<div class="pack-ar-meta"><span>Command</span> <code>' + escapeHtml(r.command) + '</code> &nbsp; ' +
+                '<span>Runs on</span> <code>' + escapeHtml(r.location) + '</code> &nbsp; ' +
+                '<span>Rules</span> <code>' + (r.rules_id || []).map(escapeHtml).join(', ') + '</code></div>' +
+                '<label for="packArTimeout">Block time (seconds)</label>' +
+                '<input type="number" id="packArTimeout" class="form-control" min="' + range[0] + '" max="' + range[1] + '" value="' + escapeHtml(String(r.timeout || 600)) + '">' +
+                (r.location === 'defined-agent'
+                    ? '<label for="packArAgent">Agent ID that runs the response</label><input type="text" id="packArAgent" class="form-control" placeholder="001">'
+                    : '') +
+                '<div class="alert alert-warning" style="margin-top:12px;">This writes the response into ossec.conf on every node and checks each one; if any node rejects it, every node is put back. ' +
+                'It takes effect when the manager restarts on each node.</div></div>';
+            const footer = '<button class="btn btn-danger" onclick="applyPackAr(\\'' + pid + '\\', \\'' + aid + '\\', true)"><svg class="icon"><use href="#icon-check"/></svg><span>Enable</span></button>' +
+                '<button class="btn" onclick="showPackDetail(\\'' + pid + '\\')"><svg class="icon"><use href="#icon-xmark"/></svg><span>Cancel</span></button>';
+            showModal('Enable active response', body, footer, true);
+        }
+
+        async function disablePackAr(packId, arId) {
+            if (!await showConfirm('Switch off this response on every node? Addresses it has already blocked are released when their block time runs out.')) return;
+            applyPackAr(packId, arId, false);
+        }
+
+        async function applyPackAr(packId, arId, enabled, localOnly) {
+            const payload = { enabled: enabled };
+            if (enabled) {
+                const t = document.getElementById('packArTimeout');
+                const a = document.getElementById('packArAgent');
+                if (t) payload.timeout = parseInt(t.value, 10);
+                if (a) payload.agent_id = a.value.trim();
+            }
+            if (localOnly) payload.local_only = true;
+            const res = await api('/packs/' + encodeURIComponent(packId) + '/active-response/' + encodeURIComponent(arId), 'POST', payload);
+            if (!res || res.error) {
+                if (res && res.local_only_possible && !localOnly &&
+                        await showConfirm((res.error || '') + ' Apply it to this manager only?', true)) {
+                    return applyPackAr(packId, arId, enabled, true);
+                }
+                const extra = res && res.problems && res.problems.length ? ' ' + res.problems.slice(0, 3).join(' / ') : '';
+                showToast(((res && res.error) || 'Failed') + extra, 'error', 12000);
+                return;
+            }
+            showToast(res.message || 'Done', 'success', 10000);
+            showPackDetail(packId);
         }
 
         async function installPack(packId, force) {
@@ -7962,6 +8116,37 @@ _I18N_SCRIPT = r"""
       'No longer in this version, will be removed': '新版已不包含，將移除',
       'No longer in this version, changed on this manager': '新版已不包含，且已在這台 manager 上修改',
       'Site data from an earlier version, left as it is': '舊版帶來的站台資料，保持原狀',
+      'Active response': '主動回應',
+      'Optional responses this pack offers. Installing the pack switches none of them on. Each one blocks something, so read what it blocks before you enable it.': '這個套件提供的選用回應。安裝套件不會啟用任何一項；每一項都會封鎖某些東西，啟用前請先看清楚它封鎖什麼。',
+      'The change takes effect after the manager restarts on:': '下列節點的 Manager 重新啟動後才會生效：',
+      'Cannot read ossec.conf on these nodes, so their state is unknown:': '無法讀取下列節點的 ossec.conf，狀態不明：',
+      'Not enabled': '未啟用',
+      'Enabled on some nodes': '部分節點已啟用',
+      'Runs on': '執行位置',
+      'Block time (seconds)': '封鎖時間（秒）',
+      'Enabled on': '已啟用於',
+      'This version of the pack defines the response differently from the copy in ossec.conf on': '這個版本的套件對此回應的定義，與下列節點 ossec.conf 裡的不同：',
+      '. Disable it and enable it again to apply the new definition.': '。請先停用再重新啟用，以套用新的定義。',
+      'The command': '指令',
+      'is not defined in ossec.conf on': '未定義於下列節點的 ossec.conf：',
+      '. It cannot be enabled until it is; the setup guide says how.': '。定義之前無法啟用，作法見部署說明。',
+      'Install the pack before enabling its responses.': '請先安裝套件，才能啟用它的回應。',
+      'Install the pack before enabling its responses': '請先安裝套件，才能啟用它的回應',
+      'Enable': '啟用',
+      'Disable': '停用',
+      'ossec.conf still holds responses that this version of the pack no longer offers:': 'ossec.conf 裡仍有這個版本的套件已不再提供的回應：',
+      'Addresses that are never blocked (white_list)': '永不封鎖的位址（white_list）',
+      'Active response skips these addresses on every rule. If only the manager itself is listed, add the addresses of administrators and of systems that log in often (monitoring, backup), or one mistyped password can lock them out.': '主動回應在任何規則下都會跳過這些位址。如果只列了 Manager 本身，請加上管理者，以及經常登入的系統（監控、備份）的位址，否則打錯一次密碼就可能把它們鎖在外面。',
+      '(none)': '（無）',
+      'Only the manager itself': '只有 Manager 本身',
+      'Agent ID that runs the response': '執行回應的 Agent ID',
+      'This writes the response into ossec.conf on every node and checks each one; if any node rejects it, every node is put back. It takes effect when the manager restarts on each node.': '這會把回應寫進每個節點的 ossec.conf 並逐一檢查；任一節點不接受，所有節點都會還原。各節點的 Manager 重新啟動後才會生效。',
+      'Enable active response': '啟用主動回應',
+      'Switch off this response on every node? Addresses it has already blocked are released when their block time runs out.': '要在所有節點停用這項回應嗎？已經被封鎖的位址會在封鎖時間到期後解除。',
+      'This pack offers no such response': '這個套件沒有提供這項回應',
+      'This response runs on one agent: give its agent ID': '這項回應只在一台 agent 上執行，請提供它的 Agent ID',
+      'Nothing to change: the response was already on.': '沒有需要變更的地方：這項回應原本就已啟用。',
+      'Nothing to change: the response was already off.': '沒有需要變更的地方：這項回應原本就已停用。',
       'Unchanged files:': '未變更的檔案：',
       'Nothing to change.': '沒有需要變更的項目。',
       'Agents in this group receive the changed files and reload their configuration.': '這個群組的 agent 會收到變更的檔案並重新載入設定。',
@@ -8683,6 +8868,37 @@ _I18N_SCRIPT = r"""
       'No longer in this version, will be removed': 'このバージョンには含まれないため削除されます',
       'No longer in this version, changed on this manager': 'このバージョンには含まれず、このマネージャー上で変更されています',
       'Site data from an earlier version, left as it is': '以前のバージョンのサイトデータ、そのまま残します',
+      'Active response': 'アクティブレスポンス',
+      'Optional responses this pack offers. Installing the pack switches none of them on. Each one blocks something, so read what it blocks before you enable it.': 'このパックが提供する任意のレスポンスです。パックをインストールしても、どれも有効になりません。どれも何かをブロックするので、有効にする前に何をブロックするか確認してください。',
+      'The change takes effect after the manager restarts on:': '次のノードでマネージャーを再起動すると反映されます：',
+      'Cannot read ossec.conf on these nodes, so their state is unknown:': '次のノードの ossec.conf を読み取れないため、状態が不明です：',
+      'Not enabled': '無効',
+      'Enabled on some nodes': '一部のノードで有効',
+      'Runs on': '実行場所',
+      'Block time (seconds)': 'ブロック時間（秒）',
+      'Enabled on': '有効なノード',
+      'This version of the pack defines the response differently from the copy in ossec.conf on': 'このバージョンのパックのレスポンス定義が、次のノードの ossec.conf にあるものと異なります：',
+      '. Disable it and enable it again to apply the new definition.': '。新しい定義を適用するには、いったん無効にしてから再度有効にしてください。',
+      'The command': 'コマンド',
+      'is not defined in ossec.conf on': 'が次のノードの ossec.conf に定義されていません：',
+      '. It cannot be enabled until it is; the setup guide says how.': '。定義するまで有効にできません。方法はセットアップガイドを参照してください。',
+      'Install the pack before enabling its responses.': 'レスポンスを有効にする前にパックをインストールしてください。',
+      'Install the pack before enabling its responses': 'レスポンスを有効にする前にパックをインストールしてください',
+      'Enable': '有効にする',
+      'Disable': '無効にする',
+      'ossec.conf still holds responses that this version of the pack no longer offers:': 'このバージョンのパックが提供しなくなったレスポンスが ossec.conf に残っています：',
+      'Addresses that are never blocked (white_list)': 'ブロックしないアドレス（white_list）',
+      'Active response skips these addresses on every rule. If only the manager itself is listed, add the addresses of administrators and of systems that log in often (monitoring, backup), or one mistyped password can lock them out.': 'アクティブレスポンスは、どのルールでもこれらのアドレスをスキップします。マネージャー自身しか載っていない場合は、管理者や頻繁にログインするシステム（監視、バックアップ）のアドレスを追加してください。パスワードを一度間違えただけで締め出されることがあります。',
+      '(none)': '（なし）',
+      'Only the manager itself': 'マネージャー自身のみ',
+      'Agent ID that runs the response': 'レスポンスを実行するエージェント ID',
+      'This writes the response into ossec.conf on every node and checks each one; if any node rejects it, every node is put back. It takes effect when the manager restarts on each node.': 'すべてのノードの ossec.conf にレスポンスを書き込み、ノードごとに検証します。いずれかのノードが受け付けなければ、すべてのノードを元に戻します。各ノードでマネージャーを再起動すると反映されます。',
+      'Enable active response': 'アクティブレスポンスを有効にする',
+      'Switch off this response on every node? Addresses it has already blocked are released when their block time runs out.': 'すべてのノードでこのレスポンスを無効にしますか？すでにブロックされたアドレスは、ブロック時間が過ぎると解除されます。',
+      'This pack offers no such response': 'このパックにそのレスポンスはありません',
+      'This response runs on one agent: give its agent ID': 'このレスポンスは 1 台のエージェントで実行されます。エージェント ID を指定してください',
+      'Nothing to change: the response was already on.': '変更はありません：このレスポンスはすでに有効です。',
+      'Nothing to change: the response was already off.': '変更はありません：このレスポンスはすでに無効です。',
       'Unchanged files:': '変更のないファイル：',
       'Nothing to change.': '変更する項目はありません。',
       'Agents in this group receive the changed files and reload their configuration.': 'このグループのエージェントは変更されたファイルを受け取り、設定を再読み込みします。',
@@ -9071,6 +9287,13 @@ _I18N_SCRIPT = r"""
   // Patterns for interpolated strings: [regex, function(match)->translated]
   var I18N_PATTERNS = {
     'zh-TW': [
+      [/^Response enabled on (.+)\. It takes effect when the manager restarts on each of them\.$/, function (m) { return '已在 ' + m[1] + ' 啟用回應。各節點的 Manager 重新啟動後才會生效。'; }],
+      [/^Response disabled on (.+)\. It takes effect when the manager restarts on each of them\.$/, function (m) { return '已在 ' + m[1] + ' 停用回應。各節點的 Manager 重新啟動後才會生效。'; }],
+      [/^timeout must be between (\d+) and (\d+) seconds$/, function (m) { return '封鎖時間必須介於 ' + m[1] + ' 到 ' + m[2] + ' 秒之間'; }],
+      [/^The manager has not loaded rule (.+)\. Reload the ruleset, then enable the response\.$/, function (m) { return 'Manager 尚未載入規則 ' + m[1] + '。請先重新載入規則集，再啟用回應。'; }],
+      [/^Cannot read ossec\.conf on (.+), so the response would be switched on for only some agents\. Make the node reachable, or retry for this manager only\.( Apply it to this manager only\?)?$/, function (m) { return '無法讀取 ' + m[1] + ' 的 ossec.conf，回應只會對部分 agent 生效。請讓該節點可以連線，或只套用到這台 Manager。' + (m[2] ? '要只套用到這台 Manager 嗎？' : ''); }],
+      [/^The command "(.+)" is not defined in ossec\.conf on (.+)\. Add its <command> block first; the setup guide says how\.$/, function (m) { return '指令「' + m[1] + '」未定義於 ' + m[2] + ' 的 ossec.conf。請先加上它的 <command> 區塊，作法見部署說明。'; }],
+      [/^The configuration on (.+?) did not validate, so every node was put back as it was\.(.*)$/, function (m) { return m[1] + ' 的設定驗證未通過，所有節點都已還原。' + m[2]; }],
       [/^Expires:\s*(.+)$/, function (m) { return '到期：' + m[1]; }],
       [/^Session expires after\s+(\d+)\s+minutes?$/, function (m) { return 'Session 將於 ' + m[1] + ' 分鐘後過期'; }],
       [/^Showing\s+(\d+)\s*-\s*(\d+)\s+of\s+(\d+)$/, function (m) { return '顯示 ' + m[1] + ' - ' + m[2] + '，共 ' + m[3] + ' 筆'; }],
@@ -9193,6 +9416,13 @@ _I18N_SCRIPT = r"""
       [/^never_connected \((\d+)\)$/, function (m) { return '從未連線 (' + m[1] + ')'; }]
     ],
     'ja': [
+      [/^Response enabled on (.+)\. It takes effect when the manager restarts on each of them\.$/, function (m) { return m[1] + ' でレスポンスを有効にしました。各ノードでマネージャーを再起動すると反映されます。'; }],
+      [/^Response disabled on (.+)\. It takes effect when the manager restarts on each of them\.$/, function (m) { return m[1] + ' でレスポンスを無効にしました。各ノードでマネージャーを再起動すると反映されます。'; }],
+      [/^timeout must be between (\d+) and (\d+) seconds$/, function (m) { return 'ブロック時間は ' + m[1] + ' から ' + m[2] + ' 秒の間で指定してください'; }],
+      [/^The manager has not loaded rule (.+)\. Reload the ruleset, then enable the response\.$/, function (m) { return 'マネージャーはルール ' + m[1] + ' を読み込んでいません。ルールセットを再読み込みしてから有効にしてください。'; }],
+      [/^Cannot read ossec\.conf on (.+), so the response would be switched on for only some agents\. Make the node reachable, or retry for this manager only\.( Apply it to this manager only\?)?$/, function (m) { return m[1] + ' の ossec.conf を読み取れないため、レスポンスは一部のエージェントにしか効きません。ノードに接続できるようにするか、このマネージャーだけに適用してください。' + (m[2] ? 'このマネージャーだけに適用しますか？' : ''); }],
+      [/^The command "(.+)" is not defined in ossec\.conf on (.+)\. Add its <command> block first; the setup guide says how\.$/, function (m) { return 'コマンド「' + m[1] + '」が ' + m[2] + ' の ossec.conf に定義されていません。先に <command> ブロックを追加してください。方法はセットアップガイドを参照してください。'; }],
+      [/^The configuration on (.+?) did not validate, so every node was put back as it was\.(.*)$/, function (m) { return m[1] + ' の設定が検証に通らなかったため、すべてのノードを元に戻しました。' + m[2]; }],
       [/^Expires:\s*(.+)$/, function (m) { return '有効期限：' + m[1]; }],
       [/^Session expires after\s+(\d+)\s+minutes?$/, function (m) { return 'セッションは ' + m[1] + ' 分後に期限切れになります'; }],
       [/^Showing\s+(\d+)\s*-\s*(\d+)\s+of\s+(\d+)$/, function (m) { return m[1] + ' - ' + m[2] + ' 件を表示（全 ' + m[3] + ' 件）'; }],
@@ -14479,6 +14709,8 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     'untracked_identical': bool(presence and presence['total']
                                                 and presence['identical'] == presence['total']),
                     'has_setup': bool(manifest.get('setup')),
+                    'active_response_count': len(_ar_definitions(manifest)),
+                    'active_response_enabled': len((state or {}).get('active_response') or {}),
                 })
             return jsonify({'packs': packs, 'total': len(packs)})
         except Exception as e:
@@ -15198,6 +15430,21 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                                    sanitize_for_log(problem['node']),
                                    sanitize_for_log(problem['error']))
 
+            # Responses the pack switched on leave with it. Left in ossec.conf they
+            # would keep blocking on rule IDs that no longer exist after the next
+            # restart, and nobody would know which pack they came from.
+            ar_changed, ar_failures = [], []
+            try:
+                with open(os.path.join(_wazuh_path(), 'etc', 'ossec.conf'), encoding='utf-8') as fh:
+                    local_conf = fh.read()
+                if state.get('active_response') or _ar_block_re(pack_id).search(local_conf):
+                    ar_changed, ar_failures = _remove_pack_responses(get_api_session(), pack_id)
+            except Exception as e:
+                ar_failures.append({'node': '', 'error': str(e)})
+            for problem in ar_failures:
+                logger.warning('PACK UNINSTALL: active response left behind on %s: %s',
+                               sanitize_for_log(problem['node']), sanitize_for_log(problem['error']))
+
             ok, problems = _ruleset_is_valid()
             os.remove(_pack_state_path(pack_id))
             logger.info(f"PACK UNINSTALLED: user={get_current_user()} pack={sanitize_for_log(pack_id)} "
@@ -15208,11 +15455,426 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                             % ', '.join(kept))
             if group_note:
                 message += ' Note: ' + group_note + '.'
+            if ar_changed:
+                message += (' Its active responses were taken out of ossec.conf on %s; '
+                            'restart the manager there for that to take effect.' % ', '.join(ar_changed))
+            if ar_failures:
+                message += (' Could not take its active responses out of ossec.conf on %s: '
+                            'remove the blocks marked "jt-wazuh-mgr active-response %s/" by hand.'
+                            % (', '.join(f['node'] or '?' for f in ar_failures), pack_id))
             return jsonify({'success': True, 'pack': pack_id, 'removed': removed, 'kept': kept,
                             'ruleset_valid': ok, 'problems': problems,
-                            'group_note': group_note, 'message': message})
+                            'group_note': group_note, 'ar_removed_on': ar_changed,
+                            'ar_failures': ar_failures, 'message': message})
         except Exception as e:
             logger.error(f"PACK UNINSTALL ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    # ---------- Active response a pack offers (opt-in) ----------
+    # A pack may describe responses, such as blocking the source of a brute
+    # force, but installing it enables none of them. Blocking is the one thing
+    # a pack can do that hurts when a rule is wrong: a shared NAT address, an
+    # administrator who mistyped a password, the reverse proxy every client
+    # appears to come from. So an operator who has read what a response blocks
+    # switches it on, on every node at once, and switches it off the same way.
+    # Each response lives in ossec.conf between two marker comments, so it can be
+    # found, compared with what the pack now says, and taken out again.
+    AR_ID_PATTERN = re.compile(r'^[a-z0-9]+(?:-[a-z0-9]+)*$')
+    AR_COMMAND_PATTERN = re.compile(r'^[A-Za-z0-9_.]+(?:-[A-Za-z0-9_.]+)*$')
+    AR_LOCATIONS = ('local', 'server', 'defined-agent', 'all')
+    # A pack never blocks for ever: an address blocked by mistake must come back
+    # without anyone noticing it first.
+    AR_TIMEOUT_RANGE = (60, 7 * 86400)
+
+    class _ArFailure(Exception):
+        def __init__(self, node, problems):
+            super().__init__(node)
+            self.node, self.problems = node, problems
+
+    def _ar_tag(pack_id, ar_id):
+        # Both ids are checked to contain no "--", which an XML comment may not.
+        return 'jt-wazuh-mgr active-response %s/%s' % (pack_id, ar_id)
+
+    def _ar_block_re(pack_id, ar_id=None):
+        """The marked block of one response, or of every response of a pack."""
+        prefix = re.escape('jt-wazuh-mgr active-response %s/' % pack_id)
+        ident = re.escape(ar_id) if ar_id else r'[a-z0-9-]+'
+        return re.compile(r'[ \t]*<!-- %s(?P<ar>%s) begin -->.*?<!-- %s(?P=ar) end -->[ \t]*\n?'
+                          % (prefix, ident, prefix), re.S)
+
+    def _ar_definitions(manifest):
+        """The manifest's responses that are well formed, keyed by id."""
+        out = {}
+        for entry in (manifest or {}).get('active_response') or []:
+            if not isinstance(entry, dict):
+                continue
+            ar_id = str(entry.get('id') or '')
+            rules = [str(r) for r in (entry.get('rules_id') or [])]
+            if not AR_ID_PATTERN.match(ar_id) or len(ar_id) > 64:
+                continue
+            if not AR_COMMAND_PATTERN.match(str(entry.get('command') or '')):
+                continue
+            if entry.get('location') not in AR_LOCATIONS:
+                continue
+            if not rules or len(rules) > 50 or not all(re.match(r'^\d{1,7}$', r) for r in rules):
+                continue
+            out[ar_id] = {**entry, 'id': ar_id, 'rules_id': rules}
+        return out
+
+    def _ar_timeout(entry, override=None):
+        value = override if override not in (None, '') else entry.get('timeout', 600)
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return None
+        lo, hi = AR_TIMEOUT_RANGE
+        return value if lo <= value <= hi else None
+
+    def _render_ar_block(pack_id, entry, timeout, agent_id=None):
+        tag = _ar_tag(pack_id, entry['id'])
+        lines = ['  <!-- %s begin -->' % tag,
+                 '  <active-response>',
+                 '    <command>%s</command>' % entry['command'],
+                 '    <location>%s</location>' % entry['location']]
+        if entry['location'] == 'defined-agent':
+            lines.append('    <agent_id>%s</agent_id>' % agent_id)
+        lines += ['    <rules_id>%s</rules_id>' % ','.join(entry['rules_id']),
+                  '    <timeout>%d</timeout>' % timeout,
+                  '  </active-response>',
+                  '  <!-- %s end -->' % tag]
+        return '\n'.join(lines) + '\n'
+
+    def _apply_ar_block(content, pack_id, ar_id, block=None):
+        """Take the response's block out of an ossec.conf and, if given, put `block` in.
+
+        Pure text in, pure text out, like _apply_list_declarations: every node
+        goes through the same function. The block goes before the last
+        </ossec_config>, which Wazuh reads like any other part of the file.
+        """
+        content = _ar_block_re(pack_id, ar_id).sub('', content)
+        if block:
+            pos = content.rfind('</ossec_config>')
+            if pos < 0:
+                raise ValueError('ossec.conf has no </ossec_config>')
+            content = content[:pos] + block + content[pos:]
+        return content
+
+    def _ar_enabled_blocks(content, pack_id):
+        """{ar_id: block text} for each response of the pack present in an ossec.conf."""
+        return {m.group('ar'): m.group(0) for m in _ar_block_re(pack_id).finditer(content or '')}
+
+    def _without_comments(content):
+        return re.sub(r'<!--.*?-->', '', content or '', flags=re.S)
+
+    def _defined_ar_commands(content):
+        return set(re.findall(r'<command>\s*<name>\s*([^<\s]+)\s*</name>', _without_comments(content)))
+
+    def _white_list(content):
+        return [w.strip() for w in re.findall(r'<white_list>([^<]*)</white_list>', _without_comments(content))]
+
+    def _local_node_name(api):
+        import socket
+        try:
+            local = api.request('GET', '/cluster/local/info')
+            name = ((local.get('data') or {}).get('affected_items') or [{}])[0].get('node')
+            if name:
+                return name
+        except Exception:
+            pass
+        return socket.gethostname()
+
+    def _node_configs(api):
+        """This manager's ossec.conf and every peer's, with how each was reached.
+
+        A peer that cannot be read is listed with its error rather than left
+        out: a response enabled "everywhere" that skipped a worker is enabled
+        for half the agents.
+        """
+        with open(os.path.join(_wazuh_path(), 'etc', 'ossec.conf'), encoding='utf-8') as fh:
+            local = fh.read()
+        nodes = [{'name': _local_node_name(api), 'ip': '', 'local': True,
+                  'content': local, 'error': None, 'via': 'file'}]
+        for peer in _cluster_peer_nodes():
+            node = peer['name']
+            ok, text = api.request_raw('GET', f'/cluster/{node}/configuration', params={'raw': 'true'})
+            via = 'api'
+            if not ok:
+                text_ssh, err = _peer_config_over_ssh(node)
+                if text_ssh is None:
+                    nodes.append({'name': node, 'ip': peer['ip'], 'local': False, 'content': None,
+                                  'error': f'{text}; over SSH: {err}', 'via': None})
+                    continue
+                text, via = text_ssh, 'ssh'
+            nodes.append({'name': node, 'ip': peer['ip'], 'local': False,
+                          'content': text, 'error': None, 'via': via})
+        return nodes
+
+    def _write_node_config(api, node, content):
+        """Write one node's ossec.conf the way it was read. Returns an error or None."""
+        if node['local']:
+            with open(os.path.join(_wazuh_path(), 'etc', 'ossec.conf'), 'w', encoding='utf-8') as fh:
+                fh.write(content)
+            return None
+        if node['via'] == 'api':
+            ok, detail = api.request_raw('PUT', f"/cluster/{node['name']}/configuration", body=content)
+            if ok:
+                return None
+            written, err = _peer_config_over_ssh(node['name'], content=content)
+            return None if written else f'{detail}; over SSH: {err}'
+        written, err = _peer_config_over_ssh(node['name'], content=content)
+        return None if written else err
+
+    def _node_config_valid(api, node):
+        """(valid, problems) for a node's ossec.conf as it is now on disk."""
+        if node['local']:
+            return _ruleset_is_valid()
+        result = api.request('GET', f"/cluster/{node['name']}/configuration/validation")
+        data = result.get('data') if isinstance(result, dict) else None
+        if not isinstance(data, dict):
+            return False, ['could not ask the node to validate its configuration: %s'
+                           % ((result or {}).get('error') if isinstance(result, dict) else result)]
+        items, failed = data.get('affected_items') or [], data.get('failed_items') or []
+        if items and items[0].get('status') == 'OK' and not failed:
+            return True, []
+        problems = []
+        for f in failed:
+            err = f.get('error', {})
+            problems.append(err.get('message') if isinstance(err, dict) else str(err))
+        for item in items:
+            problems.extend(item.get('details') or [])
+        return False, problems or ['the node reported its configuration as not valid']
+
+    def _missing_rules(api, rule_ids):
+        """Rule IDs the manager has not loaded, or None if it could not be asked."""
+        result = api.request('GET', '/rules', params={'rule_ids': ','.join(rule_ids),
+                                                      'limit': 500, 'select': 'id'})
+        data = result.get('data') if isinstance(result, dict) else None
+        if not isinstance(data, dict):
+            return None
+        found = {str(i.get('id')) for i in data.get('affected_items') or []}
+        return [r for r in rule_ids if r not in found]
+
+    def _analysisd_started(api, node):
+        """When analysisd on a node last started (aware datetime), or None if unknown."""
+        endpoint = ('/manager/daemons/stats' if node['local']
+                    else f"/cluster/{node['name']}/daemons/stats")
+        try:
+            result = api.request('GET', endpoint, params={'daemons_list': 'wazuh-analysisd'})
+            items = (result.get('data') or {}).get('affected_items') or []
+            value = (items[0] if items else {}).get('uptime')
+            if not value:
+                return None
+            started = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+            return started if started.tzinfo else started.replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
+
+    def _remove_pack_responses(api, pack_id):
+        """Take every response of a pack out of every node's ossec.conf.
+
+        Used when the pack is removed. Returns (changed_nodes, failures).
+        """
+        changed, failures = [], []
+        for node in _node_configs(api):
+            if node['content'] is None:
+                failures.append({'node': node['name'], 'error': node['error']})
+                continue
+            updated = _ar_block_re(pack_id).sub('', node['content'])
+            if updated == node['content']:
+                continue
+            err = _write_node_config(api, node, updated)
+            if err:
+                failures.append({'node': node['name'], 'error': err})
+            else:
+                changed.append(node['name'])
+        return changed, failures
+
+    @app.route('/api/packs/<pack_id>/active-response', methods=['GET'])
+    @login_required
+    @require_capability('rule_packs')
+    def get_pack_active_response(pack_id):
+        """The responses a pack offers and, for each node, whether it is switched on."""
+        manifest = _read_manifest(pack_id)
+        if not manifest:
+            return jsonify({'error': 'Unknown pack'}), 404
+        defs = _ar_definitions(manifest)
+        state = _installed_state(pack_id) or {}
+        records = state.get('active_response') or {}
+        try:
+            api = get_api_session()
+            nodes = _node_configs(api)
+            status = {ar_id: {'enabled_on': [], 'stale_on': [], 'missing_command_on': []} for ar_id in defs}
+            nodes_out = []
+            for node in nodes:
+                info = {'name': node['name'], 'local': node['local'], 'error': node['error'],
+                        'white_list': [], 'leftover': []}
+                if node['content'] is not None:
+                    info['white_list'] = _white_list(node['content'])
+                    commands = _defined_ar_commands(node['content'])
+                    enabled = _ar_enabled_blocks(node['content'], pack_id)
+                    for ar_id, entry in defs.items():
+                        if entry['command'] not in commands:
+                            status[ar_id]['missing_command_on'].append(node['name'])
+                        if ar_id not in enabled:
+                            continue
+                        status[ar_id]['enabled_on'].append(node['name'])
+                        rec = records.get(ar_id) or {}
+                        expected = _render_ar_block(pack_id, entry,
+                                                    rec.get('timeout') or _ar_timeout(entry) or 600,
+                                                    rec.get('agent_id'))
+                        if enabled[ar_id].strip() != expected.strip():
+                            status[ar_id]['stale_on'].append(node['name'])
+                    # responses an earlier version offered and this one does not
+                    info['leftover'] = sorted(set(enabled) - set(defs))
+                nodes_out.append(info)
+
+            pending = []
+            changed_at = state.get('ar_changed_at')
+            if changed_at:
+                since = datetime.fromisoformat(changed_at)
+                by_name = {n['name']: n for n in nodes}
+                for name in state.get('ar_restart_pending') or []:
+                    started = _analysisd_started(api, by_name[name]) if name in by_name else None
+                    if started is None or started < since:
+                        pending.append(name)
+            return jsonify({
+                'pack': pack_id,
+                'installed': bool(state),
+                'responses': [{**entry, **status[ar_id], 'record': records.get(ar_id)}
+                              for ar_id, entry in defs.items()],
+                'nodes': nodes_out,
+                'restart_pending': pending,
+                'timeout_range': list(AR_TIMEOUT_RANGE),
+            })
+        except Exception as e:
+            logger.error(f"PACK AR STATUS ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/packs/<pack_id>/active-response/<ar_id>', methods=['POST'])
+    @login_required
+    @require_capability('rule_packs')
+    def set_pack_active_response(pack_id, ar_id):
+        """Switch one response of a pack on or off, on every node.
+
+        Every node is written, then validated; the first node whose
+        configuration does not validate puts every node back as it was, so a
+        later manager restart cannot fail on a block this tool wrote.
+        Body: {"enabled": true|false, "timeout": seconds, "agent_id": "001",
+        "local_only": false}.
+        """
+        if not PACK_ID_PATTERN.match(pack_id or '') or '--' in pack_id:
+            return jsonify({'error': 'Invalid pack id'}), 400
+        if not AR_ID_PATTERN.match(ar_id or '') or len(ar_id) > 64:
+            return jsonify({'error': 'Invalid response id'}), 400
+        data = request.get_json(silent=True) or {}
+        enable = data.get('enabled')
+        if not isinstance(enable, bool):
+            return jsonify({'error': 'enabled must be true or false'}), 400
+        local_only = bool(data.get('local_only'))
+        manifest = _read_manifest(pack_id)
+        if not manifest:
+            return jsonify({'error': 'Unknown pack'}), 404
+        state = _installed_state(pack_id)
+        try:
+            api = get_api_session()
+            entry = timeout = agent_id = block = None
+            if enable:
+                if not state:
+                    return jsonify({'error': 'Install the pack before enabling its responses'}), 409
+                entry = _ar_definitions(manifest).get(ar_id)
+                if not entry:
+                    return jsonify({'error': 'This pack offers no such response'}), 404
+                timeout = _ar_timeout(entry, data.get('timeout'))
+                if timeout is None:
+                    return jsonify({'error': 'timeout must be between %d and %d seconds'
+                                    % AR_TIMEOUT_RANGE}), 400
+                if entry['location'] == 'defined-agent':
+                    agent_id = str(data.get('agent_id') or '')
+                    if not validate_agent_id(agent_id) or agent_id == '000':
+                        return jsonify({'error': 'This response runs on one agent: give its agent ID'}), 400
+                missing = _missing_rules(api, entry['rules_id'])
+                if missing:
+                    return jsonify({'error': 'The manager has not loaded rule %s. Reload the ruleset, '
+                                             'then enable the response.' % ', '.join(missing),
+                                    'missing_rules': missing}), 409
+                block = _render_ar_block(pack_id, entry, timeout, agent_id)
+
+            nodes = _node_configs(api)
+            unreachable = [n for n in nodes if n['content'] is None]
+            if unreachable and not local_only:
+                return jsonify({'error': 'Cannot read ossec.conf on %s, so the response would be '
+                                         'switched on for only some agents. Make the node reachable, '
+                                         'or retry for this manager only.'
+                                         % ', '.join(n['name'] for n in unreachable),
+                                'unreachable': [{'node': n['name'], 'error': n['error']} for n in unreachable],
+                                'local_only_possible': True}), 409
+            targets = [n for n in nodes if n['content'] is not None and (n['local'] or not local_only)]
+            if enable:
+                lacking = [n['name'] for n in targets
+                           if entry['command'] not in _defined_ar_commands(n['content'])]
+                if lacking:
+                    return jsonify({'error': 'The command "%s" is not defined in ossec.conf on %s. '
+                                             'Add its <command> block first; the setup guide says how.'
+                                             % (entry['command'], ', '.join(lacking)),
+                                    'missing_command_on': lacking}), 409
+
+            written = []
+            try:
+                for node in targets:
+                    updated = _apply_ar_block(node['content'], pack_id, ar_id, block)
+                    if updated == node['content']:
+                        continue
+                    err = _write_node_config(api, node, updated)
+                    if err:
+                        raise _ArFailure(node['name'], [err])
+                    written.append(node)
+                    valid, problems = _node_config_valid(api, node)
+                    if not valid:
+                        raise _ArFailure(node['name'], problems)
+            except _ArFailure as failure:
+                restore_errors = []
+                for node in reversed(written):
+                    err = _write_node_config(api, node, node['content'])
+                    if err:
+                        restore_errors.append({'node': node['name'], 'error': err})
+                logger.error('PACK AR ROLLBACK: pack=%s ar=%s node=%s problems=%s',
+                             sanitize_for_log(pack_id), sanitize_for_log(ar_id),
+                             sanitize_for_log(failure.node), sanitize_for_log('; '.join(failure.problems)[:500]))
+                return jsonify({'error': 'The configuration on %s did not validate, so every node '
+                                         'was put back as it was.' % failure.node,
+                                'node': failure.node, 'problems': failure.problems[:10],
+                                'restore_errors': restore_errors}), 422
+
+            changed = [n['name'] for n in written]
+            now = datetime.now(timezone.utc).isoformat(timespec='seconds')
+            if state is not None:
+                responses = state.setdefault('active_response', {})
+                if enable:
+                    responses[ar_id] = {'enabled_at': now, 'by': get_current_user(),
+                                        'timeout': timeout, 'agent_id': agent_id,
+                                        'command': entry['command'], 'rules_id': entry['rules_id'],
+                                        'nodes': [n['name'] for n in targets]}
+                else:
+                    responses.pop(ar_id, None)
+                if changed:
+                    state['ar_restart_pending'] = sorted(set(state.get('ar_restart_pending') or []) | set(changed))
+                    state['ar_changed_at'] = now
+                with open(_pack_state_path(pack_id), 'w', encoding='utf-8') as fh:
+                    json.dump(state, fh, ensure_ascii=False, indent=2)
+            logger.info(f"PACK AR {'ENABLED' if enable else 'DISABLED'}: user={get_current_user()} "
+                        f"pack={sanitize_for_log(pack_id)} ar={sanitize_for_log(ar_id)} "
+                        f"nodes={','.join(sanitize_for_log(c) for c in changed)}")
+            skipped = [n['name'] for n in unreachable] if local_only else []
+            if not changed:
+                message = 'Nothing to change: the response was already %s.' % ('on' if enable else 'off')
+            else:
+                message = ('Response %s on %s. It takes effect when the manager restarts on each of them.'
+                           % ('enabled' if enable else 'disabled', ', '.join(changed)))
+            return jsonify({'success': True, 'enabled': enable, 'changed_nodes': changed,
+                            'skipped_nodes': skipped, 'restart_required': bool(changed),
+                            'message': message})
+        except Exception as e:
+            logger.error(f"PACK AR ERROR: {e}")
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/nodes/config-diff', methods=['GET'])

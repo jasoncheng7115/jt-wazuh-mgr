@@ -1,0 +1,237 @@
+<!--
+  jt-ucs: decoders for Univention Corporate Server domain controllers
+  (Samba 4 Active Directory with the UCS OpenLDAP directory)
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  What a UCS domain controller already sends to Wazuh is /var/log/syslog and
+  /var/log/auth.log. Wazuh decodes the slapd connection, bind and result lines
+  and nothing else of UCS: the directory writes, the directory logger, the
+  management console's PAM lines and the Samba init script all arrived
+  undecoded.
+
+  The Samba audit and Admin Diary decoders at the end are for optional
+  sources that only exist after the site enables them (see the pack's setup
+  guide). They do nothing until then.
+-->
+
+<!--
+  OpenLDAP write operations, from slapd at log level "stats" (256):
+    conn=1283855 op=53 ADD dn="uid=alice,cn=users,dc=example,dc=com"
+    conn=1283855 op=60 MOD dn="cn=Domain Admins,cn=groups,dc=example,dc=com"
+    conn=1283855 op=60 MOD attr=memberUid uniqueMember
+  Children of the built-in openldap decoder, which is the only way to reach
+  slapd lines. The built-in decoders accumulate per connection id, so these
+  lines also carry srcip (from the ACCEPT line) and dstuser (from the first
+  BIND of that connection) when Wazuh has seen them. Only those two fields
+  travel between lines: the DN of a MOD does not reach the MOD attr= line that
+  follows it, which is why the rules correlate the two by connection id.
+-->
+<decoder name="jt-ucs-slapd-write">
+  <parent>openldap</parent>
+  <prematch type="pcre2">^conn=\d+ op=\d+ (?:ADD|DEL|MOD|MODRDN) dn="</prematch>
+  <regex type="pcre2">^conn=(\d+) op=(\d+) (ADD|DEL|MOD|MODRDN) dn="([^"]*)"</regex>
+  <order>id, ucs.ldap_opnum, ucs.ldap_op, ucs.dn</order>
+  <accumulate/>
+</decoder>
+
+<decoder name="jt-ucs-slapd-modattr">
+  <parent>openldap</parent>
+  <prematch type="pcre2">^conn=\d+ op=\d+ MOD attr=</prematch>
+  <regex type="pcre2">^conn=(\d+) op=(\d+) MOD attr=(.*)$</regex>
+  <order>id, ucs.ldap_opnum, ucs.ldap_attrs</order>
+  <accumulate/>
+</decoder>
+
+<!--
+  The UCS directory logger (ldap/logging=yes) writes one syslog line per
+  committed LDAP change, with the modifying account:
+    directory_logger: DN=uid=alice,cn=users,dc=example,dc=com#012ID=8965#012Modifier=cn=admin,dc=example,dc=com#012Timestamp=02.10.2026 00:14:12#012New Hash=01ab...
+  The line does not say whether the object was added, changed or deleted, and
+  carries no attribute values. The full record goes to
+  /var/log/univention/directory-logger.log, which contains password hashes and
+  must never be collected.
+-->
+<decoder name="jt-ucs-dirlog">
+  <program_name type="pcre2">^directory_logger$</program_name>
+  <prematch type="pcre2">^DN=</prematch>
+  <regex type="pcre2">^DN=(.*?)#012ID=(\d+)#012Modifier=(.*?)#012Timestamp=(.*?)#012New Hash=(\w+)</regex>
+  <order>ucs.dn, ucs.txid, ucs.modifier, ucs.timestamp, ucs.hash</order>
+</decoder>
+
+<!--
+  Management console (UMC) logins through PAM, in /var/log/auth.log. The
+  syslog tag contains a space ("python3 /usr/sbin/univention-management-console-server"),
+  so Wazuh finds no program name and no built-in decoder takes the line.
+  pam_unix is tried first and fails for every domain account; pam_krb5 then
+  decides. A pam_unix failure followed by a pam_krb5 success is a successful
+  login.
+-->
+<decoder name="jt-ucs-umc-pam">
+  <prematch type="pcre2">pam_\w+\(univention-management-console:\w+\): </prematch>
+</decoder>
+
+<decoder name="jt-ucs-umc-pam-fields">
+  <parent>jt-ucs-umc-pam</parent>
+  <regex type="pcre2">(pam_\w+)\(univention-management-console:(\w+)\): </regex>
+  <order>ucs.pam_module, ucs.pam_stage</order>
+</decoder>
+
+<decoder name="jt-ucs-umc-pam-fields">
+  <parent>jt-ucs-umc-pam</parent>
+  <regex type="pcre2">(?:\buser=|: user |authentication failure; logname=)([^\s(]+)</regex>
+  <order>user</order>
+</decoder>
+
+<!-- The Samba AD DC init script (samba-ad-dc[pid]: Stopping Samba AD DC server: samba). -->
+<decoder name="jt-ucs-samba-init">
+  <program_name type="pcre2">^samba-ad-dc$</program_name>
+</decoder>
+
+<!--
+  OPTIONAL SOURCE: Samba JSON audit logging (auth_json_audit,
+  dsdb_password_json_audit, dsdb_group_json_audit), routed to files of their
+  own and written in single-line syslog format (debug syslog format = yes):
+    2026-10-11T10:00:00.123456+08:00 dc1-example samba[1234]: JSON Authentication: {"timestamp": ..., "type": "Authentication", "Authentication": {...}}
+  Only this single-line format is decoded: a decoder without a program name
+  is never tried on lines that have one, so the program name samba is
+  required (verified in the sandbox).
+  Field extraction uses one regex per key (same-name sibling decoders): the
+  JSON plugin cannot be combined with a regex that turns
+  "remoteAddress": "ipv4:198.51.100.20:51234" into srcip, and srcip is what
+  frequency rules and active response need.
+  Lines written by smbd (SMB and NTLM on the DC) carry the program name smbd,
+  which the built-in smbd decoder claims first; the jt-smbd-audit-fields
+  children below repeat the same extraction under it (the prematch is given
+  once, on the first of the same-name siblings).
+-->
+<decoder name="jt-samba-audit">
+  <program_name type="pcre2">^samba$</program_name>
+  <prematch type="pcre2">^JSON (?:Authentication|Authorization|passwordChange|groupChange): \{</prematch>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">JSON (\w+): \{</regex>
+  <order>samba.type</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"status": "([^"]+)"</regex>
+  <order>samba.status</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"statusCode": (\d+)</regex>
+  <order>samba.status_code</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"remoteAddress": "ipv[46]:\[?([0-9A-Fa-f.:]+?)\]?:\d+"</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"clientAccount": "([^"]+)"</regex>
+  <order>user</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"clientDomain": "([^"]+)"</regex>
+  <order>samba.domain</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"serviceDescription": "([^"]+)"</regex>
+  <order>samba.service</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"authDescription": "([^"]+)"</regex>
+  <order>samba.auth_method</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"workstation": "([^"]+)"</regex>
+  <order>samba.workstation</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"dn": "([^"]+)"</regex>
+  <order>samba.dn</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"action": "([^"]+)"</regex>
+  <order>samba.action</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"group": "([^"]+)"</regex>
+  <order>samba.group</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"user": "([^"]+)"</regex>
+  <order>samba.member</order>
+</decoder>
+
+<decoder name="jt-samba-audit-fields">
+  <parent>jt-samba-audit</parent>
+  <regex type="pcre2">"userSid": "([^"]+)"</regex>
+  <order>samba.actor_sid</order>
+</decoder>
+
+<decoder name="jt-smbd-audit-fields">
+  <parent>smbd</parent>
+  <prematch type="pcre2">JSON (?:Authentication|Authorization|passwordChange|groupChange): \{</prematch>
+  <regex type="pcre2">JSON (\w+): \{</regex>
+  <order>samba.type</order>
+</decoder>
+
+<decoder name="jt-smbd-audit-fields">
+  <parent>smbd</parent>
+  <regex type="pcre2">"status": "([^"]+)"</regex>
+  <order>samba.status</order>
+</decoder>
+
+<decoder name="jt-smbd-audit-fields">
+  <parent>smbd</parent>
+  <regex type="pcre2">"remoteAddress": "ipv[46]:\[?([0-9A-Fa-f.:]+?)\]?:\d+"</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="jt-smbd-audit-fields">
+  <parent>smbd</parent>
+  <regex type="pcre2">"clientAccount": "([^"]+)"</regex>
+  <order>user</order>
+</decoder>
+
+<decoder name="jt-smbd-audit-fields">
+  <parent>smbd</parent>
+  <regex type="pcre2">"serviceDescription": "([^"]+)"</regex>
+  <order>samba.service</order>
+</decoder>
+
+<!--
+  OPTIONAL SOURCE: UCS Admin Diary entries. UCS sends them through rsyslog
+  with the tag ADMINDIARY and stops them before /var/log/syslog, so they never
+  reach the agent. The setup guide adds an rsyslog rule on the Admin Diary
+  backend that also writes them to /var/log/univention/jt-admindiary.log:
+    2026-10-07T01:01:24.000000+08:00 dc2-example ADMINDIARY: {"username": "root", "event": "SERVER_PASSWORD_CHANGED", "args": {...}, ...}
+-->
+<decoder name="jt-ucs-admindiary">
+  <program_name type="pcre2">^ADMINDIARY$</program_name>
+  <plugin_decoder>JSON_Decoder</plugin_decoder>
+</decoder>

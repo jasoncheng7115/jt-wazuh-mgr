@@ -1,0 +1,403 @@
+<!--
+  jt-zpush: Z-Push, the Exchange ActiveSync gateway
+  Rule range 132200-132299. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  The zz- prefix makes this file load after the built-in ruleset: rule 132280
+  extends the built-in web access rule 31530. The generic syslog rules 1002
+  ("error", "failed", "refused") and 2501 ("login failed") would match many
+  Z-Push lines, but a decoded_as rule is tried before them (wazuh-logtest -v,
+  4.14.7), so the base rule below takes every decoded line.
+
+  Modules
+    132200-132209  base, log level classes, request summary
+    132210-132229  logins: rejected, brute force, spraying, success afterwards
+    132230-132239  mail backend: Zimbra refusals, availability
+    132240-132249  devices: new device, remote wipe, policy
+    132250-132259  loop detection, crashes, other fatal errors
+    132280-132289  web server access log
+
+  Z-Push sits between the phones and the mail server. The mail server sees the
+  Z-Push host as the client of every session (the Zimbra backend forwards the
+  phone's address in X-Forwarded-For); the full device id and the result the
+  phone received are only in the Z-Push log.
+-->
+
+<group name="zpush,jt_zpush,">
+
+  <rule id="132200" level="0">
+    <decoded_as>jt-zpush</decoded_as>
+    <description>Z-Push messages grouped</description>
+  </rule>
+
+  <!-- Log level classes, mutually exclusive by the decoded level. -->
+  <rule id="132202" level="0">
+    <if_sid>132200</if_sid>
+    <field name="zpush.level" type="pcre2">^INFO$</field>
+    <description>Z-Push informational message</description>
+  </rule>
+
+  <rule id="132203" level="2">
+    <if_sid>132200</if_sid>
+    <field name="zpush.level" type="pcre2">^WARN$</field>
+    <description>Z-Push warning: $(zpush.message)</description>
+  </rule>
+
+  <rule id="132204" level="2">
+    <if_sid>132200</if_sid>
+    <field name="zpush.level" type="pcre2">^ERROR$</field>
+    <description>Z-Push error: $(zpush.message)</description>
+  </rule>
+
+  <rule id="132205" level="3">
+    <if_sid>132200</if_sid>
+    <field name="zpush.level" type="pcre2">^FATAL$</field>
+    <description>Z-Push fatal error for $(dstuser): $(zpush.message)</description>
+  </rule>
+
+  <rule id="132206" level="0">
+    <if_sid>132200</if_sid>
+    <field name="zpush.level" type="pcre2">^(?:DEBUG|WBXML|DEVICEID|WBXMLSTACK)$</field>
+    <description>Z-Push debug message</description>
+  </rule>
+
+  <!--
+    The request summary, one line per request. The children are mutually
+    exclusive by result. A successful request stays at level 0: it is about
+    40 per cent of the log and only matters after failures (132220, 132221).
+    A 401 with an empty login before the # in the [..] prefix ("[#jdoe]") is a
+    request without credentials (a browser or a scanner); with a login it is
+    a rejected password.
+  -->
+  <rule id="132207" level="0">
+    <if_sid>132202</if_sid>
+    <match type="pcre2">\] cmd='[^']*' memory='</match>
+    <id type="pcre2">^2\d\d$</id>
+    <description>Z-Push request completed: $(zpush.cmd) by $(dstuser) from $(srcip)</description>
+  </rule>
+
+  <rule id="132208" level="2">
+    <if_sid>132202</if_sid>
+    <match type="pcre2">\[\s?INFO\] \[(?:#[^\]]*)?\](?: ?\[[^\]]*\])? cmd='[^']*' memory='</match>
+    <id type="pcre2">^401$</id>
+    <description>Z-Push request without credentials from $(srcip)</description>
+  </rule>
+
+  <!--
+    Logins. 132210 (ActiveSync) and 132211 (autodiscover) are the counted
+    failures. Each failure is counted once:
+    - ActiveSync: the request summary. The LOGAUTHFAIL line (132212) and the
+      fatal exception (132213) describe the same request and are not counted.
+    - Autodiscover writes no request summary. A backend whose Logon() returns
+      false writes the "Login failed" error; the Zimbra backend throws instead,
+      and only the LOGAUTHFAIL warning has the address. With the first kind of
+      backend and LOGAUTHFAIL on, an autodiscover failure counts twice.
+    A phone with a stale saved password produces the same failures as an
+    attacker, for as long as nobody fixes it.
+
+    The frequency rules use if_matched_sid, which takes one rule id, hence one
+    set per protocol. (if_matched_group with a frequency counted wrongly in
+    4.14.7: one layout fired after 4 of 8 events, another never fired.)
+  -->
+  <rule id="132210" level="5">
+    <if_sid>132202</if_sid>
+    <match type="pcre2">\[\s?INFO\] \[[^\]#]+(?:#[^\]]*)?\](?: ?\[[^\]]*\])? cmd='[^']*' memory='</match>
+    <id type="pcre2">^401$</id>
+    <description>Z-Push: ActiveSync login rejected for $(dstuser) from $(srcip) (device $(zpush.devtype) $(zpush.devid))</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="132211" level="5">
+    <if_sid>132203,132204</if_sid>
+    <match type="pcre2">\] (?:ZPushAutodiscover-\x3egetLogin\(\): Login failed for user '|Unable to complete autodiscover because login failed for user with email ')</match>
+    <description>Z-Push: autodiscover login rejected for $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="132212" level="2">
+    <if_sid>132203</if_sid>
+    <match type="pcre2">\] IP: \S+ failed to authenticate user '</match>
+    <description>Z-Push: ActiveSync login rejected for $(dstuser) from $(srcip) (LOGAUTHFAIL line, counted by its request summary)</description>
+  </rule>
+
+  <!-- The fatal exception of a rejected request; 132210 already alerted. -->
+  <rule id="132213" level="2">
+    <if_sid>132205</if_sid>
+    <field name="zpush.exception" type="pcre2">^AuthenticationRequiredException$</field>
+    <description>Z-Push: request of $(dstuser) rejected: $(zpush.message)</description>
+  </rule>
+
+  <!--
+    One account, many failures, from anywhere: eight in five minutes. Also
+    what a phone that keeps retrying a stale password looks like; the device
+    id and the address in the alert tell the two apart. A firing uses up its
+    eight events, so a loop that goes on raises it once per eight failures.
+  -->
+  <rule id="132214" level="10" frequency="8" timeframe="300">
+    <if_matched_sid>132210</if_matched_sid>
+    <same_user />
+    <description>[WARN] Z-Push: repeated rejected ActiveSync logins for $(dstuser), last from $(srcip) (brute force, or a device with a stale password)</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failures,jt_zpush_bruteforce,</group>
+  </rule>
+
+  <!--
+    One address, failures for several different accounts: password spraying.
+    different_user counts earlier failures from this address whose account
+    differs from the current one: eight accounts tried once each reach it, one
+    account failing over and over never does. Wazuh cannot count distinct
+    accounts, so two phones with stale passwords behind one carrier NAT
+    address reach it too, after about seven failures each (measured in the
+    sandbox: alternating failures of two accounts fired on the 14th).
+    Addresses listed in etc/lists/jt-zpush-trusted-addresses (private and
+    shared ranges by default) take 132216 instead, which no active response
+    is attached to.
+  -->
+  <rule id="132215" level="10" frequency="8" timeframe="600">
+    <if_matched_sid>132210</if_matched_sid>
+    <same_srcip />
+    <different_user />
+    <description>[WARN] Z-Push: rejected ActiveSync logins for several accounts from $(srcip) (password spraying), last $(dstuser)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,jt_zpush_spraying,</group>
+  </rule>
+
+  <rule id="132216" level="10">
+    <if_sid>132215</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/jt-zpush-trusted-addresses</list>
+    <description>[WARN] Z-Push: rejected ActiveSync logins for several accounts from listed address $(srcip) (password spraying, or a proxy that hides the client address), last $(dstuser)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,jt_zpush_spraying,</group>
+  </rule>
+
+  <!-- The same two patterns through autodiscover. -->
+  <rule id="132217" level="10" frequency="8" timeframe="300">
+    <if_matched_sid>132211</if_matched_sid>
+    <same_user />
+    <description>[WARN] Z-Push: repeated rejected autodiscover logins for $(dstuser), last from $(srcip)</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failures,jt_zpush_bruteforce,</group>
+  </rule>
+
+  <rule id="132218" level="10" frequency="8" timeframe="600">
+    <if_matched_sid>132211</if_matched_sid>
+    <same_srcip />
+    <different_user />
+    <description>[WARN] Z-Push: rejected autodiscover logins for several accounts from $(srcip) (password spraying), last $(dstuser)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,jt_zpush_spraying,</group>
+  </rule>
+
+  <rule id="132219" level="10">
+    <if_sid>132218</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/jt-zpush-trusted-addresses</list>
+    <description>[WARN] Z-Push: rejected autodiscover logins for several accounts from listed address $(srcip) (password spraying, or a proxy that hides the client address), last $(dstuser)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,jt_zpush_spraying,</group>
+  </rule>
+
+  <!--
+    A successful request after a brute-force or spraying alert. After a
+    brute-force alert it is the account owner fixing the phone, or the
+    password was guessed. After a spraying alert the address that was trying
+    many accounts now has one that works.
+    if_matched_group without a frequency works; if_matched_sid would place the
+    rule under the referenced rule and ignore if_sid. The level must be above
+    the referenced alert's: Wazuh does not let an event that raised a level-10
+    alert match another rule of level 10 or lower.
+  -->
+  <rule id="132220" level="11" timeframe="900">
+    <if_sid>132207</if_sid>
+    <if_matched_group>jt_zpush_bruteforce</if_matched_group>
+    <same_user />
+    <description>[WARN] Z-Push: $(dstuser) logged in from $(srcip) after repeated rejected logins (password guessed, or a stale password corrected)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1110.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="132221" level="12" timeframe="900">
+    <if_sid>132207</if_sid>
+    <if_matched_group>jt_zpush_spraying</if_matched_group>
+    <same_srcip />
+    <description>[HIGH] Z-Push: login of $(dstuser) succeeded from $(srcip), which was spraying passwords</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1110.003</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Mail backend. The Zimbra backend names three refusals of its own. The
+    ActiveSync switch of a Zimbra account is the closest thing to a device
+    block list (Z-Push 2.7 has none): every request of that account is
+    rejected with 401.
+  -->
+  <rule id="132230" level="5">
+    <if_sid>132204</if_sid>
+    <match type="pcre2">SoapRequest\(\): zimbra ActiveSync Disabled for user</match>
+    <description>Z-Push: ActiveSync is disabled for $(dstuser) on the mail server, the device is refused</description>
+  </rule>
+
+  <rule id="132231" level="10" ignore="3600">
+    <if_sid>132204</if_sid>
+    <match type="pcre2">Z-Push Server IP Address not listed in zimbraHttpThrottleSafeIPs</match>
+    <description>[WARN] Z-Push: Zimbra refuses the Z-Push server (not in zimbraHttpThrottleSafeIPs), every login fails</description>
+  </rule>
+
+  <rule id="132232" level="7" ignore="600">
+    <if_sid>132204</if_sid>
+    <match type="pcre2">DoSFilter trap - </match>
+    <description>Z-Push: Zimbra DoSFilter is throttling the Z-Push server (add it to zimbraHttpThrottleSafeIPs)</description>
+  </rule>
+
+  <rule id="132233" level="2">
+    <if_sid>132204</if_sid>
+    <match type="pcre2">SoapRequest\(\): (?:ERROR: curl_exec - |SOAP FAULT: HTML Error Returned - |Connection Refused - )|Logon\(\): END Logon - Proxy Error</match>
+    <description>Z-Push: request to the mail server failed: $(zpush.message)</description>
+  </rule>
+
+  <!--
+    Availability. Each request that cannot reach the mail server ends with a
+    ServiceUnavailableException (HTTP 503). A routine restart of the mail
+    server produces a handful: measured 5 in two minutes on one node. Ten in
+    ten minutes on one host is an outage (level 7, at most every 30 minutes);
+    sixty in an hour is one that is not ending (level 10).
+  -->
+  <rule id="132234" level="2">
+    <if_sid>132205</if_sid>
+    <field name="zpush.exception" type="pcre2">^ServiceUnavailableException$</field>
+    <description>Z-Push: request of $(dstuser) failed, mail server unavailable: $(zpush.message)</description>
+  </rule>
+
+  <rule id="132235" level="7" frequency="10" timeframe="600" ignore="1800">
+    <if_matched_sid>132234</if_matched_sid>
+    <same_location />
+    <description>Z-Push: the mail server is unavailable, repeated failed requests (503)</description>
+  </rule>
+
+  <rule id="132236" level="10" frequency="60" timeframe="3600" ignore="3600">
+    <if_matched_sid>132234</if_matched_sid>
+    <same_location />
+    <description>[WARN] Z-Push: the mail server has been unavailable for most of an hour</description>
+  </rule>
+
+  <!-- Devices. A new device means an account is now synchronised to one
+       more phone (or to an attacker's client with a working password). -->
+  <rule id="132240" level="5">
+    <if_sid>132202</if_sid>
+    <match type="pcre2">\] Linking device ID '</match>
+    <description>Z-Push: new device $(zpush.devid) registered for $(dstuser)</description>
+    <mitre>
+      <id>T1098.005</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Remote wipe, in the order it happens: an administrator marks the device
+    (z-push-admin, not logged at INFO), the device connects and is told to
+    provision (132241, once per request until it does), Z-Push sends the
+    wipe (132242), the device confirms it (132243). Z-Push words an
+    account-only wipe the same way as a full one.
+  -->
+  <rule id="132241" level="6">
+    <if_sid>132202</if_sid>
+    <match type="pcre2">ProvisioningRequired\('[^']*'\): YES, remote wipe requested</match>
+    <description>Z-Push: device of $(dstuser) with a pending remote wipe connected</description>
+  </rule>
+
+  <rule id="132242" level="8">
+    <if_sid>132202</if_sid>
+    <field name="zpush.wipe" type="pcre2">^requested to be$</field>
+    <description>Z-Push: remote wipe sent to device $(zpush.devid) of $(dstuser), requested by $(zpush.wipe_by)</description>
+  </rule>
+
+  <rule id="132243" level="10">
+    <if_sid>132202</if_sid>
+    <field name="zpush.wipe" type="pcre2">^succ?essfully$</field>
+    <description>[WARN] Z-Push: device $(zpush.devid) of $(dstuser) confirmed the remote wipe requested by $(zpush.wipe_by)</description>
+  </rule>
+
+  <rule id="132244" level="6">
+    <if_sid>132202</if_sid>
+    <match type="pcre2">\] User '[^']*' has requested a remote wipe for this device</match>
+    <description>Z-Push: remote wipe of a shared device requested by $(zpush.wipe_by) applies to $(dstuser)</description>
+  </rule>
+
+  <rule id="132245" level="3" ignore="3600">
+    <if_sid>132202</if_sid>
+    <match type="pcre2">ProvisioningRequired\(\): saved policy hash '[^']*' changed</match>
+    <description>Z-Push: the device policy changed, devices are provisioned again</description>
+  </rule>
+
+  <!--
+    Loop detection: Z-Push noticed a device repeating the same request and
+    narrows what it sends. About eight a day across two nodes, in bursts.
+  -->
+  <rule id="132250" level="3" ignore="600">
+    <if_sid>132202</if_sid>
+    <match type="pcre2">LoopDetection-\x3eProcessLoopDetection\w+\(\): .*loop</match>
+    <description>Z-Push: synchronisation loop detected for $(dstuser)</description>
+  </rule>
+
+  <rule id="132251" level="3" ignore="600">
+    <if_sid>132203</if_sid>
+    <match type="pcre2">\] Mobile loop detected! </match>
+    <description>Z-Push: synchronisation loop detected for $(dstuser): $(zpush.message)</description>
+  </rule>
+
+  <rule id="132252" level="3">
+    <if_sid>132204</if_sid>
+    <match type="pcre2">ProcessLoopDetectionPreviousConnectionFailed\(\): Command '[^']*' at .* terminated unexpectedly</match>
+    <description>Z-Push: a previous request of $(dstuser) terminated unexpectedly (PHP crash or timeout)</description>
+  </rule>
+
+  <!-- Routine "fatal" lines: provisioning is a normal step, and the WBXML
+       dump follows another fatal line that already alerted. -->
+  <rule id="132253" level="0">
+    <if_sid>132205</if_sid>
+    <match type="pcre2">\] (?:Exception: \(ProvisioningRequiredException\)|WBXML \d+K debug data:)</match>
+    <description>Z-Push: routine provisioning request or WBXML dump</description>
+  </rule>
+
+  <rule id="132254" level="7" frequency="10" timeframe="600" ignore="1800">
+    <if_matched_sid>132205</if_matched_sid>
+    <same_location />
+    <description>Z-Push: repeated fatal errors on this host</description>
+  </rule>
+
+  <!--
+    Web server access log. Phones synchronise in bursts: one tablet sent 55
+    POSTs in 20 seconds, 20 of them within two. The built-in rule 31533 (eight
+    POSTs from one address in 20 seconds, level 10, "likely bot") fired 50 to
+    140 times a day on one Z-Push host for ordinary synchronisation. Like the built-in 31531
+    does for /wp-admin, a successful ActiveSync POST (or one the phone closed
+    itself, 499 on nginx) is not counted. A rejected one (401) is taken by the
+    built-in 400 rule 31101 (level 5) as before.
+  -->
+  <rule id="132280" level="0">
+    <if_sid>31530</if_sid>
+    <url type="pcre2">^/Microsoft-Server-ActiveSync</url>
+    <id type="pcre2">^(?:2\d\d|499)$</id>
+    <description>ActiveSync POST request (not counted as a POST flood)</description>
+  </rule>
+
+</group>

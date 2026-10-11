@@ -1,0 +1,766 @@
+{
+ "pack": "jt-pmg",
+ "sandbox_lists": {
+  "jt-pmg-service-accounts": "monitoring@pmg:service\n",
+  "jt-pmg-outbound-rules": "阻擋外寄垃圾信:spam\n\"Outgoing: virus check\":virus\n"
+ },
+ "cases": [
+  {
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'root@pam'",
+   "location": null,
+   "expect_rule": "132401",
+   "expect_level": 3,
+   "note": "real shape (GUI login or ticket renewal)"
+  },
+  {
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'monitoring@pmg'",
+   "location": null,
+   "expect_rule": "132402",
+   "expect_level": 0,
+   "note": "real shape; API automation account listed in the allowlist (real one logs in every 2 minutes)"
+  },
+  {
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'monitoring@pam'",
+   "location": null,
+   "expect_rule": "132401",
+   "expect_level": 3,
+   "note": "near miss: same name, other realm, not listed"
+  },
+  {
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'user@example.com@quarantine'",
+   "location": null,
+   "expect_rule": "132403",
+   "expect_level": 2,
+   "note": "synthesized from AccessControl.pm: end user opens the spam quarantine"
+  },
+  {
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful openid connect auth for user 'alice@sso'",
+   "location": null,
+   "expect_rule": "132401",
+   "expect_level": 3,
+   "note": "synthesized from OIDC.pm"
+  },
+  {
+   "log": "Oct  1 23:27:19 pmg1 pmgdaemon[1356514]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=auth failed: Authentication failure",
+   "location": null,
+   "expect_rule": "132404",
+   "expect_level": 5,
+   "note": "real (msg localised on the site, translated here)"
+  },
+  {
+   "log": "Oct  1 23:27:19 pmg1 pmgdaemon[1356514]: authentication failure; rhost=::ffff:192.0.2.200 user=monitoring@pmg msg=invalid credentials",
+   "location": null,
+   "expect_rule": "132404",
+   "expect_level": 5,
+   "note": "synthesized; failures of listed accounts still alert"
+  },
+  {
+   "log": "Oct  1 23:27:19 pmg1 pmgdaemon[765]: openid connect authentication failure; rhost=::ffff:192.0.2.201 msg=Failed to verify ID token",
+   "location": null,
+   "expect_rule": "132408",
+   "expect_level": 5,
+   "note": "synthesized from OIDC.pm"
+  },
+  {
+   "log": "Oct  1 23:27:19 pmg1 pmgdaemon[1356514]: authentication failure; rhost=::ffff:203.0.113.50 user=admin@pmg msg=invalid credentials",
+   "location": null,
+   "expect_rule": "132405",
+   "expect_level": 10,
+   "repeat": 6,
+   "note": "brute force: 6 failures from one address"
+  },
+  {
+   "log": "Oct  1 23:27:19 pmg1 pmgdaemon[1356514]: authentication failure; rhost=::ffff:203.0.113.51 user=admin@pmg msg=invalid credentials",
+   "location": null,
+   "expect_rule": "132404",
+   "expect_level": 5,
+   "repeat": 5,
+   "note": "near miss: 5 failures stay at level 5"
+  },
+  {
+   "log": "Oct  1 23:27:18 pmg1  worker: pam_unix(proxmox-mailgateway-auth:auth): authentication failure; logname= uid=0 euid=0 tty= ruser= rhost=::ffff:192.0.2.200  user=root",
+   "location": "/var/log/auth.log",
+   "expect_rule": "132406",
+   "expect_level": 2,
+   "note": "real (auth.log copy of the failure above, was 2501 level 5)"
+  },
+  {
+   "log": "Oct  1 23:27:18 pmg1 sshd[1000]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=192.0.2.200  user=root",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5503",
+   "note": "near miss: other PAM services keep their built-in rule"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[765]: changed password for user 'admin@pmg'",
+   "location": null,
+   "expect_rule": "132407",
+   "expect_level": 6,
+   "note": "synthesized from AccessControl.pm"
+  },
+  {
+   "log": "Oct 11 03:01:02 pmg1 pmg-daily[1402416]: starting task UPID:pmg1:00156633:338F2C99:6ACA8B6E:aptupdate::root@pam:",
+   "location": null,
+   "expect_rule": "132410",
+   "expect_level": 0,
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 03:01:05 pmg1 pmg-daily[1402416]: end task UPID:pmg1:00156633:338F2C99:6ACA8B6E:aptupdate::root@pam: command 'apt-get update' failed: exit code 100",
+   "location": null,
+   "expect_rule": "132416",
+   "expect_level": 5,
+   "note": "real (fails daily on the site)"
+  },
+  {
+   "log": "Oct 11 03:01:05 pmg1 pmg-daily[1402416]: end task UPID:pmg1:00156633:338F2C99:6ACA8B6E:aptupdate::root@pam: OK",
+   "location": null,
+   "expect_rule": "132411",
+   "expect_level": 0,
+   "note": "near miss: real shape, OK"
+  },
+  {
+   "log": "Oct 11 03:01:05 pmg1 pmg-daily[1402416]: command 'apt-get update' failed: exit code 100",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real; the task line carries the failure"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1000]: starting task UPID:pmg1:00001000:00002000:6ACA0000:termproxy::root@pam:",
+   "location": null,
+   "expect_rule": "132412",
+   "expect_level": 5,
+   "note": "synthesized from Nodes.pm fork_worker('termproxy')"
+  },
+  {
+   "log": "Oct 12 10:30:00 pmg1 pmgdaemon[1000]: end task UPID:pmg1:00001000:00002000:6ACA0000:termproxy::root@pam: command '/bin/login -f root' failed: exit code 1",
+   "location": null,
+   "expect_rule": "132417",
+   "expect_level": 2,
+   "note": "synthesized; shell closed"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1000]: starting task UPID:pmg1:00001000:00002000:6ACA0000:srvstop:postfix:root@pam:",
+   "location": null,
+   "expect_rule": "132413",
+   "expect_level": 5,
+   "note": "synthesized from Services.pm"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1000]: starting task UPID:pmg1:00001000:00002000:6ACA0000:srvrestart:postfix:root@pam:",
+   "location": null,
+   "expect_rule": "132410",
+   "expect_level": 0,
+   "note": "near miss: restart is routine"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1000]: end task UPID:pmg1:00001000:00002000:6ACA0000:acmerenew::root@pam: Error: Failed to renew certificate",
+   "location": null,
+   "expect_rule": "132418",
+   "expect_level": 7,
+   "note": "synthesized from Certificates.pm"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1000]: starting task UPID:pmg1:00001000:00002000:6ACA0000:clusterjoin::root@pam:",
+   "location": null,
+   "expect_rule": "132414",
+   "expect_level": 6,
+   "note": "synthesized from Cluster.pm"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[1000]: starting task UPID:pmg1:00001000:00002000:6ACA0000:pbs_restore::root@pam:",
+   "location": null,
+   "expect_rule": "132415",
+   "expect_level": 7,
+   "note": "synthesized from PBS/Job.pm"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: virus detected: Win.Test.EICAR_HDB-1 (clamav)",
+   "location": null,
+   "expect_rule": "132420",
+   "expect_level": 7,
+   "note": "synthesized from Utils.pm analyze_virus_clam"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: virus detected: Heuristics.Phishing.Email.SpoofedDomain (clamav)",
+   "location": null,
+   "expect_rule": "132421",
+   "expect_level": 3,
+   "note": "synthesized; heuristics count as spam, not virus"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: block mail to <user@example.com> (rule: Virus Alert)",
+   "location": null,
+   "expect_rule": "132423",
+   "expect_level": 12,
+   "note": "synthesized; PMG default outbound virus rule"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD6: block mail to <user@example.com> (rule: Outgoing: virus check)",
+   "location": null,
+   "expect_rule": "132423",
+   "expect_level": 12,
+   "note": "synthesized; a rule name with a colon, quoted in the list"
+  },
+  {
+   "log": "Oct  8 23:30:45 pmg1 pmg-smtp-filter[1070613]: 1E49706AC7B71474CE5: block mail to <admin@example.com> (rule: 阻擋外寄垃圾信)",
+   "location": null,
+   "expect_rule": "132424",
+   "expect_level": 10,
+   "note": "real shape; site's translated outbound spam rule, added via sandbox_lists"
+  },
+  {
+   "log": "Oct  8 23:30:45 pmg1 pmg-smtp-filter[1070613]: 1E49706AC7B71474CE5: block mail to <admin@example.com> (rule: Block outgoing Spam)",
+   "location": null,
+   "expect_rule": "132424",
+   "expect_level": 10,
+   "note": "synthesized; PMG default name"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD4: moved mail for <user@example.com> to spam quarantine - 1E0CF96ACAA13BE1B34 (rule: Block outgoing Spam)",
+   "location": null,
+   "expect_rule": "132424",
+   "expect_level": 10,
+   "note": "synthesized; outbound rule that quarantines"
+  },
+  {
+   "log": "Oct 11 09:00:41 pmg1 pmg-smtp-filter[1412877]: 1E2C936ACADFB857B24: block mail to <nobody@example.com> (rule: Reject unknown recipients)",
+   "location": null,
+   "expect_rule": "none",
+   "note": "near miss: real shape, inbound rule"
+  },
+  {
+   "log": "Oct 11 04:34:03 pmg1 pmg-smtp-filter[1364522]: 1E05C56ACAA129D3B11: moved mail for <service@example.com> to spam quarantine - 1E0CF96ACAA13BE1B34 (rule: Quarantine/Mark Spam (Level 3))",
+   "location": null,
+   "expect_rule": "none",
+   "note": "near miss: real shape, routine spam quarantine"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD5: moved mail for <user@example.com> to virus quarantine - 1E0CF96ACAA13BE1B35 (rule: Block Viruses)",
+   "location": null,
+   "expect_rule": "none",
+   "note": "near miss: inbound virus quarantined (the virus line alerts)"
+  },
+  {
+   "log": "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: accept mail to <user@example.com> (459381E0560) (rule: default-accept)",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 11:15:10 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: SA score=0/5 time=1.643 bayes=undefined autolearn=disabled hits=DKIM_SIGNED(0.1),DKIM_VALID(-0.1),SPF_PASS(-0.001)",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 11:16:20 pmg1 pmg-smtp-filter[1259562]: end database maintenance (57 ms)",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real (720 a day)"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: Maximum time (300 sec) exceeded. virus analyze (clamav) failed: ERROR",
+   "location": null,
+   "expect_rule": "132425",
+   "expect_level": 10,
+   "note": "synthesized from Utils.pm"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: got undefined output from virus detector: ERROR: Could not connect to clamd : ERROR",
+   "location": null,
+   "expect_rule": "132425",
+   "expect_level": 10,
+   "note": "synthesized from Utils.pm"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: 1E03056ACAFF3C7BCD3: reinject mail to <user@example.com> (rule: default-accept) failed",
+   "location": null,
+   "expect_rule": "132426",
+   "expect_level": 10,
+   "note": "synthesized from RuleDB/Accept.pm"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1259562]: ERROR: unable to open database connection",
+   "location": null,
+   "expect_rule": "132427",
+   "expect_level": 7,
+   "note": "synthesized from pmg-smtp-filter run_dequeue"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: fast exit because of errors (free 123456 bytes)",
+   "location": null,
+   "expect_rule": "132428",
+   "expect_level": 2,
+   "note": "synthesized"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmg-smtp-filter[1413102]: fast exit because of errors (free 123456 bytes)",
+   "location": null,
+   "expect_rule": "132429",
+   "expect_level": 10,
+   "repeat": 10,
+   "note": "burst of filter failures"
+  },
+  {
+   "log": "Oct  5 21:23:13 pmg1 pmg-smtp-filter[570007]: WARNING: extracttext: error (1) from /usr/bin/pdftotext: Command Line Error: Incorrect password",
+   "location": null,
+   "expect_rule": "none",
+   "note": "near miss: real, encrypted PDF"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[765]: delivered quarantined mail 'C1R2T3' (/var/spool/pmg/spam/A1/1E0B3F6ACAA13BE1B34) to user@example.com",
+   "location": null,
+   "expect_rule": "132430",
+   "expect_level": 3,
+   "note": "synthesized from Quarantine.pm"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[765]: delivered quarantined mail 'C1R2T4' (/var/spool/pmg/attachment/A1/1E0B3F6ACAA13BE1B35) to user@example.com",
+   "location": null,
+   "expect_rule": "132431",
+   "expect_level": 5,
+   "note": "synthesized"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[765]: delivered quarantined mail 'C2R7T9' (/var/spool/pmg/cluster/2/virus/A1/1E0B3F6ACAA13BE1B36) to user@example.com",
+   "location": null,
+   "expect_rule": "132432",
+   "expect_level": 10,
+   "note": "synthesized; cluster spool path"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgdaemon[765]: marked quarantined mail 'C1R2T3' as deleted (/var/spool/pmg/virus/A1/1E0B3F6ACAA13BE1B34) for user@example.com",
+   "location": null,
+   "expect_rule": "none",
+   "note": "near miss: deleting is fine"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 clamd[705]: /var/spool/pmg/active/1760000000.123456.12345.0: Win.Test.EICAR_HDB-1 FOUND",
+   "location": null,
+   "expect_rule": "132433",
+   "expect_level": 2,
+   "note": "synthesized; clamd copy of a mail virus (was 52502 level 8)"
+  },
+  {
+   "log": "Oct  5 14:46:11 pmg1 clamd[705]: /tmp/pos2.pdf: JT.Phish.PDF.LinkToScript-1.UNOFFICIAL FOUND",
+   "location": null,
+   "expect_rule": "52502",
+   "expect_level": 8,
+   "note": "near miss: real, a scan outside the spool still alerts"
+  },
+  {
+   "log": "Oct 11 11:15:16 pmg1 pmgmirror[722]: cluster synchronization finished  (0 errors, 0.02 seconds (files 0.00, database 0.02, config 0.00))",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real (720 a day)"
+  },
+  {
+   "log": "Oct 11 11:15:16 pmg1 pmgmirror[722]: cluster synchronization finished  (1 errors, 3.02 seconds (files 0.00, database 3.02, config 0.00))",
+   "location": null,
+   "expect_rule": "132442",
+   "expect_level": 2,
+   "note": "synthesized"
+  },
+  {
+   "log": "Oct 11 11:15:16 pmg1 pmgmirror[722]: database sync 'pmg2' failed - DBI connect('dbname=Proxmox_ruledb;host=/run/pmgtunnel;port=2','root',...) failed: connection refused",
+   "location": null,
+   "expect_rule": "132440",
+   "expect_level": 7,
+   "note": "synthesized from Service/pmgmirror.pm"
+  },
+  {
+   "log": "Oct 11 11:15:16 pmg1 pmgmirror[722]: sync error: unable to get remote node status",
+   "location": null,
+   "expect_rule": "132441",
+   "expect_level": 7,
+   "note": "synthesized"
+  },
+  {
+   "log": "Oct 11 11:15:16 pmg1 pmgmirror[722]: starting cluster synchronization",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 11:05:02 pmg1 pmg-hourly[1452560]: finished syncing ldap profile 'corp' (192.0.2.20): found 20 accounts, 25 addresses, 0 groups",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 11:05:02 pmg1 pmg-hourly[1452560]: aborted syncing ldap profile 'corp' (192.0.2.20): keep old data, 20 accounts, 25 addresses, 0 groups",
+   "location": null,
+   "expect_rule": "132443",
+   "expect_level": 7,
+   "note": "synthesized from LDAPSet.pm"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 pmgpolicy[724]: Database connection broken - trying to reconnect",
+   "location": null,
+   "expect_rule": "132444",
+   "expect_level": 7,
+   "note": "synthesized from pmgpolicy"
+  },
+  {
+   "log": "Oct 11 11:15:08 pmg1 pmgpolicy[1452580]: SPF says pass",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 11:15:08 pmg1 pmgpolicy[724]: WARNING: Pid_file created by this same process. Doing nothing.",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real (on every reload)"
+  },
+  {
+   "log": "Oct 12 03:01:05 pmg1 pmg-daily[1402416]: Renewing 'api' ACME certificate failed: Error: Validation failed",
+   "location": null,
+   "expect_rule": "132445",
+   "expect_level": 7,
+   "note": "synthesized from pmg-daily"
+  },
+  {
+   "log": "Oct 12 03:01:05 pmg1 pmg-daily[1402416]: Custom 'api' certificate does not expire soon, skipping ACME renewal.",
+   "location": null,
+   "expect_rule": "none",
+   "note": "near miss"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 freshclam[700]: ERROR: Update failed for database: daily",
+   "location": null,
+   "expect_rule": "132450",
+   "expect_level": 7,
+   "note": "synthesized from freshclam 1.4"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 freshclam[700]: WARNING: FreshClam received error code 429 from the ClamAV Content Delivery Network (CDN).",
+   "location": null,
+   "expect_rule": "132451",
+   "expect_level": 7,
+   "note": "synthesized from freshclam 1.4"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 freshclam[700]: Incremental update failed, trying to download daily.cvd",
+   "location": null,
+   "expect_rule": "none",
+   "note": "near miss: built-in 52509, freshclam retries"
+  },
+  {
+   "log": "Oct 11 10:00:01 pmg1 freshclam[700]: daily.cld database is up-to-date (version: 27789, sigs: 2077133, f-level: 90, builder: svc.clamav-publisher)",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 postfix/smtpd[1000]: warning: connect to proxy filter 127.0.0.1:10024: Connection refused",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132452",
+   "expect_level": 10,
+   "note": "synthesized from postfix smtpd_proxy.c"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 postfix/smtpd[1000]: warning: timeout talking to proxy 127.0.0.1:10023",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132453",
+   "expect_level": 7,
+   "note": "synthesized from postfix smtpd_proxy.c"
+  },
+  {
+   "log": "Oct 12 10:00:00 mx1 postfix/smtpd[1000]: warning: connect to proxy filter 127.0.0.1:10030: Connection refused",
+   "location": "/var/log/mail.log",
+   "expect_rule": "none",
+   "note": "near miss: another before-queue filter"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 postfix/lmtp[1000]: 4A1B2C3D4E: to=<user@example.com>, relay=none, delay=0.5, delays=0.1/0/0.4/0, dsn=4.4.1, status=deferred (connect to 127.0.0.1[127.0.0.1]:10024: Connection refused)",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132454",
+   "expect_level": 10,
+   "note": "synthesized; after-queue filtering"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 postfix/smtpd[1000]: warning: cannot get RSA certificate from file \"/etc/pmg/pmg-tls.pem\": disabling TLS support",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132455",
+   "expect_level": 7,
+   "note": "synthesized from postfix tls_certkey.c"
+  },
+  {
+   "log": "Oct 11 10:00:00 pmg1 postfix/smtpd[1000]: warning: TLS library problem: error:0A0000C1:SSL routines::no shared cipher:../ssl/statem/statem_srvr.c:2283:",
+   "location": "/var/log/mail.log",
+   "expect_rule": "none",
+   "note": "near miss: real, a client without a common cipher"
+  },
+  {
+   "log": "Oct 10 15:00:55 pmg1 postfix/dnsblog[1326819]: addr 198.51.100.126 listed by domain zen.spamhaus.org as 127.255.255.254",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132456",
+   "expect_level": 10,
+   "note": "synthesized; Spamhaus refuses public-resolver queries"
+  },
+  {
+   "log": "Oct 10 15:00:55 pmg1 postfix/dnsblog[1326819]: addr 198.51.100.126 listed by domain bl.example.net as 127.0.0.2",
+   "location": "/var/log/mail.log",
+   "expect_rule": "none",
+   "note": "near miss: real shape, a listed client"
+  },
+  {
+   "log": "Oct 10 14:23:00 pmg1 postfix/postscreen[1322838]: warning: dnsblog reply timeout 10s for bl.example.net",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132457",
+   "expect_level": 2,
+   "note": "real shape"
+  },
+  {
+   "log": "Oct 10 14:23:00 pmg1 postfix/postscreen[1322838]: warning: dnsblog reply timeout 10s for bl.example.net",
+   "location": "/var/log/mail.log",
+   "expect_rule": "132458",
+   "expect_level": 7,
+   "repeat": 10,
+   "note": "timeouts keep coming"
+  },
+  {
+   "log": "Oct  3 07:09:24 pmg1 postfix/postscreen[219013]: NOQUEUE: reject: RCPT from [198.51.100.239]:57754: 550 5.7.1 Service unavailable; client [198.51.100.239] blocked using bl.example.net; from=<info@example.net>, to=<ap@example.com>, proto=ESMTP, helo=<bulkmail.example.net>",
+   "location": "/var/log/mail.log",
+   "expect_rule": "3306",
+   "expect_level": 6,
+   "note": "real shape; built-in RBL rule left as it is"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/access/users/admin2%40pmg HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132460",
+   "expect_level": 8,
+   "note": "synthesized from the access log format (pve-http-server) and Users.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/tfa/admin2%40pmg HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132460",
+   "expect_level": 8,
+   "note": "synthesized; second factor added"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"DELETE /api2/extjs/access/tfa/admin2%40pmg/totp-1a2b HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132461",
+   "expect_level": 10,
+   "note": "synthesized from TFA.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/json/access/users/admin2%40pmg/unlock-tfa HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132461",
+   "expect_level": 10,
+   "note": "synthesized from Users.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"GET /api2/extjs/access/users HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: reading"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/json/access/users HTTP/1.1\" 403 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "near miss: refused request stays with the built-in 4xx rule"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/config/ruledb/rules/1234/action/5678 HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132462",
+   "expect_level": 8,
+   "note": "synthesized from RuleDB.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/config/ruledb/rules/1234?active=0 HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132462",
+   "expect_level": 8,
+   "note": "synthesized; query string goes to 31100"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/config/ruledb HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132463",
+   "expect_level": 10,
+   "note": "synthesized; reset_ruledb"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/config/mynetworks HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132464",
+   "expect_level": 8,
+   "note": "synthesized from MyNetworks.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/config/transport/example.com HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132464",
+   "expect_level": 8,
+   "note": "synthesized from Transport.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/config/welcomelist/ip HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132465",
+   "expect_level": 7,
+   "note": "synthesized from SMTPWelcomelist.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/config/spamquar HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132466",
+   "expect_level": 6,
+   "note": "synthesized from Config.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/config/mail HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132466",
+   "expect_level": 6,
+   "note": "synthesized"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/config/regextest HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: regex test changes nothing"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/json/config/cluster/join HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132467",
+   "expect_level": 8,
+   "note": "synthesized from Cluster.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/nodes/pmg1/backup/pmg-backup_2026_10_11_6ACA0000.tgz HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132468",
+   "expect_level": 8,
+   "note": "synthesized from Backup.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/nodes/pmg1/pbs/pbs1/snapshot/pmg1/2026-10-11T00%3A00%3A00Z HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132468",
+   "expect_level": 8,
+   "note": "synthesized from PBS/Job.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/nodes/pmg1/pbs/pbs1/snapshot/pmg1/2026-10-11T00%3A00%3A00Z/verify HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: verify is not a restore"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/nodes/pmg1/backup HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: taking a backup"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"DELETE /api2/extjs/nodes/pmg1/postfix/queue/deferred/4A1B2C3D4E HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132469",
+   "expect_level": 6,
+   "note": "synthesized from Postfix.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/nodes/pmg1/certificates/custom/smtp HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132470",
+   "expect_level": 6,
+   "note": "synthesized from Certificates.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/nodes/pmg1/status HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132471",
+   "expect_level": 6,
+   "note": "synthesized from Nodes.pm"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/nodes/pmg1/dns HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132472",
+   "expect_level": 5,
+   "note": "synthesized"
+  },
+  {
+   "log": "::ffff:192.0.2.80 - user@example.com@quarantine [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/quarantine/content HTTP/1.1\" 200 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: quarantine action by an end user (syslog says what it was)"
+  },
+  {
+   "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/access/users/admin2%40pmg HTTP/1.1\" 200 -",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "none",
+   "note": "near miss: another web server's log"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 systemd[1]: pmg-smtp-filter.service: Failed with result 'exit-code'.",
+   "location": null,
+   "expect_rule": "132480",
+   "expect_level": 10,
+   "note": "synthesized (systemd wording)"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 systemd[1]: clamav-daemon.service: Failed with result 'signal'.",
+   "location": null,
+   "expect_rule": "132480",
+   "expect_level": 10,
+   "note": "synthesized"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 systemd[1]: pmgproxy.service: Failed with result 'timeout'.",
+   "location": null,
+   "expect_rule": "132481",
+   "expect_level": 7,
+   "note": "synthesized"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 systemd[1]: pmg-smtp-filter.service: Main process exited, code=exited, status=1/FAILURE",
+   "location": null,
+   "expect_rule": "132482",
+   "expect_level": 2,
+   "note": "synthesized; was 40704 level 5, the Failed line alerts"
+  },
+  {
+   "log": "Oct 12 10:00:00 pmg1 systemd[1]: user@0.service: Main process exited, code=exited, status=1/FAILURE",
+   "location": null,
+   "expect_rule": "40704",
+   "expect_level": 5,
+   "note": "near miss: real, other units keep the built-in rule"
+  },
+  {
+   "log": "Oct 11 11:05:02 pmg1 systemd[1]: pmg-hourly.service: Deactivated successfully.",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 10:21:18 pmg1 pmgproxy[1413940]: problem with client ::ffff:192.0.2.144; Connection timed out",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real (a network scanner, 80 a month)"
+  },
+  {
+   "log": "Oct 11 10:21:13 pmg1 pmgproxy[1413940]: Header field 'Host' not found in request",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 05:26:04 pmg1 pmgdaemon[763]: worker 1417503 started",
+   "location": null,
+   "expect_rule": "none",
+   "note": "real"
+  }
+ ]
+}

@@ -1,72 +1,212 @@
 <!--
-  Zimbra 認證偵測規則
-  檔案：/var/ossec/etc/rules/zimbra_auth_rules.xml
-  區段：100840-100859
-  版本：v2.0
-  相依解碼器：zimbra-audit
+  Zimbra authentication rules (audit.log)          range 100840-100859
+  Decoder: zimbra-audit (decoders/0001-zimbra_decoders.xml)
 
-  設計重點：
-    認證面是唯一能造成「零失敗紀錄的成功入侵」的攻擊面
-    （偽造 JWT、竊取 token、preauth key 外洩）。
-    因此除了失敗事件，成功事件也必須納入行為基準比對。
+  3.0 (2026-10-11), measured against 8.8 days of real audit lines from two
+  servers (61,000 lines) and 41 days of their alerts:
 
-  ※ 100845 標記 authentication_success 群組、100842 標記
-    authentication_failures 群組後，內建規則 40112
-    （多次失敗後成功）會自動生效，100846 為 Zimbra 專用強化版。
+  * 100845, 100847 and their children had never fired. <action> compares as
+    a plain string by default, so "^Auth$|^AdminAuth$" was looked for
+    literally. Every success rule, the admin-login rules, 100846 and 100852
+    were dead. Fixed with type="pcre2".
+  * Proxied lines (Z-Push, a reverse proxy: "oip=client, proxy") decoded with
+    no srcip and no user, so brute force through a proxy was invisible.
+    The decoder now takes the client address (see the decoder file).
+  * 100845 also matched failures (a failed login is "cmd=Auth ... error=").
+    It now excludes them, so a failure can no longer be taken as a success.
+  * 100849 had no condition of its own and was a sibling of 100848, so an
+    internal admin login could come out at level 14. It now requires an
+    external address.
+  * 100846 hung off every authentication_success rule in the ruleset, so an
+    SSH brute force followed by an SSH login was reported as "Zimbra". It is
+    now limited to Zimbra events.
+  * Only the copy read from /opt/zimbra/log/audit.log counts. With
+    zimbraLogToSyslog set the same lines also arrive through syslog
+    ("zimbra_audit"), and counting both halved every threshold.
+  * Descriptions used $(user), which is never filled; the field is dstuser.
+
+  Counted correlation now uses pack groups (if_matched_group), not
+  if_matched_sid: an event is only counted for the rule it finally matched,
+  so a child rule under the counted one would silently stop the count.
+    zimbra_auth_failure   every failed attempt (100841, 100857)
+    zimbra_auth_failures  the brute-force alerts (100842, 100843, 100844, 100836, 100859)
+    zimbra_auth_success   every real login (not Zimbra's own tools)
+    zimbra_external_login logins from outside zimbra-internal-networks
 -->
 <group name="zimbra,authentication,">
 
   <rule id="100840" level="0">
     <decoded_as>zimbra-audit</decoded_as>
+    <location>/opt/zimbra/log/audit.log</location>
     <description>Zimbra authentication log (base rule)</description>
   </rule>
 
-  <!-- ── 認證失敗 ── -->
-  <rule id="100841" level="5">
-    <if_sid>100840</if_sid>
-    <match>authentication failed|AuthFailed|invalid password|account lockout</match>
-    <description>Zimbra authentication failed: $(user) from: $(srcip)</description>
-    <group>authentication_failed,</group>
+  <!-- The syslog copy (zimbraLogToSyslog, program "zimbra_audit"): decoded,
+       then dropped here, before the generic syslog rule 2501 turns every
+       copied failure into a second level 5 alert. -->
+  <rule id="100839" level="0">
+    <decoded_as>zimbra-audit</decoded_as>
+    <location type="pcre2">^(?!.*/opt/zimbra/log/audit\.log$)</location>
+    <description>Zimbra audit line received through syslog, a copy of audit.log (not counted)</description>
   </rule>
 
-  <!-- 暴力破解 -->
+  <!-- ── failures ── -->
+
+  <rule id="100841" level="5">
+    <if_sid>100840</if_sid>
+    <match type="pcre2">\berror=|authentication failed|AuthFailed|invalid password</match>
+    <description>Zimbra authentication failed: $(dstuser) from: $(srcip) ($(zimbra.error))</description>
+    <group>authentication_failed,zimbra_auth_failure,</group>
+  </rule>
+
+  <rule id="100857" level="6">
+    <if_sid>100841</if_sid>
+    <field name="zimbra.error" type="pcre2">(?i)lockout|locked</field>
+    <description>Login attempt on a locked Zimbra account: $(dstuser) from: $(srcip)</description>
+    <group>authentication_failed,zimbra_auth_failure,</group>
+  </rule>
+
+  <!-- Brute force from one address. Through Z-Push or a reverse proxy the
+       address is the client the proxy reported (first oip entry). -->
   <rule id="100842" level="10" frequency="12" timeframe="300">
-    <if_matched_sid>100841</if_matched_sid>
+    <if_matched_group>zimbra_auth_failure</if_matched_group>
     <same_source_ip />
     <description>[WARN] Repeated Zimbra authentication failures, possible brute force: $(srcip)</description>
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failures,</group>
+    <group>authentication_failures,zimbra_auth_failures,</group>
   </rule>
 
-  <!-- 密碼噴灑：同來源、多帳號、少量嘗試（比暴力破解更難察覺） -->
+  <!-- The same, from an address outside zimbra-internal-networks: the rule an
+       active response may use (see the pack's active_response notes). -->
+  <rule id="100859" level="10">
+    <if_sid>100842</if_sid>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>[WARN] Repeated Zimbra authentication failures from an external address, possible brute force: $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,zimbra_auth_failures,</group>
+  </rule>
+
+  <!-- Password spraying: one address, many accounts, few tries each. -->
   <rule id="100843" level="12" frequency="8" timeframe="600">
-    <if_matched_sid>100841</if_matched_sid>
+    <if_matched_group>zimbra_auth_failure</if_matched_group>
     <same_source_ip />
     <different_user />
     <description>[HIGH] One source tried many different accounts, possible password spraying: $(srcip)</description>
     <mitre>
       <id>T1110.003</id>
     </mitre>
+    <group>authentication_failures,zimbra_auth_failures,</group>
+  </rule>
+
+  <rule id="100836" level="12">
+    <if_sid>100843</if_sid>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>[HIGH] One external source tried many different accounts, possible password spraying: $(srcip)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,zimbra_auth_failures,</group>
+  </rule>
+
+  <!-- One account failing from many addresses: guessing spread over a
+       botnet, which no per-address rule (and no firewall block) sees. -->
+  <rule id="100844" level="10" frequency="10" timeframe="600">
+    <if_matched_group>zimbra_auth_failure</if_matched_group>
+    <same_user />
+    <different_srcip />
+    <description>[WARN] One Zimbra account failed to log in from many different addresses, distributed password guessing: $(dstuser)</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failures,zimbra_auth_failures,</group>
+  </rule>
+
+  <!-- zimbraPasswordLockoutEnabled locked the account. -->
+  <rule id="100856" level="10">
+    <if_sid>100840</if_sid>
+    <match type="pcre2">lockout due to</match>
+    <description>[WARN] Zimbra locked an account after repeated failed logins: $(dstuser)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
     <group>authentication_failures,</group>
   </rule>
 
-  <!-- ── 認證成功（基礎，供後續關聯）── -->
-  <rule id="100845" level="3">
+  <!-- ── successes ── -->
+
+  <!-- Every successful login, recorded at level 2: on two small servers
+       this is about 7,000 a day (Z-Push alone logs in on every request), so
+       the alerts below pick out the logins that mean something. -->
+  <rule id="100845" level="2">
     <if_sid>100840</if_sid>
-    <action>^Auth$|^AdminAuth$</action>
-    <description>Zimbra authentication succeeded: $(user) from: $(srcip)</description>
-    <group>authentication_success,</group>
+    <action type="pcre2">^(?:Auth|AdminAuth)$</action>
+    <match type="pcre2">^(?!.*(?:\berror=|lockout due to|(?i:preauth)))</match>
+    <description>Zimbra authentication succeeded: $(dstuser) from: $(srcip)</description>
+    <group>authentication_success,zimbra_auth_success,</group>
   </rule>
 
-  <!-- 爆破得手：先大量失敗、隨後成功 —— 憑證外洩的最強訊號
-       採用內建規則 40112 的正規寫法：if_group + if_matched_group -->
+  <!-- Zimbra's own command-line tools (zmprov, zmmailbox, ZCS internals)
+       authenticate as the zimbra admin about once a minute. -->
+  <rule id="100853" level="0">
+    <if_sid>100845</if_sid>
+    <field name="zimbra.ua" type="pcre2">^(?:zm[a-z]+|ZCS)/</field>
+    <description>Zimbra command-line tool authenticated (routine)</description>
+  </rule>
+
+  <!-- Admin console: an admin SOAP login over http(s), not one of Zimbra's
+       own tools and not saslauthd checking an SMTP AUTH password (those use
+       the admin port 7073 with an smtp:// URL and oproto=smtp). -->
+  <rule id="100847" level="8">
+    <if_sid>100845</if_sid>
+    <url type="pcre2">^https?://\S*/service/admin/soap</url>
+    <match type="pcre2">^(?!.*(?:[\[;]ua=(?:zm[a-z]+|ZCS)/|[\[;]oproto=))</match>
+    <description>Zimbra admin console login: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+    <group>authentication_success,zimbra_auth_success,</group>
+  </rule>
+
+  <!-- 3.0: was level 0. An admin login is rare (16 in 8.8 days here) and
+       worth a record even from inside. -->
+  <rule id="100848" level="3">
+    <if_sid>100847</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>Zimbra admin console login from an internal network: $(dstuser) from: $(srcip)</description>
+    <group>authentication_success,zimbra_auth_success,</group>
+  </rule>
+
+  <rule id="100849" level="14">
+    <if_sid>100847</if_sid>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>[HIGH] Zimbra admin login succeeded from an external source: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+    <group>authentication_success,zimbra_auth_success,zimbra_external_login,</group>
+  </rule>
+
+  <!-- A user login from outside, recorded (level 2) for 100852. -->
+  <rule id="100854" level="2">
+    <if_sid>100845</if_sid>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/zimbra-internal-networks</list>
+    <match type="pcre2">^(?!.*(?:[\[;]ua=(?:zm[a-z]+|ZCS)/|/service/admin/soap))</match>
+    <description>Zimbra login from an external address: $(dstuser) from: $(srcip)</description>
+    <group>authentication_success,zimbra_auth_success,zimbra_external_login,</group>
+  </rule>
+
+  <!-- Cracked: failures from an address, then a success from it.
+       Attached through if_group to every real Zimbra login above, so it
+       wins whichever of them takes the event first. -->
   <rule id="100846" level="14" timeframe="900">
-    <if_group>authentication_success</if_group>
-    <if_matched_group>authentication_failures</if_matched_group>
+    <if_group>zimbra_auth_success</if_group>
+    <if_matched_group>zimbra_auth_failures</if_matched_group>
     <same_source_ip />
-    <description>[HIGH] Zimbra: many failures then a success from the same source, the credentials appear to have been cracked: $(user) from: $(srcip)</description>
+    <description>[HIGH] Zimbra: many failures then a success from the same source, the credentials appear to have been cracked: $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1110</id>
       <id>T1078</id>
@@ -74,58 +214,53 @@
     <group>credential_access,</group>
   </rule>
 
-  <!-- ── 管理員認證 ── -->
-  <rule id="100847" level="8">
-    <if_sid>100840</if_sid>
-    <action>^AdminAuth$</action>
-    <description>[WARN] Zimbra admin login succeeded: $(user) from: $(srcip)</description>
-    <group>authentication_success,</group>
-  </rule>
-
-  <rule id="100848" level="0">
-    <if_sid>100847</if_sid>
-    <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
-    <description>Admin logged in from an internal network (normal)</description>
-  </rule>
-
-  <rule id="100849" level="14">
-    <if_sid>100847</if_sid>
-    <description>[HIGH] Zimbra admin login succeeded from an external source: $(user) from: $(srcip)</description>
+  <!-- One account logging in from three or more EXTERNAL addresses in an
+       hour. Counting internal addresses as well would have raised this 28
+       times a day here (a monitoring account checks IMAP from several
+       hosts; phones change Wi-Fi addresses); external only: 0 in 8.8 days,
+       Z-Push phones on mobile networks included. -->
+  <rule id="100852" level="13" frequency="3" timeframe="3600">
+    <if_matched_group>zimbra_external_login</if_matched_group>
+    <same_user />
+    <different_srcip />
+    <description>[HIGH] One account logged in successfully from several different external sources in a short window, the credentials may have leaked: $(dstuser)</description>
     <mitre>
-      <id>T1078.003</id>
+      <id>T1078</id>
     </mitre>
-    <group>authentication_success,</group>
   </rule>
 
-  <!-- preauth 認證：可免密碼登入任意帳號，非 SSO 環境不應出現 -->
+  <!-- preauth: a login on behalf of a user with the domain's preauth key, no
+       password involved. Normal only behind an SSO integration. -->
   <rule id="100850" level="13">
     <if_sid>100840</if_sid>
-    <match>preauth</match>
-    <description>[HIGH] preauth authentication seen; unless this is an SSO integration the preauth key may have leaked: $(user) from: $(srcip)</description>
+    <match type="pcre2">^(?!.*\berror=).*(?i:preauth)</match>
+    <description>[HIGH] preauth authentication seen; unless this is an SSO integration the preauth key may have leaked: $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1550.001</id>
     </mitre>
     <group>credential_access,</group>
   </rule>
 
-  <!-- 2FA 相關異動（CL-STA-1114 等攻擊會竊取 2FA 備援碼） -->
-  <rule id="100851" level="12">
+  <!-- DelegateAuth: an administrator takes a session as another account
+       (admin console "View Mail", or any tool holding an admin token).
+       Zimbra's own zmmailbox does this every 15 minutes and is excluded. -->
+  <rule id="100855" level="5">
     <if_sid>100840</if_sid>
-    <match>TwoFactorAuth|DisableTwoFactorAuth|GenerateScratchCodes</match>
-    <description>[HIGH] Two-factor settings changed or backup codes generated: $(user) from: $(srcip)</description>
+    <action>DelegateAuth</action>
+    <match type="pcre2">^(?!.*(?:\berror=|[\[;]ua=(?:zm[a-z]+|ZCS)/))</match>
+    <description>A Zimbra administrator opened a session as another account: $(dstuser) from: $(srcip)</description>
     <mitre>
-      <id>T1556.006</id>
+      <id>T1550.001</id>
     </mitre>
   </rule>
 
-  <!-- 同一帳號短時間內自多個來源 IP 登入成功 -->
-  <rule id="100852" level="13" frequency="3" timeframe="3600">
-    <if_matched_sid>100845</if_matched_sid>
-    <same_user />
-    <different_srcip />
-    <description>[HIGH] One account logged in successfully from several different sources in a short window, the credentials may have leaked: $(user)</description>
+  <rule id="100858" level="12">
+    <if_sid>100855</if_sid>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>[HIGH] A Zimbra administrator session from an external address took over another account: $(dstuser) from: $(srcip)</description>
     <mitre>
-      <id>T1078</id>
+      <id>T1550.001</id>
+      <id>T1078.003</id>
     </mitre>
   </rule>
 

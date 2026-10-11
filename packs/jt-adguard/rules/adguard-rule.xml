@@ -1,5 +1,5 @@
 <!--
-  AdGuard Home detection rules
+  AdGuard Home detection rules (jt-adguard 1.2)
   ID range: 130900-130999
   Wazuh ships no rules or decoder for AdGuard Home; this pack maintains both.
   Companion decoder: etc/decoders/adguard-decoder.xml
@@ -7,37 +7,68 @@
   Why this pack exists:
     A recursive resolver or a firewall only ever sees the resolver's own address as
     the source of a DNS query. AdGuard sits in front of the clients, so its log is
-    the only place that records WHICH host asked for a domain. That makes it the
-    attribution layer for every DNS-based detection elsewhere in the ruleset.
+    the only place that records WHICH host asked for a domain.
 
-  Grading:
-    Ordinary ad and tracker blocking is high volume and carries no security value,
-    so it stays at level 0 and never alerts. Only two things are surfaced directly:
-    a block from a threat-oriented filter list, and a block from a filter-evasion
-    list. Everything else is left to correlation, where volume from one client is
-    the actual signal.
+  Layout
+    130900, 130907, 130908  bases for query events (see "three bases" below)
+    130901, 130903, 130911, 130913, 130914   threat lists
+    130902, 130904, 130905, 130912           DNS filtering bypass lists
+    130910  volume, 130915 safe browsing, 130925 unusual query type
+    130929-130939  AdGuard Home service log: web interface logins, auth settings
+    130940  AdGuardHome.yaml changed (file integrity monitoring)
 
-  2026-08-30, verified on Wazuh 4.14.7:
-    * Sibling rules under one parent are evaluated in an unpredictable order -
-      neither by rule ID nor by file order. This file therefore keeps its two
-      specific children mutually exclusive by pattern, and has no catch-all child
-      that could shadow them.
-    * Short tokens are anchored with \b. Without it "TOR" matches "history" and
-      "VPN"-style abbreviations match inside longer words under case-insensitive
-      comparison.
-    * If a future filter list name matches both patterns, either rule may win.
-      130902 is deliberately level 3 rather than level 0 so that such an event
-      still alerts rather than disappearing silently.
+  Three bases for one kind of event (measured on 4.14.7):
+    Top-level rules are siblings evaluated in no fixed order, and the first one
+    that matches takes the event. Built-in 1002 takes messages containing words
+    such as "error", "failed" or "attack", and 1003 messages longer than 1025
+    bytes; both were seen winning over 130900. A threat-listed domain such as error-reporting.example.com was
+    therefore swallowed by 1002 at level 2 and never graded. 130908 and 130907
+    pick these events back up as children of 1002 and 1003, and every grading
+    rule hangs off all three bases.
 
-    * <if_matched_sid> does NOT work against a level 0 rule. Measured directly:
-      with 130900 at level 0, feeding 45 matching events never fired the
-      frequency rule; changing nothing but the level to 2 fired it on the 41st.
-      Level 0 means "do not process further", not merely "do not alert".
-      The base rule is therefore level 2 - below <log_alert_level> (3), so it
-      still writes no alert, but it does count for correlation. Any silent rule
-      that something correlates on must use level 1 or 2, never 0.
+  Grading
+    Threat lists (malware, phishing, badware, scam, C2 ...):
+      130913 L12  first time this client looked up this domain, specific rule
+      130901 L7   repeat lookup of a specific threat domain
+      130903 L5   matched only a whole-TLD, wildcard or regex rule (for example
+                  ||*.top^): weak evidence, the domain itself is not listed
+      130914 L13  three different first-time threat domains from one client
+      130911 L10  repeated threat lookups from one client (unchanged from 1.1)
+    Bypass lists (encrypted DNS, VPN, Tor, proxy):
+      130905 L6   first time this client tried this endpoint
+      130902 L3   repeat attempt (unchanged level)
+      130904 L2   Apple iCloud Private Relay and Google tunnel probes: blocking
+                  these names is how a network opts out, the device then falls
+                  back to the local resolver, so the block is compliance
+      130912 L10  20 attempts in 10 minutes from one client
+    Ads, trackers, parental control, blocked services: base 130900, level 2, no alert.
+
+  Measured on one site, 10.5 days, 7,410 bypass and 5 threat events:
+    1.1: 7,410 level 3 bypass alerts (about 700 a day), 23 level 5 summaries,
+         5 level 7 threat alerts.
+    1.2 on the same events: 3,819 relay probes go quiet, about 3,530 level 3
+         repeats (336 a day), 59 first-time level 6 alerts (front-loaded: 19 on
+         the first day, none after day 7), about 10 level 10 bursts. The 5
+         threat events all matched ||*.top^ and become level 5.
+
+  Correlation memory (measured): analysisd keeps only the last 8,192 events
+  (memory_size) for if_matched_sid. On a manager handling 20,000 alerts an hour
+  that is 10 to 20 minutes, whatever the timeframe says. 1.1's 130912
+  (timeframe 3600) fired as if its window were about 10 minutes. Timeframes here
+  are 600 seconds or less for that reason.
+
+  Older notes kept from 1.0/1.1 (2026-08-30, verified on 4.14.7):
+    * Sibling rules under one parent are evaluated in an unpredictable order.
+      Siblings here are kept mutually exclusive by pattern; where a frequency
+      rule shares a parent with a classifying child, either result alerts.
+    * <if_matched_sid> does NOT work against a level 0 rule (45 events never
+      fired a frequency rule; level 2 fired it on the 41st). Every rule that
+      something correlates on is level 1 or higher.
+    * Short tokens are anchored with \b: without it "TOR" matches "history".
 -->
 <group name="adguard,dns,">
+
+  <!-- ===== Query events: bases ===== -->
 
   <rule id="130900" level="2">
     <decoded_as>adguard</decoded_as>
@@ -45,71 +76,281 @@
     <options>no_full_log</options>
   </rule>
 
-  <!-- Blocked by a threat-oriented filter list: the client asked for a domain
-       that a security feed considers malicious. -->
+  <rule id="130907" level="2">
+    <if_sid>1003</if_sid>
+    <decoded_as>adguard</decoded_as>
+    <description>AdGuard Home event (long message)</description>
+    <options>no_full_log</options>
+  </rule>
+
+  <rule id="130908" level="2">
+    <if_sid>1002</if_sid>
+    <decoded_as>adguard</decoded_as>
+    <description>AdGuard Home event (message contains a generic error word)</description>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- ===== Threat lists ===== -->
+
   <rule id="130901" level="7">
-    <if_sid>130900</if_sid>
-    <field name="filterlist_name" type="pcre2">(?i)(malware|phishing|threat|scam|botnet|\bC2\b|ransom|malicious|abuse|spyware|stalkerware|crypto)</field>
-    <description>[WARN] AdGuard: client looked up a domain on a threat blocklist - $(QH) client: $(IP) list: $(filterlist_name)</description>
+    <if_sid>130900, 130907, 130908</if_sid>
+    <action type="pcre2">(?i)^blocked$</action>
+    <field name="filterlist_name" type="pcre2">(?i)(malware|badware|phish|threat|scam|fraud|botnet|\bC2\b|command.?and.?control|ransom|malicious|abuse|spyware|stalkerware|hacked|crypto|coin.?min|nocoin|\bDGA\b)</field>
+    <description>AdGuard: client looked up a domain on a threat blocklist (blocked) - $(dns.query) client: $(srcip) list: $(filterlist_name)</description>
     <mitre>
       <id>T1071.004</id>
     </mitre>
     <options>no_full_log</options>
-    <group>adguard,dns,threat,</group>
+    <group>threat,</group>
   </rule>
 
-  <!-- Blocked by a filter-evasion list: the client tried to route DNS around the
-       resolver, e.g. DoH, iCloud Private Relay, a VPN or Tor bootstrap. Usually a
-       consumer app rather than an attacker, but it defeats DNS-layer controls.
-
-       Level 3: a block is a control that fired, and the operator wants to see it.
-       Volume is real - four Apple and Chrome devices produced 152 of these in one
-       day, all for the same five endpoints (mask.icloud.com, doh.dns.apple.com,
-       dns.google and friends) - so 130912 adds a once-per-hour summary per client
-       on top, for the case that actually needs chasing: a device that keeps at it. -->
-  <rule id="130902" level="3">
-    <if_sid>130900</if_sid>
-    <field name="filterlist_name" type="pcre2">(?i)(bypass|encrypted.?dns|\bDoH\b|\bDoT\b|\bTOR\b|\bVPN\b|proxy|anonymi)</field>
-    <description>AdGuard: client attempted to bypass DNS filtering - $(QH) client: $(IP) list: $(filterlist_name)</description>
+  <!-- The list blocks the whole TLD or a pattern, not this domain: Dandelion
+       Sprout's anti-malware list carries ||*.top^ with an allow-list. -->
+  <rule id="130903" level="5">
+    <if_sid>130901</if_sid>
+    <field name="filtertext" type="pcre2">(?i)^(?:@@)?(?:\|\|)?(?:\*|/|[a-z0-9-]+\^)</field>
+    <description>AdGuard: client looked up a domain blocked by a TLD-wide or pattern rule of a threat list - $(dns.query) client: $(srcip) rule: $(filtertext)</description>
     <mitre>
-      <id>T1090</id>
+      <id>T1071.004</id>
     </mitre>
     <options>no_full_log</options>
-    <group>adguard,dns,evasion,</group>
+    <group>threat,</group>
   </rule>
 
-  <!-- Correlation. Volume from a single client is the real signal: a healthy host
-       makes a handful of blocked lookups a day, an infected or adware-laden one
-       makes hundreds. -->
-
-  <rule id="130910" level="5" frequency="40" timeframe="120">
-    <if_matched_sid>130900</if_matched_sid>
-    <same_field>IP</same_field>
-    <description>AdGuard: one client is generating a high volume of filtered DNS lookups, worth checking the host: $(IP)</description>
-    <options>no_full_log</options>
-    <group>adguard,dns,</group>
-  </rule>
-
-  <rule id="130912" level="5" frequency="20" timeframe="3600">
-    <if_matched_sid>130902</if_matched_sid>
-    <same_field>IP</same_field>
-    <description>AdGuard: one client keeps trying to bypass DNS filtering, check what is running on it: $(IP)</description>
+  <rule id="130913" level="12">
+    <if_sid>130901</if_sid>
+    <field name="filtertext" type="pcre2">(?i)^(?!(?:@@)?(?:\|\|)?(?:\*|/|[a-z0-9-]+\^))</field>
+    <if_fts />
+    <description>[HIGH] AdGuard: first lookup of a threat-listed domain by this client (blocked) - $(dns.query) client: $(srcip) list: $(filterlist_name)</description>
     <mitre>
-      <id>T1090</id>
+      <id>T1071.004</id>
+      <id>T1566</id>
     </mitre>
     <options>no_full_log</options>
-    <group>adguard,dns,evasion,</group>
+    <group>threat,</group>
+  </rule>
+
+  <rule id="130914" level="13" frequency="3" timeframe="600">
+    <if_matched_sid>130913</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] AdGuard: one client looked up several different threat-listed domains for the first time within 10 minutes, the host is likely compromised: $(srcip)</description>
+    <mitre>
+      <id>T1071.004</id>
+      <id>T1568.002</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>threat,</group>
   </rule>
 
   <rule id="130911" level="10" frequency="5" timeframe="300">
     <if_matched_sid>130901</if_matched_sid>
     <same_field>IP</same_field>
-    <description>[WARN] AdGuard: one client repeatedly looked up threat-listed domains, the host may be compromised: $(IP)</description>
+    <description>[WARN] AdGuard: one client repeatedly looked up threat-listed domains, the host may be compromised: $(srcip)</description>
     <mitre>
       <id>T1071.004</id>
     </mitre>
     <options>no_full_log</options>
-    <group>adguard,dns,threat,</group>
+    <group>threat,</group>
+  </rule>
+
+  <!-- AdGuard's own safe browsing service (list ID -4) flagged the domain. -->
+  <rule id="130915" level="10">
+    <if_sid>130900, 130907, 130908</if_sid>
+    <action type="pcre2">(?i)^blocked$</action>
+    <field name="filterlist_id">^-4$</field>
+    <description>[WARN] AdGuard: safe browsing blocked a malware or phishing domain - $(dns.query) client: $(srcip)</description>
+    <mitre>
+      <id>T1071.004</id>
+      <id>T1566</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>threat,</group>
+  </rule>
+
+  <!-- ===== DNS filtering bypass lists ===== -->
+
+  <!-- A list name that also reads as a threat list goes to 130901, never here. -->
+  <rule id="130902" level="3">
+    <if_sid>130900, 130907, 130908</if_sid>
+    <action type="pcre2">(?i)^blocked$</action>
+    <field name="filterlist_name" type="pcre2">(?i)^(?!.*(?:malware|badware|phish|threat|scam|fraud|botnet|\bC2\b|command.?and.?control|ransom|malicious|abuse|spyware|stalkerware|hacked|crypto|coin.?min|nocoin|\bDGA\b)).*(?:bypass|encrypted.?dns|\bDoH\b|\bDoT\b|\bTOR\b|\bVPN\b|proxy|anonymi|private.?relay)</field>
+    <description>AdGuard: client attempted to bypass DNS filtering (blocked) - $(dns.query) client: $(srcip) list: $(filterlist_name)</description>
+    <mitre>
+      <id>T1090</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>evasion,</group>
+  </rule>
+
+  <rule id="130904" level="2">
+    <if_sid>130902</if_sid>
+    <field name="QH" type="pcre2">(?i)^(?:mask(?:-h2|-api|-canary)?\.icloud\.com|(?:dns-tunnel-check|tunnel)\.googlezip\.net)$</field>
+    <description>AdGuard: device probe for iCloud Private Relay or a Google tunnel was blocked, the device falls back to local DNS - $(dns.query) client: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>evasion,</group>
+  </rule>
+
+  <rule id="130905" level="6">
+    <if_sid>130902</if_sid>
+    <field name="QH" type="pcre2">(?i)^(?!(?:mask(?:-h2|-api|-canary)?\.icloud\.com|(?:dns-tunnel-check|tunnel)\.googlezip\.net)$)</field>
+    <if_fts />
+    <description>AdGuard: client tried an encrypted DNS, VPN or proxy endpoint for the first time (blocked) - $(dns.query) client: $(srcip) list: $(filterlist_name)</description>
+    <mitre>
+      <id>T1090</id>
+      <id>T1572</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>evasion,</group>
+  </rule>
+
+  <rule id="130912" level="10" frequency="20" timeframe="600">
+    <if_matched_sid>130902</if_matched_sid>
+    <same_source_ip />
+    <field name="QH" type="pcre2">(?i)^(?!(?:mask(?:-h2|-api|-canary)?\.icloud\.com|(?:dns-tunnel-check|tunnel)\.googlezip\.net)$)</field>
+    <description>[WARN] AdGuard: one client keeps trying to bypass DNS filtering, check what is running on it: $(srcip)</description>
+    <mitre>
+      <id>T1090</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>evasion,</group>
+  </rule>
+
+  <!-- ===== Volume and query types ===== -->
+
+  <!-- Counts events that no grading rule claimed (ads, trackers, other lists). -->
+  <rule id="130910" level="5" frequency="40" timeframe="120">
+    <if_matched_sid>130900</if_matched_sid>
+    <same_field>IP</same_field>
+    <description>AdGuard: one client is generating a high volume of filtered DNS lookups, worth checking the host: $(srcip)</description>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- Only reachable when the shipper also forwards allowed queries. -->
+  <rule id="130925" level="5">
+    <if_sid>130900, 130907, 130908</if_sid>
+    <action type="pcre2">(?i)^allowed$</action>
+    <field name="QT" type="pcre2">(?i)^(?:ANY|AXFR|IXFR|NULL)$</field>
+    <description>AdGuard: client sent an unusual DNS query type ($(QT)), used for reconnaissance or DNS tunnelling - $(dns.query) client: $(srcip)</description>
+    <mitre>
+      <id>T1590.002</id>
+      <id>T1071.004</id>
+    </mitre>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- ===== AdGuard Home service log ===== -->
+
+  <rule id="130930" level="0">
+    <decoded_as>adguard-home</decoded_as>
+    <description>AdGuard Home service message</description>
+  </rule>
+
+  <!-- Error lines ("http error", "failed") can be taken by built-in 1002 instead
+       of 130930: top-level rules are siblings in no fixed order. In the sandbox
+       130930 won for service lines and 1002 won for query events. -->
+  <rule id="130938" level="2">
+    <if_sid>1002</if_sid>
+    <decoded_as>adguard-home</decoded_as>
+    <description>AdGuard Home error message</description>
+  </rule>
+
+  <rule id="130931" level="5">
+    <if_sid>130930, 130938</if_sid>
+    <url type="pcre2">^/control/login$</url>
+    <match>invalid username or password</match>
+    <description>AdGuard Home: failed login to the web interface from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <!-- Only reachable when the login rate limiter is off or set above 7
+       attempts: with the default (5 attempts) the sixth try gets 130932. -->
+  <rule id="130929" level="10" frequency="8" timeframe="300">
+    <if_matched_sid>130931</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] AdGuard Home: repeated failed logins to the web interface from $(srcip), password guessing</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,</group>
+  </rule>
+
+  <!-- The login rate limiter answers 429 after repeated failures (5 by default,
+       then the address is refused for 15 minutes) and logs every refused try.
+       ignore="300": one alert per 5 minutes, the rest fall back to 130938
+       (level 2). The suppression is per rule, not per address, and it is not
+       visible in wazuh-logtest (verified by injecting events into analysisd). -->
+  <rule id="130932" level="10" ignore="300">
+    <if_sid>130930, 130938</if_sid>
+    <url type="pcre2">^/control/login$</url>
+    <match>auth: blocked for</match>
+    <description>[WARN] AdGuard Home: web interface login locked out after repeated failures from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,</group>
+  </rule>
+
+  <rule id="130933" level="3">
+    <if_sid>130930, 130938</if_sid>
+    <match type="pcre2">successful login|successfully logged in</match>
+    <description>AdGuard Home: successful login to the web interface - user: $(dstuser) from: $(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="130939" level="10" frequency="4" timeframe="600">
+    <if_matched_sid>130931</if_matched_sid>
+    <if_sid>130933</if_sid>
+    <same_source_ip />
+    <description>[WARN] AdGuard Home: successful login to the web interface after several failures from the same address - user: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="130934" level="10">
+    <if_sid>130930, 130938</if_sid>
+    <match>authentication is disabled</match>
+    <description>[WARN] AdGuard Home: the web interface has no users, anyone who reaches it can change DNS filtering</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="130935" level="5">
+    <if_sid>130930, 130938</if_sid>
+    <match>authratelimiter is disabled</match>
+    <description>AdGuard Home: the login rate limiter is disabled, password guessing is not slowed down</description>
+  </rule>
+
+  <rule id="130936" level="3">
+    <if_sid>130930, 130938</if_sid>
+    <match type="pcre2">(?i)starting adguard home|AdGuard Home, version</match>
+    <description>AdGuard Home started</description>
+  </rule>
+
+  <rule id="130937" level="3">
+    <if_sid>130930, 130938</if_sid>
+    <match type="pcre2">(?i)stopping adguard home</match>
+    <description>AdGuard Home is stopping</description>
+  </rule>
+
+  <!-- ===== Configuration file (file integrity monitoring, agent group adguard) =====
+       AdGuard Home does not log setting changes, so the configuration file is
+       watched instead. Do not enable report_changes on it: it holds the password
+       hashes of the web users. -->
+  <rule id="130940" level="8">
+    <if_sid>550, 554</if_sid>
+    <field name="file" type="pcre2">/AdGuardHome\.yaml$</field>
+    <description>AdGuard Home configuration changed (filtering, upstreams, rewrites or users): $(file)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>syscheck,config_changed,</group>
   </rule>
 
 </group>

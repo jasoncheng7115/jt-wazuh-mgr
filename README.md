@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.12.2
+# jt-wazuh-mgr v1.13.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@ A powerful web-based management tool for Wazuh agents in cluster environments.
 
 > **Recommended**: Use the Web UI as the primary interface — it's the main feature of this tool with full functionality.
 
-![Version](https://img.shields.io/badge/version-1.12.2-blue)
+![Version](https://img.shields.io/badge/version-1.13.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -91,7 +91,8 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 - Removal restores replaced files, **refuses to discard rule files you edited**, and keeps the lists the site maintains
 - **Setup guide** for packs that depend on configuration the manager cannot apply (Sysmon filters, auditd, agent groups, syslog forwarding): numbered steps, copyable commands, a way to check each one, and the agent-side files to view or download
 - A pack whose files were copied in by hand is recognised as **installed but untracked**, instead of being reported as conflicting with itself
-- Ships with: portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, Zimbra detection, Zenarmor (OPNsense), AdGuard Home, fail2ban, and a readable alert digest by mail
+- **Active response, opt-in:** a pack can offer responses (for example, block the source of a brute force). None is enabled by installing; each states what it blocks, where, and the risk. Enabling writes a marked block into `ossec.conf` on every cluster node, validates each node and rolls every node back if one rejects it; disabling restores the file exactly. The page shows each node's `white_list` and which managers still need a restart
+- Ships with 22 packs: portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, a readable alert digest by mail, Zimbra, Z-Push, Proxmox VE and Ceph, Proxmox Backup Server, Proxmox Mail Gateway, OPNsense, Zenarmor, AdGuard Home, fail2ban, Keycloak, Univention Corporate Server / Samba AD, Nextcloud, LibreNMS, Synology DSM, Odoo, Jitsi Meet, jt-ipam and jt-vc-portal
 
 ### Security
 - Input validation for all parameters; command-injection and path-traversal protection

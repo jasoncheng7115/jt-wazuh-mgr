@@ -1,0 +1,696 @@
+{
+ "pack": "jt-odoo",
+ "sandbox_lists": {
+  "jt-odoo-service-accounts": "integration@example.com:service\nerp-sync@example.com:service\n",
+  "jt-odoo-admin-accounts": "boss@example.com:admin\nerp-sync@example.com:admin\n"
+ },
+ "cases": [
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for db:prod login:admin from 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132313",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (18.0 res_users._login; default administrator login)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for db:prod login:jdoe@example.com from 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132312",
+   "expect_level": 3,
+   "note": "synthesized from the Odoo source (res_users._login; near-miss for 132313: ordinary user)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for db:prod login:integration@example.com from 192.0.2.40 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132311",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (res_users._login; listed service account (sandbox list), an XML-RPC integration as seen in the site nginx log)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for db:prod login:boss@example.com from 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132314",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (res_users._login; login listed in jt-odoo-admin-accounts)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for db:prod login:erp-sync@example.com from 192.0.2.40 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132311",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (res_users._login; in both lists: the service list wins)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132315",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (res_users._login; beats the generic 2501)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for login:admin from 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132315",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (19.0 res_users._login, no db: part)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:jane doe@example.com from 2001:db8::5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132315",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (res_users._login; login with a space, IPv6 client)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 203.0.113.6 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132316",
+   "expect_level": 10,
+   "note": "synthesized from the Odoo source (eight failures from one address)",
+   "repeat": 8
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 203.0.113.7 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132315",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (near-miss for 132316: seven failures)",
+   "repeat": 7
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user1@example.com from 198.51.100.7 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user2@example.com from 198.51.100.7 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user3@example.com from 198.51.100.7 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user4@example.com from 198.51.100.7 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user5@example.com from 198.51.100.7 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user6@example.com from 198.51.100.7 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user7@example.com from 198.51.100.7 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user8@example.com from 198.51.100.7 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user9@example.com from 198.51.100.7 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user10@example.com from 198.51.100.7 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user11@example.com from 198.51.100.7 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user12@example.com from 198.51.100.7 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:user13@example.com from 198.51.100.7 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132317",
+   "expect_level": 12,
+   "note": "synthesized from the Odoo source (password spraying: 13 failures, 13 accounts, one address (multi-line log = one session))"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.8 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132315",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (near-miss for 132317: 14 failures for one account stay brute force (132316 fired once, then ignore))"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.9 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.9 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.9 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.9 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.9 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.9 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.9 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.9 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for db:prod login:bob@example.com from 198.51.100.9 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132318",
+   "expect_level": 12,
+   "note": "synthesized from the Odoo source (success right after brute force from the same address)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.10 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.10 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.10 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.10 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.10 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.10 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.10 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for db:prod login:bob@example.com from 198.51.100.10 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132312",
+   "expect_level": 3,
+   "note": "synthesized from the Odoo source (near-miss for 132318: seven failures do not make brute force)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.11 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.11 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.11 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.11 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.11 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.11 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.11 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:bob@example.com from 198.51.100.11 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for db:prod login:bob@example.com from 198.51.100.12 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132312",
+   "expect_level": 3,
+   "note": "synthesized from the Odoo source (near-miss for 132318: success from another address)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:integration@example.com from 198.51.100.13 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:integration@example.com from 198.51.100.13 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:integration@example.com from 198.51.100.13 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:integration@example.com from 198.51.100.13 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:integration@example.com from 198.51.100.13 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:integration@example.com from 198.51.100.13 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:integration@example.com from 198.51.100.13 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:integration@example.com from 198.51.100.13 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for db:prod login:integration@example.com from 198.51.100.13 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132318",
+   "expect_level": 12,
+   "note": "synthesized from the Odoo source (a listed service account guessed: not quiet)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u1@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u2@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u3@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u4@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u5@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u6@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u7@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u8@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u9@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u10@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u11@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u12@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:u13@example.com from 198.51.100.14 \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login successful for db:prod login:u3@example.com from 198.51.100.14 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132319",
+   "expect_level": 13,
+   "note": "synthesized from the Odoo source (success right after password spraying)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.addons.base.models.res_users: Login attempt ignored for 203.0.113.5 (user 'admin') on prod: 5 failures since last success, last failure at 2026-10-11 02:59:58.123456. You can configure the number of login failures before a user is put on cooldown as well as the duration in the System Parameters. Disable this feature by setting \"base.login_cooldown_after\" to 0. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132320",
+   "expect_level": 7,
+   "note": "synthesized from the Odoo source (18.0 res_users._assert_can_auth; beats the generic 2501)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.addons.base.models.res_users: The rate-limited IP address 10.0.0.5 is classified as private and *might* be a proxy. If your Odoo is behind a proxy, it may be mis-configured. Check that you are running Odoo in Proxy Mode and that the proxy is properly configured, see https://www.odoo.com/documentation/master/administration/install/deploy.html#https for details. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132321",
+   "expect_level": 7,
+   "note": "synthesized from the Odoo source (res_users._assert_can_auth, private address)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA check: FAIL for res.users(7,) 'jdoe' ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132330",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (auth_totp _totp_check)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA check: FAIL for res.users(7,) 'jdoe' ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132331",
+   "expect_level": 10,
+   "note": "synthesized from the Odoo source (four wrong codes for one account)",
+   "repeat": 4
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA check: FAIL for res.users(1,) 'u1' \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA check: FAIL for res.users(2,) 'u2' \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA check: FAIL for res.users(3,) 'u3' \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA check: FAIL for res.users(4,) 'u4' \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA check: FAIL for res.users(5,) 'u5' \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA check: FAIL for res.users(6,) 'u6' ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132330",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (near-miss for 132331: six accounts, one wrong code each)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp_mail.models.res_users: 2FA check (mail): FAIL for res.users(7,) 'jdoe' ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132330",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (19.0 auth_totp_mail)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA check: SUCCESS for res.users(7,) 'jdoe' ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss: a correct code)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.addons.auth_totp.models.res_users: 2FA check: REUSE for res.users(7,) 'jdoe' ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132332",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (19.0 auth_totp reused code)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA disable: SUCCESS for res.users(7,) ('jdoe') by uid #2 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132333",
+   "expect_level": 8,
+   "note": "synthesized from the Odoo source (auth_totp action_totp_disable)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA disable: REJECT for res.users(7,) ('jdoe') by uid #9 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132334",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (auth_totp action_totp_disable refused)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA enable: SUCCESS for res.users(7,) 'jdoe' ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132335",
+   "expect_level": 3,
+   "note": "synthesized from the Odoo source (near-miss for 132333: enable)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Users API Keys generated: scope: <None> for 'jdoe' (#7) from 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132336",
+   "expect_level": 8,
+   "note": "synthesized from the Odoo source (res.users.apikeys _generate)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Authentication Device generated: scope: <browser> for 'jdoe' (#7) from 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss for 132336: trusted 2FA browser)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: API key(s) removed: scope: <['rpc']> for 'jdoe' (#7) from 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132337",
+   "expect_level": 3,
+   "note": "synthesized from the Odoo source (res.users.apikeys _remove)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Invalid API key or password-based authentication attempted for a non-interactive (API) context that requires API key authentication only. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132338",
+   "expect_level": 6,
+   "note": "synthesized from the Odoo source (res.users.apikeys _check_credentials)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_signup.models.res_users: Password reset email sent for user <jdoe@example.com> to <jdoe@example.com> ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132322",
+   "expect_level": 3,
+   "note": "synthesized from the Odoo source (auth_signup action_reset_password)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_signup.models.res_users: Password reset email sent for user <jdoe@example.com> to <jdoe@example.com> ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132323",
+   "expect_level": 7,
+   "note": "synthesized from the Odoo source (ten reset mails in ten minutes)",
+   "repeat": 10
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_signup.models.res_users: New device alert email sent for user <jdoe@example.com> to <jdoe@example.com> ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132324",
+   "expect_level": 3,
+   "note": "synthesized from the Odoo source (18.0 auth_signup new device alert)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_signup.models.res_users: Signup email sent for user <new@example.com> to <new@example.com> ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132325",
+   "expect_level": 3,
+   "note": "synthesized from the Odoo source (18.0 auth_signup signup mail)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.5 - - [11/Oct/2026 03:00:00] \"GET /web/database/manager HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132340",
+   "expect_level": 8,
+   "note": "synthesized from the Odoo source (werkzeug request line, Database.manager route)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.5 - - [11/Oct/2026 03:00:00] \"POST /web/database/backup HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132341",
+   "expect_level": 12,
+   "note": "synthesized from the Odoo source (werkzeug request line, Database.backup route)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.5 - - [11/Oct/2026 03:00:00] \"POST /web/database/drop HTTP/1.1\" 303 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132341",
+   "expect_level": 12,
+   "note": "synthesized from the Odoo source (Database.drop, redirect = done)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.5 - - [11/Oct/2026 03:00:00] \"POST /web/database/list HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132340",
+   "expect_level": 8,
+   "note": "synthesized from the Odoo source (near-miss for 132341: JSON list of databases)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.5 - - [11/Oct/2026 03:00:00] \"GET /web/database/selector HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132340",
+   "expect_level": 8,
+   "note": "synthesized from the Odoo source (near-miss for 132341: selector page)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 198.51.100.20 - - [11/Oct/2026 03:00:00] \"POST /web/database/restore HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132342",
+   "expect_level": 12,
+   "note": "synthesized from the Odoo source (five manager actions from one address)",
+   "repeat": 5
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.0.2.40 - - [11/Oct/2026 03:00:00] \"POST /xmlrpc/2/db HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132343",
+   "expect_level": 6,
+   "note": "synthesized from the Odoo source (rpc controller /xmlrpc/2/<service>)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.0.2.40 - - [11/Oct/2026 03:00:00] \"POST /xmlrpc/2/common HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss for 132343: login service (path seen in the site nginx log))"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.0.2.40 - - [11/Oct/2026 03:00:00] \"POST /xmlrpc/2/object HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss: object service (path seen in the site nginx log))"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.0.2.168 - - [11/Oct/2026 03:00:00] \"GET /odoo/action-341 HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss: page load, 17.2+ URL (path seen in the site nginx log))"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.0.2.168 - - [11/Oct/2026 03:00:00] \"POST /web/dataset/call_kw/sale.order/web_search_read HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss: web client RPC (path seen in the site nginx log))"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 192.0.2.168 - - [11/Oct/2026 03:00:00] \"POST /web/login HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss: login form post, the result is the Login line)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.service.db: DROP DB: prod ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132344",
+   "expect_level": 12,
+   "note": "synthesized from the Odoo source (service/db.py exp_drop)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.service.db: DROP DB: prod failed: database \"prod\" is being accessed by other users  DETAIL:  There are 2 other sessions using the database. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132349",
+   "expect_level": 8,
+   "note": "synthesized from the Odoo source (near-miss for 132344: drop failed (joined lines))"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.service.db: DUMP DB: prod format zip ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132345",
+   "expect_level": 10,
+   "note": "synthesized from the Odoo source (18.0 dump_db)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.service.db: DUMP DB: prod format zip with filestore ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132345",
+   "expect_level": 10,
+   "note": "synthesized from the Odoo source (19.0 dump_db)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.service.db: RESTORE DB: prod2 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132346",
+   "expect_level": 12,
+   "note": "synthesized from the Odoo source (restore_db)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.service.db: RESTORING DB: prod2 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss for 132346: restore started)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.service.db: Duplicate database `prod` to `prod-copy`. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132347",
+   "expect_level": 12,
+   "note": "synthesized from the Odoo source (exp_duplicate_database)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.service.db: Create database `evil`. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132348",
+   "expect_level": 10,
+   "note": "synthesized from the Odoo source (_create_empty_database)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.service.db: RENAME DB: prod -> prod-old ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132348",
+   "expect_level": 10,
+   "note": "synthesized from the Odoo source (exp_rename)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 ERROR prod odoo.service.db: Database management functions blocked, admin disabled database listing ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132350",
+   "expect_level": 10,
+   "note": "synthesized from the Odoo source (check_db_management_enabled; beats 1002)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 ERROR prod odoo.addons.web.controllers.database: Database deletion error.  Traceback (most recent call last):   File \"/usr/lib/python3/dist-packages/odoo/addons/web/controllers/database.py\", line 114, in drop     dispatch_rpc('db', 'drop', [master_pwd, name])   File \"/usr/lib/python3/dist-packages/odoo/service/db.py\", line 62, in check_super     raise odoo.exceptions.AccessDenied() odoo.exceptions.AccessDenied: Access Denied ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132351",
+   "expect_level": 10,
+   "note": "synthesized from the Odoo source (Database.drop with a wrong master password, traceback joined by the agent group (as logcollector produced it in the sandbox))"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 ERROR prod odoo.addons.web.controllers.database: Database.backup  Traceback (most recent call last):   File \"/usr/lib/python3/dist-packages/odoo/addons/web/controllers/database.py\", line 129, in backup     odoo.service.db.check_super(master_pwd) odoo.exceptions.AccessDenied: Access Denied ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132351",
+   "expect_level": 10,
+   "note": "synthesized from the Odoo source (Database.backup with a wrong master password)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 ERROR prod odoo.addons.web.controllers.database: Database deletion error.  Traceback (most recent call last):   File \"/usr/lib/python3/dist-packages/odoo/service/db.py\", line 245, in exp_drop     cr.execute(SQL('DROP DATABASE %s', SQL.identifier(db_name))) psycopg2.errors.ObjectInUse: database \"prod\" is being accessed by other users ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132352",
+   "expect_level": 7,
+   "note": "synthesized from the Odoo source (near-miss for 132351: failed for another reason)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_module: ALLOW access to module.button_immediate_install on ['Sales'] to user admin #2 via 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132360",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (ir_module assert_log_admin_access)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_module: ALLOW access to module.button_immediate_upgrade on ['Invoicing'] to user admin #2 via 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132361",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (ir_module upgrade)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_module: ALLOW access to module.button_immediate_uninstall on ['Two-Factor Authentication'] to user admin #2 via 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132362",
+   "expect_level": 7,
+   "note": "synthesized from the Odoo source (ir_module uninstall)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_module: ALLOW access to module.button_uninstall_wizard on ['Sales'] to user admin #2 via 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss for 132362: the uninstall dialog opened)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.addons.base.models.ir_module: DENY access to module.button_immediate_install on ['Sales'] to user jdoe@example.com ID #7 via 203.0.113.5 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132363",
+   "expect_level": 8,
+   "note": "synthesized from the Odoo source (ir_module refused for a non-admin)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_module: User #2 triggered module installation ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss: second line of an install)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_rule: Access Denied by record rules for operation: read on record ids: [12, 13], uid: 7, model: hr.employee ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132370",
+   "expect_level": 2,
+   "note": "synthesized from the Odoo source (ir_rule _make_access_error)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 7, model: hr.payslip ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132371",
+   "expect_level": 6,
+   "note": "synthesized from the Odoo source (15 denials for one uid)",
+   "repeat": 15
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 2, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 3, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 4, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 5, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 6, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 7, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 8, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 9, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 10, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 11, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 12, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 13, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 14, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 15, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 16, model: hr.payslip \n2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_model: Access Denied by ACLs for operation: read, uid: 17, model: hr.payslip ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132370",
+   "expect_level": 2,
+   "note": "synthesized from the Odoo source (near-miss for 132371: 16 denials spread over 16 users)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 WARNING prod odoo.http: You are not allowed to access 'Employee' (hr.employee) records. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss: odoo.http repeat of a denial, no uid; beats 1002)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.models.unlink: User #7 deleted res.users records with IDs: [15] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132373",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (models.py unlink log)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.models.unlink: User #7 deleted sale.order records with IDs: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132374",
+   "expect_level": 7,
+   "note": "synthesized from the Odoo source (120 records in one call)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.models.unlink: User #1 deleted mail.mail records with IDs: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss for 132374: system user (the agent group drops these))"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.models.unlink: User #7 deleted sale.order.line records with IDs: [5, 6] ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss for 132374: a few records)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 CRITICAL prod odoo.service.server: Failed to initialize database `prod`. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132380",
+   "expect_level": 7,
+   "note": "synthesized from the Odoo source (server.preload_registries)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 ERROR prod odoo.http: Exception during request handling. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132303",
+   "expect_level": 2,
+   "note": "synthesized from the Odoo source (http.Application.__call__; beats 1002)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 ERROR prod odoo.http: Exception during request handling. ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132381",
+   "expect_level": 7,
+   "note": "synthesized from the Odoo source (thirty errors in five minutes)",
+   "repeat": 30
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 ERROR prod odoo.addons.base.models.ir_cron: Job 'Send Invoices' (12) server action #345 failed ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132382",
+   "expect_level": 4,
+   "note": "synthesized from the Odoo source (18.0 ir_cron _callback)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 ERROR prod odoo.addons.base.models.ir_cron: Call from cron Send Invoices for server action #345 failed in Job #12 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132382",
+   "expect_level": 4,
+   "note": "synthesized from the Odoo source (16.0 ir_cron _callback)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 ERROR prod odoo.addons.base.models.ir_cron: Job 'Send Invoices' (12) timed out ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132382",
+   "expect_level": 4,
+   "note": "synthesized from the Odoo source (18.0 ir_cron timeout)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.ir_cron: Job 'Send Invoices' (12) done in 0.512s ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss for 132382: a job that worked)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO ? odoo: Odoo version 18.0 ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132383",
+   "expect_level": 3,
+   "note": "synthesized from the Odoo source (cli/server.py report_configuration)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.http: Session expired ",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss: expired browser session)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.50 - - [11/Oct/2026 03:00:00] \"GET /wp-login.php HTTP/1.1\" 404 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132390",
+   "expect_level": 1,
+   "note": "synthesized from the Odoo source (werkzeug 404)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.51 - - [11/Oct/2026 03:00:00] \"GET /.env HTTP/1.1\" 404 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "132391",
+   "expect_level": 6,
+   "note": "synthesized from the Odoo source (twenty 404s from one address)",
+   "repeat": 20
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.52 - - [11/Oct/2026 03:00:00] \"GET /web/image/res.partner/3/avatar_128 HTTP/1.1\" 200 - 5 0.004 0.020",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the Odoo source (near-miss for 132390)"
+  },
+  {
+   "log": "203.0.113.5 - - [11/Oct/2026:03:00:00 +0800] \"GET /web/database/manager HTTP/1.1\" 200 4512 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "132395",
+   "expect_level": 8,
+   "note": "synthesized nginx combined line; Odoo answered the manager page"
+  },
+  {
+   "log": "203.0.113.5 - - [11/Oct/2026:03:00:00 +0800] \"GET /web/database/selector?debug=1 HTTP/1.1\" 200 4512 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "132395",
+   "expect_level": 8,
+   "note": "synthesized; with a query string the built-in rule stays at 31100"
+  },
+  {
+   "log": "203.0.113.5 - - [11/Oct/2026:03:00:00 +0800] \"POST /web/database/drop HTTP/1.1\" 303 4512 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "132396",
+   "expect_level": 12,
+   "note": "synthesized; drop done (redirect)"
+  },
+  {
+   "log": "203.0.113.5 - - [11/Oct/2026:03:00:00 +0800] \"GET /web/database/manager HTTP/1.1\" 404 4512 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "near-miss for 132395: refused at the proxy or no Odoo behind it"
+  },
+  {
+   "log": "203.0.113.5 - - [11/Oct/2026:03:00:00 +0800] \"GET /web/login HTTP/1.1\" 200 4512 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near-miss for 132395: login page"
+  },
+  {
+   "log": "Oct 11 03:00:00 odoo1 odoo[812]: 2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 203.0.113.5",
+   "location": "/var/log/syslog",
+   "expect_rule": "132315",
+   "expect_level": 5,
+   "note": "synthesized from the Odoo source (docker syslog driver or journald, tag odoo)"
+  },
+  {
+   "log": "Oct 11 03:00:00 odoo1 odoo[812]: 2026-10-11 03:00:00,123 1234 INFO prod werkzeug: 203.0.113.5 - - [11/Oct/2026 03:00:00] \"POST /web/database/drop HTTP/1.1\" 303 - 5 0.004 0.020",
+   "location": "/var/log/syslog",
+   "expect_rule": "132341",
+   "expect_level": 12,
+   "note": "synthesized from the Odoo source (werkzeug line through syslog)"
+  },
+  {
+   "log": "Oct 11 03:00:00 odoo1 odoo[812]: 2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.auth_totp.models.res_users: 2FA disable: SUCCESS for res.users(7,) ('jdoe') by uid #2",
+   "location": "/var/log/syslog",
+   "expect_rule": "132333",
+   "expect_level": 8,
+   "note": "synthesized from the Odoo source (2FA disable through syslog)"
+  },
+  {
+   "log": "2026-10-11 03:00:00,123 1234 INFO myapp: Login failed for user admin",
+   "location": "/var/log/odoo/odoo-server.log",
+   "expect_rule": "2501",
+   "expect_level": 5,
+   "note": "near-miss for the decoder: another Python program with a similar format is not Odoo"
+  },
+  {
+   "log": "Oct 11 03:00:00 odoo1 python3[812]: 2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 203.0.113.5",
+   "location": "/var/log/syslog",
+   "expect_rule": "2501",
+   "expect_level": 5,
+   "note": "near-miss for jt-odoo-syslog: the tag is not odoo, so the setup step asks for SyslogIdentifier=odoo"
+  }
+ ]
+}

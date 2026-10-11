@@ -1,0 +1,595 @@
+{
+ "pack": "jt-ucs",
+ "sandbox_lists": {
+  "jt-ucs-dc-hosts": "dc1-example:dc\ndc2-example:dc\n"
+ },
+ "cases": [
+  {
+   "log": "2026-10-05T08:42:09.794649+08:00 dc1-example slapd[1996]: conn=1305771 fd=25 ACCEPT from IP=198.51.100.68:34167 (IP=0.0.0.0:7389)",
+   "location": "/var/log/syslog",
+   "expect_rule": "131400",
+   "expect_level": 1,
+   "note": "real dc1; connection open quieted (built-in 2508 was level 3, ~7,000 a day)"
+  },
+  {
+   "log": "2026-09-14T21:05:37.321037+08:00 dc1-example slapd[1996]: conn=1159488 fd=25 ACCEPT from IP=198.51.100.30:34167 (IP=0.0.0.0:7389)\n2026-09-14T21:05:37.321382+08:00 dc1-example slapd[1996]: conn=1159488 op=1 BIND dn=\"uid=alice,ou=Staff,dc=example,dc=com\" method=128\n2026-09-14T21:05:37.329852+08:00 dc1-example slapd[1996]: conn=1159488 op=1 RESULT tag=97 err=49 qtime=0.000024 etime=0.008214 text=",
+   "location": "/var/log/syslog",
+   "expect_rule": "131401",
+   "expect_level": 5,
+   "note": "real dc1 (user and IPs sanitized); bind failure carries srcip and dstuser through the accumulator"
+  },
+  {
+   "log": "2026-10-07T01:00:51.890753+08:00 dc1-example slapd[1996]: conn=1317710 fd=25 ACCEPT from IP=192.0.2.113:34167 (IP=0.0.0.0:7389)\n2026-10-07T01:00:51.907175+08:00 dc1-example slapd[1996]: conn=1317710 op=1 BIND dn=\"cn=dc2-example,cn=dc,cn=computers,dc=example,dc=com\" method=128\n2026-10-07T01:00:51.918505+08:00 dc1-example slapd[1996]: conn=1317710 op=1 RESULT tag=97 err=49 qtime=0.000024 etime=0.008214 text=",
+   "location": "/var/log/syslog",
+   "expect_rule": "131402",
+   "expect_level": 3,
+   "note": "real dc1; DC machine account bind failure during machine password rotation (list entry)"
+  },
+  {
+   "log": "2026-09-14T21:05:37.321037+08:00 dc1-example slapd[1996]: conn=1159500 fd=25 ACCEPT from IP=198.51.100.30:34167 (IP=0.0.0.0:7389)\n2026-09-14T21:05:37.321382+08:00 dc1-example slapd[1996]: conn=1159500 op=1 BIND dn=\"uid=Administrator,cn=users,dc=example,dc=com\" method=128\n2026-09-14T21:05:37.329852+08:00 dc1-example slapd[1996]: conn=1159500 op=1 RESULT tag=97 err=49 qtime=0.000024 etime=0.008214 text=",
+   "location": "/var/log/syslog",
+   "expect_rule": "131403",
+   "expect_level": 8,
+   "note": "synthesized from the real err=49 shape; privileged identity"
+  },
+  {
+   "log": "2026-09-14T21:05:37.321037+08:00 dc1-example slapd[1996]: conn=1159600 fd=25 ACCEPT from IP=198.51.100.30:34167 (IP=0.0.0.0:7389)\n2026-09-14T21:05:37.321382+08:00 dc1-example slapd[1996]: conn=1159600 op=1 BIND dn=\"uid=alice,ou=Staff,dc=example,dc=com\" method=128\n2026-09-14T21:05:37.329852+08:00 dc1-example slapd[1996]: conn=1159600 op=1 RESULT tag=97 err=0 qtime=0.000021 etime=0.001397 text=",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real shape; successful bind must not alert (near miss for 131401)"
+  },
+  {
+   "log": "2026-09-14T21:05:37.321037+08:00 dc1-example slapd[1996]: conn=1159700 fd=25 ACCEPT from IP=198.51.100.31:34167 (IP=0.0.0.0:7389)\n2026-09-14T21:05:37.321382+08:00 dc1-example slapd[1996]: conn=1159700 op=1 BIND dn=\"uid=bob,ou=Staff,dc=example,dc=com\" method=128\n2026-09-14T21:05:37.329852+08:00 dc1-example slapd[1996]: conn=1159700 op=1 RESULT tag=97 err=49 qtime=0.000024 etime=0.008214 text=",
+   "location": "/var/log/syslog",
+   "expect_rule": "131404",
+   "expect_level": 10,
+   "note": "synthesized; 8 bind failures from one address in 2 minutes",
+   "repeat": 8
+  },
+  {
+   "log": "2026-09-14T21:05:37.321037+08:00 dc1-example slapd[1996]: conn=1159800 fd=25 ACCEPT from IP=198.51.100.32:34167 (IP=0.0.0.0:7389)\n2026-09-14T21:05:37.321382+08:00 dc1-example slapd[1996]: conn=1159800 op=1 BIND dn=\"uid=bob,ou=Staff,dc=example,dc=com\" method=128\n2026-09-14T21:05:37.329852+08:00 dc1-example slapd[1996]: conn=1159800 op=1 RESULT tag=97 err=49 qtime=0.000024 etime=0.008214 text=",
+   "location": "/var/log/syslog",
+   "expect_rule": "131401",
+   "expect_level": 5,
+   "note": "synthesized; 7 failures stay below the burst threshold (near miss for 131404)",
+   "repeat": 7
+  },
+  {
+   "log": "2026-10-02T01:05:20.000000+08:00 dc1-example slapd[1996]: slapd stopped.",
+   "location": "/var/log/syslog",
+   "expect_rule": "131405",
+   "expect_level": 5,
+   "note": "synthesized from the OpenLDAP shutdown message"
+  },
+  {
+   "log": "2026-10-02T01:05:21.000000+08:00 dc1-example slapd[1996]: slapd starting",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized; start message is not an alert"
+  },
+  {
+   "log": "2026-10-02T08:14:11.890318+08:00 dc1-example slapd[1996]: conn=1283855 fd=25 ACCEPT from IP=192.0.2.145:34167 (IP=0.0.0.0:7389)\n2026-10-02T08:14:11.910202+08:00 dc1-example slapd[1996]: conn=1283855 op=1 BIND dn=\"cn=admin,dc=example,dc=com\" method=128\n2026-10-02T08:14:12.716309+08:00 dc1-example slapd[1996]: conn=1283855 op=53 ADD dn=\"uid=smoke-test-admin,cn=users,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131411",
+   "expect_level": 3,
+   "note": "real dc1 (names sanitized); user created by the udm command (bind admin)"
+  },
+  {
+   "log": "2026-10-02T08:14:11.890318+08:00 dc1-example slapd[1996]: conn=1283864 fd=25 ACCEPT from IP=192.0.2.145:34167 (IP=0.0.0.0:7389)\n2026-10-02T08:14:11.910202+08:00 dc1-example slapd[1996]: conn=1283864 op=1 BIND dn=\"cn=admin,dc=example,dc=com\" method=128\n2026-10-02T08:15:06.587395+08:00 dc1-example slapd[1996]: conn=1283864 op=27 DEL dn=\"uid=smoke-test-admin,cn=users,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131412",
+   "expect_level": 3,
+   "note": "real dc1; user deleted"
+  },
+  {
+   "log": "2026-10-02T08:14:12.716309+08:00 dc1-example slapd[1996]: conn=1283900 op=12 MODRDN dn=\"uid=alice,cn=users,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131413",
+   "expect_level": 3,
+   "note": "synthesized; user renamed or moved"
+  },
+  {
+   "log": "2026-09-27T21:53:30.375563+08:00 dc1-example slapd[1996]: conn=1252709 op=36 MOD dn=\"uid=svc-sso,cn=users,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131414",
+   "expect_level": 1,
+   "note": "real dc1; plain user modification is recorded only"
+  },
+  {
+   "log": "2026-10-02T08:14:11.890318+08:00 dc1-example slapd[1996]: conn=1283870 fd=25 ACCEPT from IP=192.0.2.145:34167 (IP=0.0.0.0:7389)\n2026-10-02T08:14:11.910202+08:00 dc1-example slapd[1996]: conn=1283870 op=1 BIND dn=\"cn=admin,dc=example,dc=com\" method=128\n2026-10-02T08:14:12.716309+08:00 dc1-example slapd[1996]: conn=1283870 op=60 MOD dn=\"cn=Domain Admins,cn=groups,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131419",
+   "expect_level": 12,
+   "note": "synthesized from the real MOD dn shape; privileged group written"
+  },
+  {
+   "log": "2026-09-28T09:10:59.026004+08:00 dc1-example slapd[1996]: conn=1256016 op=108 MOD dn=\"cn=administrators,cn=builtin,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131419",
+   "expect_level": 12,
+   "note": "synthesized; lower-case builtin DN as slapd logs it"
+  },
+  {
+   "log": "2026-10-02T08:14:13.021807+08:00 dc1-example slapd[1996]: conn=1283855 op=60 MOD dn=\"cn=VC-Admins,cn=groups,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131418",
+   "expect_level": 1,
+   "note": "real dc1; ordinary group membership change recorded only (near miss for 131419)"
+  },
+  {
+   "log": "2026-10-02T08:14:13.101117+08:00 dc1-example slapd[1996]: conn=1283855 op=63 MOD dn=\"cn=Domain Users,cn=groups,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131418",
+   "expect_level": 1,
+   "note": "real dc1; Domain Users changes with every new user"
+  },
+  {
+   "log": "2026-09-27T18:17:04.466460+08:00 dc1-example slapd[1996]: conn=1251737 op=28 ADD dn=\"cn=VC-Admins,cn=groups,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131417",
+   "expect_level": 3,
+   "note": "real dc1; group created"
+  },
+  {
+   "log": "2026-10-02T08:14:12.716309+08:00 dc1-example slapd[1996]: conn=1300001 op=40 ADD dn=\"cn=win11-pc1,cn=computers,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131420",
+   "expect_level": 5,
+   "note": "synthesized; Windows computer joined"
+  },
+  {
+   "log": "2026-10-02T08:14:12.716309+08:00 dc1-example slapd[1996]: conn=1300002 op=40 ADD dn=\"cn=dc3-example,cn=dc,cn=computers,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131421",
+   "expect_level": 10,
+   "note": "synthesized; new domain controller object"
+  },
+  {
+   "log": "2026-10-02T08:14:12.716309+08:00 dc1-example slapd[1996]: conn=1300003 op=41 DEL dn=\"cn=win11-pc1,cn=computers,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131422",
+   "expect_level": 3,
+   "note": "synthesized; computer removed"
+  },
+  {
+   "log": "2026-10-04T06:39:07.206917+08:00 dc1-example slapd[1996]: conn=1296575 op=5051 MOD dn=\"cn=win10-pro-1,cn=computers,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131423",
+   "expect_level": 1,
+   "note": "real dc1; machine account change recorded only"
+  },
+  {
+   "log": "2026-10-02T08:14:12.246038+08:00 dc1-example slapd[1996]: conn=1283855 op=24 ADD dn=\"cn=smoke-test-admin,cn=uid,cn=temporary,cn=univention,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real dc1; UDM lock object (hundreds a month) must not alert"
+  },
+  {
+   "log": "2026-10-02T08:14:12.716309+08:00 dc1-example slapd[1996]: conn=1300004 op=12 MOD dn=\"cn=admin,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131424",
+   "expect_level": 10,
+   "note": "synthesized; the cn=admin account written"
+  },
+  {
+   "log": "2026-10-02T08:14:12.716309+08:00 dc1-example slapd[1996]: conn=1300005 op=13 DEL dn=\"uid=Administrator,cn=users,dc=example,dc=com\"",
+   "location": "/var/log/syslog",
+   "expect_rule": "131416",
+   "expect_level": 10,
+   "note": "synthesized; privileged account deleted"
+  },
+  {
+   "log": "2026-09-27T21:53:30.375563+08:00 dc1-example slapd[1996]: conn=1252709 op=36 MOD dn=\"uid=svc-sso,cn=users,dc=example,dc=com\"\n2026-09-27T21:53:30.375866+08:00 dc1-example slapd[1996]: conn=1252709 op=36 MOD attr=krb5KDCFlags userPassword krb5Key krb5KeyVersionNumber pwhistory sambaNTPassword sambaPwdLastSet sambaAcctFlags shadowExpire",
+   "location": "/var/log/syslog",
+   "expect_rule": "131426",
+   "expect_level": 5,
+   "note": "real dc1 (account name sanitized); user password reset through UDM"
+  },
+  {
+   "log": "2026-10-04T06:39:07.206917+08:00 dc1-example slapd[1996]: conn=1296575 op=5051 MOD dn=\"cn=win10-pro-1,cn=computers,dc=example,dc=com\"\n2026-10-04T06:39:07.207185+08:00 dc1-example slapd[1996]: conn=1296575 op=5051 MOD attr=sambaNTPassword krb5Key krb5KeyVersionNumber shadowLastChange sambaPwdLastSet",
+   "location": "/var/log/syslog",
+   "expect_rule": "131425",
+   "expect_level": 1,
+   "note": "real dc1; machine password change synced by the S4 connector stays quiet"
+  },
+  {
+   "log": "2026-10-07T01:00:51.851987+08:00 dc1-example slapd[1996]: conn=1317707 op=19 MOD dn=\"cn=dc2-example,cn=dc,cn=computers,dc=example,dc=com\"\n2026-10-07T01:00:51.853240+08:00 dc1-example slapd[1996]: conn=1317707 op=19 MOD attr=krb5Key krb5KeyVersionNumber userPassword sambaNTPassword sambaPwdLastSet",
+   "location": "/var/log/syslog",
+   "expect_rule": "131425",
+   "expect_level": 1,
+   "note": "real dc1; DC machine password rotation stays quiet"
+  },
+  {
+   "log": "2026-10-02T08:14:12.716309+08:00 dc1-example slapd[1996]: conn=1300006 op=30 MOD dn=\"uid=Administrator,cn=users,dc=example,dc=com\"\n2026-10-02T08:14:12.716900+08:00 dc1-example slapd[1996]: conn=1300006 op=30 MOD attr=krb5Key krb5KeyVersionNumber userPassword sambaNTPassword sambaPwdLastSet pwhistory",
+   "location": "/var/log/syslog",
+   "expect_rule": "131427",
+   "expect_level": 10,
+   "note": "synthesized from the real shape; Administrator password set"
+  },
+  {
+   "log": "2026-10-02T08:14:13.025759+08:00 dc1-example slapd[1996]: conn=1283855 op=60 MOD attr=memberUid uniqueMember",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real dc1; membership attribute line alone does not alert"
+  },
+  {
+   "log": "2026-09-24T06:57:07.456742+08:00 dc1-example python3 /usr/sbin/univention-management-console-server: pam_unix(univention-management-console:auth): authentication failure; logname= uid=0 euid=0 tty= ruser= rhost=  user=administrator",
+   "location": "/var/log/auth.log",
+   "expect_rule": "131432",
+   "expect_level": 2,
+   "note": "real dc1; first PAM step of every UMC login (was 2501 level 5)"
+  },
+  {
+   "log": "2026-09-24T06:57:07.729093+08:00 dc1-example python3 /usr/sbin/univention-management-console-server: pam_krb5(univention-management-console:auth): user administrator authenticated as administrator@EXAMPLE.COM",
+   "location": "/var/log/auth.log",
+   "expect_rule": "131431",
+   "expect_level": 3,
+   "note": "real dc1; UMC login succeeded"
+  },
+  {
+   "log": "2026-09-24T06:57:07.729093+08:00 dc1-example python3 /usr/sbin/univention-management-console-server: pam_krb5(univention-management-console:auth): authentication failure; logname=alice uid=0 euid=0 tty= ruser= rhost=",
+   "location": "/var/log/auth.log",
+   "expect_rule": "131433",
+   "expect_level": 5,
+   "note": "synthesized from the real pam_krb5 sshd failure shape; UMC login failed"
+  },
+  {
+   "log": "2026-09-24T06:57:07.456167+08:00 dc1-example unix_chkpwd[1449744]: password check failed for user (administrator)",
+   "location": "/var/log/auth.log",
+   "expect_rule": "131434",
+   "expect_level": 2,
+   "note": "real dc1; unix_chkpwd failure on a listed DC"
+  },
+  {
+   "log": "2026-09-24T06:57:07.456167+08:00 web1 unix_chkpwd[1449744]: password check failed for user (administrator)",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5557",
+   "expect_level": 5,
+   "note": "real shape; host not in the DC list still alerts (near miss)"
+  },
+  {
+   "log": "2026-10-04T00:00:46.623916+08:00 dc1-example sshd[552164]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=192.0.2.113  user=dc2-example$",
+   "location": "/var/log/auth.log",
+   "expect_rule": "131435",
+   "expect_level": 2,
+   "note": "real dc1; sysvol replication login, about 576 a day per DC"
+  },
+  {
+   "log": "2026-10-04T00:00:46.623916+08:00 web1 sshd[552164]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=192.0.2.113  user=alice",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5503",
+   "expect_level": 5,
+   "note": "real shape; not a listed DC (near miss)"
+  },
+  {
+   "log": "2026-10-05T17:30:45.131304+08:00 dc1-example sshd[1884239]: Accepted keyboard-interactive/pam for root from 192.0.2.144 port 44020 ssh2",
+   "location": "/var/log/auth.log",
+   "expect_rule": "131436",
+   "expect_level": 8,
+   "note": "real dc1; root password login to a DC"
+  },
+  {
+   "log": "2026-10-04T11:47:51.731301+08:00 dc1-example sshd[930993]: Accepted publickey for root from 192.0.2.200 port 56421 ssh2: ED25519 SHA256:e4Ofjw6RZyt7JZaEHHh2tCwVPpdAkmzUtDYc1aOtr3g",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5715",
+   "expect_level": 3,
+   "note": "real dc1; root key login stays at the built-in level (near miss)"
+  },
+  {
+   "log": "2026-10-05T17:30:45.131304+08:00 web1 sshd[1884239]: Accepted keyboard-interactive/pam for root from 192.0.2.144 port 44020 ssh2",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5715",
+   "expect_level": 3,
+   "note": "real shape; password root login to a host that is not a DC (near miss)"
+  },
+  {
+   "log": "2026-10-02T01:05:26.111111+08:00 dc1-example sshd[3238176]: pam_krb5(sshd:auth): authentication failure; logname=dc2-example$ uid=0 euid=0 tty=ssh ruser= rhost=192.0.2.113",
+   "location": "/var/log/auth.log",
+   "expect_rule": "2501",
+   "expect_level": 5,
+   "note": "real dc1; a real Kerberos SSH failure keeps the built-in alert"
+  },
+  {
+   "log": "2026-10-02T08:14:12.879713+08:00 dc1-example directory_logger: DN=uid=smoke-test-admin,cn=users,dc=example,dc=com#012ID=8965#012Modifier=cn=admin,dc=example,dc=com#012Timestamp=02.10.2026 00:14:12#012New Hash=01aba82e1bb59bd332b6a61eb975ff24",
+   "location": "/var/log/syslog",
+   "expect_rule": "131440",
+   "expect_level": 2,
+   "note": "real dc1; change made by a service (cn=admin) is recorded only"
+  },
+  {
+   "log": "2026-09-28T09:10:59.300000+08:00 dc1-example directory_logger: DN=cn=VC-Admins,cn=groups,dc=example,dc=com#012ID=8562#012Modifier=uid=Administrator,cn=users,dc=example,dc=com#012Timestamp=28.09.2026 01:10:59#012New Hash=8fc228348db7e8d375360fce51839dc3",
+   "location": "/var/log/syslog",
+   "expect_rule": "131441",
+   "expect_level": 3,
+   "note": "real dc1 record 8562 in the syslog line format; group changed by a person in UMC"
+  },
+  {
+   "log": "2026-10-02T08:14:13.488293+08:00 dc1-example directory_logger: DN=cn=Domain Admins,cn=groups,dc=example,dc=com#012ID=8967#012Modifier=cn=admin,dc=example,dc=com#012Timestamp=02.10.2026 00:14:13#012New Hash=035e2a5b4e3f146314119c67afaafb68",
+   "location": "/var/log/syslog",
+   "expect_rule": "131442",
+   "expect_level": 12,
+   "note": "synthesized from the real line; privileged group changed by a service"
+  },
+  {
+   "log": "2026-10-02T08:14:13.488293+08:00 dc1-example directory_logger: DN=cn=Domain Admins,cn=groups,dc=example,dc=com#012ID=8968#012Modifier=uid=Administrator,cn=users,dc=example,dc=com#012Timestamp=02.10.2026 00:14:13#012New Hash=035e2a5b4e3f146314119c67afaafb69",
+   "location": "/var/log/syslog",
+   "expect_rule": "131442",
+   "expect_level": 12,
+   "note": "synthesized; privileged group changed by a person (child of both 131440 and 131441)"
+  },
+  {
+   "log": "2026-10-04T21:11:27.000000+08:00 dc1-example directory_logger: DN=uid=Administrator,cn=users,dc=example,dc=com#012ID=8990#012Modifier=cn=admin,dc=example,dc=com#012Timestamp=04.10.2026 13:11:27#012New Hash=0f7bdff6b164cb2a1c0f7bdff6b164cb",
+   "location": "/var/log/syslog",
+   "expect_rule": "131443",
+   "expect_level": 7,
+   "note": "synthesized; the Administrator account changed"
+  },
+  {
+   "log": "2026-10-02T01:05:15.886653+08:00 dc1-example directory_logger: DN=cn=dc1-example,cn=dc,cn=computers,dc=example,dc=com#012ID=8963#012Modifier=cn=dc1-example,cn=dc,cn=computers,dc=example,dc=com#012Timestamp=01.10.2026 17:05:15#012New Hash=7de38fb170b2bde08133d2d778a4b5e3",
+   "location": "/var/log/syslog",
+   "expect_rule": "131440",
+   "expect_level": 2,
+   "note": "real dc1; DC changing its own machine password is recorded only"
+  },
+  {
+   "log": "2026-10-02T01:05:25.195079+08:00 dc1-example samba-ad-dc[3237982]: Stopping Samba AD DC server: samba",
+   "location": "/var/log/syslog",
+   "expect_rule": "131451",
+   "expect_level": 5,
+   "note": "real dc1; Samba AD DC stopped (here: machine password rotation)"
+  },
+  {
+   "log": "2026-10-02T01:05:34.313095+08:00 dc1-example samba-ad-dc[3238152]: Starting Samba AD DC server: samba.",
+   "location": "/var/log/syslog",
+   "expect_rule": "131452",
+   "expect_level": 3,
+   "note": "real dc1"
+  },
+  {
+   "log": "2026-10-02T01:05:25.455746+08:00 dc1-example samba-ad-dc[3238022]: Stopping nmbd (via systemctl): nmbd.service.",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real dc1; nmbd line of the same restart does not alert"
+  },
+  {
+   "log": "2026-10-11T03:00:00.000000+08:00 dc1-example systemd[1]: samba-ad-dc.service: Failed with result 'exit-code'.",
+   "location": "/var/log/syslog",
+   "expect_rule": "131453",
+   "expect_level": 10,
+   "note": "synthesized from the systemd unit failure format"
+  },
+  {
+   "log": "2026-09-10T01:06:49.299238+08:00 dc1-example systemd[1]: samba-ad-dc.service: Deactivated successfully.",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real dc1; normal stop (near miss for 131453)"
+  },
+  {
+   "log": "2026-10-11T03:00:00.000000+08:00 dc1-example systemd[1]: slapd.service: Failed with result 'exit-code'.",
+   "location": "/var/log/syslog",
+   "expect_rule": "131454",
+   "expect_level": 10,
+   "note": "synthesized"
+  },
+  {
+   "log": "2026-10-11T03:00:00.000000+08:00 dc1-example systemd[1]: univention-directory-listener.service: Failed with result 'exit-code'.",
+   "location": "/var/log/syslog",
+   "expect_rule": "131455",
+   "expect_level": 8,
+   "note": "synthesized"
+  },
+  {
+   "log": "2026-09-30T10:00:00.436476+08:00 dc1-example systemd[1]: univention-management-console-server.service: Failed with result 'signal'.",
+   "location": "/var/log/syslog",
+   "expect_rule": "131456",
+   "expect_level": 5,
+   "note": "real dc1 (UMC server SEGV once in 30 days)"
+  },
+  {
+   "log": "2026-09-10T01:07:17.195291+08:00 dc1-example systemd[1]: sssd-pam-priv.socket: Failed with result 'exit-code'.",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real dc1; sssd-pam socket failures (about 60 a day) produce no alert"
+  },
+  {
+   "log": "2026-09-10T01:07:15.436476+08:00 dc1-example systemd[1]: sssd.service: Failed with result 'signal'.",
+   "location": "/var/log/syslog",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real dc1; sssd crash at the rotation restart is not a DC service"
+  },
+  {
+   "log": "198.51.100.169 - - [02/Sep/2026:15:34:53 +0800] \"POST /univention/auth HTTP/1.1\" 200 695 \"https://dc1.example.com/univention/login/?location=/univention/umc/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:103.0) Gecko/20100101 Firefox/103.0\"",
+   "location": "/var/log/apache2/access.log",
+   "expect_rule": "131462",
+   "expect_level": 3,
+   "note": "real dc1 (address and host sanitized); UMC login accepted"
+  },
+  {
+   "log": "198.51.100.169 - - [02/Sep/2026:15:34:53 +0800] \"POST /univention/auth HTTP/1.1\" 401 695 \"https://dc1.example.com/univention/login/?location=/univention/umc/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:103.0) Gecko/20100101 Firefox/103.0\"",
+   "location": "/var/log/apache2/access.log",
+   "expect_rule": "131460",
+   "expect_level": 5,
+   "note": "synthesized from the real line; UMC login rejected"
+  },
+  {
+   "log": "198.51.100.170 - - [02/Sep/2026:15:34:53 +0800] \"POST /univention/auth HTTP/1.1\" 401 695 \"https://dc1.example.com/univention/login/?location=/univention/umc/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:103.0) Gecko/20100101 Firefox/103.0\"",
+   "location": "/var/log/apache2/access.log",
+   "expect_rule": "131461",
+   "expect_level": 10,
+   "note": "synthesized; 8 rejected logins from one address",
+   "repeat": 8
+  },
+  {
+   "log": "198.51.100.171 - - [02/Sep/2026:15:34:53 +0800] \"POST /univention/auth HTTP/1.1\" 401 695 \"https://dc1.example.com/univention/login/?location=/univention/umc/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:103.0) Gecko/20100101 Firefox/103.0\"",
+   "location": "/var/log/apache2/access.log",
+   "expect_rule": "131460",
+   "expect_level": 5,
+   "note": "synthesized; 7 rejected logins stay below the burst threshold (near miss for 131461)",
+   "repeat": 7
+  },
+  {
+   "log": "198.51.100.169 - - [02/Sep/2026:15:34:53 +0800] \"GET /univention/login/ HTTP/1.1\" 200 695 \"https://dc1.example.com/univention/login/?location=/univention/umc/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:103.0) Gecko/20100101 Firefox/103.0\"",
+   "location": "/var/log/apache2/access.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real dc1; the login page itself (about 940 a day, monitoring) does not alert"
+  },
+  {
+   "log": "2026-10-11T10:00:00.123456+08:00 dc1-example samba[3238254]: JSON Authentication: {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_WRONG_PASSWORD\", \"localAddress\": \"ipv4:192.0.2.145:88\", \"remoteAddress\": \"ipv4:198.51.100.20:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"alice@EXAMPLE.COM\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"duration\": 4567}}",
+   "location": "/var/log/samba/jt-audit-auth.log",
+   "expect_rule": "131473",
+   "expect_level": 5,
+   "note": "synthesized from Samba auth_json_audit format; Kerberos pre-authentication failure"
+  },
+  {
+   "log": "2026-10-11T10:00:00.123456+08:00 dc1-example smbd[1890074]: JSON Authentication: {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_WRONG_PASSWORD\", \"localAddress\": \"ipv4:192.0.2.145:88\", \"remoteAddress\": \"ipv4:198.51.100.20:51234\", \"serviceDescription\": \"SMB2\", \"authDescription\": \"NTLMSSP\", \"clientDomain\": \"EXAMPLE\", \"clientAccount\": \"alice\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"NTLMv2\", \"duration\": 4567}}",
+   "location": "/var/log/samba/jt-audit-auth.log",
+   "expect_rule": "131478",
+   "expect_level": 5,
+   "note": "synthesized; NTLM over SMB logged by smbd (built-in smbd decoder path, rule of its own)"
+  },
+  {
+   "log": "2026-10-11T10:00:00.123456+08:00 dc1-example samba[3238254]: JSON Authentication: {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_ACCOUNT_DISABLED\", \"localAddress\": \"ipv4:192.0.2.145:88\", \"remoteAddress\": \"ipv4:198.51.100.20:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"bob@EXAMPLE.COM\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"duration\": 4567}}",
+   "location": "/var/log/samba/jt-audit-auth.log",
+   "expect_rule": "131474",
+   "expect_level": 6,
+   "note": "synthesized; disabled account used"
+  },
+  {
+   "log": "2026-10-11T10:00:00.123456+08:00 dc1-example samba[3238254]: JSON Authentication: {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_WRONG_PASSWORD\", \"localAddress\": \"ipv4:192.0.2.145:88\", \"remoteAddress\": \"ipv4:198.51.100.20:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"Administrator@EXAMPLE.COM\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"duration\": 4567}}",
+   "location": "/var/log/samba/jt-audit-auth.log",
+   "expect_rule": "131476",
+   "expect_level": 8,
+   "note": "synthesized; privileged account"
+  },
+  {
+   "log": "2026-10-11T10:00:00.123456+08:00 dc1-example samba[3238254]: JSON Authentication: {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_OK\", \"localAddress\": \"ipv4:192.0.2.145:88\", \"remoteAddress\": \"ipv4:198.51.100.20:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"alice@EXAMPLE.COM\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"duration\": 4567}}",
+   "location": "/var/log/samba/jt-audit-auth.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized; success (only at auth_json_audit:3) is dropped"
+  },
+  {
+   "log": "2026-10-11T10:00:00.123456+08:00 dc1-example samba[3238254]: JSON Authentication: {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_WRONG_PASSWORD\", \"localAddress\": \"ipv4:192.0.2.145:88\", \"remoteAddress\": \"ipv4:198.51.100.21:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"carol@EXAMPLE.COM\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"duration\": 4567}}",
+   "location": "/var/log/samba/jt-audit-auth.log",
+   "expect_rule": "131477",
+   "expect_level": 10,
+   "note": "synthesized; 10 failures from one address in 5 minutes",
+   "repeat": 10
+  },
+  {
+   "log": "2026-10-11T10:00:00.123456+08:00 dc1-example smbd[1890074]: JSON Authentication: {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_WRONG_PASSWORD\", \"localAddress\": \"ipv4:192.0.2.145:88\", \"remoteAddress\": \"ipv4:198.51.100.20:51234\", \"serviceDescription\": \"SMB2\", \"authDescription\": \"NTLMSSP\", \"clientDomain\": \"EXAMPLE\", \"clientAccount\": \"Administrator\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"NTLMv2\", \"duration\": 4567}}",
+   "location": "/var/log/samba/jt-audit-auth.log",
+   "expect_rule": "131479",
+   "expect_level": 8,
+   "note": "synthesized; privileged account over SMB"
+  },
+  {
+   "log": "2026-10-11T10:00:00.123456+08:00 dc1-example samba[3238254]: JSON Authentication: {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_ACCOUNT_DISABLED\", \"localAddress\": \"ipv4:192.0.2.145:88\", \"remoteAddress\": \"ipv4:198.51.100.20:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"Administrator@EXAMPLE.COM\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"duration\": 4567}}",
+   "location": "/var/log/samba/jt-audit-auth.log",
+   "expect_rule": "131474",
+   "expect_level": 6,
+   "note": "synthesized; disabled privileged account stays at the disabled-account rule (rules are mutually exclusive)"
+  },
+  {
+   "log": "2026-10-11T10:00:00.123456+08:00 dc1-example samba[3238254]: JSON Authentication: {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_WRONG_PASSWORD\", \"localAddress\": \"ipv4:192.0.2.145:88\", \"remoteAddress\": \"ipv4:198.51.100.22:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"carol@EXAMPLE.COM\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"duration\": 4567}}",
+   "location": "/var/log/samba/jt-audit-auth.log",
+   "expect_rule": "131473",
+   "expect_level": 5,
+   "note": "synthesized; 9 failures stay below the burst threshold (near miss for 131477; a two-parent failure rule fired at the 6th)",
+   "repeat": 9
+  },
+  {
+   "log": "2026-10-11T10:05:00.000000+08:00 dc1-example samba[3238254]: JSON passwordChange: {\"timestamp\": \"2026-10-11T10:05:00.000000+0800\", \"type\": \"passwordChange\", \"passwordChange\": {\"version\": {\"major\": 1, \"minor\": 1}, \"eventId\": 4723, \"statusCode\": 0, \"status\": \"Success\", \"remoteAddress\": \"ipv4:198.51.100.20:50123\", \"userSid\": \"S-1-5-21-1111111111-2222222222-3333333333-500\", \"dn\": \"CN=alice,CN=Users,DC=example,DC=com\", \"action\": \"Change\", \"transactionId\": \"7130cb06-2062-6a1b-409e-3514c26b1773\", \"sessionId\": \"c9f9bd47-3d24-4f0a-8f5c-1b2d3c4e5f60\"}}",
+   "location": "/var/log/samba/jt-audit-password.log",
+   "expect_rule": "131480",
+   "expect_level": 3,
+   "note": "synthesized from Samba dsdb_password_json_audit format; user changed own password"
+  },
+  {
+   "log": "2026-10-11T10:05:00.000000+08:00 dc1-example samba[3238254]: JSON passwordChange: {\"timestamp\": \"2026-10-11T10:05:00.000000+0800\", \"type\": \"passwordChange\", \"passwordChange\": {\"version\": {\"major\": 1, \"minor\": 1}, \"eventId\": 4724, \"statusCode\": 0, \"status\": \"Success\", \"remoteAddress\": \"ipv4:198.51.100.20:50123\", \"userSid\": \"S-1-5-21-1111111111-2222222222-3333333333-500\", \"dn\": \"CN=alice,CN=Users,DC=example,DC=com\", \"action\": \"Reset\", \"transactionId\": \"7130cb06-2062-6a1b-409e-3514c26b1773\", \"sessionId\": \"c9f9bd47-3d24-4f0a-8f5c-1b2d3c4e5f60\"}}",
+   "location": "/var/log/samba/jt-audit-password.log",
+   "expect_rule": "131481",
+   "expect_level": 5,
+   "note": "synthesized; password reset by another account"
+  },
+  {
+   "log": "2026-10-11T10:05:00.000000+08:00 dc1-example samba[3238254]: JSON passwordChange: {\"timestamp\": \"2026-10-11T10:05:00.000000+0800\", \"type\": \"passwordChange\", \"passwordChange\": {\"version\": {\"major\": 1, \"minor\": 1}, \"eventId\": 4723, \"statusCode\": 0, \"status\": \"Success\", \"remoteAddress\": \"ipv4:198.51.100.20:50123\", \"userSid\": \"S-1-5-21-1111111111-2222222222-3333333333-500\", \"dn\": \"CN=WS01,CN=Computers,DC=example,DC=com\", \"action\": \"Change\", \"transactionId\": \"7130cb06-2062-6a1b-409e-3514c26b1773\", \"sessionId\": \"c9f9bd47-3d24-4f0a-8f5c-1b2d3c4e5f60\"}}",
+   "location": "/var/log/samba/jt-audit-password.log",
+   "expect_rule": "131482",
+   "expect_level": 2,
+   "note": "synthesized; machine account password change stays quiet"
+  },
+  {
+   "log": "2026-10-11T10:05:00.000000+08:00 dc1-example samba[3238254]: JSON passwordChange: {\"timestamp\": \"2026-10-11T10:05:00.000000+0800\", \"type\": \"passwordChange\", \"passwordChange\": {\"version\": {\"major\": 1, \"minor\": 1}, \"eventId\": 4724, \"statusCode\": 0, \"status\": \"Success\", \"remoteAddress\": \"ipv4:198.51.100.20:50123\", \"userSid\": \"S-1-5-21-1111111111-2222222222-3333333333-500\", \"dn\": \"CN=Administrator,CN=Users,DC=example,DC=com\", \"action\": \"Reset\", \"transactionId\": \"7130cb06-2062-6a1b-409e-3514c26b1773\", \"sessionId\": \"c9f9bd47-3d24-4f0a-8f5c-1b2d3c4e5f60\"}}",
+   "location": "/var/log/samba/jt-audit-password.log",
+   "expect_rule": "131483",
+   "expect_level": 10,
+   "note": "synthesized; Administrator password reset"
+  },
+  {
+   "log": "2026-10-11T10:05:00.000000+08:00 dc1-example samba[3238254]: JSON passwordChange: {\"timestamp\": \"2026-10-11T10:05:00.000000+0800\", \"type\": \"passwordChange\", \"passwordChange\": {\"version\": {\"major\": 1, \"minor\": 1}, \"eventId\": 4723, \"statusCode\": 19, \"status\": \"Constraint violation\", \"remoteAddress\": \"ipv4:198.51.100.20:50123\", \"userSid\": \"S-1-5-21-1111111111-2222222222-3333333333-500\", \"dn\": \"CN=alice,CN=Users,DC=example,DC=com\", \"action\": \"Change\", \"transactionId\": \"7130cb06-2062-6a1b-409e-3514c26b1773\", \"sessionId\": \"c9f9bd47-3d24-4f0a-8f5c-1b2d3c4e5f60\"}}",
+   "location": "/var/log/samba/jt-audit-password.log",
+   "expect_rule": "131484",
+   "expect_level": 5,
+   "note": "synthesized; password change rejected by policy"
+  },
+  {
+   "log": "2026-10-11T10:06:00.000000+08:00 dc1-example samba[3238254]: JSON groupChange: {\"timestamp\": \"2026-10-11T10:06:00.000000+0800\", \"type\": \"groupChange\", \"groupChange\": {\"version\": {\"major\": 1, \"minor\": 1}, \"eventId\": 4728, \"statusCode\": 0, \"status\": \"Success\", \"action\": \"Added\", \"remoteAddress\": \"ipv4:198.51.100.20:50124\", \"userSid\": \"S-1-5-21-1111111111-2222222222-3333333333-500\", \"group\": \"CN=Domain Admins,CN=Users,DC=example,DC=com\", \"transactionId\": \"7130cb06-2062-6a1b-409e-3514c26b1774\", \"sessionId\": \"c9f9bd47-3d24-4f0a-8f5c-1b2d3c4e5f61\", \"user\": \"CN=bob,CN=Users,DC=example,DC=com\"}}",
+   "location": "/var/log/samba/jt-audit-group.log",
+   "expect_rule": "131486",
+   "expect_level": 12,
+   "note": "synthesized from Samba dsdb_group_json_audit format; member added to Domain Admins"
+  },
+  {
+   "log": "2026-10-11T10:06:00.000000+08:00 dc1-example samba[3238254]: JSON groupChange: {\"timestamp\": \"2026-10-11T10:06:00.000000+0800\", \"type\": \"groupChange\", \"groupChange\": {\"version\": {\"major\": 1, \"minor\": 1}, \"eventId\": 4729, \"statusCode\": 0, \"status\": \"Success\", \"action\": \"Removed\", \"remoteAddress\": \"ipv4:198.51.100.20:50124\", \"userSid\": \"S-1-5-21-1111111111-2222222222-3333333333-500\", \"group\": \"CN=Staff,CN=Groups,DC=example,DC=com\", \"transactionId\": \"7130cb06-2062-6a1b-409e-3514c26b1774\", \"sessionId\": \"c9f9bd47-3d24-4f0a-8f5c-1b2d3c4e5f61\", \"user\": \"CN=bob,CN=Users,DC=example,DC=com\"}}",
+   "location": "/var/log/samba/jt-audit-group.log",
+   "expect_rule": "131485",
+   "expect_level": 3,
+   "note": "synthesized; ordinary group (near miss for 131486)"
+  },
+  {
+   "log": "2026-10-07T01:01:24.000000+08:00 dc2-example ADMINDIARY: {\"username\": \"root\", \"hostname\": \"dc2-example\", \"message\": {\"en\": \"Machine account password of {hostname} changed successfully\", \"de\": \"Maschinenpasswort von {hostname} erfolgreich ge\\u00e4ndert\"}, \"args\": {\"hostname\": \"dc2-example\"}, \"timestamp\": \"2026-10-07 01:01:24\", \"tags\": [], \"context_id\": \"8a4eca21-ab13-44af-bd74-99b85a73294d\", \"event\": \"SERVER_PASSWORD_CHANGED\", \"type\": \"Entry v1\"}",
+   "location": "/var/log/univention/jt-admindiary.log",
+   "expect_rule": "131491",
+   "expect_level": 2,
+   "note": "real dc2 via Graylog (host sanitized); routine machine password change"
+  },
+  {
+   "log": "2026-10-07T01:00:51.000000+08:00 dc2-example ADMINDIARY: {\"username\": \"dc2-example\", \"hostname\": \"dc2-example\", \"message\": {\"en\": \"Replica Directory Node {name} modified\", \"de\": \"Replica Directory Node {name} bearbeitet\"}, \"args\": {\"module\": \"computers/domaincontroller_slave\", \"name\": \"dc2-example\"}, \"timestamp\": \"2026-10-07 01:00:51\", \"tags\": [], \"context_id\": \"4223825c-f8a0-4237-82ed-be655b9983dd\", \"event\": \"UDM_COMPUTERS_DOMAINCONTROLLER_SLAVE_MODIFIED\", \"type\": \"Entry v1\"}",
+   "location": "/var/log/univention/jt-admindiary.log",
+   "expect_rule": "131491",
+   "expect_level": 2,
+   "note": "real dc2 via Graylog; DC object modified by itself"
+  },
+  {
+   "log": "2026-10-04T21:11:27.000000+08:00 dc1-example ADMINDIARY: {\"username\": \"cn=admin\", \"hostname\": \"dc1-example\", \"message\": {\"en\": \"User {username} modified\", \"de\": \"Benutzer {username} bearbeitet\"}, \"args\": {\"module\": \"users/user\", \"username\": \"Administrator\"}, \"timestamp\": \"2026-10-04 13:11:27\", \"tags\": [], \"context_id\": \"0f7bdff6-b164-4bcb-8be4-e9616c869a7b\", \"event\": \"UDM_USERS_USER_MODIFIED\", \"type\": \"Entry v1\"}",
+   "location": "/var/log/univention/jt-admindiary.log",
+   "expect_rule": "131493",
+   "expect_level": 7,
+   "note": "real dc1 via Graylog; Administrator account modified"
+  },
+  {
+   "log": "2026-10-11T10:10:00.000000+08:00 dc1-example ADMINDIARY: {\"username\": \"Administrator\", \"hostname\": \"dc1-example\", \"message\": {\"en\": \"User {username} created\", \"de\": \"Benutzer {username} angelegt\"}, \"args\": {\"module\": \"users/user\", \"username\": \"alice\"}, \"timestamp\": \"2026-10-11 02:10:00\", \"tags\": [], \"context_id\": \"11111111-2222-3333-4444-555555555555\", \"event\": \"UDM_USERS_USER_CREATED\", \"type\": \"Entry v1\"}",
+   "location": "/var/log/univention/jt-admindiary.log",
+   "expect_rule": "131490",
+   "expect_level": 3,
+   "note": "synthesized from the real Admin Diary shape; user created"
+  },
+  {
+   "log": "2026-10-11T10:11:00.000000+08:00 dc1-example ADMINDIARY: {\"username\": \"Administrator\", \"hostname\": \"dc1-example\", \"message\": {\"en\": \"Group {group} modified\", \"de\": \"Gruppe {group} bearbeitet\"}, \"args\": {\"module\": \"groups/group\", \"group\": \"Domain Admins\"}, \"timestamp\": \"2026-10-11 02:11:00\", \"tags\": [], \"context_id\": \"11111111-2222-3333-4444-555555555556\", \"event\": \"UDM_GROUPS_GROUP_MODIFIED\", \"type\": \"Entry v1\"}",
+   "location": "/var/log/univention/jt-admindiary.log",
+   "expect_rule": "131492",
+   "expect_level": 12,
+   "note": "synthesized; the group argument key is assumed (group); privileged group changed in UMC"
+  }
+ ]
+}

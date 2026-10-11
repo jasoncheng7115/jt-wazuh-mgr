@@ -1,33 +1,129 @@
 <!--
-  AdGuard Home decoder
+  AdGuard Home decoders (jt-adguard 1.2)
 
-  Observed wire format (syslog, 2026-08-30):
-    <134>2026-08-30T14:38:46+00:00 adguard-host adguard: {"Elapsed":386962,
-    "IP":"10.0.0.50","QH":"example-blocked.test","QT":"A","Upstream":null,
-    "action":"Blocked","filterlist_id":1720886277,"filterlist_name":"...",
-    "filtertext":"||example-blocked.test^"}
+  1. Query events, program name "adguard"
+
+  Wire format (syslog, one JSON object per message, keys in any order):
+    2026-10-11T02:43:17+00:00 dns-host adguard: {"Elapsed":215966,
+    "IP":"192.0.2.171","QH":"dns.google","QT":"A","Upstream":null,
+    "action":"Blocked","filterlist_id":1720886277,
+    "filterlist_name":"HaGeZi's Encrypted DNS/VPN/TOR/Proxy Bypass",
+    "filtertext":"||dns.google^"}
+
+  AdGuard Home's own querylog.json does not carry the list NAME (only a
+  numeric FilterListID), so this shape comes from a log shipper that reads
+  querylog.json, maps the ID to the name from AdGuardHome.yaml and sends one
+  JSON object per syslog message (the manifest's setup guide lists the fields).
 
   Field meanings:
-    IP               the CLIENT that asked - this is why the pack exists. A recursive
-                     resolver or firewall only ever sees its own address as the source,
-                     so this is the only place the real requester is recorded.
+    IP               the CLIENT that asked. A recursive resolver or firewall only
+                     sees its own address as the source, so this is the only place
+                     the real requester is recorded.
     QH / QT          queried host and query type
-    action           what AdGuard did, e.g. "Blocked"
+    action           what AdGuard did: "Blocked" or "Allowed"
+    filterlist_id    AdGuard list ID; 0 custom rules, -1 hosts file, -2 blocked
+                     services, -3 parental control, -4 safe browsing, -5 safe search
     filterlist_name  which blocklist matched
     filtertext       the matching rule text
     Elapsed          resolution time in nanoseconds
     Upstream         upstream resolver used, null when the answer was filtered
 
-  The whole message after "adguard: " is a JSON object, so the JSON plugin decoder
-  runs from the start of the message - no prematch offset is needed here, unlike the
-  Zenarmor decoder where the JSON sits after a "data=" prefix.
+  Decoded fields for other rules and CDB lookups (all verified with logtest):
+    srcip       = IP  (static field: address_match_key lookups, same_source_ip)
+    dns.query   = QH  (dynamic field: match_key lookups against a domain list)
+    data        = QH  (static field, only because first-time-seen tracking can
+                       key on static fields alone; see below)
+    every JSON key also stays available under its own name (QH, IP, filterlist_name ...).
+
+  First time seen (fts): the pair (client address, queried domain) is the key,
+  used by the rules that report the first lookup of a threat or bypass domain by
+  a client. Wazuh 4.14 accepts only static fields in <fts> ("Wrong field" for a
+  dynamic one), refuses fts on a decoder that has siblings of the same name, and
+  refuses it on a decoder without <regex>. Hence the fts sits on the parent with
+  a regex of its own, and the siblings decode the domain into "data" again,
+  because a parent's regex fields do not survive when the children run.
+
+  The program name is anchored (^adguard$). Unanchored it also matched
+  "AdGuardHome", the program name of the service log, which then decoded as a
+  query event with no fields.
+
+  2. AdGuard Home service log (journald, syslog or a log file)
+
+    2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000
+      method=POST url=/control/login status=403 ip=192.0.2.50
+      err="invalid username or password"
+    2026/10/11 11:15:20.000001 [info] webapi: successful login user=admin ip=192.0.2.50
+
+  Older releases (before the structured logger) write the same events as
+    [error] POST 192.0.2.3:3000 /control/login: from ip 192.0.2.50: invalid username or password
+    [info] auth: user "admin" successfully logged in from ip 192.0.2.50
+  and both shapes are decoded. The prematch is on the message itself, so the
+  line is recognised with a syslog header (program AdGuardHome) or without one
+  (a log file read directly). The microseconds keep it apart from the nginx error
+  log, whose built-in decoder expects "[" right after the seconds.
 -->
+
 <decoder name="adguard">
-  <program_name>adguard</program_name>
+  <program_name>^adguard$</program_name>
+  <regex type="pcre2">"QH":"([^"]+)"</regex>
+  <order>data</order>
+  <fts>name, srcip, data</fts>
 </decoder>
 
 <decoder name="adguard-json">
   <parent>adguard</parent>
   <use_own_name>yes</use_own_name>
   <plugin_decoder>JSON_Decoder</plugin_decoder>
+</decoder>
+
+<decoder name="adguard-json">
+  <parent>adguard</parent>
+  <regex type="pcre2">"IP":"([^"]+)"</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="adguard-json">
+  <parent>adguard</parent>
+  <regex type="pcre2">^(?=.*?"QH":"([^"]+)")(?=.*?"QH":"([^"]+)")</regex>
+  <order>dns.query, data</order>
+</decoder>
+
+
+<decoder name="adguard-home">
+  <program_name>^AdGuardHome$</program_name>
+  <prematch type="pcre2">^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d\.\d+ (?:\d+#\d+ )?\[(?:debug|info|error|fatal|panic)\] </prematch>
+</decoder>
+
+<decoder name="adguard-home">
+  <prematch type="pcre2">^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d\.\d+ (?:\d+#\d+ )?\[(?:debug|info|error|fatal|panic)\] </prematch>
+</decoder>
+
+<decoder name="adguard-home-fields">
+  <parent>adguard-home</parent>
+  <regex type="pcre2">\[(\w+)\] (?:(\w+): )?</regex>
+  <order>adguard.level, adguard.module</order>
+</decoder>
+
+<decoder name="adguard-home-fields">
+  <parent>adguard-home</parent>
+  <regex type="pcre2"> (?:from ip |ip=)([0-9A-Fa-f:.]*[0-9A-Fa-f])</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="adguard-home-fields">
+  <parent>adguard-home</parent>
+  <regex type="pcre2">(?:url=| )(/control/[^\s:?]+)</regex>
+  <order>url</order>
+</decoder>
+
+<decoder name="adguard-home-fields">
+  <parent>adguard-home</parent>
+  <regex type="pcre2"> user(?|=([^\s"]+)|="([^"]*)"| "([^"]*)")</regex>
+  <order>dstuser</order>
+</decoder>
+
+<decoder name="adguard-home-fields">
+  <parent>adguard-home</parent>
+  <regex type="pcre2"> status=(\d+)</regex>
+  <order>adguard.status</order>
 </decoder>

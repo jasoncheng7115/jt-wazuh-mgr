@@ -1,0 +1,145 @@
+<!--
+  jt-jitsi: decoders for self-hosted Jitsi Meet
+  (Prosody, Jicofo, Jitsi Videobridge, Jibri, Jigasi)
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  Line formats (from the upstream source, docker-jitsi-meet stable-11031,
+  Prosody 13.0 and jitsi-utils JitsiLogFormatter):
+
+    Prosody, console sink (docker-jitsi-meet writes to stdout):
+      2026-10-11 03:00:00 c2s55d0a3b8           info<TAB>Client connected
+      timestamp "%Y-%m-%d %X", the log source padded to at least 20
+      characters, the level (debug, info, warn, error), a tab, the message.
+      The source is a session (c2s..., bosh..., s2sin...) or
+      "<host>:<module>", e.g. meet.jitsi:auth_token.
+    Prosody, syslog sink (to = "syslog"; the level is the syslog priority):
+      prosody[812]: meet.jitsi:auth_token: Error verifying token err:...
+    Jicofo, Videobridge, Jibri and Jigasi (java.util.logging):
+      Jicofo 2026-10-11 03:00:00.000 INFO: [42] [room=...] Class.method#12: text
+      program, timestamp, level (SEVERE, WARNING, INFO, CONFIG, FINE...),
+      thread id, an optional context in brackets, the caller, the message.
+
+  Shapes that reach the manager, all decoded as jt-jitsi:
+   1. journald or syslog with a program name in front: a container with the
+      docker journald logging driver (tag "jitsi-prosody" etc., or the
+      default tag, the 12 character container id), or the Debian packages.
+      rsyslog writes the tab after the Prosody level as "#011"; both forms
+      are accepted.
+   2. the Jicofo, Videobridge or Jibri log file read by the agent directly
+      (/var/log/jitsi/*.log, Jibri's log.0.txt). The Java format does not
+      start with a timestamp, so the line reaches the decoder untouched.
+   3. the docker json-file log (/var/lib/docker/containers/*/*-json.log) is
+      NOT decoded here: it is decoded by the built-in json decoder, and a
+      child decoder of json would stop the fields of every other JSON event
+      from being decoded. The rules match its "log" field instead.
+  Prosody's own log file is not supported: its default timestamp
+  ("Oct 11 03:00:00 ") is taken by the Wazuh pre-decoder together with the
+  next word, which runs into the tab-separated source and level. Use the
+  console (docker) or syslog sink.
+
+  Fields: jitsi.source, jitsi.level, jitsi.message (Prosody);
+  jitsi.app, jitsi.level, jitsi.context, jitsi.caller, jitsi.message (Java);
+  jitsi.trace (continuation lines); jitsi.error, jitsi.reason, jitsi.room,
+  jitsi.session, srcip where a message carries them.
+-->
+
+<!-- Shape 1, Prosody console sink behind a syslog or journald header. -->
+<decoder name="jt-jitsi">
+  <program_name type="pcre2">^(?:jitsi[\w.-]*|docker-jitsi-meet[\w.-]*|prosody[\w.-]*|[0-9a-f]{12})$</program_name>
+  <prematch type="pcre2">^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d +\S+ +(?:debug|info|warn|error)(?:\t|#011)</prematch>
+</decoder>
+
+<!-- Shape 1, Prosody syslog sink: "<source>: <message>", program prosody. -->
+<decoder name="jt-jitsi">
+  <program_name type="pcre2">^prosody$</program_name>
+  <prematch type="pcre2">^[\w.@-]+(?::[\w.-]+)?: \S</prematch>
+</decoder>
+
+<!--
+  Shapes 1 and 2, the Java components. Wazuh tries a decoder without a
+  program_name only for lines that have none (tested on 4.14.7), so the
+  syslog and journald shape needs a decoder of its own.
+-->
+<decoder name="jt-jitsi">
+  <program_name type="pcre2">^(?:jitsi[\w.-]*|docker-jitsi-meet[\w.-]*|jicofo|jvb|jibri|jigasi|jitsi-videobridge2?|[0-9a-f]{12})$</program_name>
+  <prematch type="pcre2">^(?:Jicofo|JVB|Jibri|Jigasi) \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} (?:SEVERE|WARNING|INFO|CONFIG|FINE|FINER|FINEST): \[\d+\] </prematch>
+</decoder>
+
+<decoder name="jt-jitsi">
+  <prematch type="pcre2">^(?:Jicofo|JVB|Jibri|Jigasi) \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} (?:SEVERE|WARNING|INFO|CONFIG|FINE|FINER|FINEST): \[\d+\] </prematch>
+</decoder>
+
+<!--
+  Continuation lines of the Java components: every line of a stack trace is
+  a message of its own, and Jibri's stdout carries Chrome, X server and
+  ffmpeg chatter (about a third of its lines, measured on a recording host).
+  Only for program names that say Jitsi, so other containers keep their own
+  decoders. They are decoded so that they stop here instead of reaching the
+  generic syslog rules.
+-->
+<decoder name="jt-jitsi">
+  <program_name type="pcre2">^(?:jitsi[\w.-]*|docker-jitsi-meet[\w.-]*|jicofo|jvb|jibri|jigasi|jitsi-videobridge2?)$</program_name>
+  <prematch type="pcre2">^(?:\s+at [\w$.\x3c\x3e/-]+\(|\s*\.\.\. \d+ (?:more|common frames omitted)|(?:Caused by|Suppressed): [\w$.]+|(?:[a-z][\w$]*\.)+[A-Z][\w$]*(?:Exception|Error|Throwable)\b|Message: |Build info: |System info: |Driver info: |\[\d+:\d+:\d{4}/\d{6}\.\d+:(?:ERROR|WARNING|INFO|VERBOSE\d?):|\[(?:s6-init|cont-init\.d|services\.d|fix-attrs\.d)\]|Fontconfig error:|_XSERVTrans|icewmbg:|\(\S\S\) )</prematch>
+</decoder>
+
+<!-- Fields. All children share one name, so each one is tried in turn. -->
+<decoder name="jt-jitsi-fields">
+  <parent>jt-jitsi</parent>
+  <regex type="pcre2">^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d +(\S+) +(debug|info|warn|error)(?:\t|#011)(.*)$</regex>
+  <order>jitsi.source, jitsi.level, jitsi.message</order>
+</decoder>
+
+<decoder name="jt-jitsi-fields">
+  <parent>jt-jitsi</parent>
+  <regex type="pcre2">^([\w.@-]+(?::[\w.-]+)?): (\S.*)$</regex>
+  <order>jitsi.source, jitsi.message</order>
+</decoder>
+
+<decoder name="jt-jitsi-fields">
+  <parent>jt-jitsi</parent>
+  <regex type="pcre2">^(Jicofo|JVB|Jibri|Jigasi) \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3} (\w+): \[\d+\] (?:(\[[^\]]*\]) )?([\w$.\x3c\x3e-]+(?:#\d+)?): (.*)$</regex>
+  <order>jitsi.app, jitsi.level, jitsi.context, jitsi.caller, jitsi.message</order>
+</decoder>
+
+<decoder name="jt-jitsi-fields">
+  <parent>jt-jitsi</parent>
+  <regex type="pcre2">^(\s+at \S+|\s*\.\.\. \d+ \w+|(?:Caused by|Suppressed): \S+|(?:[a-z][\w$]*\.)+[A-Z][\w$]*(?:Exception|Error|Throwable)\b|Message: |Build info: |System info: |Driver info: |\[\d+:\d+:\d{4}/\d{6}\.\d+:\w+:|\[[\w.-]+\]|Fontconfig error:|_XSERVTrans|icewmbg:|\(\S\S\) )</regex>
+  <order>jitsi.trace</order>
+</decoder>
+
+<!-- JWT verification (mod_auth_token): err, reason and room of the attempt. -->
+<decoder name="jt-jitsi-fields">
+  <parent>jt-jitsi</parent>
+  <regex type="pcre2">Error verifying token err:(\S+?), reason:(.*?) tenant:\S* room:(\S*)</regex>
+  <order>jitsi.error, jitsi.reason, jitsi.room</order>
+</decoder>
+
+<!--
+  mod_token_verification: "Token <jwt> not allowed to join: <room>@<muc> err:
+  <err> reason: <reason>". The token itself is not decoded.
+-->
+<decoder name="jt-jitsi-fields">
+  <parent>jt-jitsi</parent>
+  <regex type="pcre2">not allowed to join: ([^@\s]+)@\S+ err: (\S+) reason: (.*)$</regex>
+  <order>jitsi.room, jitsi.error, jitsi.reason</order>
+</decoder>
+
+<!-- Addresses: mod_rate_limit and mod_filter_iq_jibri. -->
+<decoder name="jt-jitsi-fields">
+  <parent>jt-jitsi</parent>
+  <regex type="pcre2">(?:^Limiting |Join rate exceeded for |Filtering jibri start recording, ip:)([0-9a-fA-F.:]+)[ ,]</regex>
+  <order>srcip</order>
+</decoder>
+
+<!-- Jibri: session id and meeting name of a recording or stream. -->
+<decoder name="jt-jitsi-fields">
+  <parent>jt-jitsi</parent>
+  <regex type="pcre2">sessionId=([\w-]+), call=CallParams\(callUrlInfo=CallUrlInfo\(baseUrl='[^']*', callName='([^']*)'</regex>
+  <order>jitsi.session, jitsi.room</order>
+</decoder>
+
+<decoder name="jt-jitsi-fields">
+  <parent>jt-jitsi</parent>
+  <regex type="pcre2">\[session_id=([\w-]+)\]</regex>
+  <order>jitsi.session</order>
+</decoder>

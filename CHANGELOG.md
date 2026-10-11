@@ -4,6 +4,46 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.13.0 (2026-10-11)
+
+- **Active response, offered by a pack and switched on by you.** A pack can now
+  describe responses, such as blocking the source of a brute force. Installing
+  the pack enables none of them. The pack detail lists each one: what it blocks
+  and where, the rules that trigger it, the block time and the risk. Enable
+  writes a marked `<active-response>` block into `ossec.conf` on every cluster
+  node and checks each node's configuration; if one node rejects it, every node
+  is put back. Disable restores the file exactly, and removing the pack takes
+  its responses out too. It refuses a rule the manager has not loaded, a
+  command a node does not define, a node it cannot read (unless you choose this
+  manager only) and a block time outside 60 seconds to 7 days. The page shows
+  each node's `white_list` and which managers still need a restart.
+- **Fourteen new packs:** jt-proxmox (Proxmox VE and Ceph), jt-pbs (Proxmox
+  Backup Server), jt-pmg (Proxmox Mail Gateway), jt-keycloak, jt-ucs
+  (Univention Corporate Server and Samba AD), jt-opnsense (the firewall's own
+  logins, configuration changes, VPN and CARP), jt-ipam, jt-nextcloud,
+  jt-librenms, jt-synology (DSM syslog), jt-odoo, jt-zpush (Z-Push ActiveSync),
+  jt-jitsi (Jitsi Meet) and jt-vc-portal. Each has a setup guide and, where
+  blocking makes sense, an opt-in active response whose risks are stated.
+- **jt-zimbra 3.0.** 2.9 used decoders it did not ship, so on a clean manager
+  the whole ruleset refused to load; they are shipped now. The client address
+  is the first `oip` entry, not the proxy in front of it. Rules that could never
+  fire are fixed (`<action>` is an exact match), Zimbra's own sudo, su and
+  postdrop noise is quieted (measured on 41 days: about 104,800 alerts a day
+  down to about 1,700), and MTA, amavis/ClamAV and service rules are added.
+- **jt-zenarmor 1.4.** One alert per blocked threat instead of three copies of
+  it, with the blocked name in the description, and resolvers and mail filters
+  told apart from clients (measured: 6,459 alerts in 7.5 days down to 73).
+- **jt-adguard 1.2.** A threat lookup whose name contained a word like "error"
+  was taken by a generic built-in rule and never graded, and the decoder also
+  took AdGuard Home's service log; both fixed. The first lookup of a threat
+  domain by a client is graded higher, and the service log's logins are covered.
+- **Packs are tested in a throwaway manager.** `tools/pack_sandbox.py` runs a
+  pack in a Wazuh manager container against its case file in
+  `tests/pack_cases/` (real, sanitised lines and synthesised ones, with near
+  misses for every rule that matters). A new test refuses any decoder that is a
+  child of the built-in `json` decoder: one such decoder stops field decoding
+  for every JSON event on the manager (verified on 4.14.7).
+
 ## v1.12.2 (2026-10-10)
 
 - **A site override of a pack rule is no longer a conflict.** `overwrite="yes"`

@@ -1,55 +1,68 @@
 <!--
-  ══════════════════════════════════════════════════════════════════
-   Zimbra SOAP 資料撈取偵測（治本方案）
-   檔案：08-zimbra_soap_rules.xml    區段：100970-100979
-   建立：2026-08-10（取代僅靠 nginx URL 的 100924/100927 舊做法）
-  ══════════════════════════════════════════════════════════════════
+  Zimbra SOAP rules (mailbox.log)          100970-100974, 100925, 100928-100935, 100851
+  Decoder: zimbra-mailbox-soap (decoders/0002-zimbra_mailbox_decoders.xml)
 
-  ── 為什麼要改用 mailbox.log ──
-  舊做法（100927/100924）以 nginx access log 的 /service/soap URL 計數，有兩個先天缺陷：
-    1. srcip 是 Z-Push 閘道（push3 .102 / push4 .93），不是真實使用者。
-       same_source_ip 會把全公司手機使用者算成同一來源，門檻必爆。
-    2. SOAP 操作名在 POST body，URL 看不到。實測 98% 是 ActiveSync 的
-       WaitSet 長輪詢心跳，與「撈信」無關。
+  Why mailbox.log and not the nginx access log: the access log shows only
+  "/service/soap" (the operation travels in the POST body), and behind
+  Z-Push or a reverse proxy its client address is the proxy's. mailbox.log
+  has the account, the client the proxy reported, and the operation.
 
-  本規則改建在 mailbox.log 上，取得：
-    user   = 真實帳號
-    srcip  = oip 的第一個 IP（真實用戶端，非閘道）
-    action = SOAP 操作名
-
-  ── 偵測邏輯 ──
-  只計數「真正在取內容」的操作（Search/GetMsg/ExportContacts 等），
-  排除 WaitSet 長輪詢與 Auth/GetInfo 這類例行呼叫，
-  並以 same_user（帳號）而非 same_source_ip 關聯 —— 因為多人共用閘道 IP。
-
-  ── 門檻說明 ──
-  frequency 依實測環境訂為 30 次/5 分鐘。實測期間全公司 SearchRequest
-  佔比極低（一段取樣中甚至為 0），正常使用者不會在 5 分鐘內搜尋 30 次。
-  導入後請依 §告警量健檢 觀察一週再調整。
+  3.0 (2026-10-11):
+  * 100972/100973 fired 109 times in 41 days on two servers (level 12 and
+    14, all mailed) and every one was a phone syncing through Z-Push: Z-Push
+    lists each folder with SearchRequest on every sync. A third of them were
+    also counted twice, once from mailbox.log and once from the syslog copy
+    (zimbraLogToSyslog). Now: Z-Push's SearchRequest is not counted (its
+    GetMsgRequest, which is mail actually downloaded, still is), and only
+    the file copy counts. Replayed on 8.8 days of real lines: 2.7 a day
+    before, 0.8 a day after at the 30 threshold, all of the remainder one
+    administrator session bulk-reading one mailbox (see 100935).
+  * 100974 named one site's monitoring account. It reads the list
+    etc/lists/zimbra-service-accounts instead.
+  * 100928/100925 (an account sending a burst of mail) and 100851 (two-factor
+    changes) looked for SendMsg and TwoFactorAuth in audit.log, which logs
+    neither, so they could not fire. They now read the SOAP operations here.
+  * Counting uses the pack group zimbra_soap_read (if_matched_group).
 -->
 
 <group name="zimbra,exfiltration,soap,">
 
-  <!-- 基礎：mailbox.log 的 SOAP 事件（level 0，僅作為錨點） -->
   <rule id="100970" level="0">
     <decoded_as>zimbra-mailbox-soap</decoded_as>
+    <location>/opt/zimbra/log/mailbox.log</location>
     <description>Zimbra mailbox SOAP call (base rule)</description>
   </rule>
 
-  <!-- 計數用：真正在「取內容」的 SOAP 操作
-       ★ level 必須 >= 1，level 0 的規則會在 frequency 關聯前被丟棄
-       ★ 以 no_log 抑制輸出，避免洗版 -->
-  <rule id="100971" level="1">
-    <if_sid>100970</if_sid>
-    <action type="pcre2">^(SearchRequest|SearchConvRequest|GetMsgRequest|GetConvRequest|ExportContactsRequest|GetContactsRequest|SearchGalRequest)$</action>
-    <options>no_log</options>
-    <description>Zimbra content-read SOAP operation, counted for correlation: $(action) by $(dstuser)</description>
+  <!-- The syslog copy (program "zimbra_mailbox"): decoded, not counted. -->
+  <rule id="100834" level="0">
+    <decoded_as>zimbra-mailbox-soap</decoded_as>
+    <location type="pcre2">^(?!.*/opt/zimbra/log/mailbox\.log$)</location>
+    <description>Zimbra mailbox line received through syslog, a copy of mailbox.log (not counted)</description>
   </rule>
 
-  <!-- ★ 治本告警：同一「帳號」短時間大量讀取內容
-       用 same_user 而非 same_source_ip，因為多位使用者共用 Z-Push 閘道 IP -->
+  <!-- Counted: operations that fetch message or contact content. -->
+  <rule id="100971" level="1">
+    <if_sid>100970</if_sid>
+    <action type="pcre2">^(?:GetMsgRequest|GetConvRequest|ExportContactsRequest|GetContactsRequest|SearchGalRequest)$</action>
+    <options>no_log</options>
+    <description>Zimbra content-read SOAP operation, counted for correlation: $(action) by $(dstuser)</description>
+    <group>zimbra_soap_read,</group>
+  </rule>
+
+  <!-- Counted: searches, except Z-Push's folder listing on every sync. -->
+  <rule id="100929" level="1">
+    <if_sid>100970</if_sid>
+    <action type="pcre2">^(?:SearchRequest|SearchConvRequest)$</action>
+    <match type="pcre2">^(?!.*[\[;]ua=[^;\]]*ZPZB/)</match>
+    <options>no_log</options>
+    <description>Zimbra search SOAP operation, counted for correlation: $(action) by $(dstuser)</description>
+    <group>zimbra_soap_read,</group>
+  </rule>
+
+  <!-- Same account, many reads in five minutes. Counted per account, not
+       per address: everyone behind Z-Push or a proxy shares an address. -->
   <rule id="100972" level="12" frequency="30" timeframe="300">
-    <if_matched_sid>100971</if_matched_sid>
+    <if_matched_group>zimbra_soap_read</if_matched_group>
     <same_user />
     <description>[HIGH] Zimbra account read a large volume of message content in a short window, suggesting automated harvesting: $(dstuser) from: $(srcip)</description>
     <mitre>
@@ -58,9 +71,11 @@
     <group>exfiltration,</group>
   </rule>
 
-  <!-- 更高強度：同一帳號極大量讀取（3 倍門檻）-->
-  <rule id="100973" level="14" frequency="90" timeframe="300">
-    <if_matched_sid>100971</if_matched_sid>
+  <!-- Three times the 100972 threshold: 100972 fires every 30 reads, so a
+       third 100972 for the account within five minutes is 90 reads. (As a
+       sibling with frequency 90, 100972 always took the event first.) -->
+  <rule id="100973" level="14" frequency="3" timeframe="300">
+    <if_matched_sid>100972</if_matched_sid>
     <same_user />
     <description>[HIGH] Zimbra account read an extreme volume of message content, strongly suggesting data theft: $(dstuser) from: $(srcip)</description>
     <mitre>
@@ -69,12 +84,86 @@
     <group>exfiltration,</group>
   </rule>
 
-  <!-- 監控帳號排除（checkstatus 是 check_http 探針，會規律呼叫）
-       置於被覆寫規則之後才會生效 -->
+  <!-- Accounts listed in etc/lists/zimbra-service-accounts (monitoring
+       probes, archivers) are expected to read a lot. -->
   <rule id="100974" level="0">
     <if_sid>100972,100973</if_sid>
-    <user type="pcre2">^checkstatus@</user>
-    <description>SOAP call from a monitoring probe account (excluded)</description>
+    <list field="user" lookup="match_key">etc/lists/zimbra-service-accounts</list>
+    <description>Bulk reading by a listed Zimbra service account (excluded)</description>
+  </rule>
+
+  <!-- The same when an administrator reads someone's mailbox through a
+       delegated session: the line names the mailbox as name= and the
+       administrator as aname=. Listing that administrator account excludes
+       its tool, not the mailbox owner. -->
+  <rule id="100935" level="0">
+    <if_sid>100972,100973</if_sid>
+    <list field="zimbra.aname" lookup="match_key">etc/lists/zimbra-service-accounts</list>
+    <description>Bulk reading through a delegated session of a listed service account (excluded)</description>
+  </rule>
+
+  <!-- Sending: webmail and Z-Push both send with SendMsgRequest. -->
+  <rule id="100928" level="1">
+    <if_sid>100970</if_sid>
+    <action>SendMsgRequest</action>
+    <options>no_log</options>
+    <description>Zimbra mail send event, counted for correlation</description>
+  </rule>
+
+  <rule id="100925" level="12" frequency="50" timeframe="300">
+    <if_matched_sid>100928</if_matched_sid>
+    <same_user />
+    <description>[HIGH] One account sent a large volume of mail in a short window, the account may be hijacked: $(dstuser)</description>
+    <mitre>
+      <id>T1114.002</id>
+    </mitre>
+  </rule>
+
+  <!-- Two-factor and application passwords. An application password is a
+       way around two-factor login; generating one is how a session thief
+       keeps access after the session ends. -->
+  <rule id="100851" level="12">
+    <if_sid>100970</if_sid>
+    <action type="pcre2">^(?:EnableTwoFactorAuth|DisableTwoFactorAuth|GenerateScratchCodes|CreateAppSpecificPassword|RevokeAppSpecificPassword|RevokeTrustedDevice)Request$</action>
+    <description>[HIGH] Two-factor settings changed, backup codes or an application password generated: $(action) by $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1556.006</id>
+    </mitre>
+  </rule>
+
+  <!-- Mail filter rules saved. Forwarding or deleting rules are the usual
+       trace of a business-mail compromise (the polling rules 100883/100884
+       see the result later; this sees the change when it happens). -->
+  <rule id="100930" level="5">
+    <if_sid>100970</if_sid>
+    <action type="pcre2">^(?:ModifyFilterRules|ModifyOutgoingFilterRules)Request$</action>
+    <description>Zimbra mail filter rules changed: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1564.008</id>
+    </mitre>
+  </rule>
+
+  <rule id="100932" level="3">
+    <if_sid>100970</if_sid>
+    <action>ChangePasswordRequest</action>
+    <description>Zimbra account password changed by its user: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!-- Changes made in the admin console (or with any admin token), not by
+       Zimbra's own command-line tools. -->
+  <rule id="100931" level="8">
+    <if_sid>100970</if_sid>
+    <url type="pcre2">^https?://\S*/service/admin/soap</url>
+    <action type="pcre2">^(?:CreateAccount|DeleteAccount|RenameAccount|SetPassword|ModifyAccount|AddAccountAlias|GrantRight|RevokeRight|ModifyConfig|ModifyCos|ModifyDomain|CreateDomain|DeployZimlet|UndeployZimlet|ModifyZimlet|ModifyServer|CreateDistributionList|AddDistributionListMember|ModifyDistributionList)Request$</action>
+    <match type="pcre2">^(?!.*[\[;]ua=(?:zm[a-z]+|ZCS)/)</match>
+    <description>Zimbra administrative change: $(action) by $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>account_changed,</group>
   </rule>
 
 </group>

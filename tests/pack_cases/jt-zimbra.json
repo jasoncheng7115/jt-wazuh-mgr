@@ -1,0 +1,909 @@
+{
+ "pack": "jt-zimbra",
+ "sandbox_lists": {
+  "zimbra-service-accounts": "reader@example.com:service\nprobe@example.com:service\n"
+ },
+ "cases": [
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/libexec/zmmailboxdmgr status",
+   "location": "/var/log/auth.log",
+   "expect_rule": "100866",
+   "expect_level": 1,
+   "repeat": 2,
+   "note": "real (zcs1, 11,000 a day per server); repeat 2 so the first-time-sudo rule 5403 is past"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/libexec/zmmtastatus",
+   "location": "/var/log/auth.log",
+   "expect_rule": "100866",
+   "expect_level": 1,
+   "repeat": 2,
+   "note": "real"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/common/sbin/postconf -e smtpd_helo_required=yes",
+   "location": "/var/log/auth.log",
+   "expect_rule": "100866",
+   "expect_level": 1,
+   "repeat": 2,
+   "note": "real (zmconfigd rewriting MTA settings)"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/common/sbin/postconf -e notify_classes=resource, software",
+   "location": "/var/log/auth.log",
+   "expect_rule": "100866",
+   "expect_level": 1,
+   "repeat": 2,
+   "note": "real, value with a space"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/common/sbin/postconf -e daemon_directory=/tmp/x",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5402",
+   "expect_level": 3,
+   "repeat": 2,
+   "note": "near miss: a postconf that redirects Postfix executables stays visible"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/common/sbin/postconf -e mailbox_command=/tmp/x.sh",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5402",
+   "expect_level": 3,
+   "repeat": 2,
+   "note": "near miss: privilege-escalation path"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/libexec/zmmailboxdmgr status; /bin/sh",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5402",
+   "expect_level": 3,
+   "repeat": 2,
+   "note": "near miss: extra command after the helper"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/common/sbin/postfix start",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5402",
+   "expect_level": 3,
+   "repeat": 2,
+   "note": "near miss: helper not in the routine set (rare)"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/libexec/zmmailboxdmgr status\nOct 10 00:00:09 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/libexec/zmmailboxdmgr status\nOct 10 00:00:09 zcs1 sudo: pam_unix(sudo:session): session opened for user root by (uid=0)",
+   "location": "/var/log/auth.log",
+   "expect_rule": "100867",
+   "expect_level": 1,
+   "note": "real pair: PAM line within 30 s of a routine Zimbra sudo (two lines, one session); the sudo line is sent twice because a new logtest session reports the first one as first-time sudo (5403)"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/libexec/zmmtastatus\nOct 10 00:00:09 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/libexec/zmmtastatus\nOct 10 00:00:09 zcs1 sudo: pam_unix(sudo:session): session closed for user root",
+   "location": "/var/log/auth.log",
+   "expect_rule": "100867",
+   "expect_level": 1,
+   "note": "real pair, session closed; the sudo line is sent twice because a new logtest session reports the first one as first-time sudo (5403)"
+  },
+  {
+   "log": "Oct 11 11:26:13 zcs1 sudo: pam_unix(sudo:session): session opened for user root by (uid=0)",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5501",
+   "expect_level": 3,
+   "note": "near miss: the same PAM line without a routine Zimbra sudo before it"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/bin/bash\nOct 10 00:00:09 zcs1 sudo: pam_unix(sudo:session): session opened for user root by alice(uid=0)",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5501",
+   "expect_level": 3,
+   "note": "near miss: an administrator sudo session stays visible"
+  },
+  {
+   "log": "Oct 11 11:26:04 zcs1 su: pam_unix(su-l:session): session opened for user zimbra by (uid=0)",
+   "location": "/var/log/auth.log",
+   "expect_rule": "100868",
+   "expect_level": 0,
+   "note": "real (root cron su - zimbra)"
+  },
+  {
+   "log": "Oct 11 11:26:15 zcs1 su: pam_unix(su-l:session): session closed for user zimbra",
+   "location": "/var/log/auth.log",
+   "expect_rule": "100869",
+   "expect_level": 0,
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 11:26:04 zcs1 su: pam_unix(su-l:session): session opened for user zimbra by root(uid=0)",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5501",
+   "expect_level": 3,
+   "note": "real shape: interactive su by a logged-in root stays visible"
+  },
+  {
+   "log": "Oct 11 11:26:04 zcs1 su: pam_unix(su-l:session): session opened for user postgres by (uid=0)",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5501",
+   "expect_level": 3,
+   "note": "near miss: another account"
+  },
+  {
+   "log": "Oct 10 00:00:04 zcs1 postfix/postdrop[2656786]: warning: mail_queue_enter: create file maildrop/775130.2656786: Permission denied",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100871",
+   "expect_level": 7,
+   "note": "real (one stuck postdrop, 17,000 a day); first occurrence alerts"
+  },
+  {
+   "log": "Oct 10 00:00:04 zcs1 postfix/postdrop[2656786]: warning: mail_queue_enter: create file maildrop/775130.2656786: Permission denied",
+   "location": "/var/log/mail.log",
+   "expect_rule": "100871",
+   "expect_level": 7,
+   "note": "real; the same line read from mail.log"
+  },
+  {
+   "log": "Jan 21 00:00:01 zcs1 postfix/postdrop[12345]: warning: mail_queue_enter: create file maildrop/123456.12345: Read-only file system",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "3399",
+   "expect_level": 0,
+   "note": "near miss: built-in 3399 keeps the read-only variant"
+  },
+  {
+   "log": "Oct 10 00:00:18 zcs1 postfix/smtpd[1679520]: NOQUEUE: reject: RCPT from unknown[10.0.0.37]: 450 4.7.1 Client host rejected: cannot find your reverse hostname, [10.0.0.37]; from=<root@host1.example.com> to=<admin@example.com> proto=ESMTP helo=<host1.example.com>",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100873",
+   "expect_level": 7,
+   "note": "real shape (internal monitoring host without PTR, 1,300 a day)"
+  },
+  {
+   "log": "Oct 10 00:00:18 zcs1 postfix/smtpd[1679520]: NOQUEUE: reject: RCPT from unknown[203.0.113.77]: 450 4.7.1 Client host rejected: cannot find your reverse hostname, [203.0.113.77]; from=<root@host1.example.com> to=<admin@example.com> proto=ESMTP helo=<host1.example.com>",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "3303",
+   "expect_level": 5,
+   "note": "near miss: an internet client without reverse DNS stays at the built-in rule"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   nagios : command not allowed ; TTY=unknown ; PWD=/ ; USER=nagios ; COMMAND=/usr/bin/sudo -u zimbra /opt/zimbra/bin/zmcontrol status",
+   "location": "/var/log/auth.log",
+   "expect_rule": "100875",
+   "expect_level": 5,
+   "note": "real (700 a day)"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo:   nagios : command not allowed ; TTY=unknown ; PWD=/ ; USER=nagios ; COMMAND=/bin/cat /etc/shadow",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5406",
+   "expect_level": 5,
+   "note": "near miss: any other refused command"
+  },
+  {
+   "log": "Oct 10 00:00:09 zcs1 sudo: Debian-snmp : command not allowed ; TTY=unknown ; PWD=/ ; USER=root ; COMMAND=/etc/snmp/postfixdetailed",
+   "location": "/var/log/auth.log",
+   "expect_rule": "5406",
+   "expect_level": 5,
+   "note": "real, not Zimbra: stays at 5406"
+  },
+  {
+   "log": "Oct 10 10:00:00 zcs1 postfix/postscreen[12345]: PREGREET 11 after 0.15 from [203.0.113.5]:40000: EHLO example.com\\r\\n",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100967",
+   "expect_level": 1,
+   "note": "synthesized from Postfix postscreen documentation"
+  },
+  {
+   "log": "Oct 10 10:00:00 zcs1 postfix/postscreen[12345]: DNSBL rank 3 for [203.0.113.5]:40000",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100967",
+   "expect_level": 1,
+   "note": "synthesized from Postfix postscreen documentation"
+  },
+  {
+   "log": "Oct 10 10:00:00 zcs1 postfix/postscreen[12345]: PREGREET 11 after 0.15 from [203.0.113.5]:40000: EHLO example.com\\r\\n",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100968",
+   "expect_level": 6,
+   "repeat": 20,
+   "note": "synthesized; 20 in 10 min from one client"
+  },
+  {
+   "log": "Oct 11 11:40:17 zcs1 postfix/postscreen[3639101]: ALLOWLISTED [10.0.0.36]:51348",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "none",
+   "note": "real: an allow-listed client"
+  },
+  {
+   "log": "Oct 11 10:00:00 zcs1 postfix/lmtp[12345]: 4B1C2D3E4F: to=<user1@example.com>, relay=zcs1.example.com[10.0.0.20]:7025, delay=0.1, delays=0/0/0/0.1, dsn=4.0.0, status=deferred (host zcs1.example.com[10.0.0.20] said: 451 4.0.0 Mailbox database is temporarily unavailable (in reply to end of DATA command))",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100969",
+   "expect_level": 2,
+   "note": "synthesized from Zimbra LMTP error text"
+  },
+  {
+   "log": "Oct 11 10:00:00 zcs1 postfix/lmtp[12345]: 4B1C2D3E4F: to=<user1@example.com>, relay=zcs1.example.com[10.0.0.20]:7025, delay=0.1, delays=0/0/0/0.1, dsn=4.0.0, status=deferred (host zcs1.example.com[10.0.0.20] said: 451 4.0.0 Mailbox database is temporarily unavailable (in reply to end of DATA command))",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100903",
+   "expect_level": 10,
+   "repeat": 10,
+   "note": "synthesized; 10 deferrals in 10 min"
+  },
+  {
+   "log": "Oct 11 10:59:58 zcs2 postfix/lmtp[12345]: 4B1C2D3E4F: to=<user1@example.com>, relay=zcs2.example.com[10.0.0.21]:7025, delay=0.29, delays=0.04/0.01/0.02/0.22, dsn=2.1.5, status=sent (250 2.1.5 Delivery OK)",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "none",
+   "note": "real: successful local delivery"
+  },
+  {
+   "log": "Oct 11 10:00:00 zcs1 postfix/smtp[12345]: 4B1C2D3E4F: to=<someone@example.net>, relay=mx.example.net[198.51.100.25]:25, delay=1.2, delays=0.1/0/0.6/0.5, dsn=5.7.1, status=bounced (host mx.example.net[198.51.100.25] said: 550 5.7.1 Service unavailable; client [203.0.113.10] blocked using zen.spamhaus.org (in reply to RCPT TO command))",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100904",
+   "expect_level": 2,
+   "note": "synthesized from a typical receiver block-list rejection"
+  },
+  {
+   "log": "Oct 11 10:00:00 zcs1 postfix/smtp[12345]: 4B1C2D3E4F: to=<someone@example.net>, relay=mx.example.net[198.51.100.25]:25, delay=1.2, delays=0.1/0/0.6/0.5, dsn=5.7.1, status=bounced (host mx.example.net[198.51.100.25] said: 550 5.7.1 Service unavailable; client [203.0.113.10] blocked using zen.spamhaus.org (in reply to RCPT TO command))",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100905",
+   "expect_level": 10,
+   "repeat": 5,
+   "note": "synthesized; 5 in an hour"
+  },
+  {
+   "log": "Oct 11 10:00:00 zcs1 postfix/smtp[12345]: 4B1C2D3E4F: to=<someone@example.net>, relay=none, delay=30, delays=0.1/0/30/0, dsn=4.4.1, status=deferred (connect to mx.example.net[198.51.100.25]:25: Connection timed out)",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "none",
+   "note": "near miss: an ordinary deferral"
+  },
+  {
+   "log": "Oct 11 11:40:02 zcs1 postfix/qmgr[12345]: 4B1C2D3E4F: from=<user1@example.com>, size=1234, nrcpt=250 (queue active)",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100906",
+   "expect_level": 6,
+   "note": "synthesized from the qmgr line format"
+  },
+  {
+   "log": "Oct 11 11:40:02 zcs1 postfix/qmgr[12345]: 4B1C2D3E4F: from=<user1@example.com>, size=1234, nrcpt=3 (queue active)",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "none",
+   "note": "near miss: ordinary message"
+  },
+  {
+   "log": "Oct 11 11:40:02 zcs1 postfix/submission/smtpd[12345]: 4B1C2D3E4F: client=unknown[198.51.100.7]:51234, sasl_method=LOGIN, sasl_username=user1@example.com",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100933",
+   "expect_level": 1,
+   "note": "synthesized from the smtpd line format"
+  },
+  {
+   "log": "Oct 11 11:40:02 zcs1 postfix/submission/smtpd[12345]: 4B1C2D3E4F: client=unknown[198.51.100.7]:51234, sasl_method=LOGIN, sasl_username=user1@example.com",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100934",
+   "expect_level": 12,
+   "repeat": 50,
+   "note": "synthesized; 50 submissions in 10 min by one account"
+  },
+  {
+   "log": "Oct 10 10:00:00 zcs1 postfix/submission/smtpd[12345]: warning: unknown[203.0.113.5]: SASL LOGIN authentication failed: authentication failure",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "3332",
+   "expect_level": 5,
+   "note": "synthesized: SMTP AUTH failures are the built-in 3332/3357"
+  },
+  {
+   "log": "Oct 10 10:00:00 zcs1 amavis[12345]: (12345-05) Blocked INFECTED (Eicar-Signature) {DiscardedInbound,Quarantined}, [203.0.113.5]:40000 [203.0.113.5] <a@example.org> -> <user1@example.com>, quarantine: virus-abc, Queue-ID: 4B1C2D3E4F, Message-ID: <x@example.org>, mail_id: abc, Hits: -, size: 1234, 120 ms",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100945",
+   "expect_level": 7,
+   "note": "synthesized from amavisd-new log format"
+  },
+  {
+   "log": "Oct 10 10:00:00 zcs1 amavis[12345]: (12345-05) Blocked INFECTED (Win.Trojan.Agent) {DiscardedOutbound,Quarantined}, ORIGINATING/MYNETS LOCAL [10.0.0.27]:41552 <user2@example.com> -> <someone@example.net>, quarantine: virus-abc, Queue-ID: 4B1C2D3E4F, Message-ID: <x@example.com>, mail_id: abc, Hits: -, size: 1234, 120 ms",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100946",
+   "expect_level": 12,
+   "note": "synthesized: infected mail from a local sender"
+  },
+  {
+   "log": "Oct 11 10:00:00 zcs1 amavis[1961497]: (1961497-06) Passed CLEAN {RelayedInternal}, ORIGINATING/MYNETS LOCAL [10.0.0.28]:41552 <svc@example.com> -> <user1@example.com>, Queue-ID: 4B1C2D3E4F, Message-ID: <x@example.com>, mail_id: abc, Hits: -2.1, size: 1234, queued_as: 5C6D7E8F, 220 ms",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100944",
+   "expect_level": 0,
+   "note": "real shape (sanitized)"
+  },
+  {
+   "log": "Oct 10 10:00:00 zcs1 amavis[12345]: (12345-05) Blocked BANNED (multipart/mixed | application/x-msdownload,.exe,invoice.exe) {DiscardedInbound,Quarantined}, [203.0.113.5]:40000 [203.0.113.5] <a@example.org> -> <user1@example.com>, quarantine: banned-abc, Queue-ID: 4B1C2D3E4F, mail_id: abc, Hits: -, size: 1234, 120 ms",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100947",
+   "expect_level": 5,
+   "note": "synthesized"
+  },
+  {
+   "log": "Oct 10 10:00:00 zcs1 amavis[12345]: (12345-08) Blocked SPAM {DiscardedOutbound,Quarantined}, ORIGINATING LOCAL [10.0.0.27]:41552 <user2@example.com> -> <someone@example.net>, quarantine: spam-abc, Queue-ID: 4B1C2D3E4F, mail_id: abc, Hits: 18.2, size: 1234, 120 ms",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100948",
+   "expect_level": 8,
+   "note": "synthesized: outgoing spam from a local account"
+  },
+  {
+   "log": "Oct 10 10:00:00 zcs1 amavis[12345]: (12345-08) Blocked SPAM {DiscardedOutbound,Quarantined}, ORIGINATING LOCAL [10.0.0.27]:41552 <user2@example.com> -> <someone@example.net>, quarantine: spam-abc, Queue-ID: 4B1C2D3E4F, mail_id: abc, Hits: 18.2, size: 1234, 120 ms",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100949",
+   "expect_level": 12,
+   "repeat": 5,
+   "note": "synthesized; 5 in an hour from one sender"
+  },
+  {
+   "log": "Oct 10 10:00:00 zcs1 amavis[12345]: (12345-08) Blocked SPAM {DiscardedInbound,Quarantined}, [203.0.113.5]:40000 [203.0.113.5] <spammer@example.org> -> <user1@example.com>, quarantine: spam-abc, Queue-ID: 4B1C2D3E4F, mail_id: abc, Hits: 18.2, size: 1234, 120 ms",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100944",
+   "expect_level": 0,
+   "note": "near miss: inbound spam is the filter working"
+  },
+  {
+   "log": "Oct 10 10:00:00 zcs1 amavis[12345]: (12345-07) (!!)AV: ALL VIRUS SCANNERS FAILED",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100951",
+   "expect_level": 10,
+   "note": "synthesized from amavisd-new message text"
+  },
+  {
+   "log": "Oct 10 10:00:00 zcs1 amavis[12345]: (12345-07) (!)ClamAV-clamd: Can't connect to UNIX socket /opt/zimbra/data/clamav/clamav.sock: No such file or directory, retrying (1)",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100950",
+   "expect_level": 5,
+   "note": "synthesized from amavisd-new message text"
+  },
+  {
+   "log": "Oct 11 10:00:00 zcs1 clamd[12345]: /opt/zimbra/data/amavisd/tmp/amavis-20261011T100000-12345-abcd/parts/p002: Eicar-Signature FOUND",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100952",
+   "expect_level": 3,
+   "note": "synthesized; the amavis verdict carries the alert"
+  },
+  {
+   "log": "Oct 11 10:00:00 host1 clamd[12345]: /home/user1/Downloads/x.zip: Eicar-Signature FOUND",
+   "location": "/var/log/syslog",
+   "expect_rule": "52502",
+   "expect_level": 8,
+   "note": "near miss: ClamAV outside amavis stays at the built-in rule"
+  },
+  {
+   "log": "Oct 10 16:12:32 zcs2 clamd[2453125]: SelfCheck: Database modification detected. Forcing reload.",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "52506",
+   "expect_level": 3,
+   "note": "real: built-in"
+  },
+  {
+   "log": "Oct 11 10:00:00 zcs1 opendkim[12345]: 4B1C2D3E4F: no signing table match for 'user1@example.org'",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100953",
+   "expect_level": 0,
+   "note": "real shape: relayed mail from a domain without a key"
+  },
+  {
+   "log": "Oct 11 10:00:00 zcs1 opendkim[12345]: 4B1C2D3E4F: error loading key 'mail._domainkey.example.com'",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100954",
+   "expect_level": 7,
+   "note": "synthesized from opendkim message text"
+  },
+  {
+   "log": "Oct 11 11:26:13 zcs1 zimbramon[3626260]: 3626260:info: 2026-10-11 11:26:02, STATUS: zcs1.example.com: amavis: Running",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100955",
+   "expect_level": 0,
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 11:26:13 zcs1 zimbramon[3626260]: 3626260:info: 2026-10-11 11:26:02, STATUS: zcs1.example.com: antivirus: Stopped",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100956",
+   "expect_level": 7,
+   "note": "synthesized from zmstatuslog format"
+  },
+  {
+   "log": "Oct 11 11:40:02 zcs1 zimbramon[3638737]: 3638737:info: 2026-10-11 11:40:02, QUEUE: 0 0",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100955",
+   "expect_level": 0,
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 11:40:02 zcs1 zimbramon[3638737]: 3638737:info: 2026-10-11 11:40:02, QUEUE: 150 9876",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100957",
+   "expect_level": 7,
+   "note": "synthesized: 150 queued messages"
+  },
+  {
+   "log": "Oct 11 11:40:02 zcs1 zimbramon[3638737]: 3638737:info: 2026-10-11 11:40:02, QUEUE: 2500 812345",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100958",
+   "expect_level": 10,
+   "note": "synthesized: 2,500 queued messages"
+  },
+  {
+   "log": "Oct 11 11:41:09 zcs2 zimbramon[2454148]: 2454148:info: Disk warning: zcs2.example.com: /snap/snapd/28254 on device /dev/loop7 at 100%",
+   "location": "/var/log/syslog",
+   "expect_rule": "100955",
+   "expect_level": 0,
+   "note": "real: snap images are always full"
+  },
+  {
+   "log": "Oct 11 11:41:09 zcs2 zimbramon[2454148]: 2454148:info: Disk warning: zcs2.example.com: /opt on device /dev/sda2 at 91%",
+   "location": "/var/log/syslog",
+   "expect_rule": "100959",
+   "expect_level": 7,
+   "note": "synthesized from the real line"
+  },
+  {
+   "log": "Oct 11 11:41:09 zcs2 zimbramon[2454148]: 2454148:err: Disk critical: zcs2.example.com: /opt on device /dev/sda2 at 97%",
+   "location": "/var/log/syslog",
+   "expect_rule": "100964",
+   "expect_level": 10,
+   "note": "synthesized from zmdisklog"
+  },
+  {
+   "log": "Oct 11 11:25:42 zcs1 zmconfigd[3002115]: Watchdog: service antivirus status is OK.",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100965",
+   "expect_level": 0,
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 11:25:42 zcs1 zmconfigd[3002115]: Watchdog: skipping service antivirus. Service not yet available for restarts.",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100965",
+   "expect_level": 0,
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 11:25:42 zcs1 zmconfigd[3002115]: Watchdog: service mta status is not OK. Restarting.",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100966",
+   "expect_level": 7,
+   "note": "synthesized from the watchdog message pattern"
+  },
+  {
+   "log": "2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=10.0.0.28;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=svc@example.com; protocol=imap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100845",
+   "expect_level": 2,
+   "note": "real (sanitized): internal IMAP login, recorded only"
+  },
+  {
+   "log": "2026-10-11 11:26:06,984 INFO  [qtp350068407-9383:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;oip=198.51.100.198, 10.0.0.31;port=48030;ua=Apple-iPhone17C3/2307.90 devip=198.51.100.198 ZPZB/75;soapId=4bbe9d0e;] security - cmd=Auth; account=user2@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100854",
+   "expect_level": 2,
+   "note": "real (sanitized): phone through Z-Push on a mobile network"
+  },
+  {
+   "log": "2026-10-11 11:26:09,987 INFO  [qtp350068407-9382:https://localhost:7071/service/admin/soap/AuthRequest] [ua=zmprov/10.1.20_GA_10120;soapId=4bbe9d12;] security - cmd=Auth; account=zimbra; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100853",
+   "expect_level": 0,
+   "note": "real: zmprov, once a minute"
+  },
+  {
+   "log": "2026-10-02 16:00:24,977 INFO  [qtp350068407-3415:smtp://zcs1.example.com:7073/service/admin/soap/] [name=svc@example.com;oip=10.0.0.33;oport=36432;oproto=smtp;soapId=1320083c;] security - cmd=Auth; account=svc@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100845",
+   "expect_level": 2,
+   "note": "real (sanitized): SMTP AUTH checked by saslauthd, not an admin login"
+  },
+  {
+   "log": "Oct 11 11:26:05 zcs1 zimbra_audit 2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=10.0.0.28;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=svc@example.com; protocol=imap;",
+   "location": "/var/log/syslog",
+   "expect_rule": "100839",
+   "note": "real shape: the syslog copy (zimbraLogToSyslog) is not counted",
+   "expect_level": 0
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user3@example.com;oip=203.0.113.5;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user3@example.com; protocol=soap; error=authentication failed for [user3@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100841",
+   "expect_level": 5,
+   "note": "synthesized from Zimbra audit format (no failures in 8.8 days of real data)"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;oip=198.51.100.198, 10.0.0.31;ua=Apple-iPhone17C3/2307.90 ZPZB/75;soapId=1;] security - cmd=Auth; account=user2@example.com; protocol=soap; error=authentication failed for [user2@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100841",
+   "expect_level": 5,
+   "note": "synthesized: failure through Z-Push decodes the phone address"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;oip=198.51.100.198, 10.0.0.31;ua=Apple-iPhone17C3/2307.90 ZPZB/75;soapId=1;] security - cmd=Auth; account=user2@example.com; protocol=soap; error=authentication failed for [user2@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100859",
+   "expect_level": 10,
+   "repeat": 12,
+   "note": "synthesized: 12 failures through Z-Push (oip=phone, proxy). The external-address rule fires, so srcip is the phone (first oip entry); had it been the proxy (an internal address) the result would be 100842"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;oip=10.0.0.31;ua=Apple-iPhone17C3/2307.90 ZPZB/75;soapId=1;] security - cmd=Auth; account=user2@example.com; protocol=soap; error=authentication failed for [user2@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100842",
+   "expect_level": 10,
+   "repeat": 12,
+   "note": "near miss: the same failures where the proxy did not pass the client address (oip is the proxy itself): no external-address rule, so no active response against the proxy"
+  },
+  {
+   "log": "Oct 11 12:00:00 zcs1 zimbra_audit 2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user3@example.com;oip=203.0.113.5;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user3@example.com; protocol=soap; error=authentication failed for [user3@example.com], invalid password;",
+   "location": "/var/log/syslog",
+   "expect_rule": "100839",
+   "note": "syslog copy of a failure: not counted twice",
+   "expect_level": 0
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user3@example.com;oip=203.0.113.5;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user3@example.com; protocol=soap; error=authentication failed for [user3@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100859",
+   "expect_level": 10,
+   "repeat": 12,
+   "note": "synthesized: 12 failures in 5 min from one external address"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user3@example.com;oip=10.0.0.26;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user3@example.com; protocol=soap; error=authentication failed for [user3@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100842",
+   "expect_level": 10,
+   "repeat": 12,
+   "note": "synthesized: the same from an internal address (no active response)"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user1@example.com;oip=203.0.113.6;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user1@example.com; protocol=soap; error=authentication failed for [user1@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user2@example.com;oip=203.0.113.6;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user2@example.com; protocol=soap; error=authentication failed for [user2@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user3@example.com;oip=203.0.113.6;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user3@example.com; protocol=soap; error=authentication failed for [user3@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user4@example.com;oip=203.0.113.6;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user4@example.com; protocol=soap; error=authentication failed for [user4@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user5@example.com;oip=203.0.113.6;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user5@example.com; protocol=soap; error=authentication failed for [user5@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.6;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user7@example.com;oip=203.0.113.6;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user7@example.com; protocol=soap; error=authentication failed for [user7@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user8@example.com;oip=203.0.113.6;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user8@example.com; protocol=soap; error=authentication failed for [user8@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100836",
+   "expect_level": 12,
+   "note": "synthesized: 8 accounts from one external address (spraying)"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user4@example.com;oip=198.51.100.10;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user4@example.com; protocol=soap; error=authentication failed for [user4@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user4@example.com;oip=198.51.100.11;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user4@example.com; protocol=soap; error=authentication failed for [user4@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user4@example.com;oip=198.51.100.12;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user4@example.com; protocol=soap; error=authentication failed for [user4@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user4@example.com;oip=198.51.100.13;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user4@example.com; protocol=soap; error=authentication failed for [user4@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user4@example.com;oip=198.51.100.14;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user4@example.com; protocol=soap; error=authentication failed for [user4@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user4@example.com;oip=198.51.100.15;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user4@example.com; protocol=soap; error=authentication failed for [user4@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user4@example.com;oip=198.51.100.16;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user4@example.com; protocol=soap; error=authentication failed for [user4@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user4@example.com;oip=198.51.100.17;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user4@example.com; protocol=soap; error=authentication failed for [user4@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user4@example.com;oip=198.51.100.18;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user4@example.com; protocol=soap; error=authentication failed for [user4@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user4@example.com;oip=198.51.100.19;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user4@example.com; protocol=soap; error=authentication failed for [user4@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100844",
+   "expect_level": 10,
+   "note": "synthesized: one account, 10 addresses (distributed guessing)"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user5@example.com;oip=203.0.113.9;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user5@example.com; protocol=soap; error=authentication failed for [user5@example.com], account lockout;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100857",
+   "expect_level": 6,
+   "note": "synthesized: attempt on a locked account"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user5@example.com;oip=203.0.113.9;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user5@example.com; info=account lockout due to too many failed logins;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100856",
+   "expect_level": 10,
+   "note": "synthesized from Zimbra lockout policy message"
+  },
+  {
+   "log": "2026-10-05 11:32:55,725 INFO  [qtp350068407-113466:https://zcs2.example.com:7071/service/admin/soap] [ip=10.0.0.25;port=49220;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=6a1dee93;] security - cmd=Auth; account=admin@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100848",
+   "expect_level": 3,
+   "note": "real shape (sanitized): admin console login from inside"
+  },
+  {
+   "log": "2026-10-05 11:32:55,725 INFO  [qtp350068407-113466:https://zcs2.example.com:7071/service/admin/soap] [ip=198.51.100.40;port=49220;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=6a1dee93;] security - cmd=Auth; account=admin@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100849",
+   "expect_level": 14,
+   "note": "synthesized: admin console login from outside"
+  },
+  {
+   "log": "2026-10-11 11:30:19,424 INFO  [qtp350068407-152785:https://localhost:7071/service/admin/soap/DelegateAuthRequest] [name=zimbra;ua=zmmailbox/10.1.20_GA_4893;soapId=6a209849;] security - cmd=DelegateAuth; accountId=4ef3bd6d-e227-4986-8993-98443101a169; accountName=user1@example.com;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100840",
+   "expect_level": 0,
+   "note": "real: zmmailbox every 15 minutes"
+  },
+  {
+   "log": "2026-10-05 11:32:55,725 INFO  [qtp350068407-113466:https://zcs2.example.com:7071/service/admin/soap] [name=admin@example.com;mid=1;ip=10.0.0.25;port=49220;soapId=6a1dee93;] security - cmd=DelegateAuth; accountId=4ef3bd6d-e227-4986-8993-98443101a169; accountName=user1@example.com;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100855",
+   "expect_level": 5,
+   "note": "real (sanitized): an admin tool opens a session as a user"
+  },
+  {
+   "log": "2026-10-05 11:32:55,725 INFO  [qtp350068407-113466:https://zcs2.example.com:7071/service/admin/soap] [name=admin@example.com;mid=1;ip=198.51.100.40;port=49220;soapId=6a1dee93;] security - cmd=DelegateAuth; accountId=4ef3bd6d-e227-4986-8993-98443101a169; accountName=user1@example.com;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100858",
+   "expect_level": 12,
+   "note": "synthesized: the same from outside"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:01:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100846",
+   "expect_level": 14,
+   "note": "synthesized: 12 failures then a success from the same address"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user7@example.com;oip=198.51.100.31;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user7@example.com; protocol=soap;\n2026-10-11 12:01:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user7@example.com;oip=203.0.113.32;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user7@example.com; protocol=soap;\n2026-10-11 12:02:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user7@example.com;oip=198.51.100.33;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user7@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100852",
+   "expect_level": 13,
+   "note": "synthesized: one account from three external addresses in an hour"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user7@example.com;oip=10.0.0.22;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user7@example.com; protocol=soap;\n2026-10-11 12:01:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user7@example.com;oip=10.0.0.23;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user7@example.com; protocol=soap;\n2026-10-11 12:02:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user7@example.com;oip=10.0.0.24;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user7@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100845",
+   "expect_level": 2,
+   "note": "near miss: three INTERNAL addresses (measured 28 a day here if counted)"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/preauth] [name=user1@example.com;oip=203.0.113.50;ua=curl/8.0;] security - cmd=PreAuth; account=user1@example.com; admin=false;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100850",
+   "expect_level": 13,
+   "note": "synthesized"
+  },
+  {
+   "log": "2026-10-11 11:26:07,296 INFO  [qtp350068407-9366:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;mid=12;oip=198.51.100.198, 10.0.0.31;port=48074;ua=Apple-iPhone17C3/2307.90 devip=198.51.100.198 ZPZB/75;soapId=4bbe9d10;] soap - SearchRequest elapsed=1",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100970",
+   "expect_level": 0,
+   "note": "real (sanitized): Z-Push folder listing is not counted"
+  },
+  {
+   "log": "2026-10-11 11:26:07,296 INFO  [qtp350068407-9366:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;mid=12;oip=198.51.100.198, 10.0.0.31;port=48074;ua=Apple-iPhone17C3/2307.90 devip=198.51.100.198 ZPZB/75;soapId=4bbe9d10;] soap - SearchRequest elapsed=1",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100970",
+   "expect_level": 0,
+   "repeat": 30,
+   "note": "real: 30 Z-Push searches in 5 min, every 100972 of the last 41 days had this shape"
+  },
+  {
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs2.example.com:22443/service/soap/SearchRequest] [name=user1@example.com;mid=13;oip=198.51.100.60;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - SearchRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100929",
+   "expect_level": 1,
+   "note": "real shape (sanitized): web client search is counted"
+  },
+  {
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs2.example.com:22443/service/soap/SearchRequest] [name=user1@example.com;mid=13;oip=198.51.100.60;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - SearchRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100972",
+   "expect_level": 12,
+   "repeat": 30,
+   "note": "synthesized: 30 searches in 5 min from the web client"
+  },
+  {
+   "log": "2026-10-02 16:11:55,350 INFO  [qtp350068407-95454:https://zcs2.example.com:7071/service/admin/soap] [name=user1@example.com;aname=admin@example.com;mid=13;ip=10.0.0.25;port=60020;soapId=6a1ca17e;] soap - GetMsgRequest elapsed=34",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100972",
+   "expect_level": 12,
+   "repeat": 30,
+   "note": "real shape (sanitized): an admin session bulk-reading one mailbox (1,788 GetMsg in 8.8 days here)"
+  },
+  {
+   "log": "2026-10-02 16:11:55,350 INFO  [qtp350068407-95454:https://zcs2.example.com:7071/service/admin/soap] [name=user1@example.com;aname=reader@example.com;mid=13;ip=10.0.0.25;port=60020;soapId=6a1ca17e;] soap - GetMsgRequest elapsed=34",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100935",
+   "expect_level": 0,
+   "repeat": 30,
+   "note": "real shape: the same administrator listed in zimbra-service-accounts"
+  },
+  {
+   "log": "2026-10-11 11:24:47,732 INFO  [qtp350068407-9383:https://zcs1.example.com:12443/service/soap/] [name=probe@example.com;mid=20;oip=10.0.0.28;ua=check_http/v2.3.1;soapId=4bbe9cff;] soap - GetMsgRequest elapsed=3",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100974",
+   "expect_level": 0,
+   "repeat": 30,
+   "note": "real shape: a listed monitoring account"
+  },
+  {
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs2.example.com:22443/service/soap/GetMsgRequest] [name=user1@example.com;mid=13;oip=198.51.100.60;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - GetMsgRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100973",
+   "expect_level": 14,
+   "repeat": 90,
+   "note": "synthesized: 90 reads in 5 min"
+  },
+  {
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs2.example.com:22443/service/soap/SendMsgRequest] [name=user1@example.com;mid=13;oip=198.51.100.60;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - SendMsgRequest elapsed=120",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100928",
+   "expect_level": 1,
+   "note": "real shape: a send is counted"
+  },
+  {
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs2.example.com:22443/service/soap/SendMsgRequest] [name=user1@example.com;mid=13;oip=198.51.100.60;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - SendMsgRequest elapsed=120",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100925",
+   "expect_level": 12,
+   "repeat": 50,
+   "note": "synthesized: 50 sends in 5 min"
+  },
+  {
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs2.example.com:22443/service/soap/ModifyFilterRulesRequest] [name=user1@example.com;mid=13;oip=198.51.100.60;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - ModifyFilterRulesRequest elapsed=120",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100930",
+   "expect_level": 5,
+   "note": "synthesized"
+  },
+  {
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs2.example.com:22443/service/soap/EnableTwoFactorAuthRequest] [name=user1@example.com;mid=13;oip=198.51.100.60;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - EnableTwoFactorAuthRequest elapsed=120",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100851",
+   "expect_level": 12,
+   "note": "synthesized"
+  },
+  {
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs2.example.com:22443/service/soap/CreateAppSpecificPasswordRequest] [name=user1@example.com;mid=13;oip=198.51.100.60;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - CreateAppSpecificPasswordRequest elapsed=120",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100851",
+   "expect_level": 12,
+   "note": "synthesized"
+  },
+  {
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs2.example.com:22443/service/soap/ChangePasswordRequest] [name=user1@example.com;mid=13;oip=198.51.100.60;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - ChangePasswordRequest elapsed=120",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100932",
+   "expect_level": 3,
+   "note": "synthesized"
+  },
+  {
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs1.example.com:7071/service/admin/soap/CreateAccountRequest] [name=admin@example.com;oip=10.0.0.25;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - CreateAccountRequest elapsed=40",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100931",
+   "expect_level": 8,
+   "note": "synthesized: admin console change"
+  },
+  {
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://localhost:7071/service/admin/soap/CreateAccountRequest] [name=zimbra;ua=zmprov/10.1.20_GA_10120;soapId=1;] soap - CreateAccountRequest elapsed=40",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100970",
+   "expect_level": 0,
+   "note": "near miss: zmprov on the server"
+  },
+  {
+   "log": "2026-10-11 11:26:13,897 INFO  [qtp350068407-9394:https://localhost:7071/service/admin/soap/GetServerRequest] [name=zimbra;ua=zmprov/10.1.20_GA_10120;soapId=4bbe9d13;] soap - GetServerRequest elapsed=4",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100970",
+   "expect_level": 0,
+   "note": "real"
+  },
+  {
+   "log": "Oct 11 10:00:00 zcs2 zimbra_mailbox 2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs2.example.com:22443/service/soap/SearchRequest] [name=user1@example.com;mid=13;oip=198.51.100.60;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - SearchRequest elapsed=12",
+   "location": "/var/log/syslog",
+   "expect_rule": "100834",
+   "repeat": 30,
+   "note": "syslog copy (zimbraLogToSyslog): 30 copies do not count",
+   "expect_level": 0
+  },
+  {
+   "log": "10.0.0.38:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/service/proxy?target=http%3A%2F%2Fgdata.youtube.com%2Ffeeds%2Fapi%2Fvideos%2FyDlt9dEmNos%3Falt%3Djsonc%26v%3D2 HTTP/2.0\" 403 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "none",
+   "note": "real (sanitized): a zimlet preview through the proxy servlet; was 100978 at level 13"
+  },
+  {
+   "log": "203.0.113.70:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/service/proxy?target=https://127.0.0.1:7071/service/admin/soap HTTP/2.0\" 200 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100978",
+   "expect_level": 13,
+   "note": "synthesized: CVE-2019-9621 shape"
+  },
+  {
+   "log": "203.0.113.70:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/service/proxy?target=http%3A%2F%2F169.254.169.254%2Flatest%2Fmeta-data%2F HTTP/2.0\" 200 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100978",
+   "expect_level": 13,
+   "note": "synthesized: encoded metadata target"
+  },
+  {
+   "log": "10.0.0.32:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/home/user1/Inbox/Reports?fmt=json&query=after:-32d HTTP/2.0\" 404 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100984",
+   "expect_level": 3,
+   "repeat": 20,
+   "note": "real shape (sanitized): 404 burst from an internal script"
+  },
+  {
+   "log": "203.0.113.71:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/zimbra/x.php HTTP/2.0\" 404 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100981",
+   "expect_level": 10,
+   "repeat": 20,
+   "note": "synthesized: external 404 scan"
+  },
+  {
+   "log": "203.0.113.72:62030 - - [07/Oct/2026:12:46:44 +0800]  \"POST https://zcs2.example.com/public/x.jsp HTTP/2.0\" 200 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100824",
+   "expect_level": 15,
+   "note": "synthesized: web shell POST (existing rule)"
+  },
+  {
+   "log": "203.0.113.72:62030 - - [07/Oct/2026:12:46:44 +0800]  \"POST https://zcs2.example.com/public/x.jsp HTTP/2.0\" 200 497 \"-\" \"Mozilla/5.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100830",
+   "expect_level": 15,
+   "note": "synthesized: web shell POST with no Referer (existing rule)"
+  },
+  {
+   "log": "203.0.113.72:62030 - - [07/Oct/2026:12:46:44 +0800]  \"POST https://zcs2.example.com/public/x.jsp HTTP/2.0\" 200 497 \"-\" \"Mozilla/5.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100825",
+   "expect_level": 15,
+   "repeat": 4,
+   "note": "synthesized: 4 such POSTs in 2 min; before 3.0 the ones taken by 100830 were not counted"
+  },
+  {
+   "log": "203.0.113.80:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/public/cmd.jsp HTTP/2.0\" 404 497 \"-\" \"curl/8.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100826",
+   "expect_level": 12,
+   "repeat": 4,
+   "note": "synthesized: 4 requests for a non-stock JSP on one source port"
+  },
+  {
+   "log": "203.0.113.80:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/public/login.jsp HTTP/2.0\" 200 497 \"-\" \"Mozilla/5.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100822",
+   "expect_level": 0,
+   "repeat": 4,
+   "note": "near miss: the stock login page over one keep-alive connection"
+  },
+  {
+   "log": "203.0.113.73:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/service/home/user1/?fmt=tgz HTTP/2.0\" 200 497 \"-\" \"curl/8.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100923",
+   "expect_level": 15,
+   "repeat": 3,
+   "note": "synthesized: 3 external exports in 10 min; before 3.0 nothing was ever counted"
+  },
+  {
+   "log": "203.0.113.72:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/public/login.jsp HTTP/2.0\" 200 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100822",
+   "expect_level": 0,
+   "note": "near miss: stock JSP"
+  },
+  {
+   "log": "203.0.113.73:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/service/home/user1/?fmt=tgz HTTP/2.0\" 200 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100922",
+   "expect_level": 14,
+   "note": "synthesized: external mailbox export"
+  },
+  {
+   "log": "10.0.0.29:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/service/home/user1/?fmt=tgz HTTP/2.0\" 200 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100921",
+   "expect_level": 0,
+   "note": "near miss: internal export"
+  },
+  {
+   "log": "203.0.113.74:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com:7071/zimbraAdmin/ HTTP/2.0\" 200 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100827",
+   "expect_level": 12,
+   "note": "synthesized: admin console from outside"
+  },
+  {
+   "log": "10.0.0.30:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com:7071/zimbraAdmin/ HTTP/2.0\" 200 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100828",
+   "expect_level": 0,
+   "note": "near miss: admin console from inside"
+  },
+  {
+   "log": "203.0.113.75:62030 - - [07/Oct/2026:12:46:44 +0800]  \"POST https://zcs2.example.com/service/extension/backup/mboximport?account-name=admin&ow=2 HTTP/2.0\" 401 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100975",
+   "expect_level": 14,
+   "note": "synthesized: CVE-2022-27925 shape"
+  },
+  {
+   "log": "203.0.113.76:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/h/../../../../etc/passwd HTTP/2.0\" 400 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100976",
+   "expect_level": 13,
+   "note": "synthesized: path traversal"
+  }
+ ]
+}

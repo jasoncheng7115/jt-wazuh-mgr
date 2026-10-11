@@ -1,0 +1,715 @@
+<!--
+  jt-ipam: IP address management and privileged remote access console
+  Rule range 131600-131699. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  The zz- prefix makes this file load after the built-in ruleset: it extends the
+  built-in FreeIPA grouping rule (82202), which receives every jt-ipam line
+  (see the decoder file), and the systemd rule 40704. The built-in correlation
+  rules 40111 / 40112 load earlier and are not attached to these rules even
+  though they carry the authentication groups (sandbox, 4.14.7), so the pack
+  has its own brute-force and success-after-failures rules.
+
+  Two layers, because jt-ipam's records reach Wazuh by two roads:
+
+    131600-131629  service messages from the journal. Work as soon as the
+                   agent reads journald or /var/log/syslog, with no change on
+                   the host: failed logins and brute force by source address,
+                   console connection failures, SSH and directory activity of
+                   the integrations, audit chain verification, backups.
+    131630-131689  the audit trail, relayed by rsyslog as jt-ipam-audit lines
+                   (setup guide).
+                   Account names, reasons, roles, permissions, API tokens,
+                   revealed secrets, console sessions, settings, export and
+                   import. jt-ipam records only successful sessions here;
+                   failures to connect are in the journal layer.
+
+  Successful sessions and changes are alerted from the audit layer only: the
+  journal layer keeps its copies of them below the alert level, so the two
+  layers do not alert twice for one event. Failed logins are the exception:
+  the journal layer has the source address, the audit layer the account and
+  the reason, and both alert (measured: four failed logins in two weeks).
+-->
+
+<group name="jt_ipam,">
+
+  <!-- =============================================================
+       Journal layer
+       ============================================================= -->
+
+  <!--
+    Every jt-ipam service line. Measured on one installation: about 67,000
+    backend lines a day (half of them uvicorn's duplicate access lines),
+    110,000 from the sync service (mostly outgoing HTTP requests of the
+    integrations) and a few from the backup. All stay at level 0 unless a
+    rule below picks them out.
+  -->
+  <rule id="131600" level="0">
+    <if_sid>82202</if_sid>
+    <program_name type="pcre2">^jt-ipam-(?:backend|sync|backup|audit)$</program_name>
+    <description>jt-ipam messages</description>
+  </rule>
+
+  <!-- One HTTP request handled by the backend: method, path, status, client. -->
+  <rule id="131601" level="0">
+    <if_sid>131600</if_sid>
+    <program_name type="pcre2">^jt-ipam-backend$</program_name>
+    <url type="pcre2">^/</url>
+    <id type="pcre2">^\d{3}$</id>
+    <description>jt-ipam API request</description>
+  </rule>
+
+  <rule id="131602" level="3">
+    <if_sid>131601</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/api/v1/auth/login$</url>
+    <id type="pcre2">^401$</id>
+    <description>jt-ipam: failed login from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,gdpr_IV_35.7.d,gdpr_IV_32.2,hipaa_164.312.b,nist_800_53_AU.14,nist_800_53_AC.7,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,tsc_CC7.3,</group>
+  </rule>
+
+  <rule id="131603" level="3">
+    <if_sid>131601</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/api/v1/auth/mfa/verify$</url>
+    <id type="pcre2">^401$</id>
+    <description>jt-ipam: second-factor code rejected for a login from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,gdpr_IV_35.7.d,gdpr_IV_32.2,hipaa_164.312.b,nist_800_53_AU.14,nist_800_53_AC.7,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,tsc_CC7.3,</group>
+  </rule>
+
+  <!-- The phpIPAM-compatible API logs in with HTTP basic authentication on
+       POST /api/<app id>/user/. -->
+  <rule id="131604" level="3">
+    <if_sid>131601</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/api/(?!v1/)[^/]+/user/?$</url>
+    <id type="pcre2">^401$</id>
+    <description>jt-ipam: failed login to the phpIPAM-compatible API from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,gdpr_IV_35.7.d,gdpr_IV_32.2,hipaa_164.312.b,nist_800_53_AU.14,nist_800_53_AC.7,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,tsc_CC7.3,</group>
+  </rule>
+
+  <!--
+    Brute force from one address. jt-ipam locks an account for 15 minutes after
+    5 failures and throttles the login endpoints at 10 requests a minute per
+    address, so 5 failures in 5 minutes is already the most a single honest
+    user produces before being locked out. A success from the same address
+    afterwards is 131623 (level 12). Each endpoint is counted
+    with if_matched_sid: with if_matched_group, 4.14.7 counted every failure
+    twice in the sandbox and fired at the third.
+  -->
+  <rule id="131605" level="10" frequency="5" timeframe="300">
+    <if_matched_sid>131604</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] jt-ipam: 5 failed phpIPAM-compatible API logins in 5 minutes from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,gdpr_IV_35.7.d,gdpr_IV_32.2,hipaa_164.312.b,nist_800_53_AU.14,nist_800_53_AC.7,nist_800_53_SI.4,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,tsc_CC7.3,</group>
+  </rule>
+
+  <rule id="131606" level="10" frequency="5" timeframe="300">
+    <if_matched_sid>131602</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] jt-ipam: 5 failed logins in 5 minutes from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,gdpr_IV_35.7.d,gdpr_IV_32.2,hipaa_164.312.b,nist_800_53_AU.14,nist_800_53_AC.7,nist_800_53_SI.4,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,tsc_CC7.3,</group>
+  </rule>
+
+  <rule id="131609" level="10" frequency="5" timeframe="300">
+    <if_matched_sid>131603</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] jt-ipam: 5 second-factor codes rejected in 5 minutes for logins from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,gdpr_IV_35.7.d,gdpr_IV_32.2,hipaa_164.312.b,nist_800_53_AU.14,nist_800_53_AC.7,nist_800_53_SI.4,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,tsc_CC7.3,</group>
+  </rule>
+
+  <rule id="131607" level="6">
+    <if_sid>131601</if_sid>
+    <url type="pcre2">^/api/(?:v1/auth/(?:login|mfa/verify)|(?!v1/)[^/]+/user/?)$</url>
+    <id type="pcre2">^429$</id>
+    <description>jt-ipam: login attempts from $(srcip) throttled (more than 10 a minute)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!-- Password accepted. Below the alert level: the audit layer reports the
+       login with the account name. -->
+  <rule id="131608" level="2">
+    <if_sid>131601</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/api/v1/auth/login$</url>
+    <id type="pcre2">^200$</id>
+    <description>jt-ipam: password accepted for a login from $(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!-- The password was accepted from an address that had just tripped the
+       brute-force rule: the guessing may have worked. -->
+  <rule id="131623" level="12" timeframe="600">
+    <if_sid>131608</if_sid>
+    <if_matched_sid>131606</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] jt-ipam: login from $(srcip) succeeded after a burst of failed logins</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,gdpr_IV_35.7.d,gdpr_IV_32.2,hipaa_164.312.b,nist_800_53_AU.14,nist_800_53_AC.7,nist_800_53_SI.4,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,tsc_CC7.3,</group>
+  </rule>
+
+  <!-- Console sessions requested through the web interface. Recorded below the
+       alert level: the audit layer reports each session that connected, with
+       the remote host, the account used on it and the jt-ipam user. -->
+  <rule id="131610" level="2">
+    <if_sid>131600</if_sid>
+    <program_name type="pcre2">^jt-ipam-(?:backend|sync)$</program_name>
+    <match type="pcre2">^\{"event": "(?:rdp: ws 已接受|rustdesk-web: 開始) </match>
+    <description>jt-ipam: console session requested to $(jtipam.host)$(jtipam.peer)</description>
+  </rule>
+
+  <rule id="131611" level="3">
+    <if_sid>131600</if_sid>
+    <program_name type="pcre2">^jt-ipam-(?:backend|sync)$</program_name>
+    <match type="pcre2">^\{"event": "rdp: (?:guacd )?連線失敗 </match>
+    <description>jt-ipam: RDP console connection to $(jtipam.host) failed $(jtipam.code)</description>
+  </rule>
+
+  <rule id="131612" level="5">
+    <if_sid>131611</if_sid>
+    <field name="jtipam.code" type="pcre2">^guacd_(?:unauthorized|forbidden|auth_required)$</field>
+    <description>jt-ipam: $(jtipam.host) rejected the credentials of an RDP console session</description>
+    <mitre>
+      <id>T1021.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="131613" level="5">
+    <if_sid>131600</if_sid>
+    <program_name type="pcre2">^jt-ipam-(?:backend|sync)$</program_name>
+    <match type="pcre2">^\{"event": "rustdesk-web: 身分驗證失敗 </match>
+    <description>jt-ipam: RustDesk peer $(jtipam.peer) rejected the password of a remote desktop session</description>
+  </rule>
+
+  <!-- jt-ipam stops a user who keeps entering wrong passwords for one RustDesk
+       peer: someone is guessing the password of a remote desktop. -->
+  <rule id="131614" level="7">
+    <if_sid>131600</if_sid>
+    <program_name type="pcre2">^jt-ipam-(?:backend|sync)$</program_name>
+    <match type="pcre2">^\{"event": "rustdesk-web: 限流 </match>
+    <description>jt-ipam: repeated wrong passwords for RustDesk peer $(jtipam.peer) by user $(jtipam.actor_id)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!-- SSH from jt-ipam to a managed host (console, SFTP or an integration)
+       refused by that host. -->
+  <rule id="131615" level="5">
+    <if_sid>131600</if_sid>
+    <program_name type="pcre2">^jt-ipam-(?:backend|sync)$</program_name>
+    <match type="pcre2">Connection failure: Permission denied for user </match>
+    <description>jt-ipam: $(jtipam.host) refused the SSH login of account '$(dstuser)'</description>
+  </rule>
+
+  <rule id="131616" level="2">
+    <if_sid>131600</if_sid>
+    <program_name type="pcre2">^jt-ipam-(?:backend|sync)$</program_name>
+    <match type="pcre2">\[conn=\d+\] Auth for user \S+ succeeded</match>
+    <description>jt-ipam: SSH login to a managed host as '$(dstuser)'</description>
+  </rule>
+
+  <!-- The sync service logging in as root: an integration that holds the root
+       password (or key) of another server. The host is on the preceding
+       "Opening SSH connection" line of the same process. -->
+  <rule id="131617" level="3">
+    <if_sid>131616</if_sid>
+    <program_name type="pcre2">^jt-ipam-sync$</program_name>
+    <user type="pcre2">^root$</user>
+    <description>jt-ipam integration logged in to a managed host over SSH as root</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!--
+    The Univention (UCS) DNS integration talks to the UDM REST API. Reading is
+    routine (measured: about 1,500 GET requests a day at a 5-minute interval)
+    and stays at level 0. A write changes DNS records in the directory, with
+    whatever account the integration was given.
+  -->
+  <rule id="131618" level="5">
+    <if_sid>131600</if_sid>
+    <url type="pcre2">^https?://[^/]+/univention/udm/</url>
+    <protocol type="pcre2">^(?:POST|PUT|PATCH|DELETE)$</protocol>
+    <id type="pcre2">^2\d\d$</id>
+    <description>jt-ipam changed the UCS directory: $(protocol) $(url)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131619" level="5">
+    <if_sid>131600</if_sid>
+    <url type="pcre2">^https?://[^/]+/univention/udm/</url>
+    <id type="pcre2">^(?:401|403)$</id>
+    <description>jt-ipam: the UCS UDM REST API refused the integration's credentials ($(id))</description>
+  </rule>
+
+  <!-- The sync service re-verifies the audit hash chain every few minutes. A
+       break means records in the database were changed or removed. -->
+  <rule id="131620" level="12">
+    <if_sid>131600</if_sid>
+    <program_name type="pcre2">^jt-ipam-sync$</program_name>
+    <match type="pcre2">audit chain verification FAILED</match>
+    <description>[HIGH] jt-ipam: the audit trail hash chain is broken</description>
+    <mitre>
+      <id>T1565.001</id>
+      <id>T1070</id>
+    </mitre>
+  </rule>
+
+  <rule id="131621" level="7">
+    <if_sid>131600</if_sid>
+    <program_name type="pcre2">^jt-ipam-sync$</program_name>
+    <match type="pcre2">audit anchor (?:forward )?failed</match>
+    <description>jt-ipam: the audit trail could not be anchored outside the database</description>
+  </rule>
+
+  <rule id="131622" level="7">
+    <if_sid>40704</if_sid>
+    <match>jt-ipam-backup.service: </match>
+    <description>jt-ipam: the daily backup failed</description>
+  </rule>
+
+  <!-- =============================================================
+       Audit layer (jt-ipam-audit lines, see the setup guide)
+       ============================================================= -->
+
+  <!-- Every audit record. Below the alert level; the rules below report the
+       ones that matter. Measured on one installation: 1 to 265 a day,
+       median about 27, plus a hash chain anchor every few minutes. -->
+  <rule id="131630" level="2">
+    <if_sid>131600</if_sid>
+    <program_name type="pcre2">^jt-ipam-audit$</program_name>
+    <field name="_app" type="pcre2">^jt-ipam$</field>
+    <description>jt-ipam audit: $(_action) $(_object_type)</description>
+  </rule>
+
+  <!-- Hash chain anchor, written every few minutes. -->
+  <rule id="131631" level="0">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^audit_anchor$</field>
+    <description>jt-ipam audit: hash chain anchor</description>
+  </rule>
+
+  <!-- Authentication -->
+
+  <rule id="131632" level="3">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^(?:login_success|oidc_login|saml_login)$</field>
+    <description>jt-ipam: $(dstuser) logged in from $(srcip) ($(jtipam.reason))</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131633" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^login_failed$</field>
+    <description>jt-ipam: failed login for '$(dstuser)' from $(srcip): $(jtipam.reason)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <rule id="131634" level="10">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^account_locked$</field>
+    <description>[WARN] jt-ipam: account '$(dstuser)' locked after repeated failures, last from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <rule id="131635" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^mfa_failed$</field>
+    <description>jt-ipam: second-factor code rejected for account $(_object_id) from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <rule id="131636" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^mfa_verified$</field>
+    <field name="_diff" type="pcre2">"via": "recovery_code"</field>
+    <description>jt-ipam: account $(_object_id) logged in with a recovery code from $(srcip)</description>
+  </rule>
+
+  <!-- A refresh token presented a second time: jt-ipam revokes the session
+       family, because a copy of the token is being used elsewhere. -->
+  <rule id="131637" level="10">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^refresh_token_reuse$</field>
+    <description>[WARN] jt-ipam: a used refresh token was presented again for account $(_object_id) from $(srcip)</description>
+    <mitre>
+      <id>T1550</id>
+    </mitre>
+  </rule>
+
+  <rule id="131638" level="7">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^(?:totp_disabled|mfa_reset)$</field>
+    <description>jt-ipam: second factor turned off or reset for account $(_object_id) by $(_actor_user_id)</description>
+    <mitre>
+      <id>T1556.006</id>
+    </mitre>
+  </rule>
+
+  <rule id="131639" level="3">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^password_changed$</field>
+    <field name="_object_type" type="pcre2">^user$</field>
+    <description>jt-ipam: account $(_object_id) changed its own password from $(srcip)</description>
+  </rule>
+
+  <rule id="131640" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^ldap_auto_provision$</field>
+    <description>jt-ipam: account '$(dstuser)' created automatically at its first directory login from $(srcip)</description>
+    <mitre>
+      <id>T1136</id>
+    </mitre>
+  </rule>
+
+  <!-- Accounts, roles and permissions -->
+
+  <rule id="131641" level="7">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">^user$</field>
+    <field name="_action" type="pcre2">^create$</field>
+    <description>jt-ipam: account '$(dstuser)' created by $(_actor_user_id)</description>
+    <mitre>
+      <id>T1136</id>
+    </mitre>
+  </rule>
+
+  <rule id="131642" level="10">
+    <if_sid>131641</if_sid>
+    <field name="_diff" type="pcre2">"is_admin": true</field>
+    <description>[WARN] jt-ipam: administrator account '$(dstuser)' created by $(_actor_user_id)</description>
+    <mitre>
+      <id>T1136</id>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131643" level="7">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">^user$</field>
+    <field name="_action" type="pcre2">^delete$</field>
+    <description>jt-ipam: account '$(dstuser)' deleted by $(_actor_user_id)</description>
+    <mitre>
+      <id>T1531</id>
+    </mitre>
+  </rule>
+
+  <!-- An account edited by an administrator. The record lists only the fields
+       that were sent, so "is_admin": true means administrator rights were set
+       in this edit. -->
+  <rule id="131644" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">^user$</field>
+    <field name="_action" type="pcre2">^update$</field>
+    <description>jt-ipam: account $(_object_id) changed by $(_actor_user_id)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131645" level="10">
+    <if_sid>131644</if_sid>
+    <field name="_diff" type="pcre2">"is_admin": true</field>
+    <description>[WARN] jt-ipam: administrator rights given to account $(_object_id) by $(_actor_user_id)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131646" level="7">
+    <if_sid>131644</if_sid>
+    <field name="_diff" type="pcre2">^(?!.*"is_admin": true).*"password_changed": true</field>
+    <description>jt-ipam: password of account $(_object_id) reset by $(_actor_user_id)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131647" level="7">
+    <if_sid>131644</if_sid>
+    <field name="_diff" type="pcre2">^(?!.*"is_admin": true)(?!.*"password_changed": true).*"is_active": false</field>
+    <description>jt-ipam: account $(_object_id) disabled by $(_actor_user_id)</description>
+    <mitre>
+      <id>T1531</id>
+    </mitre>
+  </rule>
+
+  <!-- Roles are groups in jt-ipam: permissions are given to groups. -->
+  <rule id="131648" level="7">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^group_member_(?:add|remove)$</field>
+    <description>jt-ipam: $(_action) '$(dstuser)' in role '$(jtipam.group)' by $(_actor_user_id)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131649" level="7">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">^group$</field>
+    <field name="_action" type="pcre2">^(?:create|update|delete)$</field>
+    <description>jt-ipam: role $(_action): '$(jtipam.name)' by $(_actor_user_id)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131650" level="7">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">^permission$</field>
+    <description>jt-ipam: permission $(_action) by $(_actor_user_id): $(_diff)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!-- API tokens -->
+
+  <rule id="131651" level="10">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">^api_token$</field>
+    <field name="_action" type="pcre2">^create$</field>
+    <description>[WARN] jt-ipam: API token '$(jtipam.name)' created by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1098.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="131652" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^phpipam_login$</field>
+    <description>jt-ipam: phpIPAM-compatible API token issued to $(_actor_user_id) from $(srcip)</description>
+  </rule>
+
+  <rule id="131653" level="3">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">^api_token$</field>
+    <field name="_action" type="pcre2">^revoke$</field>
+    <description>jt-ipam: API token '$(jtipam.name)' revoked by $(_actor_user_id)</description>
+  </rule>
+
+  <!-- Secrets and data leaving jt-ipam -->
+
+  <!-- An administrator displayed a stored secret: an integration token, the
+       MCP key, the rack embed token, a certificate or RustDesk agent key. -->
+  <rule id="131655" level="8">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^(?:secret_view|view_agent_key|cert_agent_key_view)$</field>
+    <description>jt-ipam: secret revealed ($(_action) $(_object_type) $(jtipam.setting)$(jtipam.name)) by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1555</id>
+    </mitre>
+  </rule>
+
+  <rule id="131656" level="8">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^cert_export$</field>
+    <description>jt-ipam: certificate exported by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1552.004</id>
+    </mitre>
+  </rule>
+
+  <!-- Certificate agents fetch the bundle (including the key) after each
+       renewal: routine, measured 31 downloads by 12 agents in one renewal. -->
+  <rule id="131657" level="3">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^cert_bundle_download$</field>
+    <description>jt-ipam: certificate $(jtipam.part) delivered to a certificate agent at $(srcip)</description>
+  </rule>
+
+  <rule id="131658" level="10">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^system_export_download$</field>
+    <description>[WARN] jt-ipam: full system export downloaded by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+  </rule>
+
+  <rule id="131659" level="10">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">^system$</field>
+    <field name="_action" type="pcre2">^import$</field>
+    <description>[WARN] jt-ipam: system import applied by $(_actor_user_id) from $(srcip) (data restored or replaced)</description>
+    <mitre>
+      <id>T1565.001</id>
+    </mitre>
+  </rule>
+
+  <!-- Stored console credentials (SSH, RDP, VNC, BMC, Proxmox, RustDesk). -->
+  <rule id="131661" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">_credential$</field>
+    <description>jt-ipam: stored $(_object_type) $(_action): '$(jtipam.name)' by $(_actor_user_id)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!-- Console sessions -->
+
+  <rule id="131665" level="3">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^(?:(?:ssh|rdp|vnc|novnc|bmc)\.session_open|sftp_open)$</field>
+    <description>jt-ipam: $(_action) to $(jtipam.host) as '$(dstuser)' by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1021</id>
+    </mitre>
+  </rule>
+
+  <!-- A console session as root or a Windows or directory administrator: the
+       stored credential gives full control of that host (measured: root SSH
+       sessions to a domain controller through jt-ipam, with a password that
+       jt-ipam keeps). -->
+  <rule id="131662" level="5">
+    <if_sid>131665</if_sid>
+    <user type="pcre2">(?i)^(?:root|administrator|admin)$</user>
+    <description>jt-ipam: $(_action) to $(jtipam.host) as privileged account '$(dstuser)' by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1021</id>
+      <id>T1078.003</id>
+    </mitre>
+  </rule>
+
+  <rule id="131663" level="3">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^rustdesk\.web_session_open$</field>
+    <description>jt-ipam: RustDesk remote desktop to peer $(jtipam.peer) by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1219</id>
+    </mitre>
+  </rule>
+
+  <rule id="131666" level="2">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^(?:(?:ssh|rdp|vnc|novnc|bmc)\.session_close|rustdesk\.web_session_close|sftp_close)$</field>
+    <description>jt-ipam: $(_action) $(jtipam.host)</description>
+  </rule>
+
+  <rule id="131667" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^(?:sftp_(?:upload|download|delete|mkdir|rename)|rustdesk\.file_\w+)$</field>
+    <description>jt-ipam: $(_action) $(jtipam.path) through the console by $(_actor_user_id)</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+  </rule>
+
+  <rule id="131668" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^rustdesk\.elevation_request$</field>
+    <description>jt-ipam: elevation requested in a remote desktop session by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1548</id>
+    </mitre>
+  </rule>
+
+  <rule id="131669" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^console_revoked$</field>
+    <description>jt-ipam: a running console session was ended because its permission was withdrawn</description>
+  </rule>
+
+  <rule id="131670" level="3">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^(?:ssh\.hostkey_pin|cert_source_pin_host_key)$</field>
+    <description>jt-ipam: SSH host key trusted on first use for $(_object_type) $(_object_id) $(jtipam.host)</description>
+  </rule>
+
+  <rule id="131671" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^cert_source_forget_host_key$</field>
+    <description>jt-ipam: a trusted SSH host key was forgotten by $(_actor_user_id)</description>
+  </rule>
+
+  <!-- Configuration -->
+
+  <rule id="131672" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">^(?:system|system_setting)$</field>
+    <field name="_action" type="pcre2">^update$</field>
+    <description>jt-ipam: settings changed ($(jtipam.setting)) by $(_actor_user_id) from $(srcip)</description>
+  </rule>
+
+  <!-- Where the audit trail is sent. jt-ipam records this change after the new
+       setting is in force, so turning forwarding off is never forwarded: the
+       stream simply stops. -->
+  <rule id="131673" level="10">
+    <if_sid>131672</if_sid>
+    <field name="_diff" type="pcre2">"setting": "audit_forward"</field>
+    <description>[WARN] jt-ipam: audit forwarding changed by $(_actor_user_id) from $(srcip)</description>
+    <mitre>
+      <id>T1562</id>
+    </mitre>
+  </rule>
+
+  <rule id="131674" level="10">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^(?:chain_repair|chain_selftest)$</field>
+    <description>[WARN] jt-ipam: audit records repaired or re-verified by maintenance ($(_action))</description>
+    <mitre>
+      <id>T1070</id>
+    </mitre>
+  </rule>
+
+  <!-- Connections to other systems (firewalls, hypervisors, DNS and DHCP
+       servers, Wazuh, LibreNMS...). Each holds credentials for that system. -->
+  <rule id="131675" level="3">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">^(?:(?!scan_agent$|cert_agent$|rustdesk_server$)\w+_(?:instance|server|firewall|target|source)|jump_host)$</field>
+    <field name="_action" type="pcre2">^(?:create|update|delete)$</field>
+    <description>jt-ipam: integration $(_object_type) $(_action): '$(jtipam.name)' by $(_actor_user_id)</description>
+  </rule>
+
+  <!-- Scan agents can relay console connections into other networks;
+       certificate and RustDesk agents hold keys. -->
+  <rule id="131676" level="5">
+    <if_sid>131630</if_sid>
+    <field name="_object_type" type="pcre2">^(?:scan_agent|cert_agent|rustdesk_server)$</field>
+    <field name="_action" type="pcre2">^(?!view_agent_key$|cert_agent_key_view$|rustdesk\.)\w+$</field>
+    <description>jt-ipam: $(_object_type) $(_action): '$(jtipam.name)' by $(_actor_user_id)</description>
+  </rule>
+
+  <!-- The AI assistant and MCP clients act with the rights of their user. -->
+  <rule id="131677" level="3">
+    <if_sid>131630</if_sid>
+    <field name="_action" type="pcre2">^(?:mcp_tool_exec|ai_tool_exec)$</field>
+    <description>jt-ipam: $(_action) by $(_actor_user_id) from $(srcip)</description>
+  </rule>
+
+</group>

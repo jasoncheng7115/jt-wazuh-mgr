@@ -1,0 +1,144 @@
+{
+ "id": "jt-keycloak",
+ "name": "Keycloak Detection Suite",
+ "name_zh": "Keycloak 偵測套組",
+ "version": "1.0",
+ "summary": "Logins, failed logins, brute-force lockouts, credential changes and administrator changes from the Keycloak event log, which Wazuh does not decode at all.",
+ "summary_zh": "Keycloak 事件記錄中的登入、登入失敗、暴力破解鎖定、憑證變更與管理者變更；Wazuh 內建完全不解碼。",
+ "rule_id_range": "131300-131399",
+ "notes": [
+  "Wazuh has no decoder or rule for Keycloak. Keycloak reports every login, failed login and administrator change through its jboss-logging event listener, one key=value line per event (logger org.keycloak.events). The pack decodes realm, client, user, source address (srcip), error and, for admin events, the operation, resource type and resource path.",
+  "Successful events are logged at DEBUG unless the site raises them, so out of the box only failures arrive. Set KC_SPI_EVENTS_LISTENER__JBOSS_LOGGING__SUCCESS_LEVEL=info to see logins and admin changes. The realm's event storage settings (eventsEnabled, enabledEventTypes) do not matter here: the log listener receives every event type.",
+  "Logins: a login is level 3, a login to the admin console level 6, any other login to the master realm level 5. Logouts (level 2) and the token requests that follow every login (level 0) do not alert. Accounts that log in for a machine can be listed in etc/lists/jt-keycloak-service-accounts: their successful logins drop to level 0 (level 2 in the master realm); their failures still alert.",
+  "Failures: a wrong password or one-time code, an unknown user and a disabled account are level 5, a wrong client secret level 6, an attempt on an account that brute-force protection has locked level 10. Eight of these from one address within five minutes are level 10. Keycloak's own lockout event is level 10, or level 12 when the account is disabled permanently. A missing session cookie, an expired page, the back button after a login and a session that ended are level 2: every real user produces them.",
+  "Credentials and accounts: a one-time code or password set is level 5, removed level 8; an e-mail address changed or an account deleted level 5; an administrator impersonating a user level 10. Keycloak 26 also writes the deprecated UPDATE_TOTP, UPDATE_PASSWORD and REMOVE_TOTP for the same change in the same millisecond; they stay below the alert level so a change alerts once. Keycloak 25 and older write only the deprecated names.",
+  "Admin events: a role granted, realm settings, authentication flows, identity providers, a client secret and a deleted federation or key component are level 10; a deleted realm level 12; scope mappings, roles, group membership, required actions, federation and component changes, clients created or deleted, and an administrator setting or removing a user's credential level 8; the rest level 3 to 6. Keycloak names the realm the administrator signed in to (usually master) and the administrator's user id, not a user name and not the realm that was changed: the resource path in the alert says what changed. A failed admin operation writes no admin event.",
+  "Server: start and stop are level 3, an uncaught server error level 5, any other ERROR line (LDAP, database, mail) level 4. An uncaught WebApplicationException is an HTTP status a request handler raised on purpose; on the site this pack was built on, all 88 in 13 days were the welcome page answering requests that had no Host header, three at a time every six hours, so they are level 2. Stack trace lines, 90 per cent of the log there, are decoded and dropped.",
+  "Collection: the recommended way is the docker journald logging driver with the tag keycloak (or Keycloak under systemd), because the agent already reads the journal. The Keycloak log file and the docker json-file log work too. The json-file log is matched on its log field only, without decoded fields: no per-address correlation, no active response and a smaller rule set (131330-131339). Keycloak's JSON console format (log-console-output=json) is not supported.",
+  "Measured on one site (Keycloak 26.4.7, one realm behind a reverse proxy, 13 days of log replayed through the rules) gave 278 alerts: 158 on the day the realm was set up (the setup script's admin changes and logins), 11 to 44 a day while an automated login test ran four to eight times a day, and none on the seven quiet days. The 6,450 stack trace lines and 88 routine HTTP errors raised none. No wrong-password or lockout event occurred in that time; those rules are tested with lines built from the Keycloak 26.4.7 source."
+ ],
+ "notes_zh": [
+  "Wazuh 對 Keycloak 沒有任何解碼器或規則。Keycloak 透過 jboss-logging 事件監聽器回報每一次登入、登入失敗與管理者變更，一個事件一行 key=value（logger 為 org.keycloak.events）。本套件解出 realm、client、使用者、來源位址（srcip）、錯誤，以及管理事件的操作、資源類型與資源路徑。",
+  "成功事件預設以 DEBUG 記錄，所以不調整的話只會收到失敗事件。設定 KC_SPI_EVENTS_LISTENER__JBOSS_LOGGING__SUCCESS_LEVEL=info 才看得到登入與管理變更。realm 的事件儲存設定（eventsEnabled、enabledEventTypes）在這裡沒有影響：記錄監聽器會收到所有事件類型。",
+  "登入：一般登入為 level 3，登入管理主控台為 level 6，其他登入 master realm 為 level 5。登出（level 2）與每次登入之後的 token 請求（level 0）不告警。為機器而登入的帳號可列入 etc/lists/jt-keycloak-service-accounts：其成功登入降為 level 0（master realm 為 level 2），失敗仍會告警。",
+  "失敗：密碼或一次性密碼錯誤、使用者不存在、帳號已停用為 level 5，client secret 錯誤為 level 6，嘗試登入已被暴力破解防護鎖定的帳號為 level 10。同一位址五分鐘內八次上述失敗為 level 10。Keycloak 自己的鎖定事件為 level 10，永久停用帳號則為 level 12。缺少 session cookie、頁面逾時、登入後按上一頁、session 已結束為 level 2：每個真實使用者都會產生。",
+  "憑證與帳號：設定一次性密碼或密碼為 level 5，移除為 level 8；變更電子郵件或刪除帳號為 level 5；管理者模擬（impersonate）使用者為 level 10。Keycloak 26 會在同一毫秒另外寫出已棄用的 UPDATE_TOTP、UPDATE_PASSWORD、REMOVE_TOTP；這些維持在告警等級之下，讓一次變更只告警一次。Keycloak 25 以前只寫舊名稱。",
+  "管理事件：授予角色、realm 設定、驗證流程、身分提供者、client secret、刪除 federation 或金鑰元件為 level 10；刪除 realm 為 level 12；scope mapping、角色、群組成員、必要動作、federation 與元件變更、建立或刪除 client、管理者設定或移除使用者的憑證為 level 8；其餘為 level 3 到 6。Keycloak 記的是管理者登入的 realm（通常是 master）與管理者的使用者 ID，不是使用者名稱，也不是被變更的 realm：告警中的資源路徑才說明改了什麼。失敗的管理操作不會寫出管理事件。",
+  "伺服器：啟動與停止為 level 3，未處理的伺服器錯誤為 level 5，其他 ERROR 行（LDAP、資料庫、郵件）為 level 4。未處理的 WebApplicationException 是請求處理程式刻意回應的 HTTP 狀態；在建置本套件的站台上，13 天內 88 筆全是歡迎頁回應沒有 Host 標頭的請求，每六小時三筆，因此為 level 2。stack trace 的各行（當地記錄的 90%）會被解碼後丟棄。",
+  "收集方式：建議使用 docker 的 journald 記錄驅動程式並設定 tag 為 keycloak（或以 systemd 執行 Keycloak），因為 agent 本來就有讀 journal。Keycloak 記錄檔與 docker json-file 記錄也可以。json-file 記錄只比對其 log 欄位、沒有解碼欄位：無法依位址關聯、不能用主動回應，規則也較少（131330-131339）。不支援 Keycloak 的 JSON 主控台格式（log-console-output=json）。",
+  "單一站台實測（Keycloak 26.4.7，一個 realm，位於反向代理之後，將 13 天的記錄重新送過規則）共產生 278 則告警：設定 realm 當天 158 則（設定腳本的管理變更與登入），自動化登入測試每天執行四到八次的期間每天 11 到 44 則，七個安靜的日子為 0。6,450 行 stack trace 與 88 筆例行 HTTP 錯誤都沒有告警。期間沒有發生密碼錯誤或鎖定事件；這些規則以依 Keycloak 26.4.7 原始碼組出的記錄行測試。"
+ ],
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.7"
+ ],
+ "files": [
+  {
+   "type": "decoder",
+   "name": "jt-keycloak_decoders.xml",
+   "dest": "etc/decoders/jt-keycloak_decoders.xml",
+   "sha256": "ba09f47cafa051bc1cde63efc2fc94bc9879e73dcf4d528bb60cd43c7e7f7648"
+  },
+  {
+   "type": "rule",
+   "name": "jt-keycloak_rules.xml",
+   "dest": "etc/rules/jt-keycloak_rules.xml",
+   "sha256": "9c6c83e3a19f81cf46a1f51450f858913e3a05f0ba142326deabd7c1476db14a"
+  },
+  {
+   "type": "list",
+   "name": "jt-keycloak-service-accounts",
+   "dest": "etc/lists/jt-keycloak-service-accounts",
+   "declare": true,
+   "keep": true,
+   "sha256": "59899ffe7722e3bf9fe4c7628c53d58b6a905e7528faff2c529d84de8c9a5b8f"
+  }
+ ],
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset on every node",
+   "title_zh": "安裝套件並在所有節點重新載入規則集",
+   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Log successful events in Keycloak",
+   "title_zh": "讓 Keycloak 記錄成功事件",
+   "body": "Keycloak logs failed events at WARN and successful ones (logins, logouts, admin changes) at DEBUG, which the default INFO level drops. Add the variable to the Keycloak container (or pass the option to kc.sh start). Older releases spell it with single underscores: KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL. Takes effect on the next restart of Keycloak: a short sign-in outage.",
+   "body_zh": "Keycloak 以 WARN 記錄失敗事件，成功事件（登入、登出、管理變更）則以 DEBUG 記錄，會被預設的 INFO 等級丟掉。在 Keycloak 容器加上這個環境變數（或在 kc.sh start 加上選項）。較舊的版本寫成單底線：KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL。下次重新啟動 Keycloak 後生效：登入服務會短暫中斷。",
+   "code": "# docker compose, service keycloak, environment:\nKC_SPI_EVENTS_LISTENER__JBOSS_LOGGING__SUCCESS_LEVEL: info\n\n# or on the command line\nkc.sh start --spi-events-listener--jboss-logging--success-level=info",
+   "verify": "Sign in once, then look for a line with type=\"LOGIN\" in the Keycloak log.",
+   "verify_zh": "登入一次，Keycloak 記錄中應出現含 type=\"LOGIN\" 的行。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Send the container log to the journal with the tag keycloak",
+   "title_zh": "把容器記錄送進 journal，tag 設為 keycloak",
+   "body": "Docker keeps container output in its own json-file log, which the agent does not read. With the journald logging driver each line reaches the journal under the program name given by the tag, and the agent's journald input (default on systemd hosts since Wazuh 4.x) forwards it. docker logs keeps working. Applying it recreates the container: a short sign-in outage. If the host's rsyslog also copies the journal to /var/log/syslog and the agent reads both, every line arrives twice: keep one. Keycloak installed on the host under systemd needs nothing here; its lines carry the program name kc.sh or java.",
+   "body_zh": "Docker 把容器輸出存在自己的 json-file 記錄，agent 不會讀。改用 journald 記錄驅動程式後，每一行都以 tag 指定的程式名稱寫入 journal，再由 agent 的 journald 輸入（Wazuh 4.x 起在 systemd 主機上為預設）轉送。docker logs 仍可使用。套用時會重建容器：登入服務會短暫中斷。若主機的 rsyslog 也把 journal 複製到 /var/log/syslog，而 agent 兩者都讀，每行會收到兩次：只保留一個。直接以 systemd 安裝在主機上的 Keycloak 不需這一步，其記錄的程式名稱為 kc.sh 或 java。",
+   "code": "# docker-compose.yml, service keycloak:\n    logging:\n      driver: journald\n      options:\n        tag: keycloak\n\ndocker compose up -d keycloak\n# the agent must have this in ossec.conf:\n#   <localfile><log_format>journald</log_format><location>journald</location></localfile>",
+   "verify": "journalctl -t keycloak -n 5 shows Keycloak lines; a failed login then raises rule 131341 or 131342 (level 5) on the manager.",
+   "verify_zh": "journalctl -t keycloak -n 5 可看到 Keycloak 的記錄；之後一次登入失敗，manager 端應出現規則 131341 或 131342（level 5）。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Make Keycloak record the client address behind a reverse proxy",
+   "title_zh": "位於反向代理之後時，讓 Keycloak 記下用戶端位址",
+   "body": "Keycloak puts the client address in each event only when it trusts the proxy's forwarding header. Without it every event carries the proxy's address, the brute-force rule counts all users as one source, and an active response would block the proxy. Set the header your proxy sends, and let the proxy overwrite (not append to) any header the client sends.",
+   "body_zh": "Keycloak 只有在信任代理送來的轉送標頭時，才會在事件中記下用戶端位址。否則每個事件都是代理的位址，暴力破解規則會把所有使用者算成同一個來源，主動回應則會封鎖代理本身。設定代理實際送出的標頭，並讓代理覆寫（而不是附加）用戶端自帶的標頭。",
+   "code": "KC_PROXY_HEADERS: xforwarded    # X-Forwarded-For; use forwarded for the Forwarded header"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "List the accounts that sign in for a machine",
+   "title_zh": "列出為機器而登入的帳號",
+   "body": "One line per user name, then reload the ruleset. Their successful logins stop alerting (in the master realm they drop to level 2); failures and admin console logins still alert.",
+   "body_zh": "每個使用者名稱一行，加入後重新載入規則集。這些帳號的成功登入不再告警（master realm 降為 level 2）；失敗與管理主控台登入仍會告警。",
+   "code": "echo 'monitoring-probe:service' >> /var/ossec/etc/lists/jt-keycloak-service-accounts"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Alternative: read the Keycloak log file",
+   "title_zh": "替代方式：讀取 Keycloak 記錄檔",
+   "body": "For Keycloak on the host with file logging (log=file). Do not combine it with the journal for the same server, or every line arrives twice. The decoded fields are the same, except the log level. Stack trace lines are dropped on the agent.",
+   "body_zh": "適用於在主機上執行並啟用檔案記錄（log=file）的 Keycloak。同一台伺服器不要同時讀 journal，否則每行會收到兩次。解出的欄位相同，只少了記錄等級。stack trace 的各行在 agent 端就丟掉。",
+   "code": "<localfile>\n  <location>/opt/keycloak/data/log/keycloak.log</location>\n  <log_format>syslog</log_format>\n  <ignore type=\"PCRE2\">^\\s+at |^\\s+\\.\\.\\. \\d+ more|^(?:Caused by|Suppressed): </ignore>\n</localfile>"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Alternative: read the docker json-file log (limited)",
+   "title_zh": "替代方式：讀取 docker json-file 記錄（功能有限）",
+   "body": "Only if the logging driver cannot be changed. Wazuh decodes the file as JSON and rules 131330-131339 match the Keycloak line in its log field: failed logins, lockouts, logins, admin console logins, privileged admin changes, uncaught errors and start. Nothing else is decoded, so there is no source address: no per-address brute-force rule, no active response, and the alert shows the line instead of fields. The wildcard reads the log of every container on the host. Docker does not rotate this file unless max-size is set.",
+   "body_zh": "只在無法更改記錄驅動程式時使用。Wazuh 把檔案當作 JSON 解碼，規則 131330-131339 比對 log 欄位中的 Keycloak 記錄行：登入失敗、鎖定、登入、管理主控台登入、高權限管理變更、未處理錯誤與啟動。其他都不解碼，因此沒有來源位址：沒有依位址的暴力破解規則、不能用主動回應，告警中只有原始記錄行而沒有欄位。萬用字元會讀到主機上每個容器的記錄。除非設定 max-size，Docker 不會輪替這個檔案。",
+   "code": "<localfile>\n  <location>/var/lib/docker/containers/*/*-json.log</location>\n  <log_format>json</log_format>\n</localfile>"
+  }
+ ],
+ "active_response": [
+  {
+   "id": "block-keycloak-bruteforce",
+   "command": "firewall-drop",
+   "rules_id": [
+    "131360"
+   ],
+   "location": "defined-agent",
+   "timeout": 600,
+   "title": "Block an address that keeps failing to sign in to Keycloak",
+   "title_zh": "封鎖一再登入 Keycloak 失敗的位址",
+   "body": "Drops traffic from the source address for 10 minutes after rule 131360 (eight failed logins from one address in five minutes), using iptables or nftables on the chosen agent. Choose the host where client connections arrive: behind a reverse proxy that is the proxy, not the Keycloak host. Blocking on the Keycloak host behind a proxy does nothing when Keycloak trusts the proxy headers (the client never connects to it directly), and blocks the proxy, and with it every user, when it does not (srcip is then the proxy). Only for a Keycloak reached directly is the Keycloak host itself right. Risk: an administrator who mistypes a password eight times is locked out for 10 minutes, and so is everyone behind the same NAT address, including users who come in through a router's hairpin NAT. Put the proxy, NAT gateways and management networks in the manager's white_list first.",
+   "body_zh": "規則 131360（同一位址五分鐘內登入失敗八次）觸發後，在所選 agent 上以 iptables 或 nftables 封鎖來源位址 10 分鐘。請選用戶端連線實際抵達的主機：位於反向代理之後時是代理，而不是 Keycloak 主機。在代理後方的 Keycloak 主機上封鎖，若 Keycloak 信任代理標頭則毫無作用（用戶端從不直接連它）；若不信任則會封鎖代理本身，連帶所有使用者（此時 srcip 就是代理）。只有用戶端直接連線的 Keycloak，才適合在 Keycloak 主機上封鎖。風險：打錯密碼八次的管理者會被擋 10 分鐘，同一個 NAT 位址後的所有人也一樣，包括經由路由器 hairpin NAT 進來的使用者。請先把代理、NAT 閘道與管理網段加入 manager 的 white_list。"
+  }
+ ]
+}

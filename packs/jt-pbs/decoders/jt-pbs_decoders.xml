@@ -1,0 +1,137 @@
+<!--
+  jt-pbs: decoders for Proxmox Backup Server
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  Wazuh ships nothing for Proxmox Backup Server. Its daemons write to syslog,
+  and the interesting parts live in three files of their own:
+    /var/log/proxmox-backup/api/auth.log     logins (ISO timestamp, no syslog header)
+    /var/log/proxmox-backup/api/access.log   REST API requests
+    /var/log/proxmox-backup/tasks/archive    one line per finished task, with its result
+  The pack's agent group collects the three files.
+-->
+
+<!--
+  Daemon messages in syslog, e.g.
+    Oct  4 00:33:00 pbs1 proxmox-backup-proxy[1345]: lookup_datastore failed - datastore 'usb' is not mounted
+    Oct  3 03:33:01 pbs1 proxmox-backup-api[1340]: could not notify via target `smtp-relay`: ...
+    Sep 28 12:25:03 pbs1 proxmox-backup-proxy[1345]: OPTIONS /: 400 Bad Request: [client [::ffff:192.0.2.44]:56496] invalid http method for path
+  Siblings with one name each add the fields they find.
+-->
+<decoder name="jt-pbs">
+  <program_name type="pcre2">^proxmox-backup-(?:proxy|api)$</program_name>
+</decoder>
+
+<decoder name="jt-pbs-fields">
+  <parent>jt-pbs</parent>
+  <regex type="pcre2">datastore '([^']+)'</regex>
+  <order>pbs.datastore</order>
+</decoder>
+
+<decoder name="jt-pbs-fields">
+  <parent>jt-pbs</parent>
+  <regex type="pcre2">\[(?:client )?\[(?:::ffff:)?([0-9A-Fa-f.:]+)\]:\d+\]</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="jt-pbs-fields">
+  <parent>jt-pbs</parent>
+  <regex type="pcre2">^could not notify via target `([^`]+)`: (.*)$</regex>
+  <order>pbs.target, pbs.error</order>
+</decoder>
+
+<decoder name="jt-pbs-fields">
+  <parent>jt-pbs</parent>
+  <regex type="pcre2">^(?:TASK ERROR|lookup_datastore failed) ?[-:] (.*)$</regex>
+  <order>pbs.error</order>
+</decoder>
+
+<!--
+  /var/log/proxmox-backup/api/auth.log, e.g.
+    2026-09-17T01:10:02+08:00: successful auth for user 'root@pam'
+    2026-08-20T18:33:36+08:00: authentication failure; rhost=[::ffff:192.0.2.13]:19433 user=root@pam msg=authentication error - AUTH_ERR (7)
+    2026-04-02T10:00:00+08:00: authentication failure; rhost=[::ffff:192.0.2.21]:40112 msg=invalid credentials
+  The trailing colon after the offset keeps Wazuh's pre-decoder from taking the
+  timestamp as a syslog header, so the decoder sees the whole line (verified
+  with wazuh-logtest 4.14.7). A line with user= is a password login at
+  /access/ticket; a line without it is a request whose ticket or API token was
+  refused. dstuser keeps the realm (root@pam and root@pbs are different users).
+-->
+<decoder name="jt-pbs-auth">
+  <prematch type="pcre2">^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d: (?:successful auth for user '|authentication failure; rhost=)</prematch>
+</decoder>
+
+<decoder name="jt-pbs-auth-fields">
+  <parent>jt-pbs-auth</parent>
+  <regex type="pcre2">: successful auth for user '([^']+)'</regex>
+  <order>dstuser</order>
+</decoder>
+
+<decoder name="jt-pbs-auth-fields">
+  <parent>jt-pbs-auth</parent>
+  <regex type="pcre2">: authentication failure; rhost=\[(?:::ffff:)?([^\]]+)\]:\d+ </regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="jt-pbs-auth-fields">
+  <parent>jt-pbs-auth</parent>
+  <regex type="pcre2"> user=(\S+) msg=</regex>
+  <order>dstuser</order>
+</decoder>
+
+<decoder name="jt-pbs-auth-fields">
+  <parent>jt-pbs-auth</parent>
+  <regex type="pcre2"> msg=(.*)$</regex>
+  <order>pbs.msg</order>
+</decoder>
+
+<!--
+  /var/log/proxmox-backup/api/access.log, e.g.
+    ::ffff:192.0.2.200 - root@pam [17/09/2026:00:41:43 +0800] "PUT /api2/extjs/config/prune/storeconfig-store1" 200 0 Mozilla/5.0 ...
+  Unlike the Proxmox VE access log, the request has no HTTP version, so the
+  built-in web access decoder does not read it. The user is "-" for a request
+  without credentials; an API token appears as user@realm!tokenname.
+-->
+<decoder name="jt-pbs-access">
+  <prematch type="pcre2">^\S+ - \S+ \[\d\d/\d\d/\d{4}:\d\d:\d\d:\d\d [+-]\d{4}\] "[A-Z]+ \S+" \d{3} </prematch>
+</decoder>
+
+<decoder name="jt-pbs-access-fields">
+  <parent>jt-pbs-access</parent>
+  <regex type="pcre2">^(?:::ffff:)?(\S+) - (\S+) \[[^\]]+\] "([A-Z]+) (\S+)" (\d{3}) </regex>
+  <order>srcip, dstuser, protocol, url, id</order>
+</decoder>
+
+<!--
+  /var/log/proxmox-backup/tasks/archive: PBS appends one line when a task ends,
+    UPID:<node>:<pid>:<pstart>:<task id>:<start>:<type>:<worker id>:<user>: <end> <result>
+  e.g.
+    UPID:pbs1:00148956:08143ED0:00001C1B:6ACAEE54:backup:store1\x3act-128:backup@pbs!pve: 6ACAEFC6 OK
+  The result is OK, "WARNINGS: <n>", "unknown" (the task had no end, usually
+  because the daemon restarted under it) or the error message itself. The
+  worker id is escaped as in systemd (\x3a is a colon, \x2d a hyphen).
+-->
+<decoder name="jt-pbs-task">
+  <prematch type="pcre2">^UPID:[^:\s]+:[0-9A-F]{8,}:[0-9A-F]{8,}:[0-9A-F]{8,}:[0-9A-F]{8,}:[^:\s]+:[^:\s]*:[^:\s]+: [0-9A-F]{8,} </prematch>
+</decoder>
+
+<decoder name="jt-pbs-task-fields">
+  <parent>jt-pbs-task</parent>
+  <regex type="pcre2">^UPID:([^:]+):[0-9A-F]+:[0-9A-F]+:[0-9A-F]+:[0-9A-F]+:([^:]+):([^:]*):([^:]+): [0-9A-F]+ (.*)$</regex>
+  <order>pbs.node, pbs.task, pbs.id, pbs.user, pbs.status</order>
+</decoder>
+
+<!--
+  Disk usage, from the "df -P" command every Linux agent runs by default:
+    ossec: output: 'df -P': rpool/store1  10574932480 6638660736 3936271744  63% /store1
+  A child of the built-in "ossec" decoder; it only adds the usage and the mount
+  point. The rules look at mount points that hold a datastore: /mnt/datastore/*
+  (where PBS mounts the disks it formats, and removable datastores) and the
+  ones listed in etc/lists/jt-pbs-datastore-mounts.
+-->
+<decoder name="jt-pbs-df">
+  <parent>ossec</parent>
+  <type>ossec</type>
+  <prematch offset="after_parent" type="pcre2">^output: 'df -P': </prematch>
+  <regex offset="after_prematch" type="pcre2">\s(\d+)% (/\S*)$</regex>
+  <order>pbs.usage, pbs.mount</order>
+</decoder>

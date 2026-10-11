@@ -1,16 +1,44 @@
 <!--
-  Zenarmor (OPNsense) 解碼器
-  參考: https://www.zenarmor.com/docs/guides/integrating-zenarmor-with-wazuh
+  Zenarmor (OPNsense) decoder
+  Reference: https://www.zenarmor.com/docs/guides/integrating-zenarmor-with-wazuh
 
-  實際 syslog 格式:
-    Aug 30 09:00:00 OPNsense.localdomain zenarmor[88886]: daemon=zenarmor, index=conn, data={...}
+  Line format as remoted receives it (the <PRI> is stripped on input):
+    2026-10-11T11:35:16+08:00 fw1.example.com zenarmor[63078]: daemon=zenarmor, index=alert, data={...}
+  index is one of conn, dns, tls, http, sip or alert. Records are about 2 KB,
+  so over UDP they arrive as IP fragments; remoted reassembles them normally.
 
-  2026-08-30 實測（Wazuh 4.14.7）:
-    官方指南給的 <prematch>zenarmor</prematch> 父解碼器「不會匹配」,
-    必須用 <program_name>zenarmor</program_name>。已用 wazuh-logtest 驗證:
-      program_name 寫法 -> 成功解出 ip_src_saddr / security_tags / is_blocked
-      官方 prematch 寫法 -> No decoder matched
-    若日後 syslog 經轉送導致 program_name 被改寫, 需改用其他比對方式並重新驗證。
+  Verified on Wazuh 4.14.7:
+    * The vendor guide's <prematch>zenarmor</prematch> parent never matches.
+      <program_name>zenarmor</program_name> does.
+    * Decoders with the same name and parent are siblings: every one of them
+      runs on the event and adds its fields. The first sibling feeds the JSON
+      after data= to the JSON decoder (fields keep their JSON names:
+      ip_src_saddr, dst_hostname, security_tags, alertinfo.match.dst_hostname ...).
+      The others copy a few of those values into fields that other rules,
+      CDB lookups and active response understand.
+
+  Fields added by this file (version 1.4 of the pack):
+    zenarmor.index    conn | dns | tls | http | sip | alert
+    srcip, srcport    the client (ip_src_saddr, ip_src_port)
+    dstip, dstport    the server (ip_dst_saddr, ip_dst_port)
+    protocol          TCP | UDP (transport_proto)
+    zenarmor.domain   the name the record is about, whatever the record type:
+                        alert  alertinfo.match.dst_hostname (the name Zenarmor
+                               matched; on a DNS block the top-level
+                               dst_hostname is the DNS server, not the name)
+                        dns    query
+                        other  dst_hostname
+    zenarmor.category the category the record is about, first value only:
+                        alert  alertinfo.signature
+                        tls    category (the web category; the regex takes
+                               the last "category" key, because the device
+                               object earlier in the record has one too)
+                        other  security_tags
+  The zenarmor.domain and zenarmor.category regexes are anchored on the index,
+  so exactly one of each set can match an event.
+
+  The JSON writes numbers bare ("ip_dst_port":443, "is_blocked":1) and has a
+  space after "alertinfo":, so every regex allows optional white space.
 -->
 <decoder name="zen-dec">
   <program_name>zenarmor</program_name>
@@ -21,4 +49,76 @@
   <use_own_name>yes</use_own_name>
   <prematch>data=</prematch>
   <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">\bindex=(\w+),</regex>
+  <order>zenarmor.index</order>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">"ip_src_saddr":\s*"([^"]+)"</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">"ip_src_port":\s*"?(\d+)</regex>
+  <order>srcport</order>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">"ip_dst_saddr":\s*"([^"]+)"</regex>
+  <order>dstip</order>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">"ip_dst_port":\s*"?(\d+)</regex>
+  <order>dstport</order>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">"transport_proto":\s*"(\w+)"</regex>
+  <order>protocol</order>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">\bindex=alert,.*?"match":\s*\{\s*"dst_hostname":\s*"([^"]+)"</regex>
+  <order>zenarmor.domain</order>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">\bindex=dns,.*?"query":\s*"([^"]+)"</regex>
+  <order>zenarmor.domain</order>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">\bindex=(?!alert,|dns,)\w+,.*?"dst_hostname":\s*"([^"]+)"</regex>
+  <order>zenarmor.domain</order>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">\bindex=alert,.*?"signature":\s*\[\s*"([^"]+)"</regex>
+  <order>zenarmor.category</order>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">\bindex=tls,.*"category":\s*"([^"]+)"</regex>
+  <order>zenarmor.category</order>
+</decoder>
+
+<decoder name="zen-conn">
+  <parent>zen-dec</parent>
+  <regex type="pcre2">\bindex=(?!alert,|tls,)\w+,.*?"security_tags":\s*\[\s*"([^"]+)"</regex>
+  <order>zenarmor.category</order>
 </decoder>

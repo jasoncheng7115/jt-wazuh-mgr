@@ -1,0 +1,553 @@
+<!--
+  jt-librenms: LibreNMS network monitoring
+  Rule range 131900-131999. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  The zz- prefix makes this file load after the built-in ruleset: it extends
+  the built-in web access rules (31100, 31101, 31108, 31530) and the nginx
+  error rule 31301.
+
+  Modules
+    131900-131919  application log (librenms.log): unknown-user logins,
+                   alert delivery failures, database errors
+    131930-131939  dispatcher service (librenms-service.py, journald)
+    131940-131949  web login failures, expired forms (access log)
+    131950-131959  REST API: rejected tokens, not-found noise, changes
+    131960-131979  web interface changes: users, roles, API tokens, 2FA,
+                   settings, devices, alert rules and transports
+    131980-131989  web server error log noise
+
+  What the access log can and cannot say. It carries the method, the path, the
+  status and the client address, never the LibreNMS user and never the form
+  body. A form rejected by validation also answers with a redirect, so the
+  change rules say a change was requested, which an administrator did; the
+  audit trail of who did it is in LibreNMS (Event Log, Auth Log). Laravel
+  forms send PUT and DELETE as POST with a hidden _method field, so those
+  paths accept POST as well. Settings that the legacy pages post to
+  /ajax_form.php (alert transports among them) carry their action in the body
+  and cannot be told apart.
+-->
+
+<group name="librenms,jt_librenms,">
+
+  <!-- ===== Application log (librenms.log) ===== -->
+
+  <rule id="131900" level="0">
+    <decoded_as>jt-librenms-log</decoded_as>
+    <description>LibreNMS application log messages grouped</description>
+  </rule>
+
+  <!--
+    One line per device per polling cycle, "used by the simple python dispatcher
+    watchdog" (app/Jobs/PollDevice.php), written at ALERT level. The agent group
+    drops them before they are sent; this rule is the fallback for an agent that
+    collects the file another way. Measured order of magnitude: 288 lines a day
+    per device at the default 5-minute interval.
+  -->
+  <rule id="131901" level="0">
+    <if_sid>131900</if_sid>
+    <field name="librenms.level" type="pcre2">^ALERT$</field>
+    <field name="librenms.message" type="pcre2">^INFO: device:(?:poll|discover) </field>
+    <description>LibreNMS: routine poll or discovery timing line</description>
+  </rule>
+
+  <!-- The children of 131900 below are mutually exclusive by level. -->
+  <rule id="131902" level="0">
+    <if_sid>131900</if_sid>
+    <field name="librenms.level" type="pcre2">^(?:DEBUG|INFO|NOTICE)$</field>
+    <description>LibreNMS: informational message</description>
+  </rule>
+
+  <rule id="131903" level="2">
+    <if_sid>131900</if_sid>
+    <field name="librenms.level" type="pcre2">^WARNING$</field>
+    <description>LibreNMS warning: $(librenms.message)</description>
+  </rule>
+
+  <rule id="131904" level="3">
+    <if_sid>131900</if_sid>
+    <field name="librenms.level" type="pcre2">^ERROR$</field>
+    <description>LibreNMS error: $(librenms.message)</description>
+  </rule>
+
+  <rule id="131905" level="5">
+    <if_sid>131900</if_sid>
+    <field name="librenms.level" type="pcre2">^(?:CRITICAL|ALERT|EMERGENCY)$</field>
+    <field name="librenms.message" type="pcre2">^(?!INFO: device:(?:poll|discover) )</field>
+    <description>LibreNMS critical error: $(librenms.message)</description>
+  </rule>
+
+  <!--
+    A login with a user name that does not exist in the configured back end
+    (built-in database, LDAP, Active Directory, RADIUS). The only failed login
+    LibreNMS writes to a file: a wrong password for an existing user goes to the
+    authlog table only (see 131942 for the access-log view of those).
+    The children of 131904 are mutually exclusive by the start of the message.
+  -->
+  <rule id="131910" level="5">
+    <if_sid>131904</if_sid>
+    <field name="librenms.message" type="pcre2">^Auth Error \(</field>
+    <description>LibreNMS: login attempt from $(srcip) with unknown user name $(dstuser)</description>
+    <group>authentication_failed,invalid_login,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <rule id="131911" level="10" frequency="6" timeframe="120">
+    <if_matched_sid>131910</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] LibreNMS: repeated logins with unknown user names from $(srcip) (user name guessing)</description>
+    <group>authentication_failures,</group>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+  </rule>
+
+  <!--
+    An alert notification that LibreNMS could not deliver (mail, chat, webhook,
+    syslog transports). The alert is lost for whoever was to receive it, and
+    LibreNMS has no other way of saying so than this line: the same problem the
+    jt-alert-digest pack solves for Wazuh's own mail with rule 131100.
+  -->
+  <rule id="131912" level="10">
+    <if_sid>131903</if_sid>
+    <field name="librenms.message" type="pcre2">^Alert transport '[^']*' delivery failed for device </field>
+    <description>[WARN] LibreNMS: an alert notification could not be delivered, nobody was told</description>
+    <group>jt_librenms_notify_failure,</group>
+  </rule>
+
+  <!-- Oxidized and Unimus keep the device configuration backups. -->
+  <rule id="131913" level="5">
+    <if_sid>131903</if_sid>
+    <field name="librenms.message" type="pcre2">^(?:Oxidized|Unimus) is not reachable</field>
+    <description>LibreNMS: the configuration backup service is not reachable</description>
+  </rule>
+
+  <rule id="131914" level="4">
+    <if_sid>131904</if_sid>
+    <field name="librenms.message" type="pcre2">^Failed to store syslog message from </field>
+    <description>LibreNMS: a received syslog message could not be stored</description>
+  </rule>
+
+  <!--
+    Database errors. During an outage every poll of every device logs one, so a
+    single error stays at level 3 and a burst raises one level 8.
+  -->
+  <rule id="131915" level="3">
+    <if_sid>131904,131905</if_sid>
+    <field name="librenms.message" type="pcre2">^(?!Auth Error \(|Failed to store syslog message ).*SQLSTATE\[</field>
+    <description>LibreNMS: database error</description>
+  </rule>
+
+  <rule id="131916" level="8" frequency="20" timeframe="300">
+    <if_matched_sid>131915</if_matched_sid>
+    <description>LibreNMS: repeated database errors, the database is unreachable or failing</description>
+  </rule>
+
+  <!-- ===== Dispatcher service (librenms-service.py) ===== -->
+
+  <rule id="131930" level="0">
+    <decoded_as>jt-librenms-service</decoded_as>
+    <description>LibreNMS dispatcher service messages grouped</description>
+  </rule>
+
+  <!--
+    With -v (the shipped unit file) the service logs one INFO line per device
+    per poll; they stay at level 0. Children are mutually exclusive by level.
+  -->
+  <rule id="131931" level="0">
+    <if_sid>131930</if_sid>
+    <field name="librenms.level" type="pcre2">^(?:DEBUG|INFO)$</field>
+    <description>LibreNMS dispatcher: informational message</description>
+  </rule>
+
+  <rule id="131932" level="2">
+    <if_sid>131930</if_sid>
+    <field name="librenms.level" type="pcre2">^WARNING$</field>
+    <description>LibreNMS dispatcher warning: $(librenms.message)</description>
+  </rule>
+
+  <rule id="131933" level="3">
+    <if_sid>131930</if_sid>
+    <field name="librenms.level" type="pcre2">^ERROR$</field>
+    <description>LibreNMS dispatcher error: $(librenms.message)</description>
+  </rule>
+
+  <rule id="131934" level="5">
+    <if_sid>131930</if_sid>
+    <field name="librenms.level" type="pcre2">^CRITICAL$</field>
+    <description>LibreNMS dispatcher critical error: $(librenms.message)</description>
+  </rule>
+
+  <!-- Exit code 6 (unreachable) is a WARNING and stays at 131932. -->
+  <rule id="131935" level="3">
+    <if_sid>131933</if_sid>
+    <field name="librenms.message" type="pcre2">^(?:Polling|Discovering) device \d+ failed with exit code </field>
+    <description>LibreNMS dispatcher: a device poll or discovery failed</description>
+  </rule>
+
+  <!--
+    The service cannot reach its database or Redis: polling has stopped. systemd
+    restarts it every 10 seconds, so this is limited to one alert an hour.
+  -->
+  <rule id="131936" level="10" ignore="3600">
+    <if_sid>131934</if_sid>
+    <field name="librenms.message" type="pcre2">^(?:ERROR: Could not connect to MySQL database|DB Connection exception|DB Exception|ERROR: Redis connection required|Queue manager could not connect to Redis)</field>
+    <description>[WARN] LibreNMS dispatcher cannot reach its database or Redis, polling has stopped</description>
+  </rule>
+
+  <rule id="131937" level="5">
+    <if_sid>131932</if_sid>
+    <field name="librenms.message" type="pcre2">^Memory [\d.]+% \x3e= [\d.]+%; pausing intake</field>
+    <description>LibreNMS dispatcher paused polling, memory is short</description>
+  </rule>
+
+  <rule id="131938" level="5">
+    <if_sid>131933</if_sid>
+    <field name="librenms.message" type="pcre2">^Error \d+ in daily\.sh</field>
+    <description>LibreNMS dispatcher: daily maintenance (daily.sh, includes updates) failed</description>
+  </rule>
+
+  <!-- ===== Web login (access log) ===== -->
+
+  <!--
+    LibreNMS writes a wrong password for an existing user only to its database.
+    The access log still shows it: a failed form login is answered with a
+    redirect back to the login page, which the browser then loads, while a
+    successful one is redirected elsewhere (a logged-in user asking for /login
+    is redirected away, never shown the form). So "POST /login, then the form
+    again from the same address within seconds" is a failed login. Other Laravel
+    applications behave the same way and match too; for them it is just as true.
+    The two quiet rules below are the halves of that pair.
+  -->
+  <rule id="131940" level="1">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/login$</url>
+    <id type="pcre2">^302$</id>
+    <description>Web login form submitted</description>
+  </rule>
+
+  <rule id="131941" level="1">
+    <if_sid>31100,31108</if_sid>
+    <protocol type="pcre2">^GET$</protocol>
+    <url type="pcre2">^/login$</url>
+    <id type="pcre2">^200$</id>
+    <description>Web login form shown</description>
+  </rule>
+
+  <rule id="131942" level="5" timeframe="10">
+    <if_sid>131941</if_sid>
+    <if_matched_sid>131940</if_matched_sid>
+    <same_source_ip />
+    <description>LibreNMS: web login failed from $(srcip), the login form came back right after it was submitted</description>
+    <group>authentication_failed,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <rule id="131943" level="10" frequency="5" timeframe="180">
+    <if_matched_sid>131942</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] LibreNMS: repeated failed web logins from $(srcip)</description>
+    <group>authentication_failures,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!--
+    419 is Laravel's "page expired": a form posted without a valid CSRF token
+    (an expired session, or a scanner). The request never reached the
+    application. Measured: 16 in 10 days, all from a network scanner.
+  -->
+  <rule id="131944" level="3">
+    <if_sid>31101</if_sid>
+    <id type="pcre2">^419$</id>
+    <description>LibreNMS (Laravel): request from $(srcip) rejected, the form or session expired</description>
+  </rule>
+
+  <!-- ===== REST API (access log) ===== -->
+
+  <!--
+    The API answers 404 for an object that does not exist or a list that is
+    empty ("No ports found"). Integrations that walk every device produce them
+    in bulk: measured 17,146 level 5 alerts in 10 days on one server from two
+    API clients, 99 per cent of everything that server sent.
+  -->
+  <rule id="131950" level="2">
+    <if_sid>31101</if_sid>
+    <url type="pcre2">^/api/v0/</url>
+    <id type="pcre2">^404$</id>
+    <description>LibreNMS API: the requested object does not exist</description>
+  </rule>
+
+  <rule id="131951" level="5">
+    <if_sid>31100,31101,31530</if_sid>
+    <url type="pcre2">^/api/v0(?:/|$)</url>
+    <id type="pcre2">^40[13]$</id>
+    <description>LibreNMS API: request from $(srcip) rejected, the token is missing, invalid or lacks permission</description>
+    <group>authentication_failed,</group>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131952" level="10" frequency="8" timeframe="120">
+    <if_matched_sid>131951</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] LibreNMS API: repeated requests with a rejected token from $(srcip)</description>
+    <group>authentication_failures,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!-- A request that changes something and succeeded. Children are mutually
+       exclusive by method and path. -->
+  <rule id="131953" level="3">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^(?:POST|PUT|PATCH|DELETE)$</protocol>
+    <url type="pcre2">^/api/v0/</url>
+    <id type="pcre2">^2</id>
+    <description>LibreNMS API: $(protocol) $(url) from $(srcip)</description>
+  </rule>
+
+  <rule id="131954" level="5">
+    <if_sid>131953</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/api/v0/devices/?$</url>
+    <description>LibreNMS API: device added from $(srcip)</description>
+  </rule>
+
+  <rule id="131955" level="8">
+    <if_sid>131953</if_sid>
+    <protocol type="pcre2">^DELETE$</protocol>
+    <url type="pcre2">^/api/v0/devices/[^/?]+$</url>
+    <description>LibreNMS API: device deleted ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1562</id>
+    </mitre>
+  </rule>
+
+  <!-- PATCH can change the SNMP credentials LibreNMS uses for the device. -->
+  <rule id="131956" level="5">
+    <if_sid>131953</if_sid>
+    <protocol type="pcre2">^PATCH$</protocol>
+    <url type="pcre2">^/api/v0/devices/[^/?]+(?:/rename/[^/?]+)?$</url>
+    <description>LibreNMS API: device settings changed ($(url)) from $(srcip)</description>
+  </rule>
+
+  <rule id="131957" level="6">
+    <if_sid>131953</if_sid>
+    <url type="pcre2">^/api/v0/(?:rules|alert_templates)(?:/\d+)?/?$</url>
+    <description>LibreNMS API: alert rule or template $(protocol) from $(srcip)</description>
+  </rule>
+
+  <!-- Maintenance mode suppresses alerts for the device, group or location. -->
+  <rule id="131958" level="5">
+    <if_sid>131953</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/api/v0/(?:devices|devicegroups|locations)/[^/?]+/maintenance$</url>
+    <description>LibreNMS API: maintenance mode set, alerts suppressed ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1562</id>
+    </mitre>
+  </rule>
+
+  <!-- Integrations that feed syslog or event log entries in through the API. -->
+  <rule id="131959" level="0">
+    <if_sid>131953</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/api/v0/(?:syslogsink|devices/[^/?]+/eventlog)$</url>
+    <description>LibreNMS API: syslog or event log entry submitted</description>
+  </rule>
+
+  <!-- ===== Web interface changes (access log) ===== -->
+
+  <!--
+    These are siblings under the built-in access rules, mutually exclusive by
+    path. A status of 2xx or 3xx means the request was accepted; a rejected
+    form also redirects, hence "requested" where only a form post is seen.
+    POST /users additionally needs the referrer of LibreNMS's create form, so
+    that the sign-up form of an unrelated application on another server does
+    not read as a LibreNMS account.
+  -->
+  <rule id="131960" level="8">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/users$</url>
+    <id type="pcre2">^[23]</id>
+    <regex type="pcre2">" [23]\d\d \S+ "[^"]*/users/create(?:\?[^"]*)?"</regex>
+    <description>LibreNMS: user account creation requested from $(srcip)</description>
+    <group>adduser,account_changed,</group>
+    <mitre>
+      <id>T1136</id>
+    </mitre>
+  </rule>
+
+  <rule id="131961" level="6">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^(?:POST|PUT|PATCH)$</protocol>
+    <url type="pcre2">^/users/\d+$</url>
+    <id type="pcre2">^[23]</id>
+    <description>LibreNMS: user account $(url) changed (role, password or details) from $(srcip)</description>
+    <group>account_changed,</group>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131962" level="8">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^DELETE$</protocol>
+    <url type="pcre2">^/users/\d+$</url>
+    <id type="pcre2">^2</id>
+    <description>LibreNMS: user account $(url) deleted from $(srcip)</description>
+    <group>userdel,account_changed,</group>
+    <mitre>
+      <id>T1531</id>
+    </mitre>
+  </rule>
+
+  <rule id="131963" level="6">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^(?:POST|DELETE)$</protocol>
+    <url type="pcre2">^/users/\d+/permissions/(?:device|device-group|port|bill)(?:/\d+)?$</url>
+    <id type="pcre2">^[23]</id>
+    <description>LibreNMS: user permissions changed ($(url)) from $(srcip)</description>
+    <group>account_changed,</group>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131964" level="8">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^(?:POST|PUT|PATCH|DELETE)$</protocol>
+    <url type="pcre2">^/roles(?:/[^/?]+)?$</url>
+    <id type="pcre2">^[23]</id>
+    <description>LibreNMS: role created, changed or deleted ($(protocol) $(url)) from $(srcip)</description>
+    <group>account_changed,</group>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!-- An API token is a credential that does not expire and skips 2FA. -->
+  <rule id="131965" level="10">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/api-access(?:/\d+/reset)?$</url>
+    <id type="pcre2">^[23]</id>
+    <description>[WARN] LibreNMS: API token created or reset ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1098.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="131966" level="5">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^(?:POST|PATCH|DELETE)$</protocol>
+    <url type="pcre2">^/api-access/\d+$</url>
+    <id type="pcre2">^[23]</id>
+    <description>LibreNMS: API token enabled, disabled or deleted ($(url)) from $(srcip)</description>
+  </rule>
+
+  <rule id="131967" level="8">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^(?:POST|DELETE)$</protocol>
+    <url type="pcre2">^/2fa/(?:remove|\d+)$</url>
+    <id type="pcre2">^[23]</id>
+    <description>LibreNMS: two-factor authentication removed from an account ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1556.006</id>
+    </mitre>
+  </rule>
+
+  <rule id="131968" level="5">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/2fa/\d+/unlock$</url>
+    <id type="pcre2">^[23]</id>
+    <description>LibreNMS: two-factor lockout cleared ($(url)) from $(srcip)</description>
+  </rule>
+
+  <rule id="131969" level="6">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^(?:PUT|DELETE)$</protocol>
+    <url type="pcre2">^/settings/[\w.-]+$</url>
+    <id type="pcre2">^2</id>
+    <description>LibreNMS: global setting changed or reset ($(url)) from $(srcip)</description>
+  </rule>
+
+  <!-- Authentication, single sign-on, API and unauthenticated access settings. -->
+  <rule id="131970" level="8">
+    <if_sid>131969</if_sid>
+    <url type="pcre2">^/settings/(?:auth(?!log_)|sso\.|http_auth|twofactor|allow_unauth|public_status|api\.)</url>
+    <description>LibreNMS: authentication or access setting changed ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1556</id>
+    </mitre>
+  </rule>
+
+  <rule id="131971" level="8">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^(?:POST|DELETE)$</protocol>
+    <url type="pcre2">^/device/\d+$</url>
+    <id type="pcre2">^[23]</id>
+    <description>LibreNMS: device deletion requested ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1562</id>
+    </mitre>
+  </rule>
+
+  <rule id="131972" level="5">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/addhost/?$</url>
+    <id type="pcre2">^2</id>
+    <description>LibreNMS: device addition submitted from $(srcip)</description>
+  </rule>
+
+  <rule id="131973" level="6">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^(?:POST|PUT|PATCH|DELETE)$</protocol>
+    <url type="pcre2">^/alert-rule(?:/\d+(?:/toggle)?)?$</url>
+    <id type="pcre2">^2</id>
+    <description>LibreNMS: alert rule created, changed, switched on or off, or deleted ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1562</id>
+    </mitre>
+  </rule>
+
+  <rule id="131974" level="6">
+    <if_sid>31100,31108,31530</if_sid>
+    <protocol type="pcre2">^(?:POST|DELETE)$</protocol>
+    <url type="pcre2">^/(?:alert/transports|alert/transport-groups|alert-templates)/\d+$</url>
+    <id type="pcre2">^2</id>
+    <description>LibreNMS: alert transport or template deleted ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1562</id>
+    </mitre>
+  </rule>
+
+  <!-- ===== Web server error log ===== -->
+
+  <!--
+    LibreNMS's PHP error handler writes PHP deprecation notices to stderr,
+    which php-fpm hands to nginx, and nginx logs each as an [error]: the
+    built-in 31301 (level 3). Measured: 1,580 in 10 days on one server, two
+    notices repeated by every API request that touches the code. Quieted only
+    when every PHP message in the line is a deprecation (8192 E_DEPRECATED,
+    16384 E_USER_DEPRECATED); a line that also carries a warning, a fatal error
+    or an exception stays at 31301.
+  -->
+  <rule id="131980" level="0">
+    <if_sid>31301</if_sid>
+    <regex type="pcre2">^(?=.*/librenms/)(?!.*PHP Error\((?!(?:8192|16384)\))\d+\))(?!.*(?:PHP (?:Fatal|Parse) error|Uncaught|Exception)).*FastCGI sent in stderr: "PHP message: \S*PHP Error\((?:8192|16384)\)</regex>
+    <description>LibreNMS: PHP deprecation notice in the web server error log</description>
+  </rule>
+
+</group>

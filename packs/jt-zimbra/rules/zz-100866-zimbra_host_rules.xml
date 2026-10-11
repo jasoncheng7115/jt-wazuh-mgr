@@ -1,0 +1,453 @@
+<!--
+  jt-zimbra 3.0: the operating-system and MTA side of a Zimbra server.
+
+  The zz- prefix makes this file load after the built-in rules it hangs off
+  (sudo 5402, PAM 5501/5502, Postfix 3303/3320/3398, ClamAV 52502, syscheck
+  550/553/554). Every override here is a CHILD of the rule it overrides, so
+  a match can only make that one event quieter; nothing else changes.
+
+  Measured on two Zimbra 10.1 servers over 41 days (2026-09-01 to 10-11):
+  of about 105,000 alerts a day from the pair, 83,000 were Zimbra talking to
+  itself through sudo and su, 17,000 were one stuck postdrop process and
+  1,300 were two internal hosts refused for want of reverse DNS. The rules
+  below keep one alert for each real condition and drop the repetition.
+-->
+
+<group name="zimbra,zimbra_host,">
+
+  <!-- ==========================================================
+       sudo and su: Zimbra's own housekeeping
+
+       Zimbra's sudoers file lets the zimbra account run a few helpers as
+       root, and its monitoring does so every few seconds:
+         zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/libexec/zmmailboxdmgr status
+       Measured: zmmailboxdmgr status 11,000 a day per server, zmmtastatus
+       2,000, postconf 330. Each one is three alerts (5402 for the command,
+       5501 and 5502 for the PAM session), all level 3.
+
+       Only the exact command lines are quiet. Anything else the zimbra
+       account runs through sudo stays at 5402, including every postconf
+       that touches a setting Postfix later executes from (directories,
+       mailbox_command, transports, sendmail_path...): rewriting one of those
+       and restarting Postfix is the documented way from the zimbra account
+       to root.
+       ========================================================== -->
+
+  <rule id="100866" level="1">
+    <if_sid>5402</if_sid>
+    <regex type="pcre2">^\s*zimbra : TTY=\S+ ; PWD=\S+ ; USER=root ; COMMAND=(?:/opt/zimbra/libexec/zmmailboxdmgr status|/opt/zimbra/libexec/zmmtastatus|/opt/zimbra/libexec/zmqstat(?: all)?|/opt/zimbra/libexec/zmstat-fd(?: \S+)*|/opt/zimbra/common/sbin/postconf -[eX] (?!(?:\S*_directory|mailbox_command|mailbox_transport|local_transport|default_transport|relay_transport|virtual_transport|transport_maps|fallback_transport|mailbox_command_maps|sendmail_path|mailq_path|newaliases_path|import_environment|export_environment|mail_owner|setgid_group|default_privs|content_filter|smtpd_milters|non_smtpd_milters)\b)[a-z_0-9]+(?:=.*)?)$</regex>
+    <description>Zimbra service account ran one of its own status or configuration helpers through sudo (routine)</description>
+  </rule>
+
+  <!-- The PAM session lines that go with those commands carry no account
+       ("session opened for user root by (uid=0)"), so they are matched by
+       time: within 30 seconds after 100866 on the same host and log file.
+       A person's own sudo still shows as 5402 with its command.
+       Level 1, not 0: a level 0 rule with if_matched_sid never matches
+       (tested on 4.14.7); level 1 is below log_alert_level, so no alert. -->
+  <rule id="100867" level="1" timeframe="30">
+    <if_sid>5501,5502</if_sid>
+    <if_matched_sid>100866</if_matched_sid>
+    <same_location />
+    <match type="pcre2">^pam_unix\(sudo:session\): session (?:opened for user root by \(uid=0\)|closed for user root)$</match>
+    <description>PAM session of a routine Zimbra sudo call</description>
+  </rule>
+
+  <!-- root's scheduled jobs run "su - zimbra -c ..." (cron, zmcontrol from
+       scripts). "by (uid=0)" with no name means no login session: nobody
+       typed it. An administrator's interactive "su - zimbra" logs
+       "by alice(uid=0)" and still shows as 5501. -->
+  <rule id="100868" level="0">
+    <if_sid>5501</if_sid>
+    <match type="pcre2">^pam_unix\(su(?:-l)?:session\): session opened for user zimbra by \(uid=0\)$</match>
+    <description>Non-interactive su from root to the zimbra account (routine)</description>
+  </rule>
+
+  <rule id="100869" level="0">
+    <if_sid>5502</if_sid>
+    <match type="pcre2">^pam_unix\(su(?:-l)?:session\): session closed for user zimbra$</match>
+    <description>su session of the zimbra account closed (routine)</description>
+  </rule>
+
+  <!-- ==========================================================
+       Conditions that repeat every second until someone fixes them.
+
+       Pattern: a level 2 child takes the event (recorded, not alerted), and
+       a level 5-7 grandchild with ignore="21600" raises it once every six
+       hours. Inside the ignore window analysisd reports the parent instead,
+       which is level 2, so the repetition stays out of the alerts.
+       ignore is per rule, not per host: while one server is reported, the
+       same condition on a second server is folded into that alert.
+       ========================================================== -->
+
+  <!-- postdrop cannot write a new message into the maildrop queue:
+         postfix/postdrop[2656786]: warning: mail_queue_enter: create file maildrop/775130.2656786: Permission denied
+       postdrop retries forever, so one stuck submission writes this every
+       second (17,000 a day on one server, the same process for weeks).
+       Built-in 3398 calls it "Illegal address from unknown sender" because
+       it matches the word "mail" anywhere in a Postfix warning. The real
+       meaning: mail submitted on this host (cron output, scripts, sendmail)
+       is not being queued. Usual causes: postdrop lost its setgid bit or the
+       maildrop directory's group after an upgrade or a restore
+       (/opt/zimbra/libexec/zmfixperms repairs both). Built-in 3399 already
+       quiets the "Read-only file system" variant of the same line. -->
+  <rule id="100870" level="2">
+    <if_sid>3398</if_sid>
+    <match type="pcre2">mail_queue_enter: create file maildrop/\S+: Permission denied</match>
+    <description>Postfix postdrop cannot write to the maildrop queue (repeat)</description>
+  </rule>
+
+  <rule id="100871" level="7" ignore="21600">
+    <if_sid>100870</if_sid>
+    <description>Local mail submission is failing: postdrop cannot write to the Postfix maildrop queue (permissions), so mail sent on this host is not delivered</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <!-- An INTERNAL host refused for having no reverse DNS:
+         NOQUEUE: reject: RCPT from unknown[192.0.2.37]: 450 4.7.1 Client host rejected: cannot find your reverse hostname, [192.0.2.37]; from=...
+       From the internet this is ordinary spam filtering and stays at 3303.
+       From your own network it is your own mail being refused, every
+       retry, until a PTR record exists: measured 1,300 a day, every one of
+       them a notification that never arrived. -->
+  <rule id="100872" level="2">
+    <if_sid>3303</if_sid>
+    <match>cannot find your reverse hostname</match>
+    <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>Postfix refused an internal host without reverse DNS (repeat)</description>
+  </rule>
+
+  <rule id="100873" level="7" ignore="21600">
+    <if_sid>100872</if_sid>
+    <description>Mail from an internal host is being refused because its address has no reverse DNS (PTR) record: $(srcip)</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <!-- A monitoring agent's Zimbra check is refused by sudo:
+         nagios : command not allowed ; TTY=unknown ; PWD=/ ; USER=nagios ; COMMAND=/usr/bin/sudo -u zimbra /opt/zimbra/bin/zmcontrol status
+       This is the usual check_zimbra command line. Refused, it means the
+       service check reports nothing useful while it fails every minute.
+       Only this exact read-only command is folded; any other refused
+       command stays at 5406. -->
+  <rule id="100874" level="2">
+    <if_sid>5406</if_sid>
+    <regex type="pcre2">COMMAND=\S*sudo -u zimbra /opt/zimbra/bin/zmcontrol status$</regex>
+    <description>Monitoring check of zmcontrol refused by sudo (repeat)</description>
+  </rule>
+
+  <rule id="100875" level="5" ignore="21600">
+    <if_sid>100874</if_sid>
+    <description>A monitoring account is not allowed to run "zmcontrol status" as zimbra through sudo, so its Zimbra service check cannot work: $(srcuser)</description>
+  </rule>
+
+  <!-- ==========================================================
+       File integrity under /opt/zimbra/conf
+
+       zmconfigd and the proxy generator rewrite their output files from
+       templates on every restart, mostly with identical contents.
+       Measured: 8,163 alerts in 41 days on two servers, 76% of them a
+       changed mtime or inode and nothing else. The templates (*.in,
+       nginx/templates/) are what an attacker would have to change to make
+       a change survive; they stay at the built-in levels, as does
+       localconfig.xml (100943).
+       ========================================================== -->
+
+  <rule id="100876" level="0">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/opt/zimbra/conf/(?!localconfig\.xml$)</field>
+    <field name="changed_fields" type="pcre2">^(?:mtime|inode)(?:,(?:mtime|inode))?$</field>
+    <description>Zimbra configuration file rewritten with identical contents</description>
+  </rule>
+
+  <rule id="100877" level="3">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/opt/zimbra/conf/(?:nginx/includes/|nginx\.conf$|(?:amavisd|clamd|freshclam|opendkim|opendkim-localnets|saslauthd|stats|snmpd|unbound|dspam|cbpolicyd)\.conf$|(?:mta_milter_options|postfix_header_checks|swatchrc|spnego_java_options|log4j\.properties|salocal\.cf)$)</field>
+    <field name="changed_fields" type="pcre2">^(?!(?:mtime|inode)(?:,(?:mtime|inode))?$)</field>
+    <description>Zimbra regenerated a configuration file from its template: $(file)</description>
+  </rule>
+
+  <rule id="100879" level="3">
+    <if_sid>553,554</if_sid>
+    <field name="file" type="pcre2">^/opt/zimbra/conf/(?:nginx/includes/|nginx\.conf$|(?:amavisd|clamd|freshclam|opendkim|opendkim-localnets|saslauthd|stats|snmpd|unbound|dspam|cbpolicyd)\.conf$|(?:mta_milter_options|postfix_header_checks|swatchrc|spnego_java_options|log4j\.properties|salocal\.cf)$)</field>
+    <description>Zimbra replaced a generated configuration file: $(file)</description>
+  </rule>
+
+  <!-- postalias rebuilding the aliases map, seen with whodata -->
+  <rule id="100878" level="2">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/etc/aliases\.(?:lmdb|db)$</field>
+    <field name="process_name" type="pcre2">/opt/zimbra/common/sbin/postalias$</field>
+    <description>Zimbra's postalias rebuilt the aliases map</description>
+  </rule>
+
+</group>
+
+<!-- ==========================================================
+     Postfix (decoders: built-in postfix, plus the jt-zimbra children of it)
+     ========================================================== -->
+<group name="zimbra,postfix,">
+
+  <!-- postscreen verdicts against one client. On an internet-facing MTA
+       these come from spam bots all day; a single one is not news. -->
+  <rule id="100967" level="1">
+    <if_sid>3320</if_sid>
+    <field name="zimbra.postscreen" type="pcre2">^(?:PREGREET|DNSBL|HANGUP|COMMAND PIPELINING|NON-SMTP COMMAND|BARE NEWLINE|COMMAND (?:TIME|COUNT|LENGTH) LIMIT)$</field>
+    <description>Postfix postscreen rejected an SMTP client: $(zimbra.postscreen) from $(srcip)</description>
+  </rule>
+
+  <rule id="100968" level="6" frequency="20" timeframe="600" ignore="600">
+    <if_matched_sid>100967</if_matched_sid>
+    <same_source_ip />
+    <description>An SMTP client keeps failing Postfix postscreen tests, a spam bot or a scanner: $(srcip)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+  <!-- Local delivery to the mailbox server (LMTP) deferred: Postfix keeps the
+       mail and retries, but nothing reaches the mailboxes. One deferral
+       is a blip; a run of them is mailboxd down or out of database
+       connections. -->
+  <rule id="100969" level="2">
+    <if_sid>3320</if_sid>
+    <program_name type="pcre2">^postfix/lmtp$</program_name>
+    <status>^deferred$</status>
+    <description>Postfix LMTP delivery to the mailbox server deferred: $(zimbra.reason)</description>
+  </rule>
+
+  <rule id="100903" level="10" frequency="10" timeframe="600" ignore="1800">
+    <if_matched_sid>100969</if_matched_sid>
+    <same_location />
+    <description>[WARN] Mail is not reaching the mailboxes: repeated LMTP delivery deferrals to the Zimbra mailbox server: $(zimbra.reason)</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <!-- Outbound mail refused by remote servers as spam or because this
+       server's address is on a block list. One is noise from a strict
+       receiver; several in an hour is this server being listed, usually
+       after an account was hijacked and used to send spam. -->
+  <rule id="100904" level="2">
+    <if_sid>3320</if_sid>
+    <program_name type="pcre2">^postfix/smtp$</program_name>
+    <status type="pcre2">^(?:deferred|bounced)$</status>
+    <field name="zimbra.reason" type="pcre2">(?i)block ?list|black ?list|blocked using|listed (?:at|on|in)|spamhaus|spamcop|barracuda|\bspam\b|reputation</field>
+    <description>Remote mail server refused mail from this server as spam or block-listed: $(zimbra.relay)</description>
+  </rule>
+
+  <rule id="100905" level="10" frequency="5" timeframe="3600" ignore="3600">
+    <if_matched_sid>100904</if_matched_sid>
+    <same_location />
+    <description>[WARN] Several remote mail servers refused this server's mail as spam or because it is block-listed; check for a hijacked account sending spam: $(zimbra.reason)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+  <!-- One message with 100 or more recipients entering the queue. Mailing
+       lists do this legitimately; spam from a hijacked account does too. -->
+  <rule id="100906" level="6">
+    <if_sid>3320</if_sid>
+    <program_name type="pcre2">^postfix/qmgr$</program_name>
+    <field name="zimbra.nrcpt" type="pcre2">^[1-9]\d{2,}$</field>
+    <description>Message with $(zimbra.nrcpt) recipients queued, sender: $(zimbra.sender)</description>
+    <group>spam,</group>
+  </rule>
+
+  <!-- Authenticated submissions (587/465), counted per account. The built-in
+       3332/3357 already cover SASL password failures per address. -->
+  <rule id="100933" level="1">
+    <if_sid>3320</if_sid>
+    <field name="zimbra.sasl_method" type="pcre2">.+</field>
+    <description>Authenticated SMTP submission by $(dstuser) from $(srcip), counted for correlation</description>
+  </rule>
+
+  <rule id="100934" level="12" frequency="50" timeframe="600" ignore="1800">
+    <if_matched_sid>100933</if_matched_sid>
+    <same_user />
+    <description>[HIGH] One account submitted a large volume of mail over SMTP in a short window, the account may be hijacked and sending spam: $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+</group>
+
+<!-- ==========================================================
+     amavis and ClamAV
+     ========================================================== -->
+<group name="zimbra,amavis,">
+
+  <rule id="100944" level="0">
+    <decoded_as>zimbra-amavis</decoded_as>
+    <description>Zimbra amavis message (base rule)</description>
+  </rule>
+
+  <!-- Inbound malware stopped at the gateway: the filter did its job. -->
+  <rule id="100945" level="7">
+    <if_sid>100944</if_sid>
+    <status>^INFECTED$</status>
+    <match type="pcre2">^(?!.*\bORIGINATING\b)</match>
+    <description>amavis blocked an infected message: $(zimbra.amavis_reason) from $(zimbra.sender) to $(zimbra.rcpt)</description>
+    <group>virus,</group>
+  </rule>
+
+  <!-- Malware SENT by a local user or host: an infected workstation or a
+       hijacked account, inside the network. -->
+  <rule id="100946" level="12">
+    <if_sid>100944</if_sid>
+    <status>^INFECTED$</status>
+    <field name="zimbra.amavis_origin" type="pcre2">\bORIGINATING\b</field>
+    <description>[HIGH] A local account or host sent an infected message: $(zimbra.amavis_reason) from $(zimbra.sender) via $(srcip)</description>
+    <mitre>
+      <id>T1566.001</id>
+    </mitre>
+    <group>virus,</group>
+  </rule>
+
+  <rule id="100947" level="5">
+    <if_sid>100944</if_sid>
+    <status>^BANNED$</status>
+    <description>amavis blocked a message with a banned attachment type: $(zimbra.amavis_reason) from $(zimbra.sender)</description>
+  </rule>
+
+  <!-- Spam stopped on the way OUT: a local account is sending spam. -->
+  <rule id="100948" level="8">
+    <if_sid>100944</if_sid>
+    <action>Blocked</action>
+    <status>^SPAM$</status>
+    <field name="zimbra.amavis_origin" type="pcre2">\bORIGINATING\b</field>
+    <description>amavis blocked outgoing spam from a local account: $(zimbra.sender) via $(srcip)</description>
+    <group>spam,</group>
+  </rule>
+
+  <rule id="100949" level="12" frequency="5" timeframe="3600" ignore="3600">
+    <if_matched_sid>100948</if_matched_sid>
+    <same_field>zimbra.sender</same_field>
+    <description>[HIGH] amavis keeps blocking outgoing spam from one local account, the account is probably hijacked: $(zimbra.sender)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+  <!-- amavis marks its own problems with (!) and (!!). -->
+  <rule id="100950" level="5">
+    <if_sid>100944</if_sid>
+    <field name="zimbra.amavis_severity" type="pcre2">^!+$</field>
+    <description>amavis reported a problem: $(zimbra.amavis_problem)</description>
+  </rule>
+
+  <rule id="100951" level="10" ignore="1800">
+    <if_sid>100950</if_sid>
+    <field name="zimbra.amavis_problem" type="pcre2">(?i)ALL VIRUS SCANNERS FAILED|virus_scan: .*FAILED|ClamAV\S* .*FAILED</field>
+    <description>[WARN] amavis cannot scan for viruses: $(zimbra.amavis_problem)</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <!-- ClamAV's own line for a part amavis handed it. The amavis verdict
+       (100945/100946) carries the sender, recipient and direction, so this
+       one is only recorded: two alerts for one message is one too many. -->
+  <rule id="100952" level="3">
+    <if_sid>52502</if_sid>
+    <match>/opt/zimbra/data/amavisd/tmp/</match>
+    <description>ClamAV found a virus in a message amavis was scanning (see the amavis alert)</description>
+  </rule>
+
+</group>
+
+<!-- ==========================================================
+     opendkim, zimbramon, zmconfigd
+     ========================================================== -->
+<group name="zimbra,zimbra_service,">
+
+  <rule id="100953" level="0">
+    <decoded_as>zimbra-opendkim</decoded_as>
+    <description>Zimbra opendkim message (base rule)</description>
+  </rule>
+
+  <!-- A key that cannot be loaded means outgoing mail leaves unsigned and
+       fails DMARC at the receiver. "no signing table match" (mail from a
+       domain without a key, such as relayed mail) is normal and stays at
+       the base rule. -->
+  <rule id="100954" level="7" ignore="3600">
+    <if_sid>100953</if_sid>
+    <match type="pcre2">(?i)error loading key|can't load key|key file .* not|dkim_sign\(\)|dkim_eom\(\): resource unavailable|signing failed|unable to load key</match>
+    <description>opendkim cannot sign outgoing mail, receivers will see it unsigned</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="100955" level="0">
+    <decoded_as>zimbra-zimbramon</decoded_as>
+    <description>Zimbra zimbramon status message (base rule)</description>
+  </rule>
+
+  <!-- zmstatuslog writes every service's state every two minutes. -->
+  <rule id="100956" level="7" ignore="3600">
+    <if_sid>100955</if_sid>
+    <status type="pcre2">^(?!Running$)</status>
+    <description>Zimbra service is not running: $(zimbra.service) is $(status) on $(zimbra.host)</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <!-- zmqueuelog: messages in the Postfix queues (count, then kilobytes). -->
+  <rule id="100957" level="7" ignore="3600">
+    <if_sid>100955</if_sid>
+    <field name="zimbra.queue_count" type="pcre2">^[1-9]\d{2}$</field>
+    <description>Zimbra MTA queue holds $(zimbra.queue_count) messages ($(zimbra.queue_kb) KB): delivery is stalling or the server is sending a burst</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="100958" level="10" ignore="3600">
+    <if_sid>100955</if_sid>
+    <field name="zimbra.queue_count" type="pcre2">^[1-9]\d{3,}$</field>
+    <description>[WARN] Zimbra MTA queue holds $(zimbra.queue_count) messages ($(zimbra.queue_kb) KB): check for a hijacked account sending spam or a delivery outage</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>service_availability,spam,</group>
+  </rule>
+
+  <!-- zmdisklog. Snap packages mount read-only squashfs images that are
+       always 100% full; zimbramon reports each of them every ten minutes. -->
+  <rule id="100959" level="7" ignore="3600">
+    <if_sid>100955</if_sid>
+    <field name="zimbra.disk_level" type="pcre2">(?i)^warn</field>
+    <field name="zimbra.mount" type="pcre2">^(?!/snap/)</field>
+    <field name="zimbra.device" type="pcre2">^(?!/dev/loop)</field>
+    <description>Zimbra disk space warning: $(zimbra.mount) at $(zimbra.disk_pct)% on $(zimbra.host)</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="100964" level="10" ignore="3600">
+    <if_sid>100955</if_sid>
+    <field name="zimbra.disk_level" type="pcre2">(?i)^crit</field>
+    <field name="zimbra.mount" type="pcre2">^(?!/snap/)</field>
+    <field name="zimbra.device" type="pcre2">^(?!/dev/loop)</field>
+    <description>[WARN] Zimbra disk space critical: $(zimbra.mount) at $(zimbra.disk_pct)% on $(zimbra.host)</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="100965" level="0">
+    <decoded_as>zimbra-zmconfigd</decoded_as>
+    <description>Zimbra zmconfigd message (base rule)</description>
+  </rule>
+
+  <!-- zmconfigd's watchdog restarts services that died. The routine lines
+       ("status is OK", "skipping service", "now available") stay quiet. -->
+  <rule id="100966" level="7" ignore="1800">
+    <if_sid>100965</if_sid>
+    <match type="pcre2">Watchdog: (?!service \S+ status is OK|skipping service|service \S+ now available|Tracking)</match>
+    <description>Zimbra zmconfigd watchdog acted on a service that stopped</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="100962" level="7" ignore="1800">
+    <if_sid>100965</if_sid>
+    <match type="pcre2">(?i)^(?:ERROR|CRITICAL)\b|\bTraceback\b|failed to (?:rewrite|restart)</match>
+    <description>Zimbra zmconfigd reported an error rewriting configuration or restarting a service</description>
+    <group>service_availability,</group>
+  </rule>
+
+</group>

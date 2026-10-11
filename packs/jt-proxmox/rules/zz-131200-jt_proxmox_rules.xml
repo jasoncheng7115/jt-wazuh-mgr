@@ -1,0 +1,364 @@
+<!--
+  jt-proxmox: Proxmox VE and Ceph
+  Rule range 131200-131299. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  The zz- prefix makes this file load after the built-in ruleset: it extends
+  the built-in Proxmox rules (87200-87203) and the syslog rules (2501).
+
+  Modules
+    131200-131209  logins: routine service accounts, expired tickets
+    131210-131229  tasks: guest destroy, rollback, node shell, failures, backups
+    131230-131239  high availability
+    131240-131249  corosync
+    131250-131259  Ceph health
+    131260-131279  REST API: failed logins and changes (pveproxy access log)
+-->
+
+<group name="proxmox,jt_proxmox,">
+
+  <!--
+    Routine logins. A monitoring system that logs in every few seconds turns the
+    built-in "authentication succeeded" (87203, level 3) into tens of thousands
+    of alerts a day: measured 20,900 a day on one cluster, all from one account.
+    List such accounts in etc/lists/jt-pve-service-accounts. The key is the user
+    name without its realm, as Wazuh decodes it (monitoring, not monitoring@pve).
+    Failed logins are untouched: 87201/87202 still fire for listed accounts.
+    (A CDB lookup on the decoded user names the field "user": "dstuser" loads
+    without an error and never matches.)
+  -->
+  <rule id="131200" level="0">
+    <if_sid>87203</if_sid>
+    <list field="user" lookup="match_key">etc/lists/jt-pve-service-accounts</list>
+    <description>Proxmox VE: routine login of a listed service account</description>
+  </rule>
+
+  <!--
+    An expired or invalid session ticket. pveproxy reports it as "authentication
+    failure", which the generic syslog rule 2501 raises to level 5 every time a
+    browser tab outlives its ticket. Recorded below the alert level; a real login
+    failure is reported by pvedaemon and still alerts (87201).
+  -->
+  <rule id="131201" level="2">
+    <if_sid>2501</if_sid>
+    <program_name type="pcre2">^pveproxy$</program_name>
+    <match type="pcre2">authentication failure: 401 permission denied - invalid PVE ticket</match>
+    <description>Proxmox VE: request with an expired or invalid session ticket</description>
+  </rule>
+
+  <!--
+    Tasks. pvedaemon task lines decode under the built-in pvedaemon decoder and
+    reach 87200; the other tools' lines reach 131210. Children list both.
+  -->
+  <rule id="131210" level="0">
+    <decoded_as>jt-pve-task</decoded_as>
+    <description>Proxmox VE task messages</description>
+  </rule>
+
+  <rule id="131211" level="0">
+    <if_sid>87200,131210</if_sid>
+    <field name="pve.phase" type="pcre2">^starting$</field>
+    <description>Proxmox VE task started: $(pve.task) $(pve.vmid) by $(pve.user)</description>
+  </rule>
+
+  <rule id="131212" level="0">
+    <if_sid>87200,131210</if_sid>
+    <field name="pve.phase" type="pcre2">^end$</field>
+    <description>Proxmox VE task ended: $(pve.task) $(pve.vmid) $(pve.status)</description>
+  </rule>
+
+  <!-- The children of 131211 below are mutually exclusive by task type. -->
+  <rule id="131213" level="8">
+    <if_sid>131211</if_sid>
+    <field name="pve.task" type="pcre2">^(?:qmdestroy|vzdestroy)$</field>
+    <description>Proxmox VE: guest $(pve.vmid) destroyed by $(pve.user) on $(pve.node)</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+  </rule>
+
+  <rule id="131214" level="6">
+    <if_sid>131211</if_sid>
+    <field name="pve.task" type="pcre2">^(?:qmrollback|vzrollback)$</field>
+    <description>Proxmox VE: guest $(pve.vmid) rolled back to a snapshot by $(pve.user)</description>
+  </rule>
+
+  <!-- A root shell on the node itself, opened from the web interface (no guest id). -->
+  <rule id="131215" level="5">
+    <if_sid>131211</if_sid>
+    <field name="pve.task" type="pcre2">^(?:vncshell|termproxy|spiceshell)$</field>
+    <field name="pve.vmid" type="pcre2">^$</field>
+    <description>Proxmox VE: shell on node $(pve.node) opened from the web interface by $(pve.user)</description>
+    <mitre>
+      <id>T1059.004</id>
+    </mitre>
+  </rule>
+
+  <rule id="131216" level="3">
+    <if_sid>131211</if_sid>
+    <field name="pve.task" type="pcre2">^(?:vncproxy|termproxy|spiceproxy)$</field>
+    <field name="pve.vmid" type="pcre2">^\d+$</field>
+    <description>Proxmox VE: console of guest $(pve.vmid) opened by $(pve.user)</description>
+  </rule>
+
+  <rule id="131217" level="3">
+    <if_sid>131211</if_sid>
+    <field name="pve.task" type="pcre2">^(?:qmcreate|vzcreate|qmclone|vzclone|qmrestore|vzrestore|qmtemplate|vztemplate)$</field>
+    <description>Proxmox VE: guest $(pve.vmid) created ($(pve.task)) by $(pve.user)</description>
+  </rule>
+
+  <rule id="131218" level="3">
+    <if_sid>131211</if_sid>
+    <field name="pve.task" type="pcre2">^(?:qmigrate|vzmigrate|hamigrate|qmremote|vzremote)$</field>
+    <description>Proxmox VE: guest $(pve.vmid) migrated ($(pve.task)) by $(pve.user)</description>
+  </rule>
+
+  <rule id="131219" level="3">
+    <if_sid>131211</if_sid>
+    <field name="pve.task" type="pcre2">^(?:push_file|imgcopy|download|aptinstall)$</field>
+    <description>Proxmox VE: $(pve.task) $(pve.vmid) by $(pve.user)</description>
+  </rule>
+
+  <!--
+    A task that ended in anything but OK. "WARNINGS: n" is a successful end.
+    Console sessions end with an error whenever the browser goes away, so
+    those drop to level 2 below.
+  -->
+  <rule id="131220" level="5">
+    <if_sid>131212</if_sid>
+    <field name="pve.status" type="pcre2">^(?!OK$|WARNINGS: \d+$).+</field>
+    <description>Proxmox VE: task $(pve.task) $(pve.vmid) failed: $(pve.status)</description>
+  </rule>
+
+  <rule id="131221" level="2">
+    <if_sid>131220</if_sid>
+    <field name="pve.task" type="pcre2">^(?:vncproxy|vncshell|termproxy|spiceproxy|spiceshell)$</field>
+    <description>Proxmox VE: console session $(pve.vmid) ended: $(pve.status)</description>
+  </rule>
+
+  <rule id="131222" level="10">
+    <if_sid>131220</if_sid>
+    <field name="pve.task" type="pcre2">^vzdump$</field>
+    <description>[WARN] Proxmox VE: backup job ended with errors on $(pve.node): $(pve.status)</description>
+  </rule>
+
+  <rule id="131223" level="0">
+    <decoded_as>jt-pve-backup</decoded_as>
+    <description>Proxmox VE backup output</description>
+  </rule>
+
+  <rule id="131224" level="10">
+    <if_sid>131223</if_sid>
+    <match type="pcre2">^ERROR: Backup of (?:VM|CT) \d+ failed</match>
+    <description>[WARN] Proxmox VE: backup of guest $(pve.vmid) failed</description>
+  </rule>
+
+  <!--
+    High availability. "freeze" is what a node does to its services while it
+    restarts, and recurs daily on a working cluster. "fence" means the cluster
+    has decided a node must be reset.
+  -->
+  <rule id="131230" level="0">
+    <decoded_as>jt-pve-ha</decoded_as>
+    <description>Proxmox VE high availability messages</description>
+  </rule>
+
+  <rule id="131231" level="4">
+    <if_sid>131230</if_sid>
+    <field name="pve.ha_kind" type="pcre2">^node$</field>
+    <field name="pve.to" type="pcre2">^unknown$</field>
+    <description>Proxmox VE HA: node $(pve.ha_object) stopped responding ($(pve.from) to unknown)</description>
+  </rule>
+
+  <rule id="131232" level="12">
+    <if_sid>131230</if_sid>
+    <field name="pve.to" type="pcre2">^fence$</field>
+    <description>[HIGH] Proxmox VE HA: $(pve.ha_kind) $(pve.ha_object) is being fenced</description>
+  </rule>
+
+  <rule id="131233" level="10">
+    <if_sid>131230</if_sid>
+    <field name="pve.ha_kind" type="pcre2">^service$</field>
+    <field name="pve.to" type="pcre2">^(?:error|recovery)$</field>
+    <description>[WARN] Proxmox VE HA: service $(pve.ha_object) entered state $(pve.to)</description>
+  </rule>
+
+  <rule id="131234" level="8" frequency="6" timeframe="3600">
+    <if_matched_sid>131231</if_matched_sid>
+    <same_field>pve.ha_object</same_field>
+    <description>Proxmox VE HA: node $(pve.ha_object) keeps dropping out of the cluster</description>
+  </rule>
+
+  <!--
+    Corosync. Link flaps are routine on a busy cluster network (measured: about
+    850 in four weeks on one node) and are recorded below the alert level; a
+    burst raises 131243. Losing quorum is what stops the cluster.
+  -->
+  <rule id="131240" level="0">
+    <decoded_as>jt-corosync</decoded_as>
+    <description>Corosync messages</description>
+  </rule>
+
+  <rule id="131241" level="12">
+    <if_sid>131240</if_sid>
+    <match type="pcre2">This node is within the non-primary component and will NOT provide any services</match>
+    <description>[HIGH] Proxmox VE: this node lost cluster quorum</description>
+  </rule>
+
+  <rule id="131242" level="2">
+    <if_sid>131240</if_sid>
+    <match type="pcre2">\[KNET\s*\] link: host: \d+ link: \d+ is down</match>
+    <description>Corosync: a cluster network link went down</description>
+  </rule>
+
+  <rule id="131243" level="7" frequency="20" timeframe="600">
+    <if_matched_sid>131242</if_matched_sid>
+    <description>Corosync: cluster network links keep going down on $(hostname)</description>
+  </rule>
+
+  <rule id="131244" level="3">
+    <if_sid>131240</if_sid>
+    <match type="pcre2">\[QUORUM\] Members\[\d+\]:</match>
+    <description>Corosync: cluster membership changed</description>
+  </rule>
+
+  <!--
+    Ceph health, from the cluster log. Only WRN and above reach the manager:
+    the pack's agent group drops [DBG] lines and "overall HEALTH_OK" there.
+  -->
+  <rule id="131250" level="0">
+    <decoded_as>jt-ceph-cluster</decoded_as>
+    <description>Ceph cluster log</description>
+  </rule>
+
+  <rule id="131251" level="7">
+    <if_sid>131250</if_sid>
+    <field name="ceph.severity" type="pcre2">^WRN$</field>
+    <description>Ceph health warning: $(ceph.message)</description>
+  </rule>
+
+  <rule id="131252" level="10">
+    <if_sid>131250</if_sid>
+    <field name="ceph.severity" type="pcre2">^ERR$</field>
+    <description>[WARN] Ceph health error: $(ceph.message)</description>
+  </rule>
+
+  <rule id="131253" level="10">
+    <if_sid>131251,131252</if_sid>
+    <field name="ceph.check" type="pcre2">^(?:OSD_DOWN|OSD_HOST_DOWN|MON_DOWN|MGR_DOWN|PG_AVAILABILITY|PG_DEGRADED_FULL|OSD_NEARFULL|POOL_NEARFULL)$</field>
+    <description>[WARN] Ceph: $(ceph.message)</description>
+  </rule>
+
+  <rule id="131254" level="12">
+    <if_sid>131251,131252</if_sid>
+    <field name="ceph.check" type="pcre2">^(?:OSD_FULL|POOL_FULL|OSD_TOO_MANY_REPAIRS|PG_DAMAGED|OSD_SCRUB_ERRORS)$</field>
+    <description>[HIGH] Ceph: $(ceph.message)</description>
+  </rule>
+
+  <rule id="131255" level="3">
+    <if_sid>131250</if_sid>
+    <match type="pcre2">Health check cleared: </match>
+    <description>Ceph health check cleared: $(ceph.message)</description>
+  </rule>
+
+  <!--
+    REST API, from /var/log/pveproxy/access.log. The pack's agent group sends
+    these lines with the program name jt-pveproxy, so the pack's own decoder reads
+    them (see the decoder file for why: the client address). GET and HEAD are
+    dropped on the agent (about 240,000 lines a day on one node), and so are
+    successful login ticket requests, which monitoring systems make every few
+    seconds; failed ones (401) are kept.
+  -->
+  <rule id="131279" level="0">
+    <decoded_as>jt-pveproxy-access</decoded_as>
+    <description>Proxmox VE API request</description>
+    <group>pve_api,</group>
+  </rule>
+
+  <rule id="131266" level="5">
+    <if_sid>131279</if_sid>
+    <protocol>POST</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/access/ticket$</url>
+    <id>^401$</id>
+    <description>Proxmox VE: failed login to the web interface or API from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,pve_auth,</group>
+  </rule>
+
+  <rule id="131267" level="10" frequency="6" timeframe="120">
+    <if_matched_sid>131266</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] Proxmox VE: repeated failed logins from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,pve_auth,</group>
+  </rule>
+
+  <!-- Changes count when the answer was a success. -->
+  <rule id="131260" level="8">
+    <if_sid>131279</if_sid>
+    <id type="pcre2">^2\d\d$</id>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/access/(?:users|acl|roles|groups|domains|tfa|password|permissions|openid)</url>
+    <description>Proxmox VE API: users, permissions or realms changed ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>pve_api,</group>
+  </rule>
+
+  <rule id="131261" level="10">
+    <if_sid>131260</if_sid>
+    <url type="pcre2">/access/users/[^/]+/token(?:/|$)</url>
+    <description>[WARN] Proxmox VE API: an API token was created or changed ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1098.001</id>
+    </mitre>
+    <group>pve_api,</group>
+  </rule>
+
+  <rule id="131262" level="8">
+    <if_sid>131279</if_sid>
+    <id type="pcre2">^2\d\d$</id>
+    <protocol>DELETE</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/(?:qemu|lxc)/\d+(?:\?|$)</url>
+    <description>Proxmox VE API: guest deletion requested ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+    <group>pve_api,</group>
+  </rule>
+
+  <rule id="131263" level="6">
+    <if_sid>131279</if_sid>
+    <id type="pcre2">^2\d\d$</id>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <url type="pcre2">/firewall(?:/|$)</url>
+    <description>Proxmox VE API: firewall configuration changed ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>pve_api,</group>
+  </rule>
+
+  <rule id="131264" level="5">
+    <if_sid>131279</if_sid>
+    <id type="pcre2">^2\d\d$</id>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/storage/[^/]+/(?:upload|download-url)</url>
+    <description>Proxmox VE API: file uploaded to storage ($(url)) from $(srcip)</description>
+    <group>pve_api,</group>
+  </rule>
+
+  <rule id="131265" level="6">
+    <if_sid>131279</if_sid>
+    <id type="pcre2">^2\d\d$</id>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/(?:cluster/(?:backup|ha|replication|sdn|options|acme|jobs)|storage(?:/|$)|nodes/[^/]+/(?:dns|hosts|time|certificates|subscription))</url>
+    <description>Proxmox VE API: cluster configuration changed ($(protocol) $(url)) from $(srcip)</description>
+    <group>pve_api,</group>
+  </rule>
+
+</group>

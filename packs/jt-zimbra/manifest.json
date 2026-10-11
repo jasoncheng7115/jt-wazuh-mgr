@@ -2,27 +2,79 @@
  "id": "jt-zimbra",
  "name": "Zimbra Detection Suite",
  "name_zh": "Zimbra 偵測套組",
- "version": "2.9",
- "summary": "FIM, web, authentication, audit, state, threat and SOAP detection for Zimbra mail servers.",
- "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、稽核、狀態、威脅與 SOAP 偵測。",
+ "version": "3.0",
+ "summary": "FIM, web, authentication, SOAP, MTA and host-noise rules for Zimbra mail servers, with the decoders they need.",
+ "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、SOAP、MTA 與主機雜訊規則，並附上所需的解碼器。",
  "rule_id_range": "100800-100999",
- "notes_zh": [
-  "zimbra-webfiles 是原廠檔案基線。隨附的版本產生自 Zimbra 10.1.20（FOSS 與 NETWORK 版聯集），是起點而非自行產生的替代品。",
-  "每次 Zimbra 安裝後**與每次升級後**都要重建基線 —— 升級會替換帶版本號的 jar，新檔名對舊基線來說是未知的。產生方式：{ find /opt/zimbra/jetty_base/webapps -type f \\( -name '*.jsp' -o -name '*.jspx' -o -name '*.jar' -o -name '*.class' -o -name '*.war' -o -name '*.html' \\); find /opt/zimbra/lib/ext -type f; } | sort -u | sed 's/$/:legit/''   注意 lib/ext 要收「所有」檔案型別而非只有 jar：規則 100806 對該目錄下任何檔案都告警，而 .wsdl / .xsd / .properties 都在裡面。",
-  "zimbra-internal-networks 用於區分內外部來源，請依實際網段調整。",
-  "agent 端 syscheck 需以 whodata=yes 監控 Zimbra 目錄才能取得寫入程序資訊。",
-  "原廠基線未含 WEB-INF/lib/*.jar 與 lib/ext，這是 100803 / 100806 誤報的主要來源；重建基線可從源頭解決，優於用抑制規則掩蓋。",
-  "檔案完整性事件的雜湊比對由 jt-malware-hash 套件的規則 100141 提供，比對的是每晚重建的清單。本套件不再自帶雜湊清單：原本那份只有一個佔位符，讀取它的 level 15 規則從未觸發過。",
-  "規則 100807 原本是一條涵蓋 jsp 到 elf 全部副檔名、而且不看檔案權限的規則。在一台開發主機上實測 15 天產生 6,133 筆 level 12，其中 5,538 筆是 .py，多數是沒有執行權限位元的原始碼，根本不可能被執行。現在依「這個副檔名要不要 x 位元」拆開：100807 留下由容器載入、不看權限的網頁應用產物，100809 收下腳本與二進位檔並要求執行權限位元。實測：0755 的 .py 命中 100809，同一個檔案 0644 時靜默。規則 100810 再排除建置與測試工具鏈的暫存目錄 —— 在一台建置主機上，那類目錄一天就貢獻了其中 399 筆。",
-  "規則 100808（原廠檔案內容被改寫，level 13）在 2.7 之前不可能觸發：同層的 100800 先接走事件，其子規則 100801 又把所有原廠檔案變更定為 level 0。現在 100801 只收內容沒變的變動，其餘交給 100808，網站目錄與 lib/ext 都適用。Zimbra 每次升級都會改寫原廠檔案，會出現一批這條告警；升級後請重新產生基準清單。",
-  "100940／100941（排程或 systemd 單元被修改，level 13）不再對刪除告警：刪掉排程不是持久化。原本約一半的 level 13 是刪除事件。刪除仍由內建 553 以 level 7 記錄。"
- ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
  "requires": {
   "wazuh": ">=4.8"
  },
+ "tested_with": [
+  "4.14.7"
+ ],
+ "notes": [
+  "zimbra-webfiles is the stock-file baseline. The shipped copy was generated from Zimbra 10.1.20 (FOSS and NETWORK editions combined) and is a starting point, not a substitute for generating your own.",
+  "Regenerate the baseline after every Zimbra install AND after every upgrade - an upgrade replaces version-stamped jars, and each new filename is unknown to the old baseline. Generate with: { find /opt/zimbra/jetty_base/webapps -type f \\( -name '*.jsp' -o -name '*.jspx' -o -name '*.jar' -o -name '*.class' -o -name '*.war' -o -name '*.html' \\); find /opt/zimbra/lib/ext -type f; } | sort -u | sed 's/$/:legit/'   -- note that lib/ext takes ALL file types, not just jars: rule 100806 alerts on any file there, and .wsdl, .xsd and .properties files live in it.",
+  "zimbra-internal-networks separates internal from external sources; adjust it to your own subnets. Put your proxies in it too (Z-Push, a reverse proxy, the office NAT address): the external-only rules, and the active responses built on them, then never treat a proxy as an attacker.",
+  "The agent's syscheck must monitor the Zimbra directories with whodata=yes for the writing process to be recorded.",
+  "The stock baseline does not include WEB-INF/lib/*.jar or lib/ext. Those paths are the usual source of false positives on rules 100803 and 100806; regenerating the baseline fixes it at the source, which is better than suppressing the alerts.",
+  "Hash matching on file integrity events is provided by the jt-malware-hash pack, rule 100141, against a list rebuilt nightly. This pack no longer ships a hash list of its own: the one it had contained a single placeholder, so the level 15 rule reading it had never fired.",
+  "Rule 100807 was one rule covering every extension from jsp to elf, and it did not look at the file mode. Measured over fifteen days on a development host it produced 6,133 alerts at level 12, of which 5,538 were .py files, most of them source code with no execute bit that could never have been run. It is now split by whether the extension needs that bit: 100807 keeps the web application artefacts, which a container loads regardless of mode, and 100809 takes the scripts and binaries and requires the execute bit. Verified: a .py at 0755 matches 100809, the same file at 0644 is silent. Rule 100810 then excludes build and test toolchain scratch directories, which produced 399 of these alerts in a single day on a build host.",
+  "Rule 100808 (a stock file's contents rewritten, level 13) could never fire before 2.7: its sibling 100800 claimed the event first and 100801 settled every stock-file change at level 0. 100801 now takes only changes that leave the contents alone, and 100808 takes the rest, in the web directories and lib/ext alike. Expect a batch of these on every Zimbra upgrade, which rewrites stock files; regenerate the baseline afterwards.",
+  "100940 and 100941 (a cron entry or systemd unit changed, level 13) no longer alert on a deletion: removing a scheduled task is not persistence. About half of their level 13s were deletions. The built-in rule 553 still records them at level 7.",
+  "3.0 ships the decoders. Before 3.0 the rules named three decoders the pack did not contain, so on a manager without a hand-made copy wazuh-analysisd refused the whole ruleset. The decoder files keep the names such copies had (0001-zimbra_decoders.xml, 0002-zimbra_mailbox_decoders.xml); installing over one replaces it and the installer keeps the original as a backup.",
+  "Measured on two Zimbra 10.1 servers over 41 days: about 105,000 alerts a day. 84,000 were Zimbra's own sudo and su housekeeping (zmmailboxdmgr status every few seconds, each with two PAM session lines), 17,000 one postdrop process stuck on a permission error, 1,300 two internal hosts refused for want of reverse DNS, 700 a monitoring check refused by sudo, 200 configuration files rewritten by zmconfigd, and the only mailed pack alerts (2.7 a day) were phones syncing through Z-Push. 3.0 handles each as a child of the rule that raised it and keeps one alert per real condition: replayed on the same alerts, about 1,700 a day remain, most of them from outside this pack (a refused SNMP sudo, netstat port changes, SCA results).",
+  "Rules that could never fire are fixed: the login-success, admin-login, cracked-password and multi-source rules (100845-100852; <action> compares as a plain string unless a type is given), the burst-of-mail rule (100925/100928) and the two-factor rule (100851), which looked in audit.log for lines it never contains, and the repeat rules 100825, 100826 and 100923, which counted only events that ended at their parent. 100849 and 100922 could report an internal admin login or export at level 14 and now require an external address; 100846 hung off every login rule in the ruleset (an SSH brute force was reported as Zimbra) and is now Zimbra-only.",
+  "Requests through a proxy (Z-Push, a reverse proxy) are attributed to the client the proxy reported, the first oip address, instead of decoding with no address and no account. The address is only as trustworthy as the proxy chain: where a proxy appends to a client-supplied X-Forwarded-For header instead of replacing it, the client can choose it.",
+  "With zimbraLogToSyslog set, mailbox and audit lines also arrive through syslog (programs zimbra_mailbox and zimbra_audit). Only the copies read from /opt/zimbra/log count; rules 100834 and 100839 drop the others. Counting both halved every threshold: a third of the old SOAP alerts came from the syslog copy, and the generic rule 2501 raised every copied login failure a second time.",
+  "New in 3.0: infected mail or spam sent by a local account (level 12), virus scanning failing (level 10), Postfix unable to deliver to the mailbox server, remote servers refusing this server's mail as spam, queue growth, service and disk status from zimbramon, opendkim key errors, admin-console changes and logins, an administrator taking over another account's session, account lockout, application passwords and mail-filter changes.",
+  "Left to others on purpose: SMTP AUTH password failures per address are the built-in Postfix rules 3332 and 3357 (Zimbra also logs them in audit.log, where 100841-100844 count them per account); LDAP (slapd) belongs to the jt-ucs pack; Z-Push devices to the jt-zpush pack; known-bad addresses to jt-ioc (100991, which read jt-ioc's list, is removed: without jt-ioc it was ignored with a warning, with it 906001 already covers it).",
+  "etc/lists/zimbra-service-accounts names accounts expected to read a lot (monitoring probes, archivers, an administrator account a tool uses for delegated sessions). It replaces a site's account name that 100974 had written into it. The shipped entry is a placeholder that matches nothing.",
+  "Several 3.0 rules raise a condition that repeats every second until fixed once every six hours (attribute ignore). The window is per rule, not per host, and starts over when the manager restarts or reloads the ruleset. wazuh-logtest does not apply it; it was verified through analysisd itself.",
+  "Rules 100860-100865 need an auditd rule file with the zimbra_* keys and rules 100880-100902 and 100992 need state-audit scripts writing /var/log/zimbra-state-audit.json. Neither ships with this pack; without them those rules stay silent."
+ ],
+ "notes_zh": [
+  "zimbra-webfiles 是原廠檔案基線。隨附的版本產生自 Zimbra 10.1.20（FOSS 與 NETWORK 版聯集），是起點而非自行產生的替代品。",
+  "每次 Zimbra 安裝後**與每次升級後**都要重建基線 —— 升級會替換帶版本號的 jar，新檔名對舊基線來說是未知的。產生方式：{ find /opt/zimbra/jetty_base/webapps -type f \\( -name '*.jsp' -o -name '*.jspx' -o -name '*.jar' -o -name '*.class' -o -name '*.war' -o -name '*.html' \\); find /opt/zimbra/lib/ext -type f; } | sort -u | sed 's/$/:legit/''   注意 lib/ext 要收「所有」檔案型別而非只有 jar：規則 100806 對該目錄下任何檔案都告警，而 .wsdl / .xsd / .properties 都在裡面。",
+  "zimbra-internal-networks 用於區分內外部來源，請依實際網段調整。也請把代理放進去（Z-Push、反向代理、辦公室 NAT 位址）：只看外部來源的規則與以它們為基礎的主動回應，就不會把代理當成攻擊者。",
+  "agent 端 syscheck 需以 whodata=yes 監控 Zimbra 目錄才能取得寫入程序資訊。",
+  "原廠基線未含 WEB-INF/lib/*.jar 與 lib/ext，這是 100803 / 100806 誤報的主要來源；重建基線可從源頭解決，優於用抑制規則掩蓋。",
+  "檔案完整性事件的雜湊比對由 jt-malware-hash 套件的規則 100141 提供，比對的是每晚重建的清單。本套件不再自帶雜湊清單：原本那份只有一個佔位符，讀取它的 level 15 規則從未觸發過。",
+  "規則 100807 原本是一條涵蓋 jsp 到 elf 全部副檔名、而且不看檔案權限的規則。在一台開發主機上實測 15 天產生 6,133 筆 level 12，其中 5,538 筆是 .py，多數是沒有執行權限位元的原始碼，根本不可能被執行。現在依「這個副檔名要不要 x 位元」拆開：100807 留下由容器載入、不看權限的網頁應用產物，100809 收下腳本與二進位檔並要求執行權限位元。實測：0755 的 .py 命中 100809，同一個檔案 0644 時靜默。規則 100810 再排除建置與測試工具鏈的暫存目錄 —— 在一台建置主機上，那類目錄一天就貢獻了其中 399 筆。",
+  "規則 100808（原廠檔案內容被改寫，level 13）在 2.7 之前不可能觸發：同層的 100800 先接走事件，其子規則 100801 又把所有原廠檔案變更定為 level 0。現在 100801 只收內容沒變的變動，其餘交給 100808，網站目錄與 lib/ext 都適用。Zimbra 每次升級都會改寫原廠檔案，會出現一批這條告警；升級後請重新產生基準清單。",
+  "100940／100941（排程或 systemd 單元被修改，level 13）不再對刪除告警：刪掉排程不是持久化。原本約一半的 level 13 是刪除事件。刪除仍由內建 553 以 level 7 記錄。",
+  "3.0 起隨附解碼器。3.0 之前規則引用了三個套件裡沒有的解碼器，在沒有手動副本的管理端上 wazuh-analysisd 會拒絕載入整個規則集。解碼器檔名沿用這類副本的名稱（0001-zimbra_decoders.xml、0002-zimbra_mailbox_decoders.xml），安裝時會取代它，安裝程式會保留原檔備份。",
+  "在兩台 Zimbra 10.1 伺服器上實測 41 天：每天約 105,000 筆告警。其中 84,000 筆是 Zimbra 自己透過 sudo 與 su 做的例行工作（每隔幾秒一次 zmmailboxdmgr status，每次再加兩行 PAM 工作階段），17,000 筆是一個卡在權限錯誤的 postdrop 程序，1,300 筆是兩台缺少反解的內部主機被拒收，700 筆是被 sudo 拒絕的監控檢查，200 筆是 zmconfigd 改寫設定檔，而本套件唯一會寄信的告警（每天 2.7 筆）全是手機經 Z-Push 同步。3.0 對每一項都以「引發它的那條規則的子規則」處理，每個真實狀況保留一則告警：用同一批告警重放，每天剩約 1,700 筆，多數來自本套件以外（被拒的 SNMP sudo、netstat 連接埠變化、SCA 結果）。",
+  "修正了不可能觸發的規則：登入成功、管理員登入、密碼被破解與多來源登入（100845-100852；<action> 未指定 type 時是逐字比對），以及到 audit.log 找它根本不會寫的內容的大量寄信（100925/100928）與兩步驟驗證（100851），還有只計入「最後停在父規則」事件的重複類規則 100825、100826、100923。100849 與 100922 可能把內部的管理員登入或匯出報成 level 14，現在要求外部來源；100846 原本掛在整個規則集的所有登入規則下（SSH 暴力破解會被報成 Zimbra），現在只看 Zimbra。",
+  "經代理（Z-Push、反向代理）進來的請求，現在記在代理回報的用戶端，也就是 oip 的第一個位址；原本這類記錄解不出位址也解不出帳號。這個位址的可信度取決於代理鏈：代理若是附加在用戶端自帶的 X-Forwarded-For 之後而不是取代它，用戶端就能自己指定這個位址。",
+  "設定 zimbraLogToSyslog 時，mailbox 與 audit 的記錄也會經 syslog 進來（程式名 zimbra_mailbox、zimbra_audit）。只有從 /opt/zimbra/log 讀到的那份會被計數，規則 100834 與 100839 會丟掉另一份。兩份都算會讓每個門檻減半：舊的 SOAP 告警有三分之一來自 syslog 副本，通用規則 2501 也會把每筆複製來的登入失敗再報一次。",
+  "3.0 新增：本地帳號寄出中毒信或垃圾信（level 12）、病毒掃描失效（level 10）、Postfix 無法投遞到信箱伺服器、遠端伺服器以垃圾信為由拒收本機的信、佇列暴增、zimbramon 的服務與磁碟狀態、opendkim 金鑰錯誤、管理主控台的變更與登入、管理員接管其他帳號的工作階段、帳號鎖定、應用程式密碼與郵件篩選規則變更。",
+  "刻意交給其他規則：依來源位址的 SMTP AUTH 密碼失敗是內建 Postfix 規則 3332 與 3357（Zimbra 也會記在 audit.log，100841-100844 依帳號計數）；LDAP（slapd）屬於 jt-ucs 套件；Z-Push 裝置屬於 jt-zpush 套件；已知惡意位址屬於 jt-ioc（引用 jt-ioc 清單的 100991 已移除：沒裝 jt-ioc 時它只會被警告後忽略，裝了的話 906001 已經涵蓋）。",
+  "etc/lists/zimbra-service-accounts 列出預期會大量讀信的帳號（監控探針、封存工具、工具用來開委派工作階段的管理員帳號）。它取代了 100974 原本寫死的某站台帳號名稱。隨附的項目是不會比對到任何帳號的佔位符。",
+  "3.0 有幾條規則對「修好之前每秒重複」的狀況每六小時只告警一次（ignore 屬性）。這個時間窗以規則為單位而非主機，管理端重啟或重新載入規則集後重新起算。wazuh-logtest 不會套用它，這部分是直接用 analysisd 驗證的。",
+  "規則 100860-100865 需要帶 zimbra_* 鍵值的 auditd 規則檔，100880-100902 與 100992 需要寫入 /var/log/zimbra-state-audit.json 的狀態稽核腳本。這兩者都不在本套件內；沒有它們，這些規則不會有任何告警。"
+ ],
  "files": [
+  {
+   "type": "decoder",
+   "name": "0001-zimbra_decoders.xml",
+   "dest": "etc/decoders/0001-zimbra_decoders.xml",
+   "sha256": "fe9a2e36fd3e0ede5b7106eac868f4457d487a2c9f5ef14725fcf03e66d4cb1d"
+  },
+  {
+   "type": "decoder",
+   "name": "0002-zimbra_mailbox_decoders.xml",
+   "dest": "etc/decoders/0002-zimbra_mailbox_decoders.xml",
+   "sha256": "5439d88c6460bc5912b48c632fdf1e13d73e1638e4002faa65554c466b14941d"
+  },
+  {
+   "type": "decoder",
+   "name": "jt-zimbra_service_decoders.xml",
+   "dest": "etc/decoders/jt-zimbra_service_decoders.xml",
+   "sha256": "e228ef32db8bfa15f126ddffcd3c389da87639941a30b6e9816dc4d58a94974b"
+  },
   {
    "type": "rule",
    "name": "01-zimbra_fim_rules.xml",
@@ -33,13 +85,13 @@
    "type": "rule",
    "name": "02-zimbra_web_rules.xml",
    "dest": "etc/rules/02-zimbra_web_rules.xml",
-   "sha256": "ac37c87dc57cb918d9af0d8d949e62409a82071627595714803f5d5cfb54026a"
+   "sha256": "ff99e048c9121adf4db290371e591502642007aa30aa66f6e62f2fb8c124dec2"
   },
   {
    "type": "rule",
    "name": "03-zimbra_auth_rules.xml",
    "dest": "etc/rules/03-zimbra_auth_rules.xml",
-   "sha256": "46ab0e5ae1e68716520e06e025db4054facd22cb99a7a67ad1e7527a77501fd9"
+   "sha256": "5eeb1362df35e2752047329761a23f5a01aa14eacbcce6159bd4e867e927de01"
   },
   {
    "type": "rule",
@@ -57,13 +109,19 @@
    "type": "rule",
    "name": "06-zimbra_threat_rules.xml",
    "dest": "etc/rules/06-zimbra_threat_rules.xml",
-   "sha256": "0e1ed400f7e01e720b36072d5485bea0224a4b846632bafe6ef9b26e8504441a"
+   "sha256": "bb950bc5b9a062bc8c1aad7b920bf1ae44398cd4a4e98797cf192e5f1ac182eb"
   },
   {
    "type": "rule",
    "name": "08-zimbra_soap_rules.xml",
    "dest": "etc/rules/08-zimbra_soap_rules.xml",
-   "sha256": "a81219e3e4746f3b8ba7b3a3327cac79ae71ca9511900eb20f377e32e341a894"
+   "sha256": "1ad1df474fb7902b798f64c1e63587c4c6b0aea535789a983cbf69f5e1882d6e"
+  },
+  {
+   "type": "rule",
+   "name": "zz-100866-zimbra_host_rules.xml",
+   "dest": "etc/rules/zz-100866-zimbra_host_rules.xml",
+   "sha256": "61c0a77ad87770438a4909d0ac8135f2349cecedc905a0953b08a042eba4dc15"
   },
   {
    "type": "list",
@@ -80,18 +138,15 @@
    "declare": true,
    "sha256": "7d4269591d76a0a3910a47f7a339ff4a8e96c802af729da8847d6a67a8296513",
    "keep": true
+  },
+  {
+   "type": "list",
+   "name": "zimbra-service-accounts",
+   "dest": "etc/lists/zimbra-service-accounts",
+   "declare": true,
+   "sha256": "ecc4d3e705b33fc95dc1d78850c2737de8334abac21b3c79152aabc5e422ec91",
+   "keep": true
   }
- ],
- "notes": [
-  "zimbra-webfiles is the stock-file baseline. The shipped copy was generated from Zimbra 10.1.20 (FOSS and NETWORK editions combined) and is a starting point, not a substitute for generating your own.",
-  "Regenerate the baseline after every Zimbra install AND after every upgrade - an upgrade replaces version-stamped jars, and each new filename is unknown to the old baseline. Generate with: { find /opt/zimbra/jetty_base/webapps -type f \\( -name '*.jsp' -o -name '*.jspx' -o -name '*.jar' -o -name '*.class' -o -name '*.war' -o -name '*.html' \\); find /opt/zimbra/lib/ext -type f; } | sort -u | sed 's/$/:legit/'   -- note that lib/ext takes ALL file types, not just jars: rule 100806 alerts on any file there, and .wsdl, .xsd and .properties files live in it.",
-  "zimbra-internal-networks separates internal from external sources; adjust it to your own subnets.",
-  "The agent's syscheck must monitor the Zimbra directories with whodata=yes for the writing process to be recorded.",
-  "The stock baseline does not include WEB-INF/lib/*.jar or lib/ext. Those paths are the usual source of false positives on rules 100803 and 100806; regenerating the baseline fixes it at the source, which is better than suppressing the alerts.",
-  "Hash matching on file integrity events is provided by the jt-malware-hash pack, rule 100141, against a list rebuilt nightly. This pack no longer ships a hash list of its own: the one it had contained a single placeholder, so the level 15 rule reading it had never fired.",
-  "Rule 100807 was one rule covering every extension from jsp to elf, and it did not look at the file mode. Measured over fifteen days on a development host it produced 6,133 alerts at level 12, of which 5,538 were .py files, most of them source code with no execute bit that could never have been run. It is now split by whether the extension needs that bit: 100807 keeps the web application artefacts, which a container loads regardless of mode, and 100809 takes the scripts and binaries and requires the execute bit. Verified: a .py at 0755 matches 100809, the same file at 0644 is silent. Rule 100810 then excludes build and test toolchain scratch directories, which produced 399 of these alerts in a single day on a build host.",
-  "Rule 100808 (a stock file's contents rewritten, level 13) could never fire before 2.7: its sibling 100800 claimed the event first and 100801 settled every stock-file change at level 0. 100801 now takes only changes that leave the contents alone, and 100808 takes the rest, in the web directories and lib/ext alike. Expect a batch of these on every Zimbra upgrade, which rewrites stock files; regenerate the baseline afterwards.",
-  "100940 and 100941 (a cron entry or systemd unit changed, level 13) no longer alert on a deletion: removing a scheduled task is not persistence. About half of their level 13s were deletions. The built-in rule 553 still records them at level 7."
  ],
  "agent_group": {
   "name": "zimbra",
@@ -112,10 +167,12 @@
    "required": true,
    "title": "Assign the Zimbra servers to the zimbra group",
    "title_zh": "把 Zimbra 伺服器加入 zimbra 群組",
-   "body": "The group collects the Zimbra logs and monitors the web root, extensions, cron and systemd directories. An existing group is never overwritten by the installer; compare it with the pack's copy. File-integrity settings apply after the agent restarts.",
-   "body_zh": "群組會收集 Zimbra 記錄，並監控網站根目錄、擴充模組、cron 與 systemd 目錄。已存在的群組不會被安裝程式覆蓋，請與套件版本比對。檔案完整性設定要 agent 重啟後才生效。",
+   "body": "The group collects the Zimbra logs (including /var/log/zimbra.log, where Postfix, amavis and zimbramon write), raises the agent's event queue so a Zimbra restart does not overflow it, and monitors the web root, extensions, configuration, cron, systemd and temporary directories. An existing group is never overwritten by the installer; compare it with the pack's copy. File-integrity and buffer settings apply after the agent restarts.",
+   "body_zh": "群組會收集 Zimbra 記錄（包括 Postfix、amavis、zimbramon 寫入的 /var/log/zimbra.log），調大 agent 的事件佇列避免 Zimbra 重啟時溢出，並監控網站根目錄、擴充模組、設定、cron、systemd 與暫存目錄。已存在的群組不會被安裝程式覆蓋，請與套件版本比對。檔案完整性與緩衝設定要 agent 重啟後才生效。",
    "file": "agent/agent.conf",
-   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g zimbra\n/var/ossec/bin/agent_control -R -u <agent_id>"
+   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g zimbra\n/var/ossec/bin/agent_control -R -u <agent_id>",
+   "verify": "After the agent restarts, grep -i 'duplicated\\|buffer' /var/ossec/logs/ossec.log on the Zimbra server: a '(1958) ... duplicated' line only means the agent already read that file.",
+   "verify_zh": "agent 重啟後，在 Zimbra 伺服器上 grep -i 'duplicated\\|buffer' /var/ossec/logs/ossec.log：出現「(1958) ... duplicated」只表示 agent 本來就有讀那個檔。"
   },
   {
    "platform": "linux",
@@ -142,12 +199,64 @@
    "required": false,
    "title": "Set your internal networks",
    "title_zh": "設定內部網段",
-   "body": "etc/lists/zimbra-internal-networks separates internal from external sources. Adjust it to your own subnets, then reload the ruleset.",
-   "body_zh": "etc/lists/zimbra-internal-networks 用來區分內外部來源，請改成自己的網段後重新載入規則集。"
+   "body": "etc/lists/zimbra-internal-networks separates internal from external sources. Adjust it to your own subnets and add your proxies (Z-Push, reverse proxy, office NAT), then reload the ruleset.",
+   "body_zh": "etc/lists/zimbra-internal-networks 用來區分內外部來源，請改成自己的網段並加入代理（Z-Push、反向代理、辦公室 NAT），然後重新載入規則集。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "List the accounts that are expected to read a lot",
+   "title_zh": "列出預期會大量讀信的帳號",
+   "body": "One account per line, the full address, then reload the ruleset. Bulk reading by these accounts (100972/100973) stops alerting. For a tool that reads someone's mailbox through an administrator's delegated session, list the administrator account it logs in with, not the mailbox.",
+   "body_zh": "每行一個帳號，寫完整位址，然後重新載入規則集。這些帳號的大量讀信（100972/100973）不再告警。若是工具透過管理員的委派工作階段讀別人的信箱，請列出工具登入用的管理員帳號，而不是信箱。",
+   "code": "echo 'monitor@example.com:service' >> /var/ossec/etc/lists/zimbra-service-accounts"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Do not collect /var/log/mail.log as well as /var/log/zimbra.log",
+   "title_zh": "不要同時收集 /var/log/mail.log 與 /var/log/zimbra.log",
+   "body": "On a Zimbra server both files receive the same Postfix lines, so every Postfix event arrives twice and every Postfix frequency rule fires at half its threshold. If the agent's own ossec.conf lists /var/log/mail.log, remove that localfile and restart the agent. Nothing changes on the mail server itself.",
+   "body_zh": "在 Zimbra 伺服器上兩個檔會收到相同的 Postfix 記錄，每個 Postfix 事件都會進來兩次，Postfix 的頻率類規則等於門檻減半。若 agent 自己的 ossec.conf 列了 /var/log/mail.log，請移除該 localfile 並重啟 agent。郵件伺服器本身不需任何變更。",
+   "code": "grep -n 'mail.log\\|zimbra.log' /var/ossec/etc/ossec.conf"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Check an older zimbra group configuration for patterns that match nothing",
+   "title_zh": "檢查舊版 zimbra 群組設定中永遠比對不到的樣式",
+   "body": "syscheck's restrict and <ignore type=\"sregex\"> are OS_Match: only ^ $ | ! are special. A pattern written as a regular expression, such as restrict=\"\\.(jsp|sh)$\" or ^/opt/zimbra/conf/(ca|nginx/includes), matches nothing: the restricted directories report no file at all and the ignore excludes nothing. The pack's agent.conf uses the OS_Match form (.jsp$|.sh$).",
+   "body_zh": "syscheck 的 restrict 與 <ignore type=\"sregex\"> 都是 OS_Match：只有 ^ $ | ! 是特殊字元。寫成正規表示式的樣式，例如 restrict=\"\\.(jsp|sh)$\" 或 ^/opt/zimbra/conf/(ca|nginx/includes)，永遠比對不到：受限目錄完全不會回報任何檔案，ignore 也排除不了任何東西。套件的 agent.conf 使用 OS_Match 寫法（.jsp$|.sh$）。",
+   "file": "agent/agent.conf"
   }
  ],
- "tested_with": [
-  "4.14.7",
-  "4.14.8"
+ "active_response": [
+  {
+   "id": "block-zimbra-bruteforce",
+   "command": "firewall-drop",
+   "rules_id": [
+    "100859",
+    "100836"
+   ],
+   "location": "local",
+   "timeout": 600,
+   "title": "Block an external address that keeps failing to log in to Zimbra",
+   "title_zh": "封鎖一再登入 Zimbra 失敗的外部位址",
+   "body": "Drops traffic from the source address on the Zimbra server for 10 minutes after repeated login failures (100859) or password spraying (100836) from an address outside zimbra-internal-networks. The address is the client Zimbra recorded, which for a request through Z-Push or a reverse proxy is the address that proxy reported: a block on the mail server then has no effect, because the connection comes from the proxy, and blocking belongs on the proxy or the edge firewall instead. Risks: a mobile carrier or office NAT address is shared by many people, who are all locked out together; if a proxy appends to a client-supplied X-Forwarded-For header, an attacker can choose the address and make you block someone else, including an administrator; a proxy left out of zimbra-internal-networks would be blocked itself and cut off every user behind it (for Z-Push, every phone). Put proxies and management networks in zimbra-internal-networks and in the manager's white_list first. fail2ban on the same server blocks with the same iptables: if it already has a Zimbra jail, leave this off and let the jt-fail2ban pack report its bans.",
+   "body_zh": "外部位址（不在 zimbra-internal-networks 內）一再登入失敗（100859）或密碼噴灑（100836）時，在 Zimbra 伺服器上封鎖該來源 10 分鐘。這個位址是 Zimbra 記下的用戶端；經 Z-Push 或反向代理進來的請求，是代理回報的位址：此時在郵件伺服器上封鎖沒有效果，因為連線來自代理，應改在代理或邊界防火牆封鎖。風險：電信業者或辦公室的 NAT 位址由許多人共用，會一起被擋；代理若把位址附加在用戶端自帶的 X-Forwarded-For 之後，攻擊者可以指定位址，讓你去封鎖別人，包括管理者；沒放進 zimbra-internal-networks 的代理本身會被封鎖，切斷它後面的所有使用者（Z-Push 就是所有手機）。請先把代理與管理網段放進 zimbra-internal-networks 和管理端的 white_list。同一台伺服器上的 fail2ban 用的是同一套 iptables：如果它已經有 Zimbra 的 jail，請不要啟用這項，交給 jt-fail2ban 套件回報封鎖。"
+  },
+  {
+   "id": "block-zimbra-scanner",
+   "command": "firewall-drop",
+   "rules_id": [
+    "100981"
+   ],
+   "location": "local",
+   "timeout": 600,
+   "title": "Block an external address scanning Zimbra's web paths",
+   "title_zh": "封鎖掃描 Zimbra 網頁路徑的外部位址",
+   "body": "Drops traffic from the source address on the Zimbra server for 10 minutes after 20 or more 404 responses in two minutes. The rule takes external addresses only (internal ones, often a proxy carrying many clients, end at 100984). The address comes from Zimbra's own nginx log, so it is the connecting client; behind a reverse proxy it is the proxy, which must then be listed in zimbra-internal-networks. Risk: a shared NAT address, and a misbehaving client of a real user, are blocked for the 10 minutes.",
+   "body_zh": "兩分鐘內出現 20 次以上 404 時，在 Zimbra 伺服器上封鎖該來源 10 分鐘。規則只看外部位址（內部位址常是帶著許多用戶端的代理，會停在 100984）。位址取自 Zimbra 自己的 nginx 記錄，也就是連線的用戶端；若前面有反向代理，那就是代理本身，必須列入 zimbra-internal-networks。風險：共用的 NAT 位址，以及真實使用者行為異常的用戶端，會被封鎖 10 分鐘。"
+  }
  ]
 }

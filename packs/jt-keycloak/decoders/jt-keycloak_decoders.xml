@@ -1,0 +1,166 @@
+<!--
+  jt-keycloak: decoders for the Keycloak server log
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  Keycloak (Quarkus distribution) writes one line per message:
+    2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type="LOGIN_ERROR", realmId="...", realmName="example", clientId="portal", userId="null", ipAddress="192.0.2.86", error="user_not_found", ..., username="alice"
+  Login and admin events come from the jboss-logging event listener (logger
+  org.keycloak.events) as key="value" pairs. The key order changes with the
+  event type, so every field has its own child decoder below.
+
+  The Keycloak timestamp is UTC. Wazuh does not use it: the syslog header in
+  front of the line (or the time the agent read it) is the event time.
+
+  Three shapes reach the manager, all decoded as jt-keycloak:
+   1. journald or syslog, with a program name in front: a container with the
+      docker journald logging driver and tag "keycloak", or Keycloak under
+      systemd ("kc.sh" or "java"). An untagged container is logged under its
+      12 character container id, which is accepted too.
+   2. the Keycloak log file (log=file), read by the agent without a syslog
+      header. Wazuh's pre-decoder takes the timestamp and the level word, so
+      the decoder sees the line from "[logger]" on and no level is decoded.
+   3. the docker json-file log is NOT decoded here: a child decoder of the
+      built-in json decoder stops Wazuh from decoding the fields of every
+      other JSON event (tested on 4.14.7). The rules match its "log" field.
+
+  Fields: keycloak.level, keycloak.logger, keycloak.thread, keycloak.message
+  (not for events), keycloak.type (user events), keycloak.operation (admin
+  events), keycloak.realm, keycloak.client, keycloak.user_id, srcip
+  (ipAddress), keycloak.error, dstuser (username), keycloak.resource_type,
+  keycloak.resource_path, keycloak.credential_type, keycloak.impersonator,
+  keycloak.failures, keycloak.version, keycloak.trace.
+-->
+
+<!-- Shape 1: a program name in front. -->
+<decoder name="jt-keycloak">
+  <program_name type="pcre2">^(?:keycloak[\w.-]*|kc\.sh|kc|java|[0-9a-f]{12})$</program_name>
+  <prematch type="pcre2">^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} +(?:TRACE|DEBUG|INFO|WARN|ERROR|FATAL) +\[(?:org\.keycloak|io\.quarkus|org\.hibernate|org\.infinispan|org\.jgroups|io\.agroal|com\.arjuna|io\.vertx|io\.netty|org\.postgresql|liquibase|org\.jboss|io\.smallrye)[\w.$]*\] \(</prematch>
+</decoder>
+
+<!--
+  Stack trace lines. Each line of a Java stack trace is a message of its own
+  (about 90 per cent of the lines on a quiet server). Only for a program
+  name that says Keycloak, so traces of other containers are left alone.
+-->
+<decoder name="jt-keycloak">
+  <program_name type="pcre2">^(?:keycloak[\w.-]*|kc\.sh|kc)$</program_name>
+  <prematch type="pcre2">^\s+at [\w$.]|^\s+\.\.\. \d+ (?:more|common frames omitted)|^(?:Caused by|Suppressed): [\w$.]</prematch>
+</decoder>
+
+<!-- Shape 2: the log file, after the pre-decoder took timestamp and level. -->
+<decoder name="jt-keycloak">
+  <prematch type="pcre2">^\s*\[(?:org\.keycloak|io\.quarkus|org\.hibernate|org\.infinispan|org\.jgroups|io\.agroal|com\.arjuna|io\.vertx|io\.netty|org\.postgresql|liquibase|org\.jboss|io\.smallrye)[\w.$]*\] \(</prematch>
+</decoder>
+
+<!--
+  Fields. All children share one name, so every one of them is tried in turn
+  and each adds the field it finds. Values may be quoted (the default) or
+  not (spi events-listener jboss-logging quotes set to none).
+-->
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} +(\w+) +\[</regex>
+  <order>keycloak.level</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">\[(org\.keycloak\.events)\] \(([^)]*)\) </regex>
+  <order>keycloak.logger, keycloak.thread</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">\[((?!org\.keycloak\.events\])[\w.$]+)\] \(([^)]*)\) (.*)$</regex>
+  <order>keycloak.logger, keycloak.thread, keycloak.message</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">^\s*(at|\.\.\.|Caused by|Suppressed)[\s:]</regex>
+  <order>keycloak.trace</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">\) type="?([^",\s]+)</regex>
+  <order>keycloak.type</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">\) operationType="?([^",\s]+)</regex>
+  <order>keycloak.operation</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, realmName="?([^",]+)</regex>
+  <order>keycloak.realm</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, clientId="?([^",]+)</regex>
+  <order>keycloak.client</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, userId="?([^",]+)</regex>
+  <order>keycloak.user_id</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, ipAddress="?([^",\s]+)</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, error="?([^",]+)</regex>
+  <order>keycloak.error</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, username="?([^",]+)</regex>
+  <order>dstuser</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, resourceType="?([^",\s]+)</regex>
+  <order>keycloak.resource_type</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, resourcePath="?([^",]*)</regex>
+  <order>keycloak.resource_path</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, credential_type="?([^",]+)</regex>
+  <order>keycloak.credential_type</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, impersonator="?([^",]+)</regex>
+  <order>keycloak.impersonator</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">, num_failures="?(\d+)</regex>
+  <order>keycloak.failures</order>
+</decoder>
+
+<decoder name="jt-keycloak-fields">
+  <parent>jt-keycloak</parent>
+  <regex type="pcre2">\] \(main\) Keycloak (\S+) on JVM </regex>
+  <order>keycloak.version</order>
+</decoder>

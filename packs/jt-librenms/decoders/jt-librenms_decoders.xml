@@ -1,0 +1,57 @@
+<!--
+  jt-librenms: decoders for LibreNMS
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  Two of LibreNMS's own outputs have no decoder in Wazuh:
+    - the application log, /opt/librenms/logs/librenms.log
+    - the dispatcher service (librenms-service.py), which writes to journald
+  The web server access and error logs are decoded by Wazuh's built-in
+  web-accesslog and nginx-errorlog decoders; the rules use those.
+-->
+
+<!--
+  The application log. LibreNMS formats it itself (App\Logging\LogFileFormatter):
+    [2026-10-11T10:15:02][ERROR] Auth Error (mysql): No user () [admin] from 192.0.2.10
+    [2026-10-11T10:15:02][ALERT] INFO: device:poll sw1.example.com (12) polled in 3.456s
+  Wazuh's pre-decoder leaves the bracketed timestamp alone, so the decoder sees
+  the whole line. The agent group joins continuation lines (stack traces) to
+  the record they belong to, so one record is one event.
+-->
+<decoder name="jt-librenms-log">
+  <prematch type="pcre2">^\[\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[^\]]*\]\[(?:DEBUG|INFO|NOTICE|WARNING|ERROR|CRITICAL|ALERT|EMERGENCY)\] </prematch>
+</decoder>
+
+<!--
+  A login with a user name that does not exist. LibreNMS writes this line
+  (app/Providers/LegacyUserProvider.php) for the built-in, LDAP, AD and RADIUS
+  back ends; a wrong password for an existing user is recorded only in the
+  authlog table of its database. The user name is whatever was typed.
+-->
+<decoder name="jt-librenms-log-auth">
+  <parent>jt-librenms-log</parent>
+  <prematch type="pcre2">^\[[^\]]+\]\[ERROR\] Auth Error \([^)]*\): No user \(</prematch>
+  <regex type="pcre2">^\[[^\]]+\]\[(ERROR)\] (Auth Error \(([^)]*)\): No user \([^)]*\) \[(.*)\] from (\S+?))\s*$</regex>
+  <order>librenms.level, librenms.message, librenms.auth_type, dstuser, srcip</order>
+</decoder>
+
+<decoder name="jt-librenms-log-fields">
+  <parent>jt-librenms-log</parent>
+  <regex type="pcre2">^\[[^\]]+\]\[([A-Z]+)\] (.*?)\s*$</regex>
+  <order>librenms.level, librenms.message</order>
+</decoder>
+
+<!--
+  The dispatcher service (librenms.service runs librenms-service.py) logs to
+  journald, one line per record:
+    Poller_0-1(ERROR):Polling device 12 failed with exit code 1: ...
+  With -t it prefixes a timestamp. The syslog identifier is the script name.
+-->
+<decoder name="jt-librenms-service">
+  <program_name type="pcre2">^librenms-service(?:\.py)?$</program_name>
+</decoder>
+
+<decoder name="jt-librenms-service-fields">
+  <parent>jt-librenms-service</parent>
+  <regex type="pcre2">^(?:\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d+ )?(\S+)\((DEBUG|INFO|WARNING|ERROR|CRITICAL)\):\s?(.*)$</regex>
+  <order>librenms.thread, librenms.level, librenms.message</order>
+</decoder>

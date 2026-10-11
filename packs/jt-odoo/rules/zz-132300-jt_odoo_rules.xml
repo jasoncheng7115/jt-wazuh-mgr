@@ -1,0 +1,677 @@
+<!--
+  jt-odoo: the Odoo ERP server log
+  Rule range 132300-132399. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+  Decoders: jt-odoo_decoders.xml (jt-odoo for the log file, jt-odoo-syslog for
+  the same records through syslog or journald).
+
+  The zz- prefix makes this file load after the built-in ruleset: 132395 and
+  132396 are children of the built-in web access log rules (31100, 31108).
+  Rules that attach to authentication_success with if_group attach only to
+  rules loaded before them, so the built-in ones (0215-policy, 0280-attack)
+  do not reach the Odoo logins; files that sort after this one do.
+
+  Message texts are the ones in the Odoo source, 16.0 to 19.0 (res_users.py,
+  service/db.py, web/controllers/database.py, auth_totp, auth_signup,
+  ir_module.py, ir_model.py, ir_rule.py, ir_cron.py, models.py, netsvc.py).
+
+  The two top-level rules are level 0: Wazuh tries top-level rules at level 0
+  first and the rest from the highest level down (measured on 4.14.7), so a
+  top-level rule at a higher level would lose "Login failed" to the generic
+  2501 and every line with "error" or "denied" to 1002.
+
+  Modules
+    132300-132309  bases: file and syslog, request lines, errors, other records
+    132310-132321  logins, Odoo's login throttle, password attacks
+    132322-132329  password reset, new device and signup mails
+    132330-132339  two-factor authentication, API keys
+    132340-132359  database manager
+    132360-132369  modules
+    132370-132379  access denials, deletions
+    132380-132389  errors, scheduled jobs, server start
+    132390-132394  request lines: scanning
+    132395-132399  the web server in front of Odoo (combined log format)
+-->
+
+<group name="odoo,jt_odoo,">
+
+  <!-- ==============================================================
+       Bases
+       ============================================================== -->
+
+  <rule id="132300" level="0">
+    <decoded_as>jt-odoo</decoded_as>
+    <description>Odoo log messages</description>
+  </rule>
+
+  <rule id="132301" level="0">
+    <decoded_as>jt-odoo-syslog</decoded_as>
+    <description>Odoo log messages (through syslog)</description>
+  </rule>
+
+  <!-- The three below are mutually exclusive by level and logger. -->
+  <rule id="132302" level="0">
+    <if_sid>132300,132301</if_sid>
+    <field name="odoo.logger" type="pcre2">^werkzeug$</field>
+    <field name="odoo.level" type="pcre2">^(?:DEBUG|INFO|WARNING)$</field>
+    <description>Odoo: HTTP request</description>
+  </rule>
+
+  <!-- Recorded below the alert level for the error burst rule 132381.
+       A traceback is part of the event when the agent joins the lines. -->
+  <rule id="132303" level="2">
+    <if_sid>132300,132301</if_sid>
+    <field name="odoo.level" type="pcre2">^(?:ERROR|CRITICAL)$</field>
+    <description>Odoo error: $(odoo.logger)</description>
+  </rule>
+
+  <rule id="132304" level="0">
+    <if_sid>132300,132301</if_sid>
+    <field name="odoo.logger" type="pcre2">^(?!werkzeug$)</field>
+    <field name="odoo.level" type="pcre2">^(?:DEBUG|INFO|WARNING)$</field>
+    <description>Odoo: $(odoo.logger)</description>
+  </rule>
+
+  <!-- ==============================================================
+       Logins (res_users._login). The address is the client only when
+       Odoo runs with proxy_mode = True behind a proxy that sends
+       X-Forwarded-For and X-Forwarded-Host; otherwise it is the proxy.
+       XML-RPC and JSON-RPC clients log in through the same code, so an
+       integration that authenticates on every run is one line per run.
+       ============================================================== -->
+
+  <rule id="132310" level="0">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^Login successful for </field>
+    <description>Odoo: login of $(dstuser) from $(srcip)</description>
+  </rule>
+
+  <!-- Integrations and other service accounts, listed by login in
+       etc/lists/jt-odoo-service-accounts: their logins are not news.
+       The two rules are exclusive (match_key / not_match_key). -->
+  <rule id="132311" level="0">
+    <if_sid>132310</if_sid>
+    <list field="user" lookup="match_key">etc/lists/jt-odoo-service-accounts</list>
+    <description>Odoo: routine login of a listed service account $(dstuser)</description>
+  </rule>
+
+  <rule id="132312" level="3">
+    <if_sid>132310</if_sid>
+    <list field="user" lookup="not_match_key">etc/lists/jt-odoo-service-accounts</list>
+    <description>Odoo: login of $(dstuser) from $(srcip) to database $(odoo.db)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.5,gdpr_IV_32.2,</group>
+  </rule>
+
+  <!-- The administrator: the default login "admin", or a login listed in
+       etc/lists/jt-odoo-admin-accounts. Children of 132312, so an admin login
+       that is also listed as a service account stays quiet. -->
+  <rule id="132313" level="5">
+    <if_sid>132312</if_sid>
+    <user type="pcre2">^admin$</user>
+    <description>Odoo: administrator login of $(dstuser) from $(srcip) to database $(odoo.db)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
+  </rule>
+
+  <rule id="132314" level="5">
+    <if_sid>132312</if_sid>
+    <list field="user" lookup="match_key">etc/lists/jt-odoo-admin-accounts</list>
+    <description>Odoo: administrator login of $(dstuser) from $(srcip) to database $(odoo.db)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- A failed login. Odoo also writes this line for an attempt its throttle
+       ignored (132320), so a flood keeps counting. -->
+  <rule id="132315" level="5">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^Login failed for </field>
+    <description>Odoo: failed login for $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,gdpr_IV_35.7.d,gdpr_IV_32.2,</group>
+  </rule>
+
+  <!-- Brute force: eight failures from one address in five minutes, whatever
+       the account. Behind a proxy without proxy_mode every user shares the
+       proxy's address and this fires on ordinary typing mistakes. -->
+  <rule id="132316" level="10" frequency="8" timeframe="300" ignore="300">
+    <if_matched_sid>132315</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] Odoo: repeated failed logins from $(srcip), last for $(dstuser): password guessing</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_11.4,gdpr_IV_35.7.d,</group>
+  </rule>
+
+  <!-- Password spraying: twelve failures in fifteen minutes from one address,
+       each for an account other than the latest one. -->
+  <rule id="132317" level="12" frequency="12" timeframe="900" ignore="900">
+    <if_matched_sid>132315</if_matched_sid>
+    <same_source_ip />
+    <different_user />
+    <description>[HIGH] Odoo: failed logins for many different accounts from $(srcip): password spraying</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_11.4,gdpr_IV_35.7.d,</group>
+  </rule>
+
+  <!-- A successful login from an address that has just been guessing. Children
+       of every success rule, the listed service accounts included: a guessed
+       service account password is the worst case, not a routine login.
+       Two rules because Wazuh does not reuse an event that already raised a
+       rule of the same or a higher level: the event that raised the level 12
+       spraying rule cannot raise another level 12 (measured on 4.14.7). -->
+  <rule id="132318" level="12" timeframe="900">
+    <if_sid>132311,132312,132313,132314</if_sid>
+    <if_matched_sid>132316</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] Odoo: login of $(dstuser) from $(srcip) right after repeated failed logins from that address</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,</group>
+  </rule>
+
+  <rule id="132319" level="13" timeframe="900">
+    <if_sid>132311,132312,132313,132314</if_sid>
+    <if_matched_sid>132317</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] Odoo: login of $(dstuser) from $(srcip) right after password spraying from that address</description>
+    <mitre>
+      <id>T1110.003</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,</group>
+  </rule>
+
+  <!-- Odoo's own throttle (base.login_cooldown_after failures, default 5,
+       then base.login_cooldown_duration seconds, default 60): further attempts
+       from the address are ignored and logged. Reported once a minute; the
+       failures themselves keep feeding 132316 and 132317. -->
+  <rule id="132320" level="7" ignore="60">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^Login attempt ignored for </field>
+    <description>Odoo: login throttle engaged for $(srcip) after $(odoo.failures) failures (last account $(dstuser))</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,</group>
+  </rule>
+
+  <!-- Odoo throttled a private address: almost always the reverse proxy, which
+       means proxy_mode is off or the proxy does not send X-Forwarded-Host, and
+       every client shares one address. Reported at most once an hour. -->
+  <rule id="132321" level="7" ignore="3600">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^The rate-limited IP address \S+ is classified as private</field>
+    <description>Odoo: login throttle hit the private address $(srcip), probably the reverse proxy: check proxy_mode</description>
+    <group>configuration,</group>
+  </rule>
+
+  <!-- ==============================================================
+       Password reset, new device and signup mails (auth_signup)
+       ============================================================== -->
+
+  <rule id="132322" level="3">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^Password reset email sent for user </field>
+    <description>Odoo: password reset mail sent to $(dstuser)</description>
+    <group>account_changed,</group>
+  </rule>
+
+  <rule id="132323" level="7" frequency="10" timeframe="600" ignore="3600">
+    <if_matched_sid>132322</if_matched_sid>
+    <description>Odoo: ten password reset mails in ten minutes: account enumeration or reset spam</description>
+    <mitre>
+      <id>T1589</id>
+    </mitre>
+  </rule>
+
+  <rule id="132324" level="3">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^New device alert email sent for user </field>
+    <description>Odoo: $(dstuser) logged in from a new device</description>
+  </rule>
+
+  <rule id="132325" level="3">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^Signup email sent for user </field>
+    <description>Odoo: account $(dstuser) signed up</description>
+    <group>adduser,</group>
+  </rule>
+
+  <!-- ==============================================================
+       Two-factor authentication (auth_totp, auth_totp_mail), API keys
+       ============================================================== -->
+
+  <!-- The password was accepted (the 2FA step comes after it) but the code
+       was wrong. One is a typing mistake. -->
+  <rule id="132330" level="5">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^2FA check\s?(?:\(mail\))?: FAIL for </field>
+    <description>Odoo: wrong two-factor code for $(dstuser)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,pci_dss_10.2.4,</group>
+  </rule>
+
+  <rule id="132331" level="10" frequency="4" timeframe="600" ignore="600">
+    <if_matched_sid>132330</if_matched_sid>
+    <same_user />
+    <description>[WARN] Odoo: repeated wrong two-factor codes for $(dstuser), whose password was accepted each time</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_11.4,</group>
+  </rule>
+
+  <!-- 19.0: a code that was already used (a replayed code). -->
+  <rule id="132332" level="5">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^2FA check: REUSE for </field>
+    <description>Odoo: two-factor code reused for $(dstuser)</description>
+    <mitre>
+      <id>T1111</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="132333" level="8">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^2FA disable: SUCCESS for </field>
+    <description>Odoo: two-factor authentication disabled for $(dstuser) by user #$(odoo.uid)</description>
+    <mitre>
+      <id>T1556.006</id>
+    </mitre>
+    <group>account_changed,pci_dss_8.3,</group>
+  </rule>
+
+  <rule id="132334" level="5">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^2FA disable: REJECT for </field>
+    <description>Odoo: refused to disable two-factor authentication of $(dstuser) for user #$(odoo.uid)</description>
+    <mitre>
+      <id>T1556.006</id>
+    </mitre>
+  </rule>
+
+  <rule id="132335" level="3">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^2FA enable: SUCCESS for </field>
+    <description>Odoo: two-factor authentication enabled for $(dstuser)</description>
+    <group>account_changed,</group>
+  </rule>
+
+  <!-- A new API key works for XML-RPC and JSON-RPC without the second factor.
+       "Authentication Device generated" is a browser remembered for 2FA and
+       stays at the base. -->
+  <rule id="132336" level="8">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^(?!Authentication Device )\S.*? generated: scope: \x3c</field>
+    <description>Odoo: API key created for $(dstuser) from $(srcip) (scope $(odoo.scope))</description>
+    <mitre>
+      <id>T1098.001</id>
+    </mitre>
+    <group>account_changed,pci_dss_8.1.2,</group>
+  </rule>
+
+  <rule id="132337" level="3">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^API key\(s\) removed: </field>
+    <description>Odoo: API key removed by $(dstuser) from $(srcip)</description>
+    <group>account_changed,</group>
+  </rule>
+
+  <!-- An RPC login with a password (or a wrong key) for an account that may
+       only use API keys, which is every account with two-factor
+       authentication: a stolen password tried where 2FA is not asked. -->
+  <rule id="132338" level="6">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^Invalid API key or password-based authentication attempted for a non-interactive</field>
+    <description>Odoo: RPC login with a password refused, the account requires an API key</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <!-- ==============================================================
+       Database manager (/web/database/*, master password protected).
+       It can download, drop, restore and create whole databases;
+       production servers should run with list_db = False and the proxy
+       should refuse /web/database. Request lines carry the client
+       address, the service lines that follow record what happened.
+       ============================================================== -->
+
+  <rule id="132340" level="8">
+    <if_sid>132302</if_sid>
+    <url type="pcre2">^/web/database/</url>
+    <description>Odoo: database manager requested from $(srcip): $(protocol) $(url)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>web,attack,</group>
+  </rule>
+
+  <rule id="132341" level="12">
+    <if_sid>132340</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/web/database/(?:backup|drop|restore|duplicate|create|change_password)\b</url>
+    <description>[HIGH] Odoo: database manager action $(url) requested from $(srcip) (HTTP $(id))</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1485</id>
+    </mitre>
+    <group>web,attack,</group>
+  </rule>
+
+  <!-- Five database manager requests from one address in ten minutes: someone
+       guessing the master password. -->
+  <rule id="132342" level="12" frequency="5" timeframe="600" ignore="600">
+    <if_matched_sid>132341</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] Odoo: repeated database manager actions from $(srcip): master password guessing</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>web,attack,</group>
+  </rule>
+
+  <!-- The database service over XML-RPC (/xmlrpc/db, /xmlrpc/2/db): the same
+       functions as the manager, and also db.list and server_version, which
+       client libraries call. -->
+  <rule id="132343" level="6">
+    <if_sid>132302</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/xmlrpc/(?:2/)?db\b</url>
+    <description>Odoo: XML-RPC call to the database service from $(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!-- What the service did (odoo.service.db, INFO). -->
+  <rule id="132344" level="12">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^DROP DB: \S+\s*$</field>
+    <description>[HIGH] Odoo: database $(odoo.target_db) dropped</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+    <group>database,</group>
+  </rule>
+
+  <rule id="132345" level="10">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^DUMP DB: </field>
+    <description>[WARN] Odoo: database $(odoo.target_db) dumped (backup downloaded or written)</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+    <group>database,</group>
+  </rule>
+
+  <rule id="132346" level="12">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^RESTORE DB: \S+\s*$</field>
+    <description>[HIGH] Odoo: database $(odoo.target_db) restored from an uploaded backup</description>
+    <mitre>
+      <id>T1565.001</id>
+    </mitre>
+    <group>database,</group>
+  </rule>
+
+  <rule id="132347" level="12">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^Duplicate database \x60</field>
+    <description>[HIGH] Odoo: database $(odoo.target_db) duplicated</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+    <group>database,</group>
+  </rule>
+
+  <rule id="132348" level="10">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^(?:Create database \x60|RENAME DB: \S+ -\x3e \S+\s*$)</field>
+    <description>[WARN] Odoo: database $(odoo.target_db) created or renamed</description>
+    <group>database,</group>
+  </rule>
+
+  <rule id="132349" level="8">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^(?:DROP|RENAME) DB: .* failed:</field>
+    <description>Odoo: database drop or rename of $(odoo.target_db) failed</description>
+    <group>database,</group>
+  </rule>
+
+  <!-- Errors of the database manager (ERROR). With list_db = False every
+       manager function is refused and logged. -->
+  <rule id="132350" level="10">
+    <if_sid>132303</if_sid>
+    <field name="odoo.message" type="pcre2">^Database management functions blocked, admin disabled database listing</field>
+    <description>[WARN] Odoo: database manager function refused, the manager is disabled (list_db = False)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>database,attack,</group>
+  </rule>
+
+  <!-- The controller's error with the traceback joined: AccessDenied is the
+       master password check (or the disabled manager). -->
+  <rule id="132351" level="10">
+    <if_sid>132303</if_sid>
+    <field name="odoo.logger" type="pcre2">^odoo\.addons\.web\.controllers\.database$</field>
+    <field name="odoo.message" type="pcre2">^(?:Database (?:deletion|duplication|creation) error\.|Database\.backup)(?=.*AccessDenied)</field>
+    <description>[WARN] Odoo: database manager action refused: wrong master password</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>database,attack,authentication_failed,</group>
+  </rule>
+
+  <rule id="132352" level="7">
+    <if_sid>132303</if_sid>
+    <field name="odoo.logger" type="pcre2">^odoo\.addons\.web\.controllers\.database$</field>
+    <field name="odoo.message" type="pcre2">^(?:Database (?:deletion|duplication|creation) error\.|Database\.backup)(?!.*AccessDenied)</field>
+    <description>Odoo: database manager action failed (not a password problem, see the full log)</description>
+    <group>database,</group>
+  </rule>
+
+  <!-- ==============================================================
+       Modules (ir_module.assert_log_admin_access): every install,
+       upgrade and uninstall is logged with the user and the address.
+       Installing an app records two lines (button_immediate_install
+       calls button_install).
+       ============================================================== -->
+
+  <rule id="132360" level="5">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^ALLOW access to module\.(?:button_install|button_immediate_install) </field>
+    <description>Odoo: module install $(odoo.modules) by $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1505</id>
+    </mitre>
+    <group>config_changed,</group>
+  </rule>
+
+  <rule id="132361" level="5">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^ALLOW access to module\.(?:button_upgrade|button_immediate_upgrade) </field>
+    <description>Odoo: module upgrade $(odoo.modules) by $(dstuser) from $(srcip)</description>
+    <group>config_changed,</group>
+  </rule>
+
+  <rule id="132362" level="7">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^ALLOW access to module\.(?:button_uninstall|button_immediate_uninstall|module_uninstall) </field>
+    <description>Odoo: module uninstall $(odoo.modules) by $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>config_changed,</group>
+  </rule>
+
+  <rule id="132363" level="8">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^DENY access to module\.</field>
+    <description>Odoo: $(dstuser), not an administrator, tried $(odoo.method) on $(odoo.modules) from $(srcip)</description>
+    <mitre>
+      <id>T1068</id>
+    </mitre>
+    <group>access_denied,</group>
+  </rule>
+
+  <!-- ==============================================================
+       Access denials and deletions
+       ============================================================== -->
+
+  <!-- ACLs and record rules (INFO, with the uid; the WARNING that odoo.http
+       writes for the same error has neither and stays at the base). The web
+       client meets a few in normal use, so only a burst alerts. -->
+  <rule id="132370" level="2">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^Access Denied by (?:ACLs|record rules) for operation: </field>
+    <description>Odoo: access denied to user #$(odoo.uid): $(odoo.operation) on $(odoo.model)</description>
+  </rule>
+
+  <rule id="132371" level="6" frequency="15" timeframe="120" ignore="600">
+    <if_matched_sid>132370</if_matched_sid>
+    <same_field>odoo.uid</same_field>
+    <description>Odoo: burst of access denials for user #$(odoo.uid), last $(odoo.operation) on $(odoo.model): probing for data</description>
+    <mitre>
+      <id>T1083</id>
+    </mitre>
+    <group>access_denied,</group>
+  </rule>
+
+  <!-- odoo.models.unlink logs every deletion. User #1 (the system user, which
+       runs scheduled jobs and garbage collection) is dropped by the agent
+       group. -->
+  <rule id="132372" level="0">
+    <if_sid>132304</if_sid>
+    <field name="odoo.message" type="pcre2">^User #\d+ deleted \S+ records with IDs: </field>
+    <description>Odoo: user #$(odoo.uid) deleted $(odoo.model) records</description>
+  </rule>
+
+  <rule id="132373" level="5">
+    <if_sid>132372</if_sid>
+    <field name="odoo.model" type="pcre2">^(?:res\.users|res\.groups|ir\.rule|ir\.model\.access|ir\.config_parameter)$</field>
+    <description>Odoo: user #$(odoo.uid) deleted $(odoo.model) records (users, groups, access rules or system parameters)</description>
+    <mitre>
+      <id>T1531</id>
+    </mitre>
+    <group>config_changed,</group>
+  </rule>
+
+  <!-- One call that deletes a hundred records or more, by a user other than
+       the system user: a list view selection or a script. -->
+  <rule id="132374" level="7">
+    <if_sid>132372,132373</if_sid>
+    <field name="odoo.uid" type="pcre2">^(?!1$)\d+$</field>
+    <field name="odoo.message" type="pcre2">records with IDs: \[(?:\d+, ){99}</field>
+    <description>Odoo: user #$(odoo.uid) deleted 100 or more $(odoo.model) records at once</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+  </rule>
+
+  <!-- ==============================================================
+       Errors, scheduled jobs, server start
+       ============================================================== -->
+
+  <rule id="132380" level="7">
+    <if_sid>132303</if_sid>
+    <field name="odoo.level" type="pcre2">^CRITICAL$</field>
+    <description>Odoo critical error from $(odoo.logger)</description>
+  </rule>
+
+  <rule id="132381" level="7" frequency="30" timeframe="300" ignore="1800">
+    <if_matched_sid>132303</if_matched_sid>
+    <description>Odoo: 30 errors in five minutes, last from $(odoo.logger)</description>
+  </rule>
+
+  <!-- 18.0 and 19.0: "Job 'name' (id) server action #n failed", "... timed out";
+       16.0 and 17.0: "Call from cron name for server action #n failed in Job #id". -->
+  <rule id="132382" level="4">
+    <if_sid>132303</if_sid>
+    <field name="odoo.level" type="pcre2">^ERROR$</field>
+    <field name="odoo.message" type="pcre2">^(?:Job .*? \(\d+\) (?:server action #\d+ failed|timed out)|Call from cron .*? for server action #\d+ failed in Job #\d+)</field>
+    <description>Odoo: scheduled job $(odoo.job) failed</description>
+  </rule>
+
+  <rule id="132383" level="3">
+    <if_sid>132304</if_sid>
+    <field name="odoo.logger" type="pcre2">^odoo$</field>
+    <field name="odoo.message" type="pcre2">^Odoo version </field>
+    <description>Odoo: server started, version $(odoo.version)</description>
+  </rule>
+
+  <!-- ==============================================================
+       Request lines: scanning. Every 404 is recorded below the alert
+       level; twenty from one address in a minute alert.
+       ============================================================== -->
+
+  <rule id="132390" level="1">
+    <if_sid>132302</if_sid>
+    <id>^404$</id>
+    <url type="pcre2">^(?!/web/database/)</url>
+    <description>Odoo: page not found for $(srcip): $(url)</description>
+  </rule>
+
+  <rule id="132391" level="6" frequency="20" timeframe="60" ignore="600">
+    <if_matched_sid>132390</if_matched_sid>
+    <same_source_ip />
+    <description>Odoo: many requests for missing pages from $(srcip): scanner or content discovery</description>
+    <mitre>
+      <id>T1595.003</id>
+    </mitre>
+    <group>web,attack,</group>
+  </rule>
+
+  <!-- ==============================================================
+       The web server in front of Odoo: its access log in the combined
+       format, read by the built-in web access log decoder. It has the
+       client's address even when Odoo does not, and it is where a
+       request the proxy should have refused shows up. A 2xx or 3xx
+       answer means Odoo answered; a 403 or 404 (refused at the proxy,
+       or no Odoo behind it) is left to the built-in 4xx rules.
+       ============================================================== -->
+
+  <rule id="132395" level="8">
+    <if_sid>31100,31108</if_sid>
+    <url type="pcre2">^/web/database/(?:manager|selector|list|backup|drop|restore|duplicate|create|change_password)\b</url>
+    <id type="pcre2">^[23]\d\d$</id>
+    <description>Odoo: database manager reached through the web server from $(srcip): $(url)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>web,attack,</group>
+  </rule>
+
+  <rule id="132396" level="12">
+    <if_sid>132395</if_sid>
+    <protocol type="pcre2">^POST$</protocol>
+    <url type="pcre2">^/web/database/(?:backup|drop|restore|duplicate|create|change_password)\b</url>
+    <description>[HIGH] Odoo: database manager action $(url) through the web server from $(srcip) (HTTP $(id))</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1485</id>
+    </mitre>
+    <group>web,attack,</group>
+  </rule>
+
+</group>

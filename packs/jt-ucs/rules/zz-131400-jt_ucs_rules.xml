@@ -1,0 +1,678 @@
+<!--
+  jt-ucs: Univention Corporate Server domain controllers (Samba 4 AD + OpenLDAP)
+  Rule range 131400-131499. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  The zz- prefix makes this file load after the built-in ruleset: it extends
+  the built-in OpenLDAP (2507, 2508), PAM (5503, 5557), sshd (5715), syslog
+  (2501), systemd (40700), smbd (13100) and web access (31100, 31101, 31108)
+  rules.
+
+  Modules
+    131400-131409  OpenLDAP connections and binds
+    131410-131429  OpenLDAP writes: users, groups, computers, passwords
+    131430-131439  management console logins, PAM and SSH on domain controllers
+    131440-131449  UCS directory logger
+    131450-131459  domain controller services
+    131460-131469  management console logins seen by the web server
+    131470-131489  OPTIONAL: Samba JSON audit (authentication, passwords, groups)
+    131490-131499  OPTIONAL: UCS Admin Diary
+
+  Several rules use etc/lists/jt-ucs-dc-hosts: the short host names of the
+  domain controllers, as they appear in /var/log/syslog. The same names are
+  the first RDN of the DCs' machine accounts, so the list also recognises a
+  DC's own LDAP binds. Rules that need the list do nothing until it is filled.
+-->
+
+<group name="ucs,jt_ucs,">
+
+  <!--
+    OpenLDAP connections. The built-in 2508 raises a level 3 alert for every
+    LDAP connection: about 7,000 a day on one UCS primary, the second largest
+    alert source of that host. 131400 records them below the alert level.
+    Side effect, verified in the sandbox: the built-in 2509 (bind failure,
+    correlated with 2508) can no longer fire once 2508 has a child, so 131401
+    takes over its job. 131401 does not need the correlation: the built-in
+    openldap decoders accumulate srcip and the bound account per connection,
+    so the RESULT line already carries both. This applies to every OpenLDAP
+    server reporting to the manager, not only UCS.
+  -->
+  <rule id="131400" level="1">
+    <if_sid>2508</if_sid>
+    <description>OpenLDAP: connection from $(srcip)</description>
+  </rule>
+
+  <!--
+    A failed simple bind (err=49, invalid credentials). dstuser is the first
+    RDN value of the DN that connection bound with first ("alice" for
+    uid=alice,cn=users,...); a client that binds again on the same connection
+    is still reported under its first identity. srcip and dstuser are empty
+    when Wazuh did not see the connection's ACCEPT and BIND lines.
+    This is OpenLDAP (port 7389 on UCS). Binds to Samba's own LDAP on 389/636
+    and Kerberos or NTLM logons are not in this log: see the optional Samba
+    audit rules below.
+  -->
+  <rule id="131401" level="5">
+    <if_sid>2507</if_sid>
+    <match>RESULT tag=97 err=49 </match>
+    <description>OpenLDAP: bind failed (invalid credentials) for '$(dstuser)' from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,jt_ucs_ldap_bind_failure,pci_dss_10.2.4,pci_dss_10.2.5,gdpr_IV_35.7.d,nist_800_53_AU.14,nist_800_53_AC.7,tsc_CC6.1,</group>
+  </rule>
+
+  <!--
+    A domain controller's machine account failing to bind. UCS rotates DC
+    machine passwords (server/password/interval, 21 days by default, at
+    01:00): for a moment the DC binds with a password the directory does not
+    accept yet. Measured: two such failures a month per DC.
+  -->
+  <rule id="131402" level="3">
+    <if_sid>131401</if_sid>
+    <list field="user" lookup="match_key">etc/lists/jt-ucs-dc-hosts</list>
+    <description>OpenLDAP: bind of domain controller machine account '$(dstuser)' failed from $(srcip) (routine during a machine password change)</description>
+    <group>jt_ucs_ldap_bind_failure,</group>
+  </rule>
+
+  <rule id="131403" level="8">
+    <if_sid>131401</if_sid>
+    <user type="pcre2">^(?i)(?:admin|administrator|root|krbtgt|join-backup|join-slave)$</user>
+    <description>OpenLDAP: bind failed for privileged identity '$(dstuser)' from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,jt_ucs_ldap_bind_failure,</group>
+  </rule>
+
+  <rule id="131404" level="10" frequency="8" timeframe="120" ignore="300">
+    <if_matched_group>jt_ucs_ldap_bind_failure</if_matched_group>
+    <same_source_ip />
+    <description>[WARN] OpenLDAP: repeated bind failures from $(srcip) (last account '$(dstuser)')</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,jt_ucs_bruteforce,</group>
+  </rule>
+
+  <rule id="131405" level="5">
+    <if_sid>2507</if_sid>
+    <match type="pcre2">^slapd stopped\.$</match>
+    <description>OpenLDAP server stopped on $(hostname)</description>
+    <mitre>
+      <id>T1489</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Writes to the UCS directory (OpenLDAP), one line per operation. Each alert
+    names the operation and the DN, plus the bound account and address when
+    the accumulator has them. It cannot say which attributes changed except
+    through the MOD attr= line (131425), and not what the values were.
+    Writes come from the management console, the udm command, the UDM REST
+    API, the S4 connector (changes made on the Samba AD side) and the DCs
+    themselves, so srcip is normally a DC.
+    Not alerted: cn=temporary lock objects (hundreds a month), DNS records,
+    policies and other objects.
+  -->
+  <rule id="131410" level="0">
+    <if_sid>2507</if_sid>
+    <field name="ucs.ldap_op" type="pcre2">^(?:ADD|DEL|MOD|MODRDN)$</field>
+    <description>OpenLDAP: $(ucs.ldap_op) $(ucs.dn)</description>
+  </rule>
+
+  <!-- User accounts: the DN starts with uid=. Measured 58 created and 57 deleted in 30 days on one domain, all by automated test runs. -->
+  <rule id="131411" level="3">
+    <if_sid>131410</if_sid>
+    <field name="ucs.ldap_op" type="pcre2">^ADD$</field>
+    <field name="ucs.dn" type="pcre2">^uid=</field>
+    <description>UCS directory: user account created: $(ucs.dn) (conn $(id), bound as '$(dstuser)')</description>
+    <mitre>
+      <id>T1136.002</id>
+    </mitre>
+    <group>adduser,</group>
+  </rule>
+
+  <rule id="131412" level="3">
+    <if_sid>131410</if_sid>
+    <field name="ucs.ldap_op" type="pcre2">^DEL$</field>
+    <field name="ucs.dn" type="pcre2">^uid=</field>
+    <description>UCS directory: user account deleted: $(ucs.dn) (conn $(id), bound as '$(dstuser)')</description>
+    <mitre>
+      <id>T1531</id>
+    </mitre>
+  </rule>
+
+  <rule id="131413" level="3">
+    <if_sid>131410</if_sid>
+    <field name="ucs.ldap_op" type="pcre2">^MODRDN$</field>
+    <field name="ucs.dn" type="pcre2">^uid=</field>
+    <description>UCS directory: user account renamed or moved: $(ucs.dn) (conn $(id), bound as '$(dstuser)')</description>
+  </rule>
+
+  <!-- Recorded only: 131426 and 131427 use it to tell a user's password change from a machine's. -->
+  <rule id="131414" level="1">
+    <if_sid>131410</if_sid>
+    <field name="ucs.ldap_op" type="pcre2">^MOD$</field>
+    <field name="ucs.dn" type="pcre2">^uid=</field>
+    <description>UCS directory: user account modified: $(ucs.dn) (conn $(id))</description>
+  </rule>
+
+  <rule id="131415" level="1">
+    <if_sid>131414</if_sid>
+    <field name="ucs.dn" type="pcre2">^(?i)uid=(?:Administrator|krbtgt|join-backup|join-slave),</field>
+    <description>UCS directory: privileged account modified: $(ucs.dn) (conn $(id))</description>
+  </rule>
+
+  <rule id="131416" level="10">
+    <if_sid>131412,131413</if_sid>
+    <field name="ucs.dn" type="pcre2">^(?i)uid=(?:Administrator|krbtgt|join-backup|join-slave),</field>
+    <description>[WARN] UCS directory: privileged account $(ucs.dn) deleted, renamed or moved ($(ucs.ldap_op), conn $(id), bound as '$(dstuser)')</description>
+    <mitre>
+      <id>T1531</id>
+    </mitre>
+  </rule>
+
+  <!-- Groups in cn=groups and cn=builtin. Memberships are attributes of the group object. -->
+  <rule id="131417" level="3">
+    <if_sid>131410</if_sid>
+    <field name="ucs.ldap_op" type="pcre2">^(?:ADD|DEL|MODRDN)$</field>
+    <field name="ucs.dn" type="pcre2">^(?i)cn=[^,]+,cn=(?:groups|builtin),</field>
+    <description>UCS directory: group $(ucs.ldap_op): $(ucs.dn) (conn $(id), bound as '$(dstuser)')</description>
+  </rule>
+
+  <!-- Recorded only: every new user also modifies Domain Users (115 times in 30 days on one domain). -->
+  <rule id="131418" level="1">
+    <if_sid>131410</if_sid>
+    <field name="ucs.ldap_op" type="pcre2">^MOD$</field>
+    <field name="ucs.dn" type="pcre2">^(?i)cn=[^,]+,cn=(?:groups|builtin),</field>
+    <description>UCS directory: group modified: $(ucs.dn) (conn $(id))</description>
+  </rule>
+
+  <!--
+    Any write to a group that grants control over the domain. In UCS, DC
+    Backup Hosts and DC Slave Hosts members can read every password hash,
+    and Backup Join and Slave Join members can join domain controllers.
+    Measured: no write to any of these groups in twelve weeks on one domain.
+    The line says that the group object was written, not which member was
+    added or removed (that needs the optional Samba group audit, 131486).
+  -->
+  <rule id="131419" level="12">
+    <if_sid>131417,131418</if_sid>
+    <field name="ucs.dn" type="pcre2">^(?i)cn=(?:Domain Admins|Enterprise Admins|Schema Admins|Administrators|Account Operators|Backup Operators|Server Operators|Print Operators|DnsAdmins|Group Policy Creator Owners|Domain Controllers|Enterprise Domain Controllers|Read-only Domain Controllers|Enterprise Read-only Domain Controllers|Key Admins|Enterprise Key Admins|DC Backup Hosts|DC Slave Hosts|Backup Join|Slave Join),cn=(?:groups|builtin),</field>
+    <description>[HIGH] UCS directory: privileged group written ($(ucs.ldap_op)): $(ucs.dn) (conn $(id), bound as '$(dstuser)')</description>
+    <mitre>
+      <id>T1098.007</id>
+    </mitre>
+    <group>jt_ucs_privileged_group,</group>
+  </rule>
+
+  <!-- Computer objects: cn=<name>,...,cn=computers. -->
+  <rule id="131420" level="5">
+    <if_sid>131410</if_sid>
+    <field name="ucs.ldap_op" type="pcre2">^ADD$</field>
+    <field name="ucs.dn" type="pcre2">^(?i)cn=[^,]+,(?:cn=[^,]+,)*cn=computers,</field>
+    <description>UCS directory: computer account created (domain join): $(ucs.dn) (conn $(id), bound as '$(dstuser)')</description>
+  </rule>
+
+  <rule id="131421" level="10">
+    <if_sid>131420</if_sid>
+    <field name="ucs.dn" type="pcre2">^(?i)cn=[^,]+,cn=dc,cn=computers,</field>
+    <description>[WARN] UCS directory: new domain controller account created: $(ucs.dn) (conn $(id), bound as '$(dstuser)')</description>
+    <mitre>
+      <id>T1207</id>
+    </mitre>
+  </rule>
+
+  <rule id="131422" level="3">
+    <if_sid>131410</if_sid>
+    <field name="ucs.ldap_op" type="pcre2">^DEL$</field>
+    <field name="ucs.dn" type="pcre2">^(?i)cn=[^,]+,(?:cn=[^,]+,)*cn=computers,</field>
+    <description>UCS directory: computer account deleted: $(ucs.dn) (conn $(id), bound as '$(dstuser)')</description>
+  </rule>
+
+  <!-- Recorded only: machine password changes, about one per computer a month. -->
+  <rule id="131423" level="1">
+    <if_sid>131410</if_sid>
+    <field name="ucs.ldap_op" type="pcre2">^MOD$</field>
+    <field name="ucs.dn" type="pcre2">^(?i)cn=[^,]+,(?:cn=[^,]+,)*cn=computers,</field>
+    <description>UCS directory: computer account modified: $(ucs.dn) (conn $(id))</description>
+  </rule>
+
+  <!-- cn=admin is the directory's administrative account (its password is in /etc/ldap.secret). -->
+  <rule id="131424" level="10">
+    <if_sid>131410</if_sid>
+    <field name="ucs.dn" type="pcre2">^(?i)cn=admin,(?:dc|o|ou)=</field>
+    <description>[WARN] UCS directory: the cn=admin account was written ($(ucs.ldap_op) $(ucs.dn), conn $(id), bound as '$(dstuser)')</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Password attributes in a MOD attr= line. The line has no DN; the MOD dn=
+    line of the same connection and operation comes right before it. 131426
+    and 131427 join the two by connection id within five seconds: a user's
+    password is level 5, a privileged account's level 10, a machine
+    account's stays recorded only (131425). Measured: six password writes in
+    30 days on one domain, four of them machine accounts.
+  -->
+  <rule id="131425" level="1">
+    <if_sid>2507</if_sid>
+    <field name="ucs.ldap_attrs" type="pcre2">(?:^|\s)(?:userPassword|sambaNTPassword|krb5Key|unicodePwd)(?:\s|$)</field>
+    <description>OpenLDAP: password attributes written (conn $(id) op $(ucs.ldap_opnum)): $(ucs.ldap_attrs)</description>
+  </rule>
+
+  <rule id="131426" level="5" frequency="2" timeframe="5">
+    <if_sid>131425</if_sid>
+    <if_matched_sid>131414</if_matched_sid>
+    <same_id />
+    <description>UCS directory: password of a user account set or changed (conn $(id) op $(ucs.ldap_opnum), bound as '$(dstuser)'; the account is the MOD dn= line of that connection)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131427" level="10" frequency="2" timeframe="5">
+    <if_sid>131425,131426</if_sid>
+    <if_matched_sid>131415</if_matched_sid>
+    <same_id />
+    <description>[WARN] UCS directory: password of a privileged account (Administrator, krbtgt or a join account) set or changed (conn $(id), bound as '$(dstuser)')</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Management console (UMC) logins through PAM. These lines carry the user
+    but no source address; the web server's line does (131460-131462).
+    Without 131432, every successful login raised the built-in 2501 at
+    level 5, because the first PAM step (pam_unix) always fails for domain
+    accounts. 131432 and 131433 are children of both 2501 and 131430, since
+    either can be evaluated first. A rule with two parents is counted twice by
+    frequency rules that use if_matched_group (verified in the sandbox), so
+    131433 carries no authentication_failed group; it has no source address
+    for the built-in 40111 anyway, and 131460 has.
+  -->
+  <rule id="131430" level="0">
+    <decoded_as>jt-ucs-umc-pam</decoded_as>
+    <description>UCS management console PAM messages</description>
+  </rule>
+
+  <rule id="131431" level="3">
+    <if_sid>131430</if_sid>
+    <match type="pcre2">: user \S+ authenticated as \S+</match>
+    <description>UCS management console: '$(dstuser)' logged in (Kerberos)</description>
+    <mitre>
+      <id>T1078.002</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131432" level="2">
+    <if_sid>2501,131430</if_sid>
+    <match type="pcre2">pam_unix\(univention-management-console:auth\): authentication failure</match>
+    <description>UCS management console: local password check failed for '$(dstuser)' (normal: Kerberos decides next)</description>
+  </rule>
+
+  <rule id="131433" level="5">
+    <if_sid>2501,131430</if_sid>
+    <match type="pcre2">pam_krb5\(univention-management-console:auth\): authentication failure</match>
+    <description>UCS management console: login failed for '$(dstuser)' (source address: see the web server alert 131460)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!--
+    PAM noise on domain controllers (hosts in etc/lists/jt-ucs-dc-hosts).
+    pam_unix fails before pam_krb5 for every domain account: the DCs' own
+    sysvol replication logs in over SSH about 576 times a day per DC, and
+    each login used to raise 5503 and 5557 at level 5. A real SSH failure is
+    still reported by sshd's own "Failed ..." line.
+  -->
+  <rule id="131434" level="2">
+    <if_sid>5557</if_sid>
+    <list field="hostname" lookup="match_key">etc/lists/jt-ucs-dc-hosts</list>
+    <description>UCS domain controller: local password check failed (normal before Kerberos authentication)</description>
+  </rule>
+
+  <rule id="131435" level="2">
+    <if_sid>5503</if_sid>
+    <list field="hostname" lookup="match_key">etc/lists/jt-ucs-dc-hosts</list>
+    <match type="pcre2">pam_unix\(sshd:auth\): authentication failure</match>
+    <description>UCS domain controller: SSH local password check failed for '$(dstuser)' (normal before Kerberos authentication)</description>
+  </rule>
+
+  <rule id="131436" level="8">
+    <if_sid>5715</if_sid>
+    <list field="hostname" lookup="match_key">etc/lists/jt-ucs-dc-hosts</list>
+    <match type="pcre2">^Accepted (?:password|keyboard-interactive/pam) for root from </match>
+    <description>UCS domain controller: root logged in to $(hostname) over SSH with a password from $(srcip)</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+  </rule>
+
+  <!--
+    The UCS directory logger: one line per committed change, with the
+    account that made it. It does not say add, modify or delete, and carries
+    no values. Changes made by people through the management console or the
+    REST API have a uid= modifier; cn=admin is the udm command, the S4
+    connector and other services. Measured: 0 to 138 lines a day, median 1.
+  -->
+  <rule id="131440" level="2">
+    <decoded_as>jt-ucs-dirlog</decoded_as>
+    <description>UCS directory logger: $(ucs.dn) changed by $(ucs.modifier) (transaction $(ucs.txid))</description>
+  </rule>
+
+  <rule id="131441" level="3">
+    <if_sid>131440</if_sid>
+    <field name="ucs.modifier" type="pcre2">^uid=</field>
+    <description>UCS directory logger: $(ucs.dn) changed by $(ucs.modifier) (transaction $(ucs.txid))</description>
+  </rule>
+
+  <rule id="131442" level="12">
+    <if_sid>131440,131441</if_sid>
+    <field name="ucs.dn" type="pcre2">^(?i)cn=(?:Domain Admins|Enterprise Admins|Schema Admins|Administrators|Account Operators|Backup Operators|Server Operators|Print Operators|DnsAdmins|Group Policy Creator Owners|Domain Controllers|Enterprise Domain Controllers|Read-only Domain Controllers|Enterprise Read-only Domain Controllers|Key Admins|Enterprise Key Admins|DC Backup Hosts|DC Slave Hosts|Backup Join|Slave Join),cn=(?:groups|builtin),</field>
+    <description>[HIGH] UCS directory logger: privileged group $(ucs.dn) changed by $(ucs.modifier) (transaction $(ucs.txid))</description>
+    <mitre>
+      <id>T1098.007</id>
+    </mitre>
+    <group>jt_ucs_privileged_group,</group>
+  </rule>
+
+  <rule id="131443" level="7">
+    <if_sid>131440,131441</if_sid>
+    <field name="ucs.dn" type="pcre2">^(?i)(?:uid=(?:Administrator|krbtgt|join-backup|join-slave)|cn=admin),</field>
+    <description>UCS directory logger: privileged account $(ucs.dn) changed by $(ucs.modifier) (transaction $(ucs.txid))</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Domain controller services. The Samba AD DC stops for the machine
+    password change (every 21 days by default, at 01:00) and for updates;
+    outside those times a stop takes Kerberos, Samba LDAP and SMB away from
+    the clients of that DC. The init script's own line is used because it
+    appears whether or not systemd started the stop.
+  -->
+  <rule id="131450" level="0">
+    <decoded_as>jt-ucs-samba-init</decoded_as>
+    <description>Samba AD DC init script messages</description>
+  </rule>
+
+  <rule id="131451" level="5">
+    <if_sid>131450</if_sid>
+    <match type="pcre2">^Stopping Samba AD DC server</match>
+    <description>Samba AD DC stopped on $(hostname)</description>
+    <mitre>
+      <id>T1489</id>
+    </mitre>
+  </rule>
+
+  <rule id="131452" level="3">
+    <if_sid>131450</if_sid>
+    <match type="pcre2">^Starting Samba AD DC server</match>
+    <description>Samba AD DC started on $(hostname)</description>
+  </rule>
+
+  <rule id="131453" level="10">
+    <if_sid>40700</if_sid>
+    <match type="pcre2">^samba-ad-dc\.service: Failed with result </match>
+    <description>[WARN] Samba AD DC service failed on $(hostname)</description>
+  </rule>
+
+  <rule id="131454" level="10">
+    <if_sid>40700</if_sid>
+    <match type="pcre2">^slapd\.service: Failed with result </match>
+    <description>[WARN] OpenLDAP (UCS directory) service failed on $(hostname)</description>
+  </rule>
+
+  <rule id="131455" level="8">
+    <if_sid>40700</if_sid>
+    <match type="pcre2">^univention-(?:directory-listener|directory-notifier|s4-connector)\.service: Failed with result </match>
+    <description>UCS replication service failed on $(hostname): directory changes stop flowing</description>
+  </rule>
+
+  <rule id="131456" level="5">
+    <if_sid>40700</if_sid>
+    <match type="pcre2">^univention-management-console-server\.service: Failed with result </match>
+    <description>UCS management console server failed on $(hostname)</description>
+  </rule>
+
+  <!--
+    Management console logins as the web server sees them: these carry the
+    client address. A rejected login is HTTP 401 on POST /univention/auth.
+    Measured: 16 logins in five weeks on one domain, none rejected.
+  -->
+  <rule id="131460" level="5">
+    <if_sid>31101</if_sid>
+    <url type="pcre2">^/univention/auth/?$</url>
+    <id>^401$</id>
+    <description>UCS management console: login rejected from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="131461" level="10" frequency="8" timeframe="120" ignore="300">
+    <if_matched_sid>131460</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] UCS management console: repeated rejected logins from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,jt_ucs_bruteforce,</group>
+  </rule>
+
+  <rule id="131462" level="3">
+    <if_sid>31100,31108</if_sid>
+    <protocol>POST</protocol>
+    <url type="pcre2">^/univention/auth/?$</url>
+    <id>^200$</id>
+    <description>UCS management console: login accepted from $(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!--
+    OPTIONAL: Samba JSON audit. Nothing arrives until the site enables it
+    (setup guide). auth_json_audit at level 2 logs failures only; at level 3
+    it adds every successful logon, which 131472 drops.
+  -->
+  <rule id="131470" level="0">
+    <decoded_as>jt-samba-audit</decoded_as>
+    <description>Samba audit: $(samba.type)</description>
+  </rule>
+
+  <rule id="131471" level="0">
+    <if_sid>13100</if_sid>
+    <field name="samba.type" type="pcre2">^(?:Authentication|Authorization|passwordChange|groupChange)$</field>
+    <description>Samba audit (smbd): $(samba.type)</description>
+  </rule>
+
+  <rule id="131472" level="0">
+    <if_sid>131470,131471</if_sid>
+    <field name="samba.type" type="pcre2">^(?:Authentication|Authorization)$</field>
+    <field name="samba.status" type="pcre2">^NT_STATUS_OK$</field>
+    <description>Samba audit: successful $(samba.service) logon of '$(dstuser)'</description>
+  </rule>
+
+  <rule id="131473" level="5">
+    <if_sid>131470</if_sid>
+    <field name="samba.type" type="pcre2">^Authentication$</field>
+    <field name="samba.status" type="pcre2">^NT_STATUS_(?!OK$)\w+$</field>
+    <description>Samba AD: $(samba.service) authentication failed for '$(dstuser)' from $(srcip): $(samba.status)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,jt_ucs_samba_auth_failure,pci_dss_10.2.4,pci_dss_10.2.5,nist_800_53_AC.7,</group>
+  </rule>
+
+  <rule id="131474" level="6">
+    <if_sid>131473</if_sid>
+    <field name="samba.status" type="pcre2">^NT_STATUS_(?:ACCOUNT_DISABLED|ACCOUNT_EXPIRED|ACCOUNT_RESTRICTION|INVALID_LOGON_HOURS|INVALID_WORKSTATION)$</field>
+    <description>Samba AD: logon attempt with a disabled, expired or restricted account '$(dstuser)' from $(srcip): $(samba.status)</description>
+    <mitre>
+      <id>T1078.002</id>
+    </mitre>
+    <group>authentication_failed,jt_ucs_samba_auth_failure,</group>
+  </rule>
+
+  <rule id="131475" level="7">
+    <if_sid>131473</if_sid>
+    <field name="samba.status" type="pcre2">^NT_STATUS_ACCOUNT_LOCKED_OUT$</field>
+    <description>Samba AD: account '$(dstuser)' is locked out (attempt from $(srcip))</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,jt_ucs_samba_auth_failure,</group>
+  </rule>
+
+  <rule id="131476" level="8">
+    <if_sid>131473</if_sid>
+    <field name="samba.status" type="pcre2">^NT_STATUS_(?!ACCOUNT_DISABLED$|ACCOUNT_EXPIRED$|ACCOUNT_RESTRICTION$|INVALID_LOGON_HOURS$|INVALID_WORKSTATION$|ACCOUNT_LOCKED_OUT$)\w+$</field>
+    <user type="pcre2">^(?i)(?:[^\\@]+\\)?(?:administrator|krbtgt|join-backup|join-slave)(?:@\S*)?$</user>
+    <description>Samba AD: authentication failed for privileged account '$(dstuser)' from $(srcip): $(samba.status)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,jt_ucs_samba_auth_failure,</group>
+  </rule>
+
+  <!--
+    The same failure written by smbd (SMB and NTLM to the DC). Kept as rules of
+    their own under 131471: a failure rule with two parents would be counted
+    twice by 131477 and break its ignore window.
+  -->
+  <rule id="131478" level="5">
+    <if_sid>131471</if_sid>
+    <field name="samba.type" type="pcre2">^Authentication$</field>
+    <field name="samba.status" type="pcre2">^NT_STATUS_(?!OK$)\w+$</field>
+    <description>Samba AD: $(samba.service) authentication failed for '$(dstuser)' from $(srcip): $(samba.status)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,jt_ucs_samba_auth_failure,pci_dss_10.2.4,pci_dss_10.2.5,nist_800_53_AC.7,</group>
+  </rule>
+
+  <rule id="131479" level="8">
+    <if_sid>131478</if_sid>
+    <user type="pcre2">^(?i)(?:[^\\@]+\\)?(?:administrator|krbtgt|join-backup|join-slave)(?:@\S*)?$</user>
+    <description>Samba AD: $(samba.service) authentication failed for privileged account '$(dstuser)' from $(srcip): $(samba.status)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,jt_ucs_samba_auth_failure,</group>
+  </rule>
+
+  <rule id="131477" level="10" frequency="10" timeframe="300" ignore="300">
+    <if_matched_group>jt_ucs_samba_auth_failure</if_matched_group>
+    <same_source_ip />
+    <description>[WARN] Samba AD: repeated authentication failures from $(srcip) (last account '$(dstuser)')</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,jt_ucs_bruteforce,</group>
+  </rule>
+
+  <!-- Password changes and resets (dsdb_password_json_audit). -->
+  <rule id="131480" level="3">
+    <if_sid>131470,131471</if_sid>
+    <field name="samba.type" type="pcre2">^passwordChange$</field>
+    <field name="samba.action" type="pcre2">^Change$</field>
+    <field name="samba.status_code" type="pcre2">^0$</field>
+    <description>Samba AD: password changed by its owner: $(samba.dn) from $(srcip)</description>
+  </rule>
+
+  <rule id="131481" level="5">
+    <if_sid>131470,131471</if_sid>
+    <field name="samba.type" type="pcre2">^passwordChange$</field>
+    <field name="samba.action" type="pcre2">^Reset$</field>
+    <field name="samba.status_code" type="pcre2">^0$</field>
+    <description>Samba AD: password reset: $(samba.dn) by $(samba.actor_sid) from $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131482" level="2">
+    <if_sid>131480,131481</if_sid>
+    <field name="samba.dn" type="pcre2">(?i),(?:OU=Domain Controllers|CN=Computers),</field>
+    <description>Samba AD: machine account password changed: $(samba.dn)</description>
+  </rule>
+
+  <rule id="131483" level="10">
+    <if_sid>131480,131481,131482</if_sid>
+    <field name="samba.dn" type="pcre2">^(?i)CN=(?:Administrator|krbtgt|join-backup|join-slave),</field>
+    <description>[WARN] Samba AD: password of privileged account $(samba.dn) $(samba.action) by $(samba.actor_sid) from $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131484" level="5">
+    <if_sid>131470,131471</if_sid>
+    <field name="samba.type" type="pcre2">^passwordChange$</field>
+    <field name="samba.status_code" type="pcre2">^[1-9]\d*$</field>
+    <description>Samba AD: password $(samba.action) rejected for $(samba.dn) from $(srcip): $(samba.status)</description>
+  </rule>
+
+  <!-- Group membership changes (dsdb_group_json_audit). Changes replicated from another DC are logged there too. -->
+  <rule id="131485" level="3">
+    <if_sid>131470,131471</if_sid>
+    <field name="samba.type" type="pcre2">^groupChange$</field>
+    <field name="samba.status_code" type="pcre2">^0$</field>
+    <description>Samba AD: $(samba.member) $(samba.action) group $(samba.group) (by $(samba.actor_sid) from $(srcip))</description>
+  </rule>
+
+  <rule id="131486" level="12">
+    <if_sid>131485</if_sid>
+    <field name="samba.group" type="pcre2">^(?i)CN=(?:Domain Admins|Enterprise Admins|Schema Admins|Administrators|Account Operators|Backup Operators|Server Operators|Print Operators|DnsAdmins|Group Policy Creator Owners|Domain Controllers|Enterprise Domain Controllers|Read-only Domain Controllers|Enterprise Read-only Domain Controllers|Key Admins|Enterprise Key Admins|DC Backup Hosts|DC Slave Hosts|Backup Join|Slave Join),</field>
+    <description>[HIGH] Samba AD: $(samba.member) $(samba.action) privileged group $(samba.group) (by $(samba.actor_sid) from $(srcip))</description>
+    <mitre>
+      <id>T1098.007</id>
+    </mitre>
+    <group>jt_ucs_privileged_group,</group>
+  </rule>
+
+  <!--
+    OPTIONAL: UCS Admin Diary (what was changed through UDM, and by whom).
+    Nothing arrives until the site adds the rsyslog rule in the setup guide.
+    The object's name is in args.username, args.name or args.group depending
+    on the module; the description prints whichever is present.
+  -->
+  <rule id="131490" level="3">
+    <decoded_as>jt-ucs-admindiary</decoded_as>
+    <description>UCS Admin Diary: $(event) $(args.module) $(args.username)$(args.name)$(args.group) by $(username)</description>
+  </rule>
+
+  <rule id="131491" level="2">
+    <if_sid>131490</if_sid>
+    <field name="event" type="pcre2">^(?:SERVER_PASSWORD_CHANGED|UDM_COMPUTERS_\w+_MODIFIED)$</field>
+    <description>UCS Admin Diary: $(event) $(args.hostname)$(args.name) by $(username) (routine)</description>
+  </rule>
+
+  <rule id="131492" level="12">
+    <if_sid>131490</if_sid>
+    <field name="event" type="pcre2">^UDM_GROUPS_GROUP_(?:MODIFIED|REMOVED|MOVED)$</field>
+    <match type="pcre2">"args": \{[^}]*"(?i:Domain Admins|Enterprise Admins|Schema Admins|Administrators|Account Operators|Backup Operators|Server Operators|Print Operators|DnsAdmins|Group Policy Creator Owners|Domain Controllers|DC Backup Hosts|DC Slave Hosts|Backup Join|Slave Join)"</match>
+    <description>[HIGH] UCS Admin Diary: privileged group $(args.group)$(args.name) changed ($(event)) by $(username)</description>
+    <mitre>
+      <id>T1098.007</id>
+    </mitre>
+    <group>jt_ucs_privileged_group,</group>
+  </rule>
+
+  <rule id="131493" level="7">
+    <if_sid>131490</if_sid>
+    <field name="event" type="pcre2">^UDM_USERS_USER_(?:MODIFIED|REMOVED|MOVED)$</field>
+    <match type="pcre2">"args": \{[^}]*"(?i:Administrator|krbtgt|join-backup|join-slave)"</match>
+    <description>UCS Admin Diary: privileged account $(args.username) changed ($(event)) by $(username)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+</group>

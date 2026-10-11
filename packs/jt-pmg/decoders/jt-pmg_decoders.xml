@@ -1,0 +1,158 @@
+<!--
+  jt-pmg: decoders for Proxmox Mail Gateway
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  Wazuh has no decoder for any PMG program. The built-in Proxmox decoders
+  take pvedaemon, pveproxy and pvestatd by program name only, so pmgdaemon,
+  pmgproxy, pmg-smtp-filter and the rest arrive undecoded: a failed login
+  reached the generic syslog rule 2501 and nothing else matched at all.
+
+  One top-level decoder takes every PMG program; the children below are
+  tried in file order and the first whose prematch fits is used, so the
+  specific ones come before the generic per-message one.
+
+  Formats are from pmg-api 9.1 (src/PMG/API2/AccessControl.pm, Quarantine.pm,
+  Utils.pm, RuleDB/*.pm, Service/pmgmirror.pm, LDAPSet.pm) and from real
+  syslog lines of a PMG 9 gateway.
+-->
+
+<decoder name="jt-pmg">
+  <program_name type="pcre2">^(?:pmgdaemon|pmgproxy|pmg-smtp-filter|pmgpolicy|pmgmirror|pmgtunnel|pmg-daily|pmg-hourly|pmgqm|pmgreport|pmgsh|pmgbackup|pmgcm|pmgdb|pmgconfig|pmgsubscription|pmgupgrade)$</program_name>
+</decoder>
+
+<!--
+  Logins (pmgdaemon), e.g.
+    authentication failure; rhost=::ffff:192.0.2.10 user=root@pam msg=auth failed: Authentication failure
+    openid connect authentication failure; rhost=::ffff:192.0.2.10 msg=...
+  The client address is written IPv4-mapped (::ffff:a.b.c.d); the prefix is
+  dropped so that srcip is a plain IPv4 address that a firewall can block.
+  user keeps the realm (root@pam, admin@pmg, someone@example.com@quarantine);
+  pmg.realm is the part after the last @. msg is localised by PAM.
+-->
+<decoder name="jt-pmg-auth-failure">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^(?:openid connect )?authentication failure; rhost=</prematch>
+  <regex type="pcre2">^(?:openid connect )?authentication failure; rhost=(?:::ffff:)?(\S*) (?:user=(\S+@([^@\s]+)) )?msg=(.*)$</regex>
+  <order>srcip, user, pmg.realm, pmg.msg</order>
+</decoder>
+
+<!-- successful auth for user 'admin@pmg' / successful openid connect auth for user 'a@sso' -->
+<decoder name="jt-pmg-auth-success">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^successful (?:openid connect )?auth for user '</prematch>
+  <regex type="pcre2">^successful (?:openid connect )?auth for user '(\S+@([^@']+))'$</regex>
+  <order>user, pmg.realm</order>
+</decoder>
+
+<decoder name="jt-pmg-password">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^changed password for user '</prematch>
+  <regex type="pcre2">^changed password for user '(\S+@([^@']+))'</regex>
+  <order>user, pmg.realm</order>
+</decoder>
+
+<!--
+  Tasks. Unlike Proxmox VE, PMG writes no "<user>" in front:
+    starting task UPID:pmg1:00156633:338F2C99:6ACA8B6E:aptupdate::root@pam:
+    end task UPID:pmg1:00156633:338F2C99:6ACA8B6E:aptupdate::root@pam: command 'apt-get update' failed: exit code 100
+-->
+<decoder name="jt-pmg-task">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^(?:starting|end) task UPID:</prematch>
+  <regex type="pcre2">^(starting|end) task UPID:([^:]+):[0-9A-Fa-f]+:[0-9A-Fa-f]+:[0-9A-Fa-f]+:([^:]+):([^:]*):([^:]+):\s?(.*)$</regex>
+  <order>pmg.phase, pmg.node, pmg.task, pmg.task_id, pmg.user, pmg.status</order>
+</decoder>
+
+<!--
+  A mail released from a quarantine (pmgdaemon), e.g.
+    delivered quarantined mail 'C1R2T3' (/var/spool/pmg/virus/A1/1E0B...) to user@example.com
+  The spool path says which quarantine it was: spam, virus or attachment
+  (on a cluster node: /var/spool/pmg/cluster/<n>/virus/...).
+-->
+<decoder name="jt-pmg-quarantine-release">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^delivered quarantined mail '</prematch>
+  <regex type="pcre2">^delivered quarantined mail '(\S+)' \(\S*?/(spam|virus|attachment)/\S*\) to (.+)$</regex>
+  <order>pmg.quarantine_id, pmg.quarantine, pmg.rcpt</order>
+</decoder>
+
+<!--
+  pmg-smtp-filter, one line per decision, each starting with the mail's PMG
+  log ID (the ID the tracking center and the quarantine show):
+    1E0B...: virus detected: Win.Test.EICAR_HDB-1 (clamav)
+    1E0B...: block mail to <user@example.com> (rule: Virus Alert)
+    1E0B...: moved mail for <user@example.com> to virus quarantine - 1E0C... (rule: Block Viruses)
+  pmg.rule is the name of the PMG rule that acted, as the administrator wrote
+  it (rule names can be translated or renamed).
+-->
+<decoder name="jt-pmg-virus">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^[0-9A-F]+: virus detected: </prematch>
+  <regex type="pcre2">^([0-9A-F]+): virus detected: (.+) \((\w+)\)$</regex>
+  <order>pmg.logid, pmg.virus, pmg.scanner</order>
+</decoder>
+
+<decoder name="jt-pmg-block">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^[0-9A-F]+: block mail to \x3c</prematch>
+  <regex type="pcre2">^([0-9A-F]+): (block) mail to \x3c([^\x3e]*)\x3e \(rule: (.+)\)$</regex>
+  <order>pmg.logid, pmg.action, pmg.rcpt, pmg.rule</order>
+</decoder>
+
+<decoder name="jt-pmg-quarantined">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^[0-9A-F]+: moved mail for \x3c</prematch>
+  <regex type="pcre2">^([0-9A-F]+): moved mail for \x3c([^\x3e]*)\x3e to (\w+) (quarantine) - \S+ \(rule: (.+)\)$</regex>
+  <order>pmg.logid, pmg.rcpt, pmg.quarantine, pmg.action, pmg.rule</order>
+</decoder>
+
+<!-- Any other per-mail line: only the log ID is decoded; rules match the text. -->
+<decoder name="jt-pmg-mail">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^[0-9A-F]{12,}: </prematch>
+  <regex type="pcre2">^([0-9A-F]+): </regex>
+  <order>pmg.logid</order>
+</decoder>
+
+<!--
+  Cluster synchronisation (pmgmirror, every two minutes), e.g.
+    cluster synchronization finished  (0 errors, 0.02 seconds (files 0.00, database 0.02, config 0.00))
+    database sync 'pmg2' failed - <reason>
+-->
+<decoder name="jt-pmg-sync-finished">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^cluster synchronization finished\s+\(</prematch>
+  <regex type="pcre2">^cluster synchronization finished\s+\((\d+) errors, </regex>
+  <order>pmg.errors</order>
+</decoder>
+
+<decoder name="jt-pmg-sync-failed">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^database sync '</prematch>
+  <regex type="pcre2">^database sync '([^']+)' failed - (.*)$</regex>
+  <order>pmg.peer, pmg.error</order>
+</decoder>
+
+<!--
+  LDAP profile synchronisation (pmg-hourly), e.g.
+    finished syncing ldap profile 'corp' (192.0.2.20): found 20 accounts, 25 addresses, 0 groups
+    aborted syncing ldap profile 'corp' (192.0.2.20): keep old data, 20 accounts, 25 addresses, 0 groups
+-->
+<decoder name="jt-pmg-ldap">
+  <parent>jt-pmg</parent>
+  <prematch type="pcre2">^(?:aborted|finished) syncing ldap profile '</prematch>
+  <regex type="pcre2">^(aborted|finished) syncing ldap profile '([^']+)' \(([^)]*)\)</regex>
+  <order>pmg.ldap_result, pmg.ldap_profile, pmg.ldap_server</order>
+</decoder>
+
+<!--
+  Postfix DNS blocklist lookups (postfix/dnsblog, used by postscreen), e.g.
+    addr 192.0.2.30 listed by domain bl.example.net as 127.0.0.2
+  A child of the built-in postfix decoder, which takes every postfix/* program.
+-->
+<decoder name="jt-pmg-dnsblog">
+  <parent>postfix</parent>
+  <prematch type="pcre2">^addr \S+ listed by domain </prematch>
+  <regex type="pcre2">^addr (\S+) listed by domain (\S+) as (\S+)$</regex>
+  <order>srcip, pmg.dnsbl, pmg.dnsbl_answer</order>
+</decoder>

@@ -1,0 +1,629 @@
+<!--
+  jt-pmg: Proxmox Mail Gateway
+  Rule range 132400-132499. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  The zz- prefix makes this file load after the built-in ruleset: some rules
+  are children of built-in ones (syslog 2501, ClamAV 52501/52502/52509,
+  Postfix 3320/3395, systemd 40700/40704, web access 31100/31108).
+
+  Modules
+    132400-132409  logins to the web interface and API
+    132410-132419  tasks (root shell, service stop, cluster, failures)
+    132420-132429  mail filter: viruses, outgoing virus and spam, filter errors
+    132430-132439  quarantine releases
+    132440-132449  cluster sync, LDAP sync, policy daemon, certificate renewal
+    132450-132459  ClamAV updates, Postfix to filter path, TLS, DNS blocklists
+    132460-132479  configuration changes (pmgproxy access log)
+    132480-132489  service failures (systemd)
+
+  What PMG writes for routine mail (accepted, marked, quarantined spam, SPF,
+  greylisting, postscreen decisions) is left at level 0: on the gateway this
+  pack was built on that is about 90 per cent of the PMG lines.
+-->
+
+<group name="pmg,jt_pmg,">
+
+  <rule id="132400" level="0">
+    <decoded_as>jt-pmg</decoded_as>
+    <description>Proxmox Mail Gateway messages</description>
+  </rule>
+
+  <!--
+    Logins. pmgdaemon writes "successful auth" for a new login AND for every
+    ticket renewal: an open web interface renews every 15 minutes and API
+    automation often logs in every few minutes (measured: one account every
+    2 minutes, 720 logins a day). List such accounts in
+    etc/lists/jt-pmg-service-accounts, by full user ID with the realm.
+  -->
+  <rule id="132401" level="3">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">^successful (?:openid connect )?auth for user '</match>
+    <description>PMG: $(dstuser) logged in to the web interface or API</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="132402" level="0">
+    <if_sid>132401</if_sid>
+    <list field="user" lookup="match_key">etc/lists/jt-pmg-service-accounts</list>
+    <description>PMG: routine login of a listed service account</description>
+  </rule>
+
+  <!-- End users opening their own spam quarantine from a spam report link. -->
+  <rule id="132403" level="2">
+    <if_sid>132401</if_sid>
+    <field name="pmg.realm" type="pcre2">^quarantine$</field>
+    <description>PMG: $(dstuser) opened the spam quarantine</description>
+  </rule>
+
+  <rule id="132404" level="5">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">^(?:openid connect )?authentication failure; rhost=</match>
+    <description>PMG: login failed for $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <!-- OpenID Connect failures name no user: the identity provider checked the password. -->
+  <rule id="132408" level="5">
+    <if_sid>132404</if_sid>
+    <match type="pcre2">^openid connect authentication failure; </match>
+    <description>PMG: OpenID Connect login failed from $(srcip): $(pmg.msg)</description>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="132405" level="10" frequency="6" timeframe="300">
+    <if_matched_sid>132404</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] PMG: repeated failed logins to the web interface from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,</group>
+  </rule>
+
+  <!--
+    A failed login of a PAM (Linux) account is written twice: by pam_unix to
+    auth.log, which the generic rule 2501 raises to level 5, and by pmgdaemon
+    with the realm and the client address (132404). The PAM copy is recorded
+    below the alert level.
+  -->
+  <rule id="132406" level="2">
+    <if_sid>2501</if_sid>
+    <match type="pcre2">pam_unix\(proxmox-mailgateway-auth:auth\): authentication failure;</match>
+    <description>PMG: PAM side of a failed login, reported by pmgdaemon</description>
+  </rule>
+
+  <rule id="132407" level="6">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">^changed password for user '</match>
+    <description>PMG: password of $(dstuser) changed</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Tasks: starting task UPID:<node>:...:<type>:<id>:<user>:
+    The children of 132410 are mutually exclusive by task type.
+  -->
+  <rule id="132410" level="0">
+    <if_sid>132400</if_sid>
+    <field name="pmg.phase" type="pcre2">^starting$</field>
+    <description>PMG task started: $(pmg.task) $(pmg.task_id) by $(pmg.user)</description>
+  </rule>
+
+  <rule id="132411" level="0">
+    <if_sid>132400</if_sid>
+    <field name="pmg.phase" type="pcre2">^end$</field>
+    <description>PMG task ended: $(pmg.task) $(pmg.status)</description>
+  </rule>
+
+  <rule id="132412" level="5">
+    <if_sid>132410</if_sid>
+    <field name="pmg.task" type="pcre2">^termproxy$</field>
+    <description>PMG: root shell on $(pmg.node) opened from the web interface by $(pmg.user)</description>
+    <mitre>
+      <id>T1059.004</id>
+    </mitre>
+  </rule>
+
+  <rule id="132413" level="5">
+    <if_sid>132410</if_sid>
+    <field name="pmg.task" type="pcre2">^srvstop$</field>
+    <description>PMG: service $(pmg.task_id) stopped from the web interface by $(pmg.user)</description>
+    <mitre>
+      <id>T1489</id>
+    </mitre>
+  </rule>
+
+  <rule id="132414" level="6">
+    <if_sid>132410</if_sid>
+    <field name="pmg.task" type="pcre2">^(?:clustercreate|clusterjoin)$</field>
+    <description>PMG: cluster $(pmg.task) on $(pmg.node) by $(pmg.user)</description>
+  </rule>
+
+  <rule id="132415" level="7">
+    <if_sid>132410</if_sid>
+    <field name="pmg.task" type="pcre2">^pbs_restore$</field>
+    <description>PMG: configuration restored from Proxmox Backup Server on $(pmg.node) by $(pmg.user)</description>
+  </rule>
+
+  <!-- A task that ended in anything but OK; "WARNINGS: n" is a successful end. -->
+  <rule id="132416" level="5">
+    <if_sid>132411</if_sid>
+    <field name="pmg.status" type="pcre2">^(?!OK$|WARNINGS: \d+$).+</field>
+    <description>PMG: task $(pmg.task) failed on $(pmg.node): $(pmg.status)</description>
+  </rule>
+
+  <rule id="132417" level="2">
+    <if_sid>132416</if_sid>
+    <field name="pmg.task" type="pcre2">^termproxy$</field>
+    <description>PMG: web shell session ended: $(pmg.status)</description>
+  </rule>
+
+  <rule id="132418" level="7">
+    <if_sid>132416</if_sid>
+    <field name="pmg.task" type="pcre2">^acme</field>
+    <description>PMG: certificate task $(pmg.task) failed on $(pmg.node): $(pmg.status)</description>
+  </rule>
+
+  <!--
+    Viruses. pmg-smtp-filter writes one "virus detected" line per mail, inbound
+    or outgoing alike (the line does not say which). A ClamAV heuristic
+    (Heuristics.*) is not treated as a virus by PMG: it only adds to the spam
+    score.
+  -->
+  <rule id="132420" level="7">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">^[0-9A-F]+: virus detected: </match>
+    <description>PMG: virus $(pmg.virus) found in mail $(pmg.logid) ($(pmg.scanner))</description>
+    <mitre>
+      <id>T1566.001</id>
+    </mitre>
+    <group>virus,</group>
+  </rule>
+
+  <rule id="132421" level="3">
+    <if_sid>132420</if_sid>
+    <field name="pmg.virus" type="pcre2">^Heuristics\.</field>
+    <description>PMG: ClamAV heuristic $(pmg.virus) in mail $(pmg.logid), counted as spam</description>
+  </rule>
+
+  <!--
+    Outgoing virus and spam. PMG decides the direction (a rule's direction is
+    "in", "out" or both) but writes only the rule's NAME. The rules that only
+    act on outgoing mail are listed in etc/lists/jt-pmg-outbound-rules as
+    "<rule name>:virus" or "<rule name>:spam". It ships with PMG's default
+    names, "Virus Alert" (active by default) and "Block outgoing Spam"
+    (inactive by default); add yours if you renamed or translated them.
+    One line per recipient: ignore="60" keeps a mass mailing to one alert a
+    minute.
+  -->
+  <rule id="132422" level="0">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">^[0-9A-F]+: (?:block mail to|moved mail for) \x3c</match>
+    <description>PMG: a filter rule blocked or quarantined a mail</description>
+  </rule>
+
+  <rule id="132423" level="12" ignore="60">
+    <if_sid>132422</if_sid>
+    <list field="pmg.rule" lookup="match_key_value" check_value="^virus$">etc/lists/jt-pmg-outbound-rules</list>
+    <description>[HIGH] PMG: outgoing mail with a virus stopped by rule $(pmg.rule) (mail $(pmg.logid) to $(pmg.rcpt)): an internal sender is infected</description>
+    <mitre>
+      <id>T1534</id>
+    </mitre>
+    <group>virus,</group>
+  </rule>
+
+  <rule id="132424" level="10" ignore="60">
+    <if_sid>132422</if_sid>
+    <list field="pmg.rule" lookup="match_key_value" check_value="^spam$">etc/lists/jt-pmg-outbound-rules</list>
+    <description>[WARN] PMG: outgoing spam stopped by rule $(pmg.rule) (mail $(pmg.logid) to $(pmg.rcpt)): an internal account or host may be compromised</description>
+    <mitre>
+      <id>T1586.002</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+  <!--
+    Filter failures. A virus scan that fails leaves the mail unscanned or
+    deferred. Note: when clamd is down, clamdscan still prints a summary and
+    PMG may write nothing at all, so the service rules (132480) matter.
+  -->
+  <rule id="132425" level="10">
+    <if_sid>132400</if_sid>
+    <program_name type="pcre2">^pmg-smtp-filter$</program_name>
+    <match type="pcre2">virus analyze \(\w+\) failed|got undefined output from virus detector|can't exec (?:clamdscan|avast)</match>
+    <description>[WARN] PMG: virus scanning failed: mail is not being scanned</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="132426" level="10">
+    <if_sid>132400</if_sid>
+    <program_name type="pcre2">^pmg-smtp-filter$</program_name>
+    <match type="pcre2">^[0-9A-F]+: reinject mail to \x3c[^\x3e]*\x3e \(rule: .+\) failed$</match>
+    <description>[WARN] PMG: an accepted mail could not be handed back to Postfix for delivery (mail $(pmg.logid))</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <!-- Database maintenance runs every two minutes, node statistics every 30 seconds. -->
+  <rule id="132427" level="7" ignore="1800">
+    <if_sid>132400</if_sid>
+    <program_name type="pcre2">^pmg-smtp-filter$</program_name>
+    <match type="pcre2">^ERROR: </match>
+    <description>PMG: mail filter error</description>
+  </rule>
+
+  <!-- A filter process that hit an error on a mail exits. Bursts mean mail is failing. -->
+  <rule id="132428" level="2">
+    <if_sid>132400</if_sid>
+    <program_name type="pcre2">^pmg-smtp-filter$</program_name>
+    <match type="pcre2">^fast exit because of errors</match>
+    <description>PMG: a filter process exited after an error</description>
+  </rule>
+
+  <rule id="132429" level="10" frequency="10" timeframe="600">
+    <if_matched_sid>132428</if_matched_sid>
+    <description>[WARN] PMG: mail filter processes keep failing on $(hostname)</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <!--
+    Quarantine releases (pmgdaemon). The line does not say who released it:
+    end users release their own spam from the spam report, while the virus
+    and attachment quarantines are only open to administrators. The access log
+    line "POST /api2/.../quarantine/content" just before names the account.
+  -->
+  <rule id="132430" level="3">
+    <if_sid>132400</if_sid>
+    <field name="pmg.quarantine" type="pcre2">^spam$</field>
+    <match type="pcre2">^delivered quarantined mail '</match>
+    <description>PMG: mail released from the spam quarantine to $(pmg.rcpt)</description>
+  </rule>
+
+  <rule id="132431" level="5">
+    <if_sid>132400</if_sid>
+    <field name="pmg.quarantine" type="pcre2">^attachment$</field>
+    <match type="pcre2">^delivered quarantined mail '</match>
+    <description>PMG: mail released from the attachment quarantine to $(pmg.rcpt)</description>
+  </rule>
+
+  <rule id="132432" level="10">
+    <if_sid>132400</if_sid>
+    <field name="pmg.quarantine" type="pcre2">^virus$</field>
+    <match type="pcre2">^delivered quarantined mail '</match>
+    <description>[WARN] PMG: mail released from the VIRUS quarantine to $(pmg.rcpt)</description>
+  </rule>
+
+  <!--
+    ClamAV also writes the hit in a mail to syslog (built-in 52502, level 8),
+    with the spool file name. The pmg-smtp-filter line (132420) carries the
+    verdict and the mail's ID, so the clamd copy is recorded below the alert
+    level. Scans of other files still alert.
+  -->
+  <rule id="132433" level="2">
+    <if_sid>52502</if_sid>
+    <match type="pcre2">^/var/spool/pmg/\S+: \S+ FOUND$</match>
+    <description>ClamAV: virus in a PMG spool file, reported by pmg-smtp-filter</description>
+  </rule>
+
+  <!--
+    Cluster synchronisation runs every two minutes; normally "(0 errors".
+    A broken peer fails every run, so the alerts are capped at one per
+    30 minutes.
+  -->
+  <rule id="132440" level="7" ignore="1800">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">^database sync '[^']+' failed - </match>
+    <description>PMG: cluster synchronisation from $(pmg.peer) failed: $(pmg.error)</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="132441" level="7" ignore="1800">
+    <if_sid>132400</if_sid>
+    <program_name type="pcre2">^pmgmirror$</program_name>
+    <match type="pcre2">^sync error: </match>
+    <description>PMG: cluster synchronisation failed</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="132442" level="2">
+    <if_sid>132400</if_sid>
+    <field name="pmg.errors" type="pcre2">^[1-9]\d*$</field>
+    <description>PMG: cluster synchronisation finished with $(pmg.errors) errors</description>
+  </rule>
+
+  <!--
+    LDAP profile sync (hourly). When it aborts PMG keeps the previous data:
+    recipient checks and LDAP-based rules work on a stale copy.
+  -->
+  <rule id="132443" level="7">
+    <if_sid>132400</if_sid>
+    <field name="pmg.ldap_result" type="pcre2">^aborted$</field>
+    <description>PMG: LDAP profile $(pmg.ldap_profile) could not be synchronised from $(pmg.ldap_server), old data kept</description>
+  </rule>
+
+  <rule id="132444" level="7" ignore="600">
+    <if_sid>132400</if_sid>
+    <program_name type="pcre2">^pmgpolicy$</program_name>
+    <match type="pcre2">Database connection broken|unable to reconnect to database server|^ERROR: unable to load database|greylist database update error|rbl update error|^ERROR: </match>
+    <description>PMG: policy daemon (greylisting, SPF, rate limits) database error</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="132445" level="7">
+    <if_sid>132400</if_sid>
+    <program_name type="pcre2">^pmg-daily$</program_name>
+    <match type="pcre2">^Renewing (?:'\w+' )?ACME certificate failed: </match>
+    <description>PMG: automatic renewal of a TLS certificate (ACME) failed</description>
+  </rule>
+
+  <!--
+    ClamAV signature updates. The built-in rules leave freshclam failures at
+    level 0 (52509). A gateway whose signatures stop updating keeps scanning
+    with old ones and says nothing. Capped at one alert an hour.
+  -->
+  <rule id="132450" level="7" ignore="3600">
+    <if_sid>52501,52509</if_sid>
+    <match type="pcre2">^ERROR: </match>
+    <description>ClamAV: signature update failed</description>
+  </rule>
+
+  <rule id="132451" level="7" ignore="3600">
+    <if_sid>52501,52509</if_sid>
+    <match type="pcre2">^WARNING: (?:FreshClam received error code (?:403|429)|Can't download \S+ from )</match>
+    <description>ClamAV: signature download refused or failed (blocked or rate limited by the mirror)</description>
+  </rule>
+
+  <!--
+    Postfix cannot reach the PMG filter. PMG's Postfix hands every mail to
+    127.0.0.1:10024 (inbound) or 10023 (outgoing) before it is queued; when
+    pmg-smtp-filter is not answering, mail is rejected with a temporary error.
+  -->
+  <rule id="132452" level="10" ignore="300">
+    <if_sid>3395</if_sid>
+    <match type="pcre2">^warning: connect to proxy filter 127\.0\.0\.1:1002[34]: </match>
+    <description>[WARN] Postfix cannot reach the PMG mail filter: mail is being deferred</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="132453" level="7" ignore="300">
+    <if_sid>3395</if_sid>
+    <match type="pcre2">^warning: (?:lost connection with|timeout talking to) proxy 127\.0\.0\.1:1002[34]</match>
+    <description>Postfix lost the connection to the PMG mail filter</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <!-- The same without before-queue filtering (Postfix delivers to the filter by LMTP). -->
+  <rule id="132454" level="10" ignore="300">
+    <if_sid>3320</if_sid>
+    <match type="pcre2">status=deferred \(connect to 127\.0\.0\.1\[127\.0\.0\.1\]:1002[34]: </match>
+    <description>[WARN] Postfix cannot reach the PMG mail filter: mail is queued</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="132455" level="7" ignore="3600">
+    <if_sid>3395</if_sid>
+    <match type="pcre2">^warning: cannot (?:get (?:RSA |DSA |ECDSA )?(?:private key|certificate)|load (?:RSA |DSA |ECDSA )?certificate and key data)</match>
+    <description>Postfix cannot load its TLS certificate: STARTTLS is disabled</description>
+  </rule>
+
+  <!--
+    DNS blocklists. Spamhaus answers 127.255.255.252/254/255 when it refuses
+    a query (typing error, public resolver, too many queries). A postscreen
+    or RBL setup without an answer filter then scores every client as listed.
+  -->
+  <rule id="132456" level="10" ignore="3600">
+    <if_sid>3320</if_sid>
+    <field name="pmg.dnsbl_answer" type="pcre2">^127\.255\.255\.\d+$</field>
+    <description>[WARN] DNS blocklist $(pmg.dnsbl) refuses this server's queries (answer $(pmg.dnsbl_answer)): clients may be rejected as listed</description>
+  </rule>
+
+  <rule id="132457" level="2">
+    <if_sid>3395</if_sid>
+    <match type="pcre2">^warning: dnsblog reply timeout </match>
+    <description>Postfix postscreen: a DNS blocklist did not answer in time</description>
+  </rule>
+
+  <rule id="132458" level="7" frequency="10" timeframe="1800" ignore="3600">
+    <if_matched_sid>132457</if_matched_sid>
+    <description>Postfix postscreen: DNS blocklist lookups keep timing out, screening runs without them</description>
+  </rule>
+
+  <!--
+    Configuration changes through the REST API, from the pmgproxy access log
+    (/var/log/pmgproxy/pmgproxy.log). The pack's agent group keeps only POST,
+    PUT and DELETE requests and drops login ticket requests. The built-in web
+    access decoder reads the lines; its rule for simple 2xx and 3xx requests
+    (31108) leaves URLs with a query string at 31100, so the rules hang off
+    both. Requests that failed with 4xx or 5xx are left to the built-in web
+    rules (31101, 31120); note that the web interface uses /api2/extjs/, which
+    answers 200 even when a change is refused. The acting user is in the
+    full log line.
+  -->
+  <rule id="132460" level="8">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/access/(?:users|auth-realm|tfa)(?:/|\?|$)</url>
+    <description>PMG API: users, realms or two-factor settings changed ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>pmg_api,</group>
+  </rule>
+
+  <rule id="132461" level="10">
+    <if_sid>132460</if_sid>
+    <protocol type="pcre2">^(?:PUT|DELETE)$</protocol>
+    <url type="pcre2">^/api2/(?:json|extjs)/access/(?:tfa/[^/?]+/[^/?]+(?:\?|$)|users/[^/?]+/unlock-tfa)</url>
+    <description>[WARN] PMG API: a second factor was removed, disabled or unlocked ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1556.006</id>
+    </mitre>
+    <group>pmg_api,</group>
+  </rule>
+
+  <rule id="132462" level="8">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/config/ruledb/</url>
+    <description>PMG API: mail filter rules changed ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>pmg_api,</group>
+  </rule>
+
+  <rule id="132463" level="10">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol>POST</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/config/ruledb(?:\?|$)</url>
+    <description>[WARN] PMG API: the mail filter rule database was reset to factory defaults, from $(srcip)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>pmg_api,</group>
+  </rule>
+
+  <!-- Trusted networks may relay through the gateway; transports decide where a domain's mail goes. -->
+  <rule id="132464" level="8">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/config/(?:mynetworks|transport)(?:/|\?|$)</url>
+    <description>PMG API: trusted networks or mail routing changed ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1114.003</id>
+    </mitre>
+    <group>pmg_api,</group>
+  </rule>
+
+  <rule id="132465" level="7">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/config/(?:welcomelist|whitelist)(?:/|\?|$)</url>
+    <description>PMG API: SMTP welcomelist changed, listed senders skip the SMTP checks ($(protocol) $(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>pmg_api,</group>
+  </rule>
+
+  <rule id="132466" level="6">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/config/(?:admin|mail|spam|spamquar|virusquar|clamav|ldap|fetchmail|domains|tlspolicy|tls-inbound-domains|dkim|customscores|mimetypes|pbs|acme|tfa)(?:/|\?|$)</url>
+    <description>PMG API: gateway configuration changed ($(protocol) $(url)) from $(srcip)</description>
+    <group>pmg_api,</group>
+  </rule>
+
+  <rule id="132467" level="8">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/config/cluster/(?:create|join|nodes|update-fingerprints)(?:/|\?|$)</url>
+    <description>PMG API: cluster membership changed ($(protocol) $(url)) from $(srcip)</description>
+    <group>pmg_api,</group>
+  </rule>
+
+  <rule id="132468" level="8">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol>POST</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/(?:backup/[^/?]+|pbs/[^/]+/snapshot/[^/?]+/[^/?]+)(?:\?|$)</url>
+    <description>PMG API: configuration restore from a backup requested ($(url)) from $(srcip)</description>
+    <group>pmg_api,</group>
+  </rule>
+
+  <rule id="132469" level="6">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol>DELETE</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/postfix/queue(?:/|\?|$)</url>
+    <description>PMG API: mail deleted from the Postfix queue ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1070.008</id>
+    </mitre>
+    <group>pmg_api,</group>
+  </rule>
+
+  <rule id="132470" level="6">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/certificates/</url>
+    <description>PMG API: TLS certificate uploaded, ordered or removed ($(protocol) $(url)) from $(srcip)</description>
+    <group>pmg_api,</group>
+  </rule>
+
+  <rule id="132471" level="6">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol>POST</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/status(?:\?|$)</url>
+    <description>PMG API: node reboot or shutdown requested ($(url)) from $(srcip)</description>
+    <mitre>
+      <id>T1529</id>
+    </mitre>
+    <group>pmg_api,</group>
+  </rule>
+
+  <rule id="132472" level="5">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol type="pcre2">^(?:POST|PUT|DELETE)$</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/(?:network|dns|time|config|subscription)(?:/|\?|$)</url>
+    <description>PMG API: node network, DNS, time or node configuration changed ($(protocol) $(url)) from $(srcip)</description>
+    <group>pmg_api,</group>
+  </rule>
+
+  <!--
+    Service failures. A crash writes "Main process exited, code=..." and then
+    "Failed with result '...'"; the second line alerts once per failure. The
+    first is recorded below the alert level for these units (built-in 40704
+    would raise status=1/FAILURE to level 5 as well).
+    pmg-smtp-filter, Postfix, clamd, pmgpolicy and PostgreSQL carry the mail.
+  -->
+  <rule id="132480" level="10">
+    <if_sid>40700</if_sid>
+    <match type="pcre2">^(?:pmg-smtp-filter|postfix@-|postfix|clamav-daemon|pmgpolicy|postgresql@[\w.-]+)\.service: Failed with result '</match>
+    <description>[WARN] PMG: a service that carries the mail failed</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="132481" level="7">
+    <if_sid>40700</if_sid>
+    <match type="pcre2">^(?:pmgproxy|pmgdaemon|pmgmirror|pmgtunnel|pmg-daily|pmg-hourly|pmgspamreport|pmgreport|pmgbanner|clamav-freshclam)\.service: Failed with result '</match>
+    <description>PMG: service failed</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <rule id="132482" level="2">
+    <if_sid>40700,40704</if_sid>
+    <match type="pcre2">^(?:pmg[\w-]*|postfix@-|clamav-daemon|clamav-freshclam|postgresql@[\w.-]+)\.service: Main process exited, code=</match>
+    <description>PMG: a service process exited (the failure is reported once by 132480/132481)</description>
+  </rule>
+
+</group>

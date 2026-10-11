@@ -1,0 +1,130 @@
+<!--
+  Zimbra decoders, part 3: the MTA side of a Zimbra server, as it reaches
+  /var/log/zimbra.log (Zimbra's rsyslog rules put mail.* and local0.* there)
+  or /var/log/syslog. Shipped by the jt-zimbra pack since 3.0.
+
+  This file sorts AFTER the built-in decoders on purpose: the Postfix
+  decoders below are children of the built-in "postfix" decoder
+  (0220-postfix_decoders.xml), and a child cannot be loaded before its parent.
+  The other programs (amavis, opendkim, zimbramon, zmconfigd) have no built-in
+  decoder, so a late top-level decoder is still reached.
+-->
+
+<!-- ==========================================================
+     Postfix lines the built-in decoders leave without fields.
+     No use_own_name: they keep the decoder name "postfix", so the rules hang
+     off the built-in group rule 3320.
+     ========================================================== -->
+
+<!-- postscreen verdicts:
+       PREGREET 11 after 0.15 from [203.0.113.5]:40000: EHLO example.com\r\n
+       DNSBL rank 3 for [203.0.113.5]:40000
+       HANGUP after 0.5 from [203.0.113.5]:40000 in tests after SMTP handshake -->
+<decoder name="zimbra-postscreen">
+  <parent>postfix</parent>
+  <prematch type="pcre2">^(?:PREGREET|DNSBL rank|HANGUP|COMMAND PIPELINING|NON-SMTP COMMAND|BARE NEWLINE|COMMAND TIME LIMIT|COMMAND COUNT LIMIT|COMMAND LENGTH LIMIT) </prematch>
+  <regex type="pcre2">^(PREGREET|DNSBL|HANGUP|COMMAND PIPELINING|NON-SMTP COMMAND|BARE NEWLINE|COMMAND TIME LIMIT|COMMAND COUNT LIMIT|COMMAND LENGTH LIMIT)\b.*?\[([0-9a-fA-F.:]+)\]:(\d+)</regex>
+  <order>zimbra.postscreen, srcip, srcport</order>
+</decoder>
+
+<!-- Delivery results from smtp, lmtp, local, virtual:
+       4B1C2D3E4F: to=<b@example.com>, relay=mail.example.com[192.0.2.10]:7025, delay=0.1, delays=0/0/0/0.1, dsn=4.0.0, status=deferred (host ... said: 451 4.0.0 Mailbox database is temporarily unavailable) -->
+<decoder name="zimbra-postfix-delivery">
+  <parent>postfix</parent>
+  <prematch type="pcre2">^\w+: to=\x3c</prematch>
+  <regex type="pcre2">^(\w+): to=\x3c([^\x3e]*)\x3e, (?:orig_to=\x3c[^\x3e]*\x3e, )?relay=([^,]+), .*?dsn=([\d.]+), status=(\w+) \((.*)\)\s*$</regex>
+  <order>zimbra.queue_id, zimbra.rcpt, zimbra.relay, zimbra.dsn, status, zimbra.reason</order>
+</decoder>
+
+<!-- Queue manager, one line per message: the recipient count of a message.
+       4B1C2D3E4F: from=<a@example.com>, size=1234, nrcpt=250 (queue active) -->
+<decoder name="zimbra-postfix-qmgr">
+  <parent>postfix</parent>
+  <prematch type="pcre2">^\w+: from=\x3c[^\x3e]*\x3e, size=\d+, nrcpt=\d+ </prematch>
+  <regex type="pcre2">^(\w+): from=\x3c([^\x3e]*)\x3e, size=(\d+), nrcpt=(\d+) </regex>
+  <order>zimbra.queue_id, zimbra.sender, zimbra.size, zimbra.nrcpt</order>
+</decoder>
+
+<!-- An authenticated submission (port 587 or 465):
+       4B1C2D3E4F: client=unknown[198.51.100.7]:51234, sasl_method=LOGIN, sasl_username=user1@example.com -->
+<decoder name="zimbra-postfix-sasl-login">
+  <parent>postfix</parent>
+  <prematch type="pcre2">^\w+: client=\S+, sasl_method=\S+, sasl_username=</prematch>
+  <regex type="pcre2">^(\w+): client=[^\[]*\[([0-9a-fA-F.:]+)\](?::\d+)?, sasl_method=([^,]+), sasl_username=(\S+)</regex>
+  <order>zimbra.queue_id, srcip, zimbra.sasl_method, user</order>
+</decoder>
+
+<!-- ==========================================================
+     amavis (amavisd-new as shipped with Zimbra)
+       (12345-05) Blocked INFECTED (Eicar-Signature) {DiscardedInbound,Quarantined}, [203.0.113.5]:40000 [203.0.113.5] <a@example.org> -> <b@example.com>, quarantine: virus-abc, Queue-ID: 4B1C2D3E4F, ...
+       (12345-06) Passed CLEAN {RelayedInternal}, ORIGINATING/MYNETS LOCAL [192.0.2.5]:41552 <a@example.com> -> <b@example.com>, Queue-ID: ..., ...
+       (12345-07) (!!)AV: ALL VIRUS SCANNERS FAILED
+     ORIGINATING means the sender is local (an authenticated user or a host in
+     mynetworks), which is what separates an infected workstation or a
+     hijacked account from ordinary inbound malware.
+     ========================================================== -->
+<decoder name="zimbra-amavis">
+  <program_name type="pcre2">^amavis(?:d)?$|/amavisd$</program_name>
+</decoder>
+
+<decoder name="zimbra-amavis-fields">
+  <parent>zimbra-amavis</parent>
+  <regex type="pcre2">^\(([\w-]+)\) (Passed|Blocked) ([A-Z][A-Z-]*)(?: \(([^)]*)\))? \{([^}]*)\},\s*([A-Z/ ]*?)\s*\[([0-9a-fA-F.:]+)\]</regex>
+  <order>zimbra.amavis_id, action, status, zimbra.amavis_reason, zimbra.amavis_flow, zimbra.amavis_origin, srcip</order>
+</decoder>
+
+<decoder name="zimbra-amavis-fields">
+  <parent>zimbra-amavis</parent>
+  <regex type="pcre2">^\([\w-]+\) (?:Passed|Blocked) .*?\x3c([^\x3e]*)\x3e -\x3e \x3c([^\x3e]*)\x3e</regex>
+  <order>zimbra.sender, zimbra.rcpt</order>
+</decoder>
+
+<decoder name="zimbra-amavis-fields">
+  <parent>zimbra-amavis</parent>
+  <regex type="pcre2">^\([\w-]+\) \((!+)\)(.*)$</regex>
+  <order>zimbra.amavis_severity, zimbra.amavis_problem</order>
+</decoder>
+
+<!-- opendkim (the signing milter Zimbra runs for outbound mail) -->
+<decoder name="zimbra-opendkim">
+  <program_name>^opendkim$</program_name>
+</decoder>
+
+<decoder name="zimbra-opendkim-fields">
+  <parent>zimbra-opendkim</parent>
+  <regex type="pcre2">^(\w+): </regex>
+  <order>zimbra.queue_id</order>
+</decoder>
+
+<!-- ==========================================================
+     zimbramon: zmstatuslog, zmqueuelog and zmdisklog, every few minutes
+       1234:info: 2026-10-11 11:26:02, STATUS: mail.example.com: amavis: Running
+       1234:info: 2026-10-11 11:40:02, QUEUE: 0 0
+       1234:info: Disk warning: mail.example.com: /opt on device /dev/sda2 at 91%
+     ========================================================== -->
+<decoder name="zimbra-zimbramon">
+  <program_name>^zimbramon$</program_name>
+</decoder>
+
+<decoder name="zimbra-zimbramon-fields">
+  <parent>zimbra-zimbramon</parent>
+  <regex type="pcre2">STATUS: ([^:\s]+): ([^:]+): (\w[\w ]*?)\s*$</regex>
+  <order>zimbra.host, zimbra.service, status</order>
+</decoder>
+
+<decoder name="zimbra-zimbramon-fields">
+  <parent>zimbra-zimbramon</parent>
+  <regex type="pcre2">QUEUE: (\d+) (\d+)</regex>
+  <order>zimbra.queue_count, zimbra.queue_kb</order>
+</decoder>
+
+<decoder name="zimbra-zimbramon-fields">
+  <parent>zimbra-zimbramon</parent>
+  <regex type="pcre2">Disk (\w+): ([^:\s]+): (\S+) on device (\S+) at (\d+)%</regex>
+  <order>zimbra.disk_level, zimbra.host, zimbra.mount, zimbra.device, zimbra.disk_pct</order>
+</decoder>
+
+<!-- zmconfigd: rewrites configuration from LDAP and restarts services -->
+<decoder name="zimbra-zmconfigd">
+  <program_name>^zmconfigd$</program_name>
+</decoder>

@@ -183,7 +183,11 @@ INTERNAL = re.compile(
     r'|172\.(?:1[6-9]|2\d|3[01])\.' + _OCTET + r'\.' + _OCTET +
     r')(?![\w.])'
     r'|\b(?:edr1|edr2|dnsp1|revproxy1|jt-glogarch)\b'  # preflight:allow-example
-    r'|\b[\w.+-]+@(?!example\.)[\w-]+\.[a-z]{2,}\b'
+    # A mailbox, except documentation domains (anything under example.),
+    # docker-jitsi-meet's fixed internal XMPP domain meet.jitsi, and systemd's
+    # per-user units (user@0.service), none of which name anyone.
+    r'|\b[\w.+-]+@(?!(?:[\w-]+\.)*example\.)(?!(?:[\w-]+\.)*meet\.jitsi\b)(?!\d+\.service\b)'
+    r'[\w-]+\.[a-z]{2,}\b'
 )
 # Addresses conventionally used as documentation placeholders, not real hosts.
 PLACEHOLDER = re.compile(

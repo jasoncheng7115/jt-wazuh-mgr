@@ -1,0 +1,101 @@
+<!--
+  jt-proxmox: decoders for Proxmox VE and Ceph
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  Wazuh ships decoders for pvedaemon, pveproxy and pvestatd only, which cover
+  logins. Everything else a cluster says (tasks, HA, corosync, backups,
+  Ceph health) reached the manager undecoded and matched no rule, or
+  matched the generic "Unknown problem somewhere in the system" (1002).
+-->
+
+<!--
+  Tasks. Every PVE tool writes
+    <actor> starting task UPID:<node>:<pid>:<pstart>:<starttime>:<type>:<id>:<user>:
+    <actor> end task UPID:...:<user>: <status>
+  pvedaemon already has a built-in decoder, so its task lines are decoded by a
+  child of it; the other tools have no decoder at all.
+-->
+<decoder name="jt-pve-task">
+  <program_name type="pcre2">^(pvescheduler|pveupdate|pvesh|pct|qm|vzdump|pve-ha-lrm|pve-ha-crm|pvenode|pveceph|pvesr)$</program_name>
+  <prematch type="pcre2">^\x3c[^\x3e]+\x3e (?:starting|end) task UPID:</prematch>
+</decoder>
+
+<decoder name="jt-pve-task-fields">
+  <parent>jt-pve-task</parent>
+  <regex type="pcre2">^\x3c([^\x3e]+)\x3e (starting|end) task UPID:([^:]+):[0-9A-Fa-f]+:[0-9A-Fa-f]+:[0-9A-Fa-f]+:([^:]+):([^:]*):([^:]+):\s?(.*)$</regex>
+  <order>pve.actor, pve.phase, pve.node, pve.task, pve.vmid, pve.user, pve.status</order>
+</decoder>
+
+<decoder name="jt-pvedaemon-task">
+  <parent>pvedaemon</parent>
+  <prematch type="pcre2">^\x3c[^\x3e]+\x3e (?:starting|end) task UPID:</prematch>
+  <regex type="pcre2">^\x3c([^\x3e]+)\x3e (starting|end) task UPID:([^:]+):[0-9A-Fa-f]+:[0-9A-Fa-f]+:[0-9A-Fa-f]+:([^:]+):([^:]*):([^:]+):\s?(.*)$</regex>
+  <order>pve.actor, pve.phase, pve.node, pve.task, pve.vmid, pve.user, pve.status</order>
+</decoder>
+
+<!-- High availability: node and service state changes. -->
+<decoder name="jt-pve-ha">
+  <program_name type="pcre2">^pve-ha-(?:crm|lrm)$</program_name>
+</decoder>
+
+<decoder name="jt-pve-ha-fields">
+  <parent>jt-pve-ha</parent>
+  <regex type="pcre2">^(node|service) '([^']+)': state changed from '([^']+)' (?:=>|to) '([^']+)'</regex>
+  <order>pve.ha_kind, pve.ha_object, pve.from, pve.to</order>
+</decoder>
+
+<!-- Backup job output, as vzdump writes it through pvescheduler or on its own. -->
+<decoder name="jt-pve-backup">
+  <program_name type="pcre2">^(?:pvescheduler|vzdump)$</program_name>
+  <prematch type="pcre2">^(?:INFO|WARN|ERROR): </prematch>
+</decoder>
+
+<decoder name="jt-pve-backup-fields">
+  <parent>jt-pve-backup</parent>
+  <regex type="pcre2">^(INFO|WARN|ERROR): (?:.*?\b(?:VM|CT) (\d+))?</regex>
+  <order>pve.severity, pve.vmid</order>
+</decoder>
+
+<!-- Cluster communication. Rules match the message text. -->
+<decoder name="jt-corosync">
+  <program_name>^corosync$</program_name>
+</decoder>
+
+<!--
+  The Ceph cluster log (/var/log/ceph/ceph.log on monitor nodes), e.g.
+    2026-10-07T22:03:08.863938+0800 mon.pve1 (mon.0) 2644626 : cluster [WRN] Health check failed: clock skew detected on mon.pve4 (MON_CLOCK_SKEW)
+  Collected by the pack's agent group, with the [DBG] lines dropped on the agent.
+  Wazuh's pre-decoder takes the ISO timestamp AND the next word (mon.pve1) as
+  timestamp and host name, so a decoder sees the line from "(mon.0)" on; the
+  reporting daemon is in the hostname field.
+-->
+<decoder name="jt-ceph-cluster">
+  <prematch type="pcre2">^\(\S+\) \d+ : cluster \[</prematch>
+</decoder>
+
+<decoder name="jt-ceph-cluster-fields">
+  <parent>jt-ceph-cluster</parent>
+  <regex type="pcre2">^\(\S+\) \d+ : cluster \[(\w+)\] (.*?)(?: \((\w+)\))?$</regex>
+  <order>ceph.severity, ceph.message, ceph.check</order>
+</decoder>
+
+<!--
+  pveproxy access log. The agent group writes each line with a syslog header and
+  the program name jt-pveproxy (out_format), so that it reaches this decoder and
+  not the built-in web access decoder. The reason is the client address: pveproxy
+  listens on a dual-stack socket and logs an IPv4 client as ::ffff:a.b.c.d. The
+  built-in decoders keep that prefix, and firewall-drop then writes an ip6tables
+  rule that the client's IPv4 packets never meet (verified on 4.14.7), so a block
+  on such an alert silently does nothing. This decoder drops the prefix.
+  Line after the header:
+  ::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] "PUT /api2/extjs/access/users/x HTTP/1.1" 200 -
+-->
+<decoder name="jt-pveproxy-access">
+  <program_name>^jt-pveproxy$</program_name>
+</decoder>
+
+<decoder name="jt-pveproxy-access-fields">
+  <parent>jt-pveproxy-access</parent>
+  <regex type="pcre2">^(?:::ffff:)?(\S+) \S+ (\S+) \[[^\]]*\] "(\S+) (\S+) [^"]*" (\d{3})</regex>
+  <order>srcip, user, protocol, url, id</order>
+</decoder>

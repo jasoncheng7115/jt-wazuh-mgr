@@ -1,0 +1,817 @@
+<!--
+  jt-opnsense: the OPNsense firewall's own security events
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+  Rule IDs 131500-131599. Decoders: jt-opnsense_decoders.xml.
+
+  Wazuh had decoders for filterlog, OpenVPN and sshd on OPNsense, but none of the
+  firewall's own audit trail: web interface logins, failed logins, configuration
+  changes and firmware actions are written under the syslog ident "audit", which
+  Wazuh decodes as Solaris BSM and drops at rule 6100 (level 0). Configd actions,
+  package changes, gateway alarms, CARP, IPsec and CrowdSec had no decoder at all.
+
+  The file is named zz- because rules here are children of built-in rules
+  (6100, 81800, 81803, 81804, 1004, 510), which must be loaded first.
+-->
+
+<group name="opnsense,jt_opnsense,">
+
+  <!-- ==============================================================
+       Web interface logins (audit, children of the built-in 6100)
+       ============================================================== -->
+
+  <!-- "Successful login for user '%s' from: %s" (src/www/authgui.inc).
+       Not written when System > Settings > Administration > "Disable logging of
+       web GUI successful logins" (quietlogin) is set; 131506 still is. -->
+  <rule id="131501" level="3">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^\S+: Successful login for user '</match>
+    <description>OPNsense: web interface login of $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.5,gdpr_IV_32.2,</group>
+  </rule>
+
+  <!-- "Web GUI authentication error for '%s' from %s" (src/www/authgui.inc) -->
+  <rule id="131502" level="5">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^\S+: Web GUI authentication error for '</match>
+    <description>OPNsense: failed web interface login for $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,gdpr_IV_35.7.d,gdpr_IV_32.2,</group>
+  </rule>
+
+  <!-- Brute force: six failures from one address in two minutes. The address is the
+       client as the firewall sees it; behind a reverse proxy it is the proxy. -->
+  <rule id="131503" level="10" frequency="6" timeframe="120" ignore="300">
+    <if_matched_sid>131502</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] OPNsense: repeated failed web interface logins from $(srcip), password guessing</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_11.4,gdpr_IV_35.7.d,</group>
+  </rule>
+
+  <!-- A successful login from an address that has just been guessing passwords. -->
+  <rule id="131504" level="12" timeframe="600">
+    <if_sid>131501</if_sid>
+    <if_matched_sid>131503</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] OPNsense: web interface login of $(dstuser) from $(srcip) right after repeated failed logins from that address</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.5,pci_dss_11.4,</group>
+  </rule>
+
+  <!-- "User logged out for user '%s' from: %s" / "Session timed out for user ..." -->
+  <rule id="131505" level="2">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^\S+: (?:User logged out|Session timed out) for user '</match>
+    <description>OPNsense: web interface session of $(dstuser) ended ($(opnsense.event))</description>
+  </rule>
+
+  <!-- "user %s authenticated successfully for %s [using %s + %s]"
+       (src/opnsense/mvc/app/library/OPNsense/Auth/AuthenticationFactory.php).
+       For WebGui it accompanies 131501 and stays below the alert level. For sshd
+       (password logins through PAM), the console ("login") and IPsec user
+       authentication it is the only line that reaches Wazuh: sshd itself logs
+       under the auth facility, which the os-wazuh-agent plugin cannot select. -->
+  <rule id="131506" level="2">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^user \S+ authenticated successfully for WebGui \[using </match>
+    <description>OPNsense: $(dstuser) authenticated for $(opnsense.service) ($(opnsense.authenticator))</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131507" level="3">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^user \S+ authenticated successfully for (?!WebGui )\S+ \[using </match>
+    <description>OPNsense: $(dstuser) logged in to $(opnsense.service) ($(opnsense.authenticator))</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- Accounts in etc/lists/jt-opnsense-service-accounts: configuration backup
+       tools that log in over SSH every hour (measured: 191 a month per firewall
+       from one such account). Their logins are not news; failures still alert. -->
+  <rule id="131508" level="0">
+    <if_sid>131507</if_sid>
+    <list field="user" lookup="match_key">etc/lists/jt-opnsense-service-accounts</list>
+    <description>OPNsense: routine login of a listed service account</description>
+  </rule>
+
+  <!-- "user %s failed authentication for %s on %s via %s" (LOG_DEBUG, one line per
+       authenticator tried). For WebGui 131502 is the line with the address. For
+       sshd, the console and IPsec it is the only failure that reaches Wazuh; it
+       has no address, so 131556 counts failures per account instead. -->
+  <rule id="131509" level="2">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^user \S+ failed authentication for WebGui on </match>
+    <description>OPNsense: $(dstuser) failed authentication for $(opnsense.service) via $(opnsense.authenticator)</description>
+  </rule>
+
+  <rule id="131510" level="5">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^user \S+ failed authentication for (?!WebGui )\S+ on </match>
+    <description>OPNsense: $(dstuser) failed authentication for $(opnsense.service) via $(opnsense.authenticator)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- "user %s could not authenticate for %s, failed constraints on %s authenticated via %s":
+       the password was right but the account may not log in (disabled, expired,
+       not in an allowed group). -->
+  <rule id="131511" level="5">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^user \S+ could not authenticate for \S+, failed constraints on </match>
+    <description>OPNsense: $(dstuser) gave a valid password for $(opnsense.service) but is not allowed to log in</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_failed,pci_dss_10.2.4,</group>
+  </rule>
+
+  <!-- "uri %s not accessible for user %s" (ControllerRoot.php): a logged-in user
+       opened a page outside their privileges. -->
+  <rule id="131512" level="5">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^uri \S+ not accessible for user </match>
+    <description>OPNsense: $(dstuser) was refused $(url), outside the account's privileges</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>access_denied,pci_dss_10.2.4,</group>
+  </rule>
+
+  <!-- "no active session, user not found (called \"%s\" @ %s)": a request for a
+       page without a session. Every stale browser tab and every scanner produces
+       it; measured: 37 a month per firewall from an nmap service probe alone.
+       Recorded; 131514 alerts on a burst. -->
+  <rule id="131513" level="2">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^no active session, user not found \(called "</match>
+    <description>OPNsense: request for $(url) without a session from $(srcip)</description>
+  </rule>
+
+  <rule id="131514" level="6" frequency="20" timeframe="60" ignore="600">
+    <if_matched_sid>131513</if_matched_sid>
+    <same_source_ip />
+    <description>OPNsense: $(srcip) is requesting many web interface pages without logging in, a scan</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>web_scan,recon,</group>
+  </rule>
+
+  <!-- "session expired (%s @ %s)" -->
+  <rule id="131515" level="2">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^session expired \(</match>
+    <description>OPNsense: web interface session of $(dstuser) expired</description>
+  </rule>
+
+  <!-- ==============================================================
+       API keys (syslog ident "api", ApiControllerBase.php)
+       ============================================================== -->
+
+  <rule id="131516" level="0">
+    <decoded_as>jt-opnsense-api</decoded_as>
+    <description>OPNsense API messages grouped</description>
+  </rule>
+
+  <!-- "uri %s authentication failed for api key %s". The source address is not logged. -->
+  <rule id="131517" level="5">
+    <if_sid>131516</if_sid>
+    <match type="pcre2">^uri \S+ authentication failed for api key </match>
+    <description>OPNsense: API request to $(url) with an unknown or wrong API key</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,pci_dss_10.2.4,</group>
+  </rule>
+
+  <rule id="131518" level="8" frequency="10" timeframe="120" ignore="600">
+    <if_matched_sid>131517</if_matched_sid>
+    <description>OPNsense: many API requests with wrong keys in two minutes, guessing or a broken integration</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,</group>
+  </rule>
+
+  <!-- "uri %s not accessible for user %s using api key %s" -->
+  <rule id="131519" level="5">
+    <if_sid>131516</if_sid>
+    <match type="pcre2">^uri \S+ not accessible for user \S+ using api key </match>
+    <description>OPNsense: API key of $(dstuser) was refused $(url), outside its privileges</description>
+    <group>access_denied,</group>
+  </rule>
+
+  <!-- ==============================================================
+       Configuration changes
+       "user %s%s changed configuration to %s in %s %s"
+       (src/opnsense/mvc/app/library/OPNsense/Core/Config.php auditLogChange).
+       Every save writes a new backup under /conf/backup, so the file in the
+       alert is the version to compare (System > Configuration > History).
+       ============================================================== -->
+
+  <!-- Saved by a script, cron job or the console: the user is "(root)" or
+       "(system)" without an address. Measured: plugin and migration scripts,
+       a few a week. -->
+  <rule id="131520" level="3">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^user \(\S+\) changed configuration to </match>
+    <description>OPNsense: configuration changed by a local process ($(opnsense.system_user)) in $(url)</description>
+    <group>config_changed,pci_dss_10.2.7,</group>
+  </rule>
+
+  <!-- Console menu (src/opnsense/scripts/shell/*.php): interface assignment,
+       addresses, password reset. -->
+  <rule id="131526" level="5">
+    <if_sid>131520</if_sid>
+    <url type="pcre2">^/usr/local/opnsense/scripts/shell/</url>
+    <description>OPNsense: configuration changed from the console menu ($(url))</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>config_changed,pci_dss_10.2.7,</group>
+  </rule>
+
+  <!-- write_config('Root user reset from console') in scripts/shell/password.php -->
+  <rule id="131527" level="7">
+    <if_sid>131526</if_sid>
+    <url type="pcre2">^/usr/local/opnsense/scripts/shell/password\.php$</url>
+    <description>OPNsense: root password reset from the console</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>config_changed,account_changed,pci_dss_10.2.7,pci_dss_8.1.2,</group>
+  </rule>
+
+  <!-- Saved by a person (web interface or API key): "<user>@<address>". -->
+  <rule id="131521" level="5">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^user [^(\s]\S* (?:\([^)]*\) )?changed configuration to </match>
+    <description>OPNsense: configuration changed by $(dstuser) from $(srcip) in $(url)</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>config_changed,pci_dss_10.2.7,gdpr_IV_35.7.d,</group>
+  </rule>
+
+  <!-- Users, groups, privileges, API keys, authentication servers. -->
+  <rule id="131522" level="7">
+    <if_sid>131521</if_sid>
+    <url type="pcre2">^/api/auth/|^/system_(?:usermanager|groupmanager|authservers)</url>
+    <description>OPNsense: accounts, privileges or authentication servers changed by $(dstuser) from $(srcip) ($(url))</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>config_changed,account_changed,pci_dss_10.2.7,pci_dss_8.1.2,</group>
+  </rule>
+
+  <!-- System > Settings > Administration: web interface, SSH and console access. -->
+  <rule id="131523" level="7">
+    <if_sid>131521</if_sid>
+    <url type="pcre2">^/system_advanced_admin\.php</url>
+    <description>OPNsense: administrative access settings (web interface, SSH, console) changed by $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>config_changed,pci_dss_10.2.7,</group>
+  </rule>
+
+  <!-- A whole configuration restored from a file or reverted to a backup
+       (src/www/diag_backup.php, Core/Api/BackupController.php revertBackupAction). -->
+  <rule id="131524" level="7">
+    <if_sid>131521</if_sid>
+    <url type="pcre2">^/diag_backup\.php|^/api/core/backup/revert</url>
+    <description>OPNsense: configuration restored or reverted by $(dstuser) from $(srcip) ($(url))</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>config_changed,pci_dss_10.2.7,</group>
+  </rule>
+
+  <!-- High availability: the primary pushes its configuration to the backup through
+       XMLRPC, which the backup records as a change. -->
+  <rule id="131525" level="3">
+    <if_sid>131521</if_sid>
+    <url type="pcre2">^/xmlrpc\.php</url>
+    <description>OPNsense: configuration synchronised from the HA peer $(srcip)</description>
+    <group>config_changed,</group>
+  </rule>
+
+  <!-- ==============================================================
+       Firmware and power, as a person requested them
+       "[Firmware] User %s executed a firmware update" ... (FirmwareController.php)
+       ============================================================== -->
+
+  <rule id="131530" level="5">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^\[Firmware\] User \S+ executed (?:a firmware (?:update|upgrade)|an? (?:install|remove|reinstall) of package |a plugins (?:sync|resync))</match>
+    <description>OPNsense: $(dstuser) $(opnsense.action)</description>
+    <mitre>
+      <id>T1072</id>
+    </mitre>
+    <group>software_changed,pci_dss_10.2.7,</group>
+  </rule>
+
+  <rule id="131531" level="5">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^\[Firmware\] User \S+ executed a (?:reboot|poweroff)$</match>
+    <description>OPNsense: $(dstuser) $(opnsense.action) from the web interface</description>
+    <mitre>
+      <id>T1529</id>
+    </mitre>
+    <group>system_shutdown,</group>
+  </rule>
+
+  <rule id="131532" level="3">
+    <if_sid>6100</if_sid>
+    <match type="pcre2">^\[Firmware\] User \S+ (?:executed a security audit|executed a health|locked package|unlocked package)</match>
+    <description>OPNsense: $(dstuser) $(opnsense.action)</description>
+  </rule>
+
+  <!-- ==============================================================
+       configd, the backend every action goes through (configd.py)
+       "action allowed %s for user %s" (processhandler.py). The user is the local
+       account calling configd (root for the web interface and cron), not the
+       person; 131530/131531 name the person when the web interface was used.
+       Measured: 50,000 configd lines a day on a busy firewall, nearly all
+       routine status queries.
+       ============================================================== -->
+
+  <rule id="131540" level="0">
+    <decoded_as>jt-opnsense-configd</decoded_as>
+    <description>OPNsense configd messages grouped</description>
+  </rule>
+
+  <rule id="131541" level="3">
+    <if_sid>131540</if_sid>
+    <field name="opnsense.action" type="pcre2">^firmware\.(?:update|upgrade|install|remove|reinstall|sync|resync)$</field>
+    <match type="pcre2">^action allowed </match>
+    <description>OPNsense: firmware action $(opnsense.action) started</description>
+    <group>software_changed,</group>
+  </rule>
+
+  <rule id="131542" level="5">
+    <if_sid>131540</if_sid>
+    <field name="opnsense.action" type="pcre2">^firmware\.auto-update$</field>
+    <match type="pcre2">^action allowed </match>
+    <description>OPNsense: scheduled automatic firmware update started</description>
+    <mitre>
+      <id>T1072</id>
+    </mitre>
+    <group>software_changed,</group>
+  </rule>
+
+  <rule id="131543" level="5">
+    <if_sid>131540</if_sid>
+    <field name="opnsense.action" type="pcre2">^(?:system\.(?:reboot|halt)|firmware\.(?:reboot|poweroff))$</field>
+    <match type="pcre2">^action allowed </match>
+    <description>OPNsense: $(opnsense.action) requested, the firewall goes down</description>
+    <mitre>
+      <id>T1529</id>
+    </mitre>
+    <group>system_shutdown,</group>
+  </rule>
+
+  <!-- [reset_factory_defaults] "Revert to system defaults and power down the system" -->
+  <rule id="131544" level="10">
+    <if_sid>131540</if_sid>
+    <field name="opnsense.action" type="pcre2">^system\.reset_factory_defaults$</field>
+    <match type="pcre2">^action allowed </match>
+    <description>[WARN] OPNsense: factory reset requested, the configuration is erased and the firewall powers down</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+    <group>config_changed,system_shutdown,</group>
+  </rule>
+
+  <!-- [flush.config_history] "flush configuration history": removes the backups
+       that show who changed what. -->
+  <rule id="131545" level="5">
+    <if_sid>131540</if_sid>
+    <field name="opnsense.action" type="pcre2">^system\.flush\.config_history$</field>
+    <match type="pcre2">^action allowed </match>
+    <description>OPNsense: configuration history flushed, earlier versions are gone</description>
+    <mitre>
+      <id>T1070</id>
+    </mitre>
+    <group>config_changed,</group>
+  </rule>
+
+  <!-- "action %s not found for user %s": measured at 15 a week from one plugin
+       calling an action it no longer has. -->
+  <rule id="131546" level="2">
+    <if_sid>131540</if_sid>
+    <match type="pcre2">^action \S+ not found for user </match>
+    <description>OPNsense: configd action $(opnsense.action) does not exist (called by $(dstuser))</description>
+  </rule>
+
+  <!-- ==============================================================
+       Packages (pkg, pkg-static). A firmware update writes one line per
+       package (136 lines in one measured update), so upgrades are recorded
+       and only new or removed packages alert.
+       ============================================================== -->
+
+  <rule id="131550" level="2">
+    <decoded_as>jt-opnsense-pkg</decoded_as>
+    <field name="opnsense.pkg_action" type="pcre2">^(?:upgraded|reinstalled)$</field>
+    <description>OPNsense: package $(opnsense.package) $(opnsense.pkg_action) from $(opnsense.old_version) to $(opnsense.new_version)</description>
+  </rule>
+
+  <rule id="131551" level="3">
+    <decoded_as>jt-opnsense-pkg</decoded_as>
+    <field name="opnsense.pkg_action" type="pcre2">^(?:installed|deinstalled|downgraded)$</field>
+    <description>OPNsense: package $(opnsense.package) $(opnsense.pkg_action)</description>
+    <mitre>
+      <id>T1072</id>
+    </mitre>
+    <group>software_changed,</group>
+  </rule>
+
+  <!-- ==============================================================
+       SSH and console logins, and OPNsense's own login protection.
+       sshd logs under the auth facility and the os-wazuh-agent plugin selects
+       programs, not facilities, so sshd lines do not reach Wazuh through the
+       plugin; what does is the audit line above (131507, 131510) for password
+       logins through PAM. Key-based SSH logins leave no audit line.
+       ============================================================== -->
+
+  <!-- Eight failures for one account in two minutes (an attempt can write one
+       line per authenticator, so eight lines are at least four tries). -->
+  <rule id="131556" level="10" frequency="8" timeframe="120" ignore="300">
+    <if_matched_sid>131510</if_matched_sid>
+    <same_user />
+    <description>[WARN] OPNsense: repeated failed logins for $(dstuser) on $(opnsense.service), password guessing</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_11.4,</group>
+  </rule>
+
+  <!-- src/opnsense/scripts/syslog/lockout_handler (Firewall > Settings > Advanced,
+       "Login Protection"): after too many failed web interface or SSH logins it
+       adds the address to the sshlockout table and writes
+         "lockout %s [using table %s] after %d attempts"
+       under the ident lockout_handler, which the plugin cannot select either: this
+       rule fires only when the firewall also sends syslog to the manager. -->
+  <rule id="131555" level="8">
+    <decoded_as>jt-opnsense-lockout</decoded_as>
+    <description>OPNsense: login protection locked out $(srcip) after $(opnsense.attempts) failed attempts</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,active_response,</group>
+  </rule>
+
+  <!-- ==============================================================
+       OpenVPN. The built-in 81803 ("TLS Error|TLS Auth Error", level 4) and
+       81804 (three of them in a minute, "Possible revoked user") treat a client
+       on a bad network the same as a failed login. Measured: 196 alerts in a
+       week from one phone, all "TLS key negotiation failed to occur within 60
+       seconds" and "TLS handshake failed"; no real authentication failure.
+       Program names openvpn_server<N> / openvpn_client<N> are OPNsense's.
+       ============================================================== -->
+
+  <!-- A handshake that timed out: network trouble, not authentication. -->
+  <rule id="131560" level="2">
+    <if_sid>81803</if_sid>
+    <program_name type="pcre2">^openvpn_(?:server|client)\d+$</program_name>
+    <match type="pcre2">TLS Error: TLS key negotiation failed to occur within \d+ seconds|TLS Error: TLS handshake failed</match>
+    <description>OPNsense: OpenVPN TLS handshake with $(srcip) timed out (network, not authentication)</description>
+    <group>jt_opnsense_vpn_tls_timeout,</group>
+  </rule>
+
+  <rule id="131561" level="2">
+    <if_sid>81804</if_sid>
+    <program_name type="pcre2">^openvpn_(?:server|client)\d+$</program_name>
+    <match type="pcre2">TLS Error: TLS key negotiation failed to occur within \d+ seconds|TLS Error: TLS handshake failed</match>
+    <description>OPNsense: OpenVPN TLS handshakes with $(srcip) keep timing out (network, not authentication)</description>
+    <group>jt_opnsense_vpn_tls_timeout,</group>
+  </rule>
+
+  <!-- Thirty timeouts in half an hour from one address is no longer a bad network. -->
+  <rule id="131562" level="5" frequency="30" timeframe="1800" ignore="3600">
+    <if_matched_group>jt_opnsense_vpn_tls_timeout</if_matched_group>
+    <same_source_ip />
+    <description>OPNsense: $(srcip) keeps opening OpenVPN handshakes that never complete</description>
+    <mitre>
+      <id>T1133</id>
+    </mitre>
+  </rule>
+
+  <!-- "TLS Auth Error: Auth Username/Password verification failed for peer": the
+       password check (OPNsense's user_pass_verify.php) said no. A real failure,
+       with the client address. -->
+  <rule id="131563" level="5">
+    <if_sid>81803</if_sid>
+    <program_name type="pcre2">^openvpn_(?:server|client)\d+$</program_name>
+    <match type="pcre2">TLS Auth Error: Auth Username/Password verification failed for peer</match>
+    <description>OPNsense: OpenVPN login failed from $(srcip) (wrong user name or password)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,jt_opnsense_vpn_auth_failed,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+  </rule>
+
+  <rule id="131564" level="5">
+    <if_sid>81804</if_sid>
+    <program_name type="pcre2">^openvpn_(?:server|client)\d+$</program_name>
+    <match type="pcre2">TLS Auth Error: Auth Username/Password verification failed for peer</match>
+    <description>OPNsense: OpenVPN login failed from $(srcip) (wrong user name or password)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,jt_opnsense_vpn_auth_failed,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+  </rule>
+
+  <rule id="131565" level="10" frequency="6" timeframe="300" ignore="300">
+    <if_matched_group>jt_opnsense_vpn_auth_failed</if_matched_group>
+    <same_source_ip />
+    <description>[WARN] OPNsense: repeated failed OpenVPN logins from $(srcip), password guessing</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_11.4,</group>
+  </rule>
+
+  <!-- src/opnsense/scripts/openvpn/user_pass_verify.php, ident "openvpn":
+       "user '%s' could not authenticate."; "... Denying authentication for user %s";
+       "Username does not match certificate common name (%s != %s), access denied.";
+       "authentication failed for user '%s'. No tunnel network provisioned, but required."
+       tls_verify.php: "tls-verify : %s". No address in these lines. -->
+  <rule id="131566" level="5">
+    <if_sid>81800</if_sid>
+    <match type="pcre2">^user '[^']*' could not authenticate\.|Denying authentication for user |^Username does not match certificate common name|^authentication failed for user '[^']*'\. No tunnel network|^tls-verify : </match>
+    <description>OPNsense: OpenVPN password check refused a login</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- "user '%s' authenticated using '%s'" (user_pass_verify.php). Measured: 14 a week. -->
+  <rule id="131567" level="3">
+    <if_sid>81800</if_sid>
+    <match type="pcre2">^user '[^']*' authenticated using '</match>
+    <description>OPNsense: OpenVPN user $(srcuser) authenticated</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- OpenVPN's own certificate check: "VERIFY ERROR: depth=%d, error=%s: %s" -->
+  <rule id="131568" level="5">
+    <if_sid>81800</if_sid>
+    <match type="pcre2">VERIFY ERROR: depth=</match>
+    <description>OPNsense: OpenVPN rejected a client certificate</description>
+    <mitre>
+      <id>T1133</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <rule id="131569" level="7">
+    <if_sid>131568</if_sid>
+    <match type="pcre2">error=certificate revoked</match>
+    <description>OPNsense: OpenVPN client presented a revoked certificate</description>
+    <mitre>
+      <id>T1133</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <!-- ==============================================================
+       Gateway monitoring (dpinger)
+       ============================================================== -->
+
+  <!-- dpinger exits on SIGTERM whenever gateways are reconfigured; the built-in
+       1004 reads "exiting on signal" as syslogd stopping (level 5). Measured:
+       25 false alerts in three months on one firewall. -->
+  <rule id="131570" level="0">
+    <if_sid>1004</if_sid>
+    <program_name type="pcre2">^dpinger$</program_name>
+    <description>OPNsense: gateway monitor restarted (not syslogd)</description>
+  </rule>
+
+  <!-- "ALERT: <gateway> (Addr: <ip> Alarm: <old> -> <new> RTT: ... Loss: ... %)" -->
+  <rule id="131571" level="5">
+    <decoded_as>jt-opnsense-dpinger</decoded_as>
+    <field name="opnsense.to" type="pcre2">^down$</field>
+    <description>OPNsense: gateway $(opnsense.gateway) ($(dstip)) is down</description>
+    <group>availability,</group>
+  </rule>
+
+  <rule id="131572" level="3">
+    <decoded_as>jt-opnsense-dpinger</decoded_as>
+    <field name="opnsense.to" type="pcre2">^(?:none|loss|delay|delay\+loss)$</field>
+    <description>OPNsense: gateway $(opnsense.gateway) ($(dstip)) alarm $(opnsense.from) to $(opnsense.to)</description>
+    <group>availability,</group>
+  </rule>
+
+  <!-- ==============================================================
+       CARP (high availability), from the FreeBSD kernel:
+       "carp: %s: %s -> %s (%s)" (sys/netinet/ip_carp.c carp_set_state)
+       ============================================================== -->
+
+  <rule id="131575" level="7">
+    <decoded_as>kernel</decoded_as>
+    <field name="opnsense.to" type="pcre2">^MASTER$</field>
+    <field name="opnsense.vhid" type="pcre2">^\d+$</field>
+    <description>OPNsense: CARP vhid $(opnsense.vhid) on $(opnsense.interface) became MASTER ($(opnsense.reason))</description>
+    <group>availability,ha_failover,</group>
+  </rule>
+
+  <rule id="131576" level="5">
+    <decoded_as>kernel</decoded_as>
+    <field name="opnsense.to" type="pcre2">^(?:BACKUP|INIT)$</field>
+    <field name="opnsense.vhid" type="pcre2">^\d+$</field>
+    <description>OPNsense: CARP vhid $(opnsense.vhid) on $(opnsense.interface) went from $(opnsense.from) to $(opnsense.to) ($(opnsense.reason))</description>
+    <group>availability,ha_failover,</group>
+  </rule>
+
+  <!-- "carp: demoted by %d to %d (%s)" -->
+  <rule id="131577" level="4">
+    <decoded_as>kernel</decoded_as>
+    <field name="opnsense.demotion_total" type="pcre2">^-?\d+$</field>
+    <description>OPNsense: CARP demotion now $(opnsense.demotion_total) ($(opnsense.reason))</description>
+    <group>availability,</group>
+  </rule>
+
+  <!-- ==============================================================
+       IPsec (strongSwan charon)
+       ============================================================== -->
+
+  <rule id="131580" level="0">
+    <decoded_as>jt-strongswan</decoded_as>
+    <description>IPsec (strongSwan) messages grouped</description>
+  </rule>
+
+  <!-- "IKE_SA %s[%u] established between %H[%Y]...%H[%Y]" -->
+  <rule id="131581" level="3">
+    <if_sid>131580</if_sid>
+    <match type="pcre2">IKE_SA \S+ established between </match>
+    <description>IPsec: tunnel $(opnsense.ike_sa) up with $(srcip) ($(opnsense.remote_id))</description>
+    <group>vpn,</group>
+  </rule>
+
+  <!-- "deleting IKE_SA %s[%u] between ...": also every rekey and normal close. -->
+  <rule id="131582" level="2">
+    <if_sid>131580</if_sid>
+    <match type="pcre2">deleting IKE_SA \S+ between </match>
+    <description>IPsec: tunnel $(opnsense.ike_sa) with $(srcip) closed</description>
+  </rule>
+
+  <!-- Authentication failures (src/libcharon): pre-shared key mismatch, peer
+       refused us, user name or password, certificate, EAP, constraints, unknown
+       identity. "signature validation failed, looking for another key" is left
+       out on purpose: another key often succeeds. -->
+  <rule id="131583" level="5">
+    <if_sid>131580</if_sid>
+    <match type="pcre2">tried \d+ shared keys? for .*but MAC mismatched|received AUTHENTICATION_FAILED notify error|(?:XAuth|RADIUS) authentication of '[^']*' (?:\(myself\) )?failed|EAP method \S+ failed for peer|no trusted \S+ public key found for|constraint check failed|no matching peer config found</match>
+    <description>IPsec: authentication failed on connection $(opnsense.ipsec_conn)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,vpn,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+  </rule>
+
+  <rule id="131584" level="10" frequency="8" timeframe="300" ignore="600">
+    <if_matched_sid>131583</if_matched_sid>
+    <same_field>opnsense.ipsec_conn</same_field>
+    <description>[WARN] IPsec: repeated authentication failures on connection $(opnsense.ipsec_conn)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,vpn,</group>
+  </rule>
+
+  <!-- "XAuth authentication of '%Y' successful" / "RADIUS authentication of '%Y' successful":
+       a remote-access user logged in. -->
+  <rule id="131585" level="3">
+    <if_sid>131580</if_sid>
+    <match type="pcre2">(?:XAuth|RADIUS) authentication of '[^']*' successful</match>
+    <description>IPsec: remote access user $(dstuser) logged in on $(opnsense.ipsec_conn)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,vpn,</group>
+  </rule>
+
+  <!-- "giving up after %d retransmits": the peer stopped answering; the tunnel is down. -->
+  <rule id="131586" level="5">
+    <if_sid>131580</if_sid>
+    <match type="pcre2">giving up after \d+ (?:retransmits|retries|path probings)</match>
+    <description>IPsec: peer of $(opnsense.ipsec_conn) stopped responding, tunnel torn down</description>
+    <group>vpn,availability,</group>
+  </rule>
+
+  <!-- "no IKE config found for %H...%H, sending %N": someone who is not a
+       configured peer. Recorded; a burst from one address is a scan. -->
+  <rule id="131587" level="2">
+    <if_sid>131580</if_sid>
+    <match type="pcre2">no IKE config found for </match>
+    <description>IPsec: IKE request from $(srcip), not a configured peer</description>
+  </rule>
+
+  <rule id="131588" level="6" frequency="10" timeframe="600" ignore="1800">
+    <if_matched_sid>131587</if_matched_sid>
+    <same_source_ip />
+    <description>IPsec: $(srcip) keeps sending IKE requests without being a configured peer, a scan</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>recon,vpn,</group>
+  </rule>
+
+  <!-- ==============================================================
+       CrowdSec (agent group reads /var/log/crowdsec/crowdsec.log)
+       ============================================================== -->
+
+  <rule id="131590" level="0">
+    <decoded_as>jt-crowdsec</decoded_as>
+    <description>CrowdSec messages grouped</description>
+  </rule>
+
+  <!-- "(<machine>/<origin>) <scenario> by ip <ip> (<cc>/<asn>) : <duration> <type> on Ip <ip>"
+       CrowdSec has already blocked the address through its bouncer. -->
+  <rule id="131591" level="5">
+    <if_sid>131590</if_sid>
+    <field name="crowdsec.decision" type="pcre2">^\S+$</field>
+    <description>CrowdSec: $(crowdsec.decision) on $(srcip) for $(crowdsec.duration) ($(crowdsec.scenario))</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>crowdsec,ids,</group>
+  </rule>
+
+  <rule id="131592" level="3">
+    <if_sid>131591</if_sid>
+    <field name="crowdsec.simulated" type="pcre2">simulated</field>
+    <description>CrowdSec: simulated $(crowdsec.decision) on $(srcip) ($(crowdsec.scenario)), nothing was blocked</description>
+    <group>crowdsec,</group>
+  </rule>
+
+  <!-- "%s %s performed '%s' (%d events over %s) at %s": the trigger of the decision above. -->
+  <rule id="131593" level="2">
+    <if_sid>131590</if_sid>
+    <field name="crowdsec.events" type="pcre2">^\d+$</field>
+    <description>CrowdSec: $(srcip) triggered $(crowdsec.scenario) ($(crowdsec.events) events)</description>
+    <group>crowdsec,</group>
+  </rule>
+
+  <rule id="131594" level="7">
+    <if_sid>131590</if_sid>
+    <field name="crowdsec.level" type="pcre2">^(?:fatal|panic)$</field>
+    <description>CrowdSec stopped with a fatal error, attacks are no longer blocked</description>
+    <group>crowdsec,availability,</group>
+  </rule>
+
+  <!-- ==============================================================
+       Rootcheck false positive on the EFI system partition
+       ============================================================== -->
+
+  <!-- Rootcheck compares a directory's link count with the entries it can read.
+       FAT (msdosfs), the file system of /boot/efi, has no link counts, so every
+       directory there "hides files". Measured: 56 level 7 alerts a week on one
+       firewall, all for /boot/efi/efi, /boot/efi/efi/boot and /boot/efi/efi/freebsd.
+       Only that exact message under /boot/efi. -->
+  <rule id="131595" level="0">
+    <if_sid>510</if_sid>
+    <match type="pcre2">^Files hidden inside directory '/boot/efi(?:/[^']*)?'\. Link count does not match number of files \(\d+,\d+\)\.?$</match>
+    <description>Rootcheck: link count mismatch on the FAT EFI partition, not hidden files</description>
+  </rule>
+
+  <!-- ==============================================================
+       The os-wazuh-agent plugin's active response (opnsense-fw)
+       writes "Active response executed (add|delete <ip>)" to active-responses.log
+       ============================================================== -->
+
+  <rule id="131597" level="3">
+    <decoded_as>jt-opnsense-fw-ar</decoded_as>
+    <action>add</action>
+    <description>OPNsense: $(srcip) added to the Wazuh blocklist alias by active response</description>
+    <group>active_response,</group>
+  </rule>
+
+  <rule id="131598" level="2">
+    <decoded_as>jt-opnsense-fw-ar</decoded_as>
+    <action>delete</action>
+    <description>OPNsense: $(srcip) removed from the Wazuh blocklist alias</description>
+    <group>active_response,</group>
+  </rule>
+
+</group>

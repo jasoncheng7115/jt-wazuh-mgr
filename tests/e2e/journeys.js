@@ -525,6 +525,46 @@ async function run() {
     check('the list no longer offers an update', !/update 3\.1/.test(after) && /Installed/.test(after), after.slice(0, 160));
   });
 
+  await journey('J23 a pack response is switched on and off for every node', async () => {
+    await tab('packs', 1800);
+    const inst = await page.evaluate(async () => (await api('/packs/jt-proxmox/install', 'POST', {})) || {});
+    check('the pack installs', inst.success, JSON.stringify(inst).slice(0, 160));
+    const before = await page.evaluate(async () => await api('/packs/jt-proxmox/active-response'));
+    const offered = before.responses || [];
+    check('installing switched no response on', offered.length > 0 && offered.every(r => !(r.enabled_on || []).length),
+      JSON.stringify(before).slice(0, 200));
+    await page.evaluate(() => showPackDetail('jt-proxmox'));
+    await wait(2200);
+    const detail = await page.$eval('#modalBody', e => e.innerText);
+    check('the detail lists the response as not enabled', /Active response/.test(detail) && /Not enabled/.test(detail), detail.slice(0, 200));
+    check('the addresses that are never blocked are shown', /white_list/.test(detail));
+    const arId = (offered[0] || {}).id;
+    await page.evaluate(id => enablePackAr('jt-proxmox', id), arId);
+    await wait(800);
+    check('enabling asks for the block time first', await page.evaluate(() => !!document.getElementById('packArTimeout')));
+    // fill and press in one evaluation: the auto-refresh can redraw the dialog in between
+    await page.evaluate(() => {
+      document.getElementById('packArTimeout').value = '900';
+      const b = [...document.querySelectorAll('#modalFooter button')].find(x => /Enable/.test(x.textContent));
+      if (b) b.click();
+    });
+    await wait(2800);
+    const after = await page.evaluate(async () => await api('/packs/jt-proxmox/active-response'));
+    const on = (after.responses || []).find(x => x.id === arId) || {};
+    check('the response is on for both nodes', (on.enabled_on || []).length === 2, JSON.stringify(on.enabled_on));
+    check('the chosen block time is kept', on.record && on.record.timeout === 900, JSON.stringify(on.record));
+    const shown = await page.$eval('#modalBody', e => e.innerText);
+    check('the detail says a manager restart is still needed', /restarts on/.test(shown) && /Enabled/.test(shown), shown.slice(0, 300));
+    // not awaited: it waits for the confirmation below
+    await page.evaluate(id => { disablePackAr('jt-proxmox', id); }, arId);
+    await confirmDialog();
+    await wait(2800);
+    const offNow = await page.evaluate(async () => await api('/packs/jt-proxmox/active-response'));
+    const off = (offNow.responses || []).find(x => x.id === arId) || {};
+    check('disabling takes it off every node', !(off.enabled_on || []).length, JSON.stringify(off.enabled_on));
+    await closeModal();
+  });
+
   await journey('J16 security headers are present on a real response', async () => {
     const resp = await page.goto(BASE + '/login', { waitUntil: 'networkidle2' });
     const h = resp.headers();

@@ -1,0 +1,40 @@
+<!--
+  jt-nextcloud: Nextcloud server log (nextcloud.log) and audit log (admin_audit app)
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  The agent group "nextcloud" sends every line of the two logs with the
+  prefix "jt-nextcloud: " (localfile out_format). This decoder reads that
+  shape: all JSON keys as Wazuh's json decoder would give them (the key
+  "user" becomes dstuser, "url" stays url), plus remoteAddr a second time as
+  srcip.
+
+  Why the prefix (all measured on Wazuh 4.14.7):
+  - A JSON line without it is taken by the built-in "json" decoder, which has
+    no way to turn remoteAddr into srcip. Without srcip no frequency rule can
+    count per address, no CDB address list applies, and no active response
+    can block anything.
+  - A child decoder of "json" is not an option: as soon as "json" has one
+    child, every other JSON event on the manager (Suricata, cloud
+    integrations) loses all of its fields and falls to rule 1002.
+  - The prematch ends at the colon on purpose: the JSON plugin starts one
+    character after the prematch, which skips the space.
+
+  Lines that occ and cron write have no address (remoteAddr is two dashes);
+  they get no srcip.
+-->
+
+<decoder name="jt-nextcloud">
+  <prematch>^jt-nextcloud:</prematch>
+</decoder>
+
+<decoder name="jt-nextcloud-fields">
+  <parent>jt-nextcloud</parent>
+  <prematch>^jt-nextcloud:</prematch>
+  <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
+</decoder>
+
+<decoder name="jt-nextcloud-fields">
+  <parent>jt-nextcloud</parent>
+  <regex type="pcre2">"remoteAddr":"([0-9A-Fa-f.:]+)"</regex>
+  <order>srcip</order>
+</decoder>

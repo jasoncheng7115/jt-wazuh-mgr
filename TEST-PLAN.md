@@ -136,7 +136,7 @@ release-time change.
 ## Layer 4 — browser journeys, automated
 
 ```bash
-tests/e2e/run.sh          # 22 journeys, 103 checks, needs docker
+tests/e2e/run.sh          # 23 journeys, 112 checks, needs docker
 ```
 
 `tests/e2e/mock_api.py` serves the real application against a mocked, stateful
@@ -262,6 +262,18 @@ decodes the JSON as plain `json`, so no Windows rule is ever reached, whatever
 in the suite, against values shaped exactly as analysisd decodes them (two
 backslashes per separator), and on a host with a real event.
 
+Before a pack goes near a manager, `tools/pack_sandbox.py` runs it in a
+throwaway Wazuh manager container (`up`, `install`, `test`, `down`; it needs
+docker and the `wazuh/wazuh-manager` image). `install` fails on any error or
+warning from `wazuh-analysisd -t`, because a warning is how analysisd reports a
+rule it is ignoring. `test` replays `tests/pack_cases/<pack>.json` through
+`wazuh-logtest`: real lines (sanitised) and synthesised ones, a near miss for
+every rule that matters, `repeat` for frequency rules, and several lines joined
+by a newline for a sequence in one session. Every pack from 1.13.0 on is checked
+this way before release. What logtest cannot show (the `ignore` interval,
+file-integrity and auditd events, the agent-side `<ignore>` and `out_format`) is
+checked by feeding files to the container's own logcollector, or on a host.
+
 Check both sides of every scenario: the rule that should fire, and the near miss
 that should not. On a cluster, repeat the Windows scenarios on the worker, which
 is usually the node processing Windows agents.
@@ -295,6 +307,7 @@ is usually the node processing Windows agents.
 | portable-detect | programs started through WMI (parent WmiPrvSE) from `C:\JtwmRoot\`, the Recycle Bin, `C:\Windows\tracing\`; `ngrok.exe` from the root folder | 906177 (3); 906178 (10); 906174 (12); 906176 (12). Before 3.4 all four ended at the built-in level 0 rule 92069 | real event, after merging the 3.4 Sysmon fragment |
 | portable-detect | on a Linux host with the 3.4 auditd file: a program run from `/run/user/0` in a session opened after the rules were loaded; from `/var/crash` | 906211 (12) for both | real event |
 | any pack with a list | the list after the nightly update | `.cdb` newer than the text on every node | `ls -l etc/lists` on each node |
+| any pack with an active response | enable it, then look at `ossec.conf` on every node; disable it | the marked block on every node and the configuration valid; then the file exactly as before | the pack detail page, then `cat etc/ossec.conf` on each node |
 
 ---
 
@@ -304,14 +317,15 @@ Stated plainly, because a test plan that implies more coverage than exists is
 worse than a short one.
 
 - **Browser automation covers the main journeys only.** Layer 4 drives a real
-  browser through 22 journeys; everything in Layer 4b is still checked by hand.
+  browser through 23 journeys; everything in Layer 4b is still checked by hand.
 - **The success paths of destructive routes are not exercised in CI**, for the
   reason given in Layer 1.
 - **No load or concurrency testing.** Behaviour with thousands of agents, or with
   two operators editing one configuration, is unmeasured.
 - **No upgrade testing across versions.** Installing over an older release is
   verified by hand.
-- **The packs' detection rules are not tested against sample logs in CI.** They
-  are verified on a manager, by hand, per scenario, as listed in Layer 6. Sibling
-  rules under one parent evaluate in an unpredictable order, so a rule that
-  passes in isolation can still be shadowed in place.
+- **The packs' detection rules are not tested against sample logs in the offline
+  suite.** They are tested in the sandbox described in Layer 6, which needs docker
+  and is run by hand before a release, and the scenarios listed there are verified
+  on a manager. A sandbox holds the built-in ruleset and one pack, so a pack that
+  passes alone can still be shadowed by another pack or a site rule in place.

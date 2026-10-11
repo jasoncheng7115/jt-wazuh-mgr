@@ -1,0 +1,152 @@
+{
+ "id": "jt-synology",
+ "name": "Synology DSM Detection Suite",
+ "name_zh": "Synology DSM 偵測套組",
+ "version": "1.0",
+ "summary": "Sign-ins, brute force and auto block, Hyper Backup results, storage and drive health, power, packages and account changes on Synology DSM, from Log Center syslog; quiets the service accounts that sign in every few seconds.",
+ "summary_zh": "Synology DSM 的登入、暴力破解與自動封鎖、Hyper Backup 結果、儲存與硬碟健康、電源、套件與帳號變更，來源為記錄中心的 syslog；並讓每隔幾秒就登入的服務帳號安靜下來。",
+ "rule_id_range": "132000-132099",
+ "notes": [
+  "Wazuh 4.14.7 ships no Synology decoder: DSM's sign-in lines reached the manager undecoded and matched nothing, or the generic rule 1002 when they contained the word failure. The pack decodes DSM's Connection, System and Hyper Backup categories and the file transfer logs in the BSD (RFC 3164) format that Log Center sends by default, and also the DSM 6 wording and the IETF (RFC 5424) format.",
+  "The noise it removes: storage and monitoring clients that sign in to DSM every few seconds. Measured on one NAS: 48,987 successful sign-ins a day, all one account polling from five Proxmox VE hosts, which as level 3 alerts came to 364,471 in a week. List such accounts in etc/lists/jt-synology-service-accounts and their sign-ins drop to level 0. Their failed logins and SSH logins still alert. A listed account is trusted from any address, so restrict it in DSM as well (a dedicated account with only the permissions it needs).",
+  "Logins: a DSM sign-in or a login to another service is level 3. A shell login over SSH or Telnet, which DSM allows only to administrators, is level 5, and so is a sign-in by an account listed in etc/lists/jt-synology-admin-accounts (DSM's built-in admin is listed by default). Opening a shared folder over SMB and the password step of a two-factor sign-in are recorded below the alert level.",
+  "Failures: a failed sign-in or login is level 5, a correct password followed by a failed second factor level 6. Eight failures from one address in two minutes is level 10, split into internal (132024) and external (132025) addresses so that a response can be tied to external ones only; ten failures for one account in five minutes is level 10. DSM's own auto block of an address is level 10 (132027 internal, 132028 external). An SMB client refused for offering only NTLMv1 is level 3 and does not count as a password guess: on the NAS measured, all 835 such refusals in a year came from one network scanner trying the guest account.",
+  "Hyper Backup: a successful task is level 2 (recorded, no alert), a failed task level 10, the same task failing three times in three days level 12, a partial backup level 7, a cancelled or skipped one level 5. A deleted backup task is level 8, because deleting backups is what ransomware operators do before encrypting (MITRE T1490).",
+  "System log: account and group changes, password changes and a two-factor reset are level 6, an account added to administrators level 8; a degraded or crashed volume or storage pool level 12; a failing drive (S.M.A.R.T., bad sectors) level 10; running on UPS battery level 8, low battery or safe mode level 10; package installs and removals level 5; SSH or Telnet started and firewall or auto block settings changed level 6; a shared folder deleted level 8; Security Advisor findings level 5, malware found level 10.",
+  "File transfer logs are off in DSM by default and write one line per file operation. With them on, deletes and renames alert only in bulk: 300 deletions in a minute by one account is level 10, 100 renames in a minute level 12, the second being how file-encrypting malware looks from the NAS. Reads and writes never alert.",
+  "What was checked against a real DSM 7 NAS: the sign-in, failed sign-in, two-factor, NTLMv1 and Hyper Backup success lines. The share access, SSH, auto block, file transfer, Hyper Backup failure and DSM 6 wording comes from published samples of real devices. The System log rules follow DSM's message catalogue and could not be checked on a device, so they key on a few stable words; check them with a real event before relying on them.",
+  "Deliberately not done: logins carry no built-in authentication_success group, because that attaches built-in correlation rules (40101 for system account names, which include guest, and 40112) next to the allowlist. Active Backup for Business and Snapshot Replication keep their logs in their own consoles and were not available to sample, so they are not decoded. The NAS runs no agent, so a response can only act elsewhere (see the active response).",
+  "PREREQUISITE: the manager must accept syslog from the NAS (a <remote> block with connection syslog and the NAS in allowed-ips) and Log Center must send in BSD format. In a cluster, the node that receives the syslog analyses it: declare the two lists in that node's ossec.conf too, because the cluster copies list files but not ossec.conf."
+ ],
+ "notes_zh": [
+  "Wazuh 4.14.7 沒有內建 Synology 解碼器：DSM 的登入記錄送到管理端後沒有解碼、不命中任何規則，含有 failure 字樣時只命中通用的 1002。本套件解碼 DSM 的 Connection、System、Hyper Backup 類別與檔案傳輸記錄，格式為記錄中心預設送出的 BSD（RFC 3164），也接受 DSM 6 的寫法與 IETF（RFC 5424）格式。",
+  "它要解決的雜訊：每隔幾秒就登入 DSM 一次的儲存或監控用戶端。在一台 NAS 上實測：每天 48,987 次成功登入，全是同一個帳號從五台 Proxmox VE 主機輪詢，以 level 3 告警計算一週就是 364,471 筆。把這類帳號加入 etc/lists/jt-synology-service-accounts，它們的登入就降為 level 0。這些帳號的登入失敗與 SSH 登入仍會告警。名單上的帳號不論從哪個位址登入都被視為例行，所以請同時在 DSM 端限制它（專用帳號、只給必要的權限）。",
+  "登入：DSM 登入或其他服務的登入為 level 3。經 SSH 或 Telnet 登入 shell（DSM 只允許管理員這麼做）為 level 5，etc/lists/jt-synology-admin-accounts 名單上的帳號登入也是 level 5（預設已列入 DSM 內建的 admin）。經 SMB 開啟共用資料夾、兩步驟驗證的密碼階段，都記錄在告警等級之下。",
+  "失敗：登入失敗為 level 5，密碼正確但第二道驗證失敗為 level 6。同一位址兩分鐘內失敗八次為 level 10，並依內部（132024）與外部（132025）位址分開，讓主動回應可以只綁外部位址；同一帳號五分鐘內失敗十次為 level 10。DSM 自己的自動封鎖為 level 10（132027 內部、132028 外部）。SMB 用戶端因為只提供 NTLMv1 而被拒為 level 3，不算猜密碼：實測的那台 NAS 一年內 835 次這類拒絕，全部來自同一台以 guest 帳號嘗試的網路掃描主機。",
+  "Hyper Backup：工作成功為 level 2（記錄但不告警），失敗為 level 10，同一工作三天內失敗三次為 level 12，部分完成為 level 7，取消或略過為 level 5。刪除備份工作為 level 8，因為勒索軟體攻擊者在加密前就是先刪備份（MITRE T1490）。",
+  "系統記錄：帳號與群組變更、密碼變更、兩步驟驗證被重設為 level 6，帳號被加入 administrators 為 level 8；磁碟區或儲存集區降級、損毀為 level 12；硬碟故障（S.M.A.R.T.、壞軌）為 level 10；改由 UPS 電池供電為 level 8，電池電量低或進入安全模式為 level 10；套件安裝與移除為 level 5；啟動 SSH 或 Telnet、變更防火牆或自動封鎖設定為 level 6；刪除共用資料夾為 level 8；資安顧問的發現為 level 5，發現惡意程式為 level 10。",
+  "檔案傳輸記錄在 DSM 預設是關閉的，而且每一個檔案操作就寫一行。開啟後，刪除與重新命名只在大量發生時告警：同一帳號一分鐘內刪除 300 個檔案為 level 10，一分鐘內重新命名 100 個檔案為 level 12，後者正是加密型惡意程式從 NAS 端看起來的樣子。讀取與寫入一律不告警。",
+  "以真實的 DSM 7 NAS 驗證過的：登入、登入失敗、兩步驟驗證、NTLMv1 與 Hyper Backup 成功的記錄。共用資料夾存取、SSH、自動封鎖、檔案傳輸、Hyper Backup 失敗與 DSM 6 的寫法，取自真實裝置公開的樣本。系統記錄的規則依 DSM 的訊息目錄撰寫，沒能在裝置上驗證，因此只比對少數穩定的字詞；正式依賴之前請先用真實事件確認。",
+  "刻意不做的：登入不帶內建的 authentication_success 群組，因為那會把內建的關聯規則（針對系統帳號名稱的 40101，名單包含 guest，以及 40112）掛到允許清單規則的旁邊。Active Backup for Business 與 Snapshot Replication 的記錄在各自的主控台裡，沒有樣本可取，所以不解碼。NAS 上沒有 agent，主動回應只能在別處執行（見主動回應）。",
+  "前提條件：管理端必須接受 NAS 送來的 syslog（<remote> 區段設 connection 為 syslog，並把 NAS 加入 allowed-ips），記錄中心必須以 BSD 格式送出。叢集環境由接收 syslog 的那個節點負責分析：請在該節點的 ossec.conf 也宣告這兩份清單，因為叢集只同步清單檔、不同步 ossec.conf。"
+ ],
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.7"
+ ],
+ "files": [
+  {
+   "type": "decoder",
+   "name": "jt-synology_decoders.xml",
+   "dest": "etc/decoders/jt-synology_decoders.xml",
+   "sha256": "a36272a5c8b99976cae499da2aaff625faafd8f6beeedaed7773b419e94d8db6"
+  },
+  {
+   "type": "rule",
+   "name": "jt-synology_rules.xml",
+   "dest": "etc/rules/jt-synology_rules.xml",
+   "sha256": "dfbb6dad04d933e4dd99319d4a94a9cac3d96622dc8e2e76b9e427d0496c9fce"
+  },
+  {
+   "type": "list",
+   "name": "jt-synology-service-accounts",
+   "dest": "etc/lists/jt-synology-service-accounts",
+   "declare": true,
+   "keep": true,
+   "sha256": "f26f0c26987f6da9ab6a56ce6df81d5cbbfd16ec76201878f4001c8e5b38b4de"
+  },
+  {
+   "type": "list",
+   "name": "jt-synology-admin-accounts",
+   "dest": "etc/lists/jt-synology-admin-accounts",
+   "declare": true,
+   "keep": true,
+   "sha256": "df6afec3ede607deff23e7fc7b4ea83b489ad1e7d166f60931b9e780456dbdc0"
+  }
+ ],
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset on every node",
+   "title_zh": "安裝套件並在所有節點重新載入規則集",
+   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Accept syslog from the NAS on the manager",
+   "title_zh": "讓管理端接受 NAS 送來的 syslog",
+   "body": "Add a <remote> block with connection syslog to ossec.conf on the node the NAS will send to, with the NAS address in allowed-ips (one block per port and protocol: a syslog block with <protocol>tcp,udp</protocol> listens on TCP only, with just a warning in ossec.log; a node that already listens for syslog only needs the address added). Open the port in the manager's host firewall. remoted reads <remote> only when it starts, so restart the manager: agents reconnect within a minute. In a cluster, also declare etc/lists/jt-synology-service-accounts and etc/lists/jt-synology-admin-accounts in that node's <ruleset>, because the cluster copies list files but not ossec.conf.",
+   "body_zh": "在 NAS 要送往的那個節點的 ossec.conf 加上 connection 為 syslog 的 <remote> 區段，並把 NAS 位址加入 allowed-ips（每個連接埠與協定一個區段：syslog 區段寫 <protocol>tcp,udp</protocol> 時只會聽 TCP，ossec.log 裡只有一則警告；已經在收 syslog 的節點只要加上位址）。在管理端主機的防火牆開放該連接埠。remoted 只在啟動時讀取 <remote>，所以要重新啟動管理端：agent 會在一分鐘內重新連線。叢集環境還要在該節點的 <ruleset> 宣告 etc/lists/jt-synology-service-accounts 與 etc/lists/jt-synology-admin-accounts，因為叢集只同步清單檔、不同步 ossec.conf。",
+   "code": "<remote>\n  <connection>syslog</connection>\n  <port>514</port>\n  <protocol>udp</protocol>\n  <allowed-ips>192.0.2.20</allowed-ips>\n</remote>\n\n/var/ossec/bin/wazuh-control restart",
+   "verify": "tcpdump -i any -nn -A 'udp port 514 and host 192.0.2.20' shows lines such as <14>Oct 11 11:12:30 nas1 Connection: User [...] once the NAS sends.",
+   "verify_zh": "NAS 開始送出後，tcpdump -i any -nn -A 'udp port 514 and host 192.0.2.20' 應看到 <14>Oct 11 11:12:30 nas1 Connection: User [...] 這類記錄。"
+  },
+  {
+   "platform": "network",
+   "required": true,
+   "title": "Send the DSM logs to the manager from Log Center",
+   "title_zh": "在 DSM 記錄中心把記錄送到管理端",
+   "body": "In DSM 7 open Log Center, Log Sending, and tick Send logs to a syslog server. Server: the manager node's address. Port and transfer protocol: those of the <remote> block (UDP, or TCP if the block says tcp). Log format: BSD (RFC 3164). Leave SSL off: Wazuh's syslog listener does not accept TLS. IETF (RFC 5424) also decodes, but Wazuh 4.x does not parse its header, so those alerts carry no host or program name, and over TCP Wazuh needs one message per line: a sender that frames IETF messages by length instead is never received. Apply, then Send test log. The change takes effect at once and does not interrupt any service on the NAS.",
+   "body_zh": "在 DSM 7 開啟「記錄中心」→「記錄傳送」，勾選「傳送記錄到 syslog 伺服器」。伺服器：管理端節點的位址。連接埠與傳輸協定：與 <remote> 區段相同（UDP；區段若設 tcp 則選 TCP）。記錄格式：BSD（RFC 3164）。不要勾選 SSL：Wazuh 的 syslog 接收端不支援 TLS。IETF（RFC 5424）也能解碼，但 Wazuh 4.x 不解析它的標頭，告警會缺少主機與程式名稱；而且走 TCP 時 Wazuh 要求一行一則訊息，以長度分隔 IETF 訊息的送出端完全收不到。套用後按「傳送測試記錄」。設定立即生效，不會中斷 NAS 上的任何服務。",
+   "verify": "Sign in to DSM in a browser. Expect rule 132010 (level 3) on the manager, or 132015 (level 0) if the account is in the service account list. Send test log should raise 132096.",
+   "verify_zh": "用瀏覽器登入 DSM，管理端應出現規則 132010（level 3）；若該帳號在服務帳號清單中則為 132015（level 0）。「傳送測試記錄」應觸發 132096。"
+  },
+  {
+   "platform": "network",
+   "required": false,
+   "title": "Turn on Auto Block and Account Protection in DSM",
+   "title_zh": "在 DSM 啟用自動封鎖與帳號保護",
+   "body": "Control Panel, Security, Protection: enable Auto Block (for example 10 attempts within 5 minutes) and Account Protection. DSM then blocks the address itself and logs it, which raises 132027 or 132028. Put the management networks in the Auto Block allow list first, or an administrator who mistypes a password locks himself out of the NAS.",
+   "body_zh": "「控制台」→「安全性」→「保護」：啟用「自動封鎖」（例如 5 分鐘內嘗試 10 次）與「帳號保護」。DSM 會自己封鎖該位址並記錄下來，觸發 132027 或 132028。請先把管理網段加入自動封鎖的允許清單，否則打錯密碼的管理員會把自己擋在 NAS 外面。"
+  },
+  {
+   "platform": "network",
+   "required": false,
+   "title": "Turn on the file transfer logs for deletes and renames",
+   "title_zh": "開啟檔案傳輸記錄（刪除與重新命名）",
+   "body": "Control Panel, File Services, SMB: tick Enable transfer logs, then in Log Settings choose delete, rename and move (the same for AFP, FTP or WebDAV if they are used). Leave read and write off: every file operation is one syslog message, and on a busy share reads and writes are thousands a minute. Only bulk deletes and renames alert (132052, 132053).",
+   "body_zh": "「控制台」→「檔案服務」→「SMB」：勾選「啟用傳輸記錄」，在「記錄設定」選擇刪除、重新命名與移動（有使用 AFP、FTP、WebDAV 的話也一樣）。讀取與寫入請保持關閉：每一個檔案操作就是一則 syslog，繁忙的共用資料夾每分鐘的讀寫會有數千筆。只有大量刪除與重新命名會告警（132052、132053）。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "List the accounts that sign in for monitoring or storage",
+   "title_zh": "列出用於監控或儲存而頻繁登入的帳號",
+   "body": "One line per account, the name exactly as DSM writes it between the brackets, then reload the ruleset. Their successful logins stop alerting; their failures and SSH logins still do.",
+   "body_zh": "每個帳號一行，名稱與 DSM 記錄中方括號裡的寫法完全相同，加入後重新載入規則集。這些帳號的成功登入不再告警；失敗與 SSH 登入仍會告警。",
+   "code": "echo 'storage-client:service' >> /var/ossec/etc/lists/jt-synology-service-accounts"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "List the administrator accounts",
+   "title_zh": "列出管理員帳號",
+   "body": "Sign-ins by listed accounts are level 5 instead of 3. DSM's built-in admin is listed by default; add the accounts in the administrators group, then reload the ruleset.",
+   "body_zh": "名單上帳號的登入為 level 5 而不是 3。預設已列入 DSM 內建的 admin；請加入 administrators 群組中的帳號，再重新載入規則集。",
+   "code": "echo 'nas-admin:admin' >> /var/ossec/etc/lists/jt-synology-admin-accounts"
+  }
+ ],
+ "active_response": [
+  {
+   "id": "edge-block-external-bruteforce",
+   "command": "firewall-drop",
+   "rules_id": [
+    "132025",
+    "132028"
+   ],
+   "location": "defined-agent",
+   "timeout": 3600,
+   "title": "Block an external address that attacks the NAS, at the edge firewall",
+   "title_zh": "在邊界防火牆封鎖攻擊 NAS 的外部位址",
+   "body": "The NAS runs no agent, so Wazuh cannot block anything on it; DSM's own Auto Block already blocks the address there. This response blocks the address one step further out, on the edge firewall, for an hour, after a brute force from an external address (132025) or a DSM auto block of one (132028), so that it cannot move on to other services. Set the location to the agent on the edge firewall: firewall-drop works on a Linux firewall (iptables or nftables); on OPNsense use the os-wazuh-agent plugin's opnsense-fw command instead. Never use location local: these events are made by the manager from syslog, so local blocks on the manager. Internal addresses (132024, 132027) have no response: the edge firewall does not stand between them and the NAS. Risk: a public address shared by many people (an office or partner NAT, a mobile carrier's CGNAT) is cut off from the whole site, not only the NAS, for an hour after one of them mistypes a password eight times. If DSM is published behind a reverse proxy or relay, DSM may log the proxy's address and the response would block the proxy. Syslog carries no authentication: anyone who can send a UDP packet with the NAS's source address can invent a line and get any address blocked, so narrow allowed-ips to the NAS and prefer TCP before enabling this. Put your own public and VPN egress addresses in the manager's white_list first.",
+   "body_zh": "NAS 上沒有 agent，Wazuh 無法在 NAS 上封鎖任何東西；DSM 自己的自動封鎖已經在 NAS 上擋下該位址。這個回應在更外層的邊界防火牆封鎖該位址一小時，觸發條件是外部位址的暴力破解（132025）或 DSM 自動封鎖了外部位址（132028），讓它無法轉往其他服務。location 請設為邊界防火牆上的 agent：Linux 防火牆用 firewall-drop（iptables 或 nftables）；OPNsense 請改用 os-wazuh-agent 外掛提供的 opnsense-fw 指令。絕對不要用 local：這些事件是管理端從 syslog 產生的，local 會封鎖在管理端本身。內部位址（132024、132027）不掛回應：邊界防火牆並不在它們與 NAS 之間。風險：多人共用的公開位址（辦公室或合作夥伴的 NAT、行動業者的 CGNAT）只要其中一人連續打錯八次密碼，整個站台（不只 NAS）就會對它們斷線一小時。若 DSM 是透過反向代理或中繼對外，DSM 記到的可能是代理的位址，回應會把代理擋掉。syslog 沒有任何認證：任何能以 NAS 來源位址送出 UDP 封包的人，都能偽造一行記錄讓任意位址被封鎖，所以啟用前請把 allowed-ips 縮小到 NAS 本身，並優先使用 TCP。請先把自己的公開位址與 VPN 出口位址加入管理端的 white_list。"
+  }
+ ]
+}

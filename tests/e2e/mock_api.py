@@ -118,7 +118,10 @@ def build_workdir():
         os.makedirs(os.path.join(WORKDIR, sub), exist_ok=True)
     with io.open(os.path.join(WORKDIR, 'etc/ossec.conf'), 'w', encoding='utf-8') as fh:
         fh.write('<ossec_config>\n  <global>\n    <jsonout_output>yes</jsonout_output>\n'
-                 '  </global>\n  <ruleset>\n'
+                 '    <white_list>127.0.0.1</white_list>\n'
+                 '  </global>\n'
+                 '  <command>\n    <name>firewall-drop</name>\n    <executable>firewall-drop</executable>\n'
+                 '    <timeout_allowed>yes</timeout_allowed>\n  </command>\n  <ruleset>\n'
                  '    <decoder_dir>ruleset/decoders</decoder_dir>\n'
                  '    <rule_dir>ruleset/rules</rule_dir>\n'
                  '    <list>etc/lists/audit-keys</list>\n'
@@ -394,7 +397,9 @@ def fake_request(self, method, endpoint, data=None, params=None):
             'wazuh-monitord', 'wazuh-logcollector', 'wazuh-execd',
             'wazuh-syscheckd', 'wazuh-clusterd')}])
     if '/daemons/stats' in ep:
-        return items([{'name': d, 'metrics': {'uptime': 864000, 'events_processed': 91234}}
+        # 4.14 reports when each daemon started as a top-level "uptime".
+        return items([{'name': d, 'uptime': '2026-09-01T10:00:00+00:00',
+                       'metrics': {'uptime': 864000, 'events_processed': 91234}}
                       for d in ('wazuh-analysisd', 'wazuh-remoted', 'wazuh-db')])
     if 'configuration/validation' in ep:
         return items([{'status': 'OK'}])
@@ -439,6 +444,10 @@ def fake_request(self, method, endpoint, data=None, params=None):
 
     if ep.startswith('/agents/') and ep.endswith('/key'):
         return items([{'id': ep.split('/')[2], 'key': 'REDACTED-DEMO-KEY'}])
+
+    if ep == '/rules' and p.get('rule_ids'):
+        # Asked before a pack's active response is switched on: is each rule loaded?
+        return items([{'id': int(r)} for r in str(p['rule_ids']).split(',') if r.isdigit()])
 
     if ep == '/logtest':
         return {'error': 0, 'data': {'token': 'e2e-token', 'output': {

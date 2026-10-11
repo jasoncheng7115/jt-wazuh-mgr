@@ -1,0 +1,184 @@
+{
+ "id": "jt-odoo",
+ "name": "Odoo ERP Detection Suite",
+ "name_zh": "Odoo ERP 偵測套組",
+ "version": "1.0",
+ "summary": "Logins, password guessing and spraying, two-factor authentication, API keys, the database manager, module changes, access denials and deletions in the Odoo server log.",
+ "summary_zh": "Odoo 伺服器記錄中的登入、猜密碼與密碼噴灑、雙因素驗證、API 金鑰、資料庫管理員、模組變更、存取被拒與刪除記錄。",
+ "rule_id_range": "132300-132399",
+ "notes": [
+  "Wazuh has no decoder for Odoo. The pack reads the Odoo server log (the file the deb package writes, /var/log/odoo/odoo-server.log, or the same lines through syslog for containers and services without a log file) and covers Odoo 16.0 to 19.0. Every message it matches was taken from the Odoo source of those branches; 19.0 dropped the database name from the login lines and both forms are decoded.",
+  "Logins: a login is level 3, the administrator (login admin, or a login listed in etc/lists/jt-odoo-admin-accounts) level 5, a failed login level 5. Eight failures from one address in five minutes are level 10; twelve failures for different accounts from one address in fifteen minutes (password spraying) level 12. A successful login from such an address within fifteen minutes is level 12 after guessing and level 13 after spraying. Odoo's own throttle (by default five failures, then 60 seconds of ignored attempts) is reported at level 7, at most once a minute.",
+  "The address in Odoo's log is the client only when Odoo runs with proxy_mode = True behind a proxy that sends X-Forwarded-For and X-Forwarded-Host (Odoo applies the forwarded address only when X-Forwarded-Host is present). Otherwise every user has the proxy's address: the brute force rules then count all users together, and blocking that address cuts everyone off. Rule 132321 (level 7) reports Odoo's throttle hitting a private address, the usual symptom.",
+  "XML-RPC and JSON-RPC integrations log in through the same code as people, one login line per run (measured on one installation: about 17 a day from two integration hosts). List their logins in etc/lists/jt-odoo-service-accounts and their logins drop to level 0; their failures still alert, and a success right after guessing from the same address still raises level 12. Portal and shop customers log in like employees, so on a public web shop every customer login is level 3.",
+  "Two-factor authentication: a wrong code is level 5 (the password had already been accepted), four wrong codes for one account in ten minutes level 10, 2FA disabled level 8, a reused code (19.0) level 5. A new API key is level 8, because it works for RPC without the second factor; an RPC login with a password refused for an account that needs an API key is level 6. Password reset mails are level 3, ten in ten minutes level 7. A login from a new device (Odoo mails the user) and a new signup are level 3.",
+  "Database manager (/web/database/, protected only by the master password): any request is level 8; a POST to backup, drop, restore, duplicate, create or change_password is level 12, and five of them from one address in ten minutes level 12 again (master password guessing). The service lines that confirm a drop, restore or duplicate are level 12, a dump, a new or a renamed database level 10, an action refused because of a wrong master password or a disabled manager level 10. The same requests in the access log of the web server in front (combined format) are level 8 and 12 when Odoo answered them.",
+  "Modules: an install or an upgrade is level 5, an uninstall level 7, a user without administrator rights trying one level 8. Access denials (ACLs and record rules) are recorded below the alert level and raise level 6 when one user collects fifteen in two minutes. A deletion of users, groups, access rules or system parameters is level 5; one call that deletes 100 records or more level 7. Odoo logs who deleted records, not who changed them; changes are not covered.",
+  "Errors are recorded below the alert level and raise level 7 when thirty arrive in five minutes; CRITICAL is level 7, a failed scheduled job level 4, a server start level 3 (with the version). Twenty requests for missing pages from one address in a minute (a scanner) are level 6.",
+  "The agent group joins each traceback to its record, so a rule can see the exception (a wrong master password is an AccessDenied in the traceback), and drops static files, images, the service worker, websocket and bus requests (56 per cent of the browser requests measured on one installation), scheduled job start and end lines and deletions by the system user. Logins and request lines are written at log_level info, the default: log_level = warn silences most of the pack.",
+  "Not covered: Odoo's syslog mode (syslog = True drops the timestamp and the process ID and is not decoded; use logfile), colored output (when Odoo writes to a terminal or ODOO_PY_COLORS is set), the PostgreSQL server, and the request lines of the websocket port in multiprocess mode (logger longpolling), which stay at level 0. A login from an address on the jt-ioc threat list is raised to level 14 by jt-ioc, which loads after this pack."
+ ],
+ "notes_zh": [
+  "Wazuh 沒有 Odoo 的解碼器。本套件讀取 Odoo 伺服器記錄（deb 套件寫的 /var/log/odoo/odoo-server.log，或容器與沒有記錄檔的服務經由 syslog 送出的同樣內容），涵蓋 Odoo 16.0 到 19.0。比對的每一則訊息都取自這幾個分支的 Odoo 原始碼；19.0 的登入訊息拿掉了資料庫名稱，兩種寫法都能解碼。",
+  "登入：一般登入為 level 3，管理者（帳號 admin，或列在 etc/lists/jt-odoo-admin-accounts 的帳號）為 level 5，登入失敗為 level 5。同一位址五分鐘內失敗八次為 level 10；同一位址十五分鐘內對不同帳號失敗十二次（密碼噴灑）為 level 12。這類位址在十五分鐘內登入成功，猜密碼之後為 level 12，密碼噴灑之後為 level 13。Odoo 自己的節流機制（預設失敗五次後，60 秒內的嘗試一律忽略）以 level 7 回報，每分鐘最多一次。",
+  "Odoo 記錄裡的位址，只有在 Odoo 以 proxy_mode = True 執行、且前面的代理伺服器送出 X-Forwarded-For 與 X-Forwarded-Host 時才是用戶端（Odoo 只在有 X-Forwarded-Host 時才採用轉送的位址）。否則每個使用者的位址都是代理伺服器：暴力破解規則會把所有使用者算在一起，封鎖那個位址等於把所有人擋在外面。規則 132321（level 7）會回報 Odoo 節流機制擋到私有位址的情形，這是最常見的徵兆。",
+  "XML-RPC 與 JSON-RPC 整合程式和人走同一段登入程式碼，每執行一次就有一筆登入記錄（某套系統實測：兩台整合主機每天約 17 筆）。把這些帳號加入 etc/lists/jt-odoo-service-accounts，它們的登入就降為 level 0；登入失敗仍會告警，同一位址猜密碼之後隨即登入成功也仍是 level 12。入口網站與網路商店的顧客登入方式和員工相同，所以公開的網路商店每一筆顧客登入都是 level 3。",
+  "雙因素驗證：驗證碼錯誤為 level 5（此時密碼已經通過），同一帳號十分鐘內錯四次為 level 10，關閉雙因素驗證為 level 8，重複使用驗證碼（19.0）為 level 5。建立 API 金鑰為 level 8，因為它不需第二因素就能使用 RPC；需要 API 金鑰的帳號以密碼登入 RPC 被拒為 level 6。密碼重設信為 level 3，十分鐘內十封為 level 7。從新裝置登入（Odoo 會寄信通知使用者）與新帳號註冊為 level 3。",
+  "資料庫管理員（/web/database/，只有主控密碼保護）：任何請求為 level 8；對 backup、drop、restore、duplicate、create、change_password 的 POST 為 level 12，同一位址十分鐘內五次再發一次 level 12（猜主控密碼）。確認刪除、還原、複製資料庫的服務記錄為 level 12，傾印、新建或改名資料庫為 level 10，因主控密碼錯誤或管理員已停用而被拒的操作為 level 10。前端網頁伺服器存取記錄（combined 格式）裡的同樣請求，若 Odoo 有回應，為 level 8 與 12。",
+  "模組：安裝或升級為 level 5，移除為 level 7，沒有管理者權限的使用者嘗試操作模組為 level 8。存取被拒（ACL 與記錄規則）記錄在告警等級之下，同一使用者兩分鐘內累積十五次時升為 level 6。刪除使用者、群組、存取規則或系統參數為 level 5；一次刪除 100 筆以上記錄為 level 7。Odoo 會記錄誰刪除了記錄，但不記錄誰修改了記錄，修改不在涵蓋範圍內。",
+  "錯誤記錄在告警等級之下，五分鐘內三十筆時升為 level 7；CRITICAL 為 level 7，排程工作失敗為 level 4，伺服器啟動為 level 3（含版本）。同一位址一分鐘內二十次要求不存在的頁面（掃描器）為 level 6。",
+  "agent 群組會把每段 traceback 併回它所屬的記錄，規則才看得到例外（主控密碼錯誤就是 traceback 裡的 AccessDenied），並丟掉靜態檔案、圖片、service worker、websocket 與 bus 請求（某套系統實測占瀏覽器請求的 56%）、排程工作的開始與結束記錄，以及系統使用者的刪除記錄。登入與請求記錄都是在 log_level info（預設值）下才會寫出：設成 log_level = warn 會讓本套件大部分規則收不到資料。",
+  "不涵蓋：Odoo 的 syslog 模式（syslog = True 會拿掉時間戳記與處理程序 ID，無法解碼；請改用 logfile）、彩色輸出（Odoo 寫到終端機或設定了 ODOO_PY_COLORS 時）、PostgreSQL 伺服器，以及多處理程序模式下 websocket 連接埠的請求記錄（logger 為 longpolling，維持 level 0）。來自 jt-ioc 威脅清單位址的登入，會由在本套件之後載入的 jt-ioc 升為 level 14。"
+ ],
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.7"
+ ],
+ "files": [
+  {
+   "type": "decoder",
+   "name": "jt-odoo_decoders.xml",
+   "dest": "etc/decoders/jt-odoo_decoders.xml",
+   "sha256": "63b6ccd64e27154762047e81b9c2d8d69db71d95e8ddd9e58136a8da3122aad6"
+  },
+  {
+   "type": "rule",
+   "name": "zz-132300-jt_odoo_rules.xml",
+   "dest": "etc/rules/zz-132300-jt_odoo_rules.xml",
+   "sha256": "9d7e91acff22c52e962ee0e7db99623e21faabb631a9965779273bd936161acc"
+  },
+  {
+   "type": "list",
+   "name": "jt-odoo-service-accounts",
+   "dest": "etc/lists/jt-odoo-service-accounts",
+   "declare": true,
+   "keep": true,
+   "sha256": "fe46449569a0ac54d8ffcd3bf6de0717522ad893aff1b49f106e4432bb1f3a2f"
+  },
+  {
+   "type": "list",
+   "name": "jt-odoo-admin-accounts",
+   "dest": "etc/lists/jt-odoo-admin-accounts",
+   "declare": true,
+   "keep": true,
+   "sha256": "898bbf628c9effd498b42f5b60ff30c54eec779c37debc721b46c9379a302cc1"
+  }
+ ],
+ "agent_group": {
+  "name": "odoo",
+  "config": "agent.conf",
+  "files": [],
+  "description": "The Odoo server log, with tracebacks joined to their record and static file, websocket and scheduled job noise dropped on the agent"
+ },
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset on every node",
+   "title_zh": "安裝套件並在所有節點重新載入規則集",
+   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Make Odoo write its log to a file at log level info",
+   "title_zh": "讓 Odoo 以 info 等級把記錄寫到檔案",
+   "body": "The deb package already writes /var/log/odoo/odoo-server.log. For a source install set logfile in the configuration file Odoo is started with (-c), keep log_level at info (the default) and leave syslog off. Restarting Odoo is a short outage. If the log is elsewhere, change the location in the group file or add the same localfile to that agent's own ossec.conf.",
+   "body_zh": "deb 套件本來就會寫 /var/log/odoo/odoo-server.log。原始碼安裝請在 Odoo 啟動時指定的設定檔（-c）設定 logfile，log_level 保持 info（預設值），不要開 syslog。重新啟動 Odoo 會短暫中斷服務。若記錄檔在其他位置，請修改群組檔案裡的路徑，或在該 agent 自己的 ossec.conf 加上同樣的 localfile。",
+   "code": "# /etc/odoo/odoo.conf (deb) or the file given with -c\n[options]\nlogfile = /var/log/odoo/odoo-server.log\nlog_level = info\n\nsystemctl restart odoo",
+   "verify": "tail -n 3 /var/log/odoo/odoo-server.log shows lines that start with the date, the time with milliseconds and the process ID.",
+   "verify_zh": "tail -n 3 /var/log/odoo/odoo-server.log 看到的每行以日期、含毫秒的時間與處理程序 ID 開頭。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Odoo in a container: send its output to a file or to syslog",
+   "title_zh": "容器裡的 Odoo：把輸出送到檔案或 syslog",
+   "body": "The official image writes to the container's output. Either set logfile = /var/log/odoo/odoo-server.log in the container's odoo.conf and mount a host directory there (writable by the user Odoo runs as in the container), or switch the container to the syslog logging driver with the tag odoo: the lines then reach the host's /var/log/syslog, which the agent already reads, but tracebacks are not joined. Do not give the container a terminal (-t, tty: true), or the output is colored and cannot be decoded. Either change recreates the container: a short outage. A service started by systemd without a log file needs SyslogIdentifier=odoo in its unit for the same reason.",
+   "body_zh": "官方映像檔把記錄寫到容器的輸出。可以在容器的 odoo.conf 設定 logfile = /var/log/odoo/odoo-server.log 並把主機目錄掛載到那裡（容器內執行 Odoo 的使用者要能寫入），或把容器的記錄驅動程式改成 syslog、標籤設為 odoo：記錄會進到主機的 /var/log/syslog（agent 本來就會讀），但 traceback 不會併回記錄。不要給容器終端機（-t、tty: true），否則輸出帶有色彩碼而無法解碼。兩種改法都會重建容器，短暫中斷服務。由 systemd 啟動且沒有記錄檔的服務，基於同樣理由需要在 unit 加上 SyslogIdentifier=odoo。",
+   "code": "# docker run\ndocker run ... --log-driver syslog --log-opt tag=odoo odoo:18\n\n# docker compose\nservices:\n  odoo:\n    logging:\n      driver: syslog\n      options:\n        tag: odoo\n\n# systemd unit without logfile\n[Service]\nSyslogIdentifier=odoo",
+   "verify": "grep ' odoo\\[' /var/log/syslog | tail -n 3 shows Odoo lines after the tag.",
+   "verify_zh": "grep ' odoo\\[' /var/log/syslog | tail -n 3 可以看到標籤後面接著 Odoo 的記錄。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Behind a reverse proxy: turn on proxy_mode and forward the client address",
+   "title_zh": "在反向代理之後：開啟 proxy_mode 並轉送用戶端位址",
+   "body": "Without this every address in Odoo's log is the proxy's. Set proxy_mode = True in odoo.conf and restart Odoo (a short outage), and have the proxy send X-Forwarded-For, X-Forwarded-Host and X-Forwarded-Proto: Odoo ignores the forwarded address when X-Forwarded-Host is missing. Odoo takes the last address in X-Forwarded-For; if a CDN sits in front of the proxy, restore the client address on the proxy first (nginx real_ip). Do not turn proxy_mode on when clients reach Odoo directly: they could then claim any address.",
+   "body_zh": "不這樣設定，Odoo 記錄裡的每個位址都是代理伺服器。在 odoo.conf 設定 proxy_mode = True 並重新啟動 Odoo（短暫中斷服務），並讓代理伺服器送出 X-Forwarded-For、X-Forwarded-Host 與 X-Forwarded-Proto：缺少 X-Forwarded-Host 時 Odoo 不會採用轉送的位址。Odoo 取 X-Forwarded-For 的最後一個位址；代理伺服器前面若還有 CDN，請先在代理伺服器還原用戶端位址（nginx real_ip）。用戶端直接連到 Odoo 時不要開 proxy_mode，否則用戶端可以自稱任何位址。",
+   "code": "# odoo.conf\nproxy_mode = True\n\n# nginx, in the server block for Odoo\nproxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\nproxy_set_header X-Forwarded-Host $host;\nproxy_set_header X-Forwarded-Proto $scheme;",
+   "verify": "Log in from a workstation: rule 132312 shows the workstation's address, not the proxy's.",
+   "verify_zh": "從工作站登入：規則 132312 顯示的是工作站的位址，而不是代理伺服器的位址。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Assign the Odoo host to the odoo group",
+   "title_zh": "把 Odoo 主機加入 odoo 群組",
+   "body": "The group reads /var/log/odoo/odoo-server.log, joins tracebacks to their record and drops static file, websocket and bus requests, scheduled job start and end lines and deletions by the system user before they reach the manager.",
+   "body_zh": "群組會讀取 /var/log/odoo/odoo-server.log，把 traceback 併回所屬記錄，並在送到 manager 之前丟掉靜態檔案、websocket 與 bus 請求、排程工作的開始與結束記錄，以及系統使用者的刪除記錄。",
+   "file": "agent/agent.conf",
+   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g odoo\n/var/ossec/bin/agent_control -R -u <agent_id>",
+   "verify": "Log in to Odoo with a wrong password. Expect rule 132315 (level 5) on the manager.",
+   "verify_zh": "以錯誤的密碼登入 Odoo，manager 端應出現規則 132315（level 5）。"
+  },
+  {
+   "platform": "network",
+   "required": false,
+   "title": "Close the database manager",
+   "title_zh": "關閉資料庫管理員",
+   "body": "Anyone who reaches /web/database/ and knows (or guesses) the master password can download, drop or replace every database; while the master password is still the default, the first master password someone submits there becomes the master password. Set list_db = False in odoo.conf (this also hides the database selector, so a server with several databases needs dbfilter) and refuse the path at the proxy. Restarting Odoo is a short outage. The pack's rules keep watching the path either way.",
+   "body_zh": "任何人只要連得到 /web/database/ 並知道（或猜中）主控密碼，就能下載、刪除或取代所有資料庫；主控密碼仍是預設值時，第一個在那裡送出的主控密碼就會成為主控密碼。請在 odoo.conf 設定 list_db = False（這也會隱藏資料庫選擇頁，所以有多個資料庫的伺服器需要 dbfilter），並在代理伺服器拒絕這個路徑。重新啟動 Odoo 會短暫中斷服務。不論是否關閉，本套件的規則都會持續監看這個路徑。",
+   "code": "# odoo.conf\nlist_db = False\n\n# nginx\nlocation ~ ^/web/database { deny all; }",
+   "verify": "curl -s -o /dev/null -w '%{http_code}\\n' https://erp.example.com/web/database/manager prints 403 or 404.",
+   "verify_zh": "curl -s -o /dev/null -w '%{http_code}\\n' https://erp.example.com/web/database/manager 印出 403 或 404。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "List integration accounts and administrators",
+   "title_zh": "列出整合程式帳號與管理者帳號",
+   "body": "One login per line, exactly as users type it, then reload the ruleset. Logins in jt-odoo-service-accounts stop alerting when they succeed (failures still alert); logins in jt-odoo-admin-accounts alert at level 5 like admin.",
+   "body_zh": "每行一個登入帳號，與使用者輸入的完全相同，加入後重新載入規則集。jt-odoo-service-accounts 裡的帳號登入成功時不再告警（失敗仍會告警）；jt-odoo-admin-accounts 裡的帳號與 admin 一樣以 level 5 告警。",
+   "code": "echo 'integration@example.com:service' >> /var/ossec/etc/lists/jt-odoo-service-accounts\necho 'it-admin@example.com:admin' >> /var/ossec/etc/lists/jt-odoo-admin-accounts"
+  }
+ ],
+ "active_response": [
+  {
+   "id": "block-login-bruteforce",
+   "command": "firewall-drop",
+   "rules_id": [
+    "132316",
+    "132317",
+    "132342"
+   ],
+   "location": "local",
+   "timeout": 600,
+   "title": "Block an address that keeps failing to log in, on the Odoo host",
+   "title_zh": "在 Odoo 主機封鎖一再登入失敗的位址",
+   "body": "Drops traffic from the source address on the Odoo host for 10 minutes after repeated failed logins (132316), password spraying (132317) or repeated database manager actions (132342), using iptables or nftables. Use it only when clients reach Odoo directly or the proxy runs on the same host: behind a proxy on another host the packets come from the proxy, so the drop has no effect (use the next response). The address must be the real client: without proxy_mode it is the proxy's own address, and the drop cuts every user off for 10 minutes. Risk: an administrator who mistypes a password eight times in five minutes is locked out for 10 minutes, and so is everyone behind a shared NAT address with them (an office's internet address, a mobile carrier). Put management and office networks in the manager's white_list first.",
+   "body_zh": "在連續登入失敗（132316）、密碼噴灑（132317）或一再操作資料庫管理員（132342）之後，於 Odoo 主機上以 iptables 或 nftables 封鎖來源位址 10 分鐘。只適用於用戶端直接連到 Odoo、或代理伺服器與 Odoo 在同一台主機的情形：代理伺服器在另一台主機時，封包來自代理伺服器，封鎖沒有效果（請改用下一個回應）。位址必須是真正的用戶端：沒有 proxy_mode 時那是代理伺服器自己的位址，封鎖會讓所有使用者斷線 10 分鐘。風險：五分鐘內打錯八次密碼的管理者會被擋 10 分鐘，同一個共用 NAT 位址後的所有人（辦公室的對外位址、行動網路業者）也一樣。請先把管理網段與辦公室網段加入 manager 的 white_list。"
+  },
+  {
+   "id": "block-login-bruteforce-at-proxy",
+   "command": "firewall-drop",
+   "rules_id": [
+    "132316",
+    "132317",
+    "132342"
+   ],
+   "location": "defined-agent",
+   "timeout": 600,
+   "title": "Block an address that keeps failing to log in, on the reverse proxy",
+   "title_zh": "在反向代理伺服器封鎖一再登入失敗的位址",
+   "body": "The same block, run on the reverse proxy host in front of Odoo (give its agent ID), where the client's packets arrive. It needs proxy_mode, so that the address in the alert is the client. Risk: the address is cut off from every site that proxy serves, not only Odoo, for 10 minutes; an administrator who mistypes a password and everyone behind a shared NAT address with them are blocked as well. If the edge firewall runs a Wazuh agent with its own block command (for example opnsense-fw from the OPNsense os-wazuh-agent plugin), blocking there is better still. Put management and office networks in the manager's white_list first.",
+   "body_zh": "同樣的封鎖，改在 Odoo 前面的反向代理伺服器執行（請填它的 agent ID），也就是用戶端封包真正到達的地方。需要 proxy_mode，告警裡的位址才會是用戶端。風險：該位址在 10 分鐘內連不到那台代理伺服器上的所有網站，不只是 Odoo；打錯密碼的管理者與同一個共用 NAT 位址後的所有人也會被擋。若邊界防火牆有 Wazuh agent 並提供自己的封鎖指令（例如 OPNsense os-wazuh-agent 外掛的 opnsense-fw），在那裡封鎖更好。請先把管理網段與辦公室網段加入 manager 的 white_list。"
+  }
+ ]
+}

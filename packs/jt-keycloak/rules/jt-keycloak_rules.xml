@@ -1,0 +1,692 @@
+<!--
+  jt-keycloak: Keycloak identity provider
+  Rule range 131300-131399. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  Keycloak reports logins and administrator changes as "events" through the
+  jboss-logging event listener (logger org.keycloak.events). Successful
+  events are logged at DEBUG unless the site raises them:
+    KC_SPI_EVENTS_LISTENER__JBOSS_LOGGING__SUCCESS_LEVEL=info
+  Without that, only failures (WARN) arrive and the login rules stay silent.
+
+  Modules
+    131300-131309  structure: every Keycloak line, stack traces, user and admin events
+    131310-131329  user events: logins, credentials, account changes, lockouts
+    131330-131339  the docker json-file log (rules on the "log" field only)
+    131340-131359  failed logins and token errors
+    131360-131369  correlation: brute force from one address
+    131370-131394  admin events (admin console and admin REST API)
+    131395-131399  server: start, stop, uncaught errors
+
+  Admin events name the realm the ADMINISTRATOR signed in to (usually
+  master) and the administrator's user id, not the realm that was changed
+  and not a user name. The resource path says what was changed.
+  A failed admin operation writes no admin event, only an error.
+-->
+
+<group name="keycloak,jt_keycloak,">
+
+  <!-- Structure -->
+
+  <rule id="131300" level="0">
+    <decoded_as>jt-keycloak</decoded_as>
+    <description>Keycloak messages</description>
+  </rule>
+
+  <rule id="131301" level="0">
+    <if_sid>131300</if_sid>
+    <field name="keycloak.trace" type="pcre2">\S</field>
+    <description>Keycloak: stack trace line</description>
+  </rule>
+
+  <rule id="131302" level="0">
+    <if_sid>131300</if_sid>
+    <field name="keycloak.type" type="pcre2">^\w+$</field>
+    <description>Keycloak user event $(keycloak.type)</description>
+  </rule>
+
+  <!-- Every admin event is visible; the resource types below re-level them. -->
+  <rule id="131303" level="3">
+    <if_sid>131300</if_sid>
+    <field name="keycloak.operation" type="pcre2">^\w+$</field>
+    <description>Keycloak admin: $(keycloak.operation) $(keycloak.resource_type) $(keycloak.resource_path) by admin $(keycloak.user_id) of realm $(keycloak.realm) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+  </rule>
+
+  <!--
+    User events. Children of 131302 match one event type each and so exclude
+    each other. An event type not named here stays at 131302 (level 0).
+  -->
+
+  <rule id="131310" level="3">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^LOGIN$</field>
+    <description>Keycloak: $(dstuser) signed in to $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!-- The children of 131310 exclude each other by client and realm. -->
+  <rule id="131311" level="6">
+    <if_sid>131310</if_sid>
+    <field name="keycloak.client" type="pcre2">^security-admin-console$</field>
+    <description>Keycloak: $(dstuser) signed in to the admin console of realm $(keycloak.realm) from $(srcip)</description>
+    <group>authentication_success,keycloak_admin_login,</group>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131312" level="5">
+    <if_sid>131310</if_sid>
+    <field name="keycloak.realm" type="pcre2">^master$</field>
+    <field name="keycloak.client" type="pcre2">^(?!security-admin-console$)</field>
+    <description>Keycloak: $(dstuser) signed in to the master realm through $(keycloak.client) from $(srcip)</description>
+    <group>authentication_success,keycloak_admin_login,</group>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Accounts that sign in for a machine (a monitoring probe, a script using a
+    password grant) can turn 131310 into one alert a minute. List their user
+    names in etc/lists/jt-keycloak-service-accounts. Their failures still alert.
+    (A CDB lookup on the decoded user names the field "user".)
+  -->
+  <rule id="131313" level="0">
+    <if_sid>131310</if_sid>
+    <field name="keycloak.realm" type="pcre2">^(?!master$)</field>
+    <field name="keycloak.client" type="pcre2">^(?!security-admin-console$)</field>
+    <list field="user" lookup="match_key">etc/lists/jt-keycloak-service-accounts</list>
+    <description>Keycloak: routine login of listed service account $(dstuser)</description>
+  </rule>
+
+  <rule id="131314" level="2">
+    <if_sid>131312</if_sid>
+    <list field="user" lookup="match_key">etc/lists/jt-keycloak-service-accounts</list>
+    <description>Keycloak: routine master realm login of listed service account $(dstuser)</description>
+  </rule>
+
+  <rule id="131315" level="5">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^(?:IDENTITY_PROVIDER_FIRST_LOGIN|FEDERATED_IDENTITY_LINK|FEDERATED_IDENTITY_OVERRIDE_LINK|IDENTITY_PROVIDER_LINK_ACCOUNT|CLIENT_INITIATED_ACCOUNT_LINKING)$</field>
+    <description>Keycloak: external identity linked to an account ($(keycloak.type)) for $(dstuser) in realm $(keycloak.realm) from $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131316" level="2">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^LOGOUT$</field>
+    <description>Keycloak: user $(keycloak.user_id) signed out of $(keycloak.client) in realm $(keycloak.realm)</description>
+  </rule>
+
+  <!-- Protocol traffic that follows every login or runs on its own. -->
+  <rule id="131317" level="0">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^(?:CODE_TO_TOKEN|REFRESH_TOKEN|CLIENT_LOGIN|INTROSPECT_TOKEN|USER_INFO_REQUEST|VALIDATE_ACCESS_TOKEN|PERMISSION_TOKEN|PUSHED_AUTHORIZATION_REQUEST|RESTART_AUTHENTICATION|CUSTOM_REQUIRED_ACTION|CLIENT_INFO|GRANT_CONSENT|UPDATE_CONSENT|VERIFY_EMAIL|VERIFY_PROFILE|SEND_VERIFY_EMAIL|IDENTITY_PROVIDER_LOGIN|IDENTITY_PROVIDER_POST_LOGIN|IDENTITY_PROVIDER_RESPONSE|IDENTITY_PROVIDER_RETRIEVE_TOKEN|EXECUTE_ACTION_TOKEN|OAUTH2_DEVICE_AUTH|OAUTH2_DEVICE_VERIFY_USER_CODE|OAUTH2_DEVICE_CODE_TO_TOKEN|AUTHREQID_TO_TOKEN|OAUTH2_EXTENSION_GRANT|REGISTER_NODE|UNREGISTER_NODE|INVALID_SIGNATURE)$</field>
+    <description>Keycloak: $(keycloak.type) for $(keycloak.client) in realm $(keycloak.realm)</description>
+  </rule>
+
+  <!--
+    Brute-force protection locked an account. Keycloak writes this once per
+    lockout, as a successful event, with the address of the last failure.
+  -->
+  <rule id="131318" level="10">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^USER_DISABLED_BY_TEMPORARY_LOCKOUT$</field>
+    <description>[WARN] Keycloak: account $(keycloak.user_id) in realm $(keycloak.realm) temporarily locked by brute-force protection after $(keycloak.failures) failures, last from $(srcip)</description>
+    <group>keycloak_lockout,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <rule id="131319" level="12">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^USER_DISABLED_BY_PERMANENT_LOCKOUT$</field>
+    <description>[HIGH] Keycloak: account $(keycloak.user_id) in realm $(keycloak.realm) disabled by brute-force protection after $(keycloak.failures) failures, last from $(srcip)</description>
+    <group>keycloak_lockout,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Credentials. Keycloak 26 writes UPDATE_CREDENTIAL and REMOVE_CREDENTIAL,
+    with the kind in credential_type, AND the older UPDATE_TOTP,
+    UPDATE_PASSWORD or REMOVE_TOTP for the same change in the same
+    millisecond. The new events alert; the old ones (deprecated, to be removed
+    in Keycloak 27) are recorded below the alert level so a change is
+    reported once. Keycloak 25 and older write only the old ones.
+  -->
+  <rule id="131320" level="5">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^UPDATE_CREDENTIAL$</field>
+    <description>Keycloak: $(keycloak.credential_type) credential set for $(dstuser) in realm $(keycloak.realm) from $(srcip)</description>
+    <group>keycloak_credential,</group>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131321" level="8">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^REMOVE_CREDENTIAL$</field>
+    <description>Keycloak: $(keycloak.credential_type) credential removed for user $(keycloak.user_id) in realm $(keycloak.realm) from $(srcip)</description>
+    <group>keycloak_credential,</group>
+    <mitre>
+      <id>T1556.006</id>
+    </mitre>
+  </rule>
+
+  <rule id="131322" level="2">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^(?:UPDATE_PASSWORD|UPDATE_TOTP|REMOVE_TOTP)$</field>
+    <description>Keycloak: $(keycloak.type) (also reported as UPDATE_CREDENTIAL or REMOVE_CREDENTIAL) in realm $(keycloak.realm)</description>
+  </rule>
+
+  <rule id="131323" level="3">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^(?:SEND_RESET_PASSWORD|RESET_PASSWORD|EXECUTE_ACTIONS|UPDATE_PROFILE|REMOVE_FEDERATED_IDENTITY|SEND_IDENTITY_PROVIDER_LINK|REVOKE_GRANT|REGISTER|TOKEN_EXCHANGE|INVITE_ORG)$</field>
+    <description>Keycloak: $(keycloak.type) for user $(keycloak.user_id) in realm $(keycloak.realm) from $(srcip)</description>
+  </rule>
+
+  <!-- The e-mail address is where password resets go; a deleted account is gone. -->
+  <rule id="131324" level="5">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^(?:UPDATE_EMAIL|DELETE_ACCOUNT|CLIENT_REGISTER|CLIENT_UPDATE|CLIENT_DELETE)$</field>
+    <description>Keycloak: $(keycloak.type) by user $(keycloak.user_id) in realm $(keycloak.realm) from $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131326" level="10">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^IMPERSONATE$</field>
+    <description>[WARN] Keycloak: $(keycloak.impersonator) impersonated $(dstuser) in realm $(keycloak.realm) from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!--
+    The docker json-file log, read with log_format json. Wazuh decodes it as
+    JSON and the Keycloak line is the "log" field, which these rules match.
+    Nothing else is decoded (see the decoder file), so there is no source
+    address for correlation or active response. The journald path above is
+    the recommended one; this covers the essentials.
+  -->
+  <rule id="131330" level="0">
+    <decoded_as>json</decoded_as>
+    <field name="stream" type="pcre2">^(?:stdout|stderr)$</field>
+    <field name="log" type="pcre2">^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} +\w+ +\[(?:org\.keycloak|io\.quarkus)[\w.$]*\] \(</field>
+    <description>Keycloak messages (docker json-file log)</description>
+  </rule>
+
+  <rule id="131331" level="5">
+    <if_sid>131330</if_sid>
+    <field name="log" type="pcre2">\[org\.keycloak\.events\] \([^)]*\) type="?LOGIN_ERROR\b.*, error="?(?:invalid_user_credentials|user_not_found)\b</field>
+    <description>Keycloak: failed login (wrong credentials or unknown user), from the docker log</description>
+    <group>authentication_failed,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <rule id="131332" level="10">
+    <if_sid>131330</if_sid>
+    <field name="log" type="pcre2">\[org\.keycloak\.events\] \([^)]*\) type="?(?:USER_DISABLED_BY_(?:TEMPORARY|PERMANENT)_LOCKOUT\b|LOGIN_ERROR\b.*, error="?user_temporarily_disabled\b)</field>
+    <description>[WARN] Keycloak: brute-force protection locked an account, or a locked account was tried, from the docker log</description>
+    <group>authentication_failed,keycloak_lockout,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <rule id="131333" level="3">
+    <if_sid>131330</if_sid>
+    <field name="log" type="pcre2">\[org\.keycloak\.events\] \([^)]*\) type="?LOGIN"?,</field>
+    <description>Keycloak: successful login, from the docker log</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131334" level="6">
+    <if_sid>131333</if_sid>
+    <field name="log" type="pcre2">, clientId="?security-admin-console\b</field>
+    <description>Keycloak: login to the admin console, from the docker log</description>
+    <group>authentication_success,keycloak_admin_login,</group>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131335" level="3">
+    <if_sid>131330</if_sid>
+    <field name="log" type="pcre2">\[org\.keycloak\.events\] \([^)]*\) operationType=</field>
+    <description>Keycloak admin event, from the docker log</description>
+    <group>keycloak_admin,</group>
+  </rule>
+
+  <rule id="131336" level="10">
+    <if_sid>131335</if_sid>
+    <field name="log" type="pcre2">\) operationType="?(?:CREATE|UPDATE|DELETE)"?,.*, resourceType="?(?:REALM|AUTH_FLOW|AUTH_EXECUTION_FLOW|AUTH_EXECUTION|AUTHENTICATOR_CONFIG|IDENTITY_PROVIDER|IDENTITY_PROVIDER_MAPPER)"?,|\) operationType="?(?:CREATE|UPDATE)"?,.*, resourceType="?(?:REALM_ROLE_MAPPING|CLIENT_ROLE_MAPPING)"?,|, resourceType="?CLIENT"?, resourcePath="?clients/[^/",]+/client-secret</field>
+    <description>[WARN] Keycloak admin: role granted, or realm, authentication flow, identity provider or client secret changed, from the docker log</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131337" level="5">
+    <if_sid>131330</if_sid>
+    <field name="log" type="pcre2">\[org\.keycloak\.services\.error\.KeycloakErrorHandler\] \([^)]*\) Uncaught server error: (?!jakarta\.ws\.rs\.WebApplicationException: HTTP \d+)</field>
+    <description>Keycloak: uncaught server error, from the docker log</description>
+  </rule>
+
+  <rule id="131338" level="3">
+    <if_sid>131330</if_sid>
+    <field name="log" type="pcre2">\[io\.quarkus\] \([^)]*\) Keycloak (?:\S+ on JVM .* started in |stopped in )</field>
+    <description>Keycloak server started or stopped, from the docker log</description>
+  </rule>
+
+  <!-- No source address in this shape: a count over all sources. -->
+  <rule id="131339" level="10" frequency="12" timeframe="300">
+    <if_matched_sid>131331</if_matched_sid>
+    <description>[WARN] Keycloak: many failed logins in 5 minutes, from the docker log</description>
+    <group>authentication_failures,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Failed logins and token errors. 131340 takes every LOGIN_ERROR; its
+    children re-level it by error and exclude each other.
+  -->
+  <rule id="131340" level="3">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^LOGIN_ERROR$</field>
+    <description>Keycloak: login error $(keycloak.error) at $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
+  </rule>
+
+  <rule id="131341" level="5">
+    <if_sid>131340</if_sid>
+    <field name="keycloak.error" type="pcre2">^invalid_user_credentials$</field>
+    <description>Keycloak: wrong password or one-time code for $(dstuser) at $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
+    <group>authentication_failed,keycloak_auth_failure,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <rule id="131342" level="5">
+    <if_sid>131340</if_sid>
+    <field name="keycloak.error" type="pcre2">^user_not_found$</field>
+    <description>Keycloak: login for unknown user $(dstuser) at $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
+    <group>authentication_failed,keycloak_auth_failure,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!-- Written for every attempt while the account is locked. -->
+  <rule id="131343" level="10">
+    <if_sid>131340</if_sid>
+    <field name="keycloak.error" type="pcre2">^user_temporarily_disabled$</field>
+    <description>[WARN] Keycloak: login attempt for $(dstuser), locked by brute-force protection, in realm $(keycloak.realm) from $(srcip)</description>
+    <group>authentication_failed,keycloak_auth_failure,keycloak_lockout,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <rule id="131344" level="5">
+    <if_sid>131340</if_sid>
+    <field name="keycloak.error" type="pcre2">^user_disabled$</field>
+    <description>Keycloak: login attempt for disabled account $(dstuser) in realm $(keycloak.realm) from $(srcip)</description>
+    <group>authentication_failed,</group>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!-- Token requests made by an application: a wrong secret, a replayed code. -->
+  <rule id="131350" level="5">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^(?:CODE_TO_TOKEN_ERROR|CLIENT_LOGIN_ERROR|TOKEN_EXCHANGE_ERROR|OAUTH2_DEVICE_CODE_TO_TOKEN_ERROR|AUTHREQID_TO_TOKEN_ERROR|OAUTH2_EXTENSION_GRANT_ERROR|PERMISSION_TOKEN_ERROR)$</field>
+    <description>Keycloak: $(keycloak.type) $(keycloak.error) for client $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
+  </rule>
+
+  <!-- Refresh and validation failures: mostly sessions that ended. -->
+  <rule id="131352" level="3">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^(?:REFRESH_TOKEN_ERROR|INTROSPECT_TOKEN_ERROR|USER_INFO_REQUEST_ERROR|VALIDATE_ACCESS_TOKEN_ERROR)$</field>
+    <description>Keycloak: $(keycloak.type) $(keycloak.error) for client $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
+  </rule>
+
+  <rule id="131354" level="3">
+    <if_sid>131302</if_sid>
+    <field name="keycloak.type" type="pcre2">^(?!(?:LOGIN_ERROR|CODE_TO_TOKEN_ERROR|CLIENT_LOGIN_ERROR|TOKEN_EXCHANGE_ERROR|OAUTH2_DEVICE_CODE_TO_TOKEN_ERROR|AUTHREQID_TO_TOKEN_ERROR|OAUTH2_EXTENSION_GRANT_ERROR|PERMISSION_TOKEN_ERROR|REFRESH_TOKEN_ERROR|INTROSPECT_TOKEN_ERROR|USER_INFO_REQUEST_ERROR|VALIDATE_ACCESS_TOKEN_ERROR)$)\w+_ERROR$</field>
+    <description>Keycloak: $(keycloak.type) $(keycloak.error) in realm $(keycloak.realm) from $(srcip)</description>
+  </rule>
+
+  <!--
+    A browser without the session cookie, a page left open until the code
+    expired, the back button after a login, a session that timed out. Every
+    real user produces these.
+  -->
+  <rule id="131345" level="2">
+    <if_sid>131340,131352,131354</if_sid>
+    <field name="keycloak.error" type="pcre2">^(?:cookie_not_found|expired_code|invalid_code|already_logged_in|session_expired|user_session_not_found|invalid_token)$</field>
+    <description>Keycloak: $(keycloak.type) $(keycloak.error) (routine) in realm $(keycloak.realm)</description>
+  </rule>
+
+  <rule id="131351" level="6">
+    <if_sid>131350,131352</if_sid>
+    <field name="keycloak.error" type="pcre2">^(?:invalid_client_credentials|unauthorized_client)$</field>
+    <description>Keycloak: wrong client secret or credentials for client $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
+    <group>authentication_failed,keycloak_auth_failure,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Correlation. Wrong passwords, unknown users, attempts on a locked account
+    and wrong client secrets from one address. Keycloak's own lockout counts
+    per account; this counts per address, so it also sees one address trying
+    many accounts. Behind a reverse proxy the address is the client only when
+    Keycloak trusts the proxy headers (proxy-headers=xforwarded or forwarded).
+  -->
+  <rule id="131360" level="10" frequency="8" timeframe="300">
+    <if_matched_group>keycloak_auth_failure</if_matched_group>
+    <same_source_ip />
+    <description>[WARN] Keycloak: brute force, repeated failed logins from $(srcip) in 5 minutes</description>
+    <group>authentication_failures,keycloak_bruteforce,</group>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Admin events. Children of 131303 match by resource type (and path) and
+    exclude each other; anything else stays at 131303, level 3.
+  -->
+
+  <rule id="131370" level="10">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^(?:REALM_ROLE_MAPPING|CLIENT_ROLE_MAPPING)$</field>
+    <field name="keycloak.operation" type="pcre2">^(?:CREATE|UPDATE)$</field>
+    <description>[WARN] Keycloak admin: role granted, $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1098.003</id>
+    </mitre>
+  </rule>
+
+  <rule id="131371" level="5">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^(?:REALM_ROLE_MAPPING|CLIENT_ROLE_MAPPING)$</field>
+    <field name="keycloak.operation" type="pcre2">^(?!CREATE$|UPDATE$)</field>
+    <description>Keycloak admin: role mapping $(keycloak.operation), $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+  </rule>
+
+  <rule id="131372" level="8">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^(?:REALM_SCOPE_MAPPING|CLIENT_SCOPE_MAPPING|CLIENT_SCOPE_CLIENT_MAPPING|REALM_ROLE|CLIENT_ROLE)$</field>
+    <description>Keycloak admin: $(keycloak.operation) $(keycloak.resource_type) $(keycloak.resource_path) by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <!-- Realm settings hold brute-force protection, event logging, token lifetimes. -->
+  <rule id="131374" level="10">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^REALM$</field>
+    <field name="keycloak.operation" type="pcre2">^(?:CREATE|UPDATE)$</field>
+    <description>[WARN] Keycloak admin: realm settings $(keycloak.operation) by admin $(keycloak.user_id) of realm $(keycloak.realm) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1556</id>
+    </mitre>
+  </rule>
+
+  <rule id="131375" level="12">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^REALM$</field>
+    <field name="keycloak.operation" type="pcre2">^DELETE$</field>
+    <description>[HIGH] Keycloak admin: a realm was deleted by admin $(keycloak.user_id) of realm $(keycloak.realm) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+  </rule>
+
+  <rule id="131376" level="10">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^(?:AUTH_FLOW|AUTH_EXECUTION_FLOW|AUTH_EXECUTION|AUTHENTICATOR_CONFIG)$</field>
+    <description>[WARN] Keycloak admin: authentication flow $(keycloak.operation), $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1556</id>
+    </mitre>
+  </rule>
+
+  <rule id="131377" level="8">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^REQUIRED_ACTION$</field>
+    <description>Keycloak admin: required action $(keycloak.operation), $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1556</id>
+    </mitre>
+  </rule>
+
+  <rule id="131378" level="10">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^(?:IDENTITY_PROVIDER|IDENTITY_PROVIDER_MAPPER)$</field>
+    <description>[WARN] Keycloak admin: identity provider $(keycloak.operation), $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1484.002</id>
+    </mitre>
+  </rule>
+
+  <!-- Clients. The secret rule and the others exclude each other by path. -->
+  <rule id="131379" level="10">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^CLIENT$</field>
+    <field name="keycloak.resource_path" type="pcre2">^clients/[^/]+/client-secret</field>
+    <description>[WARN] Keycloak admin: client secret $(keycloak.operation), $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1098.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="131380" level="8">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^CLIENT$</field>
+    <field name="keycloak.operation" type="pcre2">^(?:CREATE|DELETE)$</field>
+    <field name="keycloak.resource_path" type="pcre2">^(?!clients/[^/]+/client-secret)</field>
+    <description>Keycloak admin: client $(keycloak.operation), $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+  </rule>
+
+  <rule id="131381" level="6">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^CLIENT$</field>
+    <field name="keycloak.operation" type="pcre2">^UPDATE$</field>
+    <field name="keycloak.resource_path" type="pcre2">^(?!clients/[^/]+/client-secret)</field>
+    <description>Keycloak admin: client settings changed, $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+  </rule>
+
+  <rule id="131382" level="8">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^CLIENT_INITIAL_ACCESS_MODEL$</field>
+    <description>Keycloak admin: initial access token for client registration $(keycloak.operation) by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+  </rule>
+
+  <rule id="131383" level="5">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^(?:CLIENT_SCOPE|PROTOCOL_MAPPER|USER_PROFILE|ORGANIZATION|ORGANIZATION_MEMBERSHIP|AUTHORIZATION_RESOURCE_SERVER|AUTHORIZATION_RESOURCE|AUTHORIZATION_SCOPE|AUTHORIZATION_POLICY)$</field>
+    <description>Keycloak admin: $(keycloak.operation) $(keycloak.resource_type) $(keycloak.resource_path) by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+  </rule>
+
+  <!-- Users. The rules exclude each other by operation and path. -->
+  <rule id="131384" level="5">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^USER$</field>
+    <field name="keycloak.operation" type="pcre2">^CREATE$</field>
+    <field name="keycloak.resource_path" type="pcre2">^users/[^/]+$</field>
+    <description>Keycloak admin: user created, $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1136</id>
+    </mitre>
+  </rule>
+
+  <rule id="131385" level="4">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^USER$</field>
+    <field name="keycloak.operation" type="pcre2">^UPDATE$</field>
+    <field name="keycloak.resource_path" type="pcre2">^users/[^/]+$</field>
+    <description>Keycloak admin: user changed, $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+  </rule>
+
+  <rule id="131386" level="8">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^USER$</field>
+    <field name="keycloak.operation" type="pcre2">^DELETE$</field>
+    <field name="keycloak.resource_path" type="pcre2">^users/[^/]+$</field>
+    <description>Keycloak admin: user deleted, $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1531</id>
+    </mitre>
+  </rule>
+
+  <rule id="131387" level="8">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^USER$</field>
+    <field name="keycloak.resource_path" type="pcre2">^users/[^/]+/reset-password$</field>
+    <description>Keycloak admin: password of $(keycloak.resource_path) set by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,keycloak_credential,</group>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131388" level="8">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^USER$</field>
+    <field name="keycloak.operation" type="pcre2">^DELETE$</field>
+    <field name="keycloak.resource_path" type="pcre2">^users/[^/]+/credentials/</field>
+    <description>Keycloak admin: credential removed from a user, $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,keycloak_credential,</group>
+    <mitre>
+      <id>T1556.006</id>
+    </mitre>
+  </rule>
+
+  <rule id="131389" level="5">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^USER_LOGIN_FAILURE$</field>
+    <description>Keycloak admin: brute-force lockout cleared, $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+  </rule>
+
+  <!-- Groups carry roles: membership is a privilege change. -->
+  <rule id="131390" level="8">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^GROUP_MEMBERSHIP$</field>
+    <description>Keycloak admin: group membership $(keycloak.operation), $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="131391" level="5">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^GROUP$</field>
+    <description>Keycloak admin: group $(keycloak.operation), $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+  </rule>
+
+  <!-- Components: user federation (LDAP, Kerberos), realm keys, policies. -->
+  <rule id="131392" level="8">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^(?:COMPONENT|USER_FEDERATION_PROVIDER|USER_FEDERATION_MAPPER)$</field>
+    <field name="keycloak.operation" type="pcre2">^(?:CREATE|UPDATE)$</field>
+    <description>Keycloak admin: component (federation, keys or policy) $(keycloak.operation), $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1556</id>
+    </mitre>
+  </rule>
+
+  <rule id="131393" level="10">
+    <if_sid>131303</if_sid>
+    <field name="keycloak.resource_type" type="pcre2">^(?:COMPONENT|USER_FEDERATION_PROVIDER|USER_FEDERATION_MAPPER)$</field>
+    <field name="keycloak.operation" type="pcre2">^DELETE$</field>
+    <description>[WARN] Keycloak admin: component (federation, keys or policy) deleted, $(keycloak.resource_path), by admin $(keycloak.user_id) from $(srcip)</description>
+    <group>keycloak_admin,</group>
+    <mitre>
+      <id>T1556</id>
+    </mitre>
+  </rule>
+
+  <!-- Server -->
+
+  <rule id="131395" level="3">
+    <if_sid>131300</if_sid>
+    <field name="keycloak.logger" type="pcre2">^io\.quarkus$</field>
+    <field name="keycloak.message" type="pcre2">^Keycloak \S+ on JVM .* started in </field>
+    <description>Keycloak $(keycloak.version) started</description>
+  </rule>
+
+  <rule id="131396" level="3">
+    <if_sid>131300</if_sid>
+    <field name="keycloak.logger" type="pcre2">^io\.quarkus$</field>
+    <field name="keycloak.message" type="pcre2">^Keycloak stopped in </field>
+    <description>Keycloak stopped</description>
+  </rule>
+
+  <!--
+    Uncaught errors in request handling. A WebApplicationException is an HTTP
+    status a handler raised on purpose (on one site every one of them was the
+    welcome page answering a request without a Host header, three at a time
+    every six hours), so it drops to level 2.
+  -->
+  <rule id="131397" level="5">
+    <if_sid>131300</if_sid>
+    <field name="keycloak.logger" type="pcre2">^org\.keycloak\.services\.error\.KeycloakErrorHandler$</field>
+    <field name="keycloak.message" type="pcre2">^Uncaught server error</field>
+    <description>Keycloak: $(keycloak.message)</description>
+  </rule>
+
+  <rule id="131398" level="2">
+    <if_sid>131397</if_sid>
+    <field name="keycloak.message" type="pcre2">^Uncaught server error: jakarta\.ws\.rs\.WebApplicationException: HTTP \d+</field>
+    <description>Keycloak: HTTP error raised by a request handler (routine): $(keycloak.message)</description>
+  </rule>
+
+  <!-- Other errors: LDAP, database, mail, cluster. The log file shape has no level. -->
+  <rule id="131399" level="4">
+    <if_sid>131300</if_sid>
+    <field name="keycloak.level" type="pcre2">^(?:ERROR|FATAL)$</field>
+    <field name="keycloak.logger" type="pcre2">^(?!org\.keycloak\.events$|org\.keycloak\.services\.error\.KeycloakErrorHandler$)</field>
+    <description>Keycloak error from $(keycloak.logger): $(keycloak.message)</description>
+  </rule>
+
+</group>

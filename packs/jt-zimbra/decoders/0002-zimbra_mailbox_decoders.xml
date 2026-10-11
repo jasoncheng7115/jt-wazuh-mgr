@@ -1,0 +1,74 @@
+<!--
+  Zimbra decoders, part 2: SOAP calls in /opt/zimbra/log/mailbox.log.
+  Shipped by the jt-zimbra pack since 3.0 (see 0001-zimbra_decoders.xml).
+
+  The nginx access log shows only "/service/soap" for every call: the
+  operation name travels in the POST body, and behind Z-Push or a reverse
+  proxy the client address is the proxy's. mailbox.log has all three:
+
+    2026-10-11 11:26:07,296 INFO  [qtp1-9366:https://mail.example.com:8443/service/soap/] [name=user2@example.com;mid=12;oip=198.51.100.8, 192.0.2.93;port=48074;ua=Apple-iPhone17C3/2307.90 devip=198.51.100.8 ZPZB/75;soapId=4bbe9d10;] soap - SearchRequest elapsed=1
+    2026-10-11 11:26:13,897 INFO  [qtp1-9394:https://localhost:7071/service/admin/soap/GetServerRequest] [name=zimbra;ua=zmprov/10.1.20_GA_10120;soapId=4bbe9d13;] soap - GetServerRequest elapsed=4
+
+  user is the account (name=), srcip the first oip address (the client, not
+  the proxy), action the SOAP operation. Lines without name= or oip= (an
+  unauthenticated AuthRequest, Zimbra's own command-line tools on
+  localhost:7071) still decode, with the fields they have.
+
+  With zimbraLogToSyslog set the same lines also reach syslog as
+  "<host> zimbra_mailbox <line>"; the rules count only the file copy.
+-->
+
+<decoder name="zimbra-mailbox-soap">
+  <prematch type="pcre2">\] soap - \w+</prematch>
+</decoder>
+
+<decoder name="zimbra-mailbox-soap-fields">
+  <parent>zimbra-mailbox-soap</parent>
+  <regex type="pcre2">\] soap - (\w+)</regex>
+  <order>action</order>
+</decoder>
+
+<decoder name="zimbra-mailbox-soap-fields">
+  <parent>zimbra-mailbox-soap</parent>
+  <regex type="pcre2">\[name=([^;\]]+);</regex>
+  <order>user</order>
+</decoder>
+
+<decoder name="zimbra-mailbox-soap-fields">
+  <parent>zimbra-mailbox-soap</parent>
+  <regex type="pcre2">[\[;]oip=([0-9a-fA-F.:]+)[,;]</regex>
+  <order>srcip</order>
+</decoder>
+
+<!-- A direct connection (the admin port, no proxy) has ip= and no oip=. -->
+<decoder name="zimbra-mailbox-soap-fields">
+  <parent>zimbra-mailbox-soap</parent>
+  <regex type="pcre2">^(?!.*[\[;]oip=).*?[\[;]ip=([0-9a-fA-F.:]+);</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="zimbra-mailbox-soap-fields">
+  <parent>zimbra-mailbox-soap</parent>
+  <regex type="pcre2">[\[;]oip=[^;\]]*, ?([0-9a-fA-F.:]+);</regex>
+  <order>zimbra.via_proxy</order>
+</decoder>
+
+<decoder name="zimbra-mailbox-soap-fields">
+  <parent>zimbra-mailbox-soap</parent>
+  <regex type="pcre2">[\[;]ua=([^;\]]*)</regex>
+  <order>zimbra.ua</order>
+</decoder>
+
+<decoder name="zimbra-mailbox-soap-fields">
+  <parent>zimbra-mailbox-soap</parent>
+  <regex type="pcre2">\[[^\]:]*:(\w+://[^\]\s]+)\]</regex>
+  <order>url</order>
+</decoder>
+
+<!-- aname= is the account that authenticated when it differs from the
+     mailbox (an administrator working through a delegated session). -->
+<decoder name="zimbra-mailbox-soap-fields">
+  <parent>zimbra-mailbox-soap</parent>
+  <regex type="pcre2">[\[;]aname=([^;\]]+);</regex>
+  <order>zimbra.aname</order>
+</decoder>

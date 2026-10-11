@@ -4,6 +4,32 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.13.0（2026-10-11）
+
+- **主動回應：由套件提供、由你啟用。** 套件現在可以描述回應，例如封鎖暴力破解的來源；安裝套件不會啟用任何一項。
+  套件詳細頁逐項列出：封鎖什麼、在哪裡封鎖、由哪些規則觸發、封鎖多久，以及風險。啟用時會把加了標記的
+  `<active-response>` 區塊寫進叢集每個節點的 `ossec.conf`，並逐一檢查各節點的設定；任一節點不接受，所有節點
+  都會還原。停用會把檔案完整還原，移除套件也會一併移除它的回應。manager 尚未載入的規則、節點沒有定義的指令、
+  讀不到的節點（除非選擇只套用到這台 manager）、以及 60 秒到 7 天以外的封鎖時間，都會被拒絕。頁面也會顯示
+  各節點的 `white_list`，以及哪些 manager 還需要重新啟動。
+- **新增十四個套件：** jt-proxmox（Proxmox VE 與 Ceph）、jt-pbs（Proxmox Backup Server）、jt-pmg（Proxmox
+  Mail Gateway）、jt-keycloak、jt-ucs（Univention Corporate Server 與 Samba AD）、jt-opnsense（防火牆本身的
+  登入、設定變更、VPN 與 CARP）、jt-ipam、jt-nextcloud、jt-librenms、jt-synology（DSM syslog）、jt-odoo、
+  jt-zpush（Z-Push ActiveSync）、jt-jitsi（Jitsi Meet）與 jt-vc-portal。每個套件都附部署說明，適合封鎖的
+  套件另附選用的主動回應，並寫明風險。
+- **jt-zimbra 3.0。** 2.9 用到了套件裡沒有附的解碼器，在乾淨的 manager 上整個規則集都無法載入；現在一併附上。
+  用戶端位址取 `oip` 的第一個位址，而不是前面那台代理。修好幾條永遠不會觸發的規則（`<action>` 是完全比對），
+  壓掉 Zimbra 自己的 sudo、su、postdrop 雜訊（以 41 天實測：每天約 104,800 筆降到約 1,700 筆），並新增
+  MTA、amavis/ClamAV 與服務相關規則。
+- **jt-zenarmor 1.4。** 每次封鎖的威脅只告警一次（原本同一件事有三份），描述裡寫出被封鎖的名稱，並把解析器與
+  郵件過濾主機和用戶端分開（實測：7.5 天 6,459 筆降到 73 筆）。
+- **jt-adguard 1.2。** 名稱含有「error」之類字詞的威脅查詢會被內建的通用規則接走、從未分級，解碼器也誤收了
+  AdGuard Home 的服務記錄，兩者都已修正。用戶端第一次查詢某個威脅網域時等級較高，並涵蓋服務記錄裡的登入。
+- **套件在拋棄式 manager 中測試。** `tools/pack_sandbox.py` 會在 Wazuh manager 容器裡安裝套件，並以
+  `tests/pack_cases/` 的案例檔驗證（去識別化的真實記錄與合成記錄，每條重要規則都有不該命中的反例）。新增的
+  測試會擋下任何以內建 `json` 解碼器為父解碼器的解碼器：只要有一個，manager 上所有 JSON 事件的欄位都不再解碼
+  （4.14.7 實測）。
+
 ## v1.12.2（2026-10-10）
 
 - **站台改寫套件規則不再算衝突。** `overwrite="yes"` 是 Wazuh 讓站台改變其他檔案中某條規則的等級或描述

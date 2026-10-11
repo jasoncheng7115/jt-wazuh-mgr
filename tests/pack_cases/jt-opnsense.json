@@ -1,0 +1,684 @@
+{
+ "pack": "jt-opnsense",
+ "sandbox_lists": {
+  "jt-opnsense-service-accounts": "netbackup:service\n"
+ },
+ "cases": [
+  {
+   "log": "Oct  9 16:41:57 fw1.example.com audit[17624]: /index.php: Successful login for user 'root' from: 192.0.2.200",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131501",
+   "expect_level": 3,
+   "note": "real (site firewall A, sanitized)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131502",
+   "expect_level": 5,
+   "note": "synthesized from src/www/authgui.inc"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131503",
+   "expect_level": 10,
+   "repeat": 6,
+   "note": "synthesized; six failures from one address"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131502",
+   "expect_level": 5,
+   "repeat": 5,
+   "note": "near miss: five failures stay single alerts"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'admin' from: 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131504",
+   "expect_level": 12,
+   "note": "synthesized; success right after the brute force"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'admin' from: 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131501",
+   "expect_level": 3,
+   "note": "near miss: success without earlier failures"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: User logged out for user 'root' from: 192.0.2.200",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131505",
+   "expect_level": 2,
+   "note": "synthesized from authgui.inc"
+  },
+  {
+   "log": "Oct  9 16:41:57 fw1.example.com audit[17624]: user root authenticated successfully for WebGui [using OPNsense\\Auth\\Services\\WebGui + OPNsense\\Auth\\Local]",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131506",
+   "expect_level": 2,
+   "note": "real (site firewall A)"
+  },
+  {
+   "log": "Oct 11 10:58:29 fw1.example.com audit[32048]: user alice authenticated successfully for sshd [using OPNsense\\Auth\\Services\\System + OPNsense\\Auth\\Local]",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131507",
+   "expect_level": 3,
+   "note": "real shape (site firewall A), unlisted account"
+  },
+  {
+   "log": "Oct 11 10:58:29 fw1.example.com audit[32048]: user netbackup authenticated successfully for sshd [using OPNsense\\Auth\\Services\\System + OPNsense\\Auth\\Local]",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131508",
+   "expect_level": 0,
+   "note": "real (site firewall A, hourly config backup account, sanitized); listed service account"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user admin failed authentication for WebGui on OPNsense\\Auth\\Services\\WebGui via OPNsense\\Auth\\Local",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131509",
+   "expect_level": 2,
+   "note": "synthesized from AuthenticationFactory.php"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131510",
+   "expect_level": 5,
+   "note": "synthesized from AuthenticationFactory.php"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user netbackup failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131510",
+   "expect_level": 5,
+   "note": "synthesized; a listed account's failure still alerts"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131556",
+   "expect_level": 10,
+   "repeat": 8,
+   "note": "synthesized; eight failures for one account"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user bob could not authenticate for WebGui, failed constraints on OPNsense\\Auth\\Services\\WebGui authenticated via OPNsense\\Auth\\Local",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131511",
+   "expect_level": 5,
+   "note": "synthesized from AuthenticationFactory.php"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: uri /ui/firewall/filter not accessible for user bob",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131512",
+   "expect_level": 5,
+   "note": "synthesized from ControllerRoot.php"
+  },
+  {
+   "log": "Oct 10 22:14:30 fw1.example.com audit[50267]: no active session, user not found (called \"/index.asp\" @ 192.0.2.171)",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131513",
+   "expect_level": 2,
+   "note": "real (site firewall A)"
+  },
+  {
+   "log": "Oct 11 10:14:37 fw1.example.com audit[71329]: no active session, user not found (called \"/nice%20ports%2C/Tri%6Eity.txt%2ebak\" @ 192.0.2.144)",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131513",
+   "expect_level": 2,
+   "note": "real (site firewall B), nmap service probe"
+  },
+  {
+   "log": "Oct 10 22:14:30 fw1.example.com audit[50267]: no active session, user not found (called \"/index.asp\" @ 203.0.113.80)",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131514",
+   "expect_level": 6,
+   "repeat": 20,
+   "note": "synthesized; twenty in a minute from one address"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: session expired (root @ 192.0.2.200)",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131515",
+   "expect_level": 2,
+   "note": "synthesized from ControllerRoot.php"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com api[1234]: uri /api/core/firmware/status authentication failed for api key EXAMPLEKEY0123456789",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131517",
+   "expect_level": 5,
+   "note": "synthesized from ApiControllerBase.php"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com api[1234]: uri /api/core/firmware/status authentication failed for api key EXAMPLEKEY0123456789",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131518",
+   "expect_level": 8,
+   "repeat": 10,
+   "note": "synthesized; ten in two minutes"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com api[1234]: uri /api/firewall/filter/apply not accessible for user automation using api key EXAMPLEKEY0123456789",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131519",
+   "expect_level": 5,
+   "note": "synthesized from ApiControllerBase.php"
+  },
+  {
+   "log": "Oct  6 07:12:38 fw1.example.com audit[78958]: user (root) changed configuration to /conf/backup/config-1791241958.381.xml in /usr/local/opnsense/mvc/script/run_migrations.php /usr/local/opnsense/mvc/script/run_migrations.php made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131520",
+   "expect_level": 3,
+   "note": "real (site firewall B)"
+  },
+  {
+   "log": "Oct  8 08:40:00 fw1.example.com audit[23451]: user (system) changed configuration to /conf/backup/config-1791420000.7989.xml in /usr/local/opnsense/scripts/nginx/ngx_autoblock.php /usr/local/opnsense/scripts/nginx/ngx_autoblock.php made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131520",
+   "expect_level": 3,
+   "note": "real (site firewall A)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user (root) changed configuration to /conf/backup/config-1791686400.1.xml in /usr/local/opnsense/scripts/shell/setaddr.php vtnet1 configuration from console menu",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131526",
+   "expect_level": 5,
+   "note": "synthesized from scripts/shell/setaddr.php"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user (root) changed configuration to /conf/backup/config-1791686400.1.xml in /usr/local/opnsense/scripts/shell/password.php Root user reset from console",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131527",
+   "expect_level": 7,
+   "note": "synthesized from scripts/shell/password.php"
+  },
+  {
+   "log": "Oct  6 07:03:29 fw1.example.com audit[98308]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791241409.0298.xml in /system_general.php /system_general.php made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131521",
+   "expect_level": 5,
+   "note": "real (site firewall A)"
+  },
+  {
+   "log": "Oct  6 07:06:30 fw1.example.com audit[47447]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791241590.6684.xml in /api/kea/dhcpv4/set /api/kea/dhcpv4/set 已修改",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131521",
+   "expect_level": 5,
+   "note": "real (site firewall A), description translated to zh_TW"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.2.xml in /api/auth/user/add /api/auth/user/add made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131522",
+   "expect_level": 7,
+   "note": "synthesized; MVC user manager"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@2001:db8::5 (alice) changed configuration to /conf/backup/config-1791686400.2.xml in /api/auth/group/set /api/auth/group/set made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131522",
+   "expect_level": 7,
+   "note": "synthesized; impersonated session, IPv6"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.3.xml in /system_advanced_admin.php /system_advanced_admin.php made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131523",
+   "expect_level": 7,
+   "note": "synthesized"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.4.xml in /api/core/backup/revert_backup/config-1791241409.0298.xml /api/core/backup/revert_backup/config-1791241409.0298.xml made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131524",
+   "expect_level": 7,
+   "note": "synthesized from BackupController.php"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.200 changed configuration to /conf/backup/config-1791686400.5.xml in /diag_backup.php /diag_backup.php made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131524",
+   "expect_level": 7,
+   "note": "synthesized from diag_backup.php"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root@192.0.2.1 changed configuration to /conf/backup/config-1791686400.6.xml in /xmlrpc.php /xmlrpc.php made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131525",
+   "expect_level": 3,
+   "note": "synthesized; HA sync on the backup node"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user alice@example.com changed configuration to /conf/backup/config-1791686400.7.xml in /firewall_rules_edit.php /firewall_rules_edit.php made changes",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131521",
+   "expect_level": 5,
+   "note": "synthesized; account name with @ gets no address"
+  },
+  {
+   "log": "Oct  6 07:09:31 fw1.example.com audit[77089]: [Firmware] User root executed a firmware update",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131530",
+   "expect_level": 5,
+   "note": "real (site firewall B)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[77089]: [Firmware] User root executed an install of package os-example",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131530",
+   "expect_level": 5,
+   "note": "synthesized from FirmwareController.php"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[77089]: [Firmware] User root executed a reboot",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131531",
+   "expect_level": 5,
+   "note": "synthesized from FirmwareController.php"
+  },
+  {
+   "log": "Oct  7 08:38:10 fw1.example.com audit[45287]: [Firmware] User root executed a security audit",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131532",
+   "expect_level": 3,
+   "note": "real (site firewall A)"
+  },
+  {
+   "log": "Oct  6 07:09:31 fw1.example.com configd.py[965]: action allowed firmware.update for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131541",
+   "expect_level": 3,
+   "note": "synthesized from processhandler.py; the companion line of the real firmware update"
+  },
+  {
+   "log": "Oct  6 07:09:31 fw1.example.com configd.py[965]: [c4ce4878-6866-4d58-8d1a-ccac3a5600ee] Running firmware update",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real (site firewall B)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: action allowed firmware.auto-update for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131542",
+   "expect_level": 5,
+   "note": "synthesized from actions_firmware.conf"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: action allowed system.reboot for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131543",
+   "expect_level": 5,
+   "note": "synthesized from actions_system.conf"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: action allowed firmware.poweroff for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131543",
+   "expect_level": 5,
+   "note": "synthesized from actions_firmware.conf"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: action allowed system.reset_factory_defaults for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131544",
+   "expect_level": 10,
+   "note": "synthesized from actions_system.conf"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com configd.py[965]: action allowed system.flush.config_history for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131545",
+   "expect_level": 5,
+   "note": "synthesized from actions_system.conf"
+  },
+  {
+   "log": "Oct  6 08:00:00 fw1.example.com configd.py[965]: action get_rule_aliases_csv.reload not found for user nobody",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131546",
+   "expect_level": 2,
+   "note": "real (site firewall A)"
+  },
+  {
+   "log": "Oct  6 08:00:00 fw1.example.com configd.py[965]: action allowed syslog.list.applications for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real (site firewall B); routine query"
+  },
+  {
+   "log": "Oct  6 08:00:00 fw1.example.com configd.py[965]: action allowed firmware.changelog.cron for user root",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real (site firewall B); near miss for the firmware rule"
+  },
+  {
+   "log": "Oct  6 07:09:40 fw1.example.com pkg-static[1234]: suricata upgraded: 8.0.6 -> 8.0.7_1",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131550",
+   "expect_level": 2,
+   "note": "real (site firewall B)"
+  },
+  {
+   "log": "Oct  6 07:09:40 fw1.example.com pkg[1234]: pkg upgraded: 2.3.1_1 -> 2.8.4_1",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131550",
+   "expect_level": 2,
+   "note": "real (site firewall B)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com pkg-static[1234]: os-crowdsec-1.0.12 installed",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131551",
+   "expect_level": 3,
+   "note": "synthesized from the pkg message format"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com pkg-static[1234]: os-example-1.0 deinstalled",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131551",
+   "expect_level": 3,
+   "note": "synthesized"
+  },
+  {
+   "log": "Oct  9 21:44:53 fw1.example.com openvpn_server4[21681]: udp6:198.51.100.128:11445 TLS Error: TLS key negotiation failed to occur within 60 seconds (check your network connectivity)",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131560",
+   "expect_level": 2,
+   "note": "real (site firewall B, flaky client)"
+  },
+  {
+   "log": "Oct  9 21:44:53 fw1.example.com openvpn_server4[21681]: udp6:198.51.100.128:11445 TLS Error: TLS handshake failed",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131560",
+   "expect_level": 2,
+   "repeat": 3,
+   "note": "real (site firewall B); third in a minute: 81804 used to fire, now stays at level 2"
+  },
+  {
+   "log": "Oct  9 21:44:53 fw1.example.com openvpn_server4[21681]: udp6:198.51.100.128:11445 TLS Error: TLS handshake failed",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131562",
+   "expect_level": 5,
+   "repeat": 30,
+   "note": "synthesized; thirty from one address in half an hour"
+  },
+  {
+   "log": "Oct  9 21:44:53 vpn1.example.com openvpn[2168]: 198.51.100.128:11445 TLS Error: TLS handshake failed",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "81803",
+   "expect_level": 4,
+   "note": "near miss: a non-OPNsense OpenVPN server keeps the built-in rule"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com openvpn_server1[49127]: udp4:203.0.113.176:26822 TLS Auth Error: Auth Username/Password verification failed for peer",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131563",
+   "expect_level": 5,
+   "note": "synthesized from OpenVPN ssl_verify.c"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com openvpn_server1[49127]: udp4:203.0.113.176:26822 TLS Auth Error: Auth Username/Password verification failed for peer",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131565",
+   "expect_level": 10,
+   "repeat": 6,
+   "note": "synthesized; six in five minutes"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com openvpn[1111]: user 'alice' could not authenticate.",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131566",
+   "expect_level": 5,
+   "note": "synthesized from user_pass_verify.php"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com openvpn[1111]: Username does not match certificate common name (alice != bob), access denied.",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131566",
+   "expect_level": 5,
+   "note": "synthesized from user_pass_verify.php"
+  },
+  {
+   "log": "Oct  6 08:00:00 fw1.example.com openvpn[1111]: user 'alice' authenticated using 'Local Database'",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131567",
+   "expect_level": 3,
+   "note": "real (site firewall B, sanitized)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com openvpn_server1[49127]: udp4:203.0.113.176:26822 VERIFY ERROR: depth=0, error=certificate has expired: CN=alice",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131568",
+   "expect_level": 5,
+   "note": "synthesized from OpenVPN ssl_verify_openssl.c"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com openvpn_server1[49127]: udp4:203.0.113.176:26822 VERIFY ERROR: depth=0, error=certificate revoked: CN=alice",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131569",
+   "expect_level": 7,
+   "note": "synthesized"
+  },
+  {
+   "log": "Jul 16 06:47:43 fw1.example.com openvpn_server1[49127]: udp4:198.51.100.176:26822 [alice] Peer Connection Initiated with [AF_INET]198.51.100.176:26822",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "81801",
+   "expect_level": 3,
+   "note": "real (site firewall B, sanitized); built-in login rule unchanged"
+  },
+  {
+   "log": "Oct  9 16:40:37 fw1.example.com dpinger[17633]: exiting on signal 15",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131570",
+   "expect_level": 0,
+   "note": "real (site firewall A); was 1004 level 5"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com syslogd: exiting on signal 15",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "1004",
+   "expect_level": 5,
+   "note": "near miss: syslogd itself still alerts"
+  },
+  {
+   "log": "Oct  9 16:35:00 fw1.example.com dpinger[17633]: ALERT: WAN_GW (Addr: 198.51.100.1 Alarm: none -> down RTT: 3.9 ms RTTd: 7.0 ms Loss: 23.0 %)",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131571",
+   "expect_level": 5,
+   "note": "real (site firewall A, sanitized)"
+  },
+  {
+   "log": "Oct  9 16:36:00 fw1.example.com dpinger[17633]: ALERT: WAN_GW (Addr: 198.51.100.1 Alarm: loss -> none RTT: 1.7 ms RTTd: 0.5 ms Loss: 0.0 %)",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131572",
+   "expect_level": 3,
+   "note": "real (site firewall A, sanitized)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com kernel: <6>[11035654] carp: 1@igb1: BACKUP -> MASTER (master timed out)",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131575",
+   "expect_level": 7,
+   "note": "synthesized from ip_carp.c, kernel prefix as on FreeBSD 14"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com kernel: carp: 1@igb1: MASTER -> BACKUP (more frequent advertisement received)",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131576",
+   "expect_level": 5,
+   "note": "synthesized from ip_carp.c"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com kernel: carp: demoted by 240 to 240 (pfsync bulk start)",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131577",
+   "expect_level": 4,
+   "note": "synthesized from ip_carp.c"
+  },
+  {
+   "log": "Oct  9 16:48:07 fw1.example.com kernel: <6>[11035654] arp: 192.0.2.142 moved from bc:24:11:25:41:71 to bc:24:11:08:f8:e8 on igb0",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real (site firewall A); near miss for the kernel children"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 10[IKE] <con1|3> IKE_SA con1[3] established between 192.0.2.1[fw1.example.com]...198.51.100.8[peer.example.net]",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131581",
+   "expect_level": 3,
+   "note": "synthesized from strongSwan ike_establish.c"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 10[IKE] <con1|3> deleting IKE_SA con1[3] between 192.0.2.1[fw1.example.com]...198.51.100.8[peer.example.net]",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131582",
+   "expect_level": 2,
+   "note": "synthesized from ike_delete.c"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 07[IKE] <con1|3> tried 1 shared key for 'fw1.example.com' - '198.51.100.8', but MAC mismatched",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131583",
+   "expect_level": 5,
+   "note": "synthesized from psk_authenticator.c"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 07[IKE] <con1|3> received AUTHENTICATION_FAILED notify error",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131583",
+   "expect_level": 5,
+   "note": "synthesized from ike_auth.c"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 07[IKE] <rw|9> XAuth authentication of 'alice' failed",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131583",
+   "expect_level": 5,
+   "note": "synthesized from xauth.c"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 07[IKE] <con1|3> tried 1 shared key for 'fw1.example.com' - '198.51.100.8', but MAC mismatched",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131584",
+   "expect_level": 10,
+   "repeat": 8,
+   "note": "synthesized; eight on one connection"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 07[IKE] <rw|9> XAuth authentication of 'alice' successful",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131585",
+   "expect_level": 3,
+   "note": "synthesized from xauth.c"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 07[IKE] <con1|3> giving up after 5 retransmits",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131586",
+   "expect_level": 5,
+   "note": "synthesized from task_manager_v2.c"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 07[CFG] no IKE config found for 192.0.2.1...203.0.113.66, sending NO_PROPOSAL_CHOSEN",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131587",
+   "expect_level": 2,
+   "note": "synthesized from task_manager_v2.c"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 07[CFG] no IKE config found for 192.0.2.1...203.0.113.66, sending NO_PROPOSAL_CHOSEN",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131588",
+   "expect_level": 6,
+   "repeat": 10,
+   "note": "synthesized; ten from one address"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 07[IKE] <con1|3> signature validation failed, looking for another key",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized; near miss, another key may succeed"
+  },
+  {
+   "log": "time=\"2026-10-11T10:00:00+08:00\" level=info msg=\"(fw1/crowdsec) crowdsecurity/ssh-bf by ip 203.0.113.5 (CN/4134) : 4h ban on Ip 203.0.113.5\"",
+   "location": "/var/log/crowdsec/crowdsec.log",
+   "expect_rule": "131591",
+   "expect_level": 5,
+   "note": "synthesized from CrowdSec pkg/models/helpers.go"
+  },
+  {
+   "log": "time=\"2026-10-11T10:00:00+08:00\" level=info msg=\"(fw1/crowdsec) crowdsecurity/http-probing by ip 203.0.113.6 (US/64500) : (simulated decision)4h ban on Ip 203.0.113.6\"",
+   "location": "/var/log/crowdsec/crowdsec.log",
+   "expect_rule": "131592",
+   "expect_level": 3,
+   "note": "synthesized; simulation mode"
+  },
+  {
+   "log": "time=\"2026-10-11T10:00:00+08:00\" level=info msg=\"Ip 203.0.113.5 performed 'crowdsecurity/ssh-bf' (6 events over 2.5s) at 2026-10-11 02:00:00.123 +0000 UTC\"",
+   "location": "/var/log/crowdsec/crowdsec.log",
+   "expect_rule": "131593",
+   "expect_level": 2,
+   "note": "synthesized from pkg/leakybucket/overflows.go"
+  },
+  {
+   "log": "time=\"2026-10-11T10:00:00+08:00\" level=fatal msg=\"starting outputs error : unable to connect to the local API\"",
+   "location": "/var/log/crowdsec/crowdsec.log",
+   "expect_rule": "131594",
+   "expect_level": 7,
+   "note": "synthesized"
+  },
+  {
+   "log": "time=\"2026-10-11T10:00:00+08:00\" level=info msg=\"Starting processing data\"",
+   "location": "/var/log/crowdsec/crowdsec.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized; near miss"
+  },
+  {
+   "log": "2026/10/11 10:00:00 opnsense-fw: Active response executed (add 203.0.113.5)",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "131597",
+   "expect_level": 3,
+   "note": "synthesized from scripts/wazuh/opnsense-fw"
+  },
+  {
+   "log": "2026/10/11 10:10:00 opnsense-fw: Active response executed (delete 203.0.113.5)",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "131598",
+   "expect_level": 2,
+   "note": "synthesized"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com lockout_handler[999]: lockout 203.0.113.9 [using table sshlockout] after 6 attempts",
+   "location": "192.0.2.1",
+   "expect_rule": "131555",
+   "expect_level": 8,
+   "note": "synthesized from scripts/syslog/lockout_handler"
+  },
+  {
+   "log": "Oct  4 20:58:06 fw1.example.com filterlog[32351]: 107,,,214f494f-d615-4049-ba16-def48bccf661,igb2,match,block,in,4,0x0,,52,2767,0,DF,6,tcp,60,203.0.113.72,192.0.2.134,17727,443,0,S,3343643665,,42340,,mss;sackOK;TS;nop;wscale",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "87701",
+   "expect_level": 5,
+   "note": "real (site firewall A, sanitized); a single block (no_log)"
+  },
+  {
+   "log": "Oct  4 20:58:06 fw1.example.com filterlog[32351]: 107,,,214f494f-d615-4049-ba16-def48bccf661,igb2,match,block,in,4,0x0,,52,2767,0,DF,6,tcp,60,203.0.113.72,192.0.2.134,17727,443,0,S,3343643665,,42340,,mss;sackOK;TS;nop;wscale",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "87702",
+   "expect_level": 10,
+   "repeat": 18,
+   "note": "real shape; 18 blocks from one source in 45 s"
+  }
+ ]
+}

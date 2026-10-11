@@ -1,0 +1,410 @@
+<!--
+  jt-opnsense: decoders for the OPNsense firewall's own security events
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  The os-wazuh-agent plugin copies the syslog programs ticked in its settings
+  into /var/ossec/logs/opnsense_syslog.log, in the classic BSD syslog format:
+    Mmm dd hh:mm:ss host program[pid]: text
+  Every decoder here expects that shape (the Wazuh pre-decoder removes the
+  header, so the patterns below see "text" only).
+
+  The format strings quoted in the comments come from the OPNsense core
+  repository (opnsense/core, master of 2026-10), FreeBSD (sys/netinet/ip_carp.c),
+  strongSwan (src/libcharon) and CrowdSec (pkg/models/helpers.go).
+-->
+
+<!--
+  OPNsense audit log (syslog ident "audit").
+
+  Wazuh already has a decoder for the program name "audit": the Solaris BSM
+  decoder solaris_bsm, whose rule 6100 is level 0. Without children of it every
+  OPNsense login, failed login and configuration change ended at 6100 and was
+  dropped. These decoders are children of solaris_bsm for that reason.
+
+  Field "user" is the OPNsense account (Wazuh stores it as dstuser; CDB lookups
+  name it "user").
+-->
+
+<!--
+  src/www/authgui.inc, through log_msg() which prefixes the script name:
+    sprintf("Successful login for user '%s' from: %s", usernamefld, REMOTE_ADDR)
+  Real: /index.php: Successful login for user 'root' from: 192.0.2.200
+-->
+<decoder name="jt-opnsense-gui-login">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^\S+: Successful login for user '</prematch>
+  <regex type="pcre2">^(\S+): Successful login for user '(.*)' from: (\S+)</regex>
+  <order>url, user, srcip</order>
+</decoder>
+
+<!--
+  src/www/authgui.inc:
+    "Web GUI authentication error for '{$_POST['usernamefld']}' from {$_SERVER['REMOTE_ADDR']}"
+  Note: no "user" and no colon, unlike the success line.
+-->
+<decoder name="jt-opnsense-gui-fail">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^\S+: Web GUI authentication error for '</prematch>
+  <regex type="pcre2">^(\S+): Web GUI authentication error for '(.*)' from (\S+)</regex>
+  <order>url, user, srcip</order>
+</decoder>
+
+<!--
+  src/www/authgui.inc:
+    sprintf("Session timed out for user '%s' from: %s", ...)
+    sprintf("User logged out for user '%s' from: %s", ...)
+-->
+<decoder name="jt-opnsense-gui-logout">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^\S+: (?:Session timed out|User logged out) for user '</prematch>
+  <regex type="pcre2">^(\S+): (Session timed out|User logged out) for user '(.*)' from: (\S+)</regex>
+  <order>url, opnsense.event, user, srcip</order>
+</decoder>
+
+<!--
+  src/opnsense/mvc/app/library/OPNsense/Auth/AuthenticationFactory.php (no script prefix):
+    "user %s authenticated successfully for %s [using %s + %s]"
+    "user %s could not authenticate for %s, failed constraints on %s authenticated via %s"
+    "user %s failed authentication for %s on %s via %s"        (LOG_DEBUG, one per authenticator tried)
+  The second %s is the service: WebGui, sshd, login, IPsec ...
+-->
+<decoder name="jt-opnsense-auth-ok">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^user \S+ authenticated successfully for \S+ \[using </prematch>
+  <regex type="pcre2">^user (\S+) authenticated successfully for (\S+) \[using (\S+) \+ ([^\]]+)\]</regex>
+  <order>user, opnsense.service, opnsense.auth_service, opnsense.authenticator</order>
+</decoder>
+
+<decoder name="jt-opnsense-auth-constraint">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^user \S+ could not authenticate for \S+, failed constraints on </prematch>
+  <regex type="pcre2">^user (\S+) could not authenticate for (\S+), failed constraints on (\S+) authenticated via (\S+)</regex>
+  <order>user, opnsense.service, opnsense.auth_service, opnsense.authenticator</order>
+</decoder>
+
+<decoder name="jt-opnsense-auth-fail">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^user \S+ failed authentication for \S+ on </prematch>
+  <regex type="pcre2">^user (\S+) failed authentication for (\S+) on (\S+) via (\S+)</regex>
+  <order>user, opnsense.service, opnsense.auth_service, opnsense.authenticator</order>
+</decoder>
+
+<!--
+  src/opnsense/mvc/app/library/OPNsense/Core/Config.php auditLogChange():
+    "user %s%s changed configuration to %s in %s %s"
+      username, " (impersonated_by)" or "", backup file, REQUEST_URI or SCRIPT_NAME,
+      revision description (translated: "made changes" is "已修改" in zh_TW)
+  getRevisionContext() and config.inc make_config_revision_entry() build the
+  username as <session user>@<REMOTE_ADDR> for the web interface and the API,
+  and as "(<whoami>)" without an address for scripts, cron and the console.
+  An account name that already contains "@" gets no address appended.
+  Real:
+    user root@192.0.2.200 changed configuration to /conf/backup/config-1791241409.0298.xml in /system_general.php /system_general.php made changes
+    user (root) changed configuration to /conf/backup/config-1791241958.381.xml in /usr/local/opnsense/mvc/script/run_migrations.php ...
+-->
+<decoder name="jt-opnsense-config-change-web">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^user \S+?@[0-9A-Fa-f:.]+ (?:\([^)]*\) )?changed configuration to </prematch>
+  <regex type="pcre2">^user (\S+?)@([0-9A-Fa-f:.]+) (?:\(([^)]*)\) )?changed configuration to (\S+) in (\S+)</regex>
+  <order>user, srcip, opnsense.impersonated_by, opnsense.backup, url</order>
+</decoder>
+
+<decoder name="jt-opnsense-config-change-system">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^user \(\S+\) changed configuration to </prematch>
+  <regex type="pcre2">^user \((\S+)\) changed configuration to (\S+) in (\S+)</regex>
+  <order>opnsense.system_user, opnsense.backup, url</order>
+</decoder>
+
+<decoder name="jt-opnsense-config-change-other">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^user \S+ (?:\([^)]*\) )?changed configuration to </prematch>
+  <regex type="pcre2">^user (\S+) (?:\(([^)]*)\) )?changed configuration to (\S+) in (\S+)</regex>
+  <order>user, opnsense.impersonated_by, opnsense.backup, url</order>
+</decoder>
+
+<!--
+  src/opnsense/mvc/app/controllers/OPNsense/Base/ControllerRoot.php doAuth():
+    sprintf("no active session, user not found (called \"%s\" @ %s)", REQUEST_URI, REMOTE_ADDR)
+    sprintf("session expired (%s @ %s)", Username, REMOTE_ADDR)
+    "uri " . REQUEST_URI . " not accessible for user " . Username
+-->
+<decoder name="jt-opnsense-nosession">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^no active session, user not found \(called "</prematch>
+  <regex type="pcre2">^no active session, user not found \(called "(.*)" @ (\S+)\)</regex>
+  <order>url, srcip</order>
+</decoder>
+
+<decoder name="jt-opnsense-session-expired">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^session expired \(</prematch>
+  <regex type="pcre2">^session expired \((\S+) @ (\S+)\)</regex>
+  <order>user, srcip</order>
+</decoder>
+
+<decoder name="jt-opnsense-page-denied">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^uri \S+ not accessible for user </prematch>
+  <regex type="pcre2">^uri (\S+) not accessible for user (\S+)</regex>
+  <order>url, user</order>
+</decoder>
+
+<!--
+  src/opnsense/mvc/app/controllers/OPNsense/Core/Api/FirmwareController.php:
+    sprintf("[Firmware] User %s executed a firmware update", user)    (also: upgrade, reboot,
+    poweroff, security audit, plugins sync, "an install of package %s", "an remove of
+    package %s", "a reinstall of package %s"), "[Firmware] User %s locked package %s" ...
+  Real: [Firmware] User root executed a firmware update
+-->
+<decoder name="jt-opnsense-firmware">
+  <parent>solaris_bsm</parent>
+  <prematch type="pcre2">^\[Firmware\] User \S+ </prematch>
+  <regex type="pcre2">^\[Firmware\] User (\S+) (.+)$</regex>
+  <order>user, opnsense.action</order>
+</decoder>
+
+<!--
+  API requests with a key (syslog ident "api").
+  src/opnsense/mvc/app/controllers/OPNsense/Base/ApiControllerBase.php:
+    "uri " . REQUEST_URI . " authentication failed for api key " . apiKey
+    "uri " . REQUEST_URI . " not accessible for user " . username . " using api key " . apiKey
+  The source address is not in either line.
+-->
+<decoder name="jt-opnsense-api">
+  <program_name type="pcre2">^api$</program_name>
+  <prematch type="pcre2">^uri \S+ (?:authentication failed for api key|not accessible for user) </prematch>
+</decoder>
+
+<decoder name="jt-opnsense-api-keyfail">
+  <parent>jt-opnsense-api</parent>
+  <prematch type="pcre2">^uri \S+ authentication failed for api key </prematch>
+  <regex type="pcre2">^uri (\S+) authentication failed for api key (\S+)</regex>
+  <order>url, opnsense.api_key</order>
+</decoder>
+
+<decoder name="jt-opnsense-api-denied">
+  <parent>jt-opnsense-api</parent>
+  <prematch type="pcre2">^uri \S+ not accessible for user </prematch>
+  <regex type="pcre2">^uri (\S+) not accessible for user (\S+) using api key (\S+)</regex>
+  <order>url, user, opnsense.api_key</order>
+</decoder>
+
+<!--
+  OPNsense login protection (src/opnsense/scripts/syslog/lockout_handler, Python
+  syslog with the default ident, the script name):
+    "lockout %s [using table %s] after %d attempts"
+-->
+<decoder name="jt-opnsense-lockout">
+  <program_name type="pcre2">^lockout_handler$</program_name>
+  <prematch type="pcre2">^lockout \S+ \[using table </prematch>
+  <regex type="pcre2">^lockout (\S+) \[using table (\S+)\] after (\d+) attempts</regex>
+  <order>srcip, opnsense.table, opnsense.attempts</order>
+</decoder>
+
+<!--
+  configd, the OPNsense backend (syslog ident "configd.py").
+  src/opnsense/service/modules/processhandler.py:
+    "action allowed %s for user %s"          (full command, e.g. firmware.update; the OS user)
+    "action %s not found for user %s"
+  src/opnsense/service/modules/actions/base.py:
+    "[%s] %s" % (message_uuid, message from actions_*.conf)
+  Real:
+    action allowed firmware.update for user root
+    [c4ce4878-6866-4d58-8d1a-ccac3a5600ee] Running firmware update
+-->
+<decoder name="jt-opnsense-configd">
+  <program_name type="pcre2">^configd\.py$</program_name>
+</decoder>
+
+<decoder name="jt-opnsense-configd-allowed">
+  <parent>jt-opnsense-configd</parent>
+  <prematch type="pcre2">^action allowed \S+ for user </prematch>
+  <regex type="pcre2">^action allowed (\S+) for user (\S+)</regex>
+  <order>opnsense.action, user</order>
+</decoder>
+
+<decoder name="jt-opnsense-configd-notfound">
+  <parent>jt-opnsense-configd</parent>
+  <prematch type="pcre2">^action \S+ not found for user </prematch>
+  <regex type="pcre2">^action (\S+) not found for user (\S+)</regex>
+  <order>opnsense.action, user</order>
+</decoder>
+
+<decoder name="jt-opnsense-configd-message">
+  <parent>jt-opnsense-configd</parent>
+  <prematch type="pcre2">^\[[0-9a-f-]{36}\] </prematch>
+  <regex type="pcre2">^\[([0-9a-f-]{36})\] (.*)$</regex>
+  <order>opnsense.uuid, opnsense.message</order>
+</decoder>
+
+<!--
+  FreeBSD pkg (programs "pkg" and "pkg-static"), one line per package:
+    <name> upgraded: <old> -> <new>      (also downgraded, reinstalled)
+    <name>-<version> installed
+    <name>-<version> deinstalled
+  Real: suricata upgraded: 8.0.6 -> 8.0.7_1
+-->
+<decoder name="jt-opnsense-pkg">
+  <program_name type="pcre2">^pkg(?:-static)?$</program_name>
+</decoder>
+
+<decoder name="jt-opnsense-pkg-change">
+  <parent>jt-opnsense-pkg</parent>
+  <prematch type="pcre2">^\S+ (?:upgraded|downgraded|reinstalled): </prematch>
+  <regex type="pcre2">^(\S+) (upgraded|downgraded|reinstalled): (\S+) -\x3e (\S+)</regex>
+  <order>opnsense.package, opnsense.pkg_action, opnsense.old_version, opnsense.new_version</order>
+</decoder>
+
+<decoder name="jt-opnsense-pkg-install">
+  <parent>jt-opnsense-pkg</parent>
+  <prematch type="pcre2">^\S+ (?:installed|deinstalled)$</prematch>
+  <regex type="pcre2">^(\S+) (installed|deinstalled)$</regex>
+  <order>opnsense.package, opnsense.pkg_action</order>
+</decoder>
+
+<!--
+  dpinger, the gateway monitor. Real:
+    ALERT: WAN_GW (Addr: 198.51.100.1 Alarm: none -> down RTT: 3.9 ms RTTd: 7.0 ms Loss: 23.0 %)
+-->
+<decoder name="jt-opnsense-dpinger">
+  <program_name type="pcre2">^dpinger$</program_name>
+</decoder>
+
+<decoder name="jt-opnsense-dpinger-alarm">
+  <parent>jt-opnsense-dpinger</parent>
+  <prematch type="pcre2">^ALERT: \S+ \(Addr: </prematch>
+  <regex type="pcre2">^ALERT: (\S+) \(Addr: (\S+) Alarm: (\S+) -\x3e (\S+) </regex>
+  <order>opnsense.gateway, dstip, opnsense.from, opnsense.to</order>
+</decoder>
+
+<!--
+  OpenVPN instances on OPNsense log as openvpn_server<N> / openvpn_client<N>, which the
+  built-in "openvpn" decoder takes. Its children extract no source address from the
+  "<proto>:<address>:<port> " prefix that OpenVPN 2.6 and 2.7 put in front of
+  per-client lines, so frequency rules could not group by source. Real:
+    udp6:198.51.100.128:11445 TLS Error: TLS key negotiation failed to occur within 60 seconds (check your network connectivity)
+  (The built-in children still win for the lines they recognise.)
+-->
+<decoder name="jt-opnsense-openvpn-peer">
+  <parent>openvpn</parent>
+  <prematch type="pcre2">^(?:udp|tcp)[46]?(?:-server|-client)?:\S+:\d+ </prematch>
+  <regex type="pcre2">^(?:udp|tcp)[46]?(?:-server|-client)?:(?:\[AF_INET6?\])?(\S+):(\d+) </regex>
+  <order>srcip, srcport</order>
+</decoder>
+
+<!--
+  CARP, from the FreeBSD kernel (sys/netinet/ip_carp.c):
+    CARP_LOG("%s: %s -> %s (%s)\n", "<vhid>@<interface>", old state, new state, reason)
+    CARP_LOG("demoted by %d to %d (%s)\n", ...)
+  with "carp: " in front. FreeBSD 14 adds a "<6>[sequence] " prefix to kernel lines
+  (real: kernel: <6>[11035654] arp: 192.0.2.142 moved from ...), so the prefix is optional.
+  Child of the built-in "kernel" decoder.
+-->
+<decoder name="jt-opnsense-carp-state">
+  <parent>kernel</parent>
+  <prematch type="pcre2">^(?:\x3c\d+\x3e)?(?:\[\d+\] )?carp: \d+@\S+: \S+ -\x3e </prematch>
+  <regex type="pcre2">carp: (\d+)@(\S+): (\S+) -\x3e (\S+) \((.*)\)</regex>
+  <order>opnsense.vhid, opnsense.interface, opnsense.from, opnsense.to, opnsense.reason</order>
+</decoder>
+
+<decoder name="jt-opnsense-carp-demotion">
+  <parent>kernel</parent>
+  <prematch type="pcre2">^(?:\x3c\d+\x3e)?(?:\[\d+\] )?carp: demoted by </prematch>
+  <regex type="pcre2">carp: demoted by (-?\d+) to (-?\d+) \((.*)\)</regex>
+  <order>opnsense.demotion, opnsense.demotion_total, opnsense.reason</order>
+</decoder>
+
+<!--
+  strongSwan charon (IPsec). Each line is "<thread>[<group>] <<conn>|<id>> <message>"
+  (src/libcharon/bus/listeners/sys_logger.c), the <conn|id> part when ike_name is on.
+  Messages from src/libcharon:
+    "IKE_SA %s[%u] established between %H[%Y]...%H[%Y]"        (ikev2/tasks/ike_establish.c, ikev1 main/aggressive mode)
+    "deleting IKE_SA %s[%u] between %H[%Y]...%H[%Y]"           (ikev2/tasks/ike_delete.c)
+    "tried %d shared key%s for '%Y' - '%Y', but MAC mismatched" (ikev2/authenticators/psk_authenticator.c)
+    "no trusted %N public key found for '%Y'"                  (pubkey_authenticator.c)
+    "received %N notify error"                                (AUTHENTICATION_FAILED from the peer)
+    "XAuth authentication of '%Y' failed|successful"           (ikev1/tasks/xauth.c)
+    "RADIUS authentication of '%Y' failed|successful"          (plugins/eap_radius)
+    "EAP method %N failed for peer %Y"                         (eap_authenticator.c)
+    "constraint check failed: ..."                             (ikev2/tasks/ike_auth.c)
+    "no IKE config found for %H...%H, sending %N"              (task_manager_v2.c)
+    "giving up after %d retransmits"                           (task_manager_v2.c)
+-->
+<decoder name="jt-strongswan">
+  <program_name type="pcre2">^charon$</program_name>
+  <prematch type="pcre2">^\d+\[\w+\] </prematch>
+</decoder>
+
+<decoder name="jt-strongswan-sa">
+  <parent>jt-strongswan</parent>
+  <prematch type="pcre2">(?:IKE_SA \S+ established between|deleting IKE_SA \S+ between) </prematch>
+  <regex type="pcre2">^\d+\[\w+\] (?:\x3c([^|\x3e]+)\|?\d*\x3e )?(?:deleting )?IKE_SA (\S+?)\[\d+\] (?:established )?between (\S+?)\[(.*?)\]\.\.\.(\S+?)\[(.*?)\]</regex>
+  <order>opnsense.ipsec_conn, opnsense.ike_sa, opnsense.local, opnsense.local_id, srcip, opnsense.remote_id</order>
+</decoder>
+
+<decoder name="jt-strongswan-noconfig">
+  <parent>jt-strongswan</parent>
+  <prematch type="pcre2">no IKE config found for </prematch>
+  <regex type="pcre2">no IKE config found for (\S+?)\.\.\.(\S+?),</regex>
+  <order>opnsense.local, srcip</order>
+</decoder>
+
+<decoder name="jt-strongswan-user">
+  <parent>jt-strongswan</parent>
+  <prematch type="pcre2">(?:XAuth|RADIUS) authentication of '</prematch>
+  <regex type="pcre2">^\d+\[\w+\] (?:\x3c([^|\x3e]+)\|?\d*\x3e )?(?:XAuth|RADIUS) authentication of '([^']*)' (?:\(myself\) )?(successful|failed)</regex>
+  <order>opnsense.ipsec_conn, user, opnsense.result</order>
+</decoder>
+
+<decoder name="jt-strongswan-conn">
+  <parent>jt-strongswan</parent>
+  <regex type="pcre2">^\d+\[\w+\] \x3c([^|\x3e]+)\|\d+\x3e </regex>
+  <order>opnsense.ipsec_conn</order>
+</decoder>
+
+<!--
+  CrowdSec, from its own log file /var/log/crowdsec/crowdsec.log (logrus text format,
+  log_media "file", which is what the OPNsense plugin uses). Not syslog: the agent
+  group reads the file.
+  pkg/models/helpers.go FormatAsStrings():
+    "(%s) %s : %s"  ->  "(<machine>/<origin>) <scenario> by ip <value> (<cc>/<asn>) : <duration> <type> on <scope> <value>"
+  pkg/leakybucket/overflows.go:
+    "%s %s performed '%s' (%d events over %s) at %s"
+  Example: time="2026-10-11T10:00:00+08:00" level=info msg="(fw1/crowdsec) crowdsecurity/ssh-bf by ip 203.0.113.5 (CN/4134) : 4h ban on Ip 203.0.113.5"
+-->
+<decoder name="jt-crowdsec">
+  <prematch type="pcre2">^time="[^"]+" level=\w+ msg="</prematch>
+</decoder>
+
+<decoder name="jt-crowdsec-decision">
+  <parent>jt-crowdsec</parent>
+  <prematch type="pcre2">msg="\([^)]*\) \S+ .* : (?:\(simulated (?:alert|decision)\))?\S+ \S+ on \S+ </prematch>
+  <regex type="pcre2">msg="\(([^)]*)\) (\S+) .*: (\(simulated (?:alert|decision)\))?(\S+) (\S+) on (\S+) ([^" ]+)"</regex>
+  <order>crowdsec.origin, crowdsec.scenario, crowdsec.simulated, crowdsec.duration, crowdsec.decision, crowdsec.scope, srcip</order>
+</decoder>
+
+<decoder name="jt-crowdsec-overflow">
+  <parent>jt-crowdsec</parent>
+  <prematch type="pcre2">msg="(?:Ip|Range) \S+ performed '</prematch>
+  <regex type="pcre2">msg="(Ip|Range) (\S+) performed '([^']+)' \((\d+) events over</regex>
+  <order>crowdsec.scope, srcip, crowdsec.scenario, crowdsec.events</order>
+</decoder>
+
+<decoder name="jt-crowdsec-severe">
+  <parent>jt-crowdsec</parent>
+  <prematch type="pcre2">^time="[^"]+" level=(?:fatal|panic) </prematch>
+  <regex type="pcre2">^time="[^"]+" level=(\w+) msg="(.*)"</regex>
+  <order>crowdsec.level, crowdsec.message</order>
+</decoder>
+
+<!--
+  The os-wazuh-agent plugin's own active-response script writes to
+  /var/ossec/logs/active-responses.log (src/opnsense/scripts/wazuh/opnsense-fw):
+    "<%Y/%m/%d %H:%M:%S> opnsense-fw: Active response executed (add|delete <ip>)"
+-->
+<decoder name="jt-opnsense-fw-ar">
+  <prematch type="pcre2">^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d opnsense-fw: </prematch>
+  <regex type="pcre2">^\S+ \S+ opnsense-fw: Active response executed \((add|delete) (\S+)\)</regex>
+  <order>action, srcip</order>
+</decoder>

@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.12.2
+# jt-wazuh-mgr v1.13.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.12.2-blue)
+![Version](https://img.shields.io/badge/version-1.13.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -91,7 +91,8 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 - 移除會還原被覆蓋的原檔，**拒絕刪除你修改過的規則檔**，並保留站台維護的清單
 - 需要管理端以外設定（Sysmon 過濾條件、auditd、agent 群組、syslog 轉送）的套件附**部署說明**：逐步編號、可複製的指令、每一步的確認方式，以及可檢視或下載的 agent 端檔案
 - 檔案是手動複製進去的套件會顯示為**已安裝（未登記）**，不再被判成和自己衝突
-- 內建套件：可攜式程式偵測（Windows/Linux/macOS）、IP 威脅情資、惡意程式雜湊比對、Zimbra 偵測、Zenarmor（OPNsense）、AdGuard Home、fail2ban、可讀的告警摘要信
+- **主動回應（選用）：** 套件可以提供回應（例如封鎖暴力破解的來源）。安裝時一項都不啟用；每一項都寫明封鎖什麼、在哪裡封鎖與風險。啟用會把加了標記的區塊寫進叢集每個節點的 `ossec.conf`、逐一驗證，任一節點不接受就全部還原；停用會把檔案完整還原。頁面也會顯示各節點的 `white_list`，以及哪些 manager 還需要重新啟動
+- 內建 22 個套件：可攜式程式偵測（Windows/Linux/macOS）、IP 威脅情資、惡意程式雜湊比對、可讀的告警摘要信、Zimbra、Z-Push、Proxmox VE 與 Ceph、Proxmox Backup Server、Proxmox Mail Gateway、OPNsense、Zenarmor、AdGuard Home、fail2ban、Keycloak、Univention Corporate Server／Samba AD、Nextcloud、LibreNMS、Synology DSM、Odoo、Jitsi Meet、jt-ipam 與 jt-vc-portal
 
 ### 安全性
 - 所有參數皆做輸入驗證；防範指令注入與路徑穿越

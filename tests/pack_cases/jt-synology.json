@@ -1,0 +1,668 @@
+{
+ "pack": "jt-synology",
+ "sandbox_lists": {
+  "jt-synology-service-accounts": "svc-pve:service\nsvc-both:service\n",
+  "jt-synology-admin-accounts": "nas-admin:admin\nsvc-both:admin\n"
+ },
+ "cases": [
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-pve] from [192.0.2.108] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132015",
+   "expect_level": 0,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; the 48,987-a-day polling account, listed"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132010",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; unlisted account still alerts"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] signed in to [DSM] successfully via [OTP].",
+   "location": null,
+   "expect_rule": "132010",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; second step of a two-factor sign-in"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] has successfully passed the first authentication of 2FA via [password]",
+   "location": null,
+   "expect_rule": "132014",
+   "expect_level": 2,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; password step of two-factor, below alert level"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [admin] from [192.0.2.31] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132016",
+   "expect_level": 5,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); DSM built-in admin, listed by default"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [nas-admin] from [192.0.2.31] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132016",
+   "expect_level": 5,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); account added to the admin list"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-both] from [192.0.2.108] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132015",
+   "expect_level": 0,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); in both lists, the service account list wins"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [nas-admin] from [192.0.2.31] logged in successfully via [SSH].",
+   "location": null,
+   "expect_rule": "132011",
+   "expect_level": 5,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); SSH is administrators only on DSM"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-pve] from [192.0.2.108] logged in successfully via [SSH].",
+   "location": null,
+   "expect_rule": "132011",
+   "expect_level": 5,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); a listed service account still alerts for a shell"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] logged in successfully via [WebDAV].",
+   "location": null,
+   "expect_rule": "132012",
+   "expect_level": 3,
+   "note": "synthesized from the published SSH shape; other services stay at 3"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [EXAMPLE\\alice] from [pc1(192.0.2.30)] via [CIFS(SMB3)] accessed shared folder [projects].",
+   "location": null,
+   "expect_rule": "132013",
+   "expect_level": 2,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); SMB tree connect, below alert level"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-pve] from [pve1(192.0.2.108)] via [CIFS(SMB3)] accessed shared folder [backup].",
+   "location": null,
+   "expect_rule": "132015",
+   "expect_level": 0,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); listed service account"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] logged out the server via [DSM].",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized near miss: a log-out is not a login"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [bob] from [192.0.2.32] failed to sign in to [DSM] via [password] due to authorization failure.",
+   "location": null,
+   "expect_rule": "132020",
+   "expect_level": 5,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-pve] from [192.0.2.108] failed to sign in to [DSM] via [password] due to authorization failure.",
+   "location": null,
+   "expect_rule": "132020",
+   "expect_level": 5,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); failures of a listed service account still alert"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [guest] from [10.0.0.44] failed to log in via [SMB] due to [NTLMv1 not permitted].",
+   "location": null,
+   "expect_rule": "132022",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; NTLMv1-only client (a network scanner on the measured NAS)"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [guest] from [10.0.0.44] failed to log in via [SMB] due to [NTLMv1 not permitted].",
+   "location": null,
+   "expect_rule": "132022",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; twelve in a row must not become brute force",
+   "repeat": 12
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] failed to log in via [SSH] due to authorization failure.",
+   "location": null,
+   "expect_rule": "132020",
+   "expect_level": 5,
+   "note": "synthesized from the published SMB failure shape"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection SYSTEM: User [alice] from [192.0.2.30] failed to log in via [DSM] due to authorization failure.",
+   "location": null,
+   "expect_rule": "132020",
+   "expect_level": 5,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); DSM 6 wording"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection SYSTEM: User [alice] failed to log in from [192.0.2.30] via [DSM].",
+   "location": null,
+   "expect_rule": "132020",
+   "expect_level": 5,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); DSM 6 older wording"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] failed to sign in to [DSM] via [OTP] due to authorization failure.",
+   "location": null,
+   "expect_rule": "132023",
+   "expect_level": 6,
+   "note": "synthesized from the real \"signed in to [DSM] successfully via [OTP]\" line"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.50] failed to sign in to [DSM] via [password] due to authorization failure.",
+   "location": null,
+   "expect_rule": "132024",
+   "expect_level": 10,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); 8 failures in 2 minutes, internal address",
+   "repeat": 8
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [203.0.113.50] failed to sign in to [DSM] via [password] due to authorization failure.",
+   "location": null,
+   "expect_rule": "132025",
+   "expect_level": 10,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); 8 failures in 2 minutes, external address",
+   "repeat": 8
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [203.0.113.50] failed to sign in to [DSM] via [password] due to authorization failure.",
+   "location": null,
+   "expect_rule": "132020",
+   "expect_level": 5,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); near miss, 7 failures",
+   "repeat": 7
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [carol] from [203.0.113.1] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [carol] from [203.0.113.2] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [carol] from [203.0.113.3] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [carol] from [203.0.113.4] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [carol] from [203.0.113.5] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [carol] from [203.0.113.6] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [carol] from [203.0.113.7] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [carol] from [203.0.113.8] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [carol] from [203.0.113.9] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [carol] from [203.0.113.10] failed to sign in to [DSM] via [password] due to authorization failure.",
+   "location": null,
+   "expect_rule": "132026",
+   "expect_level": 10,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); one account, ten addresses, five minutes"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: Host [203.0.113.60] was blocked via [DSM].",
+   "location": null,
+   "expect_rule": "132028",
+   "expect_level": 10,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2) (Synology community post); DSM auto block, external"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: Host [10.0.0.60] was blocked via [SSH].",
+   "location": null,
+   "expect_rule": "132027",
+   "expect_level": 10,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); DSM auto block, internal"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] was locked out because of too many failed sign-in attempts.",
+   "location": null,
+   "expect_rule": "132029",
+   "expect_level": 8,
+   "note": "synthesized; DSM 7 account protection wording not available"
+  },
+  {
+   "log": "1 2026-10-11T11:12:30+08:00 nas1 Connection - - [meta sequenceId=\"5\"] User [alice] from [192.0.2.30] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132010",
+   "expect_level": 3,
+   "note": "IETF format as syslog-ng writes it (DSM uses syslog-ng); message real"
+  },
+  {
+   "log": "1 2026-10-11T11:12:30+08:00 nas1 Connection - - - User [svc-pve] from [192.0.2.108] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132015",
+   "expect_level": 0,
+   "note": "IETF format without structured data; message real"
+  },
+  {
+   "log": "1 2026-10-11T11:12:30+08:00 nas1 Connection - - [meta sequenceId=\"6\"] User [bob] from [192.0.2.32] failed to sign in to [DSM] via [password] due to authorization failure.",
+   "location": null,
+   "expect_rule": "132020",
+   "expect_level": 5,
+   "note": "IETF format; message real"
+  },
+  {
+   "log": "1 2026-10-11T11:12:30+08:00 nas1 Hyper_Backup - - [meta sequenceId=\"7\"] SYSTEM:\t[Network][Daily offsite] Failed to run backup task.",
+   "location": null,
+   "expect_rule": "132042",
+   "expect_level": 10,
+   "note": "IETF format; message from published samples"
+  },
+  {
+   "log": "1 2026-10-11T11:12:30+08:00 nas1 System - - [meta sequenceId=\"9\"] SYSTEM:\tVolume [1] has crashed.",
+   "location": null,
+   "expect_rule": "132071",
+   "expect_level": 12,
+   "note": "IETF format; synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 02:00:41 nas1 Hyper_Backup: SYSTEM:\t[Network][Daily offsite] Backup task finished successfully. [227439 files scanned] [227439 files unchanged]",
+   "location": null,
+   "expect_rule": "132041",
+   "expect_level": 2,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized"
+  },
+  {
+   "log": "Oct 11 02:00:41 nas1 Hyper_Backup: SYSTEM:\t[Network][Daily offsite] Backup task finished successfully. [227439 files scanned] [62 new files] [227377 files unchanged]",
+   "location": null,
+   "expect_rule": "132041",
+   "expect_level": 2,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized"
+  },
+  {
+   "log": "Oct 11 02:00:41 nas1 Hyper_Backup: SYSTEM:\t[Network][Daily offsite] Backup task started.",
+   "location": null,
+   "expect_rule": "132040",
+   "expect_level": 0,
+   "note": "shape from the site decoder comment and published samples"
+  },
+  {
+   "log": "Oct 11 02:00:41 nas1 Hyper_Backup: SYSTEM:\t[Network][Daily offsite] Failed to run backup task.",
+   "location": null,
+   "expect_rule": "132042",
+   "expect_level": 10,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2) (DSM 6 wording on the DSM 7 prefix)"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Backup SYSTEM:\t[Network][Daily offsite] Failed to run backup task.",
+   "location": null,
+   "expect_rule": "132042",
+   "expect_level": 10,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); DSM 6"
+  },
+  {
+   "log": "Oct 11 02:00:41 nas1 Hyper_Backup: SYSTEM:\t[Network][Daily offsite] Backup task was cancelled.",
+   "location": null,
+   "expect_rule": "132044",
+   "expect_level": 5,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2)"
+  },
+  {
+   "log": "Oct 11 02:00:41 nas1 Hyper_Backup: SYSTEM:\t[Network][Daily offsite] Backup task was partially completed.",
+   "location": null,
+   "expect_rule": "132043",
+   "expect_level": 7,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2)"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Backup SYSTEM: Scheduled backup has been skipped because it collides an undergoing backup task. please re-arrange the backup schedule to avoid collisions.",
+   "location": null,
+   "expect_rule": "132044",
+   "expect_level": 5,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); DSM 6"
+  },
+  {
+   "log": "Oct 11 02:00:41 nas1 Hyper_Backup: SYSTEM:\tBackup task [Daily offsite] was removed.",
+   "location": null,
+   "expect_rule": "132045",
+   "expect_level": 8,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2) (DSM 6 wording on the DSM 7 prefix)"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Backup SYSTEM: Backup task [Daily offsite] was removed.",
+   "location": null,
+   "expect_rule": "132045",
+   "expect_level": 8,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); DSM 6"
+  },
+  {
+   "log": "Oct 11 02:00:41 nas1 Hyper_Backup: SYSTEM:\t[Network][Daily offsite] Failed to run backup task.",
+   "location": null,
+   "expect_rule": "132046",
+   "expect_level": 12,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); third failure of the same task",
+   "repeat": 3
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 WinFileService Event: delete, Path: /projects/Q3 report.docx, File/Folder: File, Size: 9.81 KB, User: EXAMPLE\\alice, IP: 192.0.2.30",
+   "location": null,
+   "expect_rule": "132050",
+   "expect_level": 2,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2)"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 WinFileService Event: rename, Path: /projects/old -> /projects/new, File/Folder: Folder, Size: NA, User: EXAMPLE\\alice, IP: 192.0.2.30",
+   "location": null,
+   "expect_rule": "132051",
+   "expect_level": 2,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2)"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 WinFileService Event: read, Path: /projects/a.txt, File/Folder: File, Size: 1.00 KB, User: alice, IP: 192.0.2.30",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "shape from the site decoder comment; reads never alert"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 FileStation Event: upload, Path: /Shared/Quarterly report.docx, File/Folder: File, Size: 18.77 KB, User: alice, IP: 192.0.2.30",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2) (File Station)"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 WinFileService Event: delete, Path: /projects/a.docx, File/Folder: File, Size: 9.81 KB, User: alice, IP: 192.0.2.30",
+   "location": null,
+   "expect_rule": "132052",
+   "expect_level": 10,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2) (shape); 300 deletions in a minute",
+   "repeat": 300
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 WinFileService Event: delete, Path: /projects/a.docx, File/Folder: File, Size: 9.81 KB, User: alice, IP: 192.0.2.30",
+   "location": null,
+   "expect_rule": "132050",
+   "expect_level": 2,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2) (shape); near miss, 299 deletions",
+   "repeat": 299
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 WinFileService Event: rename, Path: /projects/a.docx -> /projects/a.docx.locked, File/Folder: File, Size: 9.81 KB, User: alice, IP: 192.0.2.30",
+   "location": null,
+   "expect_rule": "132053",
+   "expect_level": 12,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2) (shape); 100 renames in a minute",
+   "repeat": 100
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: User [bob] was created.",
+   "location": null,
+   "expect_rule": "132060",
+   "expect_level": 6,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System SYSTEM: System successfully deleted User [bob].",
+   "location": null,
+   "expect_rule": "132060",
+   "expect_level": 6,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device; DSM 6 prefix"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: SYSTEM:\tPassword of the user [bob] was changed.",
+   "location": null,
+   "expect_rule": "132061",
+   "expect_level": 6,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device; DSM 7 actor prefix"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: admin:\tUser [bob] was added to the group [administrators].",
+   "location": null,
+   "expect_rule": "132063",
+   "expect_level": 8,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: User [bob] was added to the group [sales].",
+   "location": null,
+   "expect_rule": "132062",
+   "expect_level": 6,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device; near miss for administrators"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: User [bob] was removed from the group [administrators].",
+   "location": null,
+   "expect_rule": "132062",
+   "expect_level": 6,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device; removal is not an escalation"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: App privilege was set to [allow] on app [File Station] for user [bob].",
+   "location": null,
+   "expect_rule": "132064",
+   "expect_level": 5,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: 2-step verification for user [bob] was disabled.",
+   "location": null,
+   "expect_rule": "132065",
+   "expect_level": 6,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: SYSTEM:\tStorage Pool [1] was degraded [1/2]. Please repair it.",
+   "location": null,
+   "expect_rule": "132070",
+   "expect_level": 12,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System SYSTEM: Storage Pool [1] was degraded [1/2]. Please repair it.",
+   "location": null,
+   "expect_rule": "132070",
+   "expect_level": 12,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device; DSM 6 prefix"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Volume [1] has crashed.",
+   "location": null,
+   "expect_rule": "132071",
+   "expect_level": 12,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Storage Pool [1] was repaired.",
+   "location": null,
+   "expect_rule": "132072",
+   "expect_level": 3,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: S.M.A.R.T. status of Drive 3 is Failing.",
+   "location": null,
+   "expect_rule": "132073",
+   "expect_level": 10,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: The system detected bad sectors on Drive 2.",
+   "location": null,
+   "expect_rule": "132073",
+   "expect_level": 10,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: S.M.A.R.T. quick test on Drive 2 completed successfully.",
+   "location": null,
+   "expect_rule": "132074",
+   "expect_level": 2,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device; near miss for 132073"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Volume [1] is almost full.",
+   "location": null,
+   "expect_rule": "132075",
+   "expect_level": 7,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Volume [2] was removed.",
+   "location": null,
+   "expect_rule": "132076",
+   "expect_level": 8,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Server is on battery.",
+   "location": null,
+   "expect_rule": "132080",
+   "expect_level": 8,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: UPS battery is low. The system is entering safe mode.",
+   "location": null,
+   "expect_rule": "132081",
+   "expect_level": 10,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Server back online.",
+   "location": null,
+   "expect_rule": "132082",
+   "expect_level": 3,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Local UPS was plugged in.",
+   "location": null,
+   "expect_rule": "132082",
+   "expect_level": 3,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Local UPS was plugged out.",
+   "location": null,
+   "expect_rule": "132083",
+   "expect_level": 5,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: System booted up from an improper shutdown.",
+   "location": null,
+   "expect_rule": "132084",
+   "expect_level": 7,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: System started counting down to reboot.",
+   "location": null,
+   "expect_rule": "132085",
+   "expect_level": 3,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Package [Container Manager] has been successfully installed.",
+   "location": null,
+   "expect_rule": "132086",
+   "expect_level": 5,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Package [Container Manager] has been successfully uninstalled.",
+   "location": null,
+   "expect_rule": "132086",
+   "expect_level": 5,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Package [Hyper Backup] has been successfully updated.",
+   "location": null,
+   "expect_rule": "132087",
+   "expect_level": 3,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device; near miss for 132086"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Update was complete.",
+   "location": null,
+   "expect_rule": "132087",
+   "expect_level": 3,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Failed to update package [Hyper Backup].",
+   "location": null,
+   "expect_rule": "132088",
+   "expect_level": 5,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: System successfully started [SSH service].",
+   "location": null,
+   "expect_rule": "132090",
+   "expect_level": 6,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: System successfully stopped [SSH service].",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device; near miss"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: System successfully started [Rsync].",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device; near miss, not a shell service"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: User [admin] changed firewall settings.",
+   "location": null,
+   "expect_rule": "132091",
+   "expect_level": 6,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Normal shared folder [projects] was created.",
+   "location": null,
+   "expect_rule": "132092",
+   "expect_level": 5,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Shared folder [projects] was deleted.",
+   "location": null,
+   "expect_rule": "132093",
+   "expect_level": 8,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Metadata of shared folder [projects] was deleted.",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device; near miss"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Security Advisor scan completed. 2 risks found.",
+   "location": null,
+   "expect_rule": "132094",
+   "expect_level": 5,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Security Advisor found malware on the system.",
+   "location": null,
+   "expect_rule": "132095",
+   "expect_level": 10,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 System: Test message from Synology Syslog Client from (192.0.2.20)",
+   "location": null,
+   "expect_rule": "132096",
+   "expect_level": 3,
+   "note": "synthesized from the DSM message catalogue (Xboarder56 event mappings); not verified on a device (Log Center, Send test log)"
+  },
+  {
+   "log": "Oct 11 11:12:30 router1 System: Fan speed normal",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: another device using the program name System"
+  },
+  {
+   "log": "Oct 11 11:12:30 host1 sshd[1234]: Accepted password for alice from 192.0.2.30 port 50022 ssh2",
+   "location": null,
+   "expect_rule": "5715",
+   "expect_level": 3,
+   "note": "near miss: built-in sshd rules unaffected"
+  },
+  {
+   "log": "1 2026-10-11T11:12:30+00:00 fw1 filterlog 123 - - 5,,,1000,igb0,match,pass,in,4,0x0,,64,0,0,DF,6,tcp,60,192.0.2.30,198.51.100.5,50022,443,0,S",
+   "location": null,
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: an RFC 5424 line from another product is not decoded by this pack"
+  }
+ ]
+}

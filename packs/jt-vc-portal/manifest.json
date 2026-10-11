@@ -1,0 +1,140 @@
+{
+ "id": "jt-vc-portal",
+ "name": "jt-vc-portal Meeting Portal Audit",
+ "name_zh": "jt-vc-portal 會議入口稽核",
+ "version": "1.0",
+ "summary": "Sign-ins, brute force, account and single sign-on changes, the security event export, settings exports and recordings from the jt-vc-portal audit log (JaaS / Jitsi meeting portal).",
+ "summary_zh": "jt-vc-portal（JaaS／Jitsi 會議入口）稽核記錄中的登入、暴力破解、帳號與單一登入變更、安全事件外拋、設定匯出與錄影。",
+ "rule_id_range": "132100-132199",
+ "notes": [
+  "jt-vc-portal (it calls itself jaas-auth in its logs) writes one JSON line per action to audit-log.jsonl in its data directory: sign-ins and failures, accounts, settings, exports, recordings, transcripts and meetings. Wazuh's built-in json decoder decodes every key of these lines, but no rule looks at them. This pack classifies every action the portal writes, on the fields the json decoder produces (action, actor, role, result, ip, detail). It adds no decoder for the file: a child of the json decoder makes every other JSON source lose its fields (measured), so the client address stays in the field ip and is not srcip.",
+  "Sign-in: a password or single sign-on sign-in is level 3, an administrator's level 4. A failed sign-in is level 5, a failed single sign-on level 5 (level 3 for the connection test on the settings page), an attempt while the portal has the address or account locked level 6, and a correct password with a wrong second factor level 7.",
+  "Brute force: 5 failed password sign-ins from one address in 10 minutes is level 10, the same threshold at which the portal locks the address itself, so the alert means the lock has just happened (attempts during the lock are level 6 each and are not counted again); 10 failures for one account in 15 minutes, the portal's account lock, is level 10 as well. A successful sign-in from an address that set off the first rule within the hour is level 12. Single sign-on failures are not counted: the password is checked by the identity provider, and the failures seen were configuration and an identity provider that was down.",
+  "Accounts: creating, changing or deleting an account is level 6; creating an administrator or granting the administrator role level 8; turning off one's own second factor level 6. Settings: single sign-on (including the emergency command line tool that turns it off) level 8, importing a settings file level 8, exporting the settings, which writes every stored secret in clear text, level 7, the secret sign-in path level 7, the mail server and where meetings, recordings or transcripts are sent level 6, other settings level 3. Colour theme, site name, logo and personal preferences are level 2.",
+  "The security event export (SIEM): any save is level 10 and turning it off level 12, because its audit record names the format and protocol but not the destination, so a save may have redirected it, and because when it is turned off the portal applies the change before writing the record: the record of the export being turned off is never exported. Only the audit file shows it, which is one reason the file is the primary source.",
+  "Recordings and transcripts downloaded or deleted, and the audit log exported, are level 5; a transcript viewed or its speakers renamed level 3; a transcript removed by the portal because its recording is gone level 3. Meeting rooms created and entered, invitations and guests joining are the portal's normal business and stay at level 2; deleting a room is level 3. An action this pack does not know (a newer portal version) is level 3 rather than dropped.",
+  "Measured on one installation: 1,328 real records in 144 days, three quarters of them from test automation on one machine. At the levels above that is 537 alerts at level 3 or more, 200 once the three test accounts are listed in etc/lists/jt-vc-portal-quiet-accounts (their sign-ins and routine actions drop to level 0; their failures, account and settings changes, exports and deleted recordings never do). Nothing in that history reached level 10; three records reached 7 or 8 (a settings export and two single sign-on changes).",
+  "Records marked \"demo\":true are sample data written by the portal's demo generator; they decode to nothing and never alert. The agent sends only lines appended after it starts reading, so an existing history is not replayed when the group is assigned.",
+  "The portal's own export can also be pointed at the manager as RFC 5424 syslog or CEF; Wazuh 4.14.7 has no decoder for either shape and this pack adds both, decoded into the same fields so the same rules apply. Syslog carries only the action, the account and the detail: no address, so no brute force by address and no active response. CEF adds the address and the result. Neither carries the role, so administrator sign-ins are level 3 there. GELF cannot be received by Wazuh. The export goes to one collector only; use it or the file, never both, or every record alerts twice and failures are counted twice.",
+  "The sign-in rules are deliberately outside Wazuh's authentication_success and authentication_failed groups. Built-in rules hang off those groups (after-hours and weekend logins at level 9, a second brute-force rule, a user named guest at level 12) and would compete with this pack's rules in no fixed order, so the level of a sign-in would depend on the time of day.",
+  "The address is what the portal recorded: behind a reverse proxy it is the client from X-Real-IP, but only when the proxy is listed in JTVC_TRUSTED_PROXIES. With that variable empty the portal believes the header from anyone, so a client that reaches the portal directly can write any address into the log. Set it before relying on the address.",
+  "No active response is offered. The Wazuh firewall commands block srcip, which the audit file does not provide (see above), and on the portal host itself a block would do nothing for clients that come through a reverse proxy, since their connections arrive from the proxy. The portal already locks an address after 5 failures and an account after 10. Where the CEF export is used instead of the file, srcip exists, and firewall-drop on the reverse proxy's agent for rule 132150 is possible; it blocks every site that proxy serves for everyone behind the same address.",
+  "Known gaps in what the portal records: a settings save names neither the export destination nor whether the audit log retention changed (it is saved with the meeting settings).",
+  "The portal's retention clean-up rewrites the audit file in place, and the agent cannot follow that. Measured on 4.14.7 with the portal's own method: when the file stays shorter than before until the agent's next file check (about a minute), the agent reads the whole file again and every remaining record arrives a second time as a new event; when a new record makes it longer first, the agent goes on from its old position and the records in between are never sent. Neither is announced. The clean-up only rewrites the file when a record is older than the retention period (365 days by default), so set the retention to its maximum, 3650 days, on a portal whose audit file Wazuh reads: Wazuh keeps the history anyway."
+ ],
+ "notes_zh": [
+  "jt-vc-portal（記錄中自稱 jaas-auth）每個動作寫一行 JSON 到資料目錄的 audit-log.jsonl：登入與失敗、帳號、設定、匯出、錄影、逐字稿與會議。Wazuh 內建的 json 解碼器會解開這些行的每個鍵，但沒有任何規則看它們。本套件依 json 解碼器產生的欄位（action、actor、role、result、ip、detail）為入口寫出的每一種動作分級。它不為這個檔案加任何解碼器：json 解碼器一旦有子解碼器，其他所有 JSON 來源都會失去欄位（已實測），所以用戶端位址留在 ip 欄位，不是 srcip。",
+  "登入：以密碼或單一登入成功為 level 3，管理員為 level 4。登入失敗為 level 5，單一登入失敗為 level 5（設定頁的連線測試為 level 3），入口已鎖定該位址或帳號時的嘗試為 level 6，密碼正確但第二因素錯誤為 level 7。",
+  "暴力破解：同一位址 10 分鐘內密碼登入失敗 5 次為 level 10，與入口自己鎖定該位址的門檻相同，所以這則告警代表鎖定剛剛發生（鎖定期間的每次嘗試為 level 6，不再重複計數）；同一帳號 15 分鐘內失敗 10 次（入口的帳號鎖定）也是 level 10。觸發前者的位址在一小時內登入成功為 level 12。單一登入失敗不計入：密碼由身分提供者驗證，實際看到的失敗都是設定問題或身分提供者停擺。",
+  "帳號：建立、修改或刪除帳號為 level 6；建立管理員或授予管理員角色為 level 8；停用自己的第二因素為 level 6。設定：單一登入（含關閉它的緊急指令列工具）為 level 8，匯入設定檔為 level 8，匯出設定（會以明文寫出所有儲存的密鑰）為 level 7，祕密登入路徑為 level 7，郵件伺服器以及會議、錄影、逐字稿的送往位置為 level 6，其他設定為 level 3。外觀主題、站台名稱、logo 與個人偏好為 level 2。",
+  "安全事件外拋（SIEM）：任何一次儲存為 level 10，關閉為 level 12。原因是它的稽核記錄只寫格式與通訊協定、不寫目的地，所以一次儲存可能已經把它導向別處；而且關閉時入口會先套用設定再寫記錄，「外拋被關閉」這筆記錄本身永遠不會被外拋出去，只有稽核檔看得到。這也是以檔案為主要來源的原因之一。",
+  "下載或刪除錄影與逐字稿、匯出稽核記錄為 level 5；檢視逐字稿或修改發言者名稱為 level 3；入口因錄影已不存在而自動移除逐字稿為 level 3。建立與進入會議室、寄送邀請、來賓加入是入口的日常業務，維持 level 2；刪除會議室為 level 3。本套件不認得的動作（較新版本的入口）為 level 3，不會被丟掉。",
+  "單一環境實測：144 天共 1,328 筆真實記錄，其中四分之三來自一台機器上的自動化測試。依上述等級共 537 則 level 3 以上的告警；把三個測試帳號加入 etc/lists/jt-vc-portal-quiet-accounts 後降為 200 則（它們的登入與例行動作降為 level 0；登入失敗、帳號與設定變更、匯出與刪除錄影則永遠不會）。這段期間沒有任何記錄達到 level 10；達到 7 或 8 的有三筆（一次匯出設定、兩次單一登入變更）。",
+  "標有 \"demo\":true 的記錄是入口示範資料產生器寫入的樣本，解碼後沒有任何欄位、永遠不會告警。agent 只送出開始讀取之後新增的行，所以指派群組時不會把既有的歷史重送一次。",
+  "入口自己的外拋功能也可以指向 manager，格式為 RFC 5424 syslog 或 CEF；Wazuh 4.14.7 兩種都沒有解碼器，本套件都補上，並解成相同欄位，套用同一組規則。syslog 只有動作、帳號與詳細內容，沒有位址，所以無法依位址偵測暴力破解，也無法主動回應。CEF 多了位址與結果。兩者都沒有角色，因此管理員登入在這條路徑上是 level 3。Wazuh 無法接收 GELF。外拋只能送往一個收集端；用外拋或用檔案擇一，不要兩者並用，否則每筆記錄都會告警兩次、失敗次數也會重複計算。",
+  "登入規則刻意不放進 Wazuh 的 authentication_success 與 authentication_failed 群組。內建規則掛在這兩個群組底下（下班時間與週末登入為 level 9、另一條暴力破解規則、名為 guest 的使用者為 level 12），會與本套件的規則以不固定的順序競爭，讓登入的等級取決於當下時間。",
+  "位址是入口所記錄的值：在反向代理之後，它是 X-Real-IP 帶來的用戶端位址，但前提是代理伺服器列在 JTVC_TRUSTED_PROXIES。這個變數空白時入口會相信任何人送來的標頭，能直接連到入口的用戶端就能在記錄裡寫入任意位址。依賴位址之前，請先設定它。",
+  "本套件不提供主動回應。Wazuh 的防火牆指令封鎖的是 srcip，而稽核檔不提供這個欄位（見上）；在入口主機本身封鎖，對經由反向代理連入的用戶端也毫無作用，因為它們的連線都來自代理。入口本身已會在失敗 5 次後鎖定位址、失敗 10 次後鎖定帳號。若改用 CEF 外拋而不用檔案，就會有 srcip，可以針對規則 132150 在反向代理的 agent 上執行 firewall-drop；它會對同一位址後的所有人擋下該代理服務的所有網站。",
+  "入口記錄上的已知缺口：儲存設定時不會記下外拋的目的地，也不會記下稽核記錄的保留天數是否改變（它和會議設定一起儲存）。",
+  "入口的保留期限清理會原地改寫稽核檔，而 agent 跟不上這種改寫。以入口自己的方式在 4.14.7 實測：若檔案在 agent 下次檢查檔案（約一分鐘）之前一直比原本短，agent 會把整個檔案重讀一次，剩下的每筆記錄都會以新事件再送一次；若在那之前有新記錄讓檔案變得比原本長，agent 會從舊的位置繼續讀，中間的記錄永遠不會送出。兩種情況都不會有任何訊息。清理只在有記錄超過保留期限（預設 365 天）時才改寫檔案，所以 Wazuh 讀取稽核檔的入口請把保留天數設為上限 3650 天：歷史本來就保存在 Wazuh。"
+ ],
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.7"
+ ],
+ "files": [
+  {
+   "type": "decoder",
+   "name": "jt-vc-portal_decoders.xml",
+   "dest": "etc/decoders/jt-vc-portal_decoders.xml",
+   "sha256": "9212fb7368ad7b4b0b8fd814536879a7ae84a233e3c9fa7fc35cb833514a4560"
+  },
+  {
+   "type": "rule",
+   "name": "132100-jt_vc_portal_rules.xml",
+   "dest": "etc/rules/132100-jt_vc_portal_rules.xml",
+   "sha256": "d7ca510e9423dff2ea46b420289260ccbad6978a61f91957c9d0c15332edbf0e"
+  },
+  {
+   "type": "list",
+   "name": "jt-vc-portal-quiet-accounts",
+   "dest": "etc/lists/jt-vc-portal-quiet-accounts",
+   "declare": true,
+   "keep": true,
+   "sha256": "75fd4b69674fd14e6fb530b162a9f1bd27706301c616535d235da1b2a9bf16a2"
+  }
+ ],
+ "agent_group": {
+  "name": "jt-vc-portal",
+  "config": "agent.conf",
+  "files": [],
+  "description": "The jt-vc-portal audit log (audit-log.jsonl in the portal's data directory), read as JSON"
+ },
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset on every node",
+   "title_zh": "安裝套件並在所有節點重新載入規則集",
+   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Assign the portal host to the jt-vc-portal group",
+   "title_zh": "把入口主機加入 jt-vc-portal 群組",
+   "body": "The group reads audit-log.jsonl as JSON from the documented data locations: /opt/jt-vc-portal/data (the volume in the docker run examples) and /var/jaas-data (DATA_DIR without docker). If the data volume is mounted elsewhere, put that path in the group configuration or in the agent's own ossec.conf: the file is on the docker host, at the source of the volume mounted on /var/jaas-data. Nothing changes on the portal. The agent must be restarted to pick up a new log file; only lines written afterwards are sent.",
+   "body_zh": "群組會以 JSON 格式讀取文件記載的資料位置中的 audit-log.jsonl：/opt/jt-vc-portal/data（docker run 範例的資料卷）與 /var/jaas-data（不用 docker 時的 DATA_DIR）。若資料卷掛在別處，請把該路徑寫進群組設定或該 agent 自己的 ossec.conf：檔案位於 docker 主機上、掛到 /var/jaas-data 的那個資料卷來源。入口本身不需要任何變更。agent 必須重新啟動才會開始讀新的記錄檔；只會送出之後寫入的行。",
+   "file": "agent/agent.conf",
+   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g jt-vc-portal\n/var/ossec/bin/agent_control -R -u <agent_id>\n# data volume elsewhere: add to the agent's ossec.conf\n<localfile>\n  <location>/path/to/data/audit-log.jsonl</location>\n  <log_format>json</log_format>\n</localfile>",
+   "verify": "Sign in to the portal. Expect rule 132110 (level 3), or 132112 (level 4) for an administrator, on the node the agent reports to.",
+   "verify_zh": "登入入口。該 agent 所連的節點應出現規則 132110（level 3），管理員則為 132112（level 4）。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Set the portal's audit log retention to 3650 days",
+   "title_zh": "把入口的稽核記錄保留天數設為 3650 天",
+   "body": "In the portal's settings (meeting room settings, audit log retention), set the maximum, 3650 days. Its clean-up rewrites the audit file in place once a record is older than the retention period, and the agent then either sends the remaining history again or silently skips new records (measured). With the default of 365 days this starts one year after the first record. The history stays in Wazuh.",
+   "body_zh": "在入口的設定（會議室設定中的稽核記錄保留天數）設為上限 3650 天。一旦有記錄超過保留期限，入口的清理會原地改寫稽核檔，agent 接著不是把剩下的歷史重送一次，就是無聲地跳過新記錄（實測）。預設 365 天，所以會從第一筆記錄的一年後開始發生。歷史會保存在 Wazuh。",
+   "verify": "The portal's settings page shows 3650 days for the audit log.",
+   "verify_zh": "入口設定頁的稽核記錄保留天數顯示 3650 天。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Make sure the portal records the real client address",
+   "title_zh": "確認入口記錄的是真正的用戶端位址",
+   "body": "Behind a reverse proxy, set JTVC_TRUSTED_PROXIES on the container to the proxy's address (and nothing a client can reach through). Left empty, the portal accepts X-Real-IP from anyone, so a direct client can forge the address in the log and evade the brute-force rule. Changing the variable recreates the container: a short outage.",
+   "body_zh": "在反向代理之後，請把容器的 JTVC_TRUSTED_PROXIES 設為代理伺服器的位址（不要包含用戶端能經由它連入的位址）。留空時入口接受任何人送來的 X-Real-IP，直接連入的用戶端就能偽造記錄中的位址、躲過暴力破解規則。修改這個變數要重建容器：會有短暫中斷。",
+   "code": "docker run ... -e JTVC_TRUSTED_PROXIES=<proxy address> ...",
+   "verify": "Sign in through the proxy and open the portal's audit page: the address is your client's, not the proxy's.",
+   "verify_zh": "經由代理登入後開啟入口的稽核頁：位址應是你的用戶端，而不是代理伺服器。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "List the accounts used by test automation",
+   "title_zh": "列出自動化測試使用的帳號",
+   "body": "One line per account name, as the portal logs it, then reload the ruleset. Their sign-ins, room deletions and transcript views and downloads drop to level 0. Failures, account and settings changes, exports and deleted recordings still alert.",
+   "body_zh": "每個帳號名稱一行（與入口記錄中的一樣），加入後重新載入規則集。這些帳號的登入、刪除會議室、檢視與下載逐字稿會降為 level 0。登入失敗、帳號與設定變更、匯出與刪除錄影仍會告警。",
+   "code": "echo 'ci-admin:test' >> /var/ossec/etc/lists/jt-vc-portal-quiet-accounts"
+  },
+  {
+   "platform": "network",
+   "required": false,
+   "title": "Alternative: send the portal's export to the manager",
+   "title_zh": "替代方式：把入口的外拋送到 manager",
+   "body": "Only where the agent cannot read the file. In the portal's settings (Login log forwarding / SIEM) set the manager as host, port 514, UDP (not TCP: the portal sends no line end, and the manager drops such messages, measured), format CEF (address and result included) or syslog (no address: no brute force by address, no active response). The export has one destination, so this replaces whatever it sends to now; do not combine it with the file, or every record alerts twice. The record of the export being turned off is never exported. The manager needs a syslog listener that admits the portal host, which restarts the manager.",
+   "body_zh": "僅在 agent 無法讀取檔案時使用。在入口的設定（登入記錄外拋／SIEM）把主機設為 manager、埠 514、UDP（不要用 TCP：入口送出的訊息沒有換行字元，manager 會把它丟掉，已實測），格式選 CEF（含位址與結果）或 syslog（沒有位址：無法依位址偵測暴力破解，也無法主動回應）。外拋只有一個目的地，所以這會取代它目前送往的地方；不要與檔案並用，否則每筆記錄都會告警兩次。「外拋被關閉」這筆記錄永遠不會被外拋出去。manager 需要一個允許入口主機的 syslog 接收設定，修改後要重新啟動 manager。",
+   "code": "<remote>\n  <connection>syslog</connection>\n  <port>514</port>\n  <protocol>udp</protocol>\n  <allowed-ips><portal host address></allowed-ips>\n</remote>",
+   "verify": "Press the export's test button. Expect rule 132103 (level 3).",
+   "verify_zh": "按下外拋的測試按鈕，應出現規則 132103（level 3）。"
+  }
+ ]
+}
