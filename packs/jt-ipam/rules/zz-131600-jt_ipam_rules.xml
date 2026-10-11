@@ -23,11 +23,23 @@
                    import. jt-ipam records only successful sessions here;
                    failures to connect are in the journal layer.
 
-  Successful sessions and changes are alerted from the audit layer only: the
-  journal layer keeps its copies of them below the alert level, so the two
-  layers do not alert twice for one event. Failed logins are the exception:
-  the journal layer has the source address, the audit layer the account and
-  the reason, and both alert (measured: four failed logins in two weeks).
+  A successful login or console session is not an alert by itself. An
+  ordinary account from a private address is recorded at level 2. It alerts
+  when the account is admin-class (jt-ipam's built-in "admin" account, or a
+  console session as root, administrator or admin on the remote host): level
+  3; when the source is outside the private networks: level 5, and 8 for an
+  admin-class account; and after repeated failures from the same address or a
+  lockout of the same account: level 12. Nothing here depends on a site's
+  user names, hosts or lists.
+  Private networks: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8,
+  100.64.0.0/10, fc00::/7, fe80::/10. (::1 is left out on purpose: as a rule
+  condition it matched every IPv4 address on 4.14.7; the decoder does not
+  decode ::1 as a source address instead.)
+
+  Failed logins alert in both layers: the journal layer has the source
+  address, the audit layer the account and the reason (measured: four failed
+  logins in two weeks). An outside login does too, for the same reason.
+  Everything else is alerted from one layer only.
 -->
 
 <group name="jt_ipam,">
@@ -156,10 +168,29 @@
     <group>authentication_success,</group>
   </rule>
 
-  <!-- The password was accepted from an address that had just tripped the
-       brute-force rule: the guessing may have worked. -->
-  <rule id="131623" level="12" timeframe="600">
+  <!-- The password was accepted from an address outside the private
+       networks. -->
+  <rule id="131624" level="5">
     <if_sid>131608</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>jt-ipam: password accepted for a login from outside the private networks: $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!-- The password was accepted from an address that had just tripped the
+       brute-force rule: the guessing may have worked. A child of 131624 as
+       well, so that an outside address cannot hide it. -->
+  <rule id="131623" level="12" timeframe="600">
+    <if_sid>131608,131624</if_sid>
     <if_matched_sid>131606</if_matched_sid>
     <same_source_ip />
     <description>[HIGH] jt-ipam: login from $(srcip) succeeded after a burst of failed logins</description>
@@ -317,10 +348,55 @@
 
   <!-- Authentication -->
 
-  <rule id="131632" level="3">
+  <!-- A login. An ordinary account from a private address is recorded only
+       (measured: 24 logins in 30 days on one installation, all of them this). -->
+  <rule id="131632" level="2">
     <if_sid>131630</if_sid>
     <field name="_action" type="pcre2">^(?:login_success|oidc_login|saml_login)$</field>
     <description>jt-ipam: $(dstuser) logged in from $(srcip) ($(jtipam.reason))</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!-- Admin-class account by its generic name: jt-ipam's bootstrap account is
+       "admin"; administrator and root are the other usual names. A directory
+       login may carry its realm (admin@...). -->
+  <rule id="131678" level="3">
+    <if_sid>131632</if_sid>
+    <user type="pcre2">(?i)^(?:admin|administrator|root)(?:@[^@\s]+)?$</user>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <description>jt-ipam: admin-class account '$(dstuser)' logged in from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131679" level="5">
+    <if_sid>131632</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>jt-ipam: $(dstuser) logged in from outside the private networks: $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131680" level="8">
+    <if_sid>131679</if_sid>
+    <user type="pcre2">(?i)^(?:admin|administrator|root)(?:@[^@\s]+)?$</user>
+    <description>jt-ipam: admin-class account '$(dstuser)' logged in from outside the private networks: $(srcip)</description>
     <mitre>
       <id>T1078</id>
     </mitre>
@@ -341,6 +417,23 @@
     <description>[WARN] jt-ipam: account '$(dstuser)' locked after repeated failures, last from $(srcip)</description>
     <mitre>
       <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!-- The same account logged in within 30 minutes of being locked for
+       repeated failures (the lock lasts 15): the guessing may have worked,
+       from whatever address it came. A child of every login rule above, so
+       that no sibling can hide it. Defined after 131634 on purpose: an
+       if_matched_sid that points at a rule loaded later never fires (4.14.7,
+       sandbox), and analysisd -t says nothing. -->
+  <rule id="131681" level="12" timeframe="1800">
+    <if_sid>131632,131678,131679,131680</if_sid>
+    <if_matched_sid>131634</if_matched_sid>
+    <same_user />
+    <description>[HIGH] jt-ipam: '$(dstuser)' logged in from $(srcip) shortly after the account was locked for repeated failures</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
     </mitre>
   </rule>
 
@@ -583,7 +676,9 @@
 
   <!-- Console sessions -->
 
-  <rule id="131665" level="3">
+  <!-- A console session that connected. Ordinary ones from a private address
+       are recorded only (measured: 137 in 30 days, plus 131 RustDesk). -->
+  <rule id="131665" level="2">
     <if_sid>131630</if_sid>
     <field name="_action" type="pcre2">^(?:(?:ssh|rdp|vnc|novnc|bmc)\.session_open|sftp_open)$</field>
     <description>jt-ipam: $(_action) to $(jtipam.host) as '$(dstuser)' by $(_actor_user_id) from $(srcip)</description>
@@ -593,12 +688,19 @@
   </rule>
 
   <!-- A console session as root or a Windows or directory administrator: the
-       stored credential gives full control of that host (measured: root SSH
-       sessions to a domain controller through jt-ipam, with a password that
-       jt-ipam keeps). -->
-  <rule id="131662" level="5">
+       stored credential gives full control of that host (measured: 70 of 137
+       sessions in 30 days, among them root SSH to a domain controller with a
+       password that jt-ipam keeps). -->
+  <rule id="131662" level="3">
     <if_sid>131665</if_sid>
     <user type="pcre2">(?i)^(?:root|administrator|admin)$</user>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
     <description>jt-ipam: $(_action) to $(jtipam.host) as privileged account '$(dstuser)' by $(_actor_user_id) from $(srcip)</description>
     <mitre>
       <id>T1021</id>
@@ -606,12 +708,38 @@
     </mitre>
   </rule>
 
-  <rule id="131663" level="3">
+  <rule id="131663" level="2">
     <if_sid>131630</if_sid>
     <field name="_action" type="pcre2">^rustdesk\.web_session_open$</field>
     <description>jt-ipam: RustDesk remote desktop to peer $(jtipam.peer) by $(_actor_user_id) from $(srcip)</description>
     <mitre>
       <id>T1219</id>
+    </mitre>
+  </rule>
+
+  <!-- A console session opened from a browser outside the private networks. -->
+  <rule id="131660" level="5">
+    <if_sid>131665,131663</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>jt-ipam: $(_action) to $(jtipam.host)$(jtipam.peer) by $(_actor_user_id) from outside the private networks: $(srcip)</description>
+    <mitre>
+      <id>T1021</id>
+    </mitre>
+  </rule>
+
+  <rule id="131664" level="8">
+    <if_sid>131660</if_sid>
+    <user type="pcre2">(?i)^(?:root|administrator|admin)$</user>
+    <description>jt-ipam: $(_action) to $(jtipam.host) as privileged account '$(dstuser)' from outside the private networks: $(srcip)</description>
+    <mitre>
+      <id>T1021</id>
+      <id>T1078.003</id>
     </mitre>
   </rule>
 

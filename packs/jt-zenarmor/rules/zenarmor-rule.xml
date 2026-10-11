@@ -6,42 +6,63 @@
 
   What Zenarmor sends
     One record per index: conn, dns, tls, http, sip and alert. A blocked threat
-    arrives as SEVERAL records: a DNS block gives a dns record (the query), a
-    conn record (the UDP flow to the DNS server) and an alert record; a blocked
-    web connection gives conn + tls + alert. The alert record is Zenarmor's own
-    block decision: there is exactly one per block, and alertinfo.match.dst_hostname
-    holds the name it matched. Measured over 7 days on one site: 1,854 alert
-    records, 1,811 dns and 1,816 conn records for the same blocks.
-    Alert records can arrive up to about 20 minutes after the conn and dns records.
+    arrives as SEVERAL records: a DNS block gives a dns record (the query, with
+    qtype and the Recursion Desired bit is_RD), a conn record (the UDP flow to
+    the DNS server) and an alert record; a blocked web connection gives conn +
+    tls + alert. The alert record is Zenarmor's own block decision: there is
+    exactly one per block, and alertinfo.match.dst_hostname holds the name it
+    matched. Measured over 7 days on one site: 1,854 alert records, 1,811 dns and
+    1,816 conn records for the same blocks. Alert records arrive later than the
+    dns record of the same lookup: median 75 s, 90th percentile 16 min, maximum
+    58 min.
 
   Grading
     * Not blocked is worse than blocked: an unblocked malicious connection was
       established (130801, level 12).
-    * A blocked CONNECTION (web, any port but 53) is graded per event (130802, 130804).
-    * A blocked LOOKUP (port 53) is a quiet base (130816, 130817, level 2) and is
-      raised only by its pattern: the same name again and again (130832, beacon)
-      or many different names (130833). Measured on the site this was tuned on,
-      every blocked lookup came from the internal DNS resolvers and the mail
-      gateway, which look names up for other hosts: a mail filter checking the
-      domains in a message, or reverse lookups of SMTP clients. 82% of the old
-      130802 alerts were one script name in cron mail ("<name>.sh" is a valid TLD)
-      tagged Botnet DGA Domains. List such hosts in etc/lists/jt-zenarmor-resolvers.
-    * conn / dns / tls records of a blocked threat are duplicates of the alert
-      record (130815, level 2). The block needs the Alerts stream; see the setup guide.
+    * A blocked CONNECTION (web, any port but 53) is graded per event from its
+      alert record (130802, 130804, 130820).
+    * A blocked LOOKUP (port 53) never alerts by itself. Its alert record is
+      recorded (130816, 130817, level 2); its dns record is classified and counted
+      (1.5):
+        resolver style  RD=0 (only a recursive resolver sends it) or qtype PTR,
+                        NS or SOA: 130842 / 130843 / 130837 / 130838
+        client style    RD=1 and another qtype: 130836 / 130839, unless the same
+                        source sent a resolver-style record shortly before
+                        (130844 / 130847 / 130848) or is listed (130818 / 130849)
+      Client-style records are counted by 130832 (beaconing) and 130833 (many
+      names); resolver-style records by 130834 and 130835. The dns record is used
+      rather than the alert record because it carries RD and qtype and arrives
+      together with the resolver's other lookups. Measured on the tuned site:
+      1,584 of 1,811 dns records were resolver style on their own, and 220 of the
+      other 227 (a domain controller forwarding A lookups) had a resolver-style
+      record from the same host within 15 minutes before them.
+      82% of the old 130802 alerts were one script name in cron mail
+      ("<name>.sh" is a valid TLD) that a mail filter looked up.
+    * A command-and-control name looked up by a client alerts at once from its
+      dns record (130819, level 6).
     * Weak categories (Proxy, VPN, Parked) stay at level 5 or below, and at level 3
       when the policy blocked them (130828). Generic web-filtering blocks (Ads,
       Social ...) carry no security tag and stay at 130800, level 0.
 
+  Correlation memory (read before tuning any timeframe)
+    analysisd keeps correlation history only for the last memory_size events that
+    matched a rule of level 1 or more (ossec.conf global memory_size, default
+    8192; older events are freed and drop out of every if_matched list). On a
+    manager processing about 75 events a second that is 15 to 20 minutes, on a
+    busier one less. Every timeframe here is therefore 900 seconds or less, and
+    the counts are per 15 minutes: a longer timeframe would silently mean "as far
+    back as memory reaches".
+
   Read before changing anything (Wazuh 4.14.7, verified)
     * Sibling rules under one parent are evaluated in an unpredictable order
       (measured in 2026-08 on an earlier version: 130811 -> 130801 -> 130803
-      -> 130802 for one parent; 130809-130813 were retired then and are not reused), and the
-      first match ends the evaluation. Every sibling set here is mutually
-      exclusive: by is_blocked, by index (alert or not), by port (53 or not), by
-      CDB lookup (listed or not), or by a negative lookahead on the tag families.
-      Version 1.3 had an overlap: "Botnet DGA Domains" matched both the malware
-      family (Botnet) and the phishing family (DGA). The phishing family no
-      longer lists DGA and excludes events that carry a malware tag.
+      -> 130802 for one parent; 130809-130813 were retired then and are not
+      reused), and the first match ends the evaluation. Every sibling set here
+      is mutually exclusive: by is_blocked, by index, by port (53 or not), by
+      qtype, by RD, by CDB lookup (listed or not), or by a negative lookahead on
+      the tag families; an override is a child of what it overrides. 1.3 had an
+      overlap: "Botnet DGA Domains" matched both the malware family (Botnet) and
+      the phishing family (DGA).
     * negate="yes" is unreliable. Every exclusion is a positive match: ^0$ / ^1$,
       a pcre2 lookahead, or lookup="not_address_match_key".
     * security_tags is an array; the field value is its JSON text, ["Phishing"].
@@ -49,9 +70,22 @@
     * same_field / different_field need dynamic fields (ip_src_saddr works,
       srcip does not). different_field compares each earlier event with the
       CURRENT one, so two names alternating also count: thresholds allow for it.
-    * A frequency rule counts only events whose final rule is the one it names
-      (or carries the group it names): events that went on to a quiet child are
-      not counted. That is how the resolver lookups stay out of 130832 / 130833.
+    * A frequency rule counts only events whose FINAL rule is the one it names
+      or carries the group it names. An event whose final rule is the target of
+      an if_matched_sid goes only to that sid list, not to group lists: that is
+      why 130831 counts the group zenarmor_malware_conn and not sid 130802.
+    * A rule listed under several parents (if_sid a,b) is registered once per
+      parent for if_matched_group, so each event it ends is counted that many
+      times (measured: frequency 3 fired on the second event). Every rule that
+      carries a counted group has exactly one parent; that is why the malware
+      and phishing families have their own copies (130815 / 130829 and so on).
+    * if_matched_group only sees rules loaded BEFORE the composite rule: the
+      evidence rules are above 130844 / 130847 / 130848 / 130850 on purpose.
+    * A composite without frequency (130844, 130847, 130848, 130850) asks only
+      whether one earlier event of the group exists in the timeframe and does
+      not use it up.
+    * A composite with if_matched_group and no if_sid becomes a child of every
+      rule that carries the group, so it is a sibling of that rule's children.
     * Short words need \b: Tor matches Torrent otherwise.
 -->
 <group name="zenarmor,">
@@ -77,9 +111,9 @@
     <group>zenarmor,malware,c2,</group>
   </rule>
 
-  <!-- Blocked. After 1.4 this is the final rule only for Zenarmor's alert record of a
-       blocked connection on a port other than 53; the duplicates and the lookups go
-       to the children below. -->
+  <!-- Blocked. Since 1.4 this is the final rule only for Zenarmor's alert record of
+       a blocked connection on a port other than 53; the other records and the
+       lookups go to the children below. -->
   <rule id="130802" level="7">
     <if_sid>130800</if_sid>
     <field name="security_tags" type="pcre2">(?i)(Malware|Virus|Botnet|C&amp;C|Command.?and.?Control|Ransomware|Trojan|Spyware|\bWorm\b)</field>
@@ -89,7 +123,7 @@
       <id>T1071</id>
     </mitre>
     <options>no_full_log</options>
-    <group>zenarmor,malware,blocked,zenarmor_threat_block,</group>
+    <group>zenarmor,malware,blocked,zenarmor_threat_block,zenarmor_malware_conn,</group>
   </rule>
 
   <!-- ===== Phishing, fraud, spam, mining (security_tags) ===== -->
@@ -119,19 +153,131 @@
     <group>zenarmor,phishing,blocked,zenarmor_threat_block,</group>
   </rule>
 
-  <!-- ===== Blocked threats: one record per block ===== -->
+  <!-- ===== Blocked threats ===== -->
 
-  <!-- conn / dns / tls / http records of a blocked threat. The alert record of the
-       same block carries the decision and the matched name. -->
+  <!-- Other records (malware family): conn, tls, http and dns copies of a block
+       whose alert record reports it. -->
   <rule id="130815" level="2">
-    <if_sid>130802,130804</if_sid>
+    <if_sid>130802</if_sid>
     <field name="zenarmor.index" type="pcre2">^(?!alert$)\w+$</field>
     <description>Zenarmor: $(zenarmor.index) record of a blocked threat, reported by its alert record - from: $(srcip) to: $(zenarmor.domain)</description>
     <options>no_full_log</options>
     <group>zenarmor,blocked,</group>
   </rule>
 
-  <!-- A blocked lookup of a malware or botnet name: a quiet base. -->
+  <!-- dns record, qtype PTR / NS / SOA: reverse lookups of mail or SSH peers and
+       delegation lookups. Resolver style whatever the RD bit says. -->
+  <rule id="130843" level="2">
+    <if_sid>130815</if_sid>
+    <field name="zenarmor.index">^dns$</field>
+    <field name="qtype">^PTR$|^NS$|^SOA$</field>
+    <description>Zenarmor: blocked $(qtype) lookup, the source resolves names for a service - $(zenarmor.domain) from: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,blocked,dns,zenarmor_resolver_evidence,zenarmor_resolver_query,</group>
+  </rule>
+
+  <!-- dns record of any other qtype: a client's lookup unless shown otherwise by
+       the children below. DNS tunnels use TXT, CNAME, MX or NULL, so those stay
+       here. -->
+  <rule id="130836" level="2">
+    <if_sid>130815</if_sid>
+    <field name="zenarmor.index">^dns$</field>
+    <field name="qtype" type="pcre2">^(?!(PTR|NS|SOA)$)\w+$</field>
+    <description>Zenarmor: blocked lookup - $(zenarmor.category) $(zenarmor.domain) $(qtype) from: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,blocked,dns,zenarmor_client_query,zenarmor_threat_block,</group>
+  </rule>
+
+  <!-- Recursion Desired = 0: an iterative query to an authoritative server. A stub
+       resolver (every client, malware using the system or a public resolver) sets
+       RD=1; only a recursive resolver sends RD=0. -->
+  <rule id="130842" level="2">
+    <if_sid>130836</if_sid>
+    <field name="is_RD">^0$</field>
+    <description>Zenarmor: blocked iterative lookup, the source is a recursive resolver - $(zenarmor.domain) $(qtype) from: $(srcip) to: $(dstip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,blocked,dns,zenarmor_resolver_evidence,zenarmor_resolver_query,</group>
+  </rule>
+
+  <!-- A forwarder that relays only A lookups looks like a client; the site can list it. -->
+  <rule id="130818" level="2">
+    <if_sid>130836</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/jt-zenarmor-resolvers</list>
+    <description>Zenarmor: blocked lookup forwarded by a listed resolver - $(zenarmor.category) $(zenarmor.domain) via: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,blocked,dns,zenarmor_resolver_query,</group>
+  </rule>
+
+  <!-- A command-and-control name, looked up by a client: RD=1 (exclusive with
+       130842) and not listed (exclusive with 130818). -->
+  <rule id="130819" level="6">
+    <if_sid>130836</if_sid>
+    <field name="is_RD">^1$</field>
+    <field name="security_tags" type="pcre2">(?i)(C&amp;C|Command.?and.?Control|\bC2\b|Ransomware|\bBotnet\b(?!\s*DGA))</field>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/jt-zenarmor-resolvers</list>
+    <description>Zenarmor: lookup of a command-and-control domain blocked - $(zenarmor.category) $(zenarmor.domain) from: $(srcip)</description>
+    <mitre>
+      <id>T1071.004</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,malware,c2,blocked,dns,zenarmor_client_query,zenarmor_threat_block,</group>
+  </rule>
+
+  <!-- Other records (phishing family): conn, tls, http and dns copies of a block
+       whose alert record reports it. -->
+  <rule id="130829" level="2">
+    <if_sid>130804</if_sid>
+    <field name="zenarmor.index" type="pcre2">^(?!alert$)\w+$</field>
+    <description>Zenarmor: $(zenarmor.index) record of a blocked threat, reported by its alert record - from: $(srcip) to: $(zenarmor.domain)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,blocked,</group>
+  </rule>
+
+  <!-- dns record, qtype PTR / NS / SOA: reverse lookups of mail or SSH peers and
+       delegation lookups. Resolver style whatever the RD bit says. -->
+  <rule id="130838" level="2">
+    <if_sid>130829</if_sid>
+    <field name="zenarmor.index">^dns$</field>
+    <field name="qtype">^PTR$|^NS$|^SOA$</field>
+    <description>Zenarmor: blocked $(qtype) lookup, the source resolves names for a service - $(zenarmor.domain) from: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,blocked,dns,zenarmor_resolver_evidence,zenarmor_resolver_query,</group>
+  </rule>
+
+  <!-- dns record of any other qtype: a client's lookup unless shown otherwise by
+       the children below. DNS tunnels use TXT, CNAME, MX or NULL, so those stay
+       here. -->
+  <rule id="130839" level="2">
+    <if_sid>130829</if_sid>
+    <field name="zenarmor.index">^dns$</field>
+    <field name="qtype" type="pcre2">^(?!(PTR|NS|SOA)$)\w+$</field>
+    <description>Zenarmor: blocked lookup - $(zenarmor.category) $(zenarmor.domain) $(qtype) from: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,blocked,dns,zenarmor_client_query,zenarmor_threat_block,</group>
+  </rule>
+
+  <!-- Recursion Desired = 0: an iterative query to an authoritative server. A stub
+       resolver (every client, malware using the system or a public resolver) sets
+       RD=1; only a recursive resolver sends RD=0. -->
+  <rule id="130837" level="2">
+    <if_sid>130839</if_sid>
+    <field name="is_RD">^0$</field>
+    <description>Zenarmor: blocked iterative lookup, the source is a recursive resolver - $(zenarmor.domain) $(qtype) from: $(srcip) to: $(dstip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,blocked,dns,zenarmor_resolver_evidence,zenarmor_resolver_query,</group>
+  </rule>
+
+  <!-- A forwarder that relays only A lookups looks like a client; the site can list it. -->
+  <rule id="130849" level="2">
+    <if_sid>130839</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/jt-zenarmor-resolvers</list>
+    <description>Zenarmor: blocked lookup forwarded by a listed resolver - $(zenarmor.category) $(zenarmor.domain) via: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,blocked,dns,zenarmor_resolver_query,</group>
+  </rule>
+
+  <!-- Alert records of blocked lookups: the report of the block, recorded but not
+       counted (the dns record of the same lookup is). -->
   <rule id="130816" level="2">
     <if_sid>130802</if_sid>
     <field name="zenarmor.index">^alert$</field>
@@ -141,41 +287,16 @@
       <id>T1071.004</id>
     </mitre>
     <options>no_full_log</options>
-    <group>zenarmor,malware,blocked,dns,zenarmor_lookup_block,zenarmor_threat_block,</group>
+    <group>zenarmor,malware,blocked,dns,</group>
   </rule>
 
-  <!-- A blocked lookup of a phishing or fraud name: a quiet base. -->
   <rule id="130817" level="2">
     <if_sid>130804</if_sid>
     <field name="zenarmor.index">^alert$</field>
     <field name="ip_dst_port">^53$</field>
     <description>Zenarmor: lookup of a phishing or fraud domain blocked - $(zenarmor.category) $(zenarmor.domain) from: $(srcip)</description>
     <options>no_full_log</options>
-    <group>zenarmor,phishing,blocked,dns,zenarmor_lookup_block,zenarmor_threat_block,</group>
-  </rule>
-
-  <!-- The lookup came from a host that resolves names for other hosts: an internal
-       DNS resolver, a mail filter checking the domains in a message. The firewall
-       never sees the client behind it. Counted only by 130834. -->
-  <rule id="130818" level="2">
-    <if_sid>130816,130817</if_sid>
-    <list field="srcip" lookup="address_match_key">etc/lists/jt-zenarmor-resolvers</list>
-    <description>Zenarmor: blocked threat lookup made by a listed resolver - $(zenarmor.category) $(zenarmor.domain) via: $(srcip)</description>
-    <options>no_full_log</options>
-    <group>zenarmor,blocked,dns,zenarmor_resolver_lookup,</group>
-  </rule>
-
-  <!-- A command-and-control name, looked up by a client rather than a resolver. -->
-  <rule id="130819" level="6">
-    <if_sid>130816</if_sid>
-    <field name="security_tags" type="pcre2">(?i)(C&amp;C|Command.?and.?Control|\bC2\b|Ransomware|\bBotnet\b(?!\s*DGA))</field>
-    <list field="srcip" lookup="not_address_match_key">etc/lists/jt-zenarmor-resolvers</list>
-    <description>Zenarmor: lookup of a command-and-control domain blocked - $(zenarmor.category) $(zenarmor.domain) from: $(srcip)</description>
-    <mitre>
-      <id>T1071.004</id>
-    </mitre>
-    <options>no_full_log</options>
-    <group>zenarmor,malware,c2,blocked,dns,zenarmor_lookup_block,zenarmor_threat_block,</group>
+    <group>zenarmor,phishing,blocked,dns,</group>
   </rule>
 
   <!-- A blocked connection to a command-and-control server: the host tried to reach
@@ -214,6 +335,9 @@
     <group>zenarmor,phishing,dns,</group>
   </rule>
 
+  <!-- Resolved for a client behind a resolver: listed, RD=0, PTR/NS/SOA, or
+       resolver evidence from the same source shortly before (130850). These are
+       not counted by anything, so several parents are fine here. -->
   <rule id="130823" level="4">
     <if_sid>130821,130822</if_sid>
     <field name="zenarmor.index">^dns$</field>
@@ -221,6 +345,24 @@
     <description>Zenarmor: a listed resolver resolved a threat domain, not blocked, for a client behind it - $(security_tags) $(zenarmor.domain) via: $(srcip)</description>
     <options>no_full_log</options>
     <group>zenarmor,dns,</group>
+  </rule>
+
+  <rule id="130845" level="4">
+    <if_sid>130821,130822</if_sid>
+    <field name="zenarmor.index">^dns$</field>
+    <field name="is_RD">^0$</field>
+    <description>Zenarmor: a recursive resolver resolved a threat domain, not blocked, for a client behind it - $(security_tags) $(zenarmor.domain) via: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,dns,zenarmor_resolver_evidence,</group>
+  </rule>
+
+  <rule id="130846" level="4">
+    <if_sid>130821,130822</if_sid>
+    <field name="zenarmor.index">^dns$</field>
+    <field name="qtype">^PTR$|^NS$|^SOA$</field>
+    <description>Zenarmor: a $(qtype) lookup of a threat domain was resolved, not blocked, by a host resolving names for a service - $(security_tags) $(zenarmor.domain) via: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,dns,zenarmor_resolver_evidence,</group>
   </rule>
 
   <!-- The UDP flow record of the lookup: its dst_hostname is the DNS server. The
@@ -233,34 +375,49 @@
     <group>zenarmor,dns,</group>
   </rule>
 
-  <!-- ===== Out-of-band testing domains ===== -->
-  <!-- interactsh, Burp Collaborator, canarytokens and similar services hand out a
-       unique name per payload: a lookup means some host processed an injected
-       payload (log4j-style lookups, SSRF, a mail header) or opened a canary. Through
-       a resolver it is still meaningful: a host behind it did the processing.
-       Measured: a mail gateway resolved one interactsh name 13 times within four
-       minutes, which Zenarmor tagged Malware/Virus. -->
-  <rule id="130840" level="10">
-    <if_sid>130816,130818,130817,130819</if_sid>
-    <field name="zenarmor.domain" type="pcre2">(?i)(^|\.)(oast\.(pro|live|site|online|fun|me)|interact\.sh|interactsh\.com|oastify\.com|burpcollaborator\.net|canarytokens\.com|dnslog\.cn|ceye\.io)$</field>
-    <description>[WARN] Zenarmor: out-of-band testing domain looked up (blocked), a host processed an injected payload: $(zenarmor.domain) from: $(srcip)</description>
-    <mitre>
-      <id>T1190</id>
-    </mitre>
+  <!-- ===== Resolver evidence from earlier records =====
+       A client-style dns record (RD=1, A / AAAA / HTTPS ...) from a source that
+       sent a resolver-style record (130842 / 130843 / 130837 / 130838 / 130845 /
+       130846) within the last 15 minutes is a resolver forwarding a client's
+       lookup. 900 s is the most the correlation memory holds on a busy manager
+       (see the header); measured on the tuned site, 220 of 227 such records had
+       evidence within 15 minutes and 219 within 5. One rule per parent so the
+       counted group is registered once (header). -->
+  <rule id="130844" level="2" timeframe="900">
+    <if_sid>130836</if_sid>
+    <if_matched_group>zenarmor_resolver_evidence</if_matched_group>
+    <same_field>ip_src_saddr</same_field>
+    <description>Zenarmor: blocked lookup forwarded by a resolver for a client behind it - $(zenarmor.category) $(zenarmor.domain) via: $(srcip)</description>
     <options>no_full_log</options>
-    <group>zenarmor,oast,blocked,dns,</group>
+    <group>zenarmor,blocked,dns,zenarmor_resolver_query,</group>
   </rule>
 
-  <rule id="130841" level="10">
-    <if_sid>130821,130822,130823</if_sid>
-    <field name="zenarmor.index">^dns$</field>
-    <field name="zenarmor.domain" type="pcre2">(?i)(^|\.)(oast\.(pro|live|site|online|fun|me)|interact\.sh|interactsh\.com|oastify\.com|burpcollaborator\.net|canarytokens\.com|dnslog\.cn|ceye\.io)$</field>
-    <description>[WARN] Zenarmor: out-of-band testing domain resolved (not blocked), a host processed an injected payload: $(zenarmor.domain) from: $(srcip)</description>
-    <mitre>
-      <id>T1190</id>
-    </mitre>
+  <rule id="130848" level="2" timeframe="900">
+    <if_sid>130819</if_sid>
+    <if_matched_group>zenarmor_resolver_evidence</if_matched_group>
+    <same_field>ip_src_saddr</same_field>
+    <description>Zenarmor: blocked command-and-control lookup forwarded by a resolver for a client behind it - $(zenarmor.category) $(zenarmor.domain) via: $(srcip)</description>
     <options>no_full_log</options>
-    <group>zenarmor,oast,dns,</group>
+    <group>zenarmor,blocked,dns,zenarmor_resolver_query,</group>
+  </rule>
+
+  <rule id="130847" level="2" timeframe="900">
+    <if_sid>130839</if_sid>
+    <if_matched_group>zenarmor_resolver_evidence</if_matched_group>
+    <same_field>ip_src_saddr</same_field>
+    <description>Zenarmor: blocked lookup forwarded by a resolver for a client behind it - $(zenarmor.category) $(zenarmor.domain) via: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,blocked,dns,zenarmor_resolver_query,</group>
+  </rule>
+
+  <rule id="130850" level="4" timeframe="900">
+    <if_sid>130821,130822</if_sid>
+    <field name="zenarmor.index">^dns$</field>
+    <if_matched_group>zenarmor_resolver_evidence</if_matched_group>
+    <same_field>ip_src_saddr</same_field>
+    <description>Zenarmor: a resolver resolved a threat domain, not blocked, for a client behind it - $(security_tags) $(zenarmor.domain) via: $(srcip)</description>
+    <options>no_full_log</options>
+    <group>zenarmor,dns,</group>
   </rule>
 
   <!-- ===== Proxy, anonymizer, VPN ===== -->
@@ -355,7 +512,7 @@
     <group>zenarmor,parked,</group>
   </rule>
 
-  <!-- ===== Correlation ===== -->
+  <!-- ===== Correlation (counts per 15 minutes, see the header) ===== -->
 
   <!-- Unblocked malicious connections, one host. Several records per connection
        (conn, tls) are counted, so 6 is about two or three connections. -->
@@ -372,10 +529,9 @@
 
   <!-- Blocked malicious connections, one host, sustained. One page view opens four
        to six connections at once (measured: 17 alert records in four minutes from
-       one visit), so the threshold asks for a pattern over half an hour, which a
-       program retrying every minute or two produces and a person browsing does not. -->
-  <rule id="130831" level="10" frequency="20" timeframe="1800">
-    <if_matched_sid>130802</if_matched_sid>
+       one visit), so 20 in 15 minutes asks for more than one page view. -->
+  <rule id="130831" level="10" frequency="20" timeframe="900">
+    <if_matched_group>zenarmor_malware_conn</if_matched_group>
     <same_field>ip_src_saddr</same_field>
     <description>[WARN] Zenarmor: one internal host keeps retrying malicious connections, all blocked so far, check the host: $(srcip) last: $(zenarmor.domain)</description>
     <mitre>
@@ -385,14 +541,15 @@
     <group>zenarmor,malware,blocked,</group>
   </rule>
 
-  <!-- The same blocked threat name looked up again and again by one host: about one
-       lookup every three minutes for an hour. Measured: mail-filter lookups of one
-       name peaked at 24 an hour, so an unlisted resolver can still reach this. -->
-  <rule id="130832" level="10" frequency="20" timeframe="3600">
-    <if_matched_group>zenarmor_lookup_block</if_matched_group>
+  <!-- The same blocked threat name looked up again and again by a client: 15 dns
+       records in 15 minutes. A browser asks A, AAAA and HTTPS for one name, so one
+       visit is three records; 15 is a program asking about once a minute. A slower
+       beacon outlasts the correlation memory and is not detected here. -->
+  <rule id="130832" level="10" frequency="15" timeframe="900">
+    <if_matched_group>zenarmor_client_query</if_matched_group>
     <same_field>ip_src_saddr</same_field>
     <same_field>zenarmor.domain</same_field>
-    <description>[WARN] Zenarmor: one host keeps looking up the same blocked threat domain, a sign of malware beaconing: $(srcip) $(zenarmor.domain) (if the host is a DNS resolver or mail filter, list it in jt-zenarmor-resolvers)</description>
+    <description>[WARN] Zenarmor: one host keeps looking up the same blocked threat domain, a sign of malware beaconing: $(srcip) $(zenarmor.domain) (a forwarding DNS server can be listed in jt-zenarmor-resolvers)</description>
     <mitre>
       <id>T1071.004</id>
     </mitre>
@@ -400,13 +557,14 @@
     <group>zenarmor,malware,c2,</group>
   </rule>
 
-  <!-- Many different blocked threat names from one host within an hour: what DGA
-       malware and a host with several infections look like. -->
-  <rule id="130833" level="10" frequency="15" timeframe="3600">
+  <!-- Many different blocked threat names from one client within 15 minutes
+       (client-style lookups and blocked connections): DGA malware or a host with
+       several infections. -->
+  <rule id="130833" level="10" frequency="20" timeframe="900">
     <if_matched_group>zenarmor_threat_block</if_matched_group>
     <same_field>ip_src_saddr</same_field>
     <different_field>zenarmor.domain</different_field>
-    <description>[WARN] Zenarmor: one host was blocked from many different threat domains within an hour, possible infection or DGA: $(srcip) last: $(zenarmor.domain) (if the host is a DNS resolver or mail filter, list it in jt-zenarmor-resolvers)</description>
+    <description>[WARN] Zenarmor: one host was blocked from many different threat domains within 15 minutes, possible infection or DGA: $(srcip) last: $(zenarmor.domain) (a forwarding DNS server can be listed in jt-zenarmor-resolvers)</description>
     <mitre>
       <id>T1568.002</id>
     </mitre>
@@ -414,11 +572,12 @@
     <group>zenarmor,malware,c2,</group>
   </rule>
 
-  <!-- A listed resolver asking for the same blocked threat name about once a minute
-       for an hour: some client behind it is probably beaconing. The resolver's query
-       log names the client. Measured peak for mail-filter traffic: 24 an hour. -->
-  <rule id="130834" level="6" frequency="60" timeframe="3600">
-    <if_matched_sid>130818</if_matched_sid>
+  <!-- A resolver asking for the same blocked threat name 40 times in 15 minutes:
+       some client behind it is probably beaconing; the resolver's query log names
+       it. A resolver sends one lookup to several servers (measured: 4 to 6 dns
+       records per lookup, peak 12 in 15 minutes). -->
+  <rule id="130834" level="6" frequency="40" timeframe="900">
+    <if_matched_group>zenarmor_resolver_query</if_matched_group>
     <same_field>ip_src_saddr</same_field>
     <same_field>zenarmor.domain</same_field>
     <description>Zenarmor: a resolver keeps looking up the same blocked threat domain for a client behind it, check its query log: $(zenarmor.domain) via: $(srcip)</description>
@@ -427,6 +586,57 @@
     </mitre>
     <options>no_full_log</options>
     <group>zenarmor,malware,c2,dns,</group>
+  </rule>
+
+  <!-- Many different blocked threat names through one resolver within 15 minutes:
+       a client behind it may run DGA malware (a spam run being filtered looks the
+       same without the resolver's query log). Measured peak of the different_field
+       count on the tuned site: 13. -->
+  <rule id="130835" level="7" frequency="40" timeframe="900">
+    <if_matched_group>zenarmor_resolver_query</if_matched_group>
+    <same_field>ip_src_saddr</same_field>
+    <different_field>zenarmor.domain</different_field>
+    <description>Zenarmor: a resolver looked up many different blocked threat domains within 15 minutes for clients behind it, check its query log: via: $(srcip) last: $(zenarmor.domain)</description>
+    <mitre>
+      <id>T1568.002</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,malware,c2,dns,</group>
+  </rule>
+
+  <!-- ===== Out-of-band testing domains ===== -->
+  <!-- interactsh, Burp Collaborator, canarytokens and similar services hand out a
+       unique name per payload: a lookup means some host processed an injected
+       payload (log4j-style lookups, SSRF, a mail header) or opened a canary. Through
+       a resolver it is still meaningful: a host behind it did the processing.
+       130840 is also a child of 130831 and 130833, which are siblings of 130816
+       under 130802, so a burst that trips one of them still reports the testing
+       domain; that is why this block comes last (an if_sid must name a rule
+       loaded before it, or it is dropped with only a warning).
+       Measured: a mail gateway resolved one interactsh name 13 times within four
+       minutes, which Zenarmor tagged Malware/Virus. -->
+  <rule id="130840" level="10">
+    <if_sid>130816,130817,130831,130833</if_sid>
+    <field name="zenarmor.index">^alert$</field>
+    <field name="zenarmor.domain" type="pcre2">(?i)(^|\.)(oast\.(pro|live|site|online|fun|me)|interact\.sh|interactsh\.com|oastify\.com|burpcollaborator\.net|canarytokens\.com|dnslog\.cn|ceye\.io)$</field>
+    <description>[WARN] Zenarmor: out-of-band testing domain looked up (blocked), a host processed an injected payload: $(zenarmor.domain) from: $(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,oast,blocked,dns,</group>
+  </rule>
+
+  <rule id="130841" level="10">
+    <if_sid>130821,130822,130823,130845,130846,130850</if_sid>
+    <field name="zenarmor.index">^dns$</field>
+    <field name="zenarmor.domain" type="pcre2">(?i)(^|\.)(oast\.(pro|live|site|online|fun|me)|interact\.sh|interactsh\.com|oastify\.com|burpcollaborator\.net|canarytokens\.com|dnslog\.cn|ceye\.io)$</field>
+    <description>[WARN] Zenarmor: out-of-band testing domain resolved (not blocked), a host processed an injected payload: $(zenarmor.domain) from: $(srcip)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>zenarmor,oast,dns,</group>
   </rule>
 
 </group>

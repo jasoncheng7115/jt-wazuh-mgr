@@ -2,28 +2,30 @@
  "id": "jt-jitsi",
  "name": "Jitsi Meet Detection Suite",
  "name_zh": "Jitsi Meet 偵測套組",
- "version": "1.0",
+ "version": "1.1",
  "summary": "JWT authentication failures, refused moderator actions, recording, and the health of Prosody, Jicofo, the videobridge and Jibri on self-hosted Jitsi Meet.",
  "summary_zh": "自建 Jitsi Meet 的 JWT 驗證失敗、被拒絕的主持人操作、錄影，以及 Prosody、Jicofo、videobridge 與 Jibri 的健康狀態。",
  "rule_id_range": "132500-132599",
  "notes": [
   "Jitsi Meet has no decoders or rules in Wazuh. This pack decodes Prosody (the XMPP server), Jicofo, the videobridge and Jibri (the recorder) in the three shapes a manager receives: a syslog or journald line with a program name, the components' own log files, and the docker json-file log that docker-jitsi-meet writes by default. One rule serves all three shapes.",
-  "JWT authentication, from Prosody's token module: an expired token is level 3 (a tab left open past the token lifetime), a connection without a token level 5 (the meeting was opened without going through the portal), a token that this server did not sign or that is malformed level 8, a token used for a room it was not issued for level 6, a verification key that cannot be loaded level 7. Eight failures in two minutes are level 10: forgery attempts, or a portal whose signing secret no longer matches Prosody's.",
+  "JWT authentication, from Prosody's token module: an expired token is level 3 (a tab left open past the token lifetime), a connection without a token level 5 (the meeting was opened without going through the application that issues the tokens), a token that this server did not sign or that is malformed level 8, a token used for a room it was not issued for level 6, a verification key that cannot be loaded level 7. Eight failures in two minutes are level 10: forgery attempts, or a token issuer whose signing secret no longer matches Prosody's.",
   "These Prosody lines carry no client address. On docker-jitsi-meet Prosody sees every client through the web container, so no rule here can tell one client from another, and no blocking is offered on them. The real address is only in the access log of the web server in front of Jitsi.",
   "Refused actions are level 6: a participant without the right asking to record or live stream, to end the meeting for everyone or to dial out, a join with a crafted MUC resource, an address over Prosody's login or join rate limit. The web client does not offer these to such a participant, so they point to a modified client or the API. Account or server administration through XMPP admin commands is level 8.",
+  "A successful login is not an alert: every participant logs in once per connection and the components on every reconnect, so XMPP logins are recorded at level 2. An account with an administrative role (prosody:admin or prosody:operator, logged by Prosody 13) is level 3, except the components' built-in accounts focus, jvb, jibri and jigasi on the auth domain, which docker-jitsi-meet makes administrators. The login line carries no client address and no login failure names the account, so external sources and success after failures cannot be told apart. The pack needs no list.",
   "Availability: a component that loses its XMPP connection is level 7, one that cannot reach the server for minutes level 10. Single reconnection attempts are recorded below the alert level, because a Jibri retries every few seconds (measured: 1,455 attempts in one hour of outage from one recording host). A lost videobridge is level 7, no operational videobridge level 10, a failed health check level 7 and repeated failures level 10, five participants failing ICE in ten minutes level 7, gateway errors from /http-bind, /xmpp-websocket or /colibri-ws level 5 and ten in two minutes level 10.",
   "Recording: start and stop are level 3, a live stream level 5, a failed recording level 5, a Jibri that reports itself unhealthy or cannot write its recordings level 7. Without a finalize script Jibri logs SEVERE \"Failed to run finalize script\" after every recording (measured: 33 times in ten days on one host, once per recording); that case is recognised and recorded below the alert level.",
-  "Deliberately not covered: guesses at a room password and lobby knocks (Prosody 13 and the Jitsi modules do not log them at info level), prosodyctl and the admin shell that replaced mod_admin_telnet (they write nothing to the log), successful logins (one per participant, left at level 0), and the meeting portal's own audit log.",
+  "Deliberately not covered: guesses at a room password and lobby knocks (Prosody 13 and the Jitsi modules do not log them at info level), prosodyctl and the admin shell that replaced mod_admin_telnet (they write nothing to the log), and the meeting portal's own audit log.",
   "The JWT is a credential, and it ends up in logs: Prosody's token_verification module writes the whole token into the line behind rule 132515, and the Jitsi client puts it in the URL of the page and of /http-bind and /xmpp-websocket. docker-jitsi-meet's web container redacts it in its access log; a web server in front of it does not unless told to (setup guide). Treat the alerts as sensitive."
  ],
  "notes_zh": [
   "Wazuh 對 Jitsi Meet 沒有任何解碼器或規則。本套件解碼 Prosody（XMPP 伺服器）、Jicofo、videobridge 與 Jibri（錄影程式），涵蓋 manager 會收到的三種形式：帶程式名稱的 syslog 或 journald 行、各元件自己的記錄檔，以及 docker-jitsi-meet 預設寫出的 docker json-file 記錄。三種形式共用同一組規則。",
-  "JWT 驗證（Prosody 的 token 模組）：過期的 token 為 level 3（分頁開著超過 token 有效期），沒有 token 的連線為 level 5（沒有經過入口網站就開啟會議），不是本伺服器簽發或格式錯誤的 token 為 level 8，token 用在不是簽發給它的會議室為 level 6，驗證金鑰無法載入為 level 7。兩分鐘內失敗八次為 level 10：有人在偽造 token，或入口網站的簽章密鑰已和 Prosody 對不上。",
+  "JWT 驗證（Prosody 的 token 模組）：過期的 token 為 level 3（分頁開著超過 token 有效期），沒有 token 的連線為 level 5（沒有經過簽發 token 的應用程式就開啟會議），不是本伺服器簽發或格式錯誤的 token 為 level 8，token 用在不是簽發給它的會議室為 level 6，驗證金鑰無法載入為 level 7。兩分鐘內失敗八次為 level 10：有人在偽造 token，或簽發 token 的一方的簽章密鑰已和 Prosody 對不上。",
   "這些 Prosody 記錄行不含用戶端位址。在 docker-jitsi-meet 中，Prosody 看到的每個用戶端都是 web 容器，因此這裡沒有任何規則能分辨用戶端，也不對它們提供封鎖。真正的位址只在 Jitsi 前端網頁伺服器的存取記錄裡。",
   "被拒絕的操作為 level 6：沒有權限的與會者要求錄影或直播、要求替所有人結束會議或撥出電話、用偽造的 MUC resource 加入、超過 Prosody 登入或加入的速率限制。網頁用戶端不會讓這類與會者看到這些功能，所以代表修改過的用戶端或直接呼叫 API。透過 XMPP 管理指令進行帳號或伺服器管理為 level 8。",
+  "成功登入不是告警：每位與會者每次連線登入一次，各元件每次重新連線也會登入，因此 XMPP 登入記錄為 level 2。具管理角色的帳號（Prosody 13 會記錄 prosody:admin 或 prosody:operator）為 level 3，但各元件的內建帳號 focus、jvb、jibri、jigasi（auth 網域，docker-jitsi-meet 預設設為管理者）除外。登入記錄行沒有用戶端位址，登入失敗也不記錄帳號，因此無法分辨外部來源，也無法關聯「多次失敗後成功」。本套件不需要任何清單。",
   "可用性：元件失去 XMPP 連線為 level 7，數分鐘都連不上伺服器為 level 10。單次重新連線記錄在告警等級之下，因為 Jibri 每隔幾秒就重試一次（實測：一台錄影主機在一小時的中斷中重試 1,455 次）。失去一台 videobridge 為 level 7，沒有可用的 videobridge 為 level 10，健康檢查失敗為 level 7、持續失敗為 level 10，十分鐘內五位與會者 ICE 失敗為 level 7，/http-bind、/xmpp-websocket 或 /colibri-ws 回應閘道錯誤為 level 5、兩分鐘內十次為 level 10。",
   "錄影：開始與結束為 level 3，直播為 level 5，錄影失敗為 level 5，Jibri 回報自己不健康或無法寫入錄影檔為 level 7。沒有設定 finalize 腳本時，Jibri 每次錄影結束都會記一行 SEVERE「Failed to run finalize script」（實測：一台主機十天 33 次，每次錄影一次）；這種情況會被辨識出來，記錄在告警等級之下。",
-  "刻意不涵蓋：猜測會議室密碼與大廳敲門（Prosody 13 與 Jitsi 模組在 info 等級不記錄）、prosodyctl 與取代 mod_admin_telnet 的 admin shell（不寫任何記錄）、成功登入（每位與會者一筆，保持 level 0），以及會議入口網站自己的稽核記錄。",
+  "刻意不涵蓋：猜測會議室密碼與大廳敲門（Prosody 13 與 Jitsi 模組在 info 等級不記錄）、prosodyctl 與取代 mod_admin_telnet 的 admin shell（不寫任何記錄），以及會議入口網站自己的稽核記錄。",
   "JWT 是憑證，而且會出現在記錄裡：Prosody 的 token_verification 模組會把整個 token 寫進規則 132515 對應的記錄行，Jitsi 用戶端也會把它放在頁面、/http-bind 與 /xmpp-websocket 的網址中。docker-jitsi-meet 的 web 容器會在存取記錄中遮蔽它；前面另外架的網頁伺服器則不會，除非另外設定（見部署說明）。請把這些告警當成敏感資料。"
  ],
  "author": "Jason Tools",
@@ -45,7 +47,7 @@
    "type": "rule",
    "name": "zz-132500-jt_jitsi_rules.xml",
    "dest": "etc/rules/zz-132500-jt_jitsi_rules.xml",
-   "sha256": "52c7e935ef7b937eb803bcdd4b94c4b62267de539d70479029ae66aa03991394"
+   "sha256": "44b87f18473eeabcebc53240ef84fc2f96a1655d30d57161950d286a0c7fd1d7"
   }
  ],
  "agent_group": {

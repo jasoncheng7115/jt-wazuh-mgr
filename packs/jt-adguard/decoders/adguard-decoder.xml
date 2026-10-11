@@ -1,5 +1,5 @@
 <!--
-  AdGuard Home decoders (jt-adguard 1.2)
+  AdGuard Home decoders (jt-adguard 1.3)
 
   1. Query events, program name "adguard"
 
@@ -57,10 +57,15 @@
   Older releases (before the structured logger) write the same events as
     [error] POST 192.0.2.3:3000 /control/login: from ip 192.0.2.50: invalid username or password
     [info] auth: user "admin" successfully logged in from ip 192.0.2.50
-  and both shapes are decoded. The prematch is on the message itself, so the
-  line is recognised with a syslog header (program AdGuardHome) or without one
-  (a log file read directly). The microseconds keep it apart from the nginx error
-  log, whose built-in decoder expects "[" right after the seconds.
+  and both shapes are decoded, with a syslog header (decoder adguard-home,
+  program AdGuardHome: journald, which is where a systemd install logs) or
+  without one (decoder adguard-home-log: a log file read directly). The
+  microseconds keep it apart from the nginx error log, whose built-in decoder
+  expects "[" right after the seconds. An address written ::ffff:192.0.2.1 is
+  stored as 192.0.2.1, so the private-range checks of the rules apply. The
+  address is also kept in adguard.ip, a dynamic field, because rules cannot
+  test srcip for ::1: any spelling of ::1 in <srcip> also matches every IPv4
+  address (4.14.7, measured).
 -->
 
 <decoder name="adguard">
@@ -78,7 +83,7 @@
 
 <decoder name="adguard-json">
   <parent>adguard</parent>
-  <regex type="pcre2">"IP":"([^"]+)"</regex>
+  <regex type="pcre2">(?i)"IP":"(?:::ffff:)?([^"]+)"</regex>
   <order>srcip</order>
 </decoder>
 
@@ -89,13 +94,18 @@
 </decoder>
 
 
+<!-- The service log needs two parents: with a program name (journald, syslog)
+     only decoders that name a program are tried, without one (a log file read
+     directly) only decoders that do not. They need different names because
+     each carries fts (user, address: first login of a user from an address),
+     and fts is refused on a decoder whose name is used twice. The fts parent
+     needs a regex of its own; the children decode the fields again. -->
 <decoder name="adguard-home">
   <program_name>^AdGuardHome$</program_name>
   <prematch type="pcre2">^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d\.\d+ (?:\d+#\d+ )?\[(?:debug|info|error|fatal|panic)\] </prematch>
-</decoder>
-
-<decoder name="adguard-home">
-  <prematch type="pcre2">^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d\.\d+ (?:\d+#\d+ )?\[(?:debug|info|error|fatal|panic)\] </prematch>
+  <regex type="pcre2">\[(\w+)\] </regex>
+  <order>adguard.level</order>
+  <fts>name, user, srcip</fts>
 </decoder>
 
 <decoder name="adguard-home-fields">
@@ -106,8 +116,8 @@
 
 <decoder name="adguard-home-fields">
   <parent>adguard-home</parent>
-  <regex type="pcre2"> (?:from ip |ip=)([0-9A-Fa-f:.]*[0-9A-Fa-f])</regex>
-  <order>srcip</order>
+  <regex type="pcre2">(?i)^(?=.*? (?:from ip |ip=)(?:::ffff:)?([0-9a-f:.]*[0-9a-f]))(?=.*? (?:from ip |ip=)(?:::ffff:)?([0-9a-f:.]*[0-9a-f]))</regex>
+  <order>srcip, adguard.ip</order>
 </decoder>
 
 <decoder name="adguard-home-fields">
@@ -124,6 +134,44 @@
 
 <decoder name="adguard-home-fields">
   <parent>adguard-home</parent>
+  <regex type="pcre2"> status=(\d+)</regex>
+  <order>adguard.status</order>
+</decoder>
+
+
+<decoder name="adguard-home-log">
+  <prematch type="pcre2">^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d\.\d+ (?:\d+#\d+ )?\[(?:debug|info|error|fatal|panic)\] </prematch>
+  <regex type="pcre2">\[(\w+)\] </regex>
+  <order>adguard.level</order>
+  <fts>name, user, srcip</fts>
+</decoder>
+
+<decoder name="adguard-home-log-fields">
+  <parent>adguard-home-log</parent>
+  <regex type="pcre2">\[(\w+)\] (?:(\w+): )?</regex>
+  <order>adguard.level, adguard.module</order>
+</decoder>
+
+<decoder name="adguard-home-log-fields">
+  <parent>adguard-home-log</parent>
+  <regex type="pcre2">(?i)^(?=.*? (?:from ip |ip=)(?:::ffff:)?([0-9a-f:.]*[0-9a-f]))(?=.*? (?:from ip |ip=)(?:::ffff:)?([0-9a-f:.]*[0-9a-f]))</regex>
+  <order>srcip, adguard.ip</order>
+</decoder>
+
+<decoder name="adguard-home-log-fields">
+  <parent>adguard-home-log</parent>
+  <regex type="pcre2">(?:url=| )(/control/[^\s:?]+)</regex>
+  <order>url</order>
+</decoder>
+
+<decoder name="adguard-home-log-fields">
+  <parent>adguard-home-log</parent>
+  <regex type="pcre2"> user(?|=([^\s"]+)|="([^"]*)"| "([^"]*)")</regex>
+  <order>dstuser</order>
+</decoder>
+
+<decoder name="adguard-home-log-fields">
+  <parent>adguard-home-log</parent>
   <regex type="pcre2"> status=(\d+)</regex>
   <order>adguard.status</order>
 </decoder>

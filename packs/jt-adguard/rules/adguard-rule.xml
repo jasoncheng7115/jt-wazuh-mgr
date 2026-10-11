@@ -1,5 +1,5 @@
 <!--
-  AdGuard Home detection rules (jt-adguard 1.2)
+  AdGuard Home detection rules (jt-adguard 1.3)
   ID range: 130900-130999
   Wazuh ships no rules or decoder for AdGuard Home; this pack maintains both.
   Companion decoder: etc/decoders/adguard-decoder.xml
@@ -14,7 +14,7 @@
     130901, 130903, 130911, 130913, 130914   threat lists
     130902, 130904, 130905, 130912           DNS filtering bypass lists
     130910  volume, 130915 safe browsing, 130925 unusual query type
-    130929-130939  AdGuard Home service log: web interface logins, auth settings
+    130926-130939, 130941-130944  AdGuard Home service log: logins, auth settings
     130940  AdGuardHome.yaml changed (file integrity monitoring)
 
   Three bases for one kind of event (measured on 4.14.7):
@@ -36,20 +36,27 @@
       130911 L10  repeated threat lookups from one client (unchanged from 1.1)
     Bypass lists (encrypted DNS, VPN, Tor, proxy):
       130905 L6   first time this client tried this endpoint
-      130902 L3   repeat attempt (unchanged level)
+      130902 L2   repeat attempt, no alert (L3 until 1.2); still counted by 130912
       130904 L2   Apple iCloud Private Relay and Google tunnel probes: blocking
                   these names is how a network opts out, the device then falls
                   back to the local resolver, so the block is compliance
       130912 L10  20 attempts in 10 minutes from one client
     Ads, trackers, parental control, blocked services: base 130900, level 2, no alert.
+    Web interface logins (1.3, no site data needed):
+      130933 L2   successful login, known user and private address
+      130942 L3   first login of this user from this private address (fts)
+      130941 L8   login from a public address, every time
+      130943 L2   login over IPv6 loopback (::1 cannot be tested in srcip)
+      130939 L10  success after three or more failures from the address
+      130944 L12  success from an address the rate limiter locked out
 
   Measured on one site, 10.5 days, 7,410 bypass and 5 threat events:
     1.1: 7,410 level 3 bypass alerts (about 700 a day), 23 level 5 summaries,
          5 level 7 threat alerts.
-    1.2 on the same events: 3,819 relay probes go quiet, about 3,530 level 3
-         repeats (336 a day), 59 first-time level 6 alerts (front-loaded: 19 on
-         the first day, none after day 7), about 10 level 10 bursts. The 5
-         threat events all matched ||*.top^ and become level 5.
+    1.3 on the same events: 3,819 relay probes and about 3,530 repeats (336 a
+         day, level 3 in 1.2) go quiet at level 2, 59 first-time level 6 alerts
+         (front-loaded: 19 on the first day, none after day 7), about 10 level
+         10 bursts. The 5 threat events all matched ||*.top^ and become level 5.
 
   Correlation memory (measured): analysisd keeps only the last 8,192 events
   (memory_size) for if_matched_sid. On a manager handling 20,000 alerts an hour
@@ -169,8 +176,10 @@
 
   <!-- ===== DNS filtering bypass lists ===== -->
 
-  <!-- A list name that also reads as a threat list goes to 130901, never here. -->
-  <rule id="130902" level="3">
+  <!-- A list name that also reads as a threat list goes to 130901, never here.
+       Level 2 since 1.3: the first attempt (130905) and a client that keeps at
+       it (130912, which counts these level 2 events) are what alert. -->
+  <rule id="130902" level="2">
     <if_sid>130900, 130907, 130908</if_sid>
     <action type="pcre2">(?i)^blocked$</action>
     <field name="filterlist_name" type="pcre2">(?i)^(?!.*(?:malware|badware|phish|threat|scam|fraud|botnet|\bC2\b|command.?and.?control|ransom|malicious|abuse|spyware|stalkerware|hacked|crypto|coin.?min|nocoin|\bDGA\b)).*(?:bypass|encrypted.?dns|\bDoH\b|\bDoT\b|\bTOR\b|\bVPN\b|proxy|anonymi|private.?relay)</field>
@@ -245,6 +254,11 @@
     <description>AdGuard Home service message</description>
   </rule>
 
+  <rule id="130927" level="0">
+    <decoded_as>adguard-home-log</decoded_as>
+    <description>AdGuard Home service message (log file)</description>
+  </rule>
+
   <!-- Error lines ("http error", "failed") can be taken by built-in 1002 instead
        of 130930: top-level rules are siblings in no fixed order. In the sandbox
        130930 won for service lines and 1002 won for query events. -->
@@ -254,8 +268,14 @@
     <description>AdGuard Home error message</description>
   </rule>
 
+  <rule id="130926" level="2">
+    <if_sid>1002</if_sid>
+    <decoded_as>adguard-home-log</decoded_as>
+    <description>AdGuard Home error message (log file)</description>
+  </rule>
+
   <rule id="130931" level="5">
-    <if_sid>130930, 130938</if_sid>
+    <if_sid>130926, 130927, 130930, 130938</if_sid>
     <url type="pcre2">^/control/login$</url>
     <match>invalid username or password</match>
     <description>AdGuard Home: failed login to the web interface from $(srcip)</description>
@@ -283,7 +303,7 @@
        (level 2). The suppression is per rule, not per address, and it is not
        visible in wazuh-logtest (verified by injecting events into analysisd). -->
   <rule id="130932" level="10" ignore="300">
-    <if_sid>130930, 130938</if_sid>
+    <if_sid>130926, 130927, 130930, 130938</if_sid>
     <url type="pcre2">^/control/login$</url>
     <match>auth: blocked for</match>
     <description>[WARN] AdGuard Home: web interface login locked out after repeated failures from $(srcip)</description>
@@ -293,10 +313,77 @@
     <group>authentication_failures,</group>
   </rule>
 
-  <rule id="130933" level="3">
-    <if_sid>130930, 130938</if_sid>
+  <!-- A successful login is not an alert by itself: level 2, recorded and
+       correlated. AdGuard Home has no roles and no built-in account name, so
+       every web user can change all filtering; what is not routine is the
+       source (130941), the first login of a user from an address (130942) and
+       success after failures (130939, 130944). Children are evaluated highest
+       level first (rules_list.c inserts siblings by level, ties in load order),
+       so 130944 and 130939 are tried before 130941, and 130941 before 130942.
+       Built-in 10100, 40101 and 40112 (if_group authentication_success) load
+       before this file and therefore never attach to these rules (verified). -->
+  <rule id="130933" level="2">
+    <if_sid>130926, 130927, 130930, 130938</if_sid>
     <match type="pcre2">successful login|successfully logged in</match>
     <description>AdGuard Home: successful login to the web interface - user: $(dstuser) from: $(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="130941" level="8">
+    <if_sid>130933</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>AdGuard Home: login to the web interface from a public address, every web user controls all DNS filtering - user: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1133</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!-- ::1 cannot be listed in 130941 (it would exclude every IPv4 address), so a
+       login over IPv6 loopback reaches 130941 and is re-graded here. -->
+  <rule id="130943" level="2">
+    <if_sid>130941</if_sid>
+    <field name="adguard.ip" type="pcre2">(?i)^(?:0*:)*:?0*1$</field>
+    <description>AdGuard Home: successful login to the web interface over IPv6 loopback (local reverse proxy or the host itself) - user: $(dstuser)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!-- A success from an address the login rate limiter locked out. The lockout
+       lasts 15 minutes by default, hence the 30 minute window; on a busy
+       manager the correlation memory (8,192 events) may be shorter. -->
+  <rule id="130944" level="12" frequency="2" timeframe="1800">
+    <if_matched_sid>130932</if_matched_sid>
+    <if_sid>130933</if_sid>
+    <same_source_ip />
+    <description>[HIGH] AdGuard Home: successful login to the web interface from an address that the login rate limiter had locked out - user: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="130942" level="3">
+    <if_sid>130933</if_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <if_fts />
+    <description>AdGuard Home: first login of this user from this address - user: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
     <group>authentication_success,</group>
   </rule>
 
@@ -313,7 +400,7 @@
   </rule>
 
   <rule id="130934" level="10">
-    <if_sid>130930, 130938</if_sid>
+    <if_sid>130926, 130927, 130930, 130938</if_sid>
     <match>authentication is disabled</match>
     <description>[WARN] AdGuard Home: the web interface has no users, anyone who reaches it can change DNS filtering</description>
     <mitre>
@@ -322,19 +409,19 @@
   </rule>
 
   <rule id="130935" level="5">
-    <if_sid>130930, 130938</if_sid>
+    <if_sid>130926, 130927, 130930, 130938</if_sid>
     <match>authratelimiter is disabled</match>
     <description>AdGuard Home: the login rate limiter is disabled, password guessing is not slowed down</description>
   </rule>
 
   <rule id="130936" level="3">
-    <if_sid>130930, 130938</if_sid>
+    <if_sid>130926, 130927, 130930, 130938</if_sid>
     <match type="pcre2">(?i)starting adguard home|AdGuard Home, version</match>
     <description>AdGuard Home started</description>
   </rule>
 
   <rule id="130937" level="3">
-    <if_sid>130930, 130938</if_sid>
+    <if_sid>130926, 130927, 130930, 130938</if_sid>
     <match type="pcre2">(?i)stopping adguard home</match>
     <description>AdGuard Home is stopping</description>
   </rule>

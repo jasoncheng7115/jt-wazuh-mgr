@@ -27,6 +27,7 @@
     131700-131709  base, Nextcloud log levels, operational noise
     131710-131719  failed logins, brute force, second factor, tokens
     131720-131729  successful logins, Nextcloud brute-force protection
+    131770-131779  successful logins by account, address and first sight
     131730-131739  users and groups
     131740-131749  apps and occ commands
     131750-131759  sharing
@@ -215,13 +216,34 @@
   </rule>
 
   <!--
-    Successful logins. Every request that authenticates with a password or an
-    app password logs "Login successful": sync clients and monitoring checks
-    do it on every request. Measured on one server: 40,802 in 10 days, 88 per
-    cent from one monitoring account calling the serverinfo API, most of the
-    rest WebDAV sync. Recorded below the alert level; a login through the
-    login page or a single sign-on callback alerts (131721). The two children
-    of 131720 are exclusive by URL.
+    Successful logins (admin_audit "Login successful").
+
+    Nextcloud writes the line for every request that authenticates with a
+    password or an app password, not only for logins: sync clients, mobile
+    apps and monitoring checks do it on every request. Measured on one server
+    over 40 days: 166,128 lines, 9 of them from the login page. A successful
+    login is not an alert by itself. Everything is recorded below the alert
+    level except:
+    - an administrator account logging in from a private address: 3;
+    - a login from a public address: 5, an administrator account: 8;
+    - the first time an account authenticates from an address (fts): 3;
+    - a success after 8 failures from that address: 12 (131726, 131727).
+    Administrator accounts are recognised by the names Nextcloud installers
+    use for the built-in administrator (admin, administrator, root, ncadmin).
+    The line does not say whether an account is in the admin group, so other
+    members of that group count as ordinary accounts.
+
+    The requests of sync clients, apps and API callers (131777) repeat all day,
+    so for them the address and account levels apply the first time the pair
+    is seen: one alert per address and account, ever, instead of one per
+    request. A phone on mobile data alerts once for each new address.
+
+    Private: 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, fc00::/7 and
+    fe80::/10. Several srcip elements are alternatives; srcip with negate is
+    one condition per range, so together they mean "in none of these". The
+    IPv6 loopback is left out: Wazuh 4.14.7 matches both ::1 and ::1/128
+    against every IPv4 address (measured), so a request from ::1 counts as
+    public.
   -->
   <rule id="131720" level="2">
     <if_sid>131702</if_sid>
@@ -232,7 +254,9 @@
     <group>authentication_success,</group>
   </rule>
 
-  <rule id="131721" level="3">
+  <!-- The two children of 131720 are exclusive by URL: login page or single
+       sign-on callback, or anything else. -->
+  <rule id="131721" level="2">
     <if_sid>131720</if_sid>
     <url type="pcre2">^/(?:index\.php/)?(?:login(?:$|[/?])|apps/user_saml/saml/acs|apps/user_oidc/code)</url>
     <options>no_full_log</options>
@@ -240,16 +264,153 @@
     <group>authentication_success,pci_dss_10.2.5,gdpr_IV_32.2,hipaa_164.312.b,nist_800_53_AU.14,nist_800_53_AC.7,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,tsc_CC7.3,</group>
   </rule>
 
+  <rule id="131777" level="2">
+    <if_sid>131720</if_sid>
+    <url type="pcre2">^(?!/(?:index\.php/)?(?:login(?:$|[/?])|apps/user_saml/saml/acs|apps/user_oidc/code))</url>
+    <options>no_full_log</options>
+    <description>Nextcloud: request authenticated with a password or app password by $(dstuser) from $(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!-- Logins. The four children of 131721 are exclusive by account and address. -->
+  <rule id="131770" level="3">
+    <if_sid>131721</if_sid>
+    <user type="pcre2">(?i)^(?:admin|administrator|root|ncadmin)$</user>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <options>no_full_log</options>
+    <description>Nextcloud: administrator account $(dstuser) logged in from $(srcip)</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131771" level="8">
+    <if_sid>131721</if_sid>
+    <user type="pcre2">(?i)^(?:admin|administrator|root|ncadmin)$</user>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <options>no_full_log</options>
+    <description>Nextcloud: administrator account $(dstuser) logged in from public address $(srcip)</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131772" level="5">
+    <if_sid>131721</if_sid>
+    <user type="pcre2">(?i)^(?!(?:admin|administrator|root|ncadmin)$)</user>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <options>no_full_log</options>
+    <description>Nextcloud: $(dstuser) logged in from public address $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131778" level="2">
+    <if_sid>131721</if_sid>
+    <user type="pcre2">(?i)^(?!(?:admin|administrator|root|ncadmin)$)</user>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <options>no_full_log</options>
+    <description>Nextcloud: $(dstuser) logged in from $(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131773" level="3">
+    <if_sid>131778</if_sid>
+    <if_fts />
+    <options>no_full_log</options>
+    <description>Nextcloud: $(dstuser) logged in from $(srcip) for the first time</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!--
+    Requests of clients and API callers: the first time an account
+    authenticates from an address is level 3 (131774), and its children raise
+    a public address. Repeats of the pair stay at 131777, level 2. 131774 is
+    the only rule here that checks fts, so the pair is recorded exactly once.
+  -->
+  <rule id="131774" level="3">
+    <if_sid>131777</if_sid>
+    <if_fts />
+    <options>no_full_log</options>
+    <description>Nextcloud: $(dstuser) authenticated from $(srcip) for the first time ($(userAgent))</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131775" level="5">
+    <if_sid>131774</if_sid>
+    <user type="pcre2">(?i)^(?!(?:admin|administrator|root|ncadmin)$)</user>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <options>no_full_log</options>
+    <description>Nextcloud: $(dstuser) authenticated from public address $(srcip) for the first time ($(userAgent))</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131776" level="8">
+    <if_sid>131774</if_sid>
+    <user type="pcre2">(?i)^(?:admin|administrator|root|ncadmin)$</user>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <options>no_full_log</options>
+    <description>Nextcloud: administrator account $(dstuser) authenticated from public address $(srcip) for the first time ($(userAgent))</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
   <!--
     A success from an address that just failed 8 times. The built-in 40112
     (failures followed by a success) does not see these rules: measured, it
     never fires on them. Someone who finally remembers a password, or a sync
     client given its new password, looks the same; so does a guessed one.
-    Every later request from that address would repeat it, so each alerts at
-    most once per ignore period.
+    Each is a child of every rule its path can end in, so it applies whichever
+    of them matched. Every later request from that address would repeat it,
+    so each alerts at most once per ignore period.
   -->
   <rule id="131726" level="12" timeframe="1800" ignore="600">
-    <if_sid>131721</if_sid>
+    <if_sid>131721,131770,131771,131772,131778,131773</if_sid>
     <if_matched_sid>131711</if_matched_sid>
     <same_source_ip />
     <options>no_full_log</options>
@@ -262,8 +423,7 @@
   </rule>
 
   <rule id="131727" level="12" timeframe="1800" ignore="1800">
-    <if_sid>131720</if_sid>
-    <url type="pcre2">^(?!/(?:index\.php/)?(?:login(?:$|[/?])|apps/user_saml/saml/acs|apps/user_oidc/code))</url>
+    <if_sid>131777,131774,131775,131776</if_sid>
     <if_matched_sid>131711</if_matched_sid>
     <same_source_ip />
     <options>no_full_log</options>

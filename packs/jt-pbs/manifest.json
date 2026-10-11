@@ -2,7 +2,7 @@
  "id": "jt-pbs",
  "name": "Proxmox Backup Server Detection Suite",
  "name_zh": "Proxmox Backup Server 偵測套組",
- "version": "1.0",
+ "version": "1.1",
  "summary": "Failed backups, verification errors, full datastores, deleted backups, API token and permission changes, logins and undelivered notifications on Proxmox Backup Server, for which Wazuh has no rules.",
  "summary_zh": "Proxmox Backup Server 的備份失敗、驗證錯誤、datastore 空間不足、備份被刪除、API token 與權限變更、登入與通知送達失敗；Wazuh 內建完全沒有對應規則。",
  "rule_id_range": "131800-131899",
@@ -11,9 +11,10 @@
   "Task results, from the task archive: a backup that fails is level 7, and level 10 when the same backup group fails three times in a day (measured: one container failed three times a day for six weeks). A verification that finds corrupt or missing chunks is level 12; a verification that did not complete is level 6. Failed garbage collection, sync jobs and tape backups are level 10; failed prunes and tape restores level 7; any task that fails because the disk is full level 12. Warnings stay at level 0 except for garbage collection (level 7, usually missing chunks), sync, tape and verify (level 5) and prune (level 3).",
   "Destructive and administrative tasks: a datastore removed is level 10; a backup group or namespace removed, a disk wiped or a tape encryption key removed level 8; a shell on the server opened from the web interface level 5; removable datastores mounted or unmounted, storage created and certificates ordered or renewed level 3.",
   "REST API changes, from the access log (2xx answers only): API tokens created, changed or removed level 10; users, permissions, realms and two-factor settings level 8; datastore configuration level 8, and level 12 when a datastore is removed together with its data; backups deleted level 8, and level 12 for ten deletions from one address in five minutes; retention, protection and ownership of backups, remotes and sync jobs, certificates, notification settings and tape encryption keys level 6; network, DNS and time settings level 5. A change refused with 403 to an authenticated user or token is level 5. The agent group keeps only requests that change something (measured: 297,122 lines in three days, none of them a change).",
-  "Logins: a login is level 3, a failed password level 5, six from one address in five minutes level 10. The web interface renews its ticket every 15 minutes and each renewal is logged as a login, so an open browser tab is four level 3 alerts an hour. A request refused for an expired or missing ticket is level 2. A request refused for a wrong API token is level 5, and level 7 when one address keeps doing it: that is almost always a Proxmox VE node whose stored token no longer works, and its backups fail. These refusals are deliberately not in the authentication_failed group, so the built-in rule 40111 does not turn a misconfigured node into a brute-force alert.",
+  "Logins: a successful login is not an alert by itself. It is recorded at level 2 and alerts at level 3 for the built-in administrator root@pam (and any root, admin or administrator account of another realm), at level 3 the first time an ordinary account logs in on the server (first-time-seen per account and agent), at level 5 when the login comes from an address outside the private ranges, at level 10 after three failed passwords for the same account in ten minutes (level 12 for an administrator) and at level 12 when the address had a brute-force alert in the last ten minutes. A failed password is level 5, six from one address in five minutes level 10. The web interface renews its ticket every 15 minutes and each renewal is a login, so an administrator's open browser tab is four level 3 alerts an hour (measured: 2,220 of 2,221 logins in four and a half years were root@pam). A request refused for an expired or missing ticket is level 2. A request refused for a wrong API token is level 5, and level 7 when one address keeps doing it: that is almost always a Proxmox VE node whose stored token no longer works, and its backups fail. These refusals are deliberately not in the authentication_failed group, so the built-in rule 40111 does not turn a misconfigured node into a brute-force alert.",
+  "Where the login data is: auth.log has the account but not the address, and the access log has the address of the login request but not the account (it is in the request body). So the external-address and brute-force-then-login rules come from the access log and name the address, and the administrator and first-login rules come from auth.log and name the account; no single line says both, so an administrator logging in from outside is level 5, not more. Private ranges are 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, fc00::/7 and fe80::/10. The IPv6 loopback is deliberately not in the address lists: in Wazuh 4.14.7 a srcip of ::1 matches every IPv4 address; a login over ::1 comes from the server itself. The built-in rule 40112 (success after failures) never applies to rules of a pack, which is why the pack has its own.",
   "Daemon messages: a notification that could not be delivered is level 7 (Proxmox Backup Server has no other way to report a failed job). A datastore that cannot be opened is level 10, at most once an hour. A datastore that is not mounted is logged once a minute while it has a schedule (measured: 40,978 lines in four weeks from one unplugged removable datastore); each line is recorded at level 2, and rule 131812 reports it at level 5 once it has lasted an hour, then at most once a day. Ten malformed connections to the API port from one address in two minutes are level 6. A copy of a backup task's error in syslog is level 3, because the task archive reports the same failure with the task type, the backup group and the user.",
-  "Datastore disk usage, from the df -P command in every Linux agent's default configuration (every 6 minutes): 90 to 97 per cent is level 10, 98 per cent and more level 12, each at most every 6 hours. Mount points under /mnt/datastore/ (disks formatted by Proxmox Backup Server, and removable datastores) are watched without configuration; list other mount points that hold a datastore in etc/lists/jt-pbs-datastore-mounts. The built-in rule 531 covers only /dev/ devices at 100 per cent and drops paths that contain usb; it never sees a ZFS dataset.",
+  "Datastore disk usage: Proxmox Backup Server writes nothing when a datastore gets close to full (its binaries contain no such message); the first thing it logs is No space left on device, level 12. Fill levels therefore come from df: 90 to 97 per cent is level 10, 98 per cent and more level 12, each at most every 6 hours. With no setup, the df -P command in every Linux agent's default configuration covers mount points under /mnt/datastore/ (disks formatted by Proxmox Backup Server, and removable datastores). A datastore on a ZFS dataset or any other mount (measured on one site: its only datastore was a ZFS pool mounted at its own path) is not recognisable in df -P and stays invisible until one of two optional steps: add the command with the alias jt-pbs-datastores to the server's own ossec.conf, which runs df on every datastore path Proxmox Backup Server has configured and follows new datastores; or list the mount point in etc/lists/jt-pbs-datastore-mounts. The built-in rule 531 covers only /dev/ devices at 100 per cent and drops paths that contain usb.",
   "Not covered: the content of task logs (which chunk is corrupt, which snapshot failed) is one file per task and is not collected, so a rule says where to look rather than what broke. Certificate expiry is not logged by Proxmox Backup Server. Wazuh rules cannot be limited to an agent group, so the disk usage decoder adds two fields to the df -P lines of every agent; only the mount points above raise alerts.",
   "Proxmox VE has a pack of its own, jt-proxmox; a failed backup is reported on both sides when both packs are installed (by the node that sent it and by the server that received it)."
  ],
@@ -22,9 +23,10 @@
   "任務結果取自任務封存檔：備份失敗為 level 7，同一個備份群組一天內失敗三次則為 level 10（實測：某個容器連續六週每天失敗三次）。驗證發現 chunk 損壞或遺失為 level 12，驗證未完成為 level 6。垃圾回收、同步工作、磁帶備份失敗為 level 10；prune 與磁帶還原失敗為 level 7；任何因磁碟已滿而失敗的任務為 level 12。警告維持 level 0，但垃圾回收（level 7，通常是 chunk 遺失）、同步、磁帶與驗證（level 5）、prune（level 3）除外。",
   "破壞性與管理類任務：移除 datastore 為 level 10；移除備份群組或 namespace、抹除磁碟、移除磁帶加密金鑰為 level 8；從網頁介面開啟伺服器 shell 為 level 5；卸除式 datastore 掛載或卸載、建立儲存區、申請或更新憑證為 level 3。",
   "REST API 變更取自存取記錄（只看 2xx 回應）：建立、修改或移除 API token 為 level 10；使用者、權限、realm 與雙因素設定為 level 8；datastore 設定為 level 8，連同資料一起移除 datastore 為 level 12；刪除備份為 level 8，同一位址五分鐘內刪除十次為 level 12；備份的保留、保護與擁有者，remote 與同步工作，憑證，通知設定，磁帶加密金鑰為 level 6；網路、DNS、時間設定為 level 5。已驗證的使用者或 token 被以 403 拒絕的變更為 level 5。agent 群組只保留會改變東西的請求（實測：三天 297,122 行，沒有一行是變更）。",
-  "登入：成功登入為 level 3，密碼錯誤為 level 5，同一位址五分鐘內六次為 level 10。網頁介面每 15 分鐘更新一次 ticket，每次更新都記成一次登入，所以開著的瀏覽器分頁每小時會產生四筆 level 3 告警。因 ticket 過期或缺少而被拒絕的請求為 level 2。因 API token 錯誤被拒絕為 level 5，同一位址持續發生則為 level 7：這幾乎都是某台 Proxmox VE 節點儲存的 token 已失效，該節點的備份會失敗。這類拒絕刻意不放進 authentication_failed 群組，避免內建規則 40111 把設定錯誤的節點當成暴力破解。",
+  "登入：成功登入本身不是告警，記錄為 level 2。內建管理者 root@pam（以及其他 realm 中名為 root、admin、administrator 的帳號）登入為 level 3；一般帳號第一次登入這台伺服器為 level 3（以帳號與 agent 判斷首次出現）；來源位址不在私有網段為 level 5；同一帳號十分鐘內密碼錯誤三次後登入成功為 level 10（管理者為 level 12）；來源位址在十分鐘內觸發過暴力破解告警為 level 12。密碼錯誤為 level 5，同一位址五分鐘內六次為 level 10。網頁介面每 15 分鐘更新一次 ticket，每次更新都是一次登入，所以管理者開著的瀏覽器分頁每小時會產生四筆 level 3 告警（實測：四年半內 2,221 次登入有 2,220 次是 root@pam）。因 ticket 過期或缺少而被拒絕的請求為 level 2。因 API token 錯誤被拒絕為 level 5，同一位址持續發生則為 level 7：這幾乎都是某台 Proxmox VE 節點儲存的 token 已失效，該節點的備份會失敗。這類拒絕刻意不放進 authentication_failed 群組，避免內建規則 40111 把設定錯誤的節點當成暴力破解。",
+  "登入資料的位置：auth.log 有帳號但沒有位址，存取記錄有登入請求的位址但沒有帳號（帳號在請求內容中）。因此「外部位址」與「暴力破解後登入」取自存取記錄、指出位址；「管理者」與「首次登入」取自 auth.log、指出帳號；沒有一行同時具備兩者，所以管理者從外部登入是 level 5，不會更高。私有網段為 10/8、172.16/12、192.168/16、127/8、100.64/10、fc00::/7、fe80::/10。IPv6 loopback 刻意不放進位址清單：Wazuh 4.14.7 中 srcip 寫 ::1 會比對到所有 IPv4 位址；經 ::1 的登入來自伺服器本身。內建規則 40112（失敗後成功）永遠不會套用到套件的規則，所以套件自己寫了一條。",
   "服務程式訊息：通知無法送達為 level 7（Proxmox Backup Server 沒有其他方式回報工作失敗）。無法開啟 datastore 為 level 10，每小時最多一次。datastore 有排程時，未掛載的狀態每分鐘記錄一次（實測：一個沒插上的卸除式 datastore 四週產生 40,978 行）；每行記錄為 level 2，持續一小時後規則 131812 以 level 5 回報，之後每天最多一次。同一位址兩分鐘內對 API 連接埠建立十次異常連線為 level 6。syslog 裡備份任務錯誤的副本為 level 3，因為任務封存檔會以任務類型、備份群組與使用者回報同一個失敗。",
-  "datastore 磁碟用量取自每個 Linux agent 預設設定中的 df -P 指令（每 6 分鐘一次）：90% 到 97% 為 level 10，98% 以上為 level 12，各自每 6 小時最多一次。/mnt/datastore/ 底下的掛載點（Proxmox Backup Server 格式化的磁碟與卸除式 datastore）不需設定即受監看；其他存放 datastore 的掛載點請列在 etc/lists/jt-pbs-datastore-mounts。內建規則 531 只看 /dev/ 裝置且達 100% 才觸發，並會丟掉路徑含 usb 的項目；它看不到 ZFS dataset。",
+  "datastore 磁碟用量：Proxmox Backup Server 在 datastore 快滿時不會寫任何記錄（其執行檔中沒有這類訊息）；最早出現的是 No space left on device，level 12。因此用量取自 df：90% 到 97% 為 level 10，98% 以上為 level 12，各自每 6 小時最多一次。不需設定時，每個 Linux agent 預設設定中的 df -P 指令涵蓋 /mnt/datastore/ 底下的掛載點（Proxmox Backup Server 格式化的磁碟與卸除式 datastore）。放在 ZFS dataset 或其他掛載點的 datastore（某站台實測：唯一的 datastore 是掛在自己路徑的 ZFS pool）在 df -P 中無法辨識，在完成以下兩個選用步驟之一前都看不到：在伺服器自己的 ossec.conf 加上別名為 jt-pbs-datastores 的指令，它會對 Proxmox Backup Server 設定的每個 datastore 路徑執行 df，新增的 datastore 也會自動涵蓋；或把掛載點列在 etc/lists/jt-pbs-datastore-mounts。內建規則 531 只看 /dev/ 裝置且達 100% 才觸發，並會丟掉路徑含 usb 的項目。",
   "未涵蓋：任務記錄的內容（哪個 chunk 損壞、哪個 snapshot 失敗）是每個任務一個檔案，不收集，所以規則只指出去哪裡看，不說明壞了什麼。Proxmox Backup Server 不記錄憑證到期。Wazuh 規則無法限定 agent 群組，因此磁碟用量解碼器會為每台 agent 的 df -P 記錄加上兩個欄位；只有上述掛載點會產生告警。",
   "Proxmox VE 另有自己的套件 jt-proxmox；兩個套件都安裝時，備份失敗會在兩端各回報一次（送出備份的節點與接收備份的伺服器）。"
  ],
@@ -41,13 +43,13 @@
    "type": "decoder",
    "name": "jt-pbs_decoders.xml",
    "dest": "etc/decoders/jt-pbs_decoders.xml",
-   "sha256": "8dab2850b7e0dd3eb09880e65d09ea07d0e4bc8eefe84a27bbbaf302e98b4263"
+   "sha256": "1c0e3d47d094e2f0b80ca47a2a6faebf87d385e04f9bb418c6b8925eb01e9b89"
   },
   {
    "type": "rule",
    "name": "zz-131800-jt_pbs_rules.xml",
    "dest": "etc/rules/zz-131800-jt_pbs_rules.xml",
-   "sha256": "0a731e6f233ea34cc12257ce19f722de2cb469aa7aa04a8fb414f54146b0d9fd"
+   "sha256": "01de26dedc1f6345ba41b396c01d650aa73358431ba83ebef9643a6325b16df6"
   },
   {
    "type": "list",
@@ -78,20 +80,33 @@
    "required": true,
    "title": "Assign the backup servers to the pbs group",
    "title_zh": "把備份伺服器加入 pbs 群組",
-   "body": "The group collects the login log, the REST API access log and the task archive under /var/log/proxmox-backup. On the agent it drops reads (GET, HEAD), the log upload and notes update that end every backup, login ticket requests and successful backup and restore sessions, which leaves a few lines a day. Daemon messages come from /var/log/syslog, which the agent reads already; on a server that logs only to journald, add a journald localfile to the agent's own configuration. Nothing changes on the backup server itself.",
-   "body_zh": "群組會收集 /var/log/proxmox-backup 底下的登入記錄、REST API 存取記錄與任務封存檔。agent 端會丟掉讀取請求（GET、HEAD）、每次備份結尾的記錄上傳與 notes 更新、登入 ticket 請求，以及成功的備份與還原工作階段，每天只剩幾行。服務程式訊息來自 /var/log/syslog，agent 本來就有在讀；若伺服器只寫 journald，請在該 agent 自己的設定加上 journald 的 localfile。備份伺服器本身不需要任何變更。",
+   "body": "The group collects the login log, the REST API access log and the task archive under /var/log/proxmox-backup. On the agent it drops reads (GET, HEAD), the log upload and notes update that end every backup and successful backup and restore sessions, which leaves a few lines a day; login ticket requests are kept because they are the only record of a login's address. Daemon messages come from /var/log/syslog, which the agent reads already; on a server that logs only to journald, add a journald localfile to the agent's own configuration. Nothing changes on the backup server itself.",
+   "body_zh": "群組會收集 /var/log/proxmox-backup 底下的登入記錄、REST API 存取記錄與任務封存檔。agent 端會丟掉讀取請求（GET、HEAD）、每次備份結尾的記錄上傳與 notes 更新，以及成功的備份與還原工作階段，每天只剩幾行；登入 ticket 請求會保留，因為那是唯一記下登入來源位址的地方。服務程式訊息來自 /var/log/syslog，agent 本來就有在讀；若伺服器只寫 journald，請在該 agent 自己的設定加上 journald 的 localfile。備份伺服器本身不需要任何變更。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g pbs\n/var/ossec/bin/agent_control -R -u <agent_id>",
-   "verify": "Open a shell from the server's web interface (Administration, Shell) and close it. Expect rule 131857 (level 5) on the manager when the window closes.",
-   "verify_zh": "從伺服器網頁介面（管理 → Shell）開啟 shell 後關閉。視窗關閉時 manager 端應出現規則 131857（level 5）。"
+   "verify": "Open a shell from the server's web interface (Administration, Shell) and close it. Expect rule 131857 (level 5) on the manager when the window closes. Logging in as root@pam raises 131807 (level 3).",
+   "verify_zh": "從伺服器網頁介面（管理 → Shell）開啟 shell 後關閉。視窗關閉時 manager 端應出現規則 131857（level 5）。以 root@pam 登入會出現 131807（level 3）。",
+   "since": "1.1"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "1.1",
+   "title": "Watch the disk usage of every datastore (optional)",
+   "title_zh": "監看每個 datastore 的磁碟用量（選用）",
+   "body": "Without this step, disk usage is watched only for datastores under /mnt/datastore/. Add the localfile below to the Wazuh agent's own /var/ossec/etc/ossec.conf on the backup server (inside ossec_config) and restart the agent. Every 6 minutes it runs df on each datastore path in /etc/proxmox-backup/datastore.cfg (relative paths of removable datastores are skipped, they are under /mnt/datastore/ anyway), so no list is needed and new datastores are covered. It only reads that file and runs df; nothing changes in Proxmox Backup Server, and restarting the Wazuh agent does not interrupt backups. It has to be the local configuration: a command in a group's agent.conf is refused unless the agent allows remote commands.",
+   "body_zh": "未做這個步驟時，只有 /mnt/datastore/ 底下的 datastore 會被監看磁碟用量。請把下面的 localfile 加到備份伺服器上 Wazuh agent 自己的 /var/ossec/etc/ossec.conf（放在 ossec_config 內），再重新啟動 agent。它每 6 分鐘對 /etc/proxmox-backup/datastore.cfg 中每個 datastore 路徑執行 df（卸除式 datastore 的相對路徑會略過，它們本來就在 /mnt/datastore/ 底下），所以不需要清單，新增的 datastore 也會涵蓋。它只讀取該檔案並執行 df；Proxmox Backup Server 不需任何變更，重新啟動 Wazuh agent 也不會中斷備份。必須放在本機設定：群組 agent.conf 中的指令，除非 agent 允許遠端指令，否則會被拒絕。",
+   "code": "<localfile>\n  <log_format>command</log_format>\n  <command>awk '$1==\"path\" {print $2}' /etc/proxmox-backup/datastore.cfg | grep ^/ | xargs -r df -P</command>\n  <alias>jt-pbs-datastores</alias>\n  <frequency>360</frequency>\n</localfile>\n\nsystemctl restart wazuh-agent",
+   "verify": "Run the command by hand on the server: it prints one df line per datastore filesystem. A datastore at 90 per cent or more raises 131892 (level 10) on the manager within 6 minutes.",
+   "verify_zh": "在伺服器上手動執行這個指令：每個 datastore 所在的檔案系統會印出一行 df。用量達 90% 以上的 datastore，6 分鐘內 manager 端會出現 131892（level 10）。"
   },
   {
    "platform": "manager",
    "required": false,
    "title": "List datastore mount points outside /mnt/datastore",
    "title_zh": "列出 /mnt/datastore 以外的 datastore 掛載點",
-   "body": "For a datastore on a ZFS pool, an NFS share or any disk not formatted by Proxmox Backup Server, add the mount point that holds it (the last column of df -P on the server, not the datastore path below it), one line each, then reload the ruleset. Disk usage alerts start at 90 per cent.",
-   "body_zh": "datastore 若放在 ZFS pool、NFS 分享或任何不是由 Proxmox Backup Server 格式化的磁碟上，請把存放它的掛載點（伺服器上 df -P 的最後一欄，不是其下的 datastore 路徑）每行一個加入清單，再重新載入規則集。磁碟用量從 90% 開始告警。",
+   "body": "An alternative to the command above, for a site that prefers not to change the agent's configuration. For a datastore on a ZFS pool, an NFS share or any disk not formatted by Proxmox Backup Server, add the mount point that holds it (the last column of df -P on the server, not the datastore path below it), one line each, then reload the ruleset. Disk usage alerts start at 90 per cent.",
+   "body_zh": "上一個指令的替代做法，適合不想變更 agent 設定的站台。datastore 若放在 ZFS pool、NFS 分享或任何不是由 Proxmox Backup Server 格式化的磁碟上，請把存放它的掛載點（伺服器上 df -P 的最後一欄，不是其下的 datastore 路徑）每行一個加入清單，再重新載入規則集。磁碟用量從 90% 開始告警。",
    "code": "echo '/tank:datastore' >> /var/ossec/etc/lists/jt-pbs-datastore-mounts",
    "verify": "Run df -P on the server and check the mount point is the one listed.",
    "verify_zh": "在伺服器上執行 df -P，確認掛載點與清單一致。"

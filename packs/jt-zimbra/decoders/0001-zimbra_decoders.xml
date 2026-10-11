@@ -25,14 +25,14 @@
 
 <decoder name="zimbra-proxy-access-fields">
   <parent>zimbra-proxy-access</parent>
-  <regex type="pcre2">^([0-9a-fA-F.:]+):(\d+) \S+ \S+ \[[^\]]+\]\s+"(\w+) (\S+) [^"]*" (\d{3}) (\d+) "([^"]*)" "([^"]*)"</regex>
+  <regex type="pcre2">^(?:::ffff:)?([0-9a-fA-F.:]+):(\d+) \S+ \S+ \[[^\]]+\]\s+"(\w+) (\S+) [^"]*" (\d{3}) (\d+) "([^"]*)" "([^"]*)"</regex>
   <order>srcip, srcport, protocol, url, id, size, referer, user_agent</order>
 </decoder>
 
 <!-- Short form without referer and user agent (some proxy templates). -->
 <decoder name="zimbra-proxy-access-fields">
   <parent>zimbra-proxy-access</parent>
-  <regex type="pcre2">^([0-9a-fA-F.:]+):(\d+) \S+ \S+ \[[^\]]+\]\s+"(\w+) (\S+) [^"]*" (\d{3}) (\d+)\s*$</regex>
+  <regex type="pcre2">^(?:::ffff:)?([0-9a-fA-F.:]+):(\d+) \S+ \S+ \[[^\]]+\]\s+"(\w+) (\S+) [^"]*" (\d{3}) (\d+)\s*$</regex>
   <order>srcip, srcport, protocol, url, id, size</order>
 </decoder>
 
@@ -55,12 +55,23 @@
 
      Sibling decoders with the same name each add their own fields, so a
      line missing one item (no oip, no account) still gets the others.
+     An IPv4-mapped address (::ffff:198.51.100.7) is stored without the
+     prefix, so the rules' IPv4 ranges apply to it.
      ========================================================== -->
 
+<!-- fts (first time seen) is on the parent: on same-name sibling decoders
+     4.14.7 accepts it only on the first sibling and then never applies it
+     (tested). The key is (account, client address, administrator for a
+     DelegateAuth, agent): rules 100837, 100838 and 100896 use it. -->
 <decoder name="zimbra-audit">
   <prematch type="pcre2">\] security - cmd=\w+;</prematch>
+  <regex type="pcre2">\] security - cmd=(\w+);</regex>
+  <order>action</order>
+  <fts>name, srcuser, user, srcip, location</fts>
 </decoder>
 
+<!-- The parent's own regex is not applied once a child matches, so the
+     action is decoded again here. -->
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
   <regex type="pcre2">\] security - cmd=(\w+);</regex>
@@ -75,20 +86,20 @@
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">[\[;]oip=([0-9a-fA-F.:]+)[,;]</regex>
+  <regex type="pcre2">[\[;]oip=(?:::ffff:)?([0-9a-fA-F.:]+)[,;]</regex>
   <order>srcip</order>
 </decoder>
 
 <!-- A direct connection (the admin port, no proxy) has ip= and no oip=. -->
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">^(?!.*[\[;]oip=).*?[\[;]ip=([0-9a-fA-F.:]+);</regex>
+  <regex type="pcre2">^(?!.*[\[;]oip=).*?[\[;]ip=(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
   <order>srcip</order>
 </decoder>
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">[\[;]oip=[^;\]]*, ?([0-9a-fA-F.:]+);</regex>
+  <regex type="pcre2">[\[;]oip=[^;\]]*, ?(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
   <order>zimbra.via_proxy</order>
 </decoder>
 
@@ -122,4 +133,21 @@
   <parent>zimbra-audit</parent>
   <regex type="pcre2">[\[;]oproto=(\w+);</regex>
   <order>zimbra.oproto</order>
+</decoder>
+
+<!-- DelegateAuth: the context name= is the administrator, accountName= the
+     account taken over. Only for this command, so a login's fts key stays
+     (account, address). -->
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">[\[;]name=([^;\]]+);.*\] security - cmd=DelegateAuth;</regex>
+  <order>srcuser</order>
+</decoder>
+
+<!-- The account again, as a dynamic field: same_user does not match against
+     events kept for if_matched_group in 4.14.7, same_field does (tested). -->
+<decoder name="zimbra-audit-fields">
+  <parent>zimbra-audit</parent>
+  <regex type="pcre2">\] security - cmd=\w+;.*? account(?:Name)?=([^;\s]+);</regex>
+  <order>zimbra.account</order>
 </decoder>

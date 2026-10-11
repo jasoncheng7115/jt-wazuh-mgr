@@ -14,6 +14,7 @@
     132230-132239  mail backend: Zimbra refusals, availability
     132240-132249  devices: new device, remote wipe, policy
     132250-132259  loop detection, crashes, other fatal errors
+    132260-132269  successful requests: first-seen device, administrator accounts
     132280-132289  web server access log
 
   Z-Push sits between the phones and the mail server. The mail server sees the
@@ -62,17 +63,27 @@
 
   <!--
     The request summary, one line per request. The children are mutually
-    exclusive by result. A successful request stays at level 0: it is about
-    40 per cent of the log and only matters after failures (132220, 132221).
+    exclusive by result. ActiveSync authenticates every request, so each
+    successful one is a successful login: a phone makes hundreds a day. It is
+    recorded at level 2 (no alert, but available to correlation); 132260 to
+    132263 below raise the meaningful ones. It carries authentication_success
+    like the other packs' login rules. The built-in rules attached through
+    that group (first login 10100, system user 40101, out of hours and weekend
+    17101/17102, failures then success 40112) load before this file and do
+    not attach to it (checked with wazuh-logtest -v on a Sunday); a rule file
+    that loads after this one and uses if_group authentication_success does,
+    and is then tried on every request (jt-ioc 906050 is meant to: a
+    threat-listed address that logs in is level 14).
     A 401 with an empty login before the # in the [..] prefix ("[#jdoe]") is a
     request without credentials (a browser or a scanner); with a login it is
     a rejected password.
   -->
-  <rule id="132207" level="0">
+  <rule id="132207" level="2">
     <if_sid>132202</if_sid>
     <match type="pcre2">\] cmd='[^']*' memory='</match>
     <id type="pcre2">^2\d\d$</id>
     <description>Z-Push request completed: $(zpush.cmd) by $(dstuser) from $(srcip)</description>
+    <group>authentication_success,</group>
   </rule>
 
   <rule id="132208" level="2">
@@ -80,6 +91,99 @@
     <match type="pcre2">\[\s?INFO\] \[(?:#[^\]]*)?\](?: ?\[[^\]]*\])? cmd='[^']*' memory='</match>
     <id type="pcre2">^401$</id>
     <description>Z-Push request without credentials from $(srcip)</description>
+  </rule>
+
+  <!--
+    Successful requests that alert. Every ActiveSync request is a login, and a
+    phone on mobile data is outside the private ranges most of the day, so
+    grading each request by its source would turn ordinary use into hundreds of
+    alerts a day (measured on two hosts: 117 to 615 successful requests a day
+    from public addresses). Two signals instead:
+    - The first time this manager sees an account used with a device id
+      (fts: decoder name, account, device id): level 3 from a private address,
+      level 5 from a public one. The device id is used rather than the address
+      because a phone on mobile data changes its carrier address several times
+      a day, and its device id never. Requests without a device (OPTIONS, a
+      browser test, a monitoring probe) form one pair per account. Measured
+      on nine days of two hosts: 6 alerts on the first day (one per account
+      and device), then 4 in eight days. On a new installation every device
+      in use alerts once.
+    - Built-in administrator accounts (the local part admin, administrator,
+      root, postmaster or zimbra) using ActiveSync at all: level 3 from a
+      private address, level 8 from a public one, at most once an hour each,
+      since a phone repeats the login with every request.
+    Private: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, the
+    shared range 100.64.0.0/10, and for IPv6 fc00::/7 and fe80::/10. The IPv6
+    loopback is left out: in 4.14.7 a srcip of ::1 (or ::1/128) also matches
+    every IPv4 address (tested in a sandbox). Several srcip elements are alternatives;
+    several negated ones mean "in none of them".
+    The administrator rules are also children of the first-seen rules, so that
+    an administrator's first request takes the administrator level whichever
+    rule is tried first. (Defined here, ahead of their number, because the
+    correlation rules 132220 and 132221 hang under them as well.)
+  -->
+  <rule id="132260" level="3">
+    <if_sid>132207</if_sid>
+    <if_fts />
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <description>Z-Push: first request of $(dstuser) with device '$(zpush.devid)' ($(zpush.devtype)) seen by this manager, from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="132261" level="5">
+    <if_sid>132207</if_sid>
+    <if_fts />
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>Z-Push: first request of $(dstuser) with device '$(zpush.devid)' ($(zpush.devtype)) seen by this manager, from public address $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="132262" level="3" ignore="3600">
+    <if_sid>132207,132260</if_sid>
+    <user type="pcre2">(?i)^(?:admin|administrator|root|postmaster|zimbra)(?:@|$)</user>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <description>Z-Push: built-in administrator account $(dstuser) used through ActiveSync from $(srcip) (device '$(zpush.devid)')</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+  </rule>
+
+  <rule id="132263" level="8" ignore="3600">
+    <if_sid>132207,132261</if_sid>
+    <user type="pcre2">(?i)^(?:admin|administrator|root|postmaster|zimbra)(?:@|$)</user>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>Z-Push: built-in administrator account $(dstuser) used through ActiveSync from public address $(srcip) (device '$(zpush.devid)')</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
   </rule>
 
   <!--
@@ -219,12 +323,13 @@
     password was guessed. After a spraying alert the address that was trying
     many accounts now has one that works.
     if_matched_group without a frequency works; if_matched_sid would place the
-    rule under the referenced rule and ignore if_sid. The level must be above
+    rule under the referenced rule and ignore if_sid. Both are also children of
+    132260 to 132263, so that they win whichever sibling is tried first. The level must be above
     the referenced alert's: Wazuh does not let an event that raised a level-10
     alert match another rule of level 10 or lower.
   -->
   <rule id="132220" level="11" timeframe="900">
-    <if_sid>132207</if_sid>
+    <if_sid>132207,132260,132261,132262,132263</if_sid>
     <if_matched_group>jt_zpush_bruteforce</if_matched_group>
     <same_user />
     <description>[WARN] Z-Push: $(dstuser) logged in from $(srcip) after repeated rejected logins (password guessed, or a stale password corrected)</description>
@@ -235,7 +340,7 @@
   </rule>
 
   <rule id="132221" level="12" timeframe="900">
-    <if_sid>132207</if_sid>
+    <if_sid>132207,132260,132261,132262,132263</if_sid>
     <if_matched_group>jt_zpush_spraying</if_matched_group>
     <same_srcip />
     <description>[HIGH] Z-Push: login of $(dstuser) succeeded from $(srcip), which was spraying passwords</description>

@@ -8,19 +8,29 @@
   rules.
 
   Modules
-    131400-131409  OpenLDAP connections and binds
-    131410-131429  OpenLDAP writes: users, groups, computers, passwords
-    131430-131439  management console logins, PAM and SSH on domain controllers
-    131440-131449  UCS directory logger
+    131400-131409  OpenLDAP connections and binds (131406-131409: successful binds)
+    131410-131427  OpenLDAP writes: users, groups, computers, passwords
+    131428         OpenLDAP: a machine account binding (recorded, for 131402)
+    131430-131439  management console logins through PAM, PAM noise of domain accounts
+    131440-131443  UCS directory logger
+    131444-131449  machine account SSH logins, PAM and file share sessions
     131450-131459  domain controller services
     131460-131469  management console logins seen by the web server
     131470-131489  OPTIONAL: Samba JSON audit (authentication, passwords, groups)
-    131490-131499  OPTIONAL: UCS Admin Diary
+    131490-131493  OPTIONAL: UCS Admin Diary
+    131494-131495  OPTIONAL: Samba JSON audit, successful logons (continued)
 
-  Several rules use etc/lists/jt-ucs-dc-hosts: the short host names of the
-  domain controllers, as they appear in /var/log/syslog. The same names are
-  the first RDN of the DCs' machine accounts, so the list also recognises a
-  DC's own LDAP binds. Rules that need the list do nothing until it is filled.
+  Successful logins follow one policy everywhere: an ordinary account from a
+  private address is level 2 (recorded, never an alert); a built-in admin-class
+  account (Administrator, admin, root, the UCS join accounts) is level 3; any
+  account from an address outside 10/8, 172.16/12, 192.168/16, 127/8,
+  100.64/10, fc00::/7 and fe80::/10 is level 5 (admin-class 8); a success after
+  three or more failures for the same account or from the same address within
+  ten minutes is level 10. IPv6 loopback (::1) counts as external: a negated
+  ::1 in a srcip list also excludes every IPv4 address (verified).
+
+  Nothing here depends on site data. etc/lists/jt-ucs-dc-hosts is OPTIONAL
+  tuning (131436, 131449): short host names of the domain controllers.
 -->
 
 <group name="ucs,jt_ucs,">
@@ -62,15 +72,24 @@
   </rule>
 
   <!--
-    A domain controller's machine account failing to bind. UCS rotates DC
-    machine passwords (server/password/interval, 21 days by default, at
-    01:00): for a moment the DC binds with a password the directory does not
-    accept yet. Measured: two such failures a month per DC.
+    A machine account failing to bind. UCS rotates machine passwords
+    (server/password/interval, 21 days by default, at 01:00): for a moment the
+    machine binds with a password the directory does not accept yet.
+    Measured: two such failures a month per DC. The RESULT line names only the
+    first RDN ("dc1-example"), so 131428 records the BIND line of every account under
+    cn=computers and 131402 joins the failure to it by connection id.
   -->
-  <rule id="131402" level="3">
+  <rule id="131428" level="1">
+    <if_sid>2507</if_sid>
+    <match type="pcre2">^conn=\d+ op=\d+ BIND dn="cn=[^,"]+,(?:cn=[^,"]+,)*cn=computers,</match>
+    <description>OpenLDAP: machine account bind (conn $(id))</description>
+  </rule>
+
+  <rule id="131402" level="3" frequency="2" timeframe="5">
     <if_sid>131401</if_sid>
-    <list field="user" lookup="match_key">etc/lists/jt-ucs-dc-hosts</list>
-    <description>OpenLDAP: bind of domain controller machine account '$(dstuser)' failed from $(srcip) (routine during a machine password change)</description>
+    <if_matched_sid>131428</if_matched_sid>
+    <same_id />
+    <description>OpenLDAP: bind of machine account '$(dstuser)' failed from $(srcip) (routine during a machine password change)</description>
     <group>jt_ucs_ldap_bind_failure,</group>
   </rule>
 
@@ -92,6 +111,57 @@
       <id>T1110</id>
     </mitre>
     <group>authentication_failures,jt_ucs_bruteforce,</group>
+  </rule>
+
+  <!--
+    Successful binds (RESULT err=0), about 12,600 a day on one UCS primary.
+    Most are per-request API authentications: UDM, the management console
+    and the REST API bind as the logged-in user for each request, and the
+    udm command binds as cn=admin. So a successful bind stays at level 2 even
+    for admin-class accounts (6,600 a day there); the interactive login is
+    reported by the management console rules. External sources, and a
+    success after failures, alert. Wazuh's first-seen (fts) cannot be used:
+    the built-in openldap decoders carry no fts.
+  -->
+  <rule id="131406" level="2">
+    <if_sid>2507</if_sid>
+    <match>RESULT tag=97 err=0 </match>
+    <description>OpenLDAP: bind succeeded for '$(dstuser)' from $(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131407" level="5">
+    <if_sid>131406</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>OpenLDAP: bind of '$(dstuser)' succeeded from external address $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131408" level="8">
+    <if_sid>131407</if_sid>
+    <user type="pcre2">^(?i)(?:admin|administrator|root|join-backup|join-slave)$</user>
+    <description>OpenLDAP: privileged identity '$(dstuser)' bound from external address $(srcip)</description>
+    <mitre>
+      <id>T1078.002</id>
+    </mitre>
+  </rule>
+
+  <rule id="131409" level="10" frequency="4" timeframe="600" ignore="300">
+    <if_sid>131406,131407,131408</if_sid>
+    <if_matched_group>jt_ucs_ldap_bind_failure</if_matched_group>
+    <same_source_ip />
+    <description>[WARN] OpenLDAP: bind of '$(dstuser)' succeeded from $(srcip) after repeated failures from that address</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
   </rule>
 
   <rule id="131405" level="5">
@@ -284,65 +354,106 @@
 
   <!--
     Management console (UMC) logins through PAM. These lines carry the user
-    but no source address; the web server's line does (131460-131462).
-    Without 131432, every successful login raised the built-in 2501 at
-    level 5, because the first PAM step (pam_unix) always fails for domain
-    accounts. 131432 and 131433 are children of both 2501 and 131430, since
-    either can be evaluated first. A rule with two parents is counted twice by
-    frequency rules that use if_matched_group (verified in the sandbox), so
-    131433 carries no authentication_failed group; it has no source address
-    for the built-in 40111 anyway, and 131460 has.
+    but no source address; the web server's line does (131460-131464).
+    pam_unix is tried first and always fails for domain accounts; that line
+    used to raise the built-in 2501 at level 5 on every login (131432 records
+    it instead). The success line is decoded by jt-ucs-umc-pam-ok, which
+    carries fts: the first login of an account on a DC is level 3 (131438),
+    later ones level 2. Measured: 16 logins in five weeks on one domain, all
+    by Administrator (level 3 each).
+    131432 and 131433 have one parent only: the pack's decoded_as base is
+    evaluated before the generic 2501 (verified), and a failure rule with two
+    parents would be counted twice by 131439.
   -->
   <rule id="131430" level="0">
     <decoded_as>jt-ucs-umc-pam</decoded_as>
     <description>UCS management console PAM messages</description>
   </rule>
 
-  <rule id="131431" level="3">
+  <rule id="131431" level="2">
     <if_sid>131430</if_sid>
     <match type="pcre2">: user \S+ authenticated as \S+</match>
     <description>UCS management console: '$(dstuser)' logged in (Kerberos)</description>
-    <mitre>
-      <id>T1078.002</id>
-    </mitre>
     <group>authentication_success,</group>
   </rule>
 
+  <rule id="131437" level="3">
+    <if_sid>131431</if_sid>
+    <user type="pcre2">^(?i)(?:administrator|admin|root|join-backup|join-slave)$</user>
+    <description>UCS management console: admin-class account '$(dstuser)' logged in</description>
+    <mitre>
+      <id>T1078.002</id>
+    </mitre>
+  </rule>
+
+  <rule id="131438" level="3">
+    <if_sid>131431</if_sid>
+    <if_fts />
+    <user type="pcre2">^(?i)(?!(?:administrator|admin|root|join-backup|join-slave)$).+$</user>
+    <description>UCS management console: first login of '$(dstuser)' on $(hostname)</description>
+    <mitre>
+      <id>T1078.002</id>
+    </mitre>
+  </rule>
+
   <rule id="131432" level="2">
-    <if_sid>2501,131430</if_sid>
+    <if_sid>131430</if_sid>
     <match type="pcre2">pam_unix\(univention-management-console:auth\): authentication failure</match>
     <description>UCS management console: local password check failed for '$(dstuser)' (normal: Kerberos decides next)</description>
   </rule>
 
   <rule id="131433" level="5">
-    <if_sid>2501,131430</if_sid>
+    <if_sid>131430</if_sid>
     <match type="pcre2">pam_krb5\(univention-management-console:auth\): authentication failure</match>
     <description>UCS management console: login failed for '$(dstuser)' (source address: see the web server alert 131460)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,</group>
+  </rule>
+
+  <!--
+    Defined after 131433 on purpose: if_matched_sid and if_matched_group
+    only link to rules that are already loaded (verified: placed above
+    131433, this rule never fired and analysisd -t reported nothing).
+  -->
+  <rule id="131439" level="10" frequency="4" timeframe="600" ignore="300">
+    <if_sid>131431,131437,131438</if_sid>
+    <if_matched_sid>131433</if_matched_sid>
+    <same_user />
+    <description>[WARN] UCS management console: '$(dstuser)' logged in after repeated failed logins</description>
     <mitre>
       <id>T1110</id>
     </mitre>
   </rule>
 
   <!--
-    PAM noise on domain controllers (hosts in etc/lists/jt-ucs-dc-hosts).
-    pam_unix fails before pam_krb5 for every domain account: the DCs' own
-    sysvol replication logs in over SSH about 576 times a day per DC, and
-    each login used to raise 5503 and 5557 at level 5. A real SSH failure is
-    still reported by sshd's own "Failed ..." line.
+    Machine accounts (names ending in $). Samba AD and UCS domain controllers
+    log in to each other over SSH for sysvol replication, about 576 times a
+    day per DC, with the DC's machine account. pam_unix fails first for every
+    domain account, so each login used to raise 5503 and 5557 at level 5,
+    followed by 5715 and two PAM session alerts at level 3. A real failure of
+    such a login is still reported by the pam_krb5 failure line (2501) and by
+    sshd's own "Failed ..." line.
   -->
   <rule id="131434" level="2">
     <if_sid>5557</if_sid>
-    <list field="hostname" lookup="match_key">etc/lists/jt-ucs-dc-hosts</list>
-    <description>UCS domain controller: local password check failed (normal before Kerberos authentication)</description>
+    <match type="pcre2">password check failed for user \([^)\s]+\$\)</match>
+    <description>Machine account: local password check failed (normal before Kerberos authentication)</description>
   </rule>
 
   <rule id="131435" level="2">
     <if_sid>5503</if_sid>
-    <list field="hostname" lookup="match_key">etc/lists/jt-ucs-dc-hosts</list>
-    <match type="pcre2">pam_unix\(sshd:auth\): authentication failure</match>
-    <description>UCS domain controller: SSH local password check failed for '$(dstuser)' (normal before Kerberos authentication)</description>
+    <match type="pcre2">pam_unix\([\w-]+:auth\): authentication failure; .*\buser=\S+\$\s*$</match>
+    <description>Machine account '$(dstuser)': local password check failed (normal before Kerberos authentication)</description>
   </rule>
 
+  <!--
+    OPTIONAL tuning with etc/lists/jt-ucs-dc-hosts (short host names of the
+    DCs). On listed hosts, the local password failures that come before every
+    Kerberos login of any domain account are recorded only (131449), and a
+    root SSH login with a password is level 8 instead of the built-in 3.
+  -->
   <rule id="131436" level="8">
     <if_sid>5715</if_sid>
     <list field="hostname" lookup="match_key">etc/lists/jt-ucs-dc-hosts</list>
@@ -350,6 +461,61 @@
     <description>UCS domain controller: root logged in to $(hostname) over SSH with a password from $(srcip)</description>
     <mitre>
       <id>T1078.003</id>
+    </mitre>
+  </rule>
+
+  <rule id="131449" level="2">
+    <if_sid>5503,5557</if_sid>
+    <list field="hostname" lookup="match_key">etc/lists/jt-ucs-dc-hosts</list>
+    <match type="pcre2">pam_unix\([\w-]+:auth\): authentication failure|password check failed for user </match>
+    <description>UCS domain controller: local password check failed for a domain account (normal before Kerberos authentication)</description>
+  </rule>
+
+  <rule id="131444" level="2">
+    <if_sid>5715</if_sid>
+    <user type="pcre2">\$$</user>
+    <description>Machine account '$(dstuser)' logged in over SSH from $(srcip) (domain controller replication)</description>
+  </rule>
+
+  <rule id="131445" level="8">
+    <if_sid>131444</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>Machine account '$(dstuser)' logged in over SSH from external address $(srcip)</description>
+    <mitre>
+      <id>T1078.002</id>
+    </mitre>
+  </rule>
+
+  <rule id="131446" level="2">
+    <if_sid>5501,5502</if_sid>
+    <match type="pcre2">pam_unix\(sshd:session\): session (?:opened|closed) for user [^\s(]+\$(?:\(|\s|$)</match>
+    <description>Machine account SSH session (domain controller replication)</description>
+  </rule>
+
+  <!--
+    File share sessions on a Samba server (pam_unix(samba:session)): about 1,900
+    a day on one UCS primary, mostly a monitoring account, anonymous sessions
+    and machine accounts. The lines carry the user, no address. An admin-class
+    account opening a session is level 3.
+  -->
+  <rule id="131447" level="2">
+    <if_sid>5501,5502</if_sid>
+    <match type="pcre2">pam_unix\(samba:session\): session (?:opened|closed) for user </match>
+    <description>Samba: file share session of '$(dstuser)'</description>
+  </rule>
+
+  <rule id="131448" level="3">
+    <if_sid>131447</if_sid>
+    <match type="pcre2">session opened for user (?i:administrator|admin|root)\(</match>
+    <description>Samba: file share session opened by an admin-class account</description>
+    <mitre>
+      <id>T1021.002</id>
     </mitre>
   </rule>
 
@@ -443,8 +609,10 @@
 
   <!--
     Management console logins as the web server sees them: these carry the
-    client address. A rejected login is HTTP 401 on POST /univention/auth.
-    Measured: 16 logins in five weeks on one domain, none rejected.
+    client address but not the account. A rejected login is HTTP 401 on
+    POST /univention/auth. Measured: 16 logins in five weeks on one domain,
+    none rejected. An accepted login from a private address is level 2; the
+    PAM rules above report who it was.
   -->
   <rule id="131460" level="5">
     <if_sid>31101</if_sid>
@@ -467,13 +635,38 @@
     <group>authentication_failures,jt_ucs_bruteforce,</group>
   </rule>
 
-  <rule id="131462" level="3">
+  <rule id="131462" level="2">
     <if_sid>31100,31108</if_sid>
     <protocol>POST</protocol>
     <url type="pcre2">^/univention/auth/?$</url>
     <id>^200$</id>
     <description>UCS management console: login accepted from $(srcip)</description>
     <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131463" level="5">
+    <if_sid>131462</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>UCS management console: login accepted from external address $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131464" level="10" frequency="4" timeframe="600" ignore="300">
+    <if_sid>131462,131463</if_sid>
+    <if_matched_sid>131460</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] UCS management console: login accepted from $(srcip) after repeated rejected logins from that address</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
   </rule>
 
   <!--
@@ -492,11 +685,59 @@
     <description>Samba audit (smbd): $(samba.type)</description>
   </rule>
 
-  <rule id="131472" level="0">
+  <!--
+    Successful logons appear only at auth_json_audit:3 (every Kerberos ticket
+    and NTLM logon: high volume). They are level 2; admin-class accounts,
+    external addresses, a first (account, address) pair (131494, Kerberos and
+    NTLM through the samba process only: the smbd path has no fts) and a
+    success after failures from the same address (131495) alert.
+  -->
+  <rule id="131472" level="2">
     <if_sid>131470,131471</if_sid>
     <field name="samba.type" type="pcre2">^(?:Authentication|Authorization)$</field>
     <field name="samba.status" type="pcre2">^NT_STATUS_OK$</field>
-    <description>Samba audit: successful $(samba.service) logon of '$(dstuser)'</description>
+    <description>Samba audit: successful $(samba.service) logon of '$(dstuser)' from $(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131487" level="3">
+    <if_sid>131472</if_sid>
+    <user type="pcre2">^(?i)(?:[^\\@]+\\)?(?:administrator|admin|root)(?:@\S*)?$</user>
+    <description>Samba AD: admin-class account '$(dstuser)' logged on ($(samba.service)) from $(srcip)</description>
+    <mitre>
+      <id>T1078.002</id>
+    </mitre>
+  </rule>
+
+  <rule id="131494" level="3">
+    <if_sid>131472</if_sid>
+    <if_fts />
+    <user type="pcre2">^(?i)(?![^\\@]*\\?(?:administrator|admin|root)(?:@\S*)?$).+$</user>
+    <description>Samba AD: first logon of '$(dstuser)' from $(srcip) ($(samba.service))</description>
+  </rule>
+
+  <rule id="131488" level="5">
+    <if_sid>131472,131487,131494</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>Samba AD: '$(dstuser)' logged on ($(samba.service)) from external address $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131489" level="8">
+    <if_sid>131488</if_sid>
+    <user type="pcre2">^(?i)(?:[^\\@]+\\)?(?:administrator|admin|root)(?:@\S*)?$</user>
+    <description>Samba AD: admin-class account '$(dstuser)' logged on ($(samba.service)) from external address $(srcip)</description>
+    <mitre>
+      <id>T1078.002</id>
+    </mitre>
   </rule>
 
   <rule id="131473" level="5">
@@ -565,6 +806,17 @@
       <id>T1110</id>
     </mitre>
     <group>authentication_failed,jt_ucs_samba_auth_failure,</group>
+  </rule>
+
+  <!-- After the failure rules, for the same reason as 131439. -->
+  <rule id="131495" level="10" frequency="4" timeframe="600" ignore="300">
+    <if_sid>131472,131487,131488,131489,131494</if_sid>
+    <if_matched_group>jt_ucs_samba_auth_failure</if_matched_group>
+    <same_source_ip />
+    <description>[WARN] Samba AD: '$(dstuser)' logged on from $(srcip) after repeated authentication failures from that address</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
   </rule>
 
   <rule id="131477" level="10" frequency="10" timeframe="300" ignore="300">

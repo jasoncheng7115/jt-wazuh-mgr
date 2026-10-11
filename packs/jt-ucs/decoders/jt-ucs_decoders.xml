@@ -65,9 +65,20 @@
   pam_unix is tried first and fails for every domain account; pam_krb5 then
   decides. A pam_unix failure followed by a pam_krb5 success is a successful
   login.
+  The success line has a child decoder of its own, because it carries fts
+  (first time an account logs in on that DC). Wazuh applies only the first
+  child whose prematch matches; fts was verified on such a child decoder.
 -->
 <decoder name="jt-ucs-umc-pam">
   <prematch type="pcre2">pam_\w+\(univention-management-console:\w+\): </prematch>
+</decoder>
+
+<decoder name="jt-ucs-umc-pam-ok">
+  <parent>jt-ucs-umc-pam</parent>
+  <prematch type="pcre2">pam_krb5\(univention-management-console:auth\): user \S+ authenticated as </prematch>
+  <regex type="pcre2">(pam_krb5)\(univention-management-console:(auth)\): user (\S+) authenticated as </regex>
+  <order>ucs.pam_module, ucs.pam_stage, user</order>
+  <fts>name, user, location</fts>
 </decoder>
 
 <decoder name="jt-ucs-umc-pam-fields">
@@ -109,6 +120,19 @@
   <prematch type="pcre2">^JSON (?:Authentication|Authorization|passwordChange|groupChange): \{</prematch>
 </decoder>
 
+<!--
+  Successful Kerberos and NTLM logons (auth_json_audit:3) get a child of their
+  own that carries fts on (account, address). Samba writes the keys of an
+  Authentication record in a fixed order, so one regex takes all of them.
+-->
+<decoder name="jt-samba-audit-ok">
+  <parent>jt-samba-audit</parent>
+  <prematch type="pcre2">^JSON Authentication: \{.*?"status": "NT_STATUS_OK", </prematch>
+  <regex type="pcre2">^JSON (Authentication): \{.*?"status": "(NT_STATUS_OK)", .*?"remoteAddress": "ipv[46]:\[?(?:::ffff:)?([0-9A-Fa-f.:]+?)\]?:\d+", "serviceDescription": "([^"]*)".*?"clientAccount": "([^"]*)"</regex>
+  <order>samba.type, samba.status, srcip, samba.service, user</order>
+  <fts>name, user, srcip</fts>
+</decoder>
+
 <decoder name="jt-samba-audit-fields">
   <parent>jt-samba-audit</parent>
   <regex type="pcre2">JSON (\w+): \{</regex>
@@ -129,7 +153,7 @@
 
 <decoder name="jt-samba-audit-fields">
   <parent>jt-samba-audit</parent>
-  <regex type="pcre2">"remoteAddress": "ipv[46]:\[?([0-9A-Fa-f.:]+?)\]?:\d+"</regex>
+  <regex type="pcre2">"remoteAddress": "ipv[46]:\[?(?:::ffff:)?([0-9A-Fa-f.:]+?)\]?:\d+"</regex>
   <order>srcip</order>
 </decoder>
 
@@ -208,7 +232,7 @@
 
 <decoder name="jt-smbd-audit-fields">
   <parent>smbd</parent>
-  <regex type="pcre2">"remoteAddress": "ipv[46]:\[?([0-9A-Fa-f.:]+?)\]?:\d+"</regex>
+  <regex type="pcre2">"remoteAddress": "ipv[46]:\[?(?:::ffff:)?([0-9A-Fa-f.:]+?)\]?:\d+"</regex>
   <order>srcip</order>
 </decoder>
 

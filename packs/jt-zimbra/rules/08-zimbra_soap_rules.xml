@@ -1,5 +1,5 @@
 <!--
-  Zimbra SOAP rules (mailbox.log)          100970-100974, 100925, 100928-100935, 100851
+  Zimbra SOAP rules (mailbox.log)          100970-100974, 100895-100899, 100925, 100928-100934, 100851
   Decoder: zimbra-mailbox-soap (decoders/0002-zimbra_mailbox_decoders.xml)
 
   Why mailbox.log and not the nginx access log: the access log shows only
@@ -16,9 +16,10 @@
     GetMsgRequest, which is mail actually downloaded, still is), and only
     the file copy counts. Replayed on 8.8 days of real lines: 2.7 a day
     before, 0.8 a day after at the 30 threshold, all of the remainder one
-    administrator session bulk-reading one mailbox (see 100935).
-  * 100974 named one site's monitoring account. It reads the list
-    etc/lists/zimbra-service-accounts instead.
+    administrator session bulk-reading one mailbox (3.1: see 100895).
+  * 100974 named one site's monitoring account. It reads the optional list
+    etc/lists/zimbra-service-accounts instead (3.1: not needed by default,
+    see 100895).
   * 100928/100925 (an account sending a burst of mail) and 100851 (two-factor
     changes) looked for SendMsg and TwoFactorAuth in audit.log, which logs
     neither, so they could not fire. They now read the SOAP operations here.
@@ -40,10 +41,13 @@
     <description>Zimbra mailbox line received through syslog, a copy of mailbox.log (not counted)</description>
   </rule>
 
-  <!-- Counted: operations that fetch message or contact content. -->
+  <!-- Counted: operations that fetch message or contact content, in the
+       account's own session (3.1: not Zimbra's own tools, and not a
+       delegated session, which 100895 takes). -->
   <rule id="100971" level="1">
     <if_sid>100970</if_sid>
     <action type="pcre2">^(?:GetMsgRequest|GetConvRequest|ExportContactsRequest|GetContactsRequest|SearchGalRequest)$</action>
+    <match type="pcre2">^(?!.*(?:[\[;]aname=|[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]]))</match>
     <options>no_log</options>
     <description>Zimbra content-read SOAP operation, counted for correlation: $(action) by $(dstuser)</description>
     <group>zimbra_soap_read,</group>
@@ -53,10 +57,70 @@
   <rule id="100929" level="1">
     <if_sid>100970</if_sid>
     <action type="pcre2">^(?:SearchRequest|SearchConvRequest)$</action>
-    <match type="pcre2">^(?!.*[\[;]ua=[^;\]]*ZPZB/)</match>
+    <match type="pcre2">^(?!.*(?:[\[;]ua=[^;\]]*ZPZB/|[\[;]aname=|[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]]))</match>
     <options>no_log</options>
     <description>Zimbra search SOAP operation, counted for correlation: $(action) by $(dstuser)</description>
     <group>zimbra_soap_read,</group>
+  </rule>
+
+  <!-- An administrator reading another account's mailbox through a
+       delegated session: the line names the mailbox (name=) and the
+       administrator (aname=).
+       3.1: such a session from a private address is an administrator
+       working, or an internal tool holding an admin token (measured: one
+       tool read 1,788 messages of one mailbox in 8.8 days, which raised
+       100972/100973 1.3 times a day and could only be silenced by listing
+       its account). It is now reported once for each (administrator,
+       mailbox, address) triple (100897), and many different mailboxes in an
+       hour raise 100899. From a public address it is counted for 100972 as
+       before (100898). -->
+  <rule id="100895" level="1">
+    <if_sid>100970</if_sid>
+    <action type="pcre2">^(?:GetMsgRequest|GetConvRequest|ExportContactsRequest|GetContactsRequest|SearchGalRequest|SearchRequest|SearchConvRequest)$</action>
+    <match type="pcre2">^(?!.*[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]]).*[\[;]aname=</match>
+    <options>no_log</options>
+    <description>Zimbra mailbox read in a delegated administrator session: $(zimbra.aname) reading $(dstuser)</description>
+  </rule>
+
+  <rule id="100898" level="1">
+    <if_sid>100895</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/zimbra-internal-networks</list>
+    <options>no_log</options>
+    <description>Delegated mailbox read from a public address, counted for correlation: $(zimbra.aname) reading $(dstuser) from: $(srcip)</description>
+    <group>zimbra_soap_read,</group>
+  </rule>
+
+  <rule id="100897" level="5">
+    <if_sid>100895</if_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <if_fts />
+    <description>A Zimbra administrator is reading another account's mailbox, first time from this address: $(zimbra.aname) reading $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1114.002</id>
+    </mitre>
+  </rule>
+
+  <rule id="100899" level="12" frequency="5" timeframe="3600">
+    <if_matched_sid>100897</if_matched_sid>
+    <same_field>zimbra.aname</same_field>
+    <description>[HIGH] One Zimbra administrator began reading five or more different mailboxes within an hour: $(zimbra.aname) from: $(srcip)</description>
+    <mitre>
+      <id>T1114.002</id>
+    </mitre>
+    <group>exfiltration,</group>
   </rule>
 
   <!-- Same account, many reads in five minutes. Counted per account, not
@@ -84,23 +148,19 @@
     <group>exfiltration,</group>
   </rule>
 
-  <!-- Accounts listed in etc/lists/zimbra-service-accounts (monitoring
-       probes, archivers) are expected to read a lot. -->
+  <!-- Optional tuning: accounts listed in etc/lists/zimbra-service-accounts
+       (an archiver, a probe using its own account) are expected to read a
+       lot. Nothing is listed by default and nothing needs to be. For a
+       delegated session the lookup is on the administrator (srcuser). -->
   <rule id="100974" level="0">
     <if_sid>100972,100973</if_sid>
     <list field="user" lookup="match_key">etc/lists/zimbra-service-accounts</list>
     <description>Bulk reading by a listed Zimbra service account (excluded)</description>
   </rule>
 
-  <!-- The same when an administrator reads someone's mailbox through a
-       delegated session: the line names the mailbox as name= and the
-       administrator as aname=. Listing that administrator account excludes
-       its tool, not the mailbox owner. -->
-  <rule id="100935" level="0">
-    <if_sid>100972,100973</if_sid>
-    <list field="zimbra.aname" lookup="match_key">etc/lists/zimbra-service-accounts</list>
-    <description>Bulk reading through a delegated session of a listed service account (excluded)</description>
-  </rule>
+  <!-- 100935 (the same for the aname= of a delegated session) is removed in
+       3.1: 100974 already covers it, because a CDB lookup on "user" checks
+       srcuser first and the decoder now puts aname= there (tested). -->
 
   <!-- Sending: webmail and Z-Push both send with SendMsgRequest. -->
   <rule id="100928" level="1">
@@ -158,7 +218,7 @@
     <if_sid>100970</if_sid>
     <url type="pcre2">^https?://\S*/service/admin/soap</url>
     <action type="pcre2">^(?:CreateAccount|DeleteAccount|RenameAccount|SetPassword|ModifyAccount|AddAccountAlias|GrantRight|RevokeRight|ModifyConfig|ModifyCos|ModifyDomain|CreateDomain|DeployZimlet|UndeployZimlet|ModifyZimlet|ModifyServer|CreateDistributionList|AddDistributionListMember|ModifyDistributionList)Request$</action>
-    <match type="pcre2">^(?!.*[\[;]ua=(?:zm[a-z]+|ZCS)/)</match>
+    <match type="pcre2">^(?!.*[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]])</match>
     <description>Zimbra administrative change: $(action) by $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1098</id>

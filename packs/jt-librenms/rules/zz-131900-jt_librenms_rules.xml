@@ -10,7 +10,7 @@
     131900-131919  application log (librenms.log): unknown-user logins,
                    alert delivery failures, database errors
     131930-131939  dispatcher service (librenms-service.py, journald)
-    131940-131949  web login failures, expired forms (access log)
+    131940-131949  web logins: failures, successes, expired forms (access log)
     131950-131959  REST API: rejected tokens, not-found noise, changes
     131960-131979  web interface changes: users, roles, API tokens, 2FA,
                    settings, devices, alert rules and transports
@@ -97,7 +97,7 @@
     <if_matched_sid>131910</if_matched_sid>
     <same_source_ip />
     <description>[WARN] LibreNMS: repeated logins with unknown user names from $(srcip) (user name guessing)</description>
-    <group>authentication_failures,</group>
+    <group>authentication_failures,jt_librenms_login_burst,</group>
     <mitre>
       <id>T1110.003</id>
     </mitre>
@@ -251,7 +251,7 @@
     <if_matched_sid>131942</if_matched_sid>
     <same_source_ip />
     <description>[WARN] LibreNMS: repeated failed web logins from $(srcip)</description>
-    <group>authentication_failures,</group>
+    <group>authentication_failures,jt_librenms_login_burst,</group>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -266,6 +266,100 @@
     <if_sid>31101</if_sid>
     <id type="pcre2">^419$</id>
     <description>LibreNMS (Laravel): request from $(srcip) rejected, the form or session expired</description>
+  </rule>
+
+  <!--
+    A successful login is the other half of the pair: after a login submission
+    the browser loads the home page "/" (or "/2fa" when two-factor
+    authentication is on, meaning the password was accepted), which a guest
+    is never shown. A login that was redirected to a page other than "/"
+    (a bookmarked page the session expired on) is not recognised; a failed
+    login is unaffected. The access log names no user, so an administrator
+    cannot be told from anyone else, and there is no new-address check
+    (first-time-seen needs a decoder of the pack's own, and access lines are
+    decoded by Wazuh's built-in web decoder).
+    A successful login from a private address is recorded below the alert level.
+  -->
+  <rule id="131945" level="2" timeframe="10">
+    <if_sid>31100,31108</if_sid>
+    <if_matched_sid>131940</if_matched_sid>
+    <same_source_ip />
+    <protocol type="pcre2">^GET$</protocol>
+    <url type="pcre2">^/(?:2fa)?$</url>
+    <id type="pcre2">^200$</id>
+    <description>LibreNMS: web login succeeded from $(srcip)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!--
+    Children of 131945: the source is outside every private range (one negated
+    srcip per range means "in none of them"), or the login follows failures.
+    The IPv6 loopback is not in the list: in Wazuh 4.14.7 a negated ::1 (in any
+    spelling) also excludes every IPv4 address, so the rule would never fire
+    for IPv4. A login from ::1 therefore counts as external.
+    Built-in 40112 (success after a brute-force rule) does not attach to rules
+    loaded after it, so 131947 to 131949 do that job here.
+  -->
+  <rule id="131946" level="5">
+    <if_sid>131945</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>LibreNMS: web login succeeded from external address $(srcip)</description>
+    <group>authentication_success,</group>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!-- frequency="4" with if_sid: three failed logins (131942) from the address
+       in the last 10 minutes, then this success (measured in the sandbox). -->
+  <rule id="131947" level="10" frequency="4" timeframe="600">
+    <if_sid>131945,131946</if_sid>
+    <if_matched_sid>131942</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] LibreNMS: web login from $(srcip) succeeded after repeated failures</description>
+    <group>authentication_success,</group>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131948" level="12">
+    <if_sid>131947</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>[HIGH] LibreNMS: web login from external address $(srcip) succeeded after repeated failures</description>
+    <group>authentication_success,</group>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!-- After a burst: 131943 (failed web logins) or 131911 (unknown user names).
+       The burst rule consumes the failures it counted, so 131947 alone would
+       miss exactly this case. -->
+  <rule id="131949" level="12" timeframe="600">
+    <if_sid>131945,131946</if_sid>
+    <if_matched_group>jt_librenms_login_burst</if_matched_group>
+    <same_source_ip />
+    <description>[HIGH] LibreNMS: web login from $(srcip) succeeded after a burst of failed logins</description>
+    <group>authentication_success,</group>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
   </rule>
 
   <!-- ===== REST API (access log) ===== -->

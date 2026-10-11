@@ -4,6 +4,45 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.13.1 (2026-10-11)
+
+Every pack is now quiet and useful on a fresh install, with its shipped lists
+left empty. A successful login is no longer an alert by itself: an ordinary
+account logging in from a private address is recorded at level 2. What still
+alerts is a login by the product's built-in administrator, a login from a
+public address, a login right after repeated failures, and, where the pack's
+own decoder allows it, the first time an account is seen from an address. The
+site lists that used to be needed (service accounts, resolvers, domain
+controllers) are optional tuning now. Measured on this site's data, for example:
+
+- **jt-synology 1.1:** a storage plugin's polling, 49,000 alerts a day, becomes
+  five first-seen alerts in total, without listing the account.
+- **jt-proxmox 1.1:** a monitoring account's 20,880 logins a day no longer
+  alert; root logins stay visible; a login after six failures for the same
+  account is level 12.
+- **jt-zimbra 3.1:** mailed alerts from logins and delegated reading go from
+  about 2.5 a day to none; a rule that mistook phones changing mobile
+  addresses for a stolen account is fixed.
+- **jt-ucs 1.1:** domain controllers are recognised by their machine accounts,
+  so the DC list is no longer needed; about 4,600 fewer alerts a day.
+- **jt-zenarmor 1.5:** resolvers and mail filters are recognised from the DNS
+  record itself, so their lookups no longer look like a client beaconing.
+  All correlation windows fit what analysisd actually remembers (15 minutes).
+- **jt-pmg, jt-keycloak, jt-opnsense, jt-odoo, jt-nextcloud, jt-ipam, jt-pbs,
+  jt-adguard, jt-librenms, jt-jitsi, jt-zpush, jt-vc-portal** follow the same
+  rules; jt-vc-portal now reads its audit file through its own decoder, which
+  also brings the client address and an opt-in active response.
+- **jt-portable-detect 3.4.1:** a comment no longer uses a real user name.
+- **jt-malware-hash 1.5: it no longer hides built-in alerts.** 1.4 still had four rules
+  between a built-in rule and its alert: one silenced VirusTotal's "No positives found",
+  one dropped every osquery result that carried a sha256 column, and two took any JSON
+  event with a sha256 field. Each lookup is now one rule that matches only a listed hash.
+  The updater labels entries with the signature name (1.4 stored the MIME type), never
+  lists the hash of empty content, and refuses a list that suddenly triples.
+- `tools/pack_sandbox.py` fails an install on any analysisd warning (a warning
+  is how analysisd reports a rule it ignores), waits until logtest answers, and
+  runs multi-line sequences.
+
 ## v1.13.0 (2026-10-11)
 
 - **Active response, offered by a pack and switched on by you.** A pack can now

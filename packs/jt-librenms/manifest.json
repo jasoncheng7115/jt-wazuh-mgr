@@ -2,13 +2,13 @@
  "id": "jt-librenms",
  "name": "LibreNMS Detection Suite",
  "name_zh": "LibreNMS 偵測套組",
- "version": "1.0",
+ "version": "1.1",
  "summary": "Failed logins, rejected API tokens, account, token and alerting changes, and undelivered alert notifications on LibreNMS, which Wazuh saw only as generic web traffic.",
  "summary_zh": "LibreNMS 的登入失敗、被拒的 API token、帳號、token 與告警設定的變更，以及送不出去的告警通知；Wazuh 原本只把它當成一般網頁流量。",
  "rule_id_range": "131900-131999",
  "notes": [
   "LibreNMS writes three things Wazuh can read: its application log (/opt/librenms/logs/librenms.log), the dispatcher service's messages in journald, and the web server's access and error logs. Wazuh had no decoder for the first two and saw the third only as generic web traffic, so LibreNMS logins, API use and administrative changes did not register.",
-  "Logins. A login with a user name that does not exist is the only failed login LibreNMS writes to a file (level 5, level 10 for six from one address in two minutes). A wrong password for an existing user is recorded only in LibreNMS's database; the pack recognises it in the access log instead, as a login form submission followed within seconds by the login form again from the same address (level 5, level 10 for five in three minutes). Other Laravel applications fail logins the same way and match too.",
+  "Logins. A login with a user name that does not exist is the only failed login LibreNMS writes to a file (level 5, level 10 for six from one address in two minutes). A wrong password for an existing user is recorded only in LibreNMS's database; the pack recognises it in the access log instead, as a login form submission followed within seconds by the login form again from the same address (level 5, level 10 for five in three minutes). Other Laravel applications fail logins the same way and match too. A successful web login (the home page, or the two-factor page, loaded right after the form was submitted) is recorded below the alert level from a private address and is level 5 from any other address. After three failed logins from the same address within ten minutes it is level 10 (level 12 from an external address), and after a burst of failures (five failed logins or six unknown user names) level 12. The access log names no user, so an administrator cannot be told from anyone else, and a first-seen check per address is not possible with Wazuh's built-in web decoder. A login redirected to a page other than the home page is not recognised as a success; a login from the IPv6 loopback counts as external.",
   "REST API. A request rejected for a missing, invalid or insufficient token is level 5, and level 10 for eight from one address in two minutes. Successful changes through the API are level 3, a device added or changed level 5, an alert rule or template changed level 6, maintenance mode (which silences alerts) level 5, a device deleted level 8.",
   "Web interface changes, from the access log: an API token created or reset is level 10; a user account created or deleted, a role changed, two-factor authentication removed, a device deleted, an authentication or access setting changed are level 8; a user account or its permissions changed, another global setting, an alert rule, transport or template changed are level 6; an API token disabled or deleted, a two-factor lockout cleared and a device added are level 5. The access log has no user name and no form body: the alert says what was requested and from which address, and LibreNMS's own Event Log and Auth Log say who.",
   "Not visible: changes the legacy pages post to /ajax_form.php (alert transports and templates among them) carry the action in the body; SNMP and SSH credential failures towards devices go to the device's event log in the database, not to a file. A credential problem shows as a device that keeps failing to poll, or on the device itself.",
@@ -20,7 +20,7 @@
  ],
  "notes_zh": [
   "LibreNMS 會寫出三種 Wazuh 讀得到的東西：應用程式記錄（/opt/librenms/logs/librenms.log）、dispatcher 服務寫進 journald 的訊息，以及網頁伺服器的存取與錯誤記錄。前兩者 Wazuh 沒有解碼器，第三種只被當成一般網頁流量，所以 LibreNMS 的登入、API 使用與管理變更都沒有留下任何告警。",
-  "登入：以不存在的使用者名稱登入，是 LibreNMS 唯一會寫進檔案的登入失敗（level 5；同一位址兩分鐘內六次為 level 10）。既有使用者打錯密碼只記在 LibreNMS 的資料庫裡；套件改從存取記錄辨識：送出登入表單後數秒內，同一位址又拿到登入頁（level 5；三分鐘內五次為 level 10）。其他 Laravel 應用程式登入失敗的行為相同，也會命中。",
+  "登入：以不存在的使用者名稱登入，是 LibreNMS 唯一會寫進檔案的登入失敗（level 5；同一位址兩分鐘內六次為 level 10）。既有使用者打錯密碼只記在 LibreNMS 的資料庫裡；套件改從存取記錄辨識：送出登入表單後數秒內，同一位址又拿到登入頁（level 5；三分鐘內五次為 level 10）。其他 Laravel 應用程式登入失敗的行為相同，也會命中。網頁登入成功（送出表單後隨即載入首頁，或啟用兩步驟驗證時的驗證頁）來自私有位址時記錄在告警等級之下，來自其他位址為 level 5。同一位址十分鐘內登入失敗三次後才成功為 level 10（外部位址為 level 12），在一連串失敗（五次登入失敗或六個不存在的使用者名稱）之後成功為 level 12。存取記錄沒有使用者名稱，所以分不出管理者與其他人；Wazuh 內建的網頁解碼器也無法做「每個位址第一次出現」的判斷。登入後被導向首頁以外頁面的不會被認成成功；來自 IPv6 迴路位址的登入視為外部。",
   "REST API：因 token 缺少、無效或權限不足而被拒的請求為 level 5，同一位址兩分鐘內八次為 level 10。經 API 成功的變更為 level 3，新增或修改裝置 level 5，修改告警規則或範本 level 6，設定維護模式（會讓告警靜音）level 5，刪除裝置 level 8。",
   "網頁介面的變更，取自存取記錄：建立或重設 API token 為 level 10；建立或刪除使用者帳號、變更角色、移除兩步驟驗證、刪除裝置、變更驗證或存取相關設定為 level 8；修改使用者帳號或其權限、其他全域設定、告警規則、通道或範本為 level 6；停用或刪除 API token、解除兩步驟驗證鎖定、新增裝置為 level 5。存取記錄裡沒有使用者名稱也沒有表單內容：告警說明請求了什麼、來自哪個位址，是誰做的則看 LibreNMS 自己的 Event Log 與 Auth Log。",
   "看不到的部分：舊式頁面送到 /ajax_form.php 的變更（包含告警通道與範本）動作寫在表單內容裡；對裝置的 SNMP、SSH 認證失敗記在資料庫的裝置事件記錄，不寫檔案。認證問題會表現為某台裝置一直輪詢失敗，或出現在裝置自己的記錄裡。",
@@ -49,7 +49,7 @@
    "type": "rule",
    "name": "zz-131900-jt_librenms_rules.xml",
    "dest": "etc/rules/zz-131900-jt_librenms_rules.xml",
-   "sha256": "e544d6f003292179d8a83ed2487cf3bb83ef8ee0b73945a632ccfec781c1871a"
+   "sha256": "bbafa23f1b3319ef752811dfeaae4e3ed2949f5435eb93e7ee88be7ba858235c"
   }
  ],
  "agent_group": {

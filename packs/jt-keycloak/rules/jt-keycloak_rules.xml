@@ -11,9 +11,10 @@
   Modules
     131300-131309  structure: every Keycloak line, stack traces, user and admin events
     131310-131329  user events: logins, credentials, account changes, lockouts
-    131330-131339  the docker json-file log (rules on the "log" field only)
+    131330-131339  the docker json-file log (rules on the "log" field only),
+                   plus 131346-131347 for its logins from public addresses
     131340-131359  failed logins and token errors
-    131360-131369  correlation: brute force from one address
+    131360-131369  correlation: brute force, success after failures
     131370-131394  admin events (admin console and admin REST API)
     131395-131399  server: start, stop, uncaught errors
 
@@ -57,53 +58,145 @@
     each other. An event type not named here stays at 131302 (level 0).
   -->
 
-  <rule id="131310" level="3">
+  <!--
+    Logins. Policy: a successful login is not an alert. An ordinary login
+    from a private address is recorded (level 2) and alerts only when the
+    (user, address) pair is new. Admin-class logins are the Keycloak
+    built-ins: the admin console (client security-admin-console, any realm)
+    and the master realm. Public sources alert. Private means 10/8,
+    172.16/12, 192.168/16, 127/8, 100.64/10, fc00::/7 and fe80::/10. The
+    IPv6 loopback cannot go in srcip: on 4.14.7 ::1 in a rule's srcip (in any
+    spelling, plain or negated) matches every IPv4 address (tested), while
+    fc00::/7 and fe80::/10 behave. Keycloak writes it as 0:0:0:0:0:0:0:1; it
+    is kept out of the public-address rules by its text and stays at level 2.
+
+    Every login rule carries the group keycloak_login, so the correlation
+    rules 131361 and 131362 (attached with if_group) are tried below
+    whichever login rule matched, and authentication_success for other
+    packs that look at successful logins.
+
+    The children of 131310 exclude each other by client, realm and source.
+  -->
+  <rule id="131310" level="2">
     <if_sid>131302</if_sid>
     <field name="keycloak.type" type="pcre2">^LOGIN$</field>
     <description>Keycloak: $(dstuser) signed in to $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
-    <group>authentication_success,</group>
+    <group>authentication_success,keycloak_login,</group>
   </rule>
 
-  <!-- The children of 131310 exclude each other by client and realm. -->
-  <rule id="131311" level="6">
+  <rule id="131311" level="3">
     <if_sid>131310</if_sid>
     <field name="keycloak.client" type="pcre2">^security-admin-console$</field>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
     <description>Keycloak: $(dstuser) signed in to the admin console of realm $(keycloak.realm) from $(srcip)</description>
-    <group>authentication_success,keycloak_admin_login,</group>
-    <mitre>
-      <id>T1078</id>
-    </mitre>
-  </rule>
-
-  <rule id="131312" level="5">
-    <if_sid>131310</if_sid>
-    <field name="keycloak.realm" type="pcre2">^master$</field>
-    <field name="keycloak.client" type="pcre2">^(?!security-admin-console$)</field>
-    <description>Keycloak: $(dstuser) signed in to the master realm through $(keycloak.client) from $(srcip)</description>
-    <group>authentication_success,keycloak_admin_login,</group>
+    <group>authentication_success,keycloak_login,keycloak_admin_login,</group>
     <mitre>
       <id>T1078</id>
     </mitre>
   </rule>
 
   <!--
-    Accounts that sign in for a machine (a monitoring probe, a script using a
-    password grant) can turn 131310 into one alert a minute. List their user
-    names in etc/lists/jt-keycloak-service-accounts. Their failures still alert.
-    (A CDB lookup on the decoded user names the field "user".)
+    The master realm through another client: kcadm, the admin REST API,
+    automation. Recorded; it alerts the first time a user signs in from an
+    address (131329), so a script that runs every few minutes alerts once.
   -->
-  <rule id="131313" level="0">
+  <rule id="131312" level="2">
+    <if_sid>131310</if_sid>
+    <field name="keycloak.realm" type="pcre2">^master$</field>
+    <field name="keycloak.client" type="pcre2">^(?!security-admin-console$)</field>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <description>Keycloak: $(dstuser) signed in to the master realm through $(keycloak.client) from $(srcip)</description>
+    <group>authentication_success,keycloak_login,keycloak_admin_login,</group>
+  </rule>
+
+  <rule id="131325" level="8">
+    <if_sid>131310</if_sid>
+    <regex type="pcre2">^(?!.*, ipAddress="?(?:0:0:0:0:0:0:0:1|::1)"?,)(?=.*(?:, realmName="?master"?,|, clientId="?security-admin-console"?,))</regex>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>Keycloak: $(dstuser) signed in to the master realm or an admin console ($(keycloak.client), realm $(keycloak.realm)) from public address $(srcip)</description>
+    <group>authentication_success,keycloak_login,keycloak_admin_login,</group>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131327" level="5">
     <if_sid>131310</if_sid>
     <field name="keycloak.realm" type="pcre2">^(?!master$)</field>
     <field name="keycloak.client" type="pcre2">^(?!security-admin-console$)</field>
-    <list field="user" lookup="match_key">etc/lists/jt-keycloak-service-accounts</list>
-    <description>Keycloak: routine login of listed service account $(dstuser)</description>
+    <regex type="pcre2">^(?!.*, ipAddress="?(?:0:0:0:0:0:0:0:1|::1)"?,)</regex>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>Keycloak: $(dstuser) signed in to $(keycloak.client) in realm $(keycloak.realm) from public address $(srcip)</description>
+    <group>authentication_success,keycloak_login,</group>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
   </rule>
 
-  <rule id="131314" level="2">
+  <!-- First time a user signs in from a private address. -->
+  <rule id="131328" level="3">
+    <if_sid>131310</if_sid>
+    <field name="keycloak.realm" type="pcre2">^(?!master$)</field>
+    <field name="keycloak.client" type="pcre2">^(?!security-admin-console$)</field>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <if_fts />
+    <description>Keycloak: first login of $(dstuser) from $(srcip) ($(keycloak.client), realm $(keycloak.realm))</description>
+    <group>authentication_success,keycloak_login,</group>
+  </rule>
+
+  <rule id="131329" level="3">
     <if_sid>131312</if_sid>
+    <if_fts />
+    <description>Keycloak: first master realm login of $(dstuser) from $(srcip) through $(keycloak.client)</description>
+    <group>authentication_success,keycloak_login,keycloak_admin_login,</group>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Optional tuning: an account that signs in for a machine from changing
+    addresses (a monitoring probe, a cloud job) can be listed in
+    etc/lists/jt-keycloak-service-accounts. Its new-address and public-address
+    logins then stay recorded below the alert level. The pack is quiet without
+    the list; admin console logins and failures are never affected.
+    (A CDB lookup on the decoded user names the field "user".)
+  -->
+  <rule id="131313" level="2">
+    <if_sid>131327,131328,131329</if_sid>
     <list field="user" lookup="match_key">etc/lists/jt-keycloak-service-accounts</list>
-    <description>Keycloak: routine master realm login of listed service account $(dstuser)</description>
+    <description>Keycloak: routine login of listed service account $(dstuser) from $(srcip)</description>
+    <group>authentication_success,keycloak_login,</group>
   </rule>
 
   <rule id="131315" level="5">
@@ -245,18 +338,46 @@
     </mitre>
   </rule>
 
-  <rule id="131333" level="3">
+  <!--
+    Logins in the docker log follow the same policy as above, without the
+    first-login rule (no decoded fields): recorded, admin console from a
+    private address level 3, public addresses level 5 or 8. Private is
+    checked on the ipAddress text; the optional quote sits inside the
+    negative lookahead, or the lookahead would be tried after the quote
+    was skipped and pass for every address.
+  -->
+  <rule id="131333" level="2">
     <if_sid>131330</if_sid>
     <field name="log" type="pcre2">\[org\.keycloak\.events\] \([^)]*\) type="?LOGIN"?,</field>
     <description>Keycloak: successful login, from the docker log</description>
     <group>authentication_success,</group>
   </rule>
 
-  <rule id="131334" level="6">
+  <rule id="131334" level="3">
     <if_sid>131333</if_sid>
-    <field name="log" type="pcre2">, clientId="?security-admin-console\b</field>
-    <description>Keycloak: login to the admin console, from the docker log</description>
+    <field name="log" type="pcre2">, clientId="?security-admin-console"?,.*, ipAddress="?(?:::ffff:)?(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|127\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|0:0:0:0:0:0:0:1\b|::1\b|f[cd][0-9a-f]{0,2}:|fe[89ab][0-9a-f]?:)</field>
+    <description>Keycloak: login to the admin console from a private address, from the docker log</description>
     <group>authentication_success,keycloak_admin_login,</group>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131346" level="8">
+    <if_sid>131333</if_sid>
+    <field name="log" type="pcre2">(?:, realmName="?master"?,|, clientId="?security-admin-console"?,).*, ipAddress=(?!"?(?:::ffff:)?(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|127\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|0:0:0:0:0:0:0:1\b|::1\b|f[cd][0-9a-f]{0,2}:|fe[89ab][0-9a-f]?:))</field>
+    <description>Keycloak: login to the master realm or an admin console from a public address, from the docker log</description>
+    <group>authentication_success,keycloak_admin_login,</group>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131347" level="5">
+    <if_sid>131333</if_sid>
+    <field name="log" type="pcre2">^(?!.*, realmName="?master"?,)(?!.*, clientId="?security-admin-console"?,).*, ipAddress=(?!"?(?:::ffff:)?(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|127\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|0:0:0:0:0:0:0:1\b|::1\b|f[cd][0-9a-f]{0,2}:|fe[89ab][0-9a-f]?:))</field>
+    <description>Keycloak: login from a public address, from the docker log</description>
+    <group>authentication_success,</group>
     <mitre>
       <id>T1078</id>
     </mitre>
@@ -407,6 +528,40 @@
     <group>authentication_failures,keycloak_bruteforce,</group>
     <mitre>
       <id>T1110</id>
+    </mitre>
+  </rule>
+
+  <!--
+    A successful login after repeated failures. Attached to every login rule
+    through the group keycloak_login, so it is tried below whichever login
+    rule matched. Five failures within 10 minutes, then a success
+    (frequency 6 counts the success too; tested). 131361: from the address
+    that failed (one address trying one or many accounts). 131362: for the
+    account that failed, from other addresses (a distributed attempt that
+    got in).
+  -->
+  <rule id="131361" level="12" frequency="6" timeframe="600">
+    <if_group>keycloak_login</if_group>
+    <if_matched_group>keycloak_auth_failure</if_matched_group>
+    <same_source_ip />
+    <description>[HIGH] Keycloak: $(dstuser) signed in from $(srcip) after repeated failed logins from that address</description>
+    <group>authentication_success,</group>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="131362" level="10" frequency="6" timeframe="600">
+    <if_group>keycloak_login</if_group>
+    <if_matched_group>keycloak_auth_failure</if_matched_group>
+    <same_user />
+    <different_srcip />
+    <description>[WARN] Keycloak: $(dstuser) signed in from $(srcip) after repeated failed logins for that account from other addresses</description>
+    <group>authentication_success,</group>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
     </mitre>
   </rule>
 

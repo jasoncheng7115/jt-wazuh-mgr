@@ -1,44 +1,75 @@
 {
  "pack": "jt-pmg",
  "sandbox_lists": {
-  "jt-pmg-service-accounts": "monitoring@pmg:service\n",
+  "jt-pmg-service-accounts": "tuned-svc@pmg:service\n",
   "jt-pmg-outbound-rules": "阻擋外寄垃圾信:spam\n\"Outgoing: virus check\":virus\n"
  },
  "cases": [
   {
    "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'root@pam'",
    "location": null,
-   "expect_rule": "132401",
+   "expect_rule": "132491",
    "expect_level": 3,
-   "note": "real shape (GUI login or ticket renewal)"
+   "note": "real shape; superuser, first login in the hour"
   },
   {
-   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'monitoring@pmg'",
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'root@pam'",
    "location": null,
-   "expect_rule": "132402",
-   "expect_level": 0,
-   "note": "real shape; API automation account listed in the allowlist (real one logs in every 2 minutes)"
+   "expect_rule": "132492",
+   "expect_level": 2,
+   "repeat": 5,
+   "note": "real pattern: an open web interface renews every 15 minutes (5 in one session)"
   },
   {
-   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'monitoring@pam'",
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'alice@pmg'",
+   "location": null,
+   "expect_rule": "132493",
+   "expect_level": 3,
+   "note": "synthesized; first login of an account on this gateway (fts)"
+  },
+  {
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'apiuser@pmg'",
    "location": null,
    "expect_rule": "132401",
+   "expect_level": 2,
+   "repeat": 50,
+   "note": "real pattern: API automation every 2 minutes with the SHIPPED (empty) list: 50 logins, the last is below level 3"
+  },
+  {
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'bob@corp-ldap'",
+   "location": null,
+   "expect_rule": "132493",
    "expect_level": 3,
-   "note": "near miss: same name, other realm, not listed"
+   "note": "synthesized; first login of an LDAP realm account"
+  },
+  {
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful openid connect auth for user 'carol@sso'",
+   "location": null,
+   "expect_rule": "132493",
+   "expect_level": 3,
+   "note": "synthesized from OIDC.pm; first login"
+  },
+  {
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'carol@sso'",
+   "location": null,
+   "expect_rule": "132401",
+   "expect_level": 2,
+   "repeat": 2,
+   "note": "near miss: an account's second login is quiet"
   },
   {
    "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'user@example.com@quarantine'",
    "location": null,
    "expect_rule": "132403",
    "expect_level": 2,
-   "note": "synthesized from AccessControl.pm: end user opens the spam quarantine"
+   "note": "synthesized from AccessControl.pm: end users opening the spam quarantine never alert, first time or not"
   },
   {
-   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful openid connect auth for user 'alice@sso'",
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'tuned-svc@pmg'",
    "location": null,
-   "expect_rule": "132401",
-   "expect_level": 3,
-   "note": "synthesized from OIDC.pm"
+   "expect_rule": "132402",
+   "expect_level": 0,
+   "note": "optional tuning: an account listed by the site (sandbox_lists) is level 0 even on its first login"
   },
   {
    "log": "Oct  1 23:27:19 pmg1 pmgdaemon[1356514]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=auth failed: Authentication failure",
@@ -528,6 +559,104 @@
    "note": "real shape; built-in RBL rule left as it is"
   },
   {
+   "log": "::ffff:203.0.113.5 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132473",
+   "expect_level": 5,
+   "note": "synthesized from the access log format: login from a public IPv4 address (IPv4-mapped, as PMG writes it)"
+  },
+  {
+   "log": "203.0.113.5 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132473",
+   "expect_level": 5,
+   "note": "synthesized; plain IPv4 (behind a reverse proxy that sets the real address)"
+  },
+  {
+   "log": "2001:db8::5 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132473",
+   "expect_level": 5,
+   "note": "synthesized; public IPv6"
+  },
+  {
+   "log": "::ffff:203.0.113.5 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132474",
+   "expect_level": 2,
+   "repeat": 3,
+   "note": "renewals every 15 minutes from the same public address"
+  },
+  {
+   "log": "::ffff:192.168.0.200 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: 192.168/16"
+  },
+  {
+   "log": "::ffff:10.0.250.1 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: 10/8"
+  },
+  {
+   "log": "::ffff:172.31.255.1 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: 172.16/12 upper edge"
+  },
+  {
+   "log": "::ffff:172.32.0.1 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132473",
+   "expect_level": 5,
+   "note": "boundary: 172.32 is public"
+  },
+  {
+   "log": "::ffff:100.64.1.1 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: 100.64/10 (CGNAT)"
+  },
+  {
+   "log": "::ffff:100.128.0.1 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "132473",
+   "expect_level": 5,
+   "note": "boundary: 100.128 is public"
+  },
+  {
+   "log": "::ffff:127.0.0.1 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: loopback"
+  },
+  {
+   "log": "::1 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: IPv6 loopback"
+  },
+  {
+   "log": "fd12:3456::1 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: fc00::/7"
+  },
+  {
+   "log": "fe80::1 - - [11/10/2026:10:36:24 +0800] \"POST /api2/extjs/access/ticket HTTP/1.1\" 200 1250",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "none",
+   "note": "near miss: fe80::/10"
+  },
+  {
+   "log": "::ffff:203.0.113.5 - - [11/10/2026:10:36:24 +0800] \"POST /api2/json/access/ticket HTTP/1.1\" 401 -",
+   "location": "/var/log/pmgproxy/pmgproxy.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "failed json login: the agent group drops these (pmgdaemon reports them with the account), the built-in rule applies if collected otherwise"
+  },
+  {
    "log": "::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] \"PUT /api2/extjs/access/users/admin2%40pmg HTTP/1.1\" 200 -",
    "location": "/var/log/pmgproxy/pmgproxy.log",
    "expect_rule": "132460",
@@ -761,6 +890,124 @@
    "location": null,
    "expect_rule": "none",
    "note": "real"
+  }
+ ],
+ "sequences": [
+  {
+   "before": [
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=auth failed: Authentication failure"
+   ],
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'root@pam'",
+   "location": null,
+   "expect_rule": "132490",
+   "expect_level": 10,
+   "note": "three failures, then a success for the same account"
+  },
+  {
+   "before": [
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=auth failed: Authentication failure"
+   ],
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'root@pam'",
+   "location": null,
+   "expect_rule": "132491",
+   "expect_level": 3,
+   "note": "near miss: two failures are a typo"
+  },
+  {
+   "before": [
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=other@pmg msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=other@pmg msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=other@pmg msg=auth failed: Authentication failure"
+   ],
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'root@pam'",
+   "location": null,
+   "expect_rule": "132491",
+   "expect_level": 3,
+   "note": "near miss: the failures were for another account"
+  },
+  {
+   "before": [
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure"
+   ],
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'root@pam'",
+   "location": null,
+   "expect_rule": "132494",
+   "expect_level": 12,
+   "note": "brute force (132405) on the account, then a success"
+  },
+  {
+   "before": [
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:203.0.113.50 user=root@pam msg=auth failed: Authentication failure"
+   ],
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'root@pam'",
+   "location": null,
+   "expect_rule": "132494",
+   "expect_level": 12,
+   "note": "same with one more failure after the brute-force alert"
+  },
+  {
+   "before": [
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.201 user=alice@pmg msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.201 user=alice@pmg msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.201 user=alice@pmg msg=auth failed: Authentication failure"
+   ],
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'alice@pmg'",
+   "location": null,
+   "expect_rule": "132490",
+   "expect_level": 10,
+   "note": "after failures beats first login (fts)"
+  },
+  {
+   "before": [
+    "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'root@pam'",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=auth failed: Authentication failure"
+   ],
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'root@pam'",
+   "location": null,
+   "expect_rule": "132490",
+   "expect_level": 10,
+   "note": "after failures beats the renewal rule"
+  },
+  {
+   "before": [
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.202 user=tuned-svc@pmg msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.202 user=tuned-svc@pmg msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.202 user=tuned-svc@pmg msg=auth failed: Authentication failure"
+   ],
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'tuned-svc@pmg'",
+   "location": null,
+   "expect_rule": "132490",
+   "expect_level": 10,
+   "note": "a listed account still alerts after failures"
+  },
+  {
+   "before": [
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.201 user=alice@pmg msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.201 user=alice@pmg msg=auth failed: Authentication failure",
+    "Oct 11 11:16:00 pmg1 pmgdaemon[1393207]: authentication failure; rhost=::ffff:192.0.2.201 user=alice@pmg msg=auth failed: Authentication failure",
+    "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'alice@pmg'"
+   ],
+   "log": "Oct 11 11:16:05 pmg1 pmgdaemon[1393207]: successful auth for user 'alice@pmg'",
+   "location": null,
+   "expect_rule": "132493",
+   "note": "the next login after that alert does not repeat the level 10; the account's first-seen alert (level 3) follows once, because the level-10 rule won the first time",
+   "expect_level": 3
   }
  ]
 }

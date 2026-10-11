@@ -2,41 +2,47 @@
  "id": "jt-adguard",
  "name": "AdGuard Home DNS Detection",
  "name_zh": "AdGuard Home DNS 偵測套組",
- "version": "1.2",
- "summary": "Grades AdGuard Home blocks by list (threat, filter bypass, ads), reports the first lookup of a threat or bypass domain by each client, and watches web interface logins and the configuration file.",
- "summary_zh": "依清單類別（威脅、規避過濾、廣告）分級 AdGuard Home 的封鎖，回報每個用戶端第一次查詢威脅或規避網域，並監控網頁介面登入與設定檔。",
+ "version": "1.3",
+ "summary": "Grades AdGuard Home blocks by list (threat, filter bypass, ads), reports the first lookup of a threat or bypass domain by each client, and grades web interface logins (new address, public source, after failures) and configuration changes.",
+ "summary_zh": "依清單類別（威脅、規避過濾、廣告）分級 AdGuard Home 的封鎖，回報每個用戶端第一次查詢威脅或規避網域，並分級網頁介面登入（新位址、公網來源、失敗後成功）與設定變更。",
  "rule_id_range": "130900-130999",
  "notes": [
   "This pack is the attribution layer for DNS detections. A recursive resolver or a firewall only sees the resolver's own address as the query source; AdGuard Home sits in front of the clients, so its log is the only place that records which host asked for a domain.",
   "Query events arrive by syslog with the program name adguard, one JSON object per message, carrying IP, QH, QT, action, filterlist_id, filterlist_name and filtertext. AdGuard Home's own querylog.json has only a numeric list ID, so a log shipper has to add the list name (setup guide). The decoder adds srcip (client), dns.query (domain) and data (domain, for first-time tracking), so other rules and CDB lookups can use them: a lookup on srcip with address_match_key and on dns.query with match_key both work.",
   "Grading by list. Threat lists (malware, phishing, badware, scam, C2, cryptomining): the first lookup of a listed domain by a client is level 12 (130913), a repeat is level 7 (130901), a match that came only from a whole-TLD or pattern rule such as ||*.top^ is level 5 (130903), three different first-time threat domains from one client in 10 minutes is level 13 (130914). AdGuard's own safe browsing (list ID -4) is level 10 (130915). Ads, trackers, parental control and blocked services stay at level 2 and do not alert.",
-  "Bypass lists (encrypted DNS, VPN, Tor, proxy): the first attempt of a client at an endpoint is level 6 (130905), repeats stay at level 3 (130902), 20 attempts in 10 minutes is level 10 (130912). Apple iCloud Private Relay and Google tunnel probes are level 2 (130904): blocking those names is how a network opts out, and the device then uses the local resolver, so the block is the device complying, not evading.",
-  "Measured on one site over 10.5 days: 7,410 bypass events, of which 3,819 (52 per cent) were relay probes and 3,591 public resolver endpoints (dns.google, cloudflare-dns.com and others), plus 5 threat-list events, all from a ||*.top^ rule. Version 1.1 raised about 700 level 3 alerts a day. On the same events 1.2 gives about 336 level 3 repeats a day, 59 first-time level 6 alerts in total (19 on the first day, none after the seventh), about one level 10 burst a day, and level 5 for the five TLD-wide matches.",
+  "Bypass lists (encrypted DNS, VPN, Tor, proxy): the first attempt of a client at an endpoint is level 6 (130905), repeats are recorded at level 2 without an alert (130902, level 3 until 1.2), 20 attempts in 10 minutes from one client is level 10 (130912), which counts those level 2 repeats. Apple iCloud Private Relay and Google tunnel probes are level 2 (130904): blocking those names is how a network opts out, and the device then uses the local resolver, so the block is the device complying, not evading.",
+  "Measured on one site over 10.5 days: 7,410 bypass events, of which 3,819 (52 per cent) were relay probes and 3,591 public resolver endpoints (dns.google, cloudflare-dns.com and others), plus 5 threat-list events, all from a ||*.top^ rule. Version 1.1 raised about 700 level 3 alerts a day. On the same events 1.3 alerts on none of the about 336 repeats a day (1.2: level 3), 59 first-time level 6 alerts in total (19 on the first day, none after the seventh), about one level 10 burst a day, and level 5 for the five TLD-wide matches.",
   "First time seen is Wazuh's fts store, keyed on client address and domain and kept on disk by the node that decodes the event. After installing, expect one burst of first-time alerts for the clients and endpoints already active (59 at the measured site), then a few a day. A client that changes address counts as new.",
   "Correlation windows are 10 minutes or less on purpose. analysisd keeps only the last 8,192 events (memory_size) for if_matched_sid; on a manager handling 20,000 alerts an hour that is 10 to 20 minutes, whatever the timeframe says. 1.1's 130912 had a one-hour timeframe and fired exactly as a 10 to 15 minute window predicts.",
   "Built-in rule 1002 takes any message containing words such as error or failed, and 1003 any message over 1025 bytes, before this pack sees it. Until 1.2 a threat-listed domain such as windows-error-fix.example was graded level 2 by 1002 and never alerted. 130908 and 130907 take those events back.",
-  "AdGuard Home service log (journald, syslog or a log file, both the current and the older log format): failed web interface login level 5 (130931), lockout by the login rate limiter level 10 (130932, at most one alert per 5 minutes), eight failures in 5 minutes level 10 (130929, only possible with the rate limiter off), a success after three or more failures level 10 (130939), no users configured so the interface is open level 10 (130934), rate limiter disabled level 5 (130935), start and stop level 3. These lines were written from the AdGuard Home source (v0.107.43 to v0.107.79); the measured site does not collect this log yet.",
+  "AdGuard Home service log (journald, syslog or a log file, current and older log format): failed web interface login level 5 (130931), lockout by the login rate limiter level 10 (130932, at most one alert per 5 minutes), eight failures in 5 minutes level 10 (130929, only possible with the rate limiter off), no users configured so the interface is open level 10 (130934), rate limiter disabled level 5 (130935), start and stop level 3. The formats were written from the AdGuard Home source (v0.107.43 to v0.107.79); the measured site does not collect this log yet.",
+  "A successful login is not an alert by itself (130933, level 2). AdGuard Home has no roles and no built-in account name, so every web user can change all filtering, and what alerts is what is not routine: the first login of a user from a private address, level 3 (130942, first time seen on user and address, so a polling client produces one alert per address, ever); any login from a public address, level 8 every time (130941); success after three or more failures from the same address, level 10 (130939); success from an address the rate limiter had locked out, level 12 (130944). Private means 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, fc00::/7 and fe80::/10; an address written ::ffff:a.b.c.d is graded as IPv4.",
+  "Logins over IPv6 loopback (::1) are level 2 (130943) and never first-time: Wazuh 4.14.7 matches every IPv4 address against ::1 in any spelling, positive or negated, so ::1 is tested on the raw address field instead of srcip. Built-in 10100 (first login), 40101 (system account names) and 40112 (failures then success) load before this pack and never attach to its rules; jt-ioc's 906050 loads after and does, so a login from a threat-listed address still reaches level 14 when that pack is installed.",
   "AdGuard Home does not log setting changes. The agent group adguard watches AdGuardHome.yaml with file integrity monitoring, and 130940 (level 8) names the change. Verified with real file changes, including the write-then-rename that AdGuard uses. Do not turn on report_changes for it: the file holds the web users' password hashes.",
   "Changes to existing rules in 1.2: 130901 and 130902 now require action Blocked (an allow-list match inside a threat list no longer alerts), 130901 drops the [WARN] prefix (it is level 7) and its pattern now also covers badware, phishing variants, fraud, hacked sites and coin mining (HaGeZi's Badware Hoster list was not graded before), 130902 refuses a list name that also reads as a threat list, 130912 goes from level 5 with a one-hour window to level 10 with 10 minutes. The decoder's program name is anchored: unanchored, adguard also matched AdGuardHome.",
+  "Changes in 1.3 (login policy, no site data): 130933 successful login 3 -> 2; new 130941 public source (8), 130942 first login of a user from an address (3), 130943 IPv6 loopback (2), 130944 success after a lockout (12); 130902 repeat bypass attempt 3 -> 2 (the default stays quiet, 130912 still counts the repeats). The service-log decoders gained first-time tracking and strip ::ffff:; the log-file decoder is now named adguard-home-log. The pack ships no lists, and nothing in it names a host, address or account of a site.",
   "Deliberately not done: DNS rebinding (the answer is a base64 DNS message the rules cannot read), reading querylog.json directly with the agent (no list names, and the measured site makes about 380,000 queries a day), and blocking clients from query events (see active responses).",
   "PREREQUISITE: AdGuard must sit in front of the clients. If clients query a resolver that then forwards to AdGuard, every event carries the resolver's address and attribution is lost.",
-  "Verified on Wazuh 4.14.7 in an isolated manager: 49 logtest cases, plus first-time tracking, the 5-minute alert suppression and the configuration file rule checked with real events."
+  "Verified on Wazuh 4.14.7 in an isolated manager: 70 logtest cases, plus first-time tracking (queries and logins), the 5-minute alert suppression and the configuration file rule checked with real events."
  ],
  "notes_zh": [
   "本套組是 DNS 偵測的溯源層。遞迴解析器或防火牆只看得到解析器自己的位址；AdGuard Home 位於用戶端前方，它的記錄是唯一記下「哪一台主機查詢了某網域」的地方。",
   "查詢事件以 syslog 送達，program name 為 adguard，每則訊息一個 JSON 物件，含 IP、QH、QT、action、filterlist_id、filterlist_name、filtertext。AdGuard Home 自己的 querylog.json 只有數字清單 ID，因此需要記錄轉送程式補上清單名稱（見部署說明）。解碼器另外產生 srcip（用戶端）、dns.query（網域）與 data（網域，供首次出現判斷），其他規則與 CDB 清單可直接使用：srcip 以 address_match_key、dns.query 以 match_key 查詢皆已驗證。",
   "依清單分級。威脅清單（惡意程式、釣魚、badware、詐騙、C2、挖礦）：某用戶端第一次查詢清單上的網域為 level 12（130913），重複查詢為 level 7（130901），只被整個頂級網域或樣式規則（例如 ||*.top^）擋下的為 level 5（130903），同一用戶端 10 分鐘內有三個不同的首次威脅網域為 level 13（130914）。AdGuard 自己的安全瀏覽（清單 ID -4）為 level 10（130915）。廣告、追蹤、家長監護與封鎖服務停在 level 2，不告警。",
-  "規避清單（加密 DNS、VPN、Tor、代理）：用戶端第一次嘗試某個端點為 level 6（130905），之後重複為 level 3（130902），10 分鐘內 20 次為 level 10（130912）。Apple iCloud 私密轉送與 Google tunnel 的探測為 level 2（130904）：擋下這些名稱正是網路管理者關閉它們的方式，裝置隨即改用本地解析器，所以這是裝置配合，不是規避。",
-  "單一站台 10.5 天實測：規避事件 7,410 筆，其中 3,819 筆（52%）是轉送探測、3,591 筆是公共解析器端點（dns.google、cloudflare-dns.com 等）；威脅清單事件 5 筆，全部來自 ||*.top^ 規則。1.1 版每天約 700 筆 level 3 告警。同一批事件在 1.2 版變成每天約 336 筆 level 3 重複、首次 level 6 共 59 筆（第一天 19 筆，第七天之後沒有）、每天約一次 level 10 連續嘗試，五筆整個頂級網域的比對為 level 5。",
+  "規避清單（加密 DNS、VPN、Tor、代理）：用戶端第一次嘗試某個端點為 level 6（130905），之後重複以 level 2 記錄、不告警（130902，1.2 之前為 level 3），同一用戶端 10 分鐘內 20 次為 level 10（130912），計算的正是這些 level 2 重複。Apple iCloud 私密轉送與 Google tunnel 的探測為 level 2（130904）：擋下這些名稱正是網路管理者關閉它們的方式，裝置隨即改用本地解析器，所以這是裝置配合，不是規避。",
+  "單一站台 10.5 天實測：規避事件 7,410 筆，其中 3,819 筆（52%）是轉送探測、3,591 筆是公共解析器端點（dns.google、cloudflare-dns.com 等）；威脅清單事件 5 筆，全部來自 ||*.top^ 規則。1.1 版每天約 700 筆 level 3 告警。同一批事件在 1.3 版，每天約 336 筆重複都不告警（1.2 為 level 3）、首次 level 6 共 59 筆（第一天 19 筆，第七天之後沒有）、每天約一次 level 10 連續嘗試，五筆整個頂級網域的比對為 level 5。",
   "「首次出現」使用 Wazuh 的 fts 儲存，以用戶端位址加網域為鍵，由解碼該事件的節點存在磁碟上。安裝後會先出現一波目前已在活動的用戶端與端點的首次告警（實測站台為 59 筆），之後每天幾筆。用戶端換了位址會被當成新的。",
   "關聯時間窗刻意不超過 10 分鐘。analysisd 只為 if_matched_sid 保留最後 8,192 筆事件（memory_size）；在每小時兩萬筆告警的 manager 上那只有 10 到 20 分鐘，不論 timeframe 寫多少。1.1 的 130912 寫一小時，實際觸發情形與 10 到 15 分鐘的時間窗完全吻合。",
   "內建規則 1002 會先拿走含有 error、failed 等字的訊息，1003 會拿走超過 1025 位元組的訊息。1.2 之前，像 windows-error-fix.example 這種威脅網域會被 1002 判成 level 2，永遠不告警。130908 與 130907 會把這些事件接回來。",
-  "AdGuard Home 服務記錄（journald、syslog 或記錄檔，新舊兩種格式皆支援）：網頁介面登入失敗 level 5（130931）、被登入速率限制鎖住 level 10（130932，每 5 分鐘最多一則）、5 分鐘內失敗 8 次 level 10（130929，只有關閉速率限制時才可能）、失敗三次以上後成功 level 10（130939）、沒有設定任何使用者因此介面完全開放 level 10（130934）、速率限制被關閉 level 5（130935）、啟動與停止 level 3。這些格式依 AdGuard Home 原始碼（v0.107.43 到 v0.107.79）撰寫；實測站台目前尚未收集這份記錄。",
+  "AdGuard Home 服務記錄（journald、syslog 或記錄檔，新舊兩種格式皆支援）：網頁介面登入失敗 level 5（130931）、被登入速率限制鎖住 level 10（130932，每 5 分鐘最多一則）、5 分鐘內失敗 8 次 level 10（130929，只有關閉速率限制時才可能）、沒有設定任何使用者因此介面完全開放 level 10（130934）、速率限制被關閉 level 5（130935）、啟動與停止 level 3。這些格式依 AdGuard Home 原始碼（v0.107.43 到 v0.107.79）撰寫；實測站台目前尚未收集這份記錄。",
+  "成功登入本身不是告警（130933，level 2）。AdGuard Home 沒有角色、也沒有內建帳號名稱，每個網頁使用者都能改動全部過濾設定，所以告警的是「不尋常」的部分：某使用者第一次從某個私有位址登入 level 3（130942，以使用者加位址做首次出現判斷，輪詢的用戶端每個位址永遠只告警一次）；任何來自公網位址的登入每次都是 level 8（130941）；同一位址失敗三次以上後成功 level 10（130939）；被速率限制鎖過的位址登入成功 level 12（130944）。私有位址指 10/8、172.16/12、192.168/16、127/8、100.64/10、fc00::/7、fe80::/10；寫成 ::ffff:a.b.c.d 的位址當成 IPv4 判斷。",
+  "經 IPv6 loopback（::1）的登入為 level 2（130943），也不做首次出現判斷：Wazuh 4.14.7 不論正向或反向、任何寫法，都會把每個 IPv4 位址比對成 ::1，所以 ::1 改用原始位址欄位判斷，不用 srcip。內建 10100（首次登入）、40101（系統帳號名稱）與 40112（失敗後成功）比本套件先載入，不會掛到本套件的規則上；jt-ioc 的 906050 較晚載入，會掛上，所以安裝該套件時，來自威脅清單位址的登入仍會到 level 14。",
   "AdGuard Home 不記錄設定變更。agent 群組 adguard 以檔案完整性監控盯住 AdGuardHome.yaml，由 130940（level 8）指出變更。已用真實檔案變更驗證，包括 AdGuard 使用的先寫暫存檔再改名。不要對它開啟 report_changes：這個檔案含有網頁使用者的密碼雜湊。",
   "1.2 對既有規則的變更：130901 與 130902 現在要求 action 為 Blocked（威脅清單內的放行規則不再告警）；130901 拿掉 [WARN] 前綴（它是 level 7），比對樣式加上 badware、釣魚的各種寫法、詐騙、被入侵網站與挖礦（HaGeZi 的 Badware Hoster 清單先前不會被分級）；130902 不接受同時讀起來像威脅清單的名稱；130912 由 level 5、一小時時間窗改為 level 10、10 分鐘。解碼器的 program name 改為完整比對：不加錨點時 adguard 也會比對到 AdGuardHome。",
+  "1.3 的變更（登入政策、不依賴站台資料）：130933 成功登入 3 -> 2；新增 130941 公網來源（8）、130942 使用者首次從某位址登入（3）、130943 IPv6 loopback（2）、130944 被鎖定後成功（12）；130902 重複的規避嘗試 3 -> 2（預設維持安靜，130912 仍計算這些重複）。服務記錄解碼器加上首次出現判斷並去除 ::ffff:；記錄檔解碼器改名為 adguard-home-log。本套件不附任何清單，內容也不指名任何站台的主機、位址或帳號。",
   "刻意不做：DNS rebinding（回應是規則無法解讀的 base64 DNS 訊息）、以 agent 直接讀 querylog.json（沒有清單名稱，而且實測站台每天約 38 萬筆查詢）、依查詢事件封鎖用戶端（見主動回應說明）。",
   "前提條件：AdGuard 必須位於用戶端前方。若用戶端查詢的是另一台解析器再轉給 AdGuard，每筆事件都只會帶解析器的位址，溯源能力就沒了。",
-  "已在隔離的 Wazuh 4.14.7 manager 上驗證：49 個 logtest 情境，另以真實事件驗證首次出現判斷、5 分鐘告警抑制與設定檔規則。"
+  "已在隔離的 Wazuh 4.14.7 manager 上驗證：70 個 logtest 情境，另以真實事件驗證首次出現判斷（查詢與登入）、5 分鐘告警抑制與設定檔規則。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -51,13 +57,13 @@
    "type": "decoder",
    "name": "adguard-decoder.xml",
    "dest": "etc/decoders/adguard-decoder.xml",
-   "sha256": "236c2b0f83f987689198222231a0c9b7621044e6a01af9615458c8ff4515972b"
+   "sha256": "0cd1f7d08b1263afbda5b0e88794a6e47fca0a8f3be39a0733ed1cb28de066e2"
   },
   {
    "type": "rule",
    "name": "adguard-rule.xml",
    "dest": "etc/rules/adguard-rule.xml",
-   "sha256": "97786744ac93663667698e67f868ca97fe2da8fe339353a6bdcc11895e386ac4"
+   "sha256": "96025fc02301571f91fb31500c507fe4cd9e0898cb0cdfc0e2cd733161580d43"
   }
  ],
  "agent_group": {
@@ -114,8 +120,17 @@
    "body": "Logins and authentication settings come from AdGuard Home's own log, not the query log. Run as a systemd service, it logs to journald, which the Wazuh agent on that host reads by default: nothing to do. If log.file in AdGuardHome.yaml points to a file, add a localfile with log_format syslog for that file to the agent. If it is syslog, forward that program (AdGuardHome) to the manager.",
    "body_zh": "登入與驗證設定來自 AdGuard Home 自己的記錄，不是查詢記錄。以 systemd 服務執行時它寫入 journald，該主機上的 Wazuh agent 預設就會讀取，不需動作。若 AdGuardHome.yaml 的 log.file 指向檔案，請在 agent 加一個 log_format 為 syslog 的 localfile 讀取該檔。若設為 syslog，請把該程式（AdGuardHome）的訊息轉送到 manager。",
    "code": "<localfile>\n  <log_format>syslog</log_format>\n  <location>/var/log/AdGuardHome.log</location>\n</localfile>",
-   "verify": "Log in to the AdGuard web interface with a wrong password once: 130931 appears.",
-   "verify_zh": "在 AdGuard 網頁介面用錯誤密碼登入一次：出現 130931。"
+   "verify": "Log in to the AdGuard web interface with a wrong password once: 130931 appears. Then log in correctly: 130942 appears the first time, later logins from the same address stay at level 2.",
+   "verify_zh": "在 AdGuard 網頁介面用錯誤密碼登入一次：出現 130931。接著正確登入：第一次出現 130942，之後從同一位址登入維持 level 2。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "1.3",
+   "title": "Behind a reverse proxy, let AdGuard log the client address",
+   "title_zh": "位於反向代理後方時，讓 AdGuard 記下用戶端位址",
+   "body": "AdGuard Home logs the proxy's address for web logins unless the proxy is listed in dns.trusted_proxies in AdGuardHome.yaml (default: 127.0.0.0/8 and ::1, so a proxy on the same host already works); then it logs the client address from the forwarding headers. Without it every login appears to come from the proxy, so the public-source rule (130941) and first-time tracking see one address. The change takes effect when AdGuard Home restarts, a few seconds without DNS.",
+   "body_zh": "除非反向代理列在 AdGuardHome.yaml 的 dns.trusted_proxies（預設 127.0.0.0/8 與 ::1，所以同一台主機上的代理本來就可以），AdGuard Home 記錄網頁登入時寫的是代理的位址；列入後才會從轉送標頭記下用戶端位址。沒有設定時所有登入都像是來自代理，公網來源規則（130941）與首次出現判斷只會看到一個位址。修改在 AdGuard Home 重新啟動後生效，期間會有幾秒沒有 DNS。"
   },
   {
    "platform": "manager",

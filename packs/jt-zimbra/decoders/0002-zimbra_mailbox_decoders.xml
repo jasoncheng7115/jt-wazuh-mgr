@@ -18,10 +18,18 @@
   "<host> zimbra_mailbox <line>"; the rules count only the file copy.
 -->
 
+<!-- fts on the parent (see 0001-zimbra_decoders.xml): key (mailbox,
+     administrator of a delegated session, client address, agent), used by
+     rule 100897. -->
 <decoder name="zimbra-mailbox-soap">
   <prematch type="pcre2">\] soap - \w+</prematch>
+  <regex type="pcre2">\] soap - (\w+)</regex>
+  <order>action</order>
+  <fts>name, srcuser, user, srcip, location</fts>
 </decoder>
 
+<!-- The parent's own regex is not applied once a child matches, so the
+     action is decoded again here. -->
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
   <regex type="pcre2">\] soap - (\w+)</regex>
@@ -36,20 +44,20 @@
 
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
-  <regex type="pcre2">[\[;]oip=([0-9a-fA-F.:]+)[,;]</regex>
+  <regex type="pcre2">[\[;]oip=(?:::ffff:)?([0-9a-fA-F.:]+)[,;]</regex>
   <order>srcip</order>
 </decoder>
 
 <!-- A direct connection (the admin port, no proxy) has ip= and no oip=. -->
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
-  <regex type="pcre2">^(?!.*[\[;]oip=).*?[\[;]ip=([0-9a-fA-F.:]+);</regex>
+  <regex type="pcre2">^(?!.*[\[;]oip=).*?[\[;]ip=(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
   <order>srcip</order>
 </decoder>
 
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
-  <regex type="pcre2">[\[;]oip=[^;\]]*, ?([0-9a-fA-F.:]+);</regex>
+  <regex type="pcre2">[\[;]oip=[^;\]]*, ?(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
   <order>zimbra.via_proxy</order>
 </decoder>
 
@@ -71,4 +79,10 @@
   <parent>zimbra-mailbox-soap</parent>
   <regex type="pcre2">[\[;]aname=([^;\]]+);</regex>
   <order>zimbra.aname</order>
+</decoder>
+
+<decoder name="zimbra-mailbox-soap-fields">
+  <parent>zimbra-mailbox-soap</parent>
+  <regex type="pcre2">[\[;]aname=([^;\]]+);</regex>
+  <order>srcuser</order>
 </decoder>

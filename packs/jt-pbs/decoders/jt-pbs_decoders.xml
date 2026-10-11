@@ -60,10 +60,12 @@
   <prematch type="pcre2">^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d: (?:successful auth for user '|authentication failure; rhost=)</prematch>
 </decoder>
 
-<decoder name="jt-pbs-auth-fields">
+<decoder name="jt-pbs-auth-success">
   <parent>jt-pbs-auth</parent>
+  <prematch type="pcre2">: successful auth for user '</prematch>
   <regex type="pcre2">: successful auth for user '([^']+)'</regex>
   <order>dstuser</order>
+  <fts>name, user, location</fts>
 </decoder>
 
 <decoder name="jt-pbs-auth-fields">
@@ -125,13 +127,15 @@
     ossec: output: 'df -P': rpool/store1  10574932480 6638660736 3936271744  63% /store1
   A child of the built-in "ossec" decoder; it only adds the usage and the mount
   point. The rules look at mount points that hold a datastore: /mnt/datastore/*
-  (where PBS mounts the disks it formats, and removable datastores) and the
-  ones listed in etc/lists/jt-pbs-datastore-mounts.
+  (where PBS mounts the disks it formats, and removable datastores), the ones
+  listed in etc/lists/jt-pbs-datastore-mounts, and every line of the optional
+  command with the alias jt-pbs-datastores (df of each datastore path in
+  /etc/proxmox-backup/datastore.cfg, added to the agent's own ossec.conf).
 -->
 <decoder name="jt-pbs-df">
   <parent>ossec</parent>
   <type>ossec</type>
-  <prematch offset="after_parent" type="pcre2">^output: 'df -P': </prematch>
+  <prematch offset="after_parent" type="pcre2">^output: '(?:df -P|jt-pbs-datastores)': </prematch>
   <regex offset="after_prematch" type="pcre2">\s(\d+)% (/\S*)$</regex>
   <order>pbs.usage, pbs.mount</order>
 </decoder>

@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.13.0
+# jt-wazuh-mgr v1.13.1
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@
 
 > **推奨**: Web UI を主なインターフェースとしてお使いください。本ツールの中心となる機能であり、すべての機能が利用できます。
 
-![Version](https://img.shields.io/badge/version-1.13.0-blue)
+![Version](https://img.shields.io/badge/version-1.13.1-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -94,6 +94,7 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 - マネージャー以外での設定（Sysmon のフィルター、auditd、エージェントグループ、syslog 転送）が必要なパックには**セットアップガイド**を同梱：番号付きの手順、コピーできるコマンド、各手順の確認方法、表示・ダウンロードできるエージェント側ファイル
 - 手作業でファイルを配置したパックは**インストール済み（未登録）**として認識し、自分自身との競合とは報告しません
 - **アクティブレスポンス（任意）：** パックはレスポンス（例：ブルートフォースの送信元をブロック）を提供できます。インストールしても有効にはならず、それぞれ何をどこでブロックするか、リスクを明記しています。有効にすると印を付けたブロックをクラスターの全ノードの `ossec.conf` に書き込み、ノードごとに検証し、いずれかが受け付けなければ全ノードを元に戻します。無効にするとファイルは完全に元どおりになります。各ノードの `white_list` と、再起動が必要なマネージャーも表示します
+- **インストール直後から静か：** 大量のアラートを止めるためにサイトのリストを登録する必要のあるパックはありません。ログインの成功は意味のあるときだけアラートにします（組み込みの管理者、パブリックアドレス、失敗直後の成功、あるアカウントがあるアドレスから初めて現れたとき）。許可リストは任意の調整です
 - 同梱パック 22 個: 可搬実行ファイルの検知（Windows／Linux／macOS）、IP 脅威インテリジェンス、マルウェアのハッシュ照合、読みやすいアラート要約メール、Zimbra、Z-Push、Proxmox VE と Ceph、Proxmox Backup Server、Proxmox Mail Gateway、OPNsense、Zenarmor、AdGuard Home、fail2ban、Keycloak、Univention Corporate Server／Samba AD、Nextcloud、LibreNMS、Synology DSM、Odoo、Jitsi Meet、jt-ipam、jt-vc-portal
 
 ### セキュリティ

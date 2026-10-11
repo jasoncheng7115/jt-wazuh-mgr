@@ -21,7 +21,8 @@
 
   Fields
     odoo.level odoo.db odoo.logger odoo.message   every record
-    dstuser srcip                                 logins, throttling, 2FA, API keys, module access
+    dstuser srcip                                 logins (jt-odoo-login, with fts), throttling,
+                                                  2FA, API keys, module access
     srcip protocol url id                         werkzeug request lines (id = HTTP status)
     odoo.uid odoo.model odoo.operation            access denials, deletions
     odoo.method odoo.modules                      module install / upgrade / uninstall
@@ -36,19 +37,32 @@
   <prematch type="pcre2">^(?:DEBUG|INFO|WARNING|ERROR|CRITICAL) [A-Za-z0-9_.?-]+ [A-Za-z0-9_.]+: </prematch>
 </decoder>
 
+<!--
+  res_users._login: "Login successful|failed for db:%s login:%s from %s" (16.0
+  to 18.0) and "... for login:%s from %s" (19.0). A child of its own, before
+  the jt-odoo-fields group, because only a uniquely named decoder can carry
+  <fts> (same-name siblings refuse it, error 2103): rule 132306 reports the
+  first login of an account from an address. The address is taken only when
+  it is one ("n/a" outside a request is left out) and loses an IPv4-mapped
+  "::ffff:" prefix, so the private-range rules can test it. The IPv6 loopback
+  ::1 is left out too: in 4.14.7 a rule's <srcip>::1</srcip> (or ::1/128)
+  matches every IPv4 address (measured), so it cannot be listed as private;
+  a login from the host itself stays at level 2 (132310).
+-->
+<decoder name="jt-odoo-login">
+  <parent>jt-odoo</parent>
+  <prematch type="pcre2">^INFO \S+ [A-Za-z0-9_.]+: Login (?:successful|failed) for </prematch>
+  <regex type="pcre2">^(INFO) (\S+) ([A-Za-z0-9_.]+): (Login (?:successful|failed) for (?:db:\S* )?login:(.*?) from (?:(?:::ffff:)?(?!::1\s*$)([0-9A-Fa-f.:]+)|\S+))\s*$</regex>
+  <order>odoo.level, odoo.db, odoo.logger, odoo.message, dstuser, srcip</order>
+  <fts>name, user, srcip</fts>
+</decoder>
+
 <decoder name="jt-odoo-fields">
   <parent>jt-odoo</parent>
   <regex type="pcre2">^(DEBUG|INFO|WARNING|ERROR|CRITICAL) ([A-Za-z0-9_.?-]+) ([A-Za-z0-9_.]+): (.*)$</regex>
   <order>odoo.level, odoo.db, odoo.logger, odoo.message</order>
 </decoder>
 
-<!-- res_users._login: "Login successful|failed for db:%s login:%s from %s"
-     (16.0 to 18.0) and "... for login:%s from %s" (19.0) -->
-<decoder name="jt-odoo-fields">
-  <parent>jt-odoo</parent>
-  <regex type="pcre2">: Login (?:successful|failed) for (?:db:\S* )?login:(.*?) from (\S+)\s*$</regex>
-  <order>dstuser, srcip</order>
-</decoder>
 
 <!-- res_users._assert_can_auth: Odoo's own login throttle -->
 <decoder name="jt-odoo-fields">
@@ -157,17 +171,20 @@
   <prematch type="pcre2">^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3} \d+ (?:DEBUG|INFO|WARNING|ERROR|CRITICAL) </prematch>
 </decoder>
 
+<decoder name="jt-odoo-syslog-login">
+  <parent>jt-odoo-syslog</parent>
+  <prematch type="pcre2">^\S+ \S+ \d+ INFO \S+ [A-Za-z0-9_.]+: Login (?:successful|failed) for </prematch>
+  <regex type="pcre2">^\S+ \S+ \d+ (INFO) (\S+) ([A-Za-z0-9_.]+): (Login (?:successful|failed) for (?:db:\S* )?login:(.*?) from (?:(?:::ffff:)?(?!::1\s*$)([0-9A-Fa-f.:]+)|\S+))\s*$</regex>
+  <order>odoo.level, odoo.db, odoo.logger, odoo.message, dstuser, srcip</order>
+  <fts>name, user, srcip</fts>
+</decoder>
+
 <decoder name="jt-odoo-syslog-fields">
   <parent>jt-odoo-syslog</parent>
   <regex type="pcre2">^\S+ \S+ \d+ (DEBUG|INFO|WARNING|ERROR|CRITICAL) ([A-Za-z0-9_.?-]+) ([A-Za-z0-9_.]+): (.*)$</regex>
   <order>odoo.level, odoo.db, odoo.logger, odoo.message</order>
 </decoder>
 
-<decoder name="jt-odoo-syslog-fields">
-  <parent>jt-odoo-syslog</parent>
-  <regex type="pcre2">: Login (?:successful|failed) for (?:db:\S* )?login:(.*?) from (\S+)\s*$</regex>
-  <order>dstuser, srcip</order>
-</decoder>
 
 <decoder name="jt-odoo-syslog-fields">
   <parent>jt-odoo-syslog</parent>

@@ -2,14 +2,16 @@
  "id": "jt-nextcloud",
  "name": "Nextcloud Detection Suite",
  "name_zh": "Nextcloud 偵測套組",
- "version": "1.0",
- "summary": "Failed logins and brute force per address, second-factor failures, administrator rights, apps, public links, occ commands and mass deletions from the Nextcloud log and audit log, with the client address decoded as srcip.",
- "summary_zh": "從 Nextcloud 記錄與稽核記錄偵測：依來源位址計算的登入失敗與暴力破解、第二因素驗證失敗、管理者權限、App、公開連結、occ 指令與大量刪除，並把來源位址解成 srcip。",
+ "version": "1.1",
+ "summary": "Failed logins and brute force per address, second-factor failures, administrator logins, logins from public addresses and from new addresses, administrator rights, apps, public links, occ commands and mass deletions from the Nextcloud log and audit log, with the client address decoded as srcip.",
+ "summary_zh": "從 Nextcloud 記錄與稽核記錄偵測：依來源位址計算的登入失敗與暴力破解、第二因素驗證失敗、管理者登入、來自公開位址與新位址的登入、管理者權限、App、公開連結、occ 指令與大量刪除，並把來源位址解成 srcip。",
  "rule_id_range": "131700-131799",
  "notes": [
   "The pack reads Nextcloud's own log (nextcloud.log) and the admin_audit log through the agent group nextcloud, which puts a prefix in front of every line for the pack's decoder. The decoder keeps every JSON field and decodes remoteAddr as srcip as well, which Wazuh's json decoder cannot do. A child of the built-in json decoder is not a way out: measured on 4.14.7, as soon as it has one, every other JSON source on the manager (Suricata, cloud integrations) loses all its fields. Lines collected without the group stay with the built-in rules 88200-88216.",
-  "On one Nextcloud 33 server over 10 days the built-in rules raised 44,146 alerts. 40,802 were \"Login successful\", which Nextcloud writes for every request that carries a password or app password (88 per cent from one monitoring account). A failed login is written twice, to nextcloud.log and audit.log, and both copies count towards the built-in brute-force rule 88203, which has no per-address condition: one user mistyping four times in 44 seconds raised it at level 10. The built-in file rules look for wording the audit app no longer writes and never match. Replayed through this pack, the same 10 days give 26 alerts.",
-  "Logins: a failed login is level 5 (counted from nextcloud.log, which needs no extra settings; the audit copy is not counted), 8 from one address in 10 minutes level 10, 20 across addresses level 10, and a success from an address that has just failed 8 times level 12. A wrong second factor, which Nextcloud asks for only after a correct password, is level 7, and 4 from one address level 10. A login through the login page or single sign-on is level 3; the per-request authentication of sync clients and API callers is recorded below the alert level.",
+  "On one Nextcloud 33 server over 10 days the built-in rules raised 44,146 alerts. 40,802 were \"Login successful\", which Nextcloud writes for every request that carries a password or app password (88 per cent from one monitoring account). A failed login is written twice, to nextcloud.log and audit.log, and both copies count towards the built-in brute-force rule 88203, which has no per-address condition: one user mistyping four times in 44 seconds raised it at level 10. The built-in file rules look for wording the audit app no longer writes and never match. Replayed through version 1.0 of this pack, the same 10 days gave 26 alerts.",
+  "Failed logins: one failure is level 5 (counted from nextcloud.log, which needs no extra settings; the audit copy is not counted), 8 from one address in 10 minutes level 10, 20 across addresses level 10. A wrong second factor, which Nextcloud asks for only after a correct password, is level 7, and 4 from one address level 10.",
+  "Successful logins are not alerts by themselves (1.1). Nextcloud writes \"Login successful\" for every request that carries a password or app password: 166,128 lines in 40 days on one server, 9 of them from the login page. They are recorded below the alert level, except: an administrator account (the names Nextcloud installers give the built-in administrator: admin, administrator, root, ncadmin) logging in from a private address, level 3; a login from a public address, level 5, an administrator account level 8; the first time an account authenticates from an address, level 3 (fts, first time seen); a success from an address that has just failed 8 times, level 12. For sync clients, apps and API callers, which authenticate on every request, the address and account levels apply only the first time the pair is seen, so a monitoring check alerts once per address, ever. Replayed on the same 40 days: 64 alerts instead of 166,128 from the built-in rules, 27 of them the first request from a new public address (a phone on mobile data, a laptop at home); after the first month about one a day. No list is needed for any of this.",
+  "Private addresses are 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 100.64.0.0/10, fc00::/7 and fe80::/10; an IPv4 address written as ::ffff:a.b.c.d is read without the prefix. The IPv6 loopback ::1 counts as public, because Wazuh 4.14.7 matches ::1 against every IPv4 address. Group membership is not in the log line, so members of the admin group other than the built-in account count as ordinary accounts; their group change itself is level 12. The first-seen pairs are kept by Wazuh in queue/fts on each manager node; on a fresh install every pair is new, so the first day brings one level 3 or 5 alert per account and address.",
   "Nextcloud's own brute-force protection: refusing an address is level 10, slowing one down level 4, each at most once per 2 and 10 minutes, because every refused request writes the message again. Nextcloud writes these at info level, so they appear only with loglevel 1 or with the log.condition entries in the setup.",
   "From the audit log: a user added to the admin group is level 12. The audit app disabled, two-factor authentication switched off or no longer enforced with occ, and a change of the brute-force protection or audit log settings with occ are level 10; other logging and trusted proxy settings level 7. An app enabled or installed and a user deleted are level 6; a user created, a password or e-mail address changed level 5. Public links and shares to e-mail or federated recipients are level 5, removing a link's expiry date level 4. 100 files deleted by one account within 5 minutes is level 10.",
   "Not detected, because Nextcloud does not log it: a user switching off their own second factor in the web interface, an administrator doing it through the provisioning API, sub-administrator assignments and app passwords created in the web interface. Only the occ equivalents are visible (twofactorauth:disable, user:auth-tokens:add). File reads, writes, uploads, renames and previews stay on the host: the agent group drops them, because no rule uses them and they are most of the audit log.",
@@ -19,8 +21,10 @@
  ],
  "notes_zh": [
   "本套件透過 agent 群組 nextcloud 讀取 Nextcloud 自己的記錄（nextcloud.log）與 admin_audit 稽核記錄；群組會在每一行前面加上前綴，交給本套件的解碼器處理。解碼器保留所有 JSON 欄位，並另外把 remoteAddr 解成 srcip，這是 Wazuh 內建 json 解碼器做不到的。替內建 json 解碼器加子解碼器也不可行：4.14.7 實測，只要它有一個子解碼器，manager 上其他所有 JSON 來源（Suricata、雲端整合）的欄位就全部消失。不經這個群組收進來的行，仍由內建規則 88200-88216 處理。",
-  "一台 Nextcloud 33 在 10 天內，內建規則產生 44,146 筆告警。其中 40,802 筆是「Login successful」：Nextcloud 對每個帶密碼或 App 密碼的請求都會寫一次（88% 來自單一監控帳號）。登入失敗會寫兩次（nextcloud.log 與 audit.log），兩份都計入內建暴力破解規則 88203，而該規則不分來源位址：一位使用者在 44 秒內打錯四次密碼，就觸發了 level 10。內建的檔案規則比對的是稽核 App 已不再使用的寫法，永遠不會命中。同樣 10 天的資料以本套件重跑，只有 26 筆告警。",
-  "登入：登入失敗為 level 5（從 nextcloud.log 計算，不需額外設定；稽核記錄的那一份不重複計算），同一位址 10 分鐘內 8 次為 level 10，跨位址合計 20 次為 level 10，剛失敗 8 次的位址接著登入成功為 level 12。第二因素驗證錯誤（Nextcloud 只在密碼正確之後才會要求）為 level 7，同一位址 4 次為 level 10。經由登入頁或單一登入的登入為 level 3；同步程式與 API 呼叫每個請求的驗證，記錄在告警等級之下。",
+  "一台 Nextcloud 33 在 10 天內，內建規則產生 44,146 筆告警。其中 40,802 筆是「Login successful」：Nextcloud 對每個帶密碼或 App 密碼的請求都會寫一次（88% 來自單一監控帳號）。登入失敗會寫兩次（nextcloud.log 與 audit.log），兩份都計入內建暴力破解規則 88203，而該規則不分來源位址：一位使用者在 44 秒內打錯四次密碼，就觸發了 level 10。內建的檔案規則比對的是稽核 App 已不再使用的寫法，永遠不會命中。同樣 10 天的資料以本套件 1.0 版重跑，只有 26 筆告警。",
+  "登入失敗：單次失敗為 level 5（從 nextcloud.log 計算，不需額外設定；稽核記錄的那一份不重複計算），同一位址 10 分鐘內 8 次為 level 10，跨位址合計 20 次為 level 10。第二因素驗證錯誤（Nextcloud 只在密碼正確之後才會要求）為 level 7，同一位址 4 次為 level 10。",
+  "成功登入本身不是告警（1.1）。Nextcloud 對每個帶密碼或 App 密碼的請求都會寫「Login successful」：一台伺服器 40 天內 166,128 行，其中只有 9 行來自登入頁。這些都記錄在告警等級之下，例外是：管理者帳號（Nextcloud 安裝程式為內建管理者使用的名稱：admin、administrator、root、ncadmin）從私有位址登入為 level 3；從公開位址登入為 level 5，管理者帳號為 level 8；某帳號第一次從某位址通過驗證為 level 3（fts，首次出現）；剛失敗 8 次的位址接著成功為 level 12。同步程式、App 與 API 呼叫每個請求都會驗證，對它們而言位址與帳號的等級只在這組配對第一次出現時套用，因此監控檢查每個位址永遠只告警一次。以同樣 40 天的資料重跑：64 筆告警（內建規則為 166,128 筆），其中 27 筆是從新的公開位址發出的第一個請求（使用行動網路的手機、在家中的筆電）；第一個月之後約每天一筆。這些都不需要任何清單。",
+  "私有位址為 10.0.0.0/8、172.16.0.0/12、192.168.0.0/16、127.0.0.0/8、100.64.0.0/10、fc00::/7 與 fe80::/10；寫成 ::ffff:a.b.c.d 的 IPv4 位址會去掉前綴再判斷。IPv6 回送位址 ::1 視為公開位址，因為 Wazuh 4.14.7 會讓 ::1 比對到所有 IPv4 位址。記錄行中沒有群組資訊，因此內建帳號以外的 admin 群組成員視為一般帳號；把他們加入群組的那一筆本身為 level 12。首次出現的配對由 Wazuh 存在各 manager 節點的 queue/fts；剛安裝時每組配對都是新的，因此第一天每組帳號與位址會各有一筆 level 3 或 5 告警。",
   "Nextcloud 自己的暴力破解防護：拒絕某個位址為 level 10，對某個位址降速為 level 4，分別最多每 2 分鐘、10 分鐘告警一次，因為被拒絕期間每個請求都會再寫一次同樣的訊息。Nextcloud 以 info 等級寫這些訊息，因此只有 loglevel 設為 1，或加上部署說明裡的 log.condition 設定才會出現。",
   "稽核記錄：使用者被加入 admin 群組為 level 12。停用稽核 App、以 occ 關閉或取消強制第二因素驗證、以 occ 變更暴力破解防護或稽核記錄設定為 level 10；其他記錄與受信任 proxy 設定為 level 7。啟用或安裝 App、刪除使用者為 level 6；建立使用者、變更密碼或電子郵件地址為 level 5。公開連結以及分享給電子郵件或聯邦收件者為 level 5，移除連結的到期日為 level 4。同一帳號 5 分鐘內刪除 100 個檔案為 level 10。",
   "偵測不到的項目（因為 Nextcloud 不記錄）：使用者在網頁介面自行關閉第二因素驗證、管理者透過 provisioning API 關閉、指派子管理者、在網頁介面建立 App 密碼。只有對應的 occ 指令看得到（twofactorauth:disable、user:auth-tokens:add）。檔案的讀取、寫入、上傳、更名與預覽留在主機上：agent 群組會把它們丟掉，因為沒有規則用到，而它們占了稽核記錄的大部分。",
@@ -41,13 +45,13 @@
    "type": "decoder",
    "name": "jt-nextcloud_decoders.xml",
    "dest": "etc/decoders/jt-nextcloud_decoders.xml",
-   "sha256": "d575dd8636e6ad5d033856bcf4038255b3ffcc886f4faf8233525091495e0ee8"
+   "sha256": "bb1b1c36e28b994c5e7713c5aec5e65b8ad9446ed2c27c42272993ed5b40dbab"
   },
   {
    "type": "rule",
    "name": "zz-131700-jt_nextcloud_rules.xml",
    "dest": "etc/rules/zz-131700-jt_nextcloud_rules.xml",
-   "sha256": "56329b2cfce2e4537b70a7d81096393eb1b1409a38ca3d942a259af49044bd08"
+   "sha256": "e40ae39a8629457ceb67d3443e92d3ac16dca295e7989f01b9102d74af173036"
   }
  ],
  "agent_group": {
@@ -106,8 +110,8 @@
    "body_zh": "本套件的規則只看得到這個群組的 localfile 區塊以前綴「jt-nextcloud: 」（out_format）送出的行。以其他方式收集的行，例如內建 Nextcloud 解碼器註解要求加的 log_format json 加 @source 標籤的區塊，會回到內建規則 88200-88216，本套件的規則都不會套用。因此請先把 agent 自己 ossec.conf 中讀取 nextcloud.log 或 audit.log 的 localfile 區塊移除：兩邊會定義同一個檔案，agent 只會保留其中一個。若路徑與預設不同，請在這個群組的 agent.conf 中修改，並保留 out_format 那一行。群組也會把資料目錄排除在檔案完整性監控之外，下一次掃描會移除那些條目。重新啟動 agent 不影響 Nextcloud。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g nextcloud\n/var/ossec/bin/agent_control -R -u <agent_id>",
-   "verify": "Log in through the web page. Expect rule 131721 (level 3) on the manager, with decoder jt-nextcloud and srcip set to your address. Rule 88211 instead means the line arrived without the prefix: the old localfile block is still in use.",
-   "verify_zh": "從網頁登入，manager 端應出現規則 131721（level 3），解碼器為 jt-nextcloud，srcip 是你的位址。若出現的是規則 88211，表示該行沒有前綴：舊的 localfile 區塊仍在作用。"
+   "verify": "Log in through the web page from a private address for the first time: expect rule 131773 (level 3) on the manager, with decoder jt-nextcloud and srcip set to your address; from a public address 131772 (level 5). A second login from the same address is 131778, below the alert level. Rule 88211 instead means the line arrived without the prefix: the old localfile block is still in use.",
+   "verify_zh": "第一次從私有位址經網頁登入，manager 端應出現規則 131773（level 3），解碼器為 jt-nextcloud，srcip 是你的位址；從公開位址則是 131772（level 5）。同一位址第二次登入為 131778，在告警等級之下。若出現的是規則 88211，表示該行沒有前綴：舊的 localfile 區塊仍在作用。"
   },
   {
    "platform": "linux",

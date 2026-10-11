@@ -14,10 +14,12 @@ every pack its own analysisd, so several can be developed side by side.
 Case file format, tests/pack_cases/<pack-id>.json:
     {"pack": "<id>", "sandbox_lists": {"<list>": "key:value\n"},
      "cases": [{"log": "...", "location": "/var/log/x.log",
-      "expect_rule": "131201", "expect_level": 5, "repeat": 1, "note": "..."}]}
+      "expect_rule": "131201", "expect_level": 5, "repeat": 1, "note": "..."}],
+     "sequences": [{"before": ["line", ...], "log": "...", ...}]}
 expect_rule "none" means no rule above level 0 may match. repeat sends the
 line that many times in one logtest session (for frequency rules) and judges
-the last event.
+the last event; "before" lines (or a "log" holding several lines) run first
+in the same session.
 """
 
 import json
@@ -165,10 +167,12 @@ def logtest(name, lines, location=None):
 def test(pack):
     name = name_of(pack)
     with open(os.path.join(ROOT, 'tests', 'pack_cases', pack + '.json'), encoding='utf-8') as fh:
-        cases = json.load(fh)['cases']
+        data = json.load(fh)
+    # "sequences" are cases whose "before" lines run first in the same session.
+    cases = data['cases'] + data.get('sequences', [])
     failed = 0
     for i, case in enumerate(cases, 1):
-        lines = [case['log']] * int(case.get('repeat', 1))
+        lines = list(case.get('before', [])) + [case['log']] * int(case.get('repeat', 1))
         results = logtest(name, lines, case.get('location'))
         got_rule, got_level, desc = results[-1] if results else ('none', 0, '')
         want_rule, want_level = str(case['expect_rule']), case.get('expect_level')

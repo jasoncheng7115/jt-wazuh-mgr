@@ -6,11 +6,15 @@
   usage rules extend the built-in command output rules (530-532).
 
   Modules
-    131800-131809  logins (api/auth.log)
-    131810-131829  daemon messages (syslog): datastores, notifications, probes, full disks
+    131800-131809  logins (api/auth.log); 131823 administrator login after failures
+    131810-131822  daemon messages (syslog): datastores, notifications, probes, full disks
     131830-131859  task results (tasks/archive): backup, verify, GC, prune, sync, tape
-    131860-131889  REST API changes (api/access.log)
-    131890-131899  datastore disk usage (the agent's df -P command)
+    131860-131874  REST API changes (api/access.log)
+    131875-131877  logins with their source address (api/access.log)
+    131890-131894  datastore disk usage (df -P, or the optional jt-pbs-datastores command)
+
+  No rule depends on a site list: etc/lists/jt-pbs-datastore-mounts is
+  optional tuning and ships with a placeholder only.
 
   Every base rule is level 0 on purpose. Wazuh tries top-level rules at level 0
   first and the others from the highest level down (measured on 4.14.7): a base
@@ -29,18 +33,41 @@
     Measured on one server over four and a half years: 2,220 logins, 167 failed
     passwords, 2,378 refused tickets (2,234 in one month from one tool polling
     without credentials), 9 refused tokens.
-    Note: the web interface renews its ticket every 15 minutes, and each
-    renewal is logged as a login; one open browser tab is 4 logins an hour.
+    A successful login line carries the user but no address. The web interface
+    renews its ticket every 15 minutes and each renewal is logged as a login,
+    so one open browser tab is 4 logins an hour.
+    A successful login is not an alert by itself: it is recorded at level 2.
+    It alerts at level 3 for the built-in administrator (root@pam, and any
+    root, admin or administrator account of another realm), at level 3 the
+    first time an account logs in on this server, and at level 10 after three
+    failed passwords for the same account. The address of a login is in the
+    access log, see 131875 and 131876.
   -->
   <rule id="131800" level="0">
     <decoded_as>jt-pbs-auth</decoded_as>
     <description>Proxmox Backup Server authentication messages</description>
   </rule>
 
-  <rule id="131801" level="3">
+  <rule id="131801" level="2">
     <if_sid>131800</if_sid>
     <match>successful auth for user</match>
     <description>Proxmox Backup Server: login of $(dstuser)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!-- The children of 131801 are exclusive: administrator, or first login of another account. -->
+  <rule id="131807" level="3">
+    <if_sid>131801</if_sid>
+    <user type="pcre2">^(?:root|admin|administrator)@</user>
+    <description>Proxmox Backup Server: login of the administrator account $(dstuser)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131808" level="3">
+    <if_sid>131801</if_sid>
+    <if_fts />
+    <user type="pcre2">^(?!(?:root|admin|administrator)@)</user>
+    <description>Proxmox Backup Server: first login of $(dstuser) on this server</description>
     <group>authentication_success,</group>
   </rule>
 
@@ -81,6 +108,36 @@
     <if_matched_sid>131804</if_matched_sid>
     <same_source_ip />
     <description>Proxmox Backup Server: $(srcip) keeps presenting an invalid API token; a backup client with a stale token?</description>
+  </rule>
+
+  <!--
+    A login for an account that had three failed passwords in the last ten
+    minutes. A child of every success rule, so it overrides them. The success
+    line has no address, so this compares the account; the same source is
+    compared on the access log line of the login (131877).
+    frequency counts the current event: "4" means three earlier failures.
+  -->
+  <rule id="131809" level="10" frequency="4" timeframe="600">
+    <if_sid>131801,131807,131808</if_sid>
+    <if_matched_sid>131802</if_matched_sid>
+    <same_user />
+    <description>[WARN] Proxmox Backup Server: $(dstuser) logged in after repeated failed logins</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131823" level="12">
+    <if_sid>131809</if_sid>
+    <user type="pcre2">^(?:root|admin|administrator)@</user>
+    <description>[HIGH] Proxmox Backup Server: administrator account $(dstuser) logged in after repeated failed logins</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078.003</id>
+    </mitre>
+    <group>authentication_success,</group>
   </rule>
 
   <!--
@@ -553,6 +610,68 @@
     <group>pbs_api,</group>
   </rule>
 
+  <!--
+    Logins seen in the access log: the ticket request carries the address the
+    login came from, but not the user (it is in the request body; the user is
+    in auth.log at the same second). Renewals of an open web interface session
+    are logins too. A login from a private address is recorded at level 2; a
+    login from any other address is level 5; a login from an address that had
+    a brute-force alert (131805) in the last ten minutes is level 12.
+    Private: 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, fc00::/7, fe80::/10.
+    The IPv6 loopback is left out of the address lists on purpose: in 4.14.7 a
+    srcip of ::1 (or ::1/128) matches every IPv4 address. A login over ::1
+    comes from the server itself and stays at the base rule; auth.log still
+    records it.
+  -->
+  <rule id="131875" level="5">
+    <if_sid>131860</if_sid>
+    <protocol>POST</protocol>
+    <id type="pcre2">^2\d\d$</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/+access/ticket$</url>
+    <match type="pcre2">^(?!::1 )</match>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>Proxmox Backup Server: login from the external address $(srcip) (the account is in auth.log at the same second)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pbs_api,</group>
+  </rule>
+
+  <rule id="131876" level="2">
+    <if_sid>131860</if_sid>
+    <protocol>POST</protocol>
+    <id type="pcre2">^2\d\d$</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/+access/ticket$</url>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <description>Proxmox Backup Server: login from $(srcip)</description>
+    <group>authentication_success,pbs_api,</group>
+  </rule>
+
+  <!-- The built-in rule 40112 cannot see this file's rules (if_group is resolved when the built-in file loads). -->
+  <rule id="131877" level="12" timeframe="600">
+    <if_sid>131875,131876</if_sid>
+    <if_matched_sid>131805</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] Proxmox Backup Server: login from $(srcip) right after repeated failed logins from the same address</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pbs_api,</group>
+  </rule>
+
   <!-- A user or token that tried a change it has no permission for. -->
   <rule id="131874" level="5">
     <if_sid>131860</if_sid>
@@ -564,16 +683,23 @@
   </rule>
 
   <!--
-    Datastore disk usage, from the "df -P" command in every Linux agent's
-    default configuration (every 6 minutes). PBS stops accepting backups when
-    a datastore is full, and garbage collection needs free space to run.
-    Mount points under /mnt/datastore/ (where PBS mounts the disks it formats,
-    and removable datastores) are watched without configuration; list other
-    mount points that hold a datastore (a ZFS pool, an NFS share) in
-    etc/lists/jt-pbs-datastore-mounts. The built-in rule 531 looks only at
-    /dev/ devices at 100 per cent, and its child 532 drops any mount whose path
-    contains "usb" or "/mount"; the rules below are children of both, so they
-    still apply. Each alert repeats at most every 6 hours.
+    Datastore disk usage. PBS writes nothing when a datastore gets close to
+    full (checked in its binaries: no such message exists); the first thing in
+    its logs is "No space left on device" at 100 per cent (131822, 131846).
+    So the usage comes from df:
+    - the "df -P" command in every Linux agent's default configuration (every
+      6 minutes) covers mount points under /mnt/datastore/, where PBS mounts
+      the disks it formats and removable datastores; this works with no setup;
+    - a datastore on a ZFS dataset or any other mount (for example a pool
+      mounted at /tank) is not recognisable in df -P. List its mount point in
+      etc/lists/jt-pbs-datastore-mounts (optional), or add the command with
+      the alias jt-pbs-datastores to the PBS host's own ossec.conf (optional,
+      see the setup guide): it runs df on every datastore path PBS has
+      configured, so it needs no list and follows new datastores.
+    The built-in rule 531 looks only at /dev/ devices at 100 per cent, and its
+    child 532 drops any mount whose path contains "usb" or "/mount"; the rules
+    below are children of both, so they still apply. Each alert repeats at most
+    every 6 hours.
   -->
   <rule id="131890" level="0">
     <if_sid>530,531,532</if_sid>
@@ -587,15 +713,22 @@
     <description>Proxmox Backup Server: usage of datastore filesystem $(pbs.mount)</description>
   </rule>
 
+  <rule id="131894" level="0">
+    <if_sid>530,531,532</if_sid>
+    <match>^ossec: output: 'jt-pbs-datastores': </match>
+    <field name="pbs.mount" type="pcre2">^/</field>
+    <description>Proxmox Backup Server: usage of datastore filesystem $(pbs.mount)</description>
+  </rule>
+
   <rule id="131892" level="10" ignore="21600">
-    <if_sid>131890,131891</if_sid>
+    <if_sid>131890,131891,131894</if_sid>
     <field name="pbs.usage" type="pcre2">^9[0-7]$</field>
     <description>[WARN] Proxmox Backup Server: datastore filesystem $(pbs.mount) is $(pbs.usage)% full</description>
     <group>low_diskspace,</group>
   </rule>
 
   <rule id="131893" level="12" ignore="21600">
-    <if_sid>131890,131891</if_sid>
+    <if_sid>131890,131891,131894</if_sid>
     <field name="pbs.usage" type="pcre2">^(?:9[89]|100)$</field>
     <description>[HIGH] Proxmox Backup Server: datastore filesystem $(pbs.mount) is $(pbs.usage)% full</description>
     <group>low_diskspace,</group>

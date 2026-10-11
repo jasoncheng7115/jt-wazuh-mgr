@@ -4,8 +4,9 @@
 
   Modules
     132000-132009  base rules: one per DSM category and message shape
-    132010-132019  successful logins, service account allowlist, administrators
+    132010-132019  successful logins: private and outside addresses, administrators
     132020-132029  failed logins, brute force, DSM auto block, account protection
+    132030-132039  first-seen login pairs, success after failures
     132040-132049  Hyper Backup
     132050-132059  file transfer logs (SMB, File Station, ...)
     132060-132099  System: accounts, storage, disks, power, packages, settings
@@ -75,36 +76,55 @@
   </rule>
 
   <!--
-    Successful logins. "signed in to [DSM] via [OTP]" is the second step of a
-    two-factor sign-in; the first step is 132014.
+    Successful logins. A login is not an alert by itself: an ordinary account
+    from a private address is recorded at level 2, which keeps it available for
+    correlation. What raises one:
+      a first login for an (account, address, service) pair on this NAS (fts),
+      a built-in administrator name (admin, administrator, root, also as
+      DOMAIN\Administrator), an address outside the private ranges, and a
+      success after repeated failures.
+    Measured on one NAS: a storage client that signs in every 1.8 seconds from
+    five hosts (48,987 sign-ins a day) gives five first-seen alerts, ever.
+    Private: 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, fc00::/7,
+    fe80::/10. Two traps in 4.14.7: <srcip>!CIDR</srcip> does not negate (one
+    <srcip negate="yes"> per range means "in none of these"), and ::1 in a
+    srcip list matches every IPv4 address, so loopback IPv6 is left out.
+    The children of each login rule are mutually exclusive by source, account
+    class and list membership; the after-failure rules (132030-132039) are
+    children of every one of them, so they win whichever path is taken.
   -->
-  <rule id="132010" level="3">
+  <rule id="132010" level="2">
     <if_sid>132002,132003</if_sid>
     <field name="synology.event" type="pcre2">^(?:signed in to|logged in from)$</field>
-    <description>Synology DSM: $(dstuser) signed in to $(synology.service) from $(srcip)</description>
+    <description>Synology DSM: $(dstuser) signed in to $(protocol) from $(srcip)</description>
     <mitre>
       <id>T1078</id>
     </mitre>
     <group>synology_login,</group>
   </rule>
 
-  <!-- DSM allows SSH and Telnet only to members of the administrators group. -->
-  <rule id="132011" level="5">
+  <!--
+    DSM allows SSH and Telnet only to members of the administrators group, so
+    every shell login is an administrator's. A job that logs in over SSH on a
+    schedule must not flood: a known pair is recorded at level 2, a new pair is
+    level 5 (132034), an outside address level 8 (132035).
+  -->
+  <rule id="132011" level="2">
     <if_sid>132002,132003</if_sid>
     <field name="synology.event" type="pcre2">^logged in successfully$</field>
-    <field name="synology.service" type="pcre2">^(?i:SSH|Telnet)$</field>
-    <description>Synology DSM: administrator $(dstuser) logged in to a shell via $(synology.service) from $(srcip)</description>
+    <protocol type="pcre2">^(?i:SSH|Telnet)$</protocol>
+    <description>Synology DSM: administrator $(dstuser) logged in to a shell via $(protocol) from $(srcip)</description>
     <mitre>
       <id>T1021.004</id>
     </mitre>
     <group>synology_login,</group>
   </rule>
 
-  <rule id="132012" level="3">
+  <rule id="132012" level="2">
     <if_sid>132002,132003</if_sid>
     <field name="synology.event" type="pcre2">^logged in successfully$</field>
-    <field name="synology.service" type="pcre2">^(?!(?i:SSH|Telnet)$)</field>
-    <description>Synology DSM: $(dstuser) logged in via $(synology.service) from $(srcip)</description>
+    <protocol type="pcre2">^(?!(?i:SSH|Telnet)$)</protocol>
+    <description>Synology DSM: $(dstuser) logged in via $(protocol) from $(srcip)</description>
     <mitre>
       <id>T1078</id>
     </mitre>
@@ -115,7 +135,7 @@
   <rule id="132013" level="2">
     <if_sid>132002,132003</if_sid>
     <field name="synology.event" type="pcre2">^accessed shared folder$</field>
-    <description>Synology DSM: $(dstuser) from $(srcip) opened shared folder $(synology.share) via $(synology.service)</description>
+    <description>Synology DSM: $(dstuser) from $(srcip) opened shared folder $(synology.share) via $(protocol)</description>
     <group>synology_login,</group>
   </rule>
 
@@ -125,30 +145,170 @@
     <description>Synology DSM: $(dstuser) from $(srcip) passed the password step of a two-factor sign-in</description>
   </rule>
 
+  <!-- First login of an (account, address, service) pair: one alert per pair, ever. -->
+  <rule id="132033" level="3">
+    <if_sid>132010,132012</if_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <user type="pcre2">^(?!(?i:(?:[^\\]+\\)?(?:admin|administrator|root))$)</user>
+    <list field="user" lookup="not_match_key">etc/lists/jt-synology-service-accounts</list>
+    <list field="user" lookup="not_match_key">etc/lists/jt-synology-admin-accounts</list>
+    <if_fts />
+    <description>Synology DSM: first login of $(dstuser) from $(srcip) to $(protocol)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>synology_login,</group>
+  </rule>
+
+  <!-- Built-in administrator names: admin (DSM), administrator, root. -->
+  <rule id="132018" level="3">
+    <if_sid>132010,132012</if_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <user type="pcre2">^(?i:(?:[^\\]+\\)?(?:admin|administrator|root))$</user>
+    <list field="user" lookup="not_match_key">etc/lists/jt-synology-service-accounts</list>
+    <description>Synology DSM: built-in administrator $(dstuser) signed in to $(protocol) from $(srcip)</description>
+    <mitre>
+      <id>T1078.001</id>
+    </mitre>
+    <group>synology_login,</group>
+  </rule>
+
+  <!-- Any account from an address outside the private ranges. -->
+  <rule id="132017" level="5">
+    <if_sid>132010,132012,132013</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <user type="pcre2">^(?!(?i:(?:[^\\]+\\)?(?:admin|administrator|root))$)</user>
+    <list field="user" lookup="not_match_key">etc/lists/jt-synology-admin-accounts</list>
+    <description>Synology DSM: $(dstuser) logged in to $(protocol) from outside address $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>synology_login,</group>
+  </rule>
+
+  <rule id="132019" level="8">
+    <if_sid>132010,132012,132013</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <user type="pcre2">^(?i:(?:[^\\]+\\)?(?:admin|administrator|root))$</user>
+    <description>Synology DSM: built-in administrator $(dstuser) logged in to $(protocol) from outside address $(srcip)</description>
+    <mitre>
+      <id>T1078.001</id>
+    </mitre>
+    <group>synology_login,</group>
+  </rule>
+
+  <!-- Shell logins (132011): a new pair, and an outside address. -->
+  <rule id="132034" level="5">
+    <if_sid>132011</if_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <if_fts />
+    <description>Synology DSM: first shell login of administrator $(dstuser) from $(srcip) via $(protocol)</description>
+    <mitre>
+      <id>T1021.004</id>
+    </mitre>
+    <group>synology_login,</group>
+  </rule>
+
+  <rule id="132035" level="8">
+    <if_sid>132011</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>Synology DSM: administrator $(dstuser) logged in to a shell via $(protocol) from outside address $(srcip)</description>
+    <mitre>
+      <id>T1021.004</id>
+    </mitre>
+    <group>synology_login,</group>
+  </rule>
+
   <!--
-    Routine logins. A monitoring or storage client that signs in every few
-    seconds turns 132010 into tens of thousands of alerts a day (measured:
-    48,987 a day, all one account polling from five Proxmox VE hosts). List
-    such accounts in etc/lists/jt-synology-service-accounts; the key is the
-    account name as DSM writes it. Failed logins of listed accounts still
-    alert, and so do their SSH logins (132011).
+    Optional tuning. Accounts in etc/lists/jt-synology-service-accounts (key:
+    the name as DSM writes it) drop to level 0 from private addresses; from an
+    outside address they still alert (132017), and so do their failures and
+    shell logins. Accounts in etc/lists/jt-synology-admin-accounts are treated
+    like the built-in administrator names. Both lists ship with a placeholder:
+    the defaults above do not depend on them.
+    (A CDB lookup on the decoded account names the field "user": "dstuser"
+    loads without an error and never matches.)
   -->
   <rule id="132015" level="0">
     <if_sid>132010,132012,132013</if_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
     <list field="user" lookup="match_key">etc/lists/jt-synology-service-accounts</list>
     <description>Synology DSM: routine login of a listed service account</description>
   </rule>
 
-  <!--
-    Administrator accounts listed in etc/lists/jt-synology-admin-accounts
-    (DSM's built-in "admin" is listed by default). A listed service account
-    stays at 132015 even if it is also an administrator.
-  -->
-  <rule id="132016" level="5">
+  <rule id="132016" level="3">
     <if_sid>132010,132012</if_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <user type="pcre2">^(?!(?i:(?:[^\\]+\\)?(?:admin|administrator|root))$)</user>
     <list field="user" lookup="match_key">etc/lists/jt-synology-admin-accounts</list>
     <list field="user" lookup="not_match_key">etc/lists/jt-synology-service-accounts</list>
-    <description>Synology DSM: administrator $(dstuser) signed in to $(synology.service) from $(srcip)</description>
+    <description>Synology DSM: administrator $(dstuser) signed in to $(protocol) from $(srcip)</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+    <group>synology_login,</group>
+  </rule>
+
+  <rule id="132036" level="8">
+    <if_sid>132010,132012,132013</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <user type="pcre2">^(?!(?i:(?:[^\\]+\\)?(?:admin|administrator|root))$)</user>
+    <list field="user" lookup="match_key">etc/lists/jt-synology-admin-accounts</list>
+    <description>Synology DSM: administrator $(dstuser) logged in to $(protocol) from outside address $(srcip)</description>
     <mitre>
       <id>T1078.003</id>
     </mitre>
@@ -164,7 +324,7 @@
   <rule id="132020" level="5">
     <if_sid>132002,132003</if_sid>
     <field name="synology.event" type="pcre2">^(?:failed to sign in to|failed to log in)$</field>
-    <description>Synology DSM: failed login to $(synology.service) as $(dstuser) from $(srcip)</description>
+    <description>Synology DSM: failed login to $(protocol) as $(dstuser) from $(srcip)</description>
     <mitre>
       <id>T1110.001</id>
     </mitre>
@@ -255,7 +415,7 @@
     <srcip>169.254.0.0/16</srcip>
     <srcip>fc00::/7</srcip>
     <srcip>fe80::/10</srcip>
-    <description>[WARN] Synology DSM auto block: $(srcip) blocked after repeated failed logins via $(synology.service) (internal address)</description>
+    <description>[WARN] Synology DSM auto block: $(srcip) blocked after repeated failed logins via $(protocol) (internal address)</description>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -273,7 +433,7 @@
     <srcip negate="yes">169.254.0.0/16</srcip>
     <srcip negate="yes">fc00::/7</srcip>
     <srcip negate="yes">fe80::/10</srcip>
-    <description>[WARN] Synology DSM auto block: $(srcip) blocked after repeated failed logins via $(synology.service) (external address)</description>
+    <description>[WARN] Synology DSM auto block: $(srcip) blocked after repeated failed logins via $(protocol) (external address)</description>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -292,6 +452,69 @@
     <mitre>
       <id>T1110</id>
     </mitre>
+  </rule>
+
+  <!--
+    Success after failures. Children of every login rule above, so that they
+    win on any path. In 4.14.7 a rule with if_sid and if_matched_sid fires when
+    at least frequency - 1 earlier matches exist: frequency 5 means four
+    failures before the success. A frequency rule that fires clears what it
+    counted, so after brute force (132024-132026) the success is caught by the
+    rules that look back at those alerts instead.
+  -->
+  <rule id="132030" level="10" frequency="5" timeframe="600">
+    <if_sid>132010,132011,132012,132013,132015,132016,132017,132018,132019,132033,132034,132035,132036</if_sid>
+    <if_matched_sid>132020</if_matched_sid>
+    <same_srcip />
+    <description>[WARN] Synology DSM: $(dstuser) logged in from $(srcip) after at least 4 failed logins from that address</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>synology_login,synology_login_after_failure,</group>
+  </rule>
+
+  <rule id="132031" level="10" frequency="5" timeframe="600">
+    <if_sid>132010,132011,132012,132013,132015,132016,132017,132018,132019,132033,132034,132035,132036</if_sid>
+    <if_matched_sid>132020</if_matched_sid>
+    <same_user />
+    <description>[WARN] Synology DSM: $(dstuser) logged in from $(srcip) after at least 4 failed logins for that account</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>synology_login,synology_login_after_failure,</group>
+  </rule>
+
+  <rule id="132037" level="12" frequency="2" timeframe="1800">
+    <if_sid>132010,132011,132012,132013,132015,132016,132017,132018,132019,132033,132034,132035,132036,132030,132031</if_sid>
+    <if_matched_sid>132024</if_matched_sid>
+    <same_srcip />
+    <description>[HIGH] Synology DSM: $(dstuser) logged in from $(srcip), which was brute forcing logins (internal address)</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>synology_login,synology_login_after_failure,</group>
+  </rule>
+
+  <rule id="132038" level="12" frequency="2" timeframe="1800">
+    <if_sid>132010,132011,132012,132013,132015,132016,132017,132018,132019,132033,132034,132035,132036,132030,132031</if_sid>
+    <if_matched_sid>132025</if_matched_sid>
+    <same_srcip />
+    <description>[HIGH] Synology DSM: $(dstuser) logged in from $(srcip), which was brute forcing logins (external address)</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>synology_login,synology_login_after_failure,</group>
+  </rule>
+
+  <rule id="132039" level="12" frequency="2" timeframe="1800">
+    <if_sid>132010,132011,132012,132013,132015,132016,132017,132018,132019,132033,132034,132035,132036,132030,132031</if_sid>
+    <if_matched_sid>132026</if_matched_sid>
+    <same_user />
+    <description>[HIGH] Synology DSM: $(dstuser) logged in from $(srcip) after password guessing against that account</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>synology_login,synology_login_after_failure,</group>
   </rule>
 
   <!--

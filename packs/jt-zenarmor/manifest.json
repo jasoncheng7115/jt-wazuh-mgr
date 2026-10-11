@@ -2,9 +2,9 @@
  "id": "jt-zenarmor",
  "name": "Zenarmor (OPNsense) Detection Suite",
  "name_zh": "Zenarmor (OPNsense) 偵測套組",
- "version": "1.4",
- "summary": "Decoder and severity-graded rules for Zenarmor NGFW events forwarded from OPNsense: one alert per block, quiet DNS lookups raised by their pattern (beaconing, DGA), out-of-band callback domains, and normalised fields for other packs.",
- "summary_zh": "OPNsense 上 Zenarmor NGFW 事件的解碼器與分級規則：每次阻擋只告警一次，DNS 查詢靜默記錄、依行為模式（beacon、DGA）提出，涵蓋頻外回呼網域，並提供可供其他套件使用的標準化欄位。",
+ "version": "1.5",
+ "summary": "Decoder and severity-graded rules for Zenarmor NGFW events forwarded from OPNsense: one alert per block, quiet DNS lookups raised by their pattern (beaconing, DGA), DNS resolvers and mail filters recognised without a site list, out-of-band callback domains, and normalised fields for other packs.",
+ "summary_zh": "OPNsense 上 Zenarmor NGFW 事件的解碼器與分級規則：每次阻擋只告警一次，DNS 查詢靜默記錄、依行為模式（beacon、DGA）提出，不需站台清單即可認出 DNS 解析器與郵件過濾器，涵蓋頻外回呼網域，並提供可供其他套件使用的標準化欄位。",
  "rule_id_range": "130800-130899",
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -17,9 +17,11 @@
  "notes": [
   "OPNsense must forward Zenarmor's reporting data to the Wazuh manager by syslog, with the program name zenarmor, and the stream must include Alerts as well as Connections and DNS. The alert record is the one record per block that carries Zenarmor's decision and the name it matched.",
   "Grading: an unblocked malicious connection is the most serious case (130801, level 12), because the session was established. A blocked connection is graded per event: malware 130802 (level 7), command-and-control 130820 (level 10), phishing and fraud 130804 (level 5). Weak categories (Proxy, VPN, Parked Domains) stay at level 5 or below, and at level 3 when the policy blocked them (130828).",
-  "One block arrives as several records: a DNS block as a dns record, a conn record of the UDP flow and an alert record; a web block as conn, tls and alert. Version 1.4 reports each block once, from its alert record, and records the others at level 2 (130815). Measured over 7 days: 1,854 alert records against 3,627 conn and dns records for the same blocks.",
-  "A blocked lookup (port 53) is a quiet base at level 2 (130816, 130817) and alerts only through its pattern: the same name about every three minutes for an hour (130832, beaconing) or 15 different threat names within an hour (130833, DGA or several infections). A blocked lookup of a command-and-control name from a host that is not a resolver alerts at once (130819, level 6).",
-  "Internal DNS resolvers and mail filters look names up for other hosts, so the firewall sees them, not the client. On the site this was tuned on every blocked lookup came from two domain controllers and a mail gateway, and 82% of the old 130802 alerts were one script name in cron mail: a file name ending in .sh is a valid domain under the .sh TLD, the mail filter looked it up, and Zenarmor tagged it Botnet DGA Domains. List such hosts in etc/lists/jt-zenarmor-resolvers: their lookups are kept out of 130832/130833 and are raised only when one name is asked about once a minute for an hour (130834, level 6). The resolver's own query log names the client.",
+  "One block arrives as several records: a DNS block as a dns record, a conn record of the UDP flow and an alert record; a web block as conn, tls and alert. Each block is reported once, from its alert record; the others are recorded at level 2 (130815 for malware, 130829 for phishing), and a lookup's dns record is also counted (below). Measured over 7 days: 1,854 alert records against 3,627 conn and dns records for the same blocks.",
+  "A blocked lookup (port 53) never alerts by itself. Its alert record is recorded at level 2 (130816, 130817); its dns record, which carries the query type and the Recursion Desired bit, is classified and counted. Client-style lookups count towards beaconing, 15 lookups of one name in 15 minutes (130832, level 10), and towards 20 different threat names in 15 minutes, together with blocked connections (130833, level 10). A command-and-control name looked up by a client alerts at once (130819, level 6). This needs the DNS stream.",
+  "Internal DNS resolvers and mail filters look names up for other hosts, so the firewall sees them, not the client. Version 1.5 recognises them without a site list. A dns record with Recursion Desired = 0 (an iterative query, which a client never sends) or of type PTR, NS or SOA is resolver style on its own (130842, 130843, 130837, 130838). A client-style record (RD=1, A and the like) from a source that sent a resolver-style record within the last 15 minutes is a forwarded lookup (130844, 130847, 130848). Resolver lookups are counted only by 130834 (40 lookups of one name in 15 minutes, level 6) and 130835 (40 different names, level 7); the resolver's own query log names the client. Measured over 7.5 days on the tuned site: 1,584 of 1,811 blocked dns records were resolver style on their own; of the other 227 (a domain controller forwarding A lookups), 149 had evidence before them and 76 arrived in the same second as their evidence but just before it. The peak that a resolver contributed to 130832 in any 15 minutes fell from 12 lookups to 2.",
+  "etc/lists/jt-zenarmor-resolvers is optional tuning. It is needed only for a forwarding DNS server that relays clients' A lookups and never sends an iterative or a PTR, NS or SOA query itself: from the firewall such a server looks exactly like a client using a public resolver. Its lookups then go to 130818 and 130849 and are counted like a recognised resolver's.",
+  "Correlation memory: analysisd keeps correlation history only for the last memory_size events that matched a rule of level 1 or more (memory_size in the global section of ossec.conf, default 8192). Older events are freed and no longer count for any frequency or if_matched rule, whatever its timeframe. At about 75 events a second that is 15 to 20 minutes, on a busier manager less. Every timeframe in this pack is therefore 900 seconds or less and the thresholds are per 15 minutes. A beacon slower than about one lookup a minute, or resolver evidence older than the memory reaches, is not seen; raising memory_size widens the window at the cost of manager memory.",
   "Out-of-band testing domains (interactsh, Burp Collaborator, canarytokens and similar) alert at level 10 whether or not the lookup came through a resolver (130840, 130841): a unique name of that kind is looked up only when some host processed an injected payload or opened a canary. Measured: a mail gateway resolved one interactsh name 13 times in four minutes.",
   "Two Proxy-category sources are recorded at level 2 instead of alerting: Apple iCloud Private Relay (130825; 629 of 978 evasion alerts in 7 days) and check.torproject.org, the Tor exit list that threat-intelligence tools download every hour (130826; 349). A site that forbids Private Relay should block mask.icloud.com and mask-h2.icloud.com in DNS. Other site-specific names go in etc/lists/jt-zenarmor-domain-allow, which applies to the weak categories only and never to malware or phishing.",
   "Version 1.4 fixes an overlap: the tag Botnet DGA Domains matched both the malware family (Botnet) and the phishing family (DGA), and which rule won depended on evaluation order. The phishing, evasion and parked families now exclude events that carry a tag from a more serious family, by a pcre2 lookahead rather than negate.",
@@ -31,9 +33,11 @@
  "notes_zh": [
   "OPNsense 必須把 Zenarmor 的報表資料以 syslog 轉送到 Wazuh 管理端，程式名稱為 zenarmor，而且串流除了 Connections 與 DNS 之外必須包含 Alerts。每次阻擋只有 alert 記錄會帶 Zenarmor 的判定結果與比對到的名稱。",
   "分級原則：未被阻擋的惡意連線最嚴重（130801，level 12），因為連線已經成立。已阻擋的連線逐筆分級：惡意程式 130802（level 7）、C2 130820（level 10）、釣魚與詐騙 130804（level 5）。弱訊號分類（Proxy、VPN、Parked Domains）一律 level 5 以下，被政策阻擋時為 level 3（130828）。",
-  "一次阻擋會產生好幾筆記錄：DNS 阻擋是 dns、UDP 流量的 conn 與 alert 各一筆；網頁阻擋是 conn、tls 與 alert。1.4 版每次阻擋只依 alert 記錄回報一次，其餘記錄以 level 2 記下（130815）。7 天實測：同一批阻擋有 1,854 筆 alert 記錄，對上 3,627 筆 conn 與 dns 記錄。",
-  "被阻擋的名稱查詢（port 53）是 level 2 的靜默基礎規則（130816、130817），只依行為模式告警：一小時內大約每三分鐘查一次同一個名稱（130832，beacon），或一小時內查了 15 個不同的威脅名稱（130833，DGA 或多重感染）。非解析器主機查詢 C2 名稱被阻擋時立即告警（130819，level 6）。",
-  "內部 DNS 解析器與郵件過濾器會替別的主機查詢名稱，防火牆看到的是它們而不是真正的用戶端。調校所用的站台上，所有被阻擋的查詢都來自兩台網域控制站與一台郵件閘道；舊版 130802 的告警有 82% 是 cron 郵件裡的一個腳本名稱：以 .sh 結尾的檔名在 .sh 頂級網域下是合法網域，郵件過濾器去查了它，Zenarmor 把它標成 Botnet DGA Domains。請把這類主機列入 etc/lists/jt-zenarmor-resolvers：它們的查詢不計入 130832／130833，只有同一名稱一小時內約每分鐘查一次才告警（130834，level 6）。真正的用戶端請查該解析器自己的查詢記錄。",
+  "一次阻擋會產生好幾筆記錄：DNS 阻擋是 dns、UDP 流量的 conn 與 alert 各一筆；網頁阻擋是 conn、tls 與 alert。每次阻擋只依 alert 記錄回報一次，其餘記錄以 level 2 記下（惡意程式 130815、釣魚 130829），名稱查詢的 dns 記錄另外用來計數（見下）。7 天實測：同一批阻擋有 1,854 筆 alert 記錄，對上 3,627 筆 conn 與 dns 記錄。",
+  "被阻擋的名稱查詢（port 53）本身不告警。它的 alert 記錄以 level 2 記下（130816、130817）；它的 dns 記錄帶有查詢類型與 Recursion Desired 位元，用來分類與計數。用戶端式的查詢計入 beacon：15 分鐘內同一名稱 15 次（130832，level 10），也與被阻擋的連線一起計入 15 分鐘內 20 個不同的威脅名稱（130833，level 10）。用戶端查詢 C2 名稱時立即告警（130819，level 6）。這需要 DNS 串流。",
+  "內部 DNS 解析器與郵件過濾器會替別的主機查詢名稱，防火牆看到的是它們而不是真正的用戶端。1.5 版不需站台清單就能認出它們。Recursion Desired = 0 的 dns 記錄（迭代查詢，用戶端永遠不會送出）或類型為 PTR、NS、SOA 的記錄，本身就是解析器式（130842、130843、130837、130838）。來源在最近 15 分鐘內送過解析器式記錄時，它的用戶端式記錄（RD=1，A 等）視為轉送的查詢（130844、130847、130848）。解析器的查詢只計入 130834（15 分鐘內同一名稱 40 次，level 6）與 130835（40 個不同名稱，level 7）；真正的用戶端請查該解析器自己的查詢記錄。調校所用站台 7.5 天實測：1,811 筆被阻擋的 dns 記錄中有 1,584 筆本身就是解析器式；其餘 227 筆（一台網域控制站轉送的 A 查詢）有 149 筆之前已有證據，76 筆與證據在同一秒到達、只是排在證據之前。解析器在任何 15 分鐘內對 130832 的貢獻峰值從 12 次降到 2 次。",
+  "etc/lists/jt-zenarmor-resolvers 是選用的調校。只有轉送型 DNS 伺服器才需要它：它轉送用戶端的 A 查詢、自己從不送出迭代查詢或 PTR、NS、SOA 查詢，從防火牆看起來與使用公共解析器的用戶端完全一樣。列入後其查詢改由 130818 與 130849 記錄，並與被認出的解析器一樣計數。",
+  "關聯記憶：analysisd 只保留最近 memory_size 筆命中 level 1 以上規則的事件作為關聯歷史（ossec.conf global 區段的 memory_size，預設 8192）。更舊的事件會被釋放，不論規則的 timeframe 多長，都不再計入任何頻率或 if_matched 規則。每秒約 75 筆事件時大約是 15 到 20 分鐘，負載更高的管理端更短。因此本套件所有 timeframe 都是 900 秒以下，門檻以每 15 分鐘計。慢於約每分鐘一次的 beacon、或比記憶範圍更舊的解析器證據都看不到；調高 memory_size 可以加大範圍，代價是管理端記憶體。",
   "頻外測試網域（interactsh、Burp Collaborator、canarytokens 等）不論是否經由解析器查詢，一律 level 10（130840、130841）：這類唯一名稱只有在某台主機處理了被注入的 payload 或開啟了 canary 時才會被查詢。實測：一台郵件閘道在四分鐘內對同一個 interactsh 名稱查了 13 次。",
   "兩種 Proxy 分類來源改以 level 2 記錄、不告警：Apple iCloud 私密轉送（130825；7 天內 978 筆規避類告警中佔 629 筆），以及 check.torproject.org，也就是威脅情資工具每小時下載的 Tor 出口節點清單（130826；349 筆）。禁止私密轉送的站台應在 DNS 封鎖 mask.icloud.com 與 mask-h2.icloud.com。其他站台特有的名稱請加入 etc/lists/jt-zenarmor-domain-allow；此清單只作用於弱訊號分類，永遠不會讓惡意程式或釣魚告警靜音。",
   "1.4 版修正一個重疊：Botnet DGA Domains 標籤同時符合惡意程式家族（Botnet）與釣魚家族（DGA），由哪條規則勝出取決於評估順序。釣魚、規避與寄放網域家族現在以 pcre2 lookahead（而非 negate）排除帶有更嚴重家族標籤的事件。",
@@ -53,7 +57,7 @@
    "type": "rule",
    "name": "zenarmor-rule.xml",
    "dest": "etc/rules/zenarmor-rule.xml",
-   "sha256": "b0967fe93864fe0fe47ea468c9600d8dc013e2e00baf9be1eaf5f45d91dbbf92"
+   "sha256": "7b6633d1fe84e27e3f53fbc1447b2ebcb4713682ceabc0134ad8d69c85b0feb0"
   },
   {
    "type": "list",
@@ -84,12 +88,13 @@
   {
    "platform": "network",
    "required": true,
+   "since": "1.5",
    "title": "Stream Zenarmor's reporting data to the manager by syslog",
    "title_zh": "把 Zenarmor 報表資料以 syslog 串流到管理端",
-   "body": "In OPNsense open Zenarmor, Configuration, Data Management (called Reporting & Data in some versions), and enable streaming to a remote syslog server: the Wazuh manager's address, the port of its syslog listener, UDP or TCP. Select Connections, DNS, TLS, Web and Alerts. Alerts is required: without it every blocked threat stays at level 2. Records are about 2 KB, so over UDP they travel as IP fragments; a firewall in between must pass fragments, or use TCP. If a relay filters the stream, keep the alert records and every record with is_blocked=1 or a security tag. Nothing on the firewall restarts.",
-   "body_zh": "在 OPNsense 開啟 Zenarmor → Configuration → Data Management（部分版本稱 Reporting & Data），啟用串流到遠端 syslog 伺服器：填入 Wazuh 管理端位址、其 syslog 監聽埠、UDP 或 TCP。勾選 Connections、DNS、TLS、Web 與 Alerts。Alerts 為必要：沒有它，所有被阻擋的威脅都會停在 level 2。每筆記錄約 2 KB，走 UDP 時會被切成 IP 分段；中間若有防火牆必須放行分段，否則請改用 TCP。若中間有轉送程式過濾串流，請保留 alert 記錄以及所有 is_blocked=1 或帶有資安標籤的記錄。防火牆上不需要重啟任何服務。",
-   "verify": "Browse from a test client to a site your policy blocks as Phishing or Malware. Within a minute or two the manager shows 130804 or 130802 with the blocked name; the conn and tls records of the same block are recorded as 130815 and do not alert.",
-   "verify_zh": "從測試用戶端瀏覽一個政策會以 Phishing 或 Malware 阻擋的網站。一兩分鐘內管理端應出現 130804 或 130802，並帶有被阻擋的名稱；同一次阻擋的 conn 與 tls 記錄記為 130815、不告警。"
+   "body": "In OPNsense open Zenarmor, Configuration, Data Management (called Reporting & Data in some versions), and enable streaming to a remote syslog server: the Wazuh manager's address, the port of its syslog listener, UDP or TCP. Select Connections, DNS, TLS, Web and Alerts. Alerts is required: without it every blocked threat stays at level 2. DNS is required: the dns records are what blocked lookups are counted and resolvers recognised from; without them no lookup pattern is detected. Records are about 2 KB, so over UDP they travel as IP fragments; a firewall in between must pass fragments, or use TCP. If a relay filters the stream, keep the alert records and every record with is_blocked=1 or a security tag. Nothing on the firewall restarts.",
+   "body_zh": "在 OPNsense 開啟 Zenarmor → Configuration → Data Management（部分版本稱 Reporting & Data），啟用串流到遠端 syslog 伺服器：填入 Wazuh 管理端位址、其 syslog 監聽埠、UDP 或 TCP。勾選 Connections、DNS、TLS、Web 與 Alerts。Alerts 為必要：沒有它，所有被阻擋的威脅都會停在 level 2。DNS 為必要：被阻擋的查詢是依 dns 記錄計數、解析器也是依它認出；沒有它，任何查詢模式都偵測不到。每筆記錄約 2 KB，走 UDP 時會被切成 IP 分段；中間若有防火牆必須放行分段，否則請改用 TCP。若中間有轉送程式過濾串流，請保留 alert 記錄以及所有 is_blocked=1 或帶有資安標籤的記錄。防火牆上不需要重啟任何服務。",
+   "verify": "Browse from a test client to a site your policy blocks as Phishing or Malware. Within a minute or two the manager shows 130804 or 130802 with the blocked name; the conn and tls records of the same block are recorded as 130815 or 130829 and do not alert.",
+   "verify_zh": "從測試用戶端瀏覽一個政策會以 Phishing 或 Malware 阻擋的網站。一兩分鐘內管理端應出現 130804 或 130802，並帶有被阻擋的名稱；同一次阻擋的 conn 與 tls 記錄記為 130815 或 130829、不告警。"
   },
   {
    "platform": "manager",
@@ -103,17 +108,19 @@
   {
    "platform": "manager",
    "required": false,
-   "title": "List the DNS resolvers and mail filters behind the firewall",
-   "title_zh": "列出防火牆後方的 DNS 解析器與郵件過濾器",
-   "body": "One address per line, then reload the ruleset. Hosts that look names up for others (domain controllers, other recursive resolvers, mail gateways and spam filters) otherwise trip the beaconing and DGA rules with lookups made on behalf of their clients. Their blocked lookups are still recorded, and 130834 raises the sustained ones. A network prefix ending in a dot (192.0.2.) also works. Their own non-DNS connections are not affected.",
-   "body_zh": "每個位址一行，加入後重新載入規則集。替別人查詢名稱的主機（網域控制站、其他遞迴解析器、郵件閘道與垃圾郵件過濾器）若不列入，會用代替用戶端做的查詢觸發 beacon 與 DGA 規則。它們被阻擋的查詢仍會記錄，持續性的查詢由 130834 提出。也可以寫以點號結尾的網段前綴（192.0.2.）。它們自己的非 DNS 連線不受影響。",
-   "code": "echo '192.0.2.53:resolver' >> /var/ossec/etc/lists/jt-zenarmor-resolvers\necho '192.0.2.25:mail-filter' >> /var/ossec/etc/lists/jt-zenarmor-resolvers",
-   "verify": "The next blocked lookups from a listed address are recorded as 130818 instead of 130816 or 130817.",
-   "verify_zh": "列入的位址之後被阻擋的查詢會記為 130818，而不是 130816 或 130817。"
+   "since": "1.5",
+   "title": "Optional: list forwarding DNS servers",
+   "title_zh": "選用：列出轉送型 DNS 伺服器",
+   "body": "Recursive resolvers and mail filters are recognised automatically from their own DNS records. A forwarder that relays clients' A lookups and never sends an iterative or a PTR, NS or SOA query itself cannot be told apart from a client; if one trips the beaconing or many-domains rules (130832, 130833) with lookups made for its clients, list its address, one per line, then reload the ruleset. A network prefix ending in a dot (192.0.2.) also works. Its own non-DNS connections are not affected.",
+   "body_zh": "遞迴解析器與郵件過濾器會從它們自己的 DNS 記錄自動認出。轉送型伺服器若只轉送用戶端的 A 查詢、自己從不送出迭代查詢或 PTR、NS、SOA 查詢，就無法與用戶端區分；若它以替用戶端做的查詢觸發 beacon 或多網域規則（130832、130833），請把它的位址列入，每個一行，加入後重新載入規則集。也可以寫以點號結尾的網段前綴（192.0.2.）。它自己的非 DNS 連線不受影響。",
+   "code": "echo '192.0.2.53:forwarder' >> /var/ossec/etc/lists/jt-zenarmor-resolvers",
+   "verify": "The next blocked lookups from a listed address are recorded as 130818 or 130849 instead of 130836 or 130839.",
+   "verify_zh": "列入的位址之後被阻擋的查詢會記為 130818 或 130849，而不是 130836 或 130839。"
   },
   {
    "platform": "manager",
    "required": false,
+   "since": "1.5",
    "title": "Allowlist names that Zenarmor files under Proxy or VPN",
    "title_zh": "把 Zenarmor 歸類為 Proxy 或 VPN 的名稱加入允許清單",
    "body": "For a corporate VPN endpoint or a similar service in an evasion category: one name per line, exactly as it appears in the alert, then reload the ruleset. The list applies only to the evasion rules 130805 and 130806; malware and phishing alerts are never silenced by it.",

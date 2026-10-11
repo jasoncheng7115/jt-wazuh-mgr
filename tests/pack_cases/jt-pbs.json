@@ -7,9 +7,98 @@
   {
    "log": "2026-09-17T01:10:02+08:00: successful auth for user 'root@pam'",
    "location": "/var/log/proxmox-backup/api/auth.log",
-   "expect_rule": "131801",
+   "expect_rule": "131807",
    "expect_level": 3,
-   "note": "real (sanitized)"
+   "note": "real (sanitized); built-in administrator, 2,220 of 2,221 logins on the site"
+  },
+  {
+   "log": "2026-09-17T01:10:02+08:00: successful auth for user 'root@pam'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131807",
+   "expect_level": 3,
+   "repeat": 5,
+   "note": "administrator stays level 3 on every login (renewals included)"
+  },
+  {
+   "log": "2022-03-12T23:34:53+08:00: successful auth for user 'sync@pbs'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131808",
+   "expect_level": 3,
+   "note": "real shape (sanitized); first login of an ordinary account: fts new"
+  },
+  {
+   "log": "2022-03-12T23:34:53+08:00: successful auth for user 'operator@pbs'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131801",
+   "expect_level": 2,
+   "repeat": 50,
+   "note": "policy: 50 identical logins of an ordinary account end below level 3"
+  },
+  {
+   "log": "2022-03-12T23:34:53+08:00: successful auth for user 'operator@pbs'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131801",
+   "expect_level": 2,
+   "repeat": 2,
+   "note": "second login of an ordinary account is level 2"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: successful auth for user 'admin@pbs'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131807",
+   "expect_level": 3,
+   "note": "administrator-class name in another realm"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: successful auth for user 'administrator@ad'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131807",
+   "expect_level": 3,
+   "note": "administrator-class name in an AD realm"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: successful auth for user 'rootbeer@pbs'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131801",
+   "expect_level": 2,
+   "repeat": 2,
+   "note": "near miss: not an administrator name (second login)"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: successful auth for user 'administrators@ad'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131801",
+   "expect_level": 2,
+   "repeat": 2,
+   "note": "near miss: not an administrator name (second login)"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.1]:40000 user=bob@pbs msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.1]:40000 user=bob@pbs msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.1]:40000 user=bob@pbs msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: successful auth for user 'bob@pbs'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131809",
+   "expect_level": 10,
+   "note": "three failed passwords then a login of the same account (one session, four lines)"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.1]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.1]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.1]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: successful auth for user 'root@pam'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131823",
+   "expect_level": 12,
+   "note": "the same for the administrator; the site had about 6 such sequences in 4.5 years, all a mistyped password"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.1]:40000 user=carol@pbs msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.1]:40000 user=carol@pbs msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: successful auth for user 'carol@pbs'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131808",
+   "expect_level": 3,
+   "note": "near miss: two failures are not enough (first login, fts)"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.1]:40000 user=dave@pbs msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.1]:40000 user=dave@pbs msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.1]:40000 user=dave@pbs msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: successful auth for user 'erin@pbs'",
+   "location": "/var/log/proxmox-backup/api/auth.log",
+   "expect_rule": "131808",
+   "expect_level": 3,
+   "note": "near miss: failures of another account"
   },
   {
    "log": "2026-08-20T18:33:36+08:00: authentication failure; rhost=[::ffff:192.0.2.13]:19433 user=root@pam msg=authentication error - AUTH_ERR (7)",
@@ -105,7 +194,7 @@
    "expect_rule": "131804",
    "expect_level": 5,
    "repeat": 14,
-   "note": "near miss: a node with a stale token is no brute force (no 40111, 131806 ignored after firing)"
+   "note": "near miss: a node with a stale token is no brute force (no 40111); the frequency count restarts after 131806 fires"
   },
   {
    "log": "Oct  4 00:33:00 pbs1 proxmox-backup-proxy[1345878]: lookup_datastore failed - datastore 'usb' is not mounted",
@@ -136,7 +225,7 @@
    "expect_rule": "131811",
    "expect_level": 2,
    "repeat": 61,
-   "note": "after 131812 fired it is ignored for a day"
+   "note": "61 minutes: the frequency count restarts after 131812 fires (the one-day ignore is applied by analysisd, not by logtest)"
   },
   {
    "log": "Oct  4 00:33:00 pbs1 proxmox-backup-proxy[1345878]: lookup_datastore failed - datastore 'store2' is in offline maintenance mode",
@@ -758,6 +847,117 @@
    "note": "near miss: GET (dropped on the agent anyway)"
   },
   {
+   "log": "::ffff:203.0.113.5 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131875",
+   "expect_level": 5,
+   "note": "login from an external address"
+  },
+  {
+   "log": "::ffff:172.32.0.1 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131875",
+   "expect_level": 5,
+   "note": "external: just outside 172.16.0.0/12"
+  },
+  {
+   "log": "2001:db8::5 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131875",
+   "expect_level": 5,
+   "note": "external IPv6"
+  },
+  {
+   "log": "::ffff:10.0.250.1 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131876",
+   "expect_level": 2,
+   "note": "real shape (sanitized: the site logs in from 192.168.x); private address is level 2"
+  },
+  {
+   "log": "::ffff:192.168.0.200 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131876",
+   "expect_level": 2,
+   "note": "private 192.168/16"
+  },
+  {
+   "log": "::ffff:172.31.255.11 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131876",
+   "expect_level": 2,
+   "note": "private 172.16/12"
+  },
+  {
+   "log": "::ffff:100.64.1.1 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131876",
+   "expect_level": 2,
+   "note": "private 100.64/10 (CGNAT)"
+  },
+  {
+   "log": "fd00::5 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131876",
+   "expect_level": 2,
+   "note": "private fc00::/7"
+  },
+  {
+   "log": "fe80::1 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131876",
+   "expect_level": 2,
+   "note": "link-local fe80::/10"
+  },
+  {
+   "log": "::1 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "none",
+   "note": "near miss: IPv6 loopback stays at the base (srcip ::1 matches every IPv4 address in 4.14.7)"
+  },
+  {
+   "log": "::ffff:203.0.113.5 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 401 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "none",
+   "note": "near miss: a refused ticket request (the failure is in auth.log)"
+  },
+  {
+   "log": "::ffff:10.0.250.1 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131876",
+   "expect_level": 2,
+   "repeat": 50,
+   "note": "policy: 50 logins or renewals from a private address stay at level 2"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n::ffff:203.0.113.9 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131877",
+   "expect_level": 12,
+   "note": "brute force (131805) then a login from the same address"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.2]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.2]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.2]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.2]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.2]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:10.0.250.2]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n::ffff:10.0.250.2 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131877",
+   "expect_level": 12,
+   "note": "the same from a private address"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n::ffff:203.0.113.10 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131875",
+   "expect_level": 5,
+   "note": "near miss: brute force from another address"
+  },
+  {
+   "log": "2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n2026-10-11T10:00:00+08:00: authentication failure; rhost=[::ffff:203.0.113.9]:40000 user=root@pam msg=authentication error - AUTH_ERR (7)\n::ffff:203.0.113.9 - - [11/10/2026:10:00:00 +0800] \"POST /api2/json/access/ticket\" 200 0 Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0",
+   "location": "/var/log/proxmox-backup/api/access.log",
+   "expect_rule": "131875",
+   "expect_level": 5,
+   "note": "near miss: five failures are no brute-force alert"
+  },
+  {
    "log": "ossec: output: 'df -P': rpool/store1                 10574932480 6638660736 3936271744      63% /store1",
    "location": "df -P",
    "expect_rule": "none",
@@ -809,6 +1009,38 @@
    "location": "df -P",
    "expect_rule": "none",
    "note": "near miss: not a datastore"
+  },
+  {
+   "log": "ossec: output: 'jt-pbs-datastores': tank                         10574932480 6638660736 3936271744      93% /tank",
+   "location": "jt-pbs-datastores",
+   "expect_rule": "131892",
+   "expect_level": 10,
+   "note": "optional command (alias jt-pbs-datastores): no list needed"
+  },
+  {
+   "log": "ossec: output: 'jt-pbs-datastores': tank                         10574932480 6638660736 3936271744      99% /tank",
+   "location": "jt-pbs-datastores",
+   "expect_rule": "131893",
+   "expect_level": 12,
+   "note": "optional command, 99%"
+  },
+  {
+   "log": "ossec: output: 'jt-pbs-datastores': tank                         10574932480 6638660736 3936271744      65% /tank",
+   "location": "jt-pbs-datastores",
+   "expect_rule": "none",
+   "note": "real shape (sanitized; the site datastore is at 65%)"
+  },
+  {
+   "log": "ossec: output: 'jt-pbs-datastores': Filesystem     1024-blocks       Used  Available Capacity Mounted on",
+   "location": "jt-pbs-datastores",
+   "expect_rule": "none",
+   "note": "real; the header line of df"
+  },
+  {
+   "log": "ossec: output: 'df -P': tank                         10574932480 6638660736 3936271744      93% /tank",
+   "location": "df -P",
+   "expect_rule": "none",
+   "note": "near miss: the same mount in the default df -P, not listed: invisible (documented)"
   }
  ]
 }

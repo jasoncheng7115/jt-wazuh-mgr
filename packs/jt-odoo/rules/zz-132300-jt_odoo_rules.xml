@@ -20,9 +20,9 @@
   2501 and every line with "error" or "denied" to 1002.
 
   Modules
-    132300-132309  bases: file and syslog, request lines, errors, other records
-    132310-132321  logins, Odoo's login throttle, password attacks
-    132322-132329  password reset, new device and signup mails
+    132300-132304  bases: file and syslog, request lines, errors, other records
+    132305-132321, 132326, 132327  logins, Odoo's login throttle, password attacks
+    132322-132325, 132328          password reset, new device and signup mails
     132330-132339  two-factor authentication, API keys
     132340-132359  database manager
     132360-132369  modules
@@ -77,26 +77,51 @@
        X-Forwarded-For and X-Forwarded-Host; otherwise it is the proxy.
        XML-RPC and JSON-RPC clients log in through the same code, so an
        integration that authenticates on every run is one line per run.
+
+       A successful login is not an alert by itself. With the shipped
+       lists left as they are:
+         ordinary account, private address        level 2 (recorded)
+           first time this account uses the address  level 3, once (fts)
+         administrator (Odoo's built-in "admin")  level 3, external 8
+         any account from a public address        level 5
+         Odoo's system and template accounts      level 10
+         right after failed logins                level 12 / 13
+       The lists only tune this: jt-odoo-service-accounts silences an
+       account's successful logins, jt-odoo-admin-accounts adds logins
+       to the administrator class.
+       Private: 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, fc00::/7,
+       fe80::/10. Several positive srcip elements are OR; one negated
+       element per range means "in none of them". ::1 is not listed: in
+       4.14.7 <srcip>::1</srcip> matches every IPv4 address (measured); the
+       decoder leaves that address out instead.
        ============================================================== -->
 
-  <rule id="132310" level="0">
+  <rule id="132310" level="2">
     <if_sid>132304</if_sid>
     <field name="odoo.message" type="pcre2">^Login successful for </field>
-    <description>Odoo: login of $(dstuser) from $(srcip)</description>
+    <description>Odoo: login of $(dstuser) without a client address (outside a request, or from the host itself)</description>
   </rule>
 
-  <!-- Integrations and other service accounts, listed by login in
-       etc/lists/jt-odoo-service-accounts: their logins are not news.
-       The two rules are exclusive (match_key / not_match_key). -->
+  <!-- Optional tuning: accounts listed by login in
+       etc/lists/jt-odoo-service-accounts. 132311 and 132312/132313 are
+       exclusive (match_key / not_match_key); 132312 and 132313 by address.
+       A login with no address (outside a request) stays at 132310. -->
   <rule id="132311" level="0">
     <if_sid>132310</if_sid>
     <list field="user" lookup="match_key">etc/lists/jt-odoo-service-accounts</list>
     <description>Odoo: routine login of a listed service account $(dstuser)</description>
   </rule>
 
-  <rule id="132312" level="3">
+  <rule id="132312" level="2">
     <if_sid>132310</if_sid>
     <list field="user" lookup="not_match_key">etc/lists/jt-odoo-service-accounts</list>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
     <description>Odoo: login of $(dstuser) from $(srcip) to database $(odoo.db)</description>
     <mitre>
       <id>T1078</id>
@@ -104,12 +129,69 @@
     <group>authentication_success,pci_dss_10.2.5,gdpr_IV_32.2,</group>
   </rule>
 
-  <!-- The administrator: the default login "admin", or a login listed in
-       etc/lists/jt-odoo-admin-accounts. Children of 132312, so an admin login
-       that is also listed as a service account stays quiet. -->
   <rule id="132313" level="5">
+    <if_sid>132310</if_sid>
+    <list field="user" lookup="not_match_key">etc/lists/jt-odoo-service-accounts</list>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>Odoo: login of $(dstuser) from the public address $(srcip) to database $(odoo.db)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.5,gdpr_IV_32.2,</group>
+  </rule>
+
+  <!-- The children of 132312 and of 132313 are exclusive by login: the
+       built-in administrator "admin"; Odoo's system and template accounts;
+       a login listed in etc/lists/jt-odoo-admin-accounts; everyone else. -->
+
+  <!-- "admin" is the login Odoo gives its administrator (base.user_admin,
+       uid 2) when a database is created with the default. -->
+  <rule id="132314" level="3">
     <if_sid>132312</if_sid>
     <user type="pcre2">^admin$</user>
+    <description>Odoo: administrator login of $(dstuser) from $(srcip) to database $(odoo.db)</description>
+    <mitre>
+      <id>T1078.001</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
+  </rule>
+
+  <rule id="132308" level="8">
+    <if_sid>132313</if_sid>
+    <user type="pcre2">^admin$</user>
+    <description>Odoo: administrator login of $(dstuser) from the public address $(srcip) to database $(odoo.db)</description>
+    <mitre>
+      <id>T1078.001</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- __system__ (uid 1, the superuser), public, default and portaltemplate
+       are created inactive and without a password, and Odoo's login search
+       skips inactive users: a successful login means someone activated the
+       account and gave it a password. -->
+  <rule id="132307" level="10">
+    <if_sid>132312,132313</if_sid>
+    <user type="pcre2">^(?:__system__|public|default|portaltemplate)$</user>
+    <description>[WARN] Odoo: login of the built-in account $(dstuser) from $(srcip), which is inactive and has no password by default</description>
+    <mitre>
+      <id>T1078.001</id>
+      <id>T1098</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- Optional tuning: administrators listed in etc/lists/jt-odoo-admin-accounts. -->
+  <rule id="132305" level="3">
+    <if_sid>132312</if_sid>
+    <user type="pcre2">^(?!(?:admin|__system__|public|default|portaltemplate)$)</user>
+    <list field="user" lookup="match_key">etc/lists/jt-odoo-admin-accounts</list>
     <description>Odoo: administrator login of $(dstuser) from $(srcip) to database $(odoo.db)</description>
     <mitre>
       <id>T1078</id>
@@ -117,14 +199,31 @@
     <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
   </rule>
 
-  <rule id="132314" level="5">
-    <if_sid>132312</if_sid>
+  <rule id="132309" level="8">
+    <if_sid>132313</if_sid>
+    <user type="pcre2">^(?!(?:admin|__system__|public|default|portaltemplate)$)</user>
     <list field="user" lookup="match_key">etc/lists/jt-odoo-admin-accounts</list>
-    <description>Odoo: administrator login of $(dstuser) from $(srcip) to database $(odoo.db)</description>
+    <description>Odoo: administrator login of $(dstuser) from the public address $(srcip) to database $(odoo.db)</description>
     <mitre>
       <id>T1078</id>
     </mitre>
     <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- The first login of an account from an address (the jt-odoo-login
+       decoder keys first-time-seen on user and address). A person or an
+       integration that logs in from the same place every day raises this
+       once. -->
+  <rule id="132306" level="3">
+    <if_sid>132312</if_sid>
+    <user type="pcre2">^(?!(?:admin|__system__|public|default|portaltemplate)$)</user>
+    <list field="user" lookup="not_match_key">etc/lists/jt-odoo-admin-accounts</list>
+    <if_fts />
+    <description>Odoo: first login of $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.5,</group>
   </rule>
 
   <!-- A failed login. Odoo also writes this line for an attempt its throttle
@@ -165,14 +264,27 @@
     <group>authentication_failures,pci_dss_10.2.4,pci_dss_11.4,gdpr_IV_35.7.d,</group>
   </rule>
 
-  <!-- A successful login from an address that has just been guessing. Children
-       of every success rule, the listed service accounts included: a guessed
-       service account password is the worst case, not a routine login.
-       Two rules because Wazuh does not reuse an event that already raised a
+  <!-- One account guessed from many addresses: ten failures for it in
+       fifteen minutes, each from an address other than the latest one. -->
+  <rule id="132326" level="10" frequency="10" timeframe="900" ignore="900">
+    <if_matched_sid>132315</if_matched_sid>
+    <same_user />
+    <different_srcip />
+    <description>[WARN] Odoo: failed logins for $(dstuser) from many different addresses: distributed password guessing</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failures,pci_dss_10.2.4,pci_dss_11.4,gdpr_IV_35.7.d,</group>
+  </rule>
+
+  <!-- A successful login right after guessing. Children of every success
+       rule, the listed service accounts included: a guessed service account
+       password is the worst case, not a routine login. One rule per kind of
+       guessing because Wazuh does not reuse an event that already raised a
        rule of the same or a higher level: the event that raised the level 12
        spraying rule cannot raise another level 12 (measured on 4.14.7). -->
   <rule id="132318" level="12" timeframe="900">
-    <if_sid>132311,132312,132313,132314</if_sid>
+    <if_sid>132311,132312,132313,132314,132305,132306,132307,132308,132309</if_sid>
     <if_matched_sid>132316</if_matched_sid>
     <same_source_ip />
     <description>[HIGH] Odoo: login of $(dstuser) from $(srcip) right after repeated failed logins from that address</description>
@@ -184,12 +296,24 @@
   </rule>
 
   <rule id="132319" level="13" timeframe="900">
-    <if_sid>132311,132312,132313,132314</if_sid>
+    <if_sid>132311,132312,132313,132314,132305,132306,132307,132308,132309</if_sid>
     <if_matched_sid>132317</if_matched_sid>
     <same_source_ip />
     <description>[HIGH] Odoo: login of $(dstuser) from $(srcip) right after password spraying from that address</description>
     <mitre>
       <id>T1110.003</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,</group>
+  </rule>
+
+  <rule id="132327" level="12" timeframe="900">
+    <if_sid>132311,132312,132313,132314,132305,132306,132307,132308,132309</if_sid>
+    <if_matched_sid>132326</if_matched_sid>
+    <same_user />
+    <description>[HIGH] Odoo: login of $(dstuser) from $(srcip) right after failed logins for that account from many addresses</description>
+    <mitre>
+      <id>T1110</id>
       <id>T1078</id>
     </mitre>
     <group>authentication_success,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,</group>
@@ -238,17 +362,32 @@
     </mitre>
   </rule>
 
-  <rule id="132324" level="3">
+  <!-- Written for an account with two-factor authentication on every login
+       without a trusted-device cookie, and RPC clients never send one: an
+       integration using an API key causes one per run (18.0 auth_totp
+       _should_alert_new_device, 19.0 auth_totp_mail). Recorded only; the
+       first login from an address is 132306. -->
+  <rule id="132324" level="2">
     <if_sid>132304</if_sid>
     <field name="odoo.message" type="pcre2">^New device alert email sent for user </field>
-    <description>Odoo: $(dstuser) logged in from a new device</description>
+    <description>Odoo: new device alert mailed to $(dstuser)</description>
   </rule>
 
-  <rule id="132325" level="3">
+  <!-- A web shop with customer signup open writes one per new customer:
+       recorded, and a burst alerts. -->
+  <rule id="132325" level="2">
     <if_sid>132304</if_sid>
     <field name="odoo.message" type="pcre2">^Signup email sent for user </field>
     <description>Odoo: account $(dstuser) signed up</description>
     <group>adduser,</group>
+  </rule>
+
+  <rule id="132328" level="7" frequency="20" timeframe="600" ignore="3600">
+    <if_matched_sid>132325</if_matched_sid>
+    <description>Odoo: twenty signups in ten minutes: automated account creation</description>
+    <mitre>
+      <id>T1136</id>
+    </mitre>
   </rule>
 
   <!-- ==============================================================

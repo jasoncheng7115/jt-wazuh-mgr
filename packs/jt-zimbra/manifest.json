@@ -2,7 +2,7 @@
  "id": "jt-zimbra",
  "name": "Zimbra Detection Suite",
  "name_zh": "Zimbra 偵測套組",
- "version": "3.0",
+ "version": "3.1",
  "summary": "FIM, web, authentication, SOAP, MTA and host-noise rules for Zimbra mail servers, with the decoders they need.",
  "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、SOAP、MTA 與主機雜訊規則，並附上所需的解碼器。",
  "rule_id_range": "100800-100999",
@@ -17,7 +17,7 @@
  "notes": [
   "zimbra-webfiles is the stock-file baseline. The shipped copy was generated from Zimbra 10.1.20 (FOSS and NETWORK editions combined) and is a starting point, not a substitute for generating your own.",
   "Regenerate the baseline after every Zimbra install AND after every upgrade - an upgrade replaces version-stamped jars, and each new filename is unknown to the old baseline. Generate with: { find /opt/zimbra/jetty_base/webapps -type f \\( -name '*.jsp' -o -name '*.jspx' -o -name '*.jar' -o -name '*.class' -o -name '*.war' -o -name '*.html' \\); find /opt/zimbra/lib/ext -type f; } | sort -u | sed 's/$/:legit/'   -- note that lib/ext takes ALL file types, not just jars: rule 100806 alerts on any file there, and .wsdl, .xsd and .properties files live in it.",
-  "zimbra-internal-networks separates internal from external sources; adjust it to your own subnets. Put your proxies in it too (Z-Push, a reverse proxy, the office NAT address): the external-only rules, and the active responses built on them, then never treat a proxy as an attacker.",
+  "Private addresses (10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, fc00::/7, fe80::/10) are written into the rules, so the pack is quiet and useful on a fresh install with every list left as shipped. etc/lists/zimbra-internal-networks is optional tuning: an address listed there is never treated as external, for an office NAT address or a proxy with a public address. ::1 is deliberately not in the rules: a negated ::1 in 4.14.7 also excludes every IPv4 address.",
   "The agent's syscheck must monitor the Zimbra directories with whodata=yes for the writing process to be recorded.",
   "The stock baseline does not include WEB-INF/lib/*.jar or lib/ext. Those paths are the usual source of false positives on rules 100803 and 100806; regenerating the baseline fixes it at the source, which is better than suppressing the alerts.",
   "Hash matching on file integrity events is provided by the jt-malware-hash pack, rule 100141, against a list rebuilt nightly. This pack no longer ships a hash list of its own: the one it had contained a single placeholder, so the level 15 rule reading it had never fired.",
@@ -31,14 +31,19 @@
   "With zimbraLogToSyslog set, mailbox and audit lines also arrive through syslog (programs zimbra_mailbox and zimbra_audit). Only the copies read from /opt/zimbra/log count; rules 100834 and 100839 drop the others. Counting both halved every threshold: a third of the old SOAP alerts came from the syslog copy, and the generic rule 2501 raised every copied login failure a second time.",
   "New in 3.0: infected mail or spam sent by a local account (level 12), virus scanning failing (level 10), Postfix unable to deliver to the mailbox server, remote servers refusing this server's mail as spam, queue growth, service and disk status from zimbramon, opendkim key errors, admin-console changes and logins, an administrator taking over another account's session, account lockout, application passwords and mail-filter changes.",
   "Left to others on purpose: SMTP AUTH password failures per address are the built-in Postfix rules 3332 and 3357 (Zimbra also logs them in audit.log, where 100841-100844 count them per account); LDAP (slapd) belongs to the jt-ucs pack; Z-Push devices to the jt-zpush pack; known-bad addresses to jt-ioc (100991, which read jt-ioc's list, is removed: without jt-ioc it was ignored with a warning, with it 906001 already covers it).",
-  "etc/lists/zimbra-service-accounts names accounts expected to read a lot (monitoring probes, archivers, an administrator account a tool uses for delegated sessions). It replaces a site's account name that 100974 had written into it. The shipped entry is a placeholder that matches nothing.",
+  "etc/lists/zimbra-service-accounts is optional tuning and ships with a placeholder that matches nothing. Nothing needs to be listed: an internal tool that reads a mailbox through a delegated administrator session is reported once (100897) instead of raising the bulk-reading rules. List an account only to quiet an archiver or probe that reads a lot with its own credentials.",
   "Several 3.0 rules raise a condition that repeats every second until fixed once every six hours (attribute ignore). The window is per rule, not per host, and starts over when the manager restarts or reloads the ruleset. wazuh-logtest does not apply it; it was verified through analysisd itself.",
-  "Rules 100860-100865 need an auditd rule file with the zimbra_* keys and rules 100880-100902 and 100992 need state-audit scripts writing /var/log/zimbra-state-audit.json. Neither ships with this pack; without them those rules stay silent."
+  "Rules 100860-100865 need an auditd rule file with the zimbra_* keys and rules 100880-100902 and 100992 need state-audit scripts writing /var/log/zimbra-state-audit.json. Neither ships with this pack; without them those rules stay silent.",
+  "3.1 applies one policy to every successful login, with no site data: an ordinary account from a private address is level 2 (recorded, no alert), and level 3 only the first time that (account, address) pair is seen; from a public address level 2, and level 5 the first time for the pair; an administrator-class login (the admin SOAP endpoint, cmd=AdminAuth, or the built-in names admin@, administrator@, root@) is level 3 from a private address and 8 from a public one; a success after repeated failures is 14 from the same address and 11 for the same account. Public addresses are level 5 only for a new pair because Z-Push logs in on every request it relays: measured 435 such logins a day, 2.4 new pairs a day.",
+  "First-seen pairs are remembered by the manager (fts) per agent, so a fresh install reports each existing (account, address) pair once in its first days: on the two measured servers about 40 alerts at level 3 or 5 in the first week, then about one a day. A phone or a monitoring probe produces one alert per address, ever.",
+  "Mailbox reading through a delegated administrator session from a private address is not counted by the bulk-reading rules 100972/100973 any more: it is reported the first time for each (administrator, mailbox, address) triple at level 5 (100897), and an administrator starting on five different mailboxes within an hour raises level 12 (100899). Measured: one internal tool read 1,788 messages of one mailbox in 8.8 days; 3.0 raised 1.3 level 12-14 alerts a day for it unless its account was listed, 3.1 raises one level 5 alert, ever. From a public address such reads are still counted.",
+  "100852 (one account from several public addresses, level 13) now counts first-seen public pairs. In 3.0 it used different_srcip, which in 4.14.7 counts earlier events whose address differs from the current one, not distinct addresses: two logins from one address and one from a second already counted as three sources, so a phone changing its mobile address within an hour would have raised it.",
+  "preauth logins (an SSO integration logs in every user this way) are recorded at level 2 instead of level 13 each; that preauth is in use is raised at most once a day at level 10 (100831), and preauth into an administrator account at level 12 every time (100832)."
  ],
  "notes_zh": [
   "zimbra-webfiles 是原廠檔案基線。隨附的版本產生自 Zimbra 10.1.20（FOSS 與 NETWORK 版聯集），是起點而非自行產生的替代品。",
   "每次 Zimbra 安裝後**與每次升級後**都要重建基線 —— 升級會替換帶版本號的 jar，新檔名對舊基線來說是未知的。產生方式：{ find /opt/zimbra/jetty_base/webapps -type f \\( -name '*.jsp' -o -name '*.jspx' -o -name '*.jar' -o -name '*.class' -o -name '*.war' -o -name '*.html' \\); find /opt/zimbra/lib/ext -type f; } | sort -u | sed 's/$/:legit/''   注意 lib/ext 要收「所有」檔案型別而非只有 jar：規則 100806 對該目錄下任何檔案都告警，而 .wsdl / .xsd / .properties 都在裡面。",
-  "zimbra-internal-networks 用於區分內外部來源，請依實際網段調整。也請把代理放進去（Z-Push、反向代理、辦公室 NAT 位址）：只看外部來源的規則與以它們為基礎的主動回應，就不會把代理當成攻擊者。",
+  "私有位址（10/8、172.16/12、192.168/16、127/8、100.64/10、fc00::/7、fe80::/10）已寫進規則，所以全新安裝、所有清單維持原樣時，套件就能保持安靜而且有用。etc/lists/zimbra-internal-networks 是選用的調校：列在裡面的位址永遠不會被當成外部來源，適用於辦公室 NAT 位址或擁有公開位址的代理。規則刻意不含 ::1：在 4.14.7 中，否定的 ::1 也會排除所有 IPv4 位址。",
   "agent 端 syscheck 需以 whodata=yes 監控 Zimbra 目錄才能取得寫入程序資訊。",
   "原廠基線未含 WEB-INF/lib/*.jar 與 lib/ext，這是 100803 / 100806 誤報的主要來源；重建基線可從源頭解決，優於用抑制規則掩蓋。",
   "檔案完整性事件的雜湊比對由 jt-malware-hash 套件的規則 100141 提供，比對的是每晚重建的清單。本套件不再自帶雜湊清單：原本那份只有一個佔位符，讀取它的 level 15 規則從未觸發過。",
@@ -52,22 +57,27 @@
   "設定 zimbraLogToSyslog 時，mailbox 與 audit 的記錄也會經 syslog 進來（程式名 zimbra_mailbox、zimbra_audit）。只有從 /opt/zimbra/log 讀到的那份會被計數，規則 100834 與 100839 會丟掉另一份。兩份都算會讓每個門檻減半：舊的 SOAP 告警有三分之一來自 syslog 副本，通用規則 2501 也會把每筆複製來的登入失敗再報一次。",
   "3.0 新增：本地帳號寄出中毒信或垃圾信（level 12）、病毒掃描失效（level 10）、Postfix 無法投遞到信箱伺服器、遠端伺服器以垃圾信為由拒收本機的信、佇列暴增、zimbramon 的服務與磁碟狀態、opendkim 金鑰錯誤、管理主控台的變更與登入、管理員接管其他帳號的工作階段、帳號鎖定、應用程式密碼與郵件篩選規則變更。",
   "刻意交給其他規則：依來源位址的 SMTP AUTH 密碼失敗是內建 Postfix 規則 3332 與 3357（Zimbra 也會記在 audit.log，100841-100844 依帳號計數）；LDAP（slapd）屬於 jt-ucs 套件；Z-Push 裝置屬於 jt-zpush 套件；已知惡意位址屬於 jt-ioc（引用 jt-ioc 清單的 100991 已移除：沒裝 jt-ioc 時它只會被警告後忽略，裝了的話 906001 已經涵蓋）。",
-  "etc/lists/zimbra-service-accounts 列出預期會大量讀信的帳號（監控探針、封存工具、工具用來開委派工作階段的管理員帳號）。它取代了 100974 原本寫死的某站台帳號名稱。隨附的項目是不會比對到任何帳號的佔位符。",
+  "etc/lists/zimbra-service-accounts 是選用的調校，隨附的是不會比對到任何帳號的佔位符。不需要列入任何帳號：透過管理員委派工作階段讀取信箱的內部工具只會回報一次（100897），不會觸發大量讀信規則。只有在封存工具或探針以自己的帳號大量讀信時，才需要把它列入。",
   "3.0 有幾條規則對「修好之前每秒重複」的狀況每六小時只告警一次（ignore 屬性）。這個時間窗以規則為單位而非主機，管理端重啟或重新載入規則集後重新起算。wazuh-logtest 不會套用它，這部分是直接用 analysisd 驗證的。",
-  "規則 100860-100865 需要帶 zimbra_* 鍵值的 auditd 規則檔，100880-100902 與 100992 需要寫入 /var/log/zimbra-state-audit.json 的狀態稽核腳本。這兩者都不在本套件內；沒有它們，這些規則不會有任何告警。"
+  "規則 100860-100865 需要帶 zimbra_* 鍵值的 auditd 規則檔，100880-100902 與 100992 需要寫入 /var/log/zimbra-state-audit.json 的狀態稽核腳本。這兩者都不在本套件內；沒有它們，這些規則不會有任何告警。",
+  "3.1 對所有成功登入套用同一套原則，不需要任何站台資料：一般帳號從私有位址登入是 level 2（記錄、不告警），只有第一次出現這組（帳號、位址）時是 level 3；從公開位址是 level 2，該組第一次出現時 level 5；管理員等級的登入（管理 SOAP 端點、cmd=AdminAuth，或內建名稱 admin@、administrator@、root@）從私有位址是 level 3，公開位址是 8；連續失敗後的成功，同一位址是 14，同一帳號是 11。公開位址只在新組合時才是 level 5，因為 Z-Push 每轉送一個請求就登入一次：實測每天 435 筆這種登入，新組合每天 2.4 組。",
+  "第一次出現的組合由管理端記住（fts），以 agent 為單位，所以全新安裝後的頭幾天，每一組既有的（帳號、位址）都會回報一次：在兩台實測伺服器上，第一週約 40 則 level 3 或 5，之後每天約一則。手機或監控探針每個位址只會有一則告警，永遠如此。",
+  "從私有位址透過管理員委派工作階段讀取信箱，不再計入大量讀信規則 100972/100973：每一組（管理員、信箱、位址）第一次出現時以 level 5 回報（100897），管理員在一小時內開始讀取五個不同的信箱則是 level 12（100899）。實測：一個內部工具在 8.8 天內讀了同一個信箱 1,788 封信；3.0 若不把它的帳號列入，每天會產生 1.3 則 level 12-14 告警，3.1 只會產生一則 level 5，永遠如此。從公開位址的這類讀取仍會計數。",
+  "100852（同一帳號從多個公開位址登入，level 13）現在計算的是第一次出現的公開組合。3.0 用的是 different_srcip，它在 4.14.7 中計算的是「位址與目前事件不同」的先前事件數，而不是不同位址的數量：從一個位址登入兩次、另一個位址一次，就已經算成三個來源，手機一小時內換一次行動網路位址就會觸發。",
+  "preauth 登入（SSO 整合會用這種方式登入每一位使用者）改為每筆 level 2 記錄，不再是每筆 level 13；「伺服器正在使用 preauth」這件事每天最多以 level 10 回報一次（100831），以 preauth 登入管理員帳號則每次都是 level 12（100832）。"
  ],
  "files": [
   {
    "type": "decoder",
    "name": "0001-zimbra_decoders.xml",
    "dest": "etc/decoders/0001-zimbra_decoders.xml",
-   "sha256": "fe9a2e36fd3e0ede5b7106eac868f4457d487a2c9f5ef14725fcf03e66d4cb1d"
+   "sha256": "66d5f7ffd94870b3a6b96ba430eb927084f73b837e7cf8e5ffb243ebfbca0ff5"
   },
   {
    "type": "decoder",
    "name": "0002-zimbra_mailbox_decoders.xml",
    "dest": "etc/decoders/0002-zimbra_mailbox_decoders.xml",
-   "sha256": "5439d88c6460bc5912b48c632fdf1e13d73e1638e4002faa65554c466b14941d"
+   "sha256": "2989e3ac569d33b6eb3a618147edbd80c4c4bc773f360317f47daf613b36fb14"
   },
   {
    "type": "decoder",
@@ -85,13 +95,13 @@
    "type": "rule",
    "name": "02-zimbra_web_rules.xml",
    "dest": "etc/rules/02-zimbra_web_rules.xml",
-   "sha256": "ff99e048c9121adf4db290371e591502642007aa30aa66f6e62f2fb8c124dec2"
+   "sha256": "4ad47d1d4c2f9eab5319d1833a01898a3ced56d49f346225e3fdffe6fb350877"
   },
   {
    "type": "rule",
    "name": "03-zimbra_auth_rules.xml",
    "dest": "etc/rules/03-zimbra_auth_rules.xml",
-   "sha256": "5eeb1362df35e2752047329761a23f5a01aa14eacbcce6159bd4e867e927de01"
+   "sha256": "32482aff930d19151ff24c4fe8ce66bb1ce3ccf21f8fd125a07e178432b6d690"
   },
   {
    "type": "rule",
@@ -109,19 +119,19 @@
    "type": "rule",
    "name": "06-zimbra_threat_rules.xml",
    "dest": "etc/rules/06-zimbra_threat_rules.xml",
-   "sha256": "bb950bc5b9a062bc8c1aad7b920bf1ae44398cd4a4e98797cf192e5f1ac182eb"
+   "sha256": "6fb9987b9472399914393e2f83eb74d31c4111dd4bda11ecafe755d18929f2e2"
   },
   {
    "type": "rule",
    "name": "08-zimbra_soap_rules.xml",
    "dest": "etc/rules/08-zimbra_soap_rules.xml",
-   "sha256": "1ad1df474fb7902b798f64c1e63587c4c6b0aea535789a983cbf69f5e1882d6e"
+   "sha256": "0b3bc3b6d4e2bed4b88c693f9cbe1fa7f0f84e3ecc6da2e48dec3b396dc5cd1b"
   },
   {
    "type": "rule",
    "name": "zz-100866-zimbra_host_rules.xml",
    "dest": "etc/rules/zz-100866-zimbra_host_rules.xml",
-   "sha256": "61c0a77ad87770438a4909d0ac8135f2349cecedc905a0953b08a042eba4dc15"
+   "sha256": "f451da11d9415f3cbff5fcaf6b120c391474479c7a64f5835eb07aa6b9178f09"
   },
   {
    "type": "list",
@@ -197,18 +207,19 @@
   {
    "platform": "manager",
    "required": false,
-   "title": "Set your internal networks",
-   "title_zh": "設定內部網段",
-   "body": "etc/lists/zimbra-internal-networks separates internal from external sources. Adjust it to your own subnets and add your proxies (Z-Push, reverse proxy, office NAT), then reload the ruleset.",
-   "body_zh": "etc/lists/zimbra-internal-networks 用來區分內外部來源，請改成自己的網段並加入代理（Z-Push、反向代理、辦公室 NAT），然後重新載入規則集。"
+   "title": "Optional: list addresses that are internal although public",
+   "title_zh": "選用：列出雖是公開位址但屬於內部的位址",
+   "body": "Private ranges are built into the rules. If an office NAT address or a proxy (Z-Push, a reverse proxy) has a public address, add it to etc/lists/zimbra-internal-networks and reload the ruleset: its logins and failures are then never treated as external, and the active responses never block it.",
+   "body_zh": "私有網段已內建在規則中。若辦公室 NAT 位址或代理（Z-Push、反向代理）使用公開位址，請把它加入 etc/lists/zimbra-internal-networks 並重新載入規則集：它的登入與失敗就不會被當成外部來源，主動回應也不會封鎖它。",
+   "code": "echo '203.0.113.10:internal' >> /var/ossec/etc/lists/zimbra-internal-networks"
   },
   {
    "platform": "manager",
    "required": false,
-   "title": "List the accounts that are expected to read a lot",
-   "title_zh": "列出預期會大量讀信的帳號",
-   "body": "One account per line, the full address, then reload the ruleset. Bulk reading by these accounts (100972/100973) stops alerting. For a tool that reads someone's mailbox through an administrator's delegated session, list the administrator account it logs in with, not the mailbox.",
-   "body_zh": "每行一個帳號，寫完整位址，然後重新載入規則集。這些帳號的大量讀信（100972/100973）不再告警。若是工具透過管理員的委派工作階段讀別人的信箱，請列出工具登入用的管理員帳號，而不是信箱。",
+   "title": "Optional: list accounts that read a lot with their own credentials",
+   "title_zh": "選用：列出以自己帳號大量讀信的帳號",
+   "body": "Not needed by default. One account per line, the full address, then reload the ruleset. Bulk reading by these accounts (100972/100973) stops alerting. A tool working through a delegated administrator session from a private address needs no entry.",
+   "body_zh": "預設不需要。每行一個帳號，寫完整位址，然後重新載入規則集。這些帳號的大量讀信（100972/100973）不再告警。從私有位址透過管理員委派工作階段運作的工具不需要列入。",
    "code": "echo 'monitor@example.com:service' >> /var/ossec/etc/lists/zimbra-service-accounts"
   },
   {
@@ -242,8 +253,8 @@
    "timeout": 600,
    "title": "Block an external address that keeps failing to log in to Zimbra",
    "title_zh": "封鎖一再登入 Zimbra 失敗的外部位址",
-   "body": "Drops traffic from the source address on the Zimbra server for 10 minutes after repeated login failures (100859) or password spraying (100836) from an address outside zimbra-internal-networks. The address is the client Zimbra recorded, which for a request through Z-Push or a reverse proxy is the address that proxy reported: a block on the mail server then has no effect, because the connection comes from the proxy, and blocking belongs on the proxy or the edge firewall instead. Risks: a mobile carrier or office NAT address is shared by many people, who are all locked out together; if a proxy appends to a client-supplied X-Forwarded-For header, an attacker can choose the address and make you block someone else, including an administrator; a proxy left out of zimbra-internal-networks would be blocked itself and cut off every user behind it (for Z-Push, every phone). Put proxies and management networks in zimbra-internal-networks and in the manager's white_list first. fail2ban on the same server blocks with the same iptables: if it already has a Zimbra jail, leave this off and let the jt-fail2ban pack report its bans.",
-   "body_zh": "外部位址（不在 zimbra-internal-networks 內）一再登入失敗（100859）或密碼噴灑（100836）時，在 Zimbra 伺服器上封鎖該來源 10 分鐘。這個位址是 Zimbra 記下的用戶端；經 Z-Push 或反向代理進來的請求，是代理回報的位址：此時在郵件伺服器上封鎖沒有效果，因為連線來自代理，應改在代理或邊界防火牆封鎖。風險：電信業者或辦公室的 NAT 位址由許多人共用，會一起被擋；代理若把位址附加在用戶端自帶的 X-Forwarded-For 之後，攻擊者可以指定位址，讓你去封鎖別人，包括管理者；沒放進 zimbra-internal-networks 的代理本身會被封鎖，切斷它後面的所有使用者（Z-Push 就是所有手機）。請先把代理與管理網段放進 zimbra-internal-networks 和管理端的 white_list。同一台伺服器上的 fail2ban 用的是同一套 iptables：如果它已經有 Zimbra 的 jail，請不要啟用這項，交給 jt-fail2ban 套件回報封鎖。"
+   "body": "Drops traffic from the source address on the Zimbra server for 10 minutes after repeated login failures (100859) or password spraying (100836) from a public address; private ranges are built into the rules and addresses listed in zimbra-internal-networks are never included. The address is the client Zimbra recorded, which for a request through Z-Push or a reverse proxy is the address that proxy reported: a block on the mail server then has no effect, because the connection comes from the proxy, and blocking belongs on the proxy or the edge firewall instead. Risks: a mobile carrier or office NAT address is shared by many people, who are all locked out together; if a proxy appends to a client-supplied X-Forwarded-For header, an attacker can choose the address and make you block someone else, including an administrator; a proxy with a public address that is not listed in zimbra-internal-networks would be blocked itself and cut off every user behind it (for Z-Push, every phone). Put such addresses in zimbra-internal-networks and in the manager's white_list first. fail2ban on the same server blocks with the same iptables: if it already has a Zimbra jail, leave this off and let the jt-fail2ban pack report its bans.",
+   "body_zh": "公開位址一再登入失敗（100859）或密碼噴灑（100836）時，在 Zimbra 伺服器上封鎖該來源 10 分鐘；私有網段已內建在規則中，列在 zimbra-internal-networks 的位址永遠不會被包含。這個位址是 Zimbra 記下的用戶端；經 Z-Push 或反向代理進來的請求，是代理回報的位址：此時在郵件伺服器上封鎖沒有效果，因為連線來自代理，應改在代理或邊界防火牆封鎖。風險：電信業者或辦公室的 NAT 位址由許多人共用，會一起被擋；代理若把位址附加在用戶端自帶的 X-Forwarded-For 之後，攻擊者可以指定位址，讓你去封鎖別人，包括管理者；使用公開位址、卻沒列入 zimbra-internal-networks 的代理本身會被封鎖，切斷它後面的所有使用者（Z-Push 就是所有手機）。請先把這類位址放進 zimbra-internal-networks 和管理端的 white_list。同一台伺服器上的 fail2ban 用的是同一套 iptables：如果它已經有 Zimbra 的 jail，請不要啟用這項，交給 jt-fail2ban 套件回報封鎖。"
   },
   {
    "id": "block-zimbra-scanner",
@@ -255,8 +266,8 @@
    "timeout": 600,
    "title": "Block an external address scanning Zimbra's web paths",
    "title_zh": "封鎖掃描 Zimbra 網頁路徑的外部位址",
-   "body": "Drops traffic from the source address on the Zimbra server for 10 minutes after 20 or more 404 responses in two minutes. The rule takes external addresses only (internal ones, often a proxy carrying many clients, end at 100984). The address comes from Zimbra's own nginx log, so it is the connecting client; behind a reverse proxy it is the proxy, which must then be listed in zimbra-internal-networks. Risk: a shared NAT address, and a misbehaving client of a real user, are blocked for the 10 minutes.",
-   "body_zh": "兩分鐘內出現 20 次以上 404 時，在 Zimbra 伺服器上封鎖該來源 10 分鐘。規則只看外部位址（內部位址常是帶著許多用戶端的代理，會停在 100984）。位址取自 Zimbra 自己的 nginx 記錄，也就是連線的用戶端；若前面有反向代理，那就是代理本身，必須列入 zimbra-internal-networks。風險：共用的 NAT 位址，以及真實使用者行為異常的用戶端，會被封鎖 10 分鐘。"
+   "body": "Drops traffic from the source address on the Zimbra server for 10 minutes after 20 or more 404 responses in two minutes from a public address (private ranges and addresses listed in zimbra-internal-networks end at 100984/100985 instead, often a proxy carrying many clients). The address comes from Zimbra's own nginx log, so it is the connecting client; behind a reverse proxy with a public address, list that proxy. Risk: a shared NAT address, and a misbehaving client of a real user, are blocked for the 10 minutes.",
+   "body_zh": "公開位址在兩分鐘內出現 20 次以上 404 時，在 Zimbra 伺服器上封鎖該來源 10 分鐘（私有網段與列在 zimbra-internal-networks 的位址會停在 100984/100985，常是帶著許多用戶端的代理）。位址取自 Zimbra 自己的 nginx 記錄，也就是連線的用戶端；若前面有使用公開位址的反向代理，請把它列入清單。風險：共用的 NAT 位址，以及真實使用者行為異常的用戶端，會被封鎖 10 分鐘。"
   }
  ]
 }

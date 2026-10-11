@@ -5,11 +5,88 @@
  },
  "cases": [
   {
-   "log": "Oct  9 16:41:57 fw1.example.com audit[17624]: /index.php: Successful login for user 'root' from: 192.0.2.200",
+   "log": "Oct  9 16:41:57 fw1.example.com audit[17624]: /index.php: Successful login for user 'root' from: 10.0.0.200",
    "location": "/var/ossec/logs/opnsense_syslog.log",
-   "expect_rule": "131501",
+   "expect_rule": "131533",
    "expect_level": 3,
-   "note": "real (site firewall A, sanitized)"
+   "note": "real (site firewall A, sanitized): root from a private address"
+  },
+  {
+   "log": "Oct  9 16:41:57 fw1.example.com audit[17624]: /index.php: Successful login for user 'root' from: 10.0.0.200",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131533",
+   "expect_level": 3,
+   "repeat": 50,
+   "note": "real shape; root stays visible every time"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'alice' from: 10.0.0.7",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131536",
+   "expect_level": 3,
+   "note": "synthesized; first login of this account from this address (fts)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'alice' from: 10.0.0.7",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131537",
+   "expect_level": 2,
+   "repeat": 50,
+   "note": "synthesized; 50 identical logins of an ordinary account from a private address end below the alert level"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'alice' from: ::ffff:10.0.0.7",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131537",
+   "expect_level": 2,
+   "repeat": 2,
+   "note": "synthesized; IPv4-mapped address is stripped and counted as private"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'alice' from: 100.64.3.4",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131537",
+   "expect_level": 2,
+   "repeat": 2,
+   "note": "synthesized; CGNAT range is private"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'alice' from: fd00::5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131536",
+   "expect_level": 3,
+   "note": "synthesized; IPv6 ULA first seen"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'alice' from: 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131534",
+   "expect_level": 5,
+   "repeat": 3,
+   "note": "synthesized; ordinary account from an outside address"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'alice' from: 2001:db8::5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131534",
+   "expect_level": 5,
+   "note": "synthesized; global IPv6 is outside"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'root' from: 203.0.113.5",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131535",
+   "expect_level": 8,
+   "repeat": 3,
+   "note": "synthesized; root from an outside address"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'rooted' from: 10.0.0.7",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131537",
+   "expect_level": 2,
+   "repeat": 2,
+   "note": "near miss: a name that only starts with root is an ordinary account"
   },
   {
    "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5",
@@ -39,14 +116,21 @@
    "location": "/var/ossec/logs/opnsense_syslog.log",
    "expect_rule": "131504",
    "expect_level": 12,
-   "note": "synthesized; success right after the brute force"
+   "note": "synthesized; success right after the brute force (outside address)"
   },
   {
-   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'admin' from: 203.0.113.5",
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 10.0.0.9\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 10.0.0.9\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 10.0.0.9\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 10.0.0.9\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 10.0.0.9\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 10.0.0.9\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'admin' from: 10.0.0.9",
    "location": "/var/ossec/logs/opnsense_syslog.log",
-   "expect_rule": "131501",
-   "expect_level": 3,
-   "note": "near miss: success without earlier failures"
+   "expect_rule": "131504",
+   "expect_level": 12,
+   "note": "synthesized; success right after the brute force (private address, ordinary account)"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.5\nOct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'admin' from: 203.0.113.99",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131534",
+   "expect_level": 5,
+   "note": "near miss: the success comes from another address"
   },
   {
    "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: User logged out for user 'root' from: 192.0.2.200",
@@ -63,18 +147,56 @@
    "note": "real (site firewall A)"
   },
   {
-   "log": "Oct 11 10:58:29 fw1.example.com audit[32048]: user alice authenticated successfully for sshd [using OPNsense\\Auth\\Services\\System + OPNsense\\Auth\\Local]",
+   "log": "Oct 11 10:58:29 fw1.example.com audit[32048]: user cfgbackup authenticated successfully for sshd [using OPNsense\\Auth\\Services\\System + OPNsense\\Auth\\Local]",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131529",
+   "expect_level": 3,
+   "note": "real shape (site firewall A, hourly config backup account, sanitized); first login is visible once"
+  },
+  {
+   "log": "Oct 11 10:58:29 fw1.example.com audit[32048]: user cfgbackup authenticated successfully for sshd [using OPNsense\\Auth\\Services\\System + OPNsense\\Auth\\Local]",
    "location": "/var/ossec/logs/opnsense_syslog.log",
    "expect_rule": "131507",
-   "expect_level": 3,
-   "note": "real shape (site firewall A), unlisted account"
+   "expect_level": 2,
+   "repeat": 50,
+   "note": "real shape; the hourly backup login with the shipped list: below the alert level from the second login on"
   },
   {
    "log": "Oct 11 10:58:29 fw1.example.com audit[32048]: user netbackup authenticated successfully for sshd [using OPNsense\\Auth\\Services\\System + OPNsense\\Auth\\Local]",
    "location": "/var/ossec/logs/opnsense_syslog.log",
    "expect_rule": "131508",
    "expect_level": 0,
-   "note": "real (site firewall A, hourly config backup account, sanitized); listed service account"
+   "note": "optional tuning: a listed account is quiet even the first time"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[32048]: user root authenticated successfully for sshd [using OPNsense\\Auth\\Services\\System + OPNsense\\Auth\\Local]",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131528",
+   "expect_level": 3,
+   "repeat": 3,
+   "note": "synthesized; root over SSH stays visible"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[32048]: user alice authenticated successfully for login [using OPNsense\\Auth\\Services\\System + OPNsense\\Auth\\Local]",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131507",
+   "expect_level": 2,
+   "repeat": 2,
+   "note": "synthesized; console login of an ordinary account, second time"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[32048]: user root authenticated successfully for sshd [using OPNsense\\Auth\\Services\\System + OPNsense\\Auth\\Local]",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131538",
+   "expect_level": 12,
+   "note": "synthesized; success right after eight failures for the account"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[1234]: user root failed authentication for sshd on OPNsense\\Auth\\Services\\System via OPNsense\\Auth\\Local\nOct 11 10:00:00 fw1.example.com audit[32048]: user alice authenticated successfully for sshd [using OPNsense\\Auth\\Services\\System + OPNsense\\Auth\\Local]",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131529",
+   "expect_level": 3,
+   "note": "near miss: another account logs in after root's failures"
   },
   {
    "log": "Oct 11 10:00:00 fw1.example.com audit[1234]: user admin failed authentication for WebGui on OPNsense\\Auth\\Services\\WebGui via OPNsense\\Auth\\Local",
@@ -450,7 +572,7 @@
    "log": "Oct  6 08:00:00 fw1.example.com openvpn[1111]: user 'alice' authenticated using 'Local Database'",
    "location": "/var/ossec/logs/opnsense_syslog.log",
    "expect_rule": "131567",
-   "expect_level": 3,
+   "expect_level": 2,
    "note": "real (site firewall B, sanitized)"
   },
   {
@@ -576,9 +698,17 @@
   {
    "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 07[IKE] <rw|9> XAuth authentication of 'alice' successful",
    "location": "/var/ossec/logs/opnsense_syslog.log",
-   "expect_rule": "131585",
+   "expect_rule": "131589",
    "expect_level": 3,
-   "note": "synthesized from xauth.c"
+   "note": "synthesized from xauth.c; first login of the account"
+  },
+  {
+   "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 07[IKE] <rw|9> XAuth authentication of 'alice' successful",
+   "location": "/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "131585",
+   "expect_level": 2,
+   "repeat": 5,
+   "note": "synthesized; later logins are recorded"
   },
   {
    "log": "Oct 11 10:00:00 fw1.example.com charon[456]: 07[IKE] <con1|3> giving up after 5 retransmits",

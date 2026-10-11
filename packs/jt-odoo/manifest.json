@@ -2,33 +2,33 @@
  "id": "jt-odoo",
  "name": "Odoo ERP Detection Suite",
  "name_zh": "Odoo ERP 偵測套組",
- "version": "1.0",
+ "version": "1.1",
  "summary": "Logins, password guessing and spraying, two-factor authentication, API keys, the database manager, module changes, access denials and deletions in the Odoo server log.",
  "summary_zh": "Odoo 伺服器記錄中的登入、猜密碼與密碼噴灑、雙因素驗證、API 金鑰、資料庫管理員、模組變更、存取被拒與刪除記錄。",
  "rule_id_range": "132300-132399",
  "notes": [
   "Wazuh has no decoder for Odoo. The pack reads the Odoo server log (the file the deb package writes, /var/log/odoo/odoo-server.log, or the same lines through syslog for containers and services without a log file) and covers Odoo 16.0 to 19.0. Every message it matches was taken from the Odoo source of those branches; 19.0 dropped the database name from the login lines and both forms are decoded.",
-  "Logins: a login is level 3, the administrator (login admin, or a login listed in etc/lists/jt-odoo-admin-accounts) level 5, a failed login level 5. Eight failures from one address in five minutes are level 10; twelve failures for different accounts from one address in fifteen minutes (password spraying) level 12. A successful login from such an address within fifteen minutes is level 12 after guessing and level 13 after spraying. Odoo's own throttle (by default five failures, then 60 seconds of ignored attempts) is reported at level 7, at most once a minute.",
+  "Logins, with the shipped lists left as they are: a successful login is not an alert by itself. An ordinary account from a private address is level 2 (recorded and correlated, no alert), and level 3 once, the first time that account logs in from that address. Any account from a public address is level 5. The administrator, recognised by Odoo's built-in login admin, is level 3 from a private address and 8 from a public one; Odoo's system and template accounts (__system__, public, default, portaltemplate), which are inactive and have no password, are level 10 if they ever log in. A failed login is level 5. Eight failures from one address in five minutes are level 10; twelve failures for different accounts from one address in fifteen minutes (password spraying) level 12; ten failures for one account from different addresses in fifteen minutes level 10. A successful login right after any of these is level 12 (13 after spraying). Odoo's own throttle (by default five failures, then 60 seconds of ignored attempts) is reported at level 7, at most once a minute.",
   "The address in Odoo's log is the client only when Odoo runs with proxy_mode = True behind a proxy that sends X-Forwarded-For and X-Forwarded-Host (Odoo applies the forwarded address only when X-Forwarded-Host is present). Otherwise every user has the proxy's address: the brute force rules then count all users together, and blocking that address cuts everyone off. Rule 132321 (level 7) reports Odoo's throttle hitting a private address, the usual symptom.",
-  "XML-RPC and JSON-RPC integrations log in through the same code as people, one login line per run (measured on one installation: about 17 a day from two integration hosts). List their logins in etc/lists/jt-odoo-service-accounts and their logins drop to level 0; their failures still alert, and a success right after guessing from the same address still raises level 12. Portal and shop customers log in like employees, so on a public web shop every customer login is level 3.",
-  "Two-factor authentication: a wrong code is level 5 (the password had already been accepted), four wrong codes for one account in ten minutes level 10, 2FA disabled level 8, a reused code (19.0) level 5. A new API key is level 8, because it works for RPC without the second factor; an RPC login with a password refused for an account that needs an API key is level 6. Password reset mails are level 3, ten in ten minutes level 7. A login from a new device (Odoo mails the user) and a new signup are level 3.",
+  "XML-RPC and JSON-RPC integrations log in through the same code as people, one login line per run (measured on one installation: about 17 a day). From a private address they are level 2 after their first login, so nothing has to be listed. Two lists are optional tuning: etc/lists/jt-odoo-service-accounts drops an account's successful logins to level 0 (its failures still alert, and a success right after guessing is still level 12), and etc/lists/jt-odoo-admin-accounts adds logins to the administrator class, for a site whose administrator is not called admin. Portal and shop customers log in like employees, so on a public web shop every customer login is level 5.",
+  "Two-factor authentication: a wrong code is level 5 (the password had already been accepted), four wrong codes for one account in ten minutes level 10, 2FA disabled level 8, a reused code (19.0) level 5. A new API key is level 8, because it works for RPC without the second factor; an RPC login with a password refused for an account that needs an API key is level 6. Password reset mails are level 3, ten in ten minutes level 7. The new device mail is recorded at level 2: Odoo writes it on every login of a 2FA account without a trusted-device cookie, which includes every run of an integration using an API key. A signup is level 2, twenty in ten minutes level 7.",
   "Database manager (/web/database/, protected only by the master password): any request is level 8; a POST to backup, drop, restore, duplicate, create or change_password is level 12, and five of them from one address in ten minutes level 12 again (master password guessing). The service lines that confirm a drop, restore or duplicate are level 12, a dump, a new or a renamed database level 10, an action refused because of a wrong master password or a disabled manager level 10. The same requests in the access log of the web server in front (combined format) are level 8 and 12 when Odoo answered them.",
   "Modules: an install or an upgrade is level 5, an uninstall level 7, a user without administrator rights trying one level 8. Access denials (ACLs and record rules) are recorded below the alert level and raise level 6 when one user collects fifteen in two minutes. A deletion of users, groups, access rules or system parameters is level 5; one call that deletes 100 records or more level 7. Odoo logs who deleted records, not who changed them; changes are not covered.",
   "Errors are recorded below the alert level and raise level 7 when thirty arrive in five minutes; CRITICAL is level 7, a failed scheduled job level 4, a server start level 3 (with the version). Twenty requests for missing pages from one address in a minute (a scanner) are level 6.",
   "The agent group joins each traceback to its record, so a rule can see the exception (a wrong master password is an AccessDenied in the traceback), and drops static files, images, the service worker, websocket and bus requests (56 per cent of the browser requests measured on one installation), scheduled job start and end lines and deletions by the system user. Logins and request lines are written at log_level info, the default: log_level = warn silences most of the pack.",
-  "Not covered: Odoo's syslog mode (syslog = True drops the timestamp and the process ID and is not decoded; use logfile), colored output (when Odoo writes to a terminal or ODOO_PY_COLORS is set), the PostgreSQL server, and the request lines of the websocket port in multiprocess mode (logger longpolling), which stay at level 0. A login from an address on the jt-ioc threat list is raised to level 14 by jt-ioc, which loads after this pack."
+  "Not covered: Odoo's syslog mode (syslog = True drops the timestamp and the process ID and is not decoded; use logfile), colored output (when Odoo writes to a terminal or ODOO_PY_COLORS is set), the PostgreSQL server, and the request lines of the websocket port in multiprocess mode (logger longpolling), which stay at level 0. A login from an address on the jt-ioc threat list is raised to level 14 by jt-ioc, which loads after this pack. The IPv6 loopback ::1 is not tested as a private address (in Wazuh 4.14.7 a rule srcip of ::1 matches every IPv4 address); the decoder leaves it out, so such a login stays at level 2."
  ],
  "notes_zh": [
   "Wazuh 沒有 Odoo 的解碼器。本套件讀取 Odoo 伺服器記錄（deb 套件寫的 /var/log/odoo/odoo-server.log，或容器與沒有記錄檔的服務經由 syslog 送出的同樣內容），涵蓋 Odoo 16.0 到 19.0。比對的每一則訊息都取自這幾個分支的 Odoo 原始碼；19.0 的登入訊息拿掉了資料庫名稱，兩種寫法都能解碼。",
-  "登入：一般登入為 level 3，管理者（帳號 admin，或列在 etc/lists/jt-odoo-admin-accounts 的帳號）為 level 5，登入失敗為 level 5。同一位址五分鐘內失敗八次為 level 10；同一位址十五分鐘內對不同帳號失敗十二次（密碼噴灑）為 level 12。這類位址在十五分鐘內登入成功，猜密碼之後為 level 12，密碼噴灑之後為 level 13。Odoo 自己的節流機制（預設失敗五次後，60 秒內的嘗試一律忽略）以 level 7 回報，每分鐘最多一次。",
+  "登入（隨附的清單維持原樣時）：成功登入本身不是告警。一般帳號從私有位址登入為 level 2（有記錄、可供關聯，不告警），同一帳號第一次從某個位址登入時為 level 3，只有一次。任何帳號從公開位址登入為 level 5。管理者以 Odoo 內建的登入帳號 admin 辨識，從私有位址為 level 3、從公開位址為 level 8；Odoo 的系統與範本帳號（__system__、public、default、portaltemplate）預設停用且沒有密碼，一旦登入成功即為 level 10。登入失敗為 level 5。同一位址五分鐘內失敗八次為 level 10；同一位址十五分鐘內對不同帳號失敗十二次（密碼噴灑）為 level 12；同一帳號十五分鐘內從不同位址失敗十次為 level 10。上述任一情形之後隨即登入成功為 level 12（密碼噴灑之後為 13）。Odoo 自己的節流機制（預設失敗五次後，60 秒內的嘗試一律忽略）以 level 7 回報，每分鐘最多一次。",
   "Odoo 記錄裡的位址，只有在 Odoo 以 proxy_mode = True 執行、且前面的代理伺服器送出 X-Forwarded-For 與 X-Forwarded-Host 時才是用戶端（Odoo 只在有 X-Forwarded-Host 時才採用轉送的位址）。否則每個使用者的位址都是代理伺服器：暴力破解規則會把所有使用者算在一起，封鎖那個位址等於把所有人擋在外面。規則 132321（level 7）會回報 Odoo 節流機制擋到私有位址的情形，這是最常見的徵兆。",
-  "XML-RPC 與 JSON-RPC 整合程式和人走同一段登入程式碼，每執行一次就有一筆登入記錄（某套系統實測：兩台整合主機每天約 17 筆）。把這些帳號加入 etc/lists/jt-odoo-service-accounts，它們的登入就降為 level 0；登入失敗仍會告警，同一位址猜密碼之後隨即登入成功也仍是 level 12。入口網站與網路商店的顧客登入方式和員工相同，所以公開的網路商店每一筆顧客登入都是 level 3。",
-  "雙因素驗證：驗證碼錯誤為 level 5（此時密碼已經通過），同一帳號十分鐘內錯四次為 level 10，關閉雙因素驗證為 level 8，重複使用驗證碼（19.0）為 level 5。建立 API 金鑰為 level 8，因為它不需第二因素就能使用 RPC；需要 API 金鑰的帳號以密碼登入 RPC 被拒為 level 6。密碼重設信為 level 3，十分鐘內十封為 level 7。從新裝置登入（Odoo 會寄信通知使用者）與新帳號註冊為 level 3。",
+  "XML-RPC 與 JSON-RPC 整合程式和人走同一段登入程式碼，每執行一次就有一筆登入記錄（某套系統實測：每天約 17 筆）。從私有位址登入時，第一次之後都是 level 2，不需要列入任何清單。兩份清單是選用的調校：etc/lists/jt-odoo-service-accounts 讓帳號的成功登入降為 level 0（失敗仍會告警，猜密碼之後隨即登入成功也仍是 level 12）；etc/lists/jt-odoo-admin-accounts 把帳號加入管理者等級，適用於管理者不叫 admin 的站台。入口網站與網路商店的顧客登入方式和員工相同，所以公開的網路商店每一筆顧客登入都是 level 5。",
+  "雙因素驗證：驗證碼錯誤為 level 5（此時密碼已經通過），同一帳號十分鐘內錯四次為 level 10，關閉雙因素驗證為 level 8，重複使用驗證碼（19.0）為 level 5。建立 API 金鑰為 level 8，因為它不需第二因素就能使用 RPC；需要 API 金鑰的帳號以密碼登入 RPC 被拒為 level 6。密碼重設信為 level 3，十分鐘內十封為 level 7。新裝置通知信以 level 2 記錄：啟用雙因素驗證的帳號只要登入時沒有受信任裝置的 cookie，Odoo 就會寫這筆記錄，使用 API 金鑰的整合程式每執行一次都會有一筆。新帳號註冊為 level 2，十分鐘內二十筆為 level 7。",
   "資料庫管理員（/web/database/，只有主控密碼保護）：任何請求為 level 8；對 backup、drop、restore、duplicate、create、change_password 的 POST 為 level 12，同一位址十分鐘內五次再發一次 level 12（猜主控密碼）。確認刪除、還原、複製資料庫的服務記錄為 level 12，傾印、新建或改名資料庫為 level 10，因主控密碼錯誤或管理員已停用而被拒的操作為 level 10。前端網頁伺服器存取記錄（combined 格式）裡的同樣請求，若 Odoo 有回應，為 level 8 與 12。",
   "模組：安裝或升級為 level 5，移除為 level 7，沒有管理者權限的使用者嘗試操作模組為 level 8。存取被拒（ACL 與記錄規則）記錄在告警等級之下，同一使用者兩分鐘內累積十五次時升為 level 6。刪除使用者、群組、存取規則或系統參數為 level 5；一次刪除 100 筆以上記錄為 level 7。Odoo 會記錄誰刪除了記錄，但不記錄誰修改了記錄，修改不在涵蓋範圍內。",
   "錯誤記錄在告警等級之下，五分鐘內三十筆時升為 level 7；CRITICAL 為 level 7，排程工作失敗為 level 4，伺服器啟動為 level 3（含版本）。同一位址一分鐘內二十次要求不存在的頁面（掃描器）為 level 6。",
   "agent 群組會把每段 traceback 併回它所屬的記錄，規則才看得到例外（主控密碼錯誤就是 traceback 裡的 AccessDenied），並丟掉靜態檔案、圖片、service worker、websocket 與 bus 請求（某套系統實測占瀏覽器請求的 56%）、排程工作的開始與結束記錄，以及系統使用者的刪除記錄。登入與請求記錄都是在 log_level info（預設值）下才會寫出：設成 log_level = warn 會讓本套件大部分規則收不到資料。",
-  "不涵蓋：Odoo 的 syslog 模式（syslog = True 會拿掉時間戳記與處理程序 ID，無法解碼；請改用 logfile）、彩色輸出（Odoo 寫到終端機或設定了 ODOO_PY_COLORS 時）、PostgreSQL 伺服器，以及多處理程序模式下 websocket 連接埠的請求記錄（logger 為 longpolling，維持 level 0）。來自 jt-ioc 威脅清單位址的登入，會由在本套件之後載入的 jt-ioc 升為 level 14。"
+  "不涵蓋：Odoo 的 syslog 模式（syslog = True 會拿掉時間戳記與處理程序 ID，無法解碼；請改用 logfile）、彩色輸出（Odoo 寫到終端機或設定了 ODOO_PY_COLORS 時）、PostgreSQL 伺服器，以及多處理程序模式下 websocket 連接埠的請求記錄（logger 為 longpolling，維持 level 0）。來自 jt-ioc 威脅清單位址的登入，會由在本套件之後載入的 jt-ioc 升為 level 14。IPv6 迴路位址 ::1 不列為私有位址（Wazuh 4.14.7 規則中的 srcip ::1 會命中所有 IPv4 位址），解碼器不取這個位址，所以這類登入維持 level 2。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -43,13 +43,13 @@
    "type": "decoder",
    "name": "jt-odoo_decoders.xml",
    "dest": "etc/decoders/jt-odoo_decoders.xml",
-   "sha256": "63b6ccd64e27154762047e81b9c2d8d69db71d95e8ddd9e58136a8da3122aad6"
+   "sha256": "2cea438c7ffb3b137a0b3bfe2a20c58b8093604ca182e4649933ab04c42a0870"
   },
   {
    "type": "rule",
    "name": "zz-132300-jt_odoo_rules.xml",
    "dest": "etc/rules/zz-132300-jt_odoo_rules.xml",
-   "sha256": "9d7e91acff22c52e962ee0e7db99623e21faabb631a9965779273bd936161acc"
+   "sha256": "ac94f7842a98cca7676e990826834a10e649a84147ecb4e679325009aada1214"
   },
   {
    "type": "list",
@@ -113,8 +113,8 @@
    "body": "Without this every address in Odoo's log is the proxy's. Set proxy_mode = True in odoo.conf and restart Odoo (a short outage), and have the proxy send X-Forwarded-For, X-Forwarded-Host and X-Forwarded-Proto: Odoo ignores the forwarded address when X-Forwarded-Host is missing. Odoo takes the last address in X-Forwarded-For; if a CDN sits in front of the proxy, restore the client address on the proxy first (nginx real_ip). Do not turn proxy_mode on when clients reach Odoo directly: they could then claim any address.",
    "body_zh": "不這樣設定，Odoo 記錄裡的每個位址都是代理伺服器。在 odoo.conf 設定 proxy_mode = True 並重新啟動 Odoo（短暫中斷服務），並讓代理伺服器送出 X-Forwarded-For、X-Forwarded-Host 與 X-Forwarded-Proto：缺少 X-Forwarded-Host 時 Odoo 不會採用轉送的位址。Odoo 取 X-Forwarded-For 的最後一個位址；代理伺服器前面若還有 CDN，請先在代理伺服器還原用戶端位址（nginx real_ip）。用戶端直接連到 Odoo 時不要開 proxy_mode，否則用戶端可以自稱任何位址。",
    "code": "# odoo.conf\nproxy_mode = True\n\n# nginx, in the server block for Odoo\nproxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\nproxy_set_header X-Forwarded-Host $host;\nproxy_set_header X-Forwarded-Proto $scheme;",
-   "verify": "Log in from a workstation: rule 132312 shows the workstation's address, not the proxy's.",
-   "verify_zh": "從工作站登入：規則 132312 顯示的是工作站的位址，而不是代理伺服器的位址。"
+   "verify": "Log in from a workstation you have not used before: rule 132306 (level 3, first login from an address) shows the workstation's address, not the proxy's.",
+   "verify_zh": "從之前沒用過的工作站登入：規則 132306（level 3，第一次從某個位址登入）顯示的是工作站的位址，而不是代理伺服器的位址。"
   },
   {
    "platform": "linux",
@@ -142,10 +142,10 @@
   {
    "platform": "manager",
    "required": false,
-   "title": "List integration accounts and administrators",
-   "title_zh": "列出整合程式帳號與管理者帳號",
-   "body": "One login per line, exactly as users type it, then reload the ruleset. Logins in jt-odoo-service-accounts stop alerting when they succeed (failures still alert); logins in jt-odoo-admin-accounts alert at level 5 like admin.",
-   "body_zh": "每行一個登入帳號，與使用者輸入的完全相同，加入後重新載入規則集。jt-odoo-service-accounts 裡的帳號登入成功時不再告警（失敗仍會告警）；jt-odoo-admin-accounts 裡的帳號與 admin 一樣以 level 5 告警。",
+   "title": "Optional tuning: list integration accounts and administrators",
+   "title_zh": "選用的調校：列出整合程式帳號與管理者帳號",
+   "body": "Not needed for a quiet default: integrations from a private address are already at level 2. One login per line, exactly as users type it, then reload the ruleset. Logins in jt-odoo-service-accounts drop to level 0 when they succeed, also from a public address (failures still alert); logins in jt-odoo-admin-accounts are treated like admin (level 3 from a private address, 8 from a public one).",
+   "body_zh": "預設要安靜不需要這一步：從私有位址登入的整合程式本來就是 level 2。每行一個登入帳號，與使用者輸入的完全相同，加入後重新載入規則集。jt-odoo-service-accounts 裡的帳號登入成功時降為 level 0，從公開位址登入也一樣（失敗仍會告警）；jt-odoo-admin-accounts 裡的帳號比照 admin（私有位址 level 3，公開位址 level 8）。",
    "code": "echo 'integration@example.com:service' >> /var/ossec/etc/lists/jt-odoo-service-accounts\necho 'it-admin@example.com:admin' >> /var/ossec/etc/lists/jt-odoo-admin-accounts"
   }
  ],

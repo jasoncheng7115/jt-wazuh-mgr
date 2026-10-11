@@ -224,11 +224,103 @@
    "repeat": 4
   },
   {
-   "log": "192.0.2.10 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n192.0.2.10 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131945",
+   "expect_level": 2,
+   "note": "synthesized: successful login from a private address is recorded, no alert"
+  },
+  {
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131945",
+   "expect_level": 2,
+   "note": "synthesized: 50 successful logins of the same kind in one session stay at level 2",
+   "repeat": 50
+  },
+  {
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /2fa HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131945",
+   "expect_level": 2,
+   "note": "synthesized: password accepted, two-factor page shown"
+  },
+  {
+   "log": "fd00::5 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\nfd00::5 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131945",
+   "expect_level": 2,
+   "note": "synthesized: IPv6 unique local address is private"
+  },
+  {
+   "log": "203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131946",
+   "expect_level": 5,
+   "note": "synthesized: successful login from an external address"
+  },
+  {
+   "log": "2001:db8::7 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n2001:db8::7 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131946",
+   "expect_level": 5,
+   "note": "synthesized: successful login from a global IPv6 address"
+  },
+  {
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
    "location": "/var/log/nginx/access.log",
    "expect_rule": "none",
    "expect_level": 0,
-   "note": "near miss: successful login goes on to /; synthesized"
+   "note": "near miss: home page without a login submission"
+  },
+  {
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /devices HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss (known limit): login redirected to a bookmarked page is not recognised"
+  },
+  {
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131945",
+   "expect_level": 2,
+   "note": "near miss: two typos, then success, stays level 2"
+  },
+  {
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131947",
+   "expect_level": 10,
+   "note": "synthesized: three failed logins, then success"
+  },
+  {
+   "log": "203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n203.0.113.9 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131948",
+   "expect_level": 12,
+   "note": "synthesized: three failed logins from an external address, then success"
+  },
+  {
+   "log": "10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131949",
+   "expect_level": 12,
+   "note": "synthesized: burst of five failed logins (131943), then success"
+  },
+  {
+   "log": "[2026-10-11T10:15:01][ERROR] Auth Error (mysql): No user () [u1] from 10.0.250.1\n[2026-10-11T10:15:02][ERROR] Auth Error (mysql): No user () [u2] from 10.0.250.1\n[2026-10-11T10:15:03][ERROR] Auth Error (mysql): No user () [u3] from 10.0.250.1\n[2026-10-11T10:15:04][ERROR] Auth Error (mysql): No user () [u4] from 10.0.250.1\n[2026-10-11T10:15:05][ERROR] Auth Error (mysql): No user () [u5] from 10.0.250.1\n[2026-10-11T10:15:06][ERROR] Auth Error (mysql): No user () [u6] from 10.0.250.1\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131949",
+   "expect_level": 12,
+   "note": "synthesized: six unknown user names (131911, librenms.log line shape), then a web login success"
+  },
+  {
+   "log": "10.0.250.2 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.2 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.2 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.2 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.2 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.2 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.2 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.2 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.2 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.2 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"POST /login HTTP/1.1\" 302 410 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"\n10.0.250.1 - - [11/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 9100 \"https://nms.example.com/login\" \"Mozilla/5.0 (X11; Linux x86_64)\"",
+   "location": "/var/log/nginx/access.log",
+   "expect_rule": "131945",
+   "expect_level": 2,
+   "note": "near miss: the failures came from another address"
   },
   {
    "log": "192.0.2.10 - - [11/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 200 6100 \"-\" \"Mozilla/5.0 (X11; Linux x86_64)\"",

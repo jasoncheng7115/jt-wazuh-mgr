@@ -28,7 +28,11 @@
   events), keycloak.realm, keycloak.client, keycloak.user_id, srcip
   (ipAddress), keycloak.error, dstuser (username), keycloak.resource_type,
   keycloak.resource_path, keycloak.credential_type, keycloak.impersonator,
-  keycloak.failures, keycloak.version, keycloak.trace.
+  keycloak.failures, keycloak.version, keycloak.trace. An IPv4 address
+  written as ::ffff:a.b.c.d is decoded as a.b.c.d so CIDR checks apply.
+
+  FTS (first time seen) is the pair user and source address, set on the
+  login decoder only (see there).
 -->
 
 <!-- Shape 1: a program name in front. -->
@@ -50,6 +54,24 @@
 <!-- Shape 2: the log file, after the pre-decoder took timestamp and level. -->
 <decoder name="jt-keycloak">
   <prematch type="pcre2">^\s*\[(?:org\.keycloak|io\.quarkus|org\.hibernate|org\.infinispan|org\.jgroups|io\.agroal|com\.arjuna|io\.vertx|io\.netty|org\.postgresql|liquibase|org\.jboss|io\.smallrye)[\w.$]*\] \(</prematch>
+</decoder>
+
+<!--
+  Successful logins get a decoder of their own, because Wazuh refuses <fts>
+  on a decoder whose name is shared ("Duplicated decoder with fts set"), and
+  the first-login rules need FTS on the pair user and source address.
+  Keycloak writes the fixed keys of a user event in this order (type,
+  realmId, realmName, clientId, userId, sessionId if any, ipAddress), then
+  the details, among them username. A LOGIN line stops here, so the field
+  children below are not used for it.
+-->
+<decoder name="jt-keycloak-login">
+  <parent>jt-keycloak</parent>
+  <prematch type="pcre2">\[org\.keycloak\.events\] \([^)]*\) type="?LOGIN"?, </prematch>
+  <regex type="pcre2">\[org\.keycloak\.events\] \([^)]*\) type="?(LOGIN)"?, realmId="?[^",]*"?, realmName="?([^",]+)"?, clientId="?([^",]+)"?, userId="?([^",]+)"?,(?: sessionId="?[^",]*"?,)? ipAddress="?(?:::ffff:)?([^",\s]+)"?.*?, username="?([^",]+)</regex>
+  <order>keycloak.type, keycloak.realm, keycloak.client, keycloak.user_id, srcip, dstuser</order>
+  <fts>name, user, srcip</fts>
+  <ftscomment>First time this user signed in from this address.</ftscomment>
 </decoder>
 
 <!--
@@ -113,7 +135,7 @@
 
 <decoder name="jt-keycloak-fields">
   <parent>jt-keycloak</parent>
-  <regex type="pcre2">, ipAddress="?([^",\s]+)</regex>
+  <regex type="pcre2">, ipAddress="?(?:::ffff:)?([^",\s]+)</regex>
   <order>srcip</order>
 </decoder>
 

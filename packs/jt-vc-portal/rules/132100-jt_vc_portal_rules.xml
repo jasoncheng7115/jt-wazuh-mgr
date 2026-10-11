@@ -2,18 +2,16 @@
   jt-vc-portal: audit records of the jt-vc-portal meeting portal (jaas-auth)
   Rule range 132100-132199. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
 
-  Three bases, one per shape: the audit file (JSON lines, decoded by the
-  built-in json decoder), and the portal's own export as RFC 5424 syslog or
-  CEF (jt-vc-portal_decoders.xml). Every rule below hangs off all three and
-  matches on the names the json decoder produces for the file (action, actor,
-  ip, detail, result, role); the export decoders use the same names, so the
-  paths share their logic. What a shape does not carry cannot match: role
-  exists only in the JSON lines, and the syslog shape has no address.
-
-  The address is the dynamic field ip, not srcip: no decoder of ours can sit
-  under the built-in json decoder without breaking every other JSON source
-  (see the decoder file). Correlation therefore uses same_field ip, and no
-  active response can be attached: the Wazuh firewall commands block srcip.
+  Four bases, one per shape: the audit file as the agent group sends it
+  (prefixed, decoder jt-vc-portal), the same file collected without the
+  prefix (built-in json decoder), and the portal's own export as RFC 5424
+  syslog or CEF (jt-vc-portal_decoders.xml). Every rule hangs off all of them
+  and matches on the same names (action, actor, ip, detail, result, role),
+  so the paths share their logic. What a shape does not carry cannot match:
+  role exists only in the JSON lines, the syslog shape has no address, and
+  only the prefixed file and CEF have srcip (for an active response) and the
+  first-seen key. Correlation uses the dynamic field ip, which every shape
+  with an address has.
 
   Modules
     132100-132109  bases, export test event, unclassified actions
@@ -41,18 +39,27 @@
 
 <group name="jt_vc_portal,">
 
-  <!-- Bases. The JSON base requires the line shape of a portal record: the
-       portal writes its keys in a fixed order, and another JSON log that
-       happens to have an action and a result does not start like this.
-       Records ending in "demo":true are sample data from the portal's demo
-       generator and are excluded here, so no rule below can match them; a
-       quote inside a value is always escaped, so no value can imitate that
-       ending. -->
+  <!-- Bases. 132100: the audit file as the agent group sends it, prefixed
+       (decoder jt-vc-portal). 132105: the same lines collected without the
+       prefix, decoded by the built-in json decoder (no srcip, no first-seen
+       check). Both require the line shape of a portal record: the portal
+       writes its keys in a fixed order, and another JSON log that happens to
+       have an action and a result does not start like this. Records ending
+       in "demo":true are sample data from the portal's demo generator and
+       stop here; a quote inside a value is always escaped, so no value can
+       imitate that ending. -->
   <rule id="132100" level="0">
+    <decoded_as>jt-vc-portal</decoded_as>
+    <regex type="pcre2">^jt-vc-portal: {"ts":\d+,"time":"[^"]*","action":"[a-z0-9_]+",(?!.*,"demo":true}$)</regex>
+    <field name="result" type="pcre2">^(ok|fail|warn)$</field>
+    <description>jt-vc-portal: audit record</description>
+  </rule>
+
+  <rule id="132105" level="0">
     <decoded_as>json</decoded_as>
     <regex type="pcre2">^{"ts":\d+,"time":"[^"]*","action":"[a-z0-9_]+",(?!.*,"demo":true}$)</regex>
     <field name="result" type="pcre2">^(ok|fail|warn)$</field>
-    <description>jt-vc-portal: audit record</description>
+    <description>jt-vc-portal: audit record (collected without the prefix)</description>
   </rule>
 
   <rule id="132101" level="0">
@@ -77,48 +84,127 @@
        are shown at level 3 rather than dropped. The list is every action the
        siblings below handle, so this rule cannot compete with them. -->
   <rule id="132104" level="3">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^(?!(login|sso_login|logout|login_fail|login_2fa_fail|login_locked|sso_fail|account_create|account_update|account_delete|password_change|2fa_enable|2fa_disable|profile_update|theme_update|site_update|settings_update|settings_change|settings_import|settings_export|usage_baseline|recording_download|recording_delete|recording_cleanup|transcript_download|transcript_delete|transcript_view|transcript_speakers|transcript_request|transcript_done|transcript_cancel|transcript_failed|audit_export|room_create|room_enter|room_delete|guest_join|invite_sent|test)$)[a-z0-9_]+$</action>
     <description>jt-vc-portal: unclassified audit action $(action) by $(actor)</description>
   </rule>
 
 
-  <!-- Sign-in -->
-  <rule id="132110" level="3">
-    <if_sid>132100,132101,132102</if_sid>
+  <!-- Sign-in. A successful sign-in is not an alert in itself: an ordinary
+       account from a private address is recorded at level 2 (it still counts
+       for correlation). What alerts, with no list to fill in:
+         an administrator (the portal's own role field; on the syslog export,
+           which has no role, the built-in account jtvc-admin)  level 3
+         the first sign-in of an account from an address (first-seen key of
+           the prefixed audit file and of CEF)                  level 3
+         any sign-in from a public address                      level 5
+         an administrator from a public address                 level 8
+         a sign-in after repeated failures (132152, 132153)     level 11-12
+       Private: 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, ::1, fc00::/7,
+       fe80::/10, also with the ::ffff: prefix. The address is the one the
+       portal recorded (behind a reverse proxy the client from X-Real-IP).
+       Siblings are exclusive by address (private or public); the first-seen
+       rule is also a child of the administrator rule, and the listed-account
+       and after-failures rules are children of every one of them, so the
+       result never depends on the order of evaluation. -->
+  <rule id="132110" level="2">
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^login$</action>
     <description>jt-vc-portal: $(actor) signed in with a password</description>
     <group>jtvc_login_success,pci_dss_10.2.5,gdpr_IV_32.2,tsc_CC6.8,</group>
   </rule>
 
-  <rule id="132111" level="3">
-    <if_sid>132100,132101,132102</if_sid>
+  <rule id="132111" level="2">
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^sso_login$</action>
     <description>jt-vc-portal: $(actor) signed in through single sign-on</description>
     <group>jtvc_login_success,pci_dss_10.2.5,gdpr_IV_32.2,tsc_CC6.8,</group>
   </rule>
 
-  <rule id="132112" level="4">
+  <rule id="132112" level="3">
     <if_sid>132110,132111</if_sid>
     <field name="role" type="pcre2">^admin$</field>
-    <description>jt-vc-portal: administrator $(actor) signed in</description>
+    <field name="ip" type="pcre2">^(?:::ffff:)?(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|^(?i:::1$|f[cd][0-9a-f]{0,2}:|fe[89ab][0-9a-f]?:)</field>
+    <description>jt-vc-portal: administrator $(actor) signed in from $(ip)</description>
     <mitre>
       <id>T1078</id>
     </mitre>
     <group>jtvc_login_success,pci_dss_10.2.2,pci_dss_10.2.5,gdpr_IV_32.2,tsc_CC6.8,</group>
   </rule>
 
-  <!-- A listed account (test automation, monitoring): its sign-ins are
-       routine. A child of both the sign-in and the administrator rule, because
-       either can be the one that matched first. -->
-  <rule id="132113" level="0">
+  <rule id="132115" level="5">
+    <if_sid>132110,132111</if_sid>
+    <field name="ip" type="pcre2">^(?!(?:::ffff:)?(?:0\.|10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|(?i:::1?$|f[cd][0-9a-f]{0,2}:|fe[89ab][0-9a-f]?:))[0-9A-Fa-f.:]*[0-9A-Fa-f]$</field>
+    <description>jt-vc-portal: $(actor) signed in from the public address $(ip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jtvc_login_success,pci_dss_10.2.5,gdpr_IV_32.2,tsc_CC6.8,</group>
+  </rule>
+
+  <rule id="132116" level="8">
+    <if_sid>132115</if_sid>
+    <field name="role" type="pcre2">^admin$</field>
+    <description>jt-vc-portal: administrator $(actor) signed in from the public address $(ip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jtvc_login_success,pci_dss_10.2.2,pci_dss_10.2.5,gdpr_IV_32.2,tsc_CC6.8,</group>
+  </rule>
+
+  <!-- First sign-in of this account from this address. The key (account,
+       address) is kept by the manager; a script that signs in every few
+       minutes alerts once per address, ever. Only the prefixed audit file
+       and CEF carry the key: the built-in json decoder and the syslog shape
+       cannot, so there the first sign-in stays at level 2. Also a child of
+       the administrator rule, so that an administrator's first sign-in from
+       an address always ends here (same level 3), whichever sibling Wazuh
+       tries first. -->
+  <rule id="132117" level="3">
     <if_sid>132110,132111,132112</if_sid>
+    <field name="ip" type="pcre2">^(?:::ffff:)?(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|^(?i:::1$|f[cd][0-9a-f]{0,2}:|fe[89ab][0-9a-f]?:)</field>
+    <if_fts />
+    <description>jt-vc-portal: first sign-in of $(actor) from $(ip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jtvc_login_success,pci_dss_10.2.5,gdpr_IV_32.2,tsc_CC6.8,</group>
+  </rule>
+
+  <!-- The syslog export has neither role nor address: the portal's built-in
+       administrator account (JTVC_ADMIN_USERNAME, jtvc-admin unless changed)
+       is the only administrator it can recognise. -->
+  <rule id="132118" level="3">
+    <if_sid>132110,132111</if_sid>
+    <decoded_as>jt-vc-portal-syslog</decoded_as>
+    <field name="actor" type="pcre2">^jtvc-admin$</field>
+    <description>jt-vc-portal: built-in administrator $(actor) signed in</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jtvc_login_success,pci_dss_10.2.2,pci_dss_10.2.5,gdpr_IV_32.2,tsc_CC6.8,</group>
+  </rule>
+
+  <!-- Optional tuning: accounts listed in jt-vc-portal-quiet-accounts (test
+       automation, monitoring) sign in at level 0 from a private address.
+       The pack is quiet without it; it only matters for administrator
+       accounts that a script uses. A sign-in from a public address is never
+       quieted. -->
+  <rule id="132113" level="0">
+    <if_sid>132110,132111,132112,132117</if_sid>
     <list field="actor" lookup="match_key">etc/lists/jt-vc-portal-quiet-accounts</list>
+    <field name="ip" type="pcre2">^(?:::ffff:)?(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|^(?i:::1$|f[cd][0-9a-f]{0,2}:|fe[89ab][0-9a-f]?:)</field>
     <description>jt-vc-portal: routine sign-in of a listed account</description>
   </rule>
 
+  <rule id="132119" level="0">
+    <if_sid>132118</if_sid>
+    <list field="actor" lookup="match_key">etc/lists/jt-vc-portal-quiet-accounts</list>
+    <description>jt-vc-portal: routine sign-in of a listed account (syslog export)</description>
+  </rule>
+
   <rule id="132114" level="2">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^logout$</action>
     <description>jt-vc-portal: $(actor) signed out</description>
   </rule>
@@ -128,7 +214,7 @@
        10 minutes (30 minutes, 24 hours after three locks) and an account
        after 10 in 15 minutes; login_locked is an attempt while locked. -->
   <rule id="132120" level="5">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^login_fail$</action>
     <description>jt-vc-portal: failed sign-in for $(actor)</description>
     <mitre>
@@ -138,7 +224,7 @@
   </rule>
 
   <rule id="132121" level="7">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^login_2fa_fail$</action>
     <description>jt-vc-portal: correct password but wrong second factor for $(actor)</description>
     <mitre>
@@ -149,7 +235,7 @@
   </rule>
 
   <rule id="132122" level="6">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^login_locked$</action>
     <description>jt-vc-portal: sign-in attempt for $(actor) while the portal has the address or account locked</description>
     <mitre>
@@ -163,7 +249,7 @@
        configuration (a user name that clashes with a local account) or an
        identity provider that is down. -->
   <rule id="132123" level="5">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^sso_fail$</action>
     <description>jt-vc-portal: single sign-on failed for $(actor)</description>
     <group>pci_dss_10.2.4,gdpr_IV_32.2,tsc_CC6.8,</group>
@@ -178,7 +264,7 @@
 
   <!-- Accounts and second factor -->
   <rule id="132130" level="6">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^account_create$</action>
     <description>jt-vc-portal: $(actor) created an account: $(detail)</description>
     <mitre>
@@ -200,7 +286,7 @@
   </rule>
 
   <rule id="132132" level="6">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^account_update$</action>
     <description>jt-vc-portal: $(actor) changed an account: $(detail)</description>
     <mitre>
@@ -221,7 +307,7 @@
   </rule>
 
   <rule id="132134" level="6">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^account_delete$</action>
     <description>jt-vc-portal: $(actor) deleted an account: $(detail)</description>
     <mitre>
@@ -231,13 +317,13 @@
   </rule>
 
   <rule id="132135" level="3">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^password_change$|^2fa_enable$</action>
     <description>jt-vc-portal: $(actor) changed their own password or turned on the second factor</description>
   </rule>
 
   <rule id="132136" level="6">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^2fa_disable$</action>
     <description>jt-vc-portal: $(actor) turned off their second factor</description>
     <mitre>
@@ -248,7 +334,7 @@
   <!-- Personal and cosmetic: interface language, display name, colour theme,
        site name and logo. Recorded, not shown. -->
   <rule id="132137" level="2">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^profile_update$|^theme_update$|^site_update$</action>
     <description>jt-vc-portal: $(actor) changed a cosmetic setting: $(detail)</description>
   </rule>
@@ -258,7 +344,7 @@
        operator may use it for a record added by hand for a change made
        outside the web interface, and it is treated the same. -->
   <rule id="132140" level="3">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^settings_update$|^settings_change$</action>
     <description>jt-vc-portal: $(actor) changed settings: $(detail)</description>
     <group>pci_dss_10.2.7,gdpr_IV_32.2,tsc_CC8.1,</group>
@@ -332,7 +418,7 @@
   <!-- Import replaces single sign-on, the export, mail, the sign-in path and
        every secret in one step, and is logged as one record. -->
   <rule id="132147" level="8">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^settings_import$</action>
     <description>jt-vc-portal: $(actor) imported a complete settings file</description>
     <mitre>
@@ -346,7 +432,7 @@
        credentials, the JaaS and recording service tokens and the webhook
        secret, in clear text. -->
   <rule id="132148" level="7">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^settings_export$</action>
     <description>jt-vc-portal: $(actor) exported the settings, including every stored secret</description>
     <mitre>
@@ -356,7 +442,7 @@
   </rule>
 
   <rule id="132149" level="3">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^usage_baseline$</action>
     <description>jt-vc-portal: $(actor) corrected the usage counter: $(detail)</description>
   </rule>
@@ -397,11 +483,16 @@
     <group>authentication_failures,pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,gdpr_IV_35.7.d,gdpr_IV_32.2,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,</group>
   </rule>
 
-  <!-- A successful sign-in from an address that set off 132150 within the
-       hour. A child of every sign-in rule, the listed-account one included,
-       so that it is reached whichever of them matched first. -->
+  <!-- A successful sign-in after repeated failures: from an address that set
+       off 132150 within the hour (level 12), or for an account that set off
+       132151 within the hour (level 11). Children of every sign-in rule, the
+       listed-account ones included, so they are reached whichever of them
+       matched first. Measured on 4.14.7: an if_matched_sid rule must have a
+       higher level than the rule it follows. Events that already raised a
+       level 10 alert are skipped by a level 10 rule that refers to it, so
+       132153 at level 10 never fired. -->
   <rule id="132152" level="12" timeframe="3600">
-    <if_sid>132110,132111,132112,132113</if_sid>
+    <if_sid>132110,132111,132112,132113,132115,132116,132117,132118,132119</if_sid>
     <if_matched_sid>132150</if_matched_sid>
     <field name="ip" type="pcre2">^[0-9A-Fa-f.:]+$</field>
     <same_field>ip</same_field>
@@ -413,10 +504,22 @@
     <group>pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,gdpr_IV_35.7.d,gdpr_IV_32.2,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,</group>
   </rule>
 
+  <rule id="132153" level="11" timeframe="3600">
+    <if_sid>132110,132111,132112,132113,132115,132116,132117,132118,132119</if_sid>
+    <if_matched_sid>132151</if_matched_sid>
+    <same_field>actor</same_field>
+    <description>[WARN] jt-vc-portal: $(actor) signed in after repeated failed sign-ins for that account</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1110</id>
+    </mitre>
+    <group>pci_dss_10.2.4,pci_dss_10.2.5,pci_dss_11.4,gdpr_IV_35.7.d,gdpr_IV_32.2,tsc_CC6.1,tsc_CC6.8,tsc_CC7.2,</group>
+  </rule>
+
 
   <!-- Recordings, transcripts, audit export -->
   <rule id="132160" level="5">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^recording_download$</action>
     <description>jt-vc-portal: $(actor) downloaded a meeting recording</description>
     <mitre>
@@ -425,7 +528,7 @@
   </rule>
 
   <rule id="132161" level="5">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^recording_delete$|^recording_cleanup$</action>
     <description>jt-vc-portal: $(actor) deleted meeting recordings: $(detail)</description>
     <mitre>
@@ -434,7 +537,7 @@
   </rule>
 
   <rule id="132162" level="5">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^transcript_download$</action>
     <description>jt-vc-portal: $(actor) downloaded a meeting transcript or summary</description>
     <mitre>
@@ -443,7 +546,7 @@
   </rule>
 
   <rule id="132163" level="5">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^transcript_delete$</action>
     <description>jt-vc-portal: $(actor) deleted a meeting transcript: $(detail)</description>
   </rule>
@@ -456,55 +559,63 @@
   </rule>
 
   <rule id="132165" level="3">
-    <if_sid>132100,132101,132102</if_sid>
-    <action type="pcre2">^transcript_view$|^transcript_speakers$</action>
-    <description>jt-vc-portal: $(actor) opened or edited a meeting transcript</description>
+    <if_sid>132100,132101,132102,132105</if_sid>
+    <action type="pcre2">^transcript_speakers$</action>
+    <description>jt-vc-portal: $(actor) renamed the speakers of a meeting transcript</description>
   </rule>
 
   <rule id="132166" level="2">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^transcript_request$|^transcript_done$|^transcript_cancel$</action>
     <description>jt-vc-portal: transcript job: $(detail)</description>
   </rule>
 
   <rule id="132167" level="3">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^transcript_failed$</action>
     <description>jt-vc-portal: transcript generation failed: $(detail)</description>
   </rule>
 
   <rule id="132168" level="5">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^audit_export$</action>
     <description>jt-vc-portal: $(actor) exported the audit log: $(detail)</description>
   </rule>
 
+  <!-- Opening a transcript is the normal way to use one. -->
+  <rule id="132169" level="2">
+    <if_sid>132100,132101,132102,132105</if_sid>
+    <action type="pcre2">^transcript_view$</action>
+    <description>jt-vc-portal: $(actor) opened a meeting transcript</description>
+  </rule>
 
-  <!-- Meetings: the portal's normal business, recorded but not shown. -->
+
+  <!-- Meetings: the portal's normal business, recorded but not shown,
+       deleting a room included (owners delete their rooms after a meeting). -->
   <rule id="132170" level="2">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^room_create$|^room_enter$|^invite_sent$</action>
     <description>jt-vc-portal: $(actor) meeting activity ($(action)): $(detail)</description>
   </rule>
 
   <rule id="132171" level="2">
-    <if_sid>132100,132101,132102</if_sid>
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^guest_join$</action>
     <description>jt-vc-portal: guest joined a meeting: $(detail)</description>
   </rule>
 
-  <rule id="132172" level="3">
-    <if_sid>132100,132101,132102</if_sid>
+  <rule id="132172" level="2">
+    <if_sid>132100,132101,132102,132105</if_sid>
     <action type="pcre2">^room_delete$</action>
     <description>jt-vc-portal: $(actor) deleted a meeting room: $(detail)</description>
   </rule>
 
 
-  <!-- Listed accounts: routine actions of test automation. Failures,
-       accounts, settings, exports and deletion of recordings are never
-       quieted. -->
+  <!-- Optional tuning, listed accounts: transcript downloads and speaker
+       edits of test automation. Failures, accounts, settings, exports and
+       deletion of recordings are never quieted. -->
   <rule id="132180" level="0">
-    <if_sid>132162,132165,132172</if_sid>
+    <if_sid>132162,132165</if_sid>
     <list field="actor" lookup="match_key">etc/lists/jt-vc-portal-quiet-accounts</list>
     <description>jt-vc-portal: routine action of a listed account</description>
   </rule>

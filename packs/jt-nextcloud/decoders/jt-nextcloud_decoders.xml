@@ -20,11 +20,32 @@
     character after the prematch, which skips the space.
 
   Lines that occ and cron write have no address (remoteAddr is two dashes);
-  they get no srcip.
+  they get no srcip. An IPv4 address that PHP reports in its IPv6 form
+  (::ffff:203.0.113.5) loses the prefix, so that IPv4 ranges match it.
+
+  fts (first time seen) is the pair of account and address: rules with
+  if_fts fire the first time a user authenticates from an address. Wazuh
+  keeps the pairs it has seen in queue/fts on each manager node.
+  Measured on 4.14.7, a decoder that carries fts may not be a JSON plugin
+  decoder, nor have a sibling of the same name, and a parent's regex is not
+  applied once a child matches. So "Login successful" lines with an address
+  get a child of their own (jt-nextcloud-login) that reads the fields the
+  rules need with one regex: reqId, level, srcip, user, app, method, url,
+  message, userAgent. Their values stay JSON-escaped (\" and \u00f6 as written in the
+  file). Every other line, and a login line without an address, goes to the
+  JSON decoder pair below.
 -->
 
 <decoder name="jt-nextcloud">
   <prematch>^jt-nextcloud:</prematch>
+</decoder>
+
+<decoder name="jt-nextcloud-login">
+  <parent>jt-nextcloud</parent>
+  <prematch type="pcre2">^jt-nextcloud: \{(?=.*"remoteAddr":"[0-9A-Fa-f.:]+")(?=.*"app":"admin_audit")(?=.*"message":"Login successful: )</prematch>
+  <regex type="pcre2">^(?=.*?"reqId":"([^"]*)")(?=.*?"level":(\d))(?=.*?"remoteAddr":"(?:::[Ff]{4}:)?([0-9A-Fa-f.:]+)")(?=.*?"user":"((?:[^"\\]|\\.)*)")(?=.*?"app":"([^"]*)")(?=.*?"method":"([^"]*)")(?=.*?"url":"((?:[^"\\]|\\.)*)")(?=.*?"message":"((?:[^"\\]|\\.)*)")(?=.*?"userAgent":"((?:[^"\\]|\\.)*)")</regex>
+  <order>reqId, level, srcip, user, app, method, url, message, userAgent</order>
+  <fts>name, user, srcip</fts>
 </decoder>
 
 <decoder name="jt-nextcloud-fields">
@@ -35,6 +56,6 @@
 
 <decoder name="jt-nextcloud-fields">
   <parent>jt-nextcloud</parent>
-  <regex type="pcre2">"remoteAddr":"([0-9A-Fa-f.:]+)"</regex>
+  <regex type="pcre2">"remoteAddr":"(?:::[Ff]{4}:)?([0-9A-Fa-f.:]+)"</regex>
   <order>srcip</order>
 </decoder>

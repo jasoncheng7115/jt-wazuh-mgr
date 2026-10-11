@@ -36,12 +36,17 @@
   <order>srcip, user, pmg.realm, pmg.msg</order>
 </decoder>
 
-<!-- successful auth for user 'admin@pmg' / successful openid connect auth for user 'a@sso' -->
+<!--
+  successful auth for user 'admin@pmg' / successful openid connect auth for user 'a@sso'
+  No client address is written. fts (first time seen) is the account on this
+  agent: rule 132493 alerts on the first login of each account, once.
+-->
 <decoder name="jt-pmg-auth-success">
   <parent>jt-pmg</parent>
   <prematch type="pcre2">^successful (?:openid connect )?auth for user '</prematch>
   <regex type="pcre2">^successful (?:openid connect )?auth for user '(\S+@([^@']+))'$</regex>
   <order>user, pmg.realm</order>
+  <fts>name, user, location</fts>
 </decoder>
 
 <decoder name="jt-pmg-password">

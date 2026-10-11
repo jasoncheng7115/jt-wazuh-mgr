@@ -17,19 +17,73 @@
 <group name="proxmox,jt_proxmox,">
 
   <!--
-    Routine logins. A monitoring system that logs in every few seconds turns the
-    built-in "authentication succeeded" (87203, level 3) into tens of thousands
-    of alerts a day: measured 20,900 a day on one cluster, all from one account.
-    List such accounts in etc/lists/jt-pve-service-accounts. The key is the user
-    name without its realm, as Wazuh decodes it (monitoring, not monitoring@pve).
-    Failed logins are untouched: 87201/87202 still fire for listed accounts.
-    (A CDB lookup on the decoded user names the field "user": "dstuser" loads
-    without an error and never matches.)
+    Successful logins. The built-in "authentication succeeded" (87203) is level 3
+    for every login, so a monitoring system that logs in every few seconds turns it
+    into tens of thousands of alerts a day (measured: 20,880 a day on one cluster,
+    all from one monitoring account, against 7 root logins). A successful login is
+    not an alert by itself: an ordinary account's login is recorded at level 2,
+    root's stays visible at 3, and a login right after repeated failures for the
+    same account is level 12. pvedaemon's success line carries no client address,
+    and its decoder is Wazuh's, so neither "from outside" nor "first time from
+    this address" can be told here; the pveproxy access log rules below see the
+    address of failed logins.
+    The built-in decoder keeps the user name without its realm, and only for the
+    pam and pve realms; a login through another realm (LDAP, AD, OpenID) has no
+    decoded user and is matched by its text.
+    etc/lists/jt-pve-service-accounts is optional tuning: listed accounts drop to
+    level 0. (A CDB lookup on the decoded user names the field "user": "dstuser"
+    loads without an error and never matches.)
   -->
   <rule id="131200" level="0">
     <if_sid>87203</if_sid>
     <list field="user" lookup="match_key">etc/lists/jt-pve-service-accounts</list>
     <description>Proxmox VE: routine login of a listed service account</description>
+  </rule>
+
+  <rule id="131203" level="2">
+    <if_sid>87203</if_sid>
+    <user type="pcre2">^(?!root$).+</user>
+    <description>Proxmox VE: login of $(user)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131204" level="3">
+    <if_sid>87203</if_sid>
+    <user>^root$</user>
+    <description>Proxmox VE: root logged in</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131205" level="2">
+    <if_sid>87203</if_sid>
+    <match type="pcre2">successful auth for user '[^']+@(?!pam'|pve')[^']+'$</match>
+    <description>Proxmox VE: login through a directory realm</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!-- Repeated failures for one account: the built-in 87202 counts by address,
+       and pvedaemon's success line has none, so the success that follows can only
+       be tied to the failures by account. -->
+  <rule id="131202" level="10" frequency="6" timeframe="300">
+    <if_matched_sid>87201</if_matched_sid>
+    <same_user />
+    <description>[WARN] Proxmox VE: repeated failed logins for $(user)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,</group>
+  </rule>
+
+  <rule id="131206" level="12" timeframe="900">
+    <if_sid>131200,131203,131204</if_sid>
+    <if_matched_sid>131202</if_matched_sid>
+    <same_user />
+    <description>[HIGH] Proxmox VE: $(user) logged in right after repeated failed logins for that account</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
   </rule>
 
   <!--

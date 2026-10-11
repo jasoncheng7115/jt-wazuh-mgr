@@ -1,7 +1,8 @@
 {
  "pack": "jt-zimbra",
  "sandbox_lists": {
-  "zimbra-service-accounts": "reader@example.com:service\nprobe@example.com:service\n"
+  "zimbra-service-accounts": "reader@example.com:service\nprobe@example.com:service\n",
+  "zimbra-internal-networks": "203.0.113.200:internal\n"
  },
  "cases": [
   {
@@ -464,16 +465,16 @@
   {
    "log": "2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=10.0.0.28;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=svc@example.com; protocol=imap;",
    "location": "/opt/zimbra/log/audit.log",
-   "expect_rule": "100845",
-   "expect_level": 2,
-   "note": "real (sanitized): internal IMAP login, recorded only"
+   "expect_rule": "100838",
+   "expect_level": 3,
+   "note": "real (sanitized): internal IMAP login, first time for the (account, address) pair in this session: level 3"
   },
   {
    "log": "2026-10-11 11:26:06,984 INFO  [qtp350068407-9383:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;oip=198.51.100.198, 10.0.0.31;port=48030;ua=Apple-iPhone17C3/2307.90 devip=198.51.100.198 ZPZB/75;soapId=4bbe9d0e;] security - cmd=Auth; account=user2@example.com; protocol=soap;",
    "location": "/opt/zimbra/log/audit.log",
-   "expect_rule": "100854",
-   "expect_level": 2,
-   "note": "real (sanitized): phone through Z-Push on a mobile network"
+   "expect_rule": "100837",
+   "expect_level": 5,
+   "note": "real (sanitized): phone through Z-Push on a mobile network, first time for the pair: level 5"
   },
   {
    "log": "2026-10-11 11:26:09,987 INFO  [qtp350068407-9382:https://localhost:7071/service/admin/soap/AuthRequest] [ua=zmprov/10.1.20_GA_10120;soapId=4bbe9d12;] security - cmd=Auth; account=zimbra; protocol=soap;",
@@ -485,9 +486,9 @@
   {
    "log": "2026-10-02 16:00:24,977 INFO  [qtp350068407-3415:smtp://zcs1.example.com:7073/service/admin/soap/] [name=svc@example.com;oip=10.0.0.33;oport=36432;oproto=smtp;soapId=1320083c;] security - cmd=Auth; account=svc@example.com; protocol=soap;",
    "location": "/opt/zimbra/log/audit.log",
-   "expect_rule": "100845",
-   "expect_level": 2,
-   "note": "real (sanitized): SMTP AUTH checked by saslauthd, not an admin login"
+   "expect_rule": "100838",
+   "expect_level": 3,
+   "note": "real (sanitized): SMTP AUTH checked by saslauthd is an ordinary login, not an admin one; first time for the pair"
   },
   {
    "log": "Oct 11 11:26:05 zcs1 zimbra_audit 2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=10.0.0.28;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=svc@example.com; protocol=imap;",
@@ -588,8 +589,8 @@
    "log": "2026-10-05 11:32:55,725 INFO  [qtp350068407-113466:https://zcs2.example.com:7071/service/admin/soap] [ip=198.51.100.40;port=49220;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=6a1dee93;] security - cmd=Auth; account=admin@example.com; protocol=soap;",
    "location": "/opt/zimbra/log/audit.log",
    "expect_rule": "100849",
-   "expect_level": 14,
-   "note": "synthesized: admin console login from outside"
+   "expect_level": 8,
+   "note": "synthesized: admin console login from a public IPv4 address (3.1: level 14 to 8)"
   },
   {
    "log": "2026-10-11 11:30:19,424 INFO  [qtp350068407-152785:https://localhost:7071/service/admin/soap/DelegateAuthRequest] [name=zimbra;ua=zmmailbox/10.1.20_GA_4893;soapId=6a209849;] security - cmd=DelegateAuth; accountId=4ef3bd6d-e227-4986-8993-98443101a169; accountName=user1@example.com;",
@@ -601,16 +602,16 @@
   {
    "log": "2026-10-05 11:32:55,725 INFO  [qtp350068407-113466:https://zcs2.example.com:7071/service/admin/soap] [name=admin@example.com;mid=1;ip=10.0.0.25;port=49220;soapId=6a1dee93;] security - cmd=DelegateAuth; accountId=4ef3bd6d-e227-4986-8993-98443101a169; accountName=user1@example.com;",
    "location": "/opt/zimbra/log/audit.log",
-   "expect_rule": "100855",
+   "expect_rule": "100896",
    "expect_level": 5,
-   "note": "real (sanitized): an admin tool opens a session as a user"
+   "note": "real (sanitized): an admin tool opens a session as a user, first time for (administrator, account, address)"
   },
   {
    "log": "2026-10-05 11:32:55,725 INFO  [qtp350068407-113466:https://zcs2.example.com:7071/service/admin/soap] [name=admin@example.com;mid=1;ip=198.51.100.40;port=49220;soapId=6a1dee93;] security - cmd=DelegateAuth; accountId=4ef3bd6d-e227-4986-8993-98443101a169; accountName=user1@example.com;",
    "location": "/opt/zimbra/log/audit.log",
    "expect_rule": "100858",
-   "expect_level": 12,
-   "note": "synthesized: the same from outside"
+   "expect_level": 8,
+   "note": "synthesized: the same from a public address (3.1: level 12 to 8)"
   },
   {
    "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap; error=authentication failed for [user6@example.com], invalid password;\n2026-10-11 12:01:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user6@example.com;oip=203.0.113.20;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user6@example.com; protocol=soap;",
@@ -624,21 +625,21 @@
    "location": "/opt/zimbra/log/audit.log",
    "expect_rule": "100852",
    "expect_level": 13,
-   "note": "synthesized: one account from three external addresses in an hour"
+   "note": "synthesized: one account from three public addresses it never used before, within an hour"
   },
   {
    "log": "2026-10-11 12:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user7@example.com;oip=10.0.0.22;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user7@example.com; protocol=soap;\n2026-10-11 12:01:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user7@example.com;oip=10.0.0.23;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user7@example.com; protocol=soap;\n2026-10-11 12:02:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user7@example.com;oip=10.0.0.24;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user7@example.com; protocol=soap;",
    "location": "/opt/zimbra/log/audit.log",
-   "expect_rule": "100845",
-   "expect_level": 2,
-   "note": "near miss: three INTERNAL addresses (measured 28 a day here if counted)"
+   "expect_rule": "100838",
+   "expect_level": 3,
+   "note": "near miss: three PRIVATE addresses; the last is only a first-seen pair (level 3), not 100852"
   },
   {
    "log": "2026-10-11 12:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/preauth] [name=user1@example.com;oip=203.0.113.50;ua=curl/8.0;] security - cmd=PreAuth; account=user1@example.com; admin=false;",
    "location": "/opt/zimbra/log/audit.log",
-   "expect_rule": "100850",
-   "expect_level": 13,
-   "note": "synthesized"
+   "expect_rule": "100831",
+   "expect_level": 10,
+   "note": "synthesized from the Zimbra preauth log format: preauth in use, raised at most once a day (3.1: was level 13 per login)"
   },
   {
    "log": "2026-10-11 11:26:07,296 INFO  [qtp350068407-9366:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;mid=12;oip=198.51.100.198, 10.0.0.31;port=48074;ua=Apple-iPhone17C3/2307.90 devip=198.51.100.198 ZPZB/75;soapId=4bbe9d10;] soap - SearchRequest elapsed=1",
@@ -673,18 +674,18 @@
   {
    "log": "2026-10-02 16:11:55,350 INFO  [qtp350068407-95454:https://zcs2.example.com:7071/service/admin/soap] [name=user1@example.com;aname=admin@example.com;mid=13;ip=10.0.0.25;port=60020;soapId=6a1ca17e;] soap - GetMsgRequest elapsed=34",
    "location": "/opt/zimbra/log/mailbox.log",
-   "expect_rule": "100972",
-   "expect_level": 12,
+   "expect_rule": "100895",
+   "expect_level": 1,
    "repeat": 30,
-   "note": "real shape (sanitized): an admin session bulk-reading one mailbox (1,788 GetMsg in 8.8 days here)"
+   "note": "real shape (sanitized): an internal tool bulk-reading one mailbox through a delegated admin session (1,788 GetMsg in 8.8 days here): no alert by default, no list needed (was 100972)"
   },
   {
-   "log": "2026-10-02 16:11:55,350 INFO  [qtp350068407-95454:https://zcs2.example.com:7071/service/admin/soap] [name=user1@example.com;aname=reader@example.com;mid=13;ip=10.0.0.25;port=60020;soapId=6a1ca17e;] soap - GetMsgRequest elapsed=34",
+   "log": "2026-10-02 16:11:55,350 INFO  [qtp350068407-95454:https://zcs2.example.com:7071/service/admin/soap] [name=user1@example.com;aname=reader@example.com;mid=13;ip=198.51.100.40;port=60020;soapId=6a1ca17e;] soap - GetMsgRequest elapsed=34",
    "location": "/opt/zimbra/log/mailbox.log",
-   "expect_rule": "100935",
+   "expect_rule": "100974",
    "expect_level": 0,
    "repeat": 30,
-   "note": "real shape: the same administrator listed in zimbra-service-accounts"
+   "note": "optional tuning: a delegated session from a public address by an administrator listed in zimbra-service-accounts (the lookup on \"user\" checks the administrator, srcuser, first)"
   },
   {
    "log": "2026-10-11 11:24:47,732 INFO  [qtp350068407-9383:https://zcs1.example.com:12443/service/soap/] [name=probe@example.com;mid=20;oip=10.0.0.28;ua=check_http/v2.3.1;soapId=4bbe9cff;] soap - GetMsgRequest elapsed=3",
@@ -773,6 +774,144 @@
    "repeat": 30,
    "note": "syslog copy (zimbraLogToSyslog): 30 copies do not count",
    "expect_level": 0
+  },
+  {
+   "log": "2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=10.0.0.28;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=svc@example.com; protocol=imap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100845",
+   "expect_level": 2,
+   "repeat": 50,
+   "note": "policy: 50 identical logins of an ordinary account from a private address in one session end at level 2"
+  },
+  {
+   "log": "2026-10-11 11:26:06,984 INFO  [qtp350068407-9383:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;oip=198.51.100.198, 10.0.0.31;port=48030;ua=Apple-iPhone17C3/2307.90 devip=198.51.100.198 ZPZB/75;soapId=4bbe9d0e;] security - cmd=Auth; account=user2@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100854",
+   "expect_level": 2,
+   "repeat": 50,
+   "note": "policy: 50 identical Z-Push logins from the same public address end at level 2 (Z-Push logs in on every request it relays)"
+  },
+  {
+   "log": "2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=fd12:3456::68;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=svc@example.com; protocol=imap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100838",
+   "expect_level": 3,
+   "note": "synthesized: a unique-local IPv6 address is private"
+  },
+  {
+   "log": "2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=2001:db8::68;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=svc@example.com; protocol=imap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100837",
+   "expect_level": 5,
+   "note": "synthesized: a global IPv6 address is public"
+  },
+  {
+   "log": "2026-10-11 11:26:06,984 INFO  [qtp350068407-9383:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;oip=::ffff:198.51.100.198, 10.0.0.31;port=48030;ua=Apple-iPhone17C3/2307.90 devip=198.51.100.198 ZPZB/75;soapId=4bbe9d0e;] security - cmd=Auth; account=user2@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100837",
+   "expect_level": 5,
+   "note": "synthesized: an IPv4-mapped address is decoded without ::ffff: and classed as public"
+  },
+  {
+   "log": "2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=::ffff:10.0.0.28;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=svc@example.com; protocol=imap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100838",
+   "expect_level": 3,
+   "note": "synthesized: an IPv4-mapped private address is private"
+  },
+  {
+   "log": "2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=203.0.113.88;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=admin@example.com; protocol=imap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100849",
+   "expect_level": 8,
+   "note": "synthesized: the built-in admin account over IMAP from a public IPv4 address is administrator-class"
+  },
+  {
+   "log": "2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=10.0.0.28;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=admin@example.com; protocol=imap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100848",
+   "expect_level": 3,
+   "note": "synthesized: the built-in admin account from a private address"
+  },
+  {
+   "log": "2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=10.0.0.28;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=adminuser@example.com; protocol=imap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100838",
+   "expect_level": 3,
+   "note": "near miss: an account whose name only starts with \"admin\" is ordinary"
+  },
+  {
+   "log": "2026-10-02 22:00:28,228 INFO  [qtp350068407-5252:https://zcs1.example.com:7071/service/admin/soap/AuthRequest] [ip=10.0.250.1;port=50022;ua=ZCS;soapId=1320177b;] security - cmd=Auth; account=zimbra; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100853",
+   "expect_level": 0,
+   "note": "real (sanitized): Zimbra internal \"ZCS\" user agent without a version is a tool, not an admin login"
+  },
+  {
+   "log": "2026-10-02 22:00:28,228 INFO  [qtp350068407-5252:https://zcs1.example.com:7071/service/admin/soap/DelegateAuthRequest] [name=zimbra;ip=10.0.250.1;port=50022;ua=ZCS;soapId=1320177b;] security - cmd=DelegateAuth; accountId=c52bb710; accountName=user1@example.com;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100840",
+   "expect_level": 0,
+   "note": "real (sanitized): DelegateAuth by Zimbra itself (ua=ZCS), 36 in 8.8 days here"
+  },
+  {
+   "log": "2026-10-05 11:32:55,725 INFO  [qtp350068407-113466:https://zcs2.example.com:7071/service/admin/soap] [name=admin@example.com;mid=1;ip=10.0.0.25;port=49220;soapId=6a1dee93;] security - cmd=DelegateAuth; accountId=4ef3bd6d-e227-4986-8993-98443101a169; accountName=user1@example.com;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100855",
+   "expect_level": 3,
+   "repeat": 2,
+   "note": "real (sanitized): the same DelegateAuth again: administrator-class from a private address, level 3"
+  },
+  {
+   "log": "2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=198.51.100.71;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=user8@example.com; protocol=imap;\n2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=198.51.100.71;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=user8@example.com; protocol=imap;\n2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=198.51.100.72;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=user8@example.com; protocol=imap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100837",
+   "expect_level": 5,
+   "note": "near miss (was a level 13 in 3.0): two logins from one public address and one from a second; different_srcip counted that as three sources"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/preauth] [name=user1@example.com;oip=203.0.113.50;ua=curl/8.0;] security - cmd=PreAuth; account=user1@example.com; admin=true;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100832",
+   "expect_level": 12,
+   "note": "synthesized: preauth to an administrator session"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user9@example.com;oip=198.51.100.10;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user9@example.com; protocol=soap; error=authentication failed for [user9@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user9@example.com;oip=198.51.100.11;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user9@example.com; protocol=soap; error=authentication failed for [user9@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user9@example.com;oip=198.51.100.12;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user9@example.com; protocol=soap; error=authentication failed for [user9@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user9@example.com;oip=198.51.100.13;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user9@example.com; protocol=soap; error=authentication failed for [user9@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user9@example.com;oip=198.51.100.14;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user9@example.com; protocol=soap; error=authentication failed for [user9@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user9@example.com;oip=198.51.100.15;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user9@example.com; protocol=soap; error=authentication failed for [user9@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user9@example.com;oip=198.51.100.16;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user9@example.com; protocol=soap; error=authentication failed for [user9@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user9@example.com;oip=198.51.100.17;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user9@example.com; protocol=soap; error=authentication failed for [user9@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user9@example.com;oip=198.51.100.18;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user9@example.com; protocol=soap; error=authentication failed for [user9@example.com], invalid password;\n2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user9@example.com;oip=198.51.100.19;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user9@example.com; protocol=soap; error=authentication failed for [user9@example.com], invalid password;\n2026-10-11 12:01:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user9@example.com;oip=198.51.100.99;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user9@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100833",
+   "expect_level": 11,
+   "note": "synthesized: failures for one account from 10 addresses, then a success for it from an 11th"
+  },
+  {
+   "log": "2026-10-02 16:11:55,350 INFO  [qtp350068407-95454:https://zcs2.example.com:7071/service/admin/soap] [name=user1@example.com;aname=admin@example.com;mid=13;ip=10.0.0.25;port=60020;soapId=6a1ca17e;] soap - GetMsgRequest elapsed=34",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100897",
+   "expect_level": 5,
+   "note": "real shape (sanitized): first delegated read of a mailbox for (administrator, mailbox, address)"
+  },
+  {
+   "log": "2026-10-02 16:11:55,350 INFO  [qtp350068407-95454:https://zcs2.example.com:7071/service/admin/soap] [name=user1@example.com;aname=admin@example.com;mid=13;ip=10.0.0.25;port=60020;soapId=6a1ca17e;] soap - GetMsgRequest elapsed=34\n2026-10-02 16:11:55,350 INFO  [qtp350068407-95454:https://zcs2.example.com:7071/service/admin/soap] [name=user2@example.com;aname=admin@example.com;mid=13;ip=10.0.0.25;port=60020;soapId=6a1ca17e;] soap - GetMsgRequest elapsed=34\n2026-10-02 16:11:55,350 INFO  [qtp350068407-95454:https://zcs2.example.com:7071/service/admin/soap] [name=user3@example.com;aname=admin@example.com;mid=13;ip=10.0.0.25;port=60020;soapId=6a1ca17e;] soap - GetMsgRequest elapsed=34\n2026-10-02 16:11:55,350 INFO  [qtp350068407-95454:https://zcs2.example.com:7071/service/admin/soap] [name=user4@example.com;aname=admin@example.com;mid=13;ip=10.0.0.25;port=60020;soapId=6a1ca17e;] soap - GetMsgRequest elapsed=34\n2026-10-02 16:11:55,350 INFO  [qtp350068407-95454:https://zcs2.example.com:7071/service/admin/soap] [name=user5@example.com;aname=admin@example.com;mid=13;ip=10.0.0.25;port=60020;soapId=6a1ca17e;] soap - GetMsgRequest elapsed=34",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100899",
+   "expect_level": 12,
+   "note": "synthesized: one administrator starts reading five different mailboxes"
+  },
+  {
+   "log": "2026-10-02 16:11:55,350 INFO  [qtp350068407-95454:https://zcs2.example.com:7071/service/admin/soap] [name=user1@example.com;aname=admin@example.com;mid=13;ip=198.51.100.40;port=60020;soapId=6a1ca17e;] soap - GetMsgRequest elapsed=34",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100972",
+   "expect_level": 12,
+   "repeat": 30,
+   "note": "synthesized: delegated bulk reading from a public address is still counted"
+  },
+  {
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://localhost:7071/service/admin/soap/SearchRequest] [name=user1@example.com;ua=ZCS;soapId=1;] soap - SearchRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100970",
+   "expect_level": 0,
+   "repeat": 30,
+   "note": "near miss: searches by Zimbra itself (ua=ZCS) are not counted"
   },
   {
    "log": "10.0.0.38:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/service/proxy?target=http%3A%2F%2Fgdata.youtube.com%2Ffeeds%2Fapi%2Fvideos%2FyDlt9dEmNos%3Falt%3Djsonc%26v%3D2 HTTP/2.0\" 403 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
@@ -904,6 +1043,29 @@
    "expect_rule": "100976",
    "expect_level": 13,
    "note": "synthesized: path traversal"
+  },
+  {
+   "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user3@example.com;oip=203.0.113.200;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user3@example.com; protocol=soap; error=authentication failed for [user3@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100842",
+   "expect_level": 10,
+   "repeat": 12,
+   "note": "optional tuning: a public address listed in zimbra-internal-networks is not \"external\" (no 100859, so no active response)"
+  },
+  {
+   "log": "2026-10-11 11:26:05,929 INFO  [ImapSSLServer-406] [ip=10.0.0.35;oip=203.0.113.200;via=10.0.0.35(nginx/1.24.0);ua=Zimbra/10.1.20_GA_10120;cid=912;] security - cmd=Auth; account=admin@example.com; protocol=imap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100847",
+   "expect_level": 3,
+   "note": "optional tuning: administrator login from a listed public address is level 3, not 8"
+  },
+  {
+   "log": "203.0.113.200:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/zimbra/x.php HTTP/2.0\" 404 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100985",
+   "expect_level": 3,
+   "repeat": 20,
+   "note": "optional tuning: 404 burst from a listed address"
   }
  ]
 }

@@ -2,27 +2,27 @@
  "id": "jt-ipam",
  "name": "jt-ipam Audit and Remote Access",
  "name_zh": "jt-ipam 稽核與遠端存取",
- "version": "1.0",
+ "version": "1.1",
  "summary": "Logins and brute force, roles and permissions, API tokens, revealed secrets, console sessions, settings and backups of jt-ipam, from its journal and its audit trail.",
  "summary_zh": "jt-ipam 的登入與暴力破解、角色與權限、API token、顯示機密、主控台工作階段、設定與備份，取自服務記錄與稽核軌跡。",
  "rule_id_range": "131600-131699",
  "notes": [
   "jt-ipam's service messages go to the systemd journal and reach Wazuh with no change on the host, through an agent that reads journald or /var/log/syslog. Wazuh's built-in FreeIPA decoder claims every program whose name contains \"ipa\", so before this pack every jt-ipam line ended at the FreeIPA rule 82202, level 0, with nothing decoded. Measured on one installation: about 180,000 jt-ipam lines a day, nearly all API requests and the integrations' HTTP calls; those stay at level 0.",
-  "From the journal: failed logins (web interface, second factor, phpIPAM-compatible API) are level 3 with the source address; 5 in 5 minutes from one address level 10 (each endpoint counted on its own); throttled login attempts level 6. A login accepted from that address within 10 minutes afterwards is level 12. Console connections that fail: target unreachable level 3, target rejected the credentials level 5, a RustDesk peer rejecting the password level 5 and repeated wrong RustDesk passwords level 7, SSH refused by the target level 5. A broken audit hash chain is level 12, failed anchoring level 7, a failed daily backup level 7 (measured: 28 failures in 30 days on one installation, which the built-in rule reported only as a generic service failure).",
+  "From the journal: failed logins (web interface, second factor, phpIPAM-compatible API) are level 3 with the source address; 5 in 5 minutes from one address level 10 (each endpoint counted on its own); throttled login attempts level 6. An accepted password is recorded at level 2, and is level 5 when the address is outside the private networks. A login accepted from that address within 10 minutes afterwards is level 12. Console connections that fail: target unreachable level 3, target rejected the credentials level 5, a RustDesk peer rejecting the password level 5 and repeated wrong RustDesk passwords level 7, SSH refused by the target level 5. A broken audit hash chain is level 12, failed anchoring level 7, a failed daily backup level 7 (measured: 28 failures in 30 days on one installation, which the built-in rule reported only as a generic service failure).",
   "Integrations: the sync service logging in to another server over SSH as root is level 3, a write to the UCS directory through the UDM REST API level 5, and UDM refusing the integration's credentials level 5. Reading the directory (measured: about 1,500 requests a day) stays at level 0. These rules show what the integration accounts are used for; give them the least privilege that works, for example a read-only directory account when jt-ipam only reads DNS, and a dedicated non-root SSH account.",
-  "The audit trail is jt-ipam's own record of who did what. It is kept in its database and leaves it only as GELF messages (Audit forwarding in the administration area); the setup guide relays them into a file that the jt-ipam agent group reads. Then: logins with the account and the reason (success level 3, failure 5), account locked 10, a refresh token presented twice 10, second factor turned off or reset 7, recovery code used 5; accounts created 7 (administrator 10), deleted 7, administrator rights given 10, password reset by an administrator 7, account disabled 7; role membership, roles and permissions 7; API token created 10; a stored secret revealed 8; certificate export 8; full system export downloaded 10 and system import 10; stored console credentials 5.",
-  "Console sessions from the audit trail: every SSH, RDP, VNC, noVNC, BMC, RustDesk and SFTP session that connected is level 3, with the remote host, the account used on it, the jt-ipam user and the source address, and level 5 when that account is root or an administrator (measured: root SSH sessions to a domain controller with a password jt-ipam stores); file transfers through the console 5; elevation requested in a remote desktop 5; settings 5; changes to audit forwarding 10; audit maintenance (chain repair) 10.",
-  "Deliberately quiet: session ends, routine IP and device edits, scans, AI chats, the anchor heartbeat, and certificate agents fetching a renewed bundle (level 3). The journal's copies of successful logins and of console sessions starting are kept below the alert level, so one event does not alert twice. Failed logins alert in both layers, one with the source address and one with the account (measured: four failed logins in two weeks).",
+  "The audit trail is jt-ipam's own record of who did what. It is kept in its database and leaves it only as GELF messages (Audit forwarding in the administration area); the setup guide relays them into a file that the jt-ipam agent group reads. Then: logins with the account and the reason: a failure is level 5; a success is recorded at level 2 for an ordinary account from a private address, and alerts for an admin-class account (jt-ipam's built-in admin, administrator, root) at 3, from outside the private networks at 5 (admin-class 8), and for an account that was locked within the last 30 minutes at 12; account locked 10, a refresh token presented twice 10, second factor turned off or reset 7, recovery code used 5; accounts created 7 (administrator 10), deleted 7, administrator rights given 10, password reset by an administrator 7, account disabled 7; role membership, roles and permissions 7; API token created 10; a stored secret revealed 8; certificate export 8; full system export downloaded 10 and system import 10; stored console credentials 5.",
+  "Console sessions from the audit trail: every SSH, RDP, VNC, noVNC, BMC, RustDesk and SFTP session that connected is recorded with the remote host, the account used on it, the jt-ipam user and the source address. An ordinary session from a private address stays at level 2; a session as root, administrator or admin on the remote host is level 3 (measured: 70 of 137 sessions in 30 days, among them root SSH to a domain controller with a password jt-ipam stores); a session opened from outside the private networks is level 5, and 8 as a privileged account. File transfers through the console 5; elevation requested in a remote desktop 5; settings 5; changes to audit forwarding 10; audit maintenance (chain repair) 10.",
+  "Deliberately quiet: ordinary logins and sessions from private addresses, session ends, routine IP and device edits, scans, AI chats, the anchor heartbeat, and certificate agents fetching a renewed bundle (level 3). Nothing depends on a site's user names, hosts or lists: admin-class accounts are recognised by generic names only. A \"first login of this account from this address\" alert is not possible: Wazuh's first-time-seen (fts) never fired on these decoders, which must be children of the built-in FreeIPA decoder. Measured on one installation over 30 days, the change from 1.0 to 1.1 turns 222 level 3 alerts (logins and sessions) and 70 level 5 alerts (root sessions) into 70 level 3 alerts and records the rest at level 2.",
   "Limits: an audit record names the acting account by its id, not its name. Turning audit forwarding off is recorded after the change takes effect, so that record is never forwarded: the stream simply stops. jt-ipam records a console session only once it has connected; a failed attempt is only in the journal.",
   "Active response is opt-in: blocking the source address of rules 131605, 131606 and 131609 on the jt-ipam host. See the risks below before enabling it."
  ],
  "notes_zh": [
   "jt-ipam 的服務訊息寫入 systemd journal，agent 只要有讀 journald 或 /var/log/syslog 就會送到 Wazuh，主機不必改設定。Wazuh 內建的 FreeIPA 解碼器會接走程式名稱中「任何位置」含 ipa 的程式，所以裝這個套件之前，jt-ipam 的每一行都停在 FreeIPA 規則 82202（level 0），什麼也沒解碼。實測一套安裝每天約 18 萬行，幾乎都是 API 請求與整合功能的 HTTP 呼叫，這些維持 level 0。",
-  "取自 journal：登入失敗（網頁介面、第二因素、phpIPAM 相容 API）為 level 3，帶來源位址；同一位址 5 分鐘內 5 次為 level 10（各端點分開計算）；登入被限流為 level 6。之後 10 分鐘內同一位址登入成功為 level 12。主控台連線失敗：目標連不到 level 3、目標拒絕帳密 level 5、RustDesk 對端拒絕密碼 level 5、一再輸錯 RustDesk 密碼 level 7、目標拒絕 SSH 登入 level 5。稽核雜湊鏈斷裂為 level 12，錨定失敗 level 7，每日備份失敗 level 7（實測一套安裝 30 天內失敗 28 次，內建規則只把它當成一般的服務失敗）。",
+  "取自 journal：登入失敗（網頁介面、第二因素、phpIPAM 相容 API）為 level 3，帶來源位址；同一位址 5 分鐘內 5 次為 level 10（各端點分開計算）；登入被限流為 level 6。密碼通過只記錄為 level 2，來源位址不在私有網段時為 level 5。之後 10 分鐘內同一位址登入成功為 level 12。主控台連線失敗：目標連不到 level 3、目標拒絕帳密 level 5、RustDesk 對端拒絕密碼 level 5、一再輸錯 RustDesk 密碼 level 7、目標拒絕 SSH 登入 level 5。稽核雜湊鏈斷裂為 level 12，錨定失敗 level 7，每日備份失敗 level 7（實測一套安裝 30 天內失敗 28 次，內建規則只把它當成一般的服務失敗）。",
   "整合功能：sync 服務以 root 透過 SSH 登入其他伺服器為 level 3，經 UDM REST API 寫入 UCS 目錄為 level 5，UDM 拒絕整合帳號的帳密為 level 5。讀取目錄（實測每天約 1,500 次請求）維持 level 0。這些規則讓人看得到整合帳號實際被拿來做什麼；請給它們夠用的最小權限，例如 jt-ipam 只讀 DNS 時用唯讀的目錄帳號，SSH 用專用的非 root 帳號。",
-  "稽核軌跡是 jt-ipam 自己記下的「誰做了什麼」。它存在資料庫裡，只會以 GELF 訊息送出（管理區的「稽核轉送」）；設定指南用一個轉送程式把它寫成檔案，由 jt-ipam agent 群組讀取。之後可看到：登入帶帳號與原因（成功 level 3、失敗 5）、帳號被鎖定 10、refresh token 被重複出示 10、第二因素被關閉或重設 7、使用復原碼登入 5；建立帳號 7（管理者 10）、刪除帳號 7、授予管理權限 10、管理者重設密碼 7、停用帳號 7；角色成員、角色與權限變更 7；建立 API token 10；顯示儲存的機密 8；匯出憑證 8；下載完整系統匯出 10、套用系統匯入 10；主控台儲存帳密的變更 5。",
-  "主控台工作階段取自稽核軌跡：每個連上的 SSH、RDP、VNC、noVNC、BMC、RustDesk、SFTP 工作階段為 level 3，帶遠端主機、在遠端使用的帳號、jt-ipam 使用者與來源位址，遠端帳號是 root 或管理者時為 level 5（實測有以 jt-ipam 儲存的密碼用 root SSH 登入網域控制站）；經主控台傳輸檔案 5；在遠端桌面要求提權 5；設定變更 5；稽核轉送設定變更 10；稽核維護（修復雜湊鏈）10。",
-  "刻意保持安靜：工作階段結束、例行的 IP 與裝置編輯、掃描、AI 對話、錨定心跳，以及憑證 agent 取回續期後的憑證包（level 3）。journal 裡登入成功與主控台開始的那一份記錄在告警等級之下，同一件事不會告警兩次。登入失敗在兩層都會告警，一筆帶來源位址、一筆帶帳號（實測兩週四次）。",
+  "稽核軌跡是 jt-ipam 自己記下的「誰做了什麼」。它存在資料庫裡，只會以 GELF 訊息送出（管理區的「稽核轉送」）；設定指南用一個轉送程式把它寫成檔案，由 jt-ipam agent 群組讀取。之後可看到：登入帶帳號與原因：失敗為 level 5；成功時，一般帳號從私有位址登入只記錄為 level 2，admin 類帳號（jt-ipam 內建的 admin、administrator、root）為 3，來源不在私有網段為 5（admin 類 8），30 分鐘內曾被鎖定的帳號登入為 12；帳號被鎖定 10、refresh token 被重複出示 10、第二因素被關閉或重設 7、使用復原碼登入 5；建立帳號 7（管理者 10）、刪除帳號 7、授予管理權限 10、管理者重設密碼 7、停用帳號 7；角色成員、角色與權限變更 7；建立 API token 10；顯示儲存的機密 8；匯出憑證 8；下載完整系統匯出 10、套用系統匯入 10；主控台儲存帳密的變更 5。",
+  "主控台工作階段取自稽核軌跡：每個連上的 SSH、RDP、VNC、noVNC、BMC、RustDesk、SFTP 工作階段都會記下遠端主機、在遠端使用的帳號、jt-ipam 使用者與來源位址。從私有位址開啟的一般工作階段維持 level 2；在遠端以 root、administrator 或 admin 登入為 level 3（實測 30 天 137 個工作階段中有 70 個，包括以 jt-ipam 儲存的密碼用 root SSH 登入網域控制站）；從私有網段以外開啟為 level 5，以特權帳號則為 8。經主控台傳輸檔案 5；在遠端桌面要求提權 5；設定變更 5；稽核轉送設定變更 10；稽核維護（修復雜湊鏈）10。",
+  "刻意保持安靜：從私有位址的一般登入與工作階段、工作階段結束、例行的 IP 與裝置編輯、掃描、AI 對話、錨定心跳，以及憑證 agent 取回續期後的憑證包（level 3）。不依賴站台的使用者名稱、主機或清單：admin 類帳號只以通用名稱辨識。無法提供「這個帳號第一次從這個位址登入」的告警：這些解碼器必須是內建 FreeIPA 解碼器的子解碼器，而 Wazuh 的首次出現（fts）在它們身上從未觸發。以一套安裝 30 天的實測資料，1.0 到 1.1 的變化是：原本 222 筆 level 3（登入與工作階段）與 70 筆 level 5（root 工作階段），變成 70 筆 level 3，其餘只記錄為 level 2。",
   "限制：稽核記錄只以 id 記下執行操作的帳號，沒有名稱。關閉稽核轉送的那筆記錄是在設定生效後才寫入，所以永遠不會被轉送出去：資料流只是停了。jt-ipam 只在主控台工作階段連上之後才記錄；連線失敗只出現在 journal。",
   "主動回應需自行啟用：在 jt-ipam 主機上封鎖觸發規則 131605、131606、131609 的來源位址。啟用前請先看下方的風險說明。"
  ],
@@ -39,13 +39,13 @@
    "type": "decoder",
    "name": "jt-ipam_decoders.xml",
    "dest": "etc/decoders/jt-ipam_decoders.xml",
-   "sha256": "35477cca02674355130378195fc3b78da839805d2c9ecf7b5a88e1c5894d3e40"
+   "sha256": "eae723051e0d37b54242bdb70bfbf6ba58d53893f2decd8e80872128f193b45f"
   },
   {
    "type": "rule",
    "name": "zz-131600-jt_ipam_rules.xml",
    "dest": "etc/rules/zz-131600-jt_ipam_rules.xml",
-   "sha256": "38a6e52d41fa685f0cf8a836ca48f9a2a0d9c17953329321f70e70029d0e7f39"
+   "sha256": "1034dea7b9ac4bef2c74668be55a7ed355a5cc80c60d598eb3db302181926a96"
   }
  ],
  "agent_group": {
@@ -94,8 +94,8 @@
    "body_zh": "群組會讓 agent 讀取 /var/log/jt-ipam-audit.log。請在上一步的轉寫設定好之後再做，並重啟 agent，讓它開啟這個檔案。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g jt-ipam\n/var/ossec/bin/agent_control -R -u <agent_id>",
-   "verify": "Log in to jt-ipam. Expect rule 131632 (level 3) with your account name.",
-   "verify_zh": "登入 jt-ipam，manager 端應出現規則 131632（level 3），帶你的帳號名稱。"
+   "verify": "Log in to jt-ipam as admin (or fail a login on purpose). Expect rule 131678 (level 3), or 131633 (level 5), with the account name. An ordinary login from a private address is recorded at level 2 and does not alert.",
+   "verify_zh": "以 admin 登入 jt-ipam（或故意登入失敗一次），manager 端應出現規則 131678（level 3）或 131633（level 5），帶帳號名稱。一般帳號從私有位址登入只記錄為 level 2，不會告警。"
   }
  ],
  "active_response": [

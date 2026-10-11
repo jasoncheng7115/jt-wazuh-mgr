@@ -25,7 +25,8 @@
   Both fill the same fields, so one set of rules serves every shape:
     dstuser, srcip                the account and the client address
     synology.event                what happened, e.g. "signed in to", "failed to log in"
-    synology.service              DSM, SSH, SMB, CIFS(SMB3), WebDAV ...
+    protocol, system_name         the service: DSM, SSH, SMB, CIFS(SMB3), WebDAV ...
+                                  (twice: system_name is what <fts> accepts)
     synology.method               password, OTP (sign-ins only)
     synology.reason               the text after "due to"
     synology.share                the shared folder that was accessed
@@ -40,10 +41,22 @@
     synology.app, synology.host   jt-synology-raw only: the category and, for
                                   IETF lines, the host name
   A CDB lookup on the decoded account names the field "user", not "dstuser".
+  An IPv4 address that DSM writes in its IPv6-mapped form (::ffff:192.0.2.10)
+  is decoded without the prefix, so that the private-range rules see it.
+
+  First time seen: both parents carry <fts> on (account, address, service, the
+  sending NAS), used by the rules that report a new login pair. Wazuh 4.14
+  accepts only static fields there (protocol is refused, system_name is not),
+  refuses fts on a decoder with same-name siblings, and refuses it on a decoder
+  without a regex. Hence the fts sits on the parents with a regex of their own,
+  whose field does not survive once the children run.
 -->
 
 <decoder name="jt-synology">
   <program_name type="pcre2">^(?:Connection|System|Hyper_Backup)$</program_name>
+  <regex type="pcre2">^(\S*)</regex>
+  <order>extra_data</order>
+  <fts>name, location, dstuser, srcip, system_name</fts>
 </decoder>
 
 <!-- The acting account (Hyper Backup writes SYSTEM:, then a tab) and the message. -->
@@ -56,21 +69,21 @@
 <!-- User [alice] from [192.0.2.10] ... and User [alice] from [pc1(192.0.2.10)] ... -->
 <decoder name="jt-synology-fields">
   <parent>jt-synology</parent>
-  <regex type="pcre2">User \[([^\]]*)\] from \[(?:[^\]\(]*\()?([0-9A-Fa-f:.]+)\)?\]</regex>
+  <regex type="pcre2">User \[([^\]]*)\] from \[(?:[^\]\(]*\()?(?:::[fF]{4}:)?([0-9A-Fa-f:.]+)\)?\]</regex>
   <order>dstuser, srcip</order>
 </decoder>
 
 <!-- Older wording: User [alice] failed to log in from [192.0.2.10] via [DSM]. -->
 <decoder name="jt-synology-fields">
   <parent>jt-synology</parent>
-  <regex type="pcre2">User \[([^\]]*)\] (?:failed to log in|logged in) from \[([0-9A-Fa-f:.]+)\]</regex>
+  <regex type="pcre2">User \[([^\]]*)\] (?:failed to log in|logged in) from \[(?:::[fF]{4}:)?([0-9A-Fa-f:.]+)\]</regex>
   <order>dstuser, srcip</order>
 </decoder>
 
 <!-- Auto block: Host [192.0.2.10] was blocked via [SSH]. -->
 <decoder name="jt-synology-fields">
   <parent>jt-synology</parent>
-  <regex type="pcre2">Host \[([0-9A-Fa-f:.]+)\] was (?:blocked|unblocked)</regex>
+  <regex type="pcre2">Host \[(?:::[fF]{4}:)?([0-9A-Fa-f:.]+)\] was (?:blocked|unblocked)</regex>
   <order>srcip</order>
 </decoder>
 
@@ -89,15 +102,15 @@
 <!-- signed in to [DSM] successfully via [password] / failed to sign in to [DSM] via [password] -->
 <decoder name="jt-synology-fields">
   <parent>jt-synology</parent>
-  <regex type="pcre2">(?:signed in|sign in) to \[([^\]]+)\](?: successfully)? via \[([^\]]+)\]</regex>
-  <order>synology.service, synology.method</order>
+  <regex type="pcre2">(?:signed in|sign in) to \[(([^\]]+))\](?: successfully)? via \[([^\]]+)\]</regex>
+  <order>protocol, system_name, synology.method</order>
 </decoder>
 
 <!-- every other "via [service]": logins, share access, auto block, log out -->
 <decoder name="jt-synology-fields">
   <parent>jt-synology</parent>
-  <regex type="pcre2">(?:logged in successfully|failed to log in|from \[[^\]]+\]|was blocked|was unblocked|logged out[^\[]*) via \[([^\]]+)\]</regex>
-  <order>synology.service</order>
+  <regex type="pcre2">(?:logged in successfully|failed to log in|from \[[^\]]+\]|was blocked|was unblocked|logged out[^\[]*) via \[(([^\]]+))\]</regex>
+  <order>protocol, system_name</order>
 </decoder>
 
 <decoder name="jt-synology-fields">
@@ -140,6 +153,9 @@
 -->
 <decoder name="jt-synology-raw">
   <prematch type="pcre2">^(?:1 \d{4}-\d\d-\d\dT\S+ \S+ (?:Connection|System|Hyper_Backup) \S+ \S+ |1 \d{4}-\d\d-\d\dT\S+ \S+ \w+ \S+ \S+ .*?\bEvent: \w+, Path: |(?:Connection|System|Backup|Hyper_Backup) [^\s\[\]:]+:\s|\w+ Event: \w+, Path: )</prematch>
+  <regex type="pcre2">^(\S*)</regex>
+  <order>extra_data</order>
+  <fts>name, location, dstuser, srcip, system_name</fts>
 </decoder>
 
 <!-- IETF: 1 timestamp host app procid msgid structured-data message -->
@@ -165,26 +181,26 @@
 
 <decoder name="jt-synology-raw-fields">
   <parent>jt-synology-raw</parent>
-  <regex type="pcre2">Event: (\w+), Path: (.+?)(?: -\x3e (.+?))?, File/Folder: (\w+), Size: (.*?), User: (.+?), IP: ([0-9A-Fa-f:.]+)</regex>
+  <regex type="pcre2">Event: (\w+), Path: (.+?)(?: -\x3e (.+?))?, File/Folder: (\w+), Size: (.*?), User: (.+?), IP: (?:::[fF]{4}:)?([0-9A-Fa-f:.]+)</regex>
   <order>synology.file_action, synology.path, synology.new_path, synology.object, synology.size, dstuser, srcip</order>
 </decoder>
 
 <!-- The same field decoders as under jt-synology. -->
 <decoder name="jt-synology-raw-fields">
   <parent>jt-synology-raw</parent>
-  <regex type="pcre2">User \[([^\]]*)\] from \[(?:[^\]\(]*\()?([0-9A-Fa-f:.]+)\)?\]</regex>
+  <regex type="pcre2">User \[([^\]]*)\] from \[(?:[^\]\(]*\()?(?:::[fF]{4}:)?([0-9A-Fa-f:.]+)\)?\]</regex>
   <order>dstuser, srcip</order>
 </decoder>
 
 <decoder name="jt-synology-raw-fields">
   <parent>jt-synology-raw</parent>
-  <regex type="pcre2">User \[([^\]]*)\] (?:failed to log in|logged in) from \[([0-9A-Fa-f:.]+)\]</regex>
+  <regex type="pcre2">User \[([^\]]*)\] (?:failed to log in|logged in) from \[(?:::[fF]{4}:)?([0-9A-Fa-f:.]+)\]</regex>
   <order>dstuser, srcip</order>
 </decoder>
 
 <decoder name="jt-synology-raw-fields">
   <parent>jt-synology-raw</parent>
-  <regex type="pcre2">Host \[([0-9A-Fa-f:.]+)\] was (?:blocked|unblocked)</regex>
+  <regex type="pcre2">Host \[(?:::[fF]{4}:)?([0-9A-Fa-f:.]+)\] was (?:blocked|unblocked)</regex>
   <order>srcip</order>
 </decoder>
 
@@ -202,14 +218,14 @@
 
 <decoder name="jt-synology-raw-fields">
   <parent>jt-synology-raw</parent>
-  <regex type="pcre2">(?:signed in|sign in) to \[([^\]]+)\](?: successfully)? via \[([^\]]+)\]</regex>
-  <order>synology.service, synology.method</order>
+  <regex type="pcre2">(?:signed in|sign in) to \[(([^\]]+))\](?: successfully)? via \[([^\]]+)\]</regex>
+  <order>protocol, system_name, synology.method</order>
 </decoder>
 
 <decoder name="jt-synology-raw-fields">
   <parent>jt-synology-raw</parent>
-  <regex type="pcre2">(?:logged in successfully|failed to log in|from \[[^\]]+\]|was blocked|was unblocked|logged out[^\[]*) via \[([^\]]+)\]</regex>
-  <order>synology.service</order>
+  <regex type="pcre2">(?:logged in successfully|failed to log in|from \[[^\]]+\]|was blocked|was unblocked|logged out[^\[]*) via \[(([^\]]+))\]</regex>
+  <order>protocol, system_name</order>
 </decoder>
 
 <decoder name="jt-synology-raw-fields">

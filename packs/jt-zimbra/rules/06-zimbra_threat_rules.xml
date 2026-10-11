@@ -6,7 +6,7 @@
 
   相依：
     - 解碼器 zimbra-proxy-access（decoders/0001-zimbra_decoders.xml，3.0 起隨套件提供）
-    - CDB 清單 etc/lists/zimbra-internal-networks
+    - CDB 清單 etc/lists/zimbra-internal-networks（3.1 起為選用：私有網段已寫進規則）
   3.0 起不再引用其他套件的清單（100991 已移除，見該處說明）。
 -->
 
@@ -29,7 +29,13 @@
 
   <rule id="100921" level="0">
     <if_sid>100920</if_sid>
-    <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
     <description>Mailbox export from an internal network, normal backup or user action</description>
   </rule>
 
@@ -37,6 +43,13 @@
        internal export could come out at level 14. -->
   <rule id="100922" level="14">
     <if_sid>100920</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
     <list field="srcip" lookup="not_address_match_key">etc/lists/zimbra-internal-networks</list>
     <description>[HIGH] Full mailbox export from an external source, possible data exfiltration: $(url) from: $(srcip)</description>
     <mitre>
@@ -276,14 +289,28 @@
     </mitre>
   </rule>
 
-  <!-- 3.0: a 404 burst from an internal address is usually a proxy (Z-Push,
+  <!-- 3.1: private ranges are written into the rule; the optional list only
+       adds addresses (100985).
+       3.0: a 404 burst from an internal address is usually a proxy (Z-Push,
        a reverse proxy) carrying many clients, or a user's own script:
        the four 100981 alerts in 41 days here were all one internal script.
        Recorded at level 3 instead of 10. -->
   <rule id="100984" level="3">
     <if_sid>100981</if_sid>
-    <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
     <description>Many 404 responses for one internal address, often a proxy carrying many clients or a script: $(srcip)</description>
+  </rule>
+
+  <rule id="100985" level="3">
+    <if_sid>100981</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>Many 404 responses for one address listed as internal: $(srcip)</description>
   </rule>
 
   <!-- 掃描後成功：探測轉為得手 -->

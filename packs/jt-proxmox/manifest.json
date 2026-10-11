@@ -2,7 +2,7 @@
  "id": "jt-proxmox",
  "name": "Proxmox VE Detection Suite",
  "name_zh": "Proxmox VE 偵測套組",
- "version": "1.0",
+ "version": "1.1",
  "summary": "Tasks, high availability, cluster quorum, Ceph health and REST API changes on Proxmox VE, where Wazuh only decodes logins.",
  "summary_zh": "Proxmox VE 的任務、高可用、叢集 quorum、Ceph 健康狀態與 REST API 變更；Wazuh 內建只解碼登入。",
  "rule_id_range": "131200-131299",
@@ -12,7 +12,7 @@
   "High availability and quorum: a node being fenced and this node losing quorum are level 12; an HA service in error or recovery is level 10; a node that drops out of the cluster is level 4, and level 8 when it happens six times in an hour. Corosync link flaps are recorded below the alert level and raise level 7 only in a burst, because a busy cluster network produces hundreds a month.",
   "Ceph health from the cluster log on monitor nodes: a warning is level 7, an error or a down OSD or monitor level 10, a full OSD or pool or damaged placement groups level 12. The agent group drops the [DBG] lines (about 99 per cent of the log) and the regular HEALTH_OK.",
   "REST API from the pveproxy access log: failed logins (level 5; six from one address in two minutes, level 10), and changes that succeeded: users, permissions and realms (level 8), API tokens (level 10), guest deletion (level 8), firewall changes (level 6), uploads to storage (level 5), cluster configuration (level 6). The agent group sends these lines under the program name jt-pveproxy so that the pack's decoder reads them: pveproxy logs an IPv4 client as ::ffff:a.b.c.d, the built-in decoders keep that prefix, and Wazuh's firewall-drop then writes an ip6tables rule that the client's IPv4 traffic never meets. The pack's decoder reports the plain IPv4 address.",
-  "Monitoring systems that log in every few seconds made the built-in rule 87203 produce tens of thousands of level 3 alerts a day (measured: 20,900 a day from one account). List such accounts in etc/lists/jt-pve-service-accounts and their successful logins drop to level 0. The key is the user name without its realm, as Wazuh decodes it. Failed logins of those accounts still alert.",
+  "Successful logins: the built-in rule 87203 alerts at level 3 on every login, and a monitoring system that logs in every few seconds makes that tens of thousands of alerts a day (measured: 20,880 a day from one monitoring account, against 7 root logins). The pack records an ordinary account's login at level 2, keeps root's visible at level 3, and raises a login that follows six failures for the same account to level 12. This works on a fresh install; etc/lists/jt-pve-service-accounts is optional tuning that drops listed accounts to level 0. pvedaemon's success line carries no client address, so a login from outside cannot be told apart there.",
   "Proxmox Backup Server has a pack of its own, jt-pbs."
  ],
  "notes_zh": [
@@ -21,7 +21,7 @@
   "高可用與 quorum：節點被 fence、本節點失去 quorum 為 level 12；HA 服務進入 error 或 recovery 為 level 10；節點脫離叢集為 level 4，一小時內發生六次則為 level 8。corosync 連線閃斷記錄在告警等級之下，只有短時間大量發生才升為 level 7，因為繁忙的叢集網路一個月就有數百次。",
   "Ceph 健康狀態取自 monitor 節點的叢集記錄：警告為 level 7，錯誤或 OSD、monitor 停擺為 level 10，OSD 或 pool 滿了、placement group 損壞為 level 12。agent 群組會丟掉 [DBG] 行（約占記錄 99%）與例行的 HEALTH_OK。",
   "pveproxy 存取記錄裡的 REST API：登入失敗（level 5；同一位址兩分鐘內六次為 level 10），以及成功的變更：使用者、權限與 realm（level 8）、API token（level 10）、刪除 guest（level 8）、防火牆變更（level 6）、上傳到儲存區（level 5）、叢集設定（level 6）。agent 群組以程式名稱 jt-pveproxy 送出這些記錄，讓套件自己的解碼器讀取：pveproxy 把 IPv4 用戶端記成 ::ffff:a.b.c.d，內建解碼器保留這個前綴，Wazuh 的 firewall-drop 就會寫成 ip6tables 規則，用戶端的 IPv4 流量永遠碰不到。套件的解碼器回報的是單純的 IPv4 位址。",
-  "每隔幾秒就登入一次的監控系統，會讓內建規則 87203 每天產生數萬筆 level 3 告警（實測：單一帳號每天 20,900 筆）。把這類帳號加入 etc/lists/jt-pve-service-accounts，它們的成功登入就降為 level 0。鍵值是不含 realm 的使用者名稱，與 Wazuh 解碼的一樣。這些帳號的登入失敗仍會告警。",
+  "成功登入：內建規則 87203 對每一次登入都告警 level 3，每幾秒登入一次的監控系統會讓它一天變成幾萬筆（實測：一個監控帳號一天 20,880 筆，root 只有 7 筆）。套件把一般帳號的登入記成 level 2，root 的登入維持 level 3 可見，同一帳號失敗六次後的登入升到 level 12。裝上去就有效；etc/lists/jt-pve-service-accounts 只是選用的微調，列入的帳號降為 level 0。pvedaemon 的成功記錄沒有用戶端位址，所以無法在那裡分辨是否從外部登入。",
   "Proxmox Backup Server 另有自己的套件 jt-pbs。"
  ],
  "author": "Jason Tools",
@@ -43,7 +43,7 @@
    "type": "rule",
    "name": "zz-131200-jt_proxmox_rules.xml",
    "dest": "etc/rules/zz-131200-jt_proxmox_rules.xml",
-   "sha256": "640dd17dff3276864b683b99b76c03387ee903c6c50e2921def4d16d730ce8b7"
+   "sha256": "edc37d5a21e169577de43fa802ec7ea33e6cfe759d799e7749f60f32697c01fe"
   },
   {
    "type": "list",
@@ -84,10 +84,10 @@
   {
    "platform": "manager",
    "required": false,
-   "title": "List the accounts that log in for monitoring",
-   "title_zh": "列出用於監控而頻繁登入的帳號",
-   "body": "One line per account, the user name without its realm, then reload the ruleset. Their successful logins stop alerting; their failures still do.",
-   "body_zh": "每個帳號一行，使用者名稱不含 realm，加入後重新載入規則集。這些帳號的成功登入不再告警；失敗仍會告警。",
+   "title": "Optional: list the accounts that log in for monitoring",
+   "title_zh": "選用：列出用來監控而登入的帳號",
+   "body": "Not needed: routine logins are already recorded below the alert level. Listing an account drops its logins to level 0 instead of 2. One line per account, the user name without its realm, then reload the ruleset. Their failures still alert.",
+   "body_zh": "不是必要的：例行登入本來就記在告警等級以下。列入的帳號登入降為 level 0（原本是 2）。每行一個帳號，寫不含 realm 的使用者名稱，然後重新載入規則集。這些帳號的登入失敗照樣告警。",
    "code": "echo 'monitoring:service' >> /var/ossec/etc/lists/jt-pve-service-accounts"
   }
  ],

@@ -2911,7 +2911,7 @@ class TestPreflightPrivacyPattern(unittest.TestCase):
 
     def test_leaves_documentation_placeholders_alone(self):
         for value in ('192.168.1.100', '192.168.1.1', '10.0.0.50',
-                      'you@example.com', 'agent-example', 'root@host1.example.com',
+                      '172.31.255.1', 'you@example.com', 'agent-example', 'root@host1.example.com',
                       'room@muc.meet.jitsi', 'focus@auth.meet.jitsi', 'user@0.service'):
             with self.subTest(value=value):
                 self.assertFalse(self._flags(value), '%s should not be flagged' % value)
@@ -3069,3 +3069,73 @@ class TestAlertDigest(unittest.TestCase):
         group['samples'] = [alert]
         text = self.mod.render_text({('1', 'h'): group}, 1, 12, None)
         self.assertIn('Source: 10.0.0.1', text)
+
+
+class TestMalwareHashUpdater(unittest.TestCase):
+    """jt-malware-hash's updater, against a small export shaped like MalwareBazaar's.
+
+    Before 1.5 every label in the list was a MIME type (row[7:10] starts at the
+    mime_type column), and nothing stopped the empty-content hash from entering
+    the list, where it would match about half of all FIM events.
+    """
+
+    HEADER = ('# "first_seen_utc","sha256_hash","md5_hash","sha1_hash","reporter","file_name",'
+              '"file_type_guess","mime_type","signature","clamav","vtpercent","imphash","ssdeep","tlsh"')
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(root, 'packs', 'jt-malware-hash', 'scripts', 'update-malware-hashes.py')
+        spec = importlib.util.spec_from_file_location('mh_updater', path)
+        cls.mod = importlib.util.module_from_spec(spec)
+        previous = sys.dont_write_bytecode
+        sys.dont_write_bytecode = True      # no __pycache__ inside the shipped pack
+        try:
+            spec.loader.exec_module(cls.mod)
+        finally:
+            sys.dont_write_bytecode = previous
+
+    def _zip(self, rows):
+        import tempfile, zipfile
+        fd, path = tempfile.mkstemp(suffix='.zip')
+        os.close(fd)
+        self.addCleanup(os.remove, path)
+        body = '################\n# MalwareBazaar full export\n' + self.HEADER + '\n' + '\n'.join(rows) + '\n'
+        with zipfile.ZipFile(path, 'w') as zf:
+            zf.writestr('full.csv', body)
+        return path
+
+    def row(self, sha, signature='n/a', ftype='exe'):
+        return ('"2026-10-01 00:00:00", "%s", "%s", "%s", "someone", "x.exe", "%s", '
+                '"application/x-dosexec", "%s", "n/a", "n/a", "n/a", "n/a", "n/a"'
+                % (sha, 'a' * 32, 'b' * 40, ftype, signature))
+
+    def test_labels_come_from_the_signature_column_not_the_mime_type(self):
+        a, b = '1' * 64, '2' * 64
+        hashes = self.mod.extract_hashes(self._zip([self.row(a, 'RemcosRAT'), self.row(b, 'n/a', 'dll')]))
+        self.assertEqual(hashes[a], 'RemcosRAT')
+        self.assertEqual(hashes[b], 'dll', 'without a signature the file type is the label')
+        self.assertNotIn('application/x-dosexec', hashes.values())
+
+    def test_the_empty_content_hash_never_enters_the_list(self):
+        hashes = self.mod.extract_hashes(self._zip([self.row(self.mod.EMPTY_SHA256, 'Mirai'),
+                                                    self.row('3' * 64, 'Mirai')]))
+        self.assertNotIn(self.mod.EMPTY_SHA256, hashes)
+        self.assertIn('3' * 64, hashes)
+
+    def test_labels_cannot_break_the_cdb_line(self):
+        hashes = self.mod.extract_hashes(self._zip([self.row('4' * 64, 'Agent:Tesla"x')]))
+        self.assertNotIn(':', hashes['4' * 64])
+        self.assertNotIn('"', hashes['4' * 64])
+
+    def test_the_shipped_list_is_a_placeholder_key_not_a_comment(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with io.open(os.path.join(root, 'packs', 'jt-malware-hash', 'lists', 'malware_hash'),
+                     encoding='utf-8') as fh:
+            lines = [l for l in fh.read().splitlines() if l.strip()]
+        self.assertTrue(lines)
+        for line in lines:
+            self.assertFalse(line.startswith('#'), 'CDB lists have no comments: %r' % line)
+            self.assertRegex(line, r'^[^:#\s]+:\S')
+            self.assertNotRegex(line, r'^[0-9a-f]{64}:', 'a shipped key must never be a real hash')

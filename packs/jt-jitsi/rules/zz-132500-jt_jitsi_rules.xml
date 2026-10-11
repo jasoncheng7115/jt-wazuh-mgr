@@ -8,7 +8,7 @@
   Modules
     132500-132504  base rules, one per line shape (all level 0)
     132510-132519  Prosody: JWT (token) authentication
-    132520-132529  Prosody: refused actions, rate limits, accounts
+    132520-132529  Prosody: refused actions, rate limits, accounts, logins
     132530-132539  Prosody: configuration, TLS, ports
     132540-132549  XMPP connections of Jicofo, Videobridge, Jibri; bridges
     132550-132559  Videobridge health and ICE
@@ -63,7 +63,7 @@
     through the web container. Expired tokens are the routine case (a tab
     left open past the token lifetime, an old invitation link) and stay low.
     A bad signature, algorithm or issuer means a token that this server did
-    not sign: a forgery attempt, or a portal whose signing secret no longer
+    not sign: a forgery attempt, or a token issuer whose signing secret no longer
     matches Prosody's (then every join fails, and 132518 fires too).
     132518 counts the group jitsi_token_failure, which only the final rules
     carry. Expired tokens are not counted. On 4.14.7 if_matched_group counts
@@ -97,7 +97,7 @@
   <rule id="132513" level="5">
     <if_sid>132510</if_sid>
     <match>reason:token required </match>
-    <description>Jitsi Meet: connection without a JWT refused (meeting opened without the portal)</description>
+    <description>Jitsi Meet: connection without a JWT refused (meeting opened without its token issuer)</description>
     <group>authentication_failed,jitsi_token_failure,</group>
   </rule>
 
@@ -111,7 +111,7 @@
   <rule id="132519" level="5">
     <if_sid>132510</if_sid>
     <regex type="pcre2">reason:(?:Not acceptable by nbf|jwt missing required context claim) </regex>
-    <description>Jitsi Meet: JWT not yet valid or without its context claim (clock skew between portal and server?)</description>
+    <description>Jitsi Meet: JWT not yet valid or without its context claim (clock skew between token issuer and server?)</description>
     <group>authentication_failed,jitsi_token_failure,</group>
   </rule>
 
@@ -142,7 +142,7 @@
   <rule id="132518" level="10" frequency="15" timeframe="120" ignore="300">
     <if_matched_group>jitsi_token_failure</if_matched_group>
     <same_location />
-    <description>[WARN] Jitsi Meet: repeated JWT failures (forgery attempts, or a portal secret that no longer matches)</description>
+    <description>[WARN] Jitsi Meet: repeated JWT failures (forgery attempts, or a token issuer secret that no longer matches)</description>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -216,6 +216,43 @@
       <id>T1098</id>
     </mitre>
     <group>account_changed,</group>
+  </rule>
+
+  <!--
+    Successful XMPP logins. A login is not an alert: every participant logs in
+    once per connection (with JWT authentication under a random name), and
+    Jicofo, the videobridge and Jibri log in on every (re)connect. They are
+    recorded at level 2, below the alert level but usable for correlation.
+    Prosody 13 adds the role: accounts with an administrative role
+    (prosody:admin, prosody:operator) are level 3, except the components'
+    built-in accounts, which docker-jitsi-meet makes admins by default
+    (focus, jvb, jibri, jigasi on the auth domain). The line carries no client
+    address, so external sources cannot be told apart, and no login failure
+    names the account, so success after failures cannot be correlated.
+    Prosody 0.12 logs no role: its logins stay at 132527.
+  -->
+  <rule id="132527" level="2">
+    <if_sid>132500,132501</if_sid>
+    <match>Authenticated as </match>
+    <description>Jitsi Meet: XMPP login</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="132529" level="3">
+    <if_sid>132527</if_sid>
+    <regex type="pcre2">Authenticated as \S+ \[prosody:(?:admin|operator)\]</regex>
+    <description>Jitsi Meet: XMPP login of an account with an administrative role</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="132528" level="2">
+    <if_sid>132529</if_sid>
+    <regex type="pcre2">Authenticated as (?:focus|jvb|jibri|jigasi)@auth\.\S+ \[prosody:(?:admin|operator)\]</regex>
+    <description>Jitsi Meet: XMPP login of a built-in component account</description>
+    <group>authentication_success,</group>
   </rule>
 
   <!--

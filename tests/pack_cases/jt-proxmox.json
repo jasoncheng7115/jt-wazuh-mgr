@@ -12,9 +12,9 @@
   },
   {
    "log": "Oct 11 00:28:19 pve1 pvedaemon[3802103]: <root@pam> successful auth for user 'root@pam'",
-   "expect_rule": "87203",
+   "expect_rule": "131204",
    "expect_level": 3,
-   "note": "real shape; unlisted account still alerts"
+   "note": "real shape; root stays visible (level 3)"
   },
   {
    "log": "Oct  4 00:40:21 pve1 pvedaemon[2310392]: authentication failure; rhost=::ffff:192.0.2.200 user=monitoring@pve msg=Authentication failure",
@@ -314,6 +314,56 @@
    "location": "/var/log/pveproxy/access.log",
    "expect_rule": "none",
    "note": "without the agent group header the line is the built-in web decoder's, and the pack stays out of it"
+  },
+  {
+   "log": "Oct 11 00:28:19 pve1 pvedaemon[3802103]: <root@pam> successful auth for user 'backupsvc@pve'",
+   "location": null,
+   "expect_rule": "131203",
+   "expect_level": 2,
+   "repeat": 50,
+   "note": "POLICY: 50 routine logins of an unlisted account with the SHIPPED list end at level 2, no alert"
+  },
+  {
+   "log": "Oct 11 00:28:19 pve1 pvedaemon[3802103]: <root@pam> successful auth for user 'alice@pam'",
+   "location": null,
+   "expect_rule": "131203",
+   "expect_level": 2,
+   "note": "ordinary account login: recorded, no alert"
+  },
+  {
+   "log": "Oct 11 00:28:19 pve1 pvedaemon[3802103]: <root@pam> successful auth for user 'jdoe@corp-ldap'",
+   "location": null,
+   "expect_rule": "131205",
+   "expect_level": 2,
+   "note": "login through a directory realm (no decoded user)"
+  },
+  {
+   "log": "Oct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:19 pve1 pvedaemon[3802103]: <root@pam> successful auth for user 'admin@pve'",
+   "location": null,
+   "expect_rule": "131206",
+   "expect_level": 12,
+   "note": "six failures for one account, then its login: password guessed"
+  },
+  {
+   "log": "Oct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:19 pve1 pvedaemon[3802103]: <root@pam> successful auth for user 'admin@pve'",
+   "location": null,
+   "expect_rule": "131203",
+   "expect_level": 2,
+   "note": "near miss: five failures, then the login, stays a routine login"
+  },
+  {
+   "log": "Oct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=admin@pve msg=Authentication failure\nOct 11 00:28:19 pve1 pvedaemon[3802103]: <root@pam> successful auth for user 'carol@pve'",
+   "location": null,
+   "expect_rule": "131203",
+   "expect_level": 2,
+   "note": "near miss: failures for another account do not taint this login"
+  },
+  {
+   "log": "Oct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=Authentication failure\nOct 11 00:28:10 pve1 pvedaemon[3802103]: authentication failure; rhost=::ffff:192.0.2.200 user=root@pam msg=Authentication failure",
+   "location": null,
+   "expect_rule": "131202",
+   "expect_level": 10,
+   "note": "six failures for one account from one address: 131202 (87202 needs eight)"
   }
  ]
 }

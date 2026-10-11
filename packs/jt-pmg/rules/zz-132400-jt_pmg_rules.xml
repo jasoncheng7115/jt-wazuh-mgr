@@ -8,12 +8,13 @@
 
   Modules
     132400-132409  logins to the web interface and API
+    132490-132499  logins: superuser, first login, login after failures
     132410-132419  tasks (root shell, service stop, cluster, failures)
     132420-132429  mail filter: viruses, outgoing virus and spam, filter errors
     132430-132439  quarantine releases
     132440-132449  cluster sync, LDAP sync, policy daemon, certificate renewal
     132450-132459  ClamAV updates, Postfix to filter path, TLS, DNS blocklists
-    132460-132479  configuration changes (pmgproxy access log)
+    132460-132479  configuration changes and public-address logins (pmgproxy access log)
     132480-132489  service failures (systemd)
 
   What PMG writes for routine mail (accepted, marked, quarantined spam, SPF,
@@ -29,35 +30,28 @@
   </rule>
 
   <!--
-    Logins. pmgdaemon writes "successful auth" for a new login AND for every
-    ticket renewal: an open web interface renews every 15 minutes and API
-    automation often logs in every few minutes (measured: one account every
-    2 minutes, 720 logins a day). List such accounts in
-    etc/lists/jt-pmg-service-accounts, by full user ID with the realm.
+    Logins. pmgdaemon writes "successful auth for user '<user>@<realm>'" for a
+    new login AND for every ticket renewal (an open web interface renews every
+    15 minutes), and it writes NO client address. API automation logs in often
+    (measured: one account every 2 minutes, 720 logins a day). By default:
+      - an ordinary login is recorded below the alert level (132401, level 2);
+      - the first login of an account on this gateway is level 3 (132493,
+        first time seen: a polling account alerts once, ever);
+      - root@pam, the built-in superuser (the pam realm admits only root), is
+        level 3, at most once an hour per gateway; the renewals of an open
+        session in that hour are level 2 (132491, 132492);
+      - a login after three failures for the same account within 10 minutes is
+        level 10, after a brute-force alert (132405) that named the account
+        level 12 (132490, 132494).
+    The client address of a login is only in the pmgproxy access log: a login
+    request from a public address is 132473. etc/lists/jt-pmg-service-accounts
+    is optional tuning (full user ID with the realm): listed accounts drop to
+    level 0; their failures still alert.
+    Correlation note: Wazuh stores an event only in the list of the rule that
+    finally matched it, and an event that already completed a correlation is
+    not reused. So the renewal rule looks back at the last level-3 login, not
+    at the previous renewal, and the failure rules come first in this file.
   -->
-  <rule id="132401" level="3">
-    <if_sid>132400</if_sid>
-    <match type="pcre2">^successful (?:openid connect )?auth for user '</match>
-    <description>PMG: $(dstuser) logged in to the web interface or API</description>
-    <mitre>
-      <id>T1078</id>
-    </mitre>
-    <group>authentication_success,</group>
-  </rule>
-
-  <rule id="132402" level="0">
-    <if_sid>132401</if_sid>
-    <list field="user" lookup="match_key">etc/lists/jt-pmg-service-accounts</list>
-    <description>PMG: routine login of a listed service account</description>
-  </rule>
-
-  <!-- End users opening their own spam quarantine from a spam report link. -->
-  <rule id="132403" level="2">
-    <if_sid>132401</if_sid>
-    <field name="pmg.realm" type="pcre2">^quarantine$</field>
-    <description>PMG: $(dstuser) opened the spam quarantine</description>
-  </rule>
-
   <rule id="132404" level="5">
     <if_sid>132400</if_sid>
     <match type="pcre2">^(?:openid connect )?authentication failure; rhost=</match>
@@ -84,6 +78,89 @@
       <id>T1110</id>
     </mitre>
     <group>authentication_failures,</group>
+  </rule>
+
+  <rule id="132401" level="2">
+    <if_sid>132400</if_sid>
+    <match type="pcre2">^successful (?:openid connect )?auth for user '</match>
+    <description>PMG: $(dstuser) logged in to the web interface or API</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!-- The children of 132401 are mutually exclusive by realm: pam (root only), quarantine, any other. -->
+  <rule id="132491" level="3">
+    <if_sid>132401</if_sid>
+    <field name="pmg.realm" type="pcre2">^pam$</field>
+    <description>PMG: the superuser $(dstuser) logged in to the web interface or API</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="132492" level="2" timeframe="3600">
+    <if_matched_sid>132491</if_matched_sid>
+    <same_user />
+    <description>PMG: $(dstuser) logged in again or renewed the session within the hour</description>
+  </rule>
+
+  <!-- End users opening their own spam quarantine from a spam report link. -->
+  <rule id="132403" level="2">
+    <if_sid>132401</if_sid>
+    <field name="pmg.realm" type="pcre2">^quarantine$</field>
+    <description>PMG: $(dstuser) opened the spam quarantine</description>
+  </rule>
+
+  <!-- First login of an account of the pmg, LDAP or OpenID realms on this gateway. -->
+  <rule id="132493" level="3">
+    <if_sid>132401</if_sid>
+    <field name="pmg.realm" type="pcre2">^(?!pam$|quarantine$)</field>
+    <if_fts />
+    <description>PMG: first login of $(dstuser) on this gateway</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <!-- Optional tuning: accounts listed by the site never alert on success. -->
+  <rule id="132402" level="0">
+    <if_sid>132401,132491,132493</if_sid>
+    <list field="user" lookup="match_key">etc/lists/jt-pmg-service-accounts</list>
+    <description>PMG: routine login of a listed service account</description>
+  </rule>
+
+  <!--
+    A login after failures for the same account (the failure lines carry the
+    user with its realm, like the success line). Children of every success
+    rule above, so they win whichever of those matched first. frequency="4"
+    means three earlier failures. After a brute-force alert (132405) the
+    failures it used are no longer available to 132490, so 132494 looks at the
+    brute-force alert itself.
+  -->
+  <rule id="132490" level="10" frequency="4" timeframe="600">
+    <if_sid>132401,132402,132403,132491,132492,132493</if_sid>
+    <if_matched_sid>132404</if_matched_sid>
+    <same_user />
+    <description>[WARN] PMG: $(dstuser) logged in after repeated failed logins</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="132494" level="12" timeframe="600">
+    <if_sid>132401,132402,132403,132490,132491,132492,132493</if_sid>
+    <if_matched_sid>132405</if_matched_sid>
+    <same_user />
+    <description>[HIGH] PMG: $(dstuser) logged in after a brute-force attack on the web interface</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_success,</group>
   </rule>
 
   <!--
@@ -438,8 +515,9 @@
   <!--
     Configuration changes through the REST API, from the pmgproxy access log
     (/var/log/pmgproxy/pmgproxy.log). The pack's agent group keeps only POST,
-    PUT and DELETE requests and drops login ticket requests. The built-in web
-    access decoder reads the lines; its rule for simple 2xx and 3xx requests
+    PUT and DELETE requests, and of the login ticket requests only the
+    answered ones (132473). The built-in web access decoder reads the lines;
+    its rule for simple 2xx and 3xx requests
     (31108) leaves URLs with a query string at 31100, so the rules hang off
     both. Requests that failed with 4xx or 5xx are left to the built-in web
     rules (31101, 31120); note that the web interface uses /api2/extjs/, which
@@ -597,6 +675,40 @@
     <url type="pcre2">^/api2/(?:json|extjs)/nodes/[^/]+/(?:network|dns|time|config|subscription)(?:/|\?|$)</url>
     <description>PMG API: node network, DNS, time or node configuration changed ($(protocol) $(url)) from $(srcip)</description>
     <group>pmg_api,</group>
+  </rule>
+
+  <!--
+    Login requests from a public address. The success line in syslog has no
+    client address, so the access log is the only place it is written. The
+    agent group keeps the ticket requests that were answered with 2xx (it drops
+    failed json logins, which pmgdaemon reports with the user). The web
+    interface logs in through /api2/extjs/, which answers 200 even for a wrong
+    password, so this means "a login or a session renewal was attempted from a
+    public address"; the account is in the syslog line of the same second.
+    Wazuh's address matching does not see an IPv4 address behind the ::ffff:
+    prefix PMG writes, so private addresses are recognised by the line's start:
+    10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, ::1, fc00::/7, fe80::/10.
+    Further requests from the same address within the hour of that alert
+    drop to level 2 (renewals every 15 minutes).
+  -->
+  <rule id="132473" level="5">
+    <if_sid>31100,31108</if_sid>
+    <location>/var/log/pmgproxy/pmgproxy.log</location>
+    <protocol>POST</protocol>
+    <id type="pcre2">^2</id>
+    <url type="pcre2">^/api2/(?:json|extjs)/access/ticket(?:\?|$)</url>
+    <match type="pcre2">^(?!(?:::ffff:)?(?:10|127)\.|(?:::ffff:)?192\.168\.|(?:::ffff:)?172\.(?:1[6-9]|2\d|3[01])\.|(?:::ffff:)?100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|::1 |f[cd][0-9a-f]{0,2}:|fe[89ab][0-9a-f]?:|- )</match>
+    <description>PMG: web interface or API login from the public address $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>pmg_api,</group>
+  </rule>
+
+  <rule id="132474" level="2" timeframe="3600">
+    <if_matched_sid>132473</if_matched_sid>
+    <same_source_ip />
+    <description>PMG: another login or session renewal from the public address $(srcip) within the hour</description>
   </rule>
 
   <!--

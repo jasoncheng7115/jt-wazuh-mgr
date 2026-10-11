@@ -20,9 +20,13 @@
        ============================================================== -->
 
   <!-- "Successful login for user '%s' from: %s" (src/www/authgui.inc).
+       A successful login is recorded, not alerted (level 2), unless it is the
+       built-in superuser root, comes from outside the private ranges, is the
+       first time this account logs in from this address on this firewall, or
+       follows password guessing from the same address. No site list is needed.
        Not written when System > Settings > Administration > "Disable logging of
        web GUI successful logins" (quietlogin) is set; 131506 still is. -->
-  <rule id="131501" level="3">
+  <rule id="131501" level="2">
     <if_sid>6100</if_sid>
     <match type="pcre2">^\S+: Successful login for user '</match>
     <description>OPNsense: web interface login of $(dstuser) from $(srcip)</description>
@@ -30,6 +34,74 @@
       <id>T1078</id>
     </mitre>
     <group>authentication_success,pci_dss_10.2.5,gdpr_IV_32.2,</group>
+  </rule>
+
+  <!-- Private source: 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10 (CGNAT),
+       fc00::/7, fe80::/10. Several <srcip> elements are OR. (::1 is left out on
+       purpose: in 4.14.7 an entry "::1" or "::1/128" matches every IPv4 address.) -->
+  <rule id="131537" level="2">
+    <if_sid>131501</if_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <description>OPNsense: web interface login of $(dstuser) from $(srcip) (private address)</description>
+    <group>authentication_success,</group>
+  </rule>
+
+  <rule id="131533" level="3">
+    <if_sid>131537</if_sid>
+    <user type="pcre2">^root$</user>
+    <description>OPNsense: web interface login of the superuser root from $(srcip)</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- First time this account logs in from this address on this firewall
+       (fts on user, srcip, location): a returning administrator stays quiet. -->
+  <rule id="131536" level="3">
+    <if_sid>131537</if_sid>
+    <if_fts />
+    <description>OPNsense: first web interface login of $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- Any source outside the private ranges: one negated <srcip> per range
+       means "in none of them". -->
+  <rule id="131534" level="5">
+    <if_sid>131501</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>OPNsense: web interface login of $(dstuser) from the outside address $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1133</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.5,</group>
+  </rule>
+
+  <rule id="131535" level="8">
+    <if_sid>131534</if_sid>
+    <user type="pcre2">^root$</user>
+    <description>OPNsense: web interface login of the superuser root from the outside address $(srcip)</description>
+    <mitre>
+      <id>T1078.003</id>
+      <id>T1133</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
   </rule>
 
   <!-- "Web GUI authentication error for '%s' from %s" (src/www/authgui.inc) -->
@@ -55,9 +127,11 @@
     <group>authentication_failures,pci_dss_10.2.4,pci_dss_11.4,gdpr_IV_35.7.d,</group>
   </rule>
 
-  <!-- A successful login from an address that has just been guessing passwords. -->
+  <!-- A successful login from an address that has just been guessing passwords.
+       Listed under every rule of the success tree: siblings are evaluated in no
+       fixed order, and whichever wins, this child is tried below it. -->
   <rule id="131504" level="12" timeframe="600">
-    <if_sid>131501</if_sid>
+    <if_sid>131501,131537,131533,131536,131534,131535</if_sid>
     <if_matched_sid>131503</if_matched_sid>
     <same_source_ip />
     <description>[HIGH] OPNsense: web interface login of $(dstuser) from $(srcip) right after repeated failed logins from that address</description>
@@ -88,7 +162,12 @@
     <group>authentication_success,</group>
   </rule>
 
-  <rule id="131507" level="3">
+  <!-- These lines carry no address, so private and outside sources cannot be
+       told apart. Recorded (level 2); root and a first-seen account alert.
+       Measured: a configuration backup account logging in over SSH every hour,
+       191 lines a month per firewall, was 191 level 3 alerts and is now one
+       level 3 alert per firewall, the first time. -->
+  <rule id="131507" level="2">
     <if_sid>6100</if_sid>
     <match type="pcre2">^user \S+ authenticated successfully for (?!WebGui )\S+ \[using </match>
     <description>OPNsense: $(dstuser) logged in to $(opnsense.service) ($(opnsense.authenticator))</description>
@@ -98,14 +177,35 @@
     <group>authentication_success,pci_dss_10.2.5,</group>
   </rule>
 
-  <!-- Accounts in etc/lists/jt-opnsense-service-accounts: configuration backup
-       tools that log in over SSH every hour (measured: 191 a month per firewall
-       from one such account). Their logins are not news; failures still alert. -->
-  <rule id="131508" level="0">
+  <rule id="131528" level="3">
     <if_sid>131507</if_sid>
+    <user type="pcre2">^root$</user>
+    <description>OPNsense: the superuser root logged in to $(opnsense.service) ($(opnsense.authenticator))</description>
+    <mitre>
+      <id>T1078.003</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- First login of this account on this firewall (fts on user, location). -->
+  <rule id="131529" level="3">
+    <if_sid>131507</if_sid>
+    <if_fts />
+    <description>OPNsense: first login of $(dstuser) on this firewall ($(opnsense.service))</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.5,</group>
+  </rule>
+
+  <!-- Optional tuning: accounts in etc/lists/jt-opnsense-service-accounts never
+       alert on success, not even the first time or as root. Failures still do. -->
+  <rule id="131508" level="0">
+    <if_sid>131507,131528,131529</if_sid>
     <list field="user" lookup="match_key">etc/lists/jt-opnsense-service-accounts</list>
     <description>OPNsense: routine login of a listed service account</description>
   </rule>
+
 
   <!-- "user %s failed authentication for %s on %s via %s" (LOG_DEBUG, one line per
        authenticator tried). For WebGui 131502 is the line with the address. For
@@ -461,6 +561,23 @@
     <group>authentication_failures,pci_dss_10.2.4,pci_dss_11.4,</group>
   </rule>
 
+  <!-- A login right after eight failures for the same account (131556).
+       Level 12, above 131556 (10) on purpose: analysisd skips an earlier event
+       that already produced an alert of the same or higher level
+       (eventinfo.c Search_LastSids, "lf->matched >= rule->level"), so at level 10
+       this rule never fired (verified in the sandbox). -->
+  <rule id="131538" level="12" timeframe="600">
+    <if_sid>131507,131528,131529,131508</if_sid>
+    <if_matched_sid>131556</if_matched_sid>
+    <same_user />
+    <description>[HIGH] OPNsense: $(dstuser) logged in to $(opnsense.service) right after repeated failed logins for that account</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,pci_dss_10.2.5,pci_dss_11.4,</group>
+  </rule>
+
   <!-- src/opnsense/scripts/syslog/lockout_handler (Firewall > Settings > Advanced,
        "Login Protection"): after too many failed web interface or SSH logins it
        adds the address to the sshlockout table and writes
@@ -562,8 +679,11 @@
     <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,</group>
   </rule>
 
-  <!-- "user '%s' authenticated using '%s'" (user_pass_verify.php). Measured: 14 a week. -->
-  <rule id="131567" level="3">
+  <!-- "user '%s' authenticated using '%s'" (user_pass_verify.php). Measured: 14 a
+       week. A successful VPN login is recorded, not alerted; the built-in 81801
+       ("Peer Connection Initiated", level 3) is left as it is. Repeated failures
+       (131565) still alert. -->
+  <rule id="131567" level="2">
     <if_sid>81800</if_sid>
     <match type="pcre2">^user '[^']*' authenticated using '</match>
     <description>OPNsense: OpenVPN user $(srcuser) authenticated</description>
@@ -700,11 +820,22 @@
   </rule>
 
   <!-- "XAuth authentication of '%Y' successful" / "RADIUS authentication of '%Y' successful":
-       a remote-access user logged in. -->
-  <rule id="131585" level="3">
+       a remote-access user logged in. Recorded; the first login of an account on
+       this firewall alerts (131589). -->
+  <rule id="131585" level="2">
     <if_sid>131580</if_sid>
     <match type="pcre2">(?:XAuth|RADIUS) authentication of '[^']*' successful</match>
     <description>IPsec: remote access user $(dstuser) logged in on $(opnsense.ipsec_conn)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,vpn,</group>
+  </rule>
+
+  <rule id="131589" level="3">
+    <if_sid>131585</if_sid>
+    <if_fts />
+    <description>IPsec: first remote access login of $(dstuser) on this firewall ($(opnsense.ipsec_conn))</description>
     <mitre>
       <id>T1078</id>
     </mitre>

@@ -40,7 +40,11 @@
                      ("INFO:     192.0.2.10:0 - ..."); it carries nothing more.
     jt-ipam-sync     2026-10-09 02:01:17,301 [INFO] asyncssh: [conn=0] Auth for user root succeeded
   client_ip is the address nginx saw (uvicorn trusts only the local proxy for
-  the forwarded address), so it is decoded as srcip.
+  the forwarded address), so it is decoded as srcip. An IPv4-mapped prefix
+  (::ffff:) is stripped so that IPv4 networks match. The IPv6 loopback ::1 is
+  not decoded as srcip: on 4.14.7 a rule condition <srcip>::1</srcip> matched
+  every IPv4 address in the sandbox, so ::1 cannot be listed among the private
+  networks, and a ::1 source would otherwise count as an outside address.
 -->
 <decoder name="jt-ipam">
   <parent>freeipa</parent>
@@ -50,7 +54,7 @@
 
 <decoder name="jt-ipam">
   <parent>freeipa</parent>
-  <regex type="pcre2">"client_ip": "([^"]+)"</regex>
+  <regex type="pcre2">"client_ip": "(?:::ffff:)?(?!::1")([^"]+)"</regex>
   <order>srcip</order>
 </decoder>
 
@@ -109,6 +113,10 @@
   harmless. _diff is an object serialised as a string, so the plugin keeps it
   as one string; the siblings after it pick the parts rules need out of the
   raw line, where its quotes appear escaped as \".
+  fts (first time seen) is not available: Wazuh accepts it only on the first
+  decoder of a same-name family and, on a child of the FreeIPA decoder, it never
+  fired in the sandbox (4.14.7); on any other sibling analysisd refuses it
+  (error 2103). The rules use account names and source networks instead.
   _actor_user_id is the acting account's id: jt-ipam does not record the
   actor's name. "username" in _diff is the account the event is about (the
   one logging in, the one added to a role, or the account used on the remote
@@ -121,7 +129,7 @@
 
 <decoder name="jt-ipam">
   <parent>freeipa</parent>
-  <regex type="pcre2">"_actor_ip": "([^"]+)"</regex>
+  <regex type="pcre2">"_actor_ip": "(?:::ffff:)?(?!::1")([^"]+)"</regex>
   <order>srcip</order>
 </decoder>
 

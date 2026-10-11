@@ -2,31 +2,33 @@
  "id": "jt-keycloak",
  "name": "Keycloak Detection Suite",
  "name_zh": "Keycloak 偵測套組",
- "version": "1.0",
+ "version": "1.1",
  "summary": "Logins, failed logins, brute-force lockouts, credential changes and administrator changes from the Keycloak event log, which Wazuh does not decode at all.",
  "summary_zh": "Keycloak 事件記錄中的登入、登入失敗、暴力破解鎖定、憑證變更與管理者變更；Wazuh 內建完全不解碼。",
  "rule_id_range": "131300-131399",
  "notes": [
   "Wazuh has no decoder or rule for Keycloak. Keycloak reports every login, failed login and administrator change through its jboss-logging event listener, one key=value line per event (logger org.keycloak.events). The pack decodes realm, client, user, source address (srcip), error and, for admin events, the operation, resource type and resource path.",
   "Successful events are logged at DEBUG unless the site raises them, so out of the box only failures arrive. Set KC_SPI_EVENTS_LISTENER__JBOSS_LOGGING__SUCCESS_LEVEL=info to see logins and admin changes. The realm's event storage settings (eventsEnabled, enabledEventTypes) do not matter here: the log listener receives every event type.",
-  "Logins: a login is level 3, a login to the admin console level 6, any other login to the master realm level 5. Logouts (level 2) and the token requests that follow every login (level 0) do not alert. Accounts that log in for a machine can be listed in etc/lists/jt-keycloak-service-accounts: their successful logins drop to level 0 (level 2 in the master realm); their failures still alert.",
+  "Logins: a successful login is not an alert. From a private address (10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, fc00::/7, fe80::/10) it is recorded at level 2 and alerts at level 3 only the first time that user signs in from that address (FTS on user and address), so a script or monitoring probe that logs in every few minutes alerts once per address, ever. The admin console (client security-admin-console, any realm) is level 3 every time from a private address; any other master realm login (kcadm, the admin REST API) follows the first-time rule. From a public address an ordinary login is level 5, an admin console or master realm login level 8. A successful login after five failures in 10 minutes is level 12 from the address that failed, level 10 for the account that failed from other addresses. Logouts (level 2) and the token requests that follow every login (level 0) do not alert.",
+  "Nothing has to be listed for that. etc/lists/jt-keycloak-service-accounts is optional tuning: a listed account's first-time and public-address logins stay at level 2 as well. Admin console logins and failures are never affected. IPv6 unique-local (fc00::/7) and link-local (fe80::/10) sources count as private. The IPv6 loopback cannot be checked as a network (on Wazuh 4.14.7 ::1 in a rule's srcip matches every IPv4 address), so it is recognised by its text and recorded at level 2 without the first-time check; public IPv6 sources alert like public IPv4 ones.",
   "Failures: a wrong password or one-time code, an unknown user and a disabled account are level 5, a wrong client secret level 6, an attempt on an account that brute-force protection has locked level 10. Eight of these from one address within five minutes are level 10. Keycloak's own lockout event is level 10, or level 12 when the account is disabled permanently. A missing session cookie, an expired page, the back button after a login and a session that ended are level 2: every real user produces them.",
   "Credentials and accounts: a one-time code or password set is level 5, removed level 8; an e-mail address changed or an account deleted level 5; an administrator impersonating a user level 10. Keycloak 26 also writes the deprecated UPDATE_TOTP, UPDATE_PASSWORD and REMOVE_TOTP for the same change in the same millisecond; they stay below the alert level so a change alerts once. Keycloak 25 and older write only the deprecated names.",
   "Admin events: a role granted, realm settings, authentication flows, identity providers, a client secret and a deleted federation or key component are level 10; a deleted realm level 12; scope mappings, roles, group membership, required actions, federation and component changes, clients created or deleted, and an administrator setting or removing a user's credential level 8; the rest level 3 to 6. Keycloak names the realm the administrator signed in to (usually master) and the administrator's user id, not a user name and not the realm that was changed: the resource path in the alert says what changed. A failed admin operation writes no admin event.",
   "Server: start and stop are level 3, an uncaught server error level 5, any other ERROR line (LDAP, database, mail) level 4. An uncaught WebApplicationException is an HTTP status a request handler raised on purpose; on the site this pack was built on, all 88 in 13 days were the welcome page answering requests that had no Host header, three at a time every six hours, so they are level 2. Stack trace lines, 90 per cent of the log there, are decoded and dropped.",
-  "Collection: the recommended way is the docker journald logging driver with the tag keycloak (or Keycloak under systemd), because the agent already reads the journal. The Keycloak log file and the docker json-file log work too. The json-file log is matched on its log field only, without decoded fields: no per-address correlation, no active response and a smaller rule set (131330-131339). Keycloak's JSON console format (log-console-output=json) is not supported.",
-  "Measured on one site (Keycloak 26.4.7, one realm behind a reverse proxy, 13 days of log replayed through the rules) gave 278 alerts: 158 on the day the realm was set up (the setup script's admin changes and logins), 11 to 44 a day while an automated login test ran four to eight times a day, and none on the seven quiet days. The 6,450 stack trace lines and 88 routine HTTP errors raised none. No wrong-password or lockout event occurred in that time; those rules are tested with lines built from the Keycloak 26.4.7 source."
+  "Collection: the recommended way is the docker journald logging driver with the tag keycloak (or Keycloak under systemd), because the agent already reads the journal. The Keycloak log file and the docker json-file log work too. The json-file log is matched on its log field only, without decoded fields: no first-time logins, no correlation by address, no active response and a smaller rule set (131330-131339, 131346-131347); its logins follow the same levels by address. Keycloak's JSON console format (log-console-output=json) is not supported.",
+  "Measured on one site (Keycloak 26.4.7, one realm behind a reverse proxy, 13 days of log replayed through the rules) gave about 148 alerts (version 1.0: 278). Only 11 are logins, against 141 in 1.0: four admin console logins, one from a public address and six first-time (user, address) pairs, all but one on the first day. The rest are the setup day's admin changes and a test suite's OTP enrolments, unknown test user and failed user deletions. The 6,450 stack trace lines and 88 routine HTTP errors raised none. No wrong-password or lockout event occurred in that time; those rules are tested with lines built from the Keycloak 26.4.7 source."
  ],
  "notes_zh": [
   "Wazuh 對 Keycloak 沒有任何解碼器或規則。Keycloak 透過 jboss-logging 事件監聽器回報每一次登入、登入失敗與管理者變更，一個事件一行 key=value（logger 為 org.keycloak.events）。本套件解出 realm、client、使用者、來源位址（srcip）、錯誤，以及管理事件的操作、資源類型與資源路徑。",
   "成功事件預設以 DEBUG 記錄，所以不調整的話只會收到失敗事件。設定 KC_SPI_EVENTS_LISTENER__JBOSS_LOGGING__SUCCESS_LEVEL=info 才看得到登入與管理變更。realm 的事件儲存設定（eventsEnabled、enabledEventTypes）在這裡沒有影響：記錄監聽器會收到所有事件類型。",
-  "登入：一般登入為 level 3，登入管理主控台為 level 6，其他登入 master realm 為 level 5。登出（level 2）與每次登入之後的 token 請求（level 0）不告警。為機器而登入的帳號可列入 etc/lists/jt-keycloak-service-accounts：其成功登入降為 level 0（master realm 為 level 2），失敗仍會告警。",
+  "登入：成功登入不是告警。來自私有位址（10/8、172.16/12、192.168/16、127/8、100.64/10、fc00::/7、fe80::/10）的登入記錄為 level 2，只有該使用者第一次從該位址登入時才以 level 3 告警（以使用者與位址做 FTS），所以每幾分鐘登入一次的腳本或監控探針，每個位址只會告警一次。管理主控台（client security-admin-console，任何 realm）從私有位址登入每次都是 level 3；其他 master realm 登入（kcadm、管理 REST API）適用第一次登入的規則。來自公開位址時，一般登入為 level 5，管理主控台或 master realm 登入為 level 8。10 分鐘內失敗五次後登入成功：同一來源位址為 level 12，同一帳號但來自其他位址為 level 10。登出（level 2）與每次登入之後的 token 請求（level 0）不告警。",
+  "以上都不需要列出任何帳號。etc/lists/jt-keycloak-service-accounts 只是選用的調校：列入的帳號第一次登入與從公開位址登入也維持在 level 2。管理主控台登入與失敗事件永遠不受影響。IPv6 的 unique-local（fc00::/7）與 link-local（fe80::/10）來源視為私有。IPv6 loopback 無法以網段判斷（在 Wazuh 4.14.7，規則 srcip 中的 ::1 會符合所有 IPv4 位址），所以改以位址文字辨識，記錄為 level 2，不做第一次登入的判斷；公開 IPv6 來源與公開 IPv4 一樣告警。",
   "失敗：密碼或一次性密碼錯誤、使用者不存在、帳號已停用為 level 5，client secret 錯誤為 level 6，嘗試登入已被暴力破解防護鎖定的帳號為 level 10。同一位址五分鐘內八次上述失敗為 level 10。Keycloak 自己的鎖定事件為 level 10，永久停用帳號則為 level 12。缺少 session cookie、頁面逾時、登入後按上一頁、session 已結束為 level 2：每個真實使用者都會產生。",
   "憑證與帳號：設定一次性密碼或密碼為 level 5，移除為 level 8；變更電子郵件或刪除帳號為 level 5；管理者模擬（impersonate）使用者為 level 10。Keycloak 26 會在同一毫秒另外寫出已棄用的 UPDATE_TOTP、UPDATE_PASSWORD、REMOVE_TOTP；這些維持在告警等級之下，讓一次變更只告警一次。Keycloak 25 以前只寫舊名稱。",
   "管理事件：授予角色、realm 設定、驗證流程、身分提供者、client secret、刪除 federation 或金鑰元件為 level 10；刪除 realm 為 level 12；scope mapping、角色、群組成員、必要動作、federation 與元件變更、建立或刪除 client、管理者設定或移除使用者的憑證為 level 8；其餘為 level 3 到 6。Keycloak 記的是管理者登入的 realm（通常是 master）與管理者的使用者 ID，不是使用者名稱，也不是被變更的 realm：告警中的資源路徑才說明改了什麼。失敗的管理操作不會寫出管理事件。",
   "伺服器：啟動與停止為 level 3，未處理的伺服器錯誤為 level 5，其他 ERROR 行（LDAP、資料庫、郵件）為 level 4。未處理的 WebApplicationException 是請求處理程式刻意回應的 HTTP 狀態；在建置本套件的站台上，13 天內 88 筆全是歡迎頁回應沒有 Host 標頭的請求，每六小時三筆，因此為 level 2。stack trace 的各行（當地記錄的 90%）會被解碼後丟棄。",
-  "收集方式：建議使用 docker 的 journald 記錄驅動程式並設定 tag 為 keycloak（或以 systemd 執行 Keycloak），因為 agent 本來就有讀 journal。Keycloak 記錄檔與 docker json-file 記錄也可以。json-file 記錄只比對其 log 欄位、沒有解碼欄位：無法依位址關聯、不能用主動回應，規則也較少（131330-131339）。不支援 Keycloak 的 JSON 主控台格式（log-console-output=json）。",
-  "單一站台實測（Keycloak 26.4.7，一個 realm，位於反向代理之後，將 13 天的記錄重新送過規則）共產生 278 則告警：設定 realm 當天 158 則（設定腳本的管理變更與登入），自動化登入測試每天執行四到八次的期間每天 11 到 44 則，七個安靜的日子為 0。6,450 行 stack trace 與 88 筆例行 HTTP 錯誤都沒有告警。期間沒有發生密碼錯誤或鎖定事件；這些規則以依 Keycloak 26.4.7 原始碼組出的記錄行測試。"
+  "收集方式：建議使用 docker 的 journald 記錄驅動程式並設定 tag 為 keycloak（或以 systemd 執行 Keycloak），因為 agent 本來就有讀 journal。Keycloak 記錄檔與 docker json-file 記錄也可以。json-file 記錄只比對其 log 欄位、沒有解碼欄位：沒有第一次登入判斷、無法依位址關聯、不能用主動回應，規則也較少（131330-131339、131346-131347）；其登入同樣依位址分級。不支援 Keycloak 的 JSON 主控台格式（log-console-output=json）。",
+  "單一站台實測（Keycloak 26.4.7，一個 realm，位於反向代理之後，將 13 天的記錄重新送過規則）共產生 約 148 則告警（1.0 版為 278 則）。其中登入只有 11 則（1.0 版 141 次登入全部告警）：四次管理主控台登入、一次來自公開位址、六組第一次出現的（使用者、位址），除了一則都在第一天。其餘是設定當天的管理變更，以及測試套件的一次性密碼註冊、不存在的測試使用者與刪除使用者失敗。6,450 行 stack trace 與 88 筆例行 HTTP 錯誤都沒有告警。期間沒有發生密碼錯誤或鎖定事件；這些規則以依 Keycloak 26.4.7 原始碼組出的記錄行測試。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -41,13 +43,13 @@
    "type": "decoder",
    "name": "jt-keycloak_decoders.xml",
    "dest": "etc/decoders/jt-keycloak_decoders.xml",
-   "sha256": "ba09f47cafa051bc1cde63efc2fc94bc9879e73dcf4d528bb60cd43c7e7f7648"
+   "sha256": "4aefa11a9bb4baf792379f695dde1c745d33f19add9b5dac55f057b94aa6e40d"
   },
   {
    "type": "rule",
    "name": "jt-keycloak_rules.xml",
    "dest": "etc/rules/jt-keycloak_rules.xml",
-   "sha256": "9c6c83e3a19f81cf46a1f51450f858913e3a05f0ba142326deabd7c1476db14a"
+   "sha256": "ee7fb8440578af21769a30c57787d2dd423bf0f58ffa36b84aba2cf4fbb9dbb9"
   },
   {
    "type": "list",
@@ -101,10 +103,10 @@
   {
    "platform": "manager",
    "required": false,
-   "title": "List the accounts that sign in for a machine",
-   "title_zh": "列出為機器而登入的帳號",
-   "body": "One line per user name, then reload the ruleset. Their successful logins stop alerting (in the master realm they drop to level 2); failures and admin console logins still alert.",
-   "body_zh": "每個使用者名稱一行，加入後重新載入規則集。這些帳號的成功登入不再告警（master realm 降為 level 2）；失敗與管理主控台登入仍會告警。",
+   "title": "Optional: list accounts that sign in for a machine from changing addresses",
+   "title_zh": "選用：列出從不固定位址登入的機器帳號",
+   "body": "Not needed for a quiet pack: a login from a private address alerts only the first time per user and address. List an account here only when it signs in from ever new or public addresses (a cloud monitor). One user name per line, then reload the ruleset. Its first-time and public-address logins stay at level 2; failures and admin console logins still alert.",
+   "body_zh": "不需要它套件也很安靜：從私有位址登入，每個使用者與位址只在第一次告警。只有帳號會從不斷變動或公開的位址登入（例如雲端監控）時才列在這裡。每個使用者名稱一行，加入後重新載入規則集。這些帳號第一次登入與從公開位址登入都維持在 level 2；失敗與管理主控台登入仍會告警。",
    "code": "echo 'monitoring-probe:service' >> /var/ossec/etc/lists/jt-keycloak-service-accounts"
   },
   {

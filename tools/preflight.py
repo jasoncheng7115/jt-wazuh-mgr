@@ -190,8 +190,11 @@ INTERNAL = re.compile(
     r'[\w-]+\.[a-z]{2,}\b'
 )
 # Addresses conventionally used as documentation placeholders, not real hosts.
+# 172.31.255.x is the top of 172.16.0.0/12: pack test cases use it to check the
+# edge of the private ranges.
 PLACEHOLDER = re.compile(
-    r'^(?:192\.168\.1\.(?:1|10|100)|192\.168\.0\.\d{1,3}|10\.0\.\d{1,3}\.\d{1,3})$')
+    r'^(?:192\.168\.1\.(?:1|10|100)|192\.168\.0\.\d{1,3}|10\.0\.\d{1,3}\.\d{1,3}'
+    r'|172\.31\.255\.\d{1,3})$')
 
 
 def check_no_internal_data():

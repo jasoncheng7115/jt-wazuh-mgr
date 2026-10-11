@@ -1,110 +1,269 @@
 {
  "pack": "jt-synology",
  "sandbox_lists": {
-  "jt-synology-service-accounts": "svc-pve:service\nsvc-both:service\n",
+  "jt-synology-service-accounts": "svc-listed:service\nsvc-both:service\n",
   "jt-synology-admin-accounts": "nas-admin:admin\nsvc-both:admin\n"
  },
  "cases": [
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-pve] from [192.0.2.108] signed in to [DSM] successfully via [password].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.108] signed in to [DSM] successfully via [password].",
    "location": null,
-   "expect_rule": "132015",
-   "expect_level": 0,
-   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; the 48,987-a-day polling account, listed"
+   "expect_rule": "132033",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; the polling account, first sign-in from that host is a new pair"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] signed in to [DSM] successfully via [password].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.108] signed in to [DSM] successfully via [password].",
    "location": null,
    "expect_rule": "132010",
-   "expect_level": 3,
-   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; unlisted account still alerts"
+   "expect_level": 2,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; the 48,987-a-day polling account: 50 sign-ins in one session end at level 2, no list",
+   "repeat": 50
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] signed in to [DSM] successfully via [OTP].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.108] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.108] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.108] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.108] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.109] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.109] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.109] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.109] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.110] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.110] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.110] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.110] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.111] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.111] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.111] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.111] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.114] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.114] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.114] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [svc-poll] from [10.0.0.114] signed in to [DSM] successfully via [password].",
    "location": null,
    "expect_rule": "132010",
-   "expect_level": 3,
-   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; second step of a two-factor sign-in"
+   "expect_level": 2,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; five polling hosts, four rounds: only the first per host was new"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] has successfully passed the first authentication of 2FA via [password]",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] signed in to [DSM] successfully via [OTP].",
+   "location": null,
+   "expect_rule": "132033",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; two-factor sign-in, first time for this pair"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] has successfully passed the first authentication of 2FA via [password]\nOct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] signed in to [DSM] successfully via [OTP].\nOct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] signed in to [DSM] successfully via [OTP].",
+   "location": null,
+   "expect_rule": "132010",
+   "expect_level": 2,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; the second two-factor sign-in of a known pair"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] has successfully passed the first authentication of 2FA via [password]",
    "location": null,
    "expect_rule": "132014",
    "expect_level": 2,
    "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized; password step of two-factor, below alert level"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [admin] from [192.0.2.31] signed in to [DSM] successfully via [password].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [admin] from [10.0.0.31] signed in to [DSM] successfully via [password].",
    "location": null,
-   "expect_rule": "132016",
+   "expect_rule": "132018",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); DSM built-in admin, no list needed"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [admin] from [10.0.0.31] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132018",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); built-in admin stays visible on every sign-in",
+   "repeat": 5
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [EXAMPLE\\Administrator] from [10.0.0.31] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132018",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); the directory built-in administrator"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [admins] from [10.0.0.31] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132033",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); near miss: a name that only starts with admin is ordinary"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [203.0.113.7] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132017",
    "expect_level": 5,
-   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); DSM built-in admin, listed by default"
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); ordinary account from an outside address"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [nas-admin] from [192.0.2.31] signed in to [DSM] successfully via [password].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [admin] from [203.0.113.7] signed in to [DSM] successfully via [password].",
    "location": null,
-   "expect_rule": "132016",
+   "expect_rule": "132019",
+   "expect_level": 8,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); built-in admin from an outside address"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [2001:db8::7] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132017",
    "expect_level": 5,
-   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); account added to the admin list"
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); outside IPv6 address"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-both] from [192.0.2.108] signed in to [DSM] successfully via [password].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [frank] from [fd00::7] signed in to [DSM] successfully via [password].",
    "location": null,
-   "expect_rule": "132015",
-   "expect_level": 0,
-   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); in both lists, the service account list wins"
+   "expect_rule": "132033",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); near miss: IPv6 unique local address is private"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [nas-admin] from [192.0.2.31] logged in successfully via [SSH].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [carol] from [::ffff:10.0.0.9] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132033",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); IPv6-mapped private address is decoded without ::ffff:"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [carol] from [::ffff:203.0.113.9] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132017",
+   "expect_level": 5,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); IPv6-mapped outside address"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [gina] from [100.70.1.1] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132033",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); near miss: carrier-grade NAT range is private"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [gina] from [100.128.1.1] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132017",
+   "expect_level": 5,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); just outside 100.64.0.0/10"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [ops] from [10.0.0.40] logged in successfully via [SSH].",
+   "location": null,
+   "expect_rule": "132034",
+   "expect_level": 5,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); first shell login for this pair (SSH is administrators only)"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [ops] from [10.0.0.40] logged in successfully via [SSH].",
    "location": null,
    "expect_rule": "132011",
-   "expect_level": 5,
-   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); SSH is administrators only on DSM"
+   "expect_level": 2,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); a scheduled SSH job: repeats of a known pair are recorded at level 2",
+   "repeat": 20
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-pve] from [192.0.2.108] logged in successfully via [SSH].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [ops] from [198.51.100.4] logged in successfully via [SSH].",
    "location": null,
-   "expect_rule": "132011",
-   "expect_level": 5,
-   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); a listed service account still alerts for a shell"
+   "expect_rule": "132035",
+   "expect_level": 8,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); shell login from an outside address"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] logged in successfully via [WebDAV].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [ops] from [198.51.100.4] logged in successfully via [SSH].",
+   "location": null,
+   "expect_rule": "132035",
+   "expect_level": 8,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); outside shell logins stay visible on every repeat",
+   "repeat": 3
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] logged in successfully via [WebDAV].",
+   "location": null,
+   "expect_rule": "132033",
+   "expect_level": 3,
+   "note": "synthesized from the published SSH shape; first WebDAV login for this pair"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] logged in successfully via [WebDAV].",
    "location": null,
    "expect_rule": "132012",
-   "expect_level": 3,
-   "note": "synthesized from the published SSH shape; other services stay at 3"
+   "expect_level": 2,
+   "note": "synthesized from the published SSH shape; repeats recorded at level 2",
+   "repeat": 3
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [EXAMPLE\\alice] from [pc1(192.0.2.30)] via [CIFS(SMB3)] accessed shared folder [projects].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] signed in to [DSM] successfully via [password].\nOct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] logged in successfully via [WebDAV].",
+   "location": null,
+   "expect_rule": "132033",
+   "expect_level": 3,
+   "note": "synthesized; the same account and address on a different service is a new pair"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [EXAMPLE\\alice] from [pc1(10.0.0.30)] via [CIFS(SMB3)] accessed shared folder [projects].",
    "location": null,
    "expect_rule": "132013",
    "expect_level": 2,
    "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); SMB tree connect, below alert level"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-pve] from [pve1(192.0.2.108)] via [CIFS(SMB3)] accessed shared folder [backup].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [EXAMPLE\\alice] from [pc1(203.0.113.30)] via [CIFS(SMB3)] accessed shared folder [projects].",
    "location": null,
-   "expect_rule": "132015",
-   "expect_level": 0,
-   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); listed service account"
+   "expect_rule": "132017",
+   "expect_level": 5,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2) (shape); share opened from an outside address"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] logged out the server via [DSM].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] logged out the server via [DSM].",
    "location": null,
    "expect_rule": "none",
    "expect_level": 0,
    "note": "synthesized near miss: a log-out is not a login"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [bob] from [192.0.2.32] failed to sign in to [DSM] via [password] due to authorization failure.",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-listed] from [10.0.0.108] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132015",
+   "expect_level": 0,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); a listed service account from a private address"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-listed] from [203.0.113.108] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132017",
+   "expect_level": 5,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); a listed service account from outside still alerts"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-listed] from [pve1(10.0.0.108)] via [CIFS(SMB3)] accessed shared folder [backup].",
+   "location": null,
+   "expect_rule": "132015",
+   "expect_level": 0,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); listed service account opening a share"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-listed] from [10.0.0.108] logged in successfully via [SSH].",
+   "location": null,
+   "expect_rule": "132034",
+   "expect_level": 5,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); the service list does not quiet shell logins"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-both] from [10.0.0.108] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132015",
+   "expect_level": 0,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); in both lists, the service account list wins"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [nas-admin] from [10.0.0.31] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132016",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); account added to the admin list"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [nas-admin] from [203.0.113.31] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132036",
+   "expect_level": 8,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); listed admin from an outside address"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.32] failed to sign in to [DSM] via [password] due to authorization failure.",
    "location": null,
    "expect_rule": "132020",
    "expect_level": 5,
    "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-pve] from [192.0.2.108] failed to sign in to [DSM] via [password] due to authorization failure.",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-listed] from [10.0.0.108] failed to sign in to [DSM] via [password] due to authorization failure.",
    "location": null,
    "expect_rule": "132020",
    "expect_level": 5,
@@ -126,28 +285,28 @@
    "repeat": 12
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] failed to log in via [SSH] due to authorization failure.",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] failed to log in via [SSH] due to authorization failure.",
    "location": null,
    "expect_rule": "132020",
    "expect_level": 5,
    "note": "synthesized from the published SMB failure shape"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection SYSTEM: User [alice] from [192.0.2.30] failed to log in via [DSM] due to authorization failure.",
+   "log": "Oct 11 11:12:30 nas1 Connection SYSTEM: User [alice] from [10.0.0.30] failed to log in via [DSM] due to authorization failure.",
    "location": null,
    "expect_rule": "132020",
    "expect_level": 5,
    "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); DSM 6 wording"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection SYSTEM: User [alice] failed to log in from [192.0.2.30] via [DSM].",
+   "log": "Oct 11 11:12:30 nas1 Connection SYSTEM: User [alice] failed to log in from [10.0.0.30] via [DSM].",
    "location": null,
    "expect_rule": "132020",
    "expect_level": 5,
    "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); DSM 6 older wording"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] failed to sign in to [DSM] via [OTP] due to authorization failure.",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] failed to sign in to [DSM] via [OTP] due to authorization failure.",
    "location": null,
    "expect_rule": "132023",
    "expect_level": 6,
@@ -199,28 +358,113 @@
    "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2); DSM auto block, internal"
   },
   {
-   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.30] was locked out because of too many failed sign-in attempts.",
+   "log": "Oct 11 11:12:30 nas1 Connection: Host [::ffff:10.0.0.61] was blocked via [SSH].",
+   "location": null,
+   "expect_rule": "132027",
+   "expect_level": 10,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2) (shape); IPv6-mapped internal address"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [10.0.0.30] was locked out because of too many failed sign-in attempts.",
    "location": null,
    "expect_rule": "132029",
    "expect_level": 8,
    "note": "synthesized; DSM 7 account protection wording not available"
   },
   {
-   "log": "1 2026-10-11T11:12:30+08:00 nas1 Connection - - [meta sequenceId=\"5\"] User [alice] from [192.0.2.30] signed in to [DSM] successfully via [password].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.32] signed in to [DSM] successfully via [password].",
    "location": null,
-   "expect_rule": "132010",
-   "expect_level": 3,
-   "note": "IETF format as syslog-ng writes it (DSM uses syslog-ng); message real"
+   "expect_rule": "132030",
+   "expect_level": 10,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); four failures from the address, then success"
   },
   {
-   "log": "1 2026-10-11T11:12:30+08:00 nas1 Connection - - - User [svc-pve] from [192.0.2.108] signed in to [DSM] successfully via [password].",
+   "log": "Oct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.32] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132033",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); near miss: three failures then success is a typo, not an attack"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [erin] from [10.0.1.1] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [erin] from [10.0.1.2] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [erin] from [10.0.1.3] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [erin] from [10.0.1.4] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [erin] from [10.0.1.9] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132031",
+   "expect_level": 10,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); four failures for the account from four addresses, then success"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.33] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.33] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.33] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.33] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.33] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.33] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.33] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.33] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [10.0.0.33] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132037",
+   "expect_level": 12,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); success from an internal address that set off brute force"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [bob] from [203.0.113.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [203.0.113.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [203.0.113.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [203.0.113.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [203.0.113.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [203.0.113.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [203.0.113.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [203.0.113.32] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [bob] from [203.0.113.32] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132038",
+   "expect_level": 12,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); success from an external address that set off brute force"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [dave] from [203.0.113.1] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [dave] from [203.0.113.2] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [dave] from [203.0.113.3] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [dave] from [203.0.113.4] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [dave] from [203.0.113.5] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [dave] from [203.0.113.6] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [dave] from [203.0.113.7] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [dave] from [203.0.113.8] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [dave] from [203.0.113.9] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [dave] from [203.0.113.10] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [dave] from [10.0.0.77] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132039",
+   "expect_level": 12,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); success for an account after password guessing against it"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [admin] from [10.0.0.34] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [admin] from [10.0.0.34] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [admin] from [10.0.0.34] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [admin] from [10.0.0.34] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [admin] from [10.0.0.34] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132030",
+   "expect_level": 10,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); built-in admin after failures: the after-failure rule wins over 132018"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [svc-listed] from [10.0.0.35] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [svc-listed] from [10.0.0.35] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [svc-listed] from [10.0.0.35] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [svc-listed] from [10.0.0.35] failed to sign in to [DSM] via [password] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [svc-listed] from [10.0.0.35] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132030",
+   "expect_level": 10,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); a listed service account after failures: wins over the level 0 allowlist"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [ops] from [10.0.0.41] failed to log in via [SSH] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [ops] from [10.0.0.41] failed to log in via [SSH] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [ops] from [10.0.0.41] failed to log in via [SSH] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [ops] from [10.0.0.41] failed to log in via [SSH] due to authorization failure.\nOct 11 11:12:30 nas1 Connection: User [ops] from [10.0.0.41] logged in successfully via [SSH].",
+   "location": null,
+   "expect_rule": "132030",
+   "expect_level": 10,
+   "note": "shape from published real-device samples (FarmhouseNetworking/Wazuh-Synology, st0rm-cr0w and Tomo-9925 decoders, Xboarder56 issue #2) (shape); shell login after failures"
+  },
+  {
+   "log": "Oct 11 11:12:30 nas1 Connection: User [guest] from [10.0.0.44] failed to log in via [SMB] due to [NTLMv1 not permitted].\nOct 11 11:12:30 nas1 Connection: User [guest] from [10.0.0.44] failed to log in via [SMB] due to [NTLMv1 not permitted].\nOct 11 11:12:30 nas1 Connection: User [guest] from [10.0.0.44] failed to log in via [SMB] due to [NTLMv1 not permitted].\nOct 11 11:12:30 nas1 Connection: User [guest] from [10.0.0.44] failed to log in via [SMB] due to [NTLMv1 not permitted].\nOct 11 11:12:30 nas1 Connection: User [guest] from [10.0.0.44] failed to log in via [SMB] due to [NTLMv1 not permitted].\nOct 11 11:12:30 nas1 Connection: User [guest] from [10.0.0.44] failed to log in via [SMB] due to [NTLMv1 not permitted].\nOct 11 11:12:30 nas1 Connection: User [guest] from [10.0.0.44] logged in successfully via [SMB].",
+   "location": null,
+   "expect_rule": "132033",
+   "expect_level": 3,
+   "note": "real sample from a DSM 7 NAS (alerts.json / tcpdump), account and addresses sanitized (shape); near miss: NTLMv1 refusals do not count as failures"
+  },
+  {
+   "log": "1 2026-10-11T11:12:30+08:00 nas1 Connection - - [meta sequenceId=\"5\"] User [alice] from [10.0.0.30] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132033",
+   "expect_level": 3,
+   "note": "IETF format as syslog-ng writes it (DSM uses syslog-ng); message real; new pair"
+  },
+  {
+   "log": "1 2026-10-11T11:12:30+08:00 nas1 Connection - - - User [svc-poll] from [10.0.0.108] signed in to [DSM] successfully via [password].",
+   "location": null,
+   "expect_rule": "132010",
+   "expect_level": 2,
+   "note": "IETF format without structured data; message real; repeats at level 2",
+   "repeat": 10
+  },
+  {
+   "log": "1 2026-10-11T11:12:30+08:00 nas1 Connection - - - User [svc-listed] from [10.0.0.108] signed in to [DSM] successfully via [password].",
    "location": null,
    "expect_rule": "132015",
    "expect_level": 0,
-   "note": "IETF format without structured data; message real"
+   "note": "IETF format; listed service account"
   },
   {
-   "log": "1 2026-10-11T11:12:30+08:00 nas1 Connection - - [meta sequenceId=\"6\"] User [bob] from [192.0.2.32] failed to sign in to [DSM] via [password] due to authorization failure.",
+   "log": "1 2026-10-11T11:12:30+08:00 nas1 Connection - - [meta sequenceId=\"6\"] User [bob] from [10.0.0.32] failed to sign in to [DSM] via [password] due to authorization failure.",
    "location": null,
    "expect_rule": "132020",
    "expect_level": 5,

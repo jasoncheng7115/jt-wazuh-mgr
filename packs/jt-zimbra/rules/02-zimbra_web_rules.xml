@@ -85,11 +85,24 @@
     </mitre>
   </rule>
 
-  <!-- 內部網段存取管理介面屬正常 —— 請依實際網段調整 -->
+  <!-- Admin interface from a private address is normal. 3.1: private
+       ranges written into the rule; the list only adds to them (100819). -->
   <rule id="100828" level="0">
     <if_sid>100827</if_sid>
-    <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
     <description>Admin interface accessed from an internal network (normal)</description>
+  </rule>
+
+  <rule id="100819" level="0">
+    <if_sid>100827</if_sid>
+    <list field="srcip" lookup="address_match_key">etc/lists/zimbra-internal-networks</list>
+    <description>Admin interface accessed from an address listed as internal (normal)</description>
   </rule>
 
   <!-- User-Agent 與行為矛盾：偽造 UA 的典型破綻

@@ -2,18 +2,18 @@
  "id": "jt-opnsense",
  "name": "OPNsense Hardening",
  "name_zh": "OPNsense 強化",
- "version": "1.0",
+ "version": "1.1",
  "summary": "The firewall's own security events: web interface logins and brute force, configuration changes and who made them, firmware and power actions, VPN and IPsec authentication, CARP and gateway state, CrowdSec decisions.",
  "summary_zh": "防火牆本身的資安事件：網頁介面登入與暴力破解、設定變更與變更者、韌體與電源操作、VPN 與 IPsec 認證、CARP 與閘道狀態、CrowdSec 決策。",
  "rule_id_range": "131500-131599",
  "notes": [
   "OPNsense writes its audit trail (web interface logins, failed logins, configuration changes, firmware actions) under the syslog name \"audit\". Wazuh decodes that name as Solaris BSM and drops it at rule 6100, level 0, so none of it ever alerted: measured on two firewalls, 549 audit lines in 30 days and no alert. This pack's decoders are children of that decoder, built from the format strings in the OPNsense source, and every rule was tested against real lines from those two firewalls where they exist.",
-  "Web interface: a login is level 3, a failed login level 5, six failed logins from one address in two minutes level 10, and a successful login from that address within ten minutes level 12. Logouts and expired sessions are recorded below the alert level. Requests for pages without a session (stale browser tabs, scanners; measured 37 a month per firewall from an nmap probe) are recorded, and twenty in a minute from one address are level 6.",
+  "Web interface: a successful login is recorded, not alerted (level 2), with no site list needed. It alerts when the account is the built-in superuser root (level 3), the first time an account logs in from an address on a firewall (level 3), from an address outside the private ranges (level 5, root level 8), and right after six failed logins from the same address (level 12). A failed login is level 5, six from one address in two minutes level 10. Logouts and expired sessions are recorded. Requests for pages without a session (stale browser tabs, scanners; measured 37 a month per firewall from an nmap probe) are recorded, and twenty in a minute from one address are level 6.",
   "Configuration changes: every save names the account, its address, the page and the backup file that holds the new version. A change through the web interface or the API is level 5; accounts, privileges and authentication servers, administrative access settings, and a restored or reverted configuration are level 7. Changes saved by local processes (migrations, plugin scripts; a few a week) are level 3, from the console menu level 5, and a root password reset from the console level 7. On an HA backup the changes pushed by the primary are level 3.",
   "Firmware and power: a firmware update, upgrade or package install from the web interface is level 5 and names the person; reboot and power off level 5. Through configd: a scheduled automatic update and a reboot or halt are level 5, flushing the configuration history level 5, a factory reset level 10. Package upgrades are recorded below the alert level (136 lines in one measured update); a package installed, removed or downgraded is level 3.",
-  "Logins through OPNsense's own authentication for services other than the web interface (SSH with a password, the console, IPsec users): a login is level 3, a failure level 5, eight failures for one account in two minutes level 10. Accounts that log in for backups or monitoring can be listed in etc/lists/jt-opnsense-service-accounts; their logins drop to level 0 (measured: 191 a month from one configuration backup account), their failures still alert.",
-  "OpenVPN: the built-in rules 81803 and 81804 call every TLS timeout a certificate failure or a possibly revoked user. Measured: 196 such alerts in a week from one phone on a bad network and no real failure. On OPNsense's OpenVPN instances a timed-out handshake is now recorded below the alert level, and thirty from one address in half an hour are level 5. A wrong user name or password is level 5 with the client address, six from one address in five minutes level 10; refusals by OPNsense's password check are level 5, a successful authentication level 3, a rejected certificate level 5 and a revoked one level 7. Other OpenVPN servers keep the built-in behaviour.",
-  "IPsec (strongSwan): a tunnel up is level 3, closed is recorded, an authentication failure (pre-shared key, certificate, XAuth, RADIUS, EAP) level 5, eight on one connection in five minutes level 10, a remote-access user login level 3, a peer that stopped answering level 5. IKE requests from addresses that are not configured peers are recorded, and ten from one address in ten minutes are level 6. Built from the strongSwan source; the measured firewalls run no IPsec.",
+  "Logins through OPNsense's own authentication for services other than the web interface (SSH with a password, the console, IPsec users) carry no address. They are recorded (level 2); root (level 3) and the first login of an account on a firewall (level 3) alert, a failure is level 5, eight failures for one account in two minutes level 10, and a login right after them level 12. Measured: a configuration backup account logging in every hour made 191 level 3 alerts a month per firewall; now it makes one, the first time. Listing such accounts in etc/lists/jt-opnsense-service-accounts is optional tuning that silences even that one; their failures still alert.",
+  "OpenVPN: the built-in rules 81803 and 81804 call every TLS timeout a certificate failure or a possibly revoked user. Measured: 196 such alerts in a week from one phone on a bad network and no real failure. On OPNsense's OpenVPN instances a timed-out handshake is now recorded below the alert level, and thirty from one address in half an hour are level 5. A wrong user name or password is level 5 with the client address, six from one address in five minutes level 10; refusals by OPNsense's password check are level 5, a successful authentication is recorded (level 2; the built-in 81801 still shows the connection at level 3), a rejected certificate level 5 and a revoked one level 7. Other OpenVPN servers keep the built-in behaviour.",
+  "IPsec (strongSwan): a tunnel up is level 3, closed is recorded, an authentication failure (pre-shared key, certificate, XAuth, RADIUS, EAP) level 5, eight on one connection in five minutes level 10, a remote-access user login is recorded and its first login on a firewall level 3, a peer that stopped answering level 5. IKE requests from addresses that are not configured peers are recorded, and ten from one address in ten minutes are level 6. Built from the strongSwan source; the measured firewalls run no IPsec.",
   "Gateways and high availability: dpinger exits on every gateway reconfiguration and the built-in rule 1004 read that as syslogd stopping (25 false level 5 alerts in three months on one firewall); it is now level 0. A gateway going down is level 5, other gateway alarms level 3. A CARP address becoming MASTER is level 7, BACKUP or INIT level 5, a demotion change level 4.",
   "CrowdSec decisions are level 5 (the address is already blocked by CrowdSec), simulated ones level 3, a fatal CrowdSec error level 7. Rootcheck's \"Files hidden inside directory\" for /boot/efi, which is a FAT partition without link counts, is dropped (measured: 56 level 7 alerts a week on one firewall). The plugin's own active response is visible: an address added to its block list is level 3.",
   "Firewall log (filterlog) is not changed. A single block is built-in rule 87701, level 5 with no_log, so it is counted but never stored, and only 87702 (18 blocks from one source in 45 seconds, level 10) alerts. That is deliberate: an internet-facing firewall blocks hundreds of thousands of packets a day (measured: 930,000 filterlog lines a day on one firewall) and a single block says nothing. Tick filter (filterlog) in the plugin only if 87702 is wanted, and expect that load on the agent and the manager.",
@@ -22,12 +22,12 @@
  ],
  "notes_zh": [
   "OPNsense 把稽核軌跡（網頁介面登入、登入失敗、設定變更、韌體操作）寫在 syslog 名稱「audit」底下。Wazuh 把這個名稱當成 Solaris BSM 解碼，並在規則 6100（level 0）丟掉，所以從來沒有告警過：實測兩台防火牆 30 天有 549 行稽核記錄、零筆告警。本套件的解碼器是那個解碼器的子解碼器，依 OPNsense 原始碼的格式字串撰寫；有真實記錄的情境，都用這兩台防火牆的真實記錄測過。",
-  "網頁介面：登入為 level 3，登入失敗 level 5，同一位址兩分鐘內失敗六次 level 10，該位址十分鐘內接著登入成功 level 12。登出與工作階段逾時記錄在告警等級之下。沒有工作階段就要求頁面（過期的瀏覽器分頁、掃描器；實測每台每月 37 筆來自 nmap 探測）會記錄，同一位址一分鐘內 20 次為 level 6。",
+  "網頁介面：登入成功只記錄、不告警（level 2），不需要任何站台清單。以下情況才告警：帳號是內建超級使用者 root（level 3）、某帳號第一次從某位址登入某台防火牆（level 3）、來自私有網段以外的位址（level 5，root 為 level 8）、同一位址剛失敗六次後登入成功（level 12）。登入失敗為 level 5，同一位址兩分鐘內六次 level 10。登出與工作階段逾時會記錄。沒有工作階段就要求頁面（過期的瀏覽器分頁、掃描器；實測每台每月 37 筆來自 nmap 探測）會記錄，同一位址一分鐘內 20 次為 level 6。",
   "設定變更：每次儲存都會記下帳號、來源位址、頁面，以及保存新版本的備份檔。透過網頁介面或 API 的變更為 level 5；帳號、權限與認證伺服器、管理存取設定、還原或回復設定為 level 7。本機程序（移轉、外掛程式腳本；每週數筆）儲存的變更為 level 3，從主控台選單變更為 level 5，從主控台重設 root 密碼為 level 7。HA 備援機收到主機推送的變更為 level 3。",
   "韌體與電源：從網頁介面更新、升級韌體或安裝套件為 level 5，並記下操作者；重新開機與關機 level 5。經由 configd：排程自動更新、重新開機或停機為 level 5，清除設定歷程 level 5，回復原廠設定 level 10。套件升級記錄在告警等級之下（實測一次更新 136 行）；新增、移除或降版套件為 level 3。",
-  "網頁介面以外、透過 OPNsense 本身認證的登入（以密碼登入 SSH、主控台、IPsec 使用者）：登入為 level 3，失敗 level 5，同一帳號兩分鐘內失敗八次 level 10。用於備份或監控而定期登入的帳號可列在 etc/lists/jt-opnsense-service-accounts，它們的登入降為 level 0（實測一個設定備份帳號每月 191 筆），失敗仍會告警。",
-  "OpenVPN：內建規則 81803 與 81804 把每一次 TLS 逾時都當成憑證失敗或「可能是已撤銷的使用者」。實測一支網路不穩的手機一週產生 196 筆，沒有一筆是真正的認證失敗。在 OPNsense 的 OpenVPN 執行個體上，逾時的交握現在記錄在告警等級之下，同一位址半小時內 30 次為 level 5。帳號或密碼錯誤為 level 5 並附來源位址，同一位址五分鐘內六次 level 10；OPNsense 密碼檢查拒絕為 level 5，認證成功 level 3，憑證被拒 level 5，已撤銷的憑證 level 7。其他 OpenVPN 伺服器維持內建行為。",
-  "IPsec（strongSwan）：通道建立為 level 3，關閉會記錄，認證失敗（預共享金鑰、憑證、XAuth、RADIUS、EAP）level 5，同一連線五分鐘內八次 level 10，遠端存取使用者登入 level 3，對端不再回應 level 5。來自非設定對端的 IKE 請求會記錄，同一位址十分鐘內十次為 level 6。依 strongSwan 原始碼撰寫；實測的防火牆沒有使用 IPsec。",
+  "網頁介面以外、透過 OPNsense 本身認證的登入（以密碼登入 SSH、主控台、IPsec 使用者）沒有來源位址。它們只記錄（level 2）；root（level 3）與某帳號第一次登入某台防火牆（level 3）會告警，失敗為 level 5，同一帳號兩分鐘內失敗八次 level 10，緊接著登入成功 level 12。實測一個每小時登入的設定備份帳號每台每月產生 191 筆 level 3；現在只有第一次的一筆。把這類帳號列入 etc/lists/jt-opnsense-service-accounts 是選用的調校，連那一筆也會靜音；失敗仍會告警。",
+  "OpenVPN：內建規則 81803 與 81804 把每一次 TLS 逾時都當成憑證失敗或「可能是已撤銷的使用者」。實測一支網路不穩的手機一週產生 196 筆，沒有一筆是真正的認證失敗。在 OPNsense 的 OpenVPN 執行個體上，逾時的交握現在記錄在告警等級之下，同一位址半小時內 30 次為 level 5。帳號或密碼錯誤為 level 5 並附來源位址，同一位址五分鐘內六次 level 10；OPNsense 密碼檢查拒絕為 level 5，認證成功只記錄（level 2；內建 81801 仍以 level 3 顯示連線），憑證被拒 level 5，已撤銷的憑證 level 7。其他 OpenVPN 伺服器維持內建行為。",
+  "IPsec（strongSwan）：通道建立為 level 3，關閉會記錄，認證失敗（預共享金鑰、憑證、XAuth、RADIUS、EAP）level 5，同一連線五分鐘內八次 level 10，遠端存取使用者登入只記錄，第一次登入某台防火牆為 level 3，對端不再回應 level 5。來自非設定對端的 IKE 請求會記錄，同一位址十分鐘內十次為 level 6。依 strongSwan 原始碼撰寫；實測的防火牆沒有使用 IPsec。",
   "閘道與高可用：dpinger 每次重新設定閘道都會結束，內建規則 1004 把它當成 syslogd 停止（實測一台三個月 25 筆 level 5 誤報），現在為 level 0。閘道斷線為 level 5，其他閘道警示 level 3。CARP 位址成為 MASTER 為 level 7，變成 BACKUP 或 INIT 為 level 5，降級值變更為 level 4。",
   "CrowdSec 的決策為 level 5（該位址 CrowdSec 已經封鎖），模擬決策 level 3，CrowdSec 嚴重錯誤 level 7。Rootcheck 對 /boot/efi 回報的「Files hidden inside directory」會被丟掉，那是沒有連結數的 FAT 分割區（實測一台每週 56 筆 level 7）。外掛程式本身的主動回應也看得到：位址被加入封鎖清單為 level 3。",
   "防火牆記錄（filterlog）不做更動。單一封鎖是內建規則 87701，level 5 且 no_log，只計數、從不儲存，只有 87702（同一來源 45 秒內 18 次封鎖，level 10）會告警。這是刻意的：面向網際網路的防火牆每天封鎖數十萬個封包（實測一台每天 930,000 行 filterlog），單一封鎖沒有資訊。只有需要 87702 時才在外掛程式勾選 filter（filterlog），並預期 agent 與 manager 的負載。",
@@ -47,13 +47,13 @@
    "type": "decoder",
    "name": "jt-opnsense_decoders.xml",
    "dest": "etc/decoders/jt-opnsense_decoders.xml",
-   "sha256": "3043472ff9958053abc9adbac949f39170847dfe8fc19c7d2a49a3153ef60f3c"
+   "sha256": "9effd4dc93647c804acd56318bb575e3ad3372a13f38e632c6386d3419b98932"
   },
   {
    "type": "rule",
    "name": "zz-131500-jt_opnsense_rules.xml",
    "dest": "etc/rules/zz-131500-jt_opnsense_rules.xml",
-   "sha256": "9cc1a7d7add5ec5c850e5628fbf1e064ca22e24792531bab287faa242b8a41e2"
+   "sha256": "41712399fed8d5493b0b55b1fd74e9420035541a1d699616bd79094d1333ba1e"
   },
   {
    "type": "list",
@@ -115,11 +115,11 @@
   {
    "platform": "manager",
    "required": false,
-   "title": "List the accounts that log in for backups or monitoring",
-   "title_zh": "列出用於備份或監控而定期登入的帳號",
-   "body": "One OPNsense user name per line, then reload the ruleset. Their successful SSH and console logins stop alerting; their failures still do.",
-   "body_zh": "每行一個 OPNsense 使用者名稱，加入後重新載入規則集。這些帳號的 SSH 與主控台登入成功不再告警；失敗仍會告警。",
-   "code": "echo 'netbackup:service' >> /var/ossec/etc/lists/jt-opnsense-service-accounts"
+   "title": "Optional: list accounts that log in for backups or monitoring",
+   "title_zh": "選用：列出用於備份或監控而定期登入的帳號",
+   "body": "Not needed for a quiet default: such logins are already recorded below the alert level after the first one. Listing an account (one OPNsense user name per line, then reload the ruleset) also silences that first alert and root-level alerts for it. Its failures still alert.",
+   "body_zh": "預設已經安靜，不需要這一步：這類登入在第一次之後就只記錄、不告警。列入清單（每行一個 OPNsense 使用者名稱，然後重新載入規則集）會連第一次的告警也靜音。失敗仍會告警。",
+   "code": "echo 'cfgbackup:service' >> /var/ossec/etc/lists/jt-opnsense-service-accounts"
   },
   {
    "platform": "network",

@@ -12,7 +12,7 @@
    "log": "2026-10-11T03:12:34+00:00 dns1 adguard: {\"Elapsed\":236527,\"IP\":\"192.0.2.171\",\"QH\":\"dns.google\",\"QT\":\"A\",\"Upstream\":null,\"action\":\"Blocked\",\"filterlist_id\":1720886277,\"filterlist_name\":\"HaGeZi's Encrypted DNS/VPN/TOR/Proxy Bypass\",\"filtertext\":\"||dns.google^\"}",
    "location": null,
    "expect_rule": "130902",
-   "expect_level": 3,
+   "expect_level": 2,
    "repeat": 2,
    "note": "real line from the site (master tcpdump / alerts.json 2026-10), host and client sanitized; second attempt in the session is a repeat"
   },
@@ -50,7 +50,7 @@
    "log": "2026-10-11T03:12:34+00:00 dns1 adguard: {\"Elapsed\":236527,\"IP\":\"192.0.2.166\",\"QH\":\"doh.dns.apple.com\",\"QT\":\"A\",\"Upstream\":null,\"action\":\"Blocked\",\"filterlist_id\":1720886277,\"filterlist_name\":\"HaGeZi's Encrypted DNS/VPN/TOR/Proxy Bypass\",\"filtertext\":\"||doh.dns.apple.com^\"}",
    "location": null,
    "expect_rule": "130902",
-   "expect_level": 3,
+   "expect_level": 2,
    "repeat": 20,
    "note": "real domain; 20 attempts stay at the repeat level (near miss for 130912)"
   },
@@ -206,7 +206,7 @@
    "note": "synthesized from the real Dandelion rule padded past 1025 bytes: built-in 1003 takes it, 130907 takes it back"
   },
   {
-   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=192.0.2.50 err=\"invalid username or password\"",
+   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=10.0.250.1 err=\"invalid username or password\"",
    "location": null,
    "expect_rule": "130931",
    "expect_level": 5,
@@ -248,35 +248,186 @@
    "note": "synthesized from v0.107.62 source"
   },
   {
-   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=192.0.2.50",
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=10.0.250.1",
    "location": null,
-   "expect_rule": "130933",
+   "expect_rule": "130942",
    "expect_level": 3,
-   "note": "synthesized from v0.107.79 source"
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; first login of this user from this private address (fts)"
   },
   {
-   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [info] auth: user \"admin\" successfully logged in from ip 192.0.2.50",
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=10.0.250.1",
    "location": null,
    "expect_rule": "130933",
-   "expect_level": 3,
-   "note": "synthesized from v0.107.62 source"
+   "expect_level": 2,
+   "repeat": 50,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; 50 identical logins of a non-admin-named account from a private address end at level 2"
   },
   {
-   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=192.0.2.50 err=\"invalid username or password\"\nOct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=192.0.2.50 err=\"invalid username or password\"\nOct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=192.0.2.50 err=\"invalid username or password\"\nOct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=192.0.2.50",
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=monitor ip=10.0.250.1",
+   "location": null,
+   "expect_rule": "130933",
+   "expect_level": 2,
+   "repeat": 2,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; second login of a known pair is not an alert (near miss for 130942)"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=10.0.250.1\nOct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=10.0.250.2",
+   "location": null,
+   "expect_rule": "130942",
+   "expect_level": 3,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; same user, new private address is a new pair"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=10.0.250.1\nOct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=bob ip=10.0.250.1",
+   "location": null,
+   "expect_rule": "130942",
+   "expect_level": 3,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; new user, same address is a new pair"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=198.51.100.20",
+   "location": null,
+   "expect_rule": "130941",
+   "expect_level": 8,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; external IPv4 source must fire"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=198.51.100.20",
+   "location": null,
+   "expect_rule": "130941",
+   "expect_level": 8,
+   "repeat": 5,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; external logins alert every time, fts does not quiet them"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=::FFFF:203.0.113.9",
+   "location": null,
+   "expect_rule": "130941",
+   "expect_level": 8,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; IPv4-mapped public address is stripped and graded as IPv4"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=100.128.0.1",
+   "location": null,
+   "expect_rule": "130941",
+   "expect_level": 8,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; just outside 100.64.0.0/10 is public"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=100.64.1.1",
+   "location": null,
+   "expect_rule": "130942",
+   "expect_level": 3,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; carrier-grade NAT range counts as private (near miss for 130941)"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=2001:db8::50",
+   "location": null,
+   "expect_rule": "130941",
+   "expect_level": 8,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; public IPv6 source"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=fd00::5",
+   "location": null,
+   "expect_rule": "130942",
+   "expect_level": 3,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; IPv6 unique local address is private (near miss for 130941)"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=fe80::1",
+   "location": null,
+   "expect_rule": "130942",
+   "expect_level": 3,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; IPv6 link-local is private"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=::1",
+   "location": null,
+   "expect_rule": "130943",
+   "expect_level": 2,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; IPv6 loopback cannot be listed in srcip, re-graded to level 2 (near miss for 130941)"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=127.0.0.1",
+   "location": null,
+   "expect_rule": "130942",
+   "expect_level": 3,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; IPv4 loopback, first time"
+  },
+  {
+   "log": "Oct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=guest ip=10.0.250.1",
+   "location": null,
+   "expect_rule": "130942",
+   "expect_level": 3,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; built-in 40101 (system account names) does not attach to pack rules (near miss)"
+  },
+  {
+   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [info] auth: user \"admin\" successfully logged in from ip 10.0.250.1",
+   "location": null,
+   "expect_rule": "130942",
+   "expect_level": 3,
+   "note": "synthesized from v0.107.62 source (older format), private"
+  },
+  {
+   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [info] auth: user \"admin\" successfully logged in from ip 198.51.100.20",
+   "location": null,
+   "expect_rule": "130941",
+   "expect_level": 8,
+   "note": "synthesized from v0.107.62 source (older format), external"
+  },
+  {
+   "log": "2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=10.0.250.1",
+   "location": "/var/log/AdGuardHome.log",
+   "expect_rule": "130933",
+   "expect_level": 2,
+   "repeat": 2,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; log file without syslog header, second login"
+  },
+  {
+   "log": "2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=203.0.113.9",
+   "location": "/var/log/AdGuardHome.log",
+   "expect_rule": "130941",
+   "expect_level": 8,
+   "note": "synthesized from v0.107.79 source; policy 2026-10-11 login grading; log file without syslog header, external"
+  },
+  {
+   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=10.0.250.1 err=\"invalid username or password\"\nOct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=10.0.250.1 err=\"invalid username or password\"\nOct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=10.0.250.1 err=\"invalid username or password\"\nOct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=10.0.250.1",
    "location": null,
    "expect_rule": "130939",
    "expect_level": 10,
    "note": "synthesized; three failures then a success from the same address"
   },
   {
-   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=192.0.2.50 err=\"invalid username or password\"\nOct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=192.0.2.50 err=\"invalid username or password\"\nOct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=192.0.2.50",
+   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=198.51.100.20 err=\"invalid username or password\"\nOct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=198.51.100.20 err=\"invalid username or password\"\nOct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=198.51.100.20 err=\"invalid username or password\"\nOct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=198.51.100.20",
    "location": null,
-   "expect_rule": "130933",
+   "expect_rule": "130939",
+   "expect_level": 10,
+   "note": "synthesized; after failures outranks external (130939 is evaluated before 130941)"
+  },
+  {
+   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=10.0.250.1 err=\"invalid username or password\"\nOct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=10.0.250.1 err=\"invalid username or password\"\nOct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=10.0.250.1",
+   "location": null,
+   "expect_rule": "130942",
    "expect_level": 3,
    "note": "synthesized; two failures then a success is a typo (near miss for 130939)"
   },
   {
-   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=192.0.2.50 err=\"invalid username or password\"",
+   "log": "Oct 11 11:16:16 dns1 AdGuardHome[812]: 2026/10/11 11:16:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=429 ip=10.0.250.1 err=\"auth: blocked for 14m59.9s\"\nOct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=10.0.250.1",
+   "location": null,
+   "expect_rule": "130944",
+   "expect_level": 12,
+   "note": "synthesized; success from an address the rate limiter locked out"
+  },
+  {
+   "log": "Oct 11 11:16:16 dns1 AdGuardHome[812]: 2026/10/11 11:16:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=429 ip=10.0.250.3 err=\"auth: blocked for 14m59.9s\"\nOct 11 11:15:30 dns1 AdGuardHome[812]: 2026/10/11 11:15:30.123456 [info] webapi: successful login user=admin ip=10.0.250.1",
+   "location": null,
+   "expect_rule": "130942",
+   "expect_level": 3,
+   "note": "synthesized; lockout of another address (near miss for 130944)"
+  },
+  {
+   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=10.0.250.1 err=\"invalid username or password\"",
    "location": null,
    "expect_rule": "130929",
    "expect_level": 10,
@@ -284,7 +435,7 @@
    "note": "synthesized; eight failures in five minutes (rate limiter off)"
   },
   {
-   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=192.0.2.50 err=\"invalid username or password\"",
+   "log": "Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error host=192.0.2.3:3000 method=POST url=/control/login status=403 ip=10.0.250.1 err=\"invalid username or password\"",
    "location": null,
    "expect_rule": "130931",
    "expect_level": 5,

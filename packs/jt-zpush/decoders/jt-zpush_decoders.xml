@@ -46,20 +46,25 @@
   rsyslog's imfile writes the break as a literal \n. Without the join the
   method and the HTTP code are on a line of their own and stay undecoded.
   The agent's multi-line join leaves a trailing space on every event, hence
-  the \s*$ at the end of the patterns below.
+  the \s*$ at the end of the patterns below. A dual-stack web server can hand
+  PHP an IPv4 client as ::ffff:a.b.c.d; the prefix is dropped so that srcip
+  matches IPv4 networks.
+  fts (first time seen) is the pair account and device id: rule 132260 and
+  132261 fire the first time this manager sees a device used by an account.
 -->
 <decoder name="jt-zpush-request">
   <parent>jt-zpush</parent>
   <prematch type="pcre2">\] cmd='[^']*' memory='</prematch>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^\]#]*)(?:#[^\]]*)?\](?: ?\[[^\]]*\])? cmd='([^']*)' memory='[^']*' time='([^']*)' devType='([^']*)' devId='([^']*)' getUser='([^']*)' from='([^']*)' idle='[^']*' version='[^']*'(?: method='(\w*)' httpcode='(\d*)')?</regex>
-  <order>zpush.level, dstuser, zpush.cmd, zpush.time, zpush.devtype, zpush.devid, zpush.getuser, srcip, protocol, id</order>
+  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^\]#]*)(?:#[^\]]*)?\](?: ?\[[^\]]*\])? cmd='([^']*)' memory='[^']*' time='([^']*)' devType='([^']*)' devId='(([^']*))' getUser='([^']*)' from='(?:::ffff:)?([^']*)' idle='[^']*' version='[^']*'(?: method='(\w*)' httpcode='(\d*)')?</regex>
+  <order>zpush.level, dstuser, zpush.cmd, zpush.time, zpush.devtype, zpush.devid, system_name, zpush.getuser, srcip, protocol, id</order>
+  <fts>name, dstuser, system_name</fts>
 </decoder>
 
 <!-- Autodiscover (autodiscover.log), backends whose Logon() returns false. -->
 <decoder name="jt-zpush-autodiscover-fail">
   <parent>jt-zpush</parent>
   <prematch type="pcre2">\] ZPushAutodiscover-\x3egetLogin\(\): Login failed for user '</prematch>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? ZPushAutodiscover-\x3egetLogin\(\): Login failed for user '([^']*)' from IP ([0-9A-Fa-f:.]+?)\.?\]?\s*$</regex>
+  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? ZPushAutodiscover-\x3egetLogin\(\): Login failed for user '([^']*)' from IP (?:::ffff:)?([0-9A-Fa-f:.]+?)\.?\]?\s*$</regex>
   <order>zpush.level, dstuser, srcip</order>
 </decoder>
 
@@ -68,7 +73,7 @@
 <decoder name="jt-zpush-autodiscover-authfail">
   <parent>jt-zpush</parent>
   <prematch type="pcre2">\] Unable to complete autodiscover because login failed for user with email '</prematch>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? Unable to complete autodiscover because login failed for user with email '([^']*)' from IP ([0-9A-Fa-f:.]+?)\.?\]?\s*$</regex>
+  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? Unable to complete autodiscover because login failed for user with email '([^']*)' from IP (?:::ffff:)?([0-9A-Fa-f:.]+?)\.?\]?\s*$</regex>
   <order>zpush.level, dstuser, srcip</order>
 </decoder>
 
@@ -76,7 +81,7 @@
 <decoder name="jt-zpush-authfail">
   <parent>jt-zpush</parent>
   <prematch type="pcre2">\] IP: \S+ failed to authenticate user '</prematch>
-  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? IP: (\S+) failed to authenticate user '([^']*)'</regex>
+  <regex type="pcre2">\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[[^\]]*\](?: ?\[[^\]]*\])? IP: (?:::ffff:)?(\S+) failed to authenticate user '([^']*)'</regex>
   <order>zpush.level, srcip, dstuser</order>
 </decoder>
 

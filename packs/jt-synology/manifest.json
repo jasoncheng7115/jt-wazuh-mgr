@@ -2,14 +2,15 @@
  "id": "jt-synology",
  "name": "Synology DSM Detection Suite",
  "name_zh": "Synology DSM 偵測套組",
- "version": "1.0",
- "summary": "Sign-ins, brute force and auto block, Hyper Backup results, storage and drive health, power, packages and account changes on Synology DSM, from Log Center syslog; quiets the service accounts that sign in every few seconds.",
- "summary_zh": "Synology DSM 的登入、暴力破解與自動封鎖、Hyper Backup 結果、儲存與硬碟健康、電源、套件與帳號變更，來源為記錄中心的 syslog；並讓每隔幾秒就登入的服務帳號安靜下來。",
+ "version": "1.1",
+ "summary": "Sign-ins, brute force and auto block, Hyper Backup results, storage and drive health, power, packages and account changes on Synology DSM, from Log Center syslog. Routine logins stay quiet without any configuration; new login pairs, administrators, outside addresses and success after failures alert.",
+ "summary_zh": "Synology DSM 的登入、暴力破解與自動封鎖、Hyper Backup 結果、儲存與硬碟健康、電源、套件與帳號變更，來源為記錄中心的 syslog。例行登入不需任何設定就保持安靜；新的登入組合、管理員、外部位址與失敗後成功才告警。",
  "rule_id_range": "132000-132099",
  "notes": [
   "Wazuh 4.14.7 ships no Synology decoder: DSM's sign-in lines reached the manager undecoded and matched nothing, or the generic rule 1002 when they contained the word failure. The pack decodes DSM's Connection, System and Hyper Backup categories and the file transfer logs in the BSD (RFC 3164) format that Log Center sends by default, and also the DSM 6 wording and the IETF (RFC 5424) format.",
-  "The noise it removes: storage and monitoring clients that sign in to DSM every few seconds. Measured on one NAS: 48,987 successful sign-ins a day, all one account polling from five Proxmox VE hosts, which as level 3 alerts came to 364,471 in a week. List such accounts in etc/lists/jt-synology-service-accounts and their sign-ins drop to level 0. Their failed logins and SSH logins still alert. A listed account is trusted from any address, so restrict it in DSM as well (a dedicated account with only the permissions it needs).",
-  "Logins: a DSM sign-in or a login to another service is level 3. A shell login over SSH or Telnet, which DSM allows only to administrators, is level 5, and so is a sign-in by an account listed in etc/lists/jt-synology-admin-accounts (DSM's built-in admin is listed by default). Opening a shared folder over SMB and the password step of a two-factor sign-in are recorded below the alert level.",
+  "A successful login is not an alert by itself. Storage and monitoring clients sign in to DSM every few seconds: measured on one NAS, 48,987 sign-ins a day, all one account polling from five Proxmox VE hosts, which as level 3 alerts came to 364,471 a week. With version 1.1 and nothing configured, an ordinary account signing in from a private address is recorded at level 2, and the first login of each (account, address, service) pair on a NAS is level 3: that client gives five alerts, ever. First-seen pairs are kept in the manager's fts queue and survive restarts.",
+  "What raises a login: a built-in administrator name (admin, administrator, root, also as DOMAIN\\Administrator) from a private address is level 3; any account from an address outside the private ranges (10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, fc00::/7, fe80::/10) is level 5, an administrator name level 8; a success after at least four failures from the same address or for the same account within ten minutes is level 10, and a success from an address or for an account that set off a brute force rule within 30 minutes is level 12. A shell login over SSH or Telnet, which DSM allows only to administrators, is level 5 the first time for a pair and level 8 from outside; repeats are recorded at level 2, so a scheduled SSH job does not flood. Opening a shared folder and the password step of a two-factor sign-in are recorded below the alert level.",
+  "Optional tuning, not needed for the defaults: accounts in etc/lists/jt-synology-service-accounts drop to level 0 when they sign in from a private address (they still alert from outside, and their failures and shell logins still alert); accounts in etc/lists/jt-synology-admin-accounts are treated like the built-in administrator names. Both lists ship with a placeholder.",
   "Failures: a failed sign-in or login is level 5, a correct password followed by a failed second factor level 6. Eight failures from one address in two minutes is level 10, split into internal (132024) and external (132025) addresses so that a response can be tied to external ones only; ten failures for one account in five minutes is level 10. DSM's own auto block of an address is level 10 (132027 internal, 132028 external). An SMB client refused for offering only NTLMv1 is level 3 and does not count as a password guess: on the NAS measured, all 835 such refusals in a year came from one network scanner trying the guest account.",
   "Hyper Backup: a successful task is level 2 (recorded, no alert), a failed task level 10, the same task failing three times in three days level 12, a partial backup level 7, a cancelled or skipped one level 5. A deleted backup task is level 8, because deleting backups is what ransomware operators do before encrypting (MITRE T1490).",
   "System log: account and group changes, password changes and a two-factor reset are level 6, an account added to administrators level 8; a degraded or crashed volume or storage pool level 12; a failing drive (S.M.A.R.T., bad sectors) level 10; running on UPS battery level 8, low battery or safe mode level 10; package installs and removals level 5; SSH or Telnet started and firewall or auto block settings changed level 6; a shared folder deleted level 8; Security Advisor findings level 5, malware found level 10.",
@@ -20,8 +21,9 @@
  ],
  "notes_zh": [
   "Wazuh 4.14.7 沒有內建 Synology 解碼器：DSM 的登入記錄送到管理端後沒有解碼、不命中任何規則，含有 failure 字樣時只命中通用的 1002。本套件解碼 DSM 的 Connection、System、Hyper Backup 類別與檔案傳輸記錄，格式為記錄中心預設送出的 BSD（RFC 3164），也接受 DSM 6 的寫法與 IETF（RFC 5424）格式。",
-  "它要解決的雜訊：每隔幾秒就登入 DSM 一次的儲存或監控用戶端。在一台 NAS 上實測：每天 48,987 次成功登入，全是同一個帳號從五台 Proxmox VE 主機輪詢，以 level 3 告警計算一週就是 364,471 筆。把這類帳號加入 etc/lists/jt-synology-service-accounts，它們的登入就降為 level 0。這些帳號的登入失敗與 SSH 登入仍會告警。名單上的帳號不論從哪個位址登入都被視為例行，所以請同時在 DSM 端限制它（專用帳號、只給必要的權限）。",
-  "登入：DSM 登入或其他服務的登入為 level 3。經 SSH 或 Telnet 登入 shell（DSM 只允許管理員這麼做）為 level 5，etc/lists/jt-synology-admin-accounts 名單上的帳號登入也是 level 5（預設已列入 DSM 內建的 admin）。經 SMB 開啟共用資料夾、兩步驟驗證的密碼階段，都記錄在告警等級之下。",
+  "成功登入本身不是告警。儲存或監控用戶端每隔幾秒就登入 DSM 一次：在一台 NAS 上實測，每天 48,987 次登入，全是同一個帳號從五台 Proxmox VE 主機輪詢，以 level 3 告警計算一週就是 364,471 筆。1.1 版在什麼都不設定的情況下，一般帳號從私有位址登入記錄為 level 2，每台 NAS 上每一組（帳號、位址、服務）第一次登入為 level 3：那個用戶端從頭到尾只會產生五則告警。第一次出現的組合存在管理端的 fts 佇列裡，重新啟動後仍然保留。",
+  "會讓登入升級的情況：內建管理員名稱（admin、administrator、root，也包含 DOMAIN\\Administrator）從私有位址登入為 level 3；任何帳號從私有網段（10/8、172.16/12、192.168/16、127/8、100.64/10、fc00::/7、fe80::/10）以外的位址登入為 level 5，管理員名稱為 level 8；十分鐘內同一位址或同一帳號失敗至少四次後登入成功為 level 10，30 分鐘內觸發過暴力破解規則的位址或帳號登入成功為 level 12。經 SSH 或 Telnet 登入 shell（DSM 只允許管理員這麼做）在某組合第一次出現時為 level 5、來自外部時為 level 8；重複的登入記錄為 level 2，排程的 SSH 工作不會洗版。開啟共用資料夾、兩步驟驗證的密碼階段，都記錄在告警等級之下。",
+  "選用的調校，預設行為不需要它們：etc/lists/jt-synology-service-accounts 裡的帳號從私有位址登入時降為 level 0（從外部登入仍會告警，失敗與 shell 登入也仍會告警）；etc/lists/jt-synology-admin-accounts 裡的帳號比照內建管理員名稱處理。兩份清單出貨時都只有預留項目。",
   "失敗：登入失敗為 level 5，密碼正確但第二道驗證失敗為 level 6。同一位址兩分鐘內失敗八次為 level 10，並依內部（132024）與外部（132025）位址分開，讓主動回應可以只綁外部位址；同一帳號五分鐘內失敗十次為 level 10。DSM 自己的自動封鎖為 level 10（132027 內部、132028 外部）。SMB 用戶端因為只提供 NTLMv1 而被拒為 level 3，不算猜密碼：實測的那台 NAS 一年內 835 次這類拒絕，全部來自同一台以 guest 帳號嘗試的網路掃描主機。",
   "Hyper Backup：工作成功為 level 2（記錄但不告警），失敗為 level 10，同一工作三天內失敗三次為 level 12，部分完成為 level 7，取消或略過為 level 5。刪除備份工作為 level 8，因為勒索軟體攻擊者在加密前就是先刪備份（MITRE T1490）。",
   "系統記錄：帳號與群組變更、密碼變更、兩步驟驗證被重設為 level 6，帳號被加入 administrators 為 level 8；磁碟區或儲存集區降級、損毀為 level 12；硬碟故障（S.M.A.R.T.、壞軌）為 level 10；改由 UPS 電池供電為 level 8，電池電量低或進入安全模式為 level 10；套件安裝與移除為 level 5；啟動 SSH 或 Telnet、變更防火牆或自動封鎖設定為 level 6；刪除共用資料夾為 level 8；資安顧問的發現為 level 5，發現惡意程式為 level 10。",
@@ -43,13 +45,13 @@
    "type": "decoder",
    "name": "jt-synology_decoders.xml",
    "dest": "etc/decoders/jt-synology_decoders.xml",
-   "sha256": "a36272a5c8b99976cae499da2aaff625faafd8f6beeedaed7773b419e94d8db6"
+   "sha256": "f3baa37b7018cca4d710cf9876ba3f668e1b8aff48caf3d29f0af1e7feec3c5c"
   },
   {
    "type": "rule",
    "name": "jt-synology_rules.xml",
    "dest": "etc/rules/jt-synology_rules.xml",
-   "sha256": "dfbb6dad04d933e4dd99319d4a94a9cac3d96622dc8e2e76b9e427d0496c9fce"
+   "sha256": "e73087a5aebcde45c0e22a791919dc834ef40d4f6445195c5f5e65a20f032e2b"
   },
   {
    "type": "list",
@@ -65,7 +67,7 @@
    "dest": "etc/lists/jt-synology-admin-accounts",
    "declare": true,
    "keep": true,
-   "sha256": "df6afec3ede607deff23e7fc7b4ea83b489ad1e7d166f60931b9e780456dbdc0"
+   "sha256": "0faac6861b2c1c14078960d72d36f5013b37564731127e328b2f7fcd3c818bae"
   }
  ],
  "setup": [
@@ -95,8 +97,8 @@
    "title_zh": "在 DSM 記錄中心把記錄送到管理端",
    "body": "In DSM 7 open Log Center, Log Sending, and tick Send logs to a syslog server. Server: the manager node's address. Port and transfer protocol: those of the <remote> block (UDP, or TCP if the block says tcp). Log format: BSD (RFC 3164). Leave SSL off: Wazuh's syslog listener does not accept TLS. IETF (RFC 5424) also decodes, but Wazuh 4.x does not parse its header, so those alerts carry no host or program name, and over TCP Wazuh needs one message per line: a sender that frames IETF messages by length instead is never received. Apply, then Send test log. The change takes effect at once and does not interrupt any service on the NAS.",
    "body_zh": "在 DSM 7 開啟「記錄中心」→「記錄傳送」，勾選「傳送記錄到 syslog 伺服器」。伺服器：管理端節點的位址。連接埠與傳輸協定：與 <remote> 區段相同（UDP；區段若設 tcp 則選 TCP）。記錄格式：BSD（RFC 3164）。不要勾選 SSL：Wazuh 的 syslog 接收端不支援 TLS。IETF（RFC 5424）也能解碼，但 Wazuh 4.x 不解析它的標頭，告警會缺少主機與程式名稱；而且走 TCP 時 Wazuh 要求一行一則訊息，以長度分隔 IETF 訊息的送出端完全收不到。套用後按「傳送測試記錄」。設定立即生效，不會中斷 NAS 上的任何服務。",
-   "verify": "Sign in to DSM in a browser. Expect rule 132010 (level 3) on the manager, or 132015 (level 0) if the account is in the service account list. Send test log should raise 132096.",
-   "verify_zh": "用瀏覽器登入 DSM，管理端應出現規則 132010（level 3）；若該帳號在服務帳號清單中則為 132015（level 0）。「傳送測試記錄」應觸發 132096。"
+   "verify": "Sign in to DSM in a browser from a workstation. The first time, expect rule 132033 (level 3, a new account and address pair) on the manager; later sign-ins are recorded as 132010 at level 2. Send test log should raise 132096.",
+   "verify_zh": "從一台工作站用瀏覽器登入 DSM。第一次登入時管理端應出現規則 132033（level 3，新的帳號與位址組合）；之後的登入記錄為 132010（level 2）。「傳送測試記錄」應觸發 132096。"
   },
   {
    "platform": "network",
@@ -117,19 +119,21 @@
   {
    "platform": "manager",
    "required": false,
+   "since": "1.1",
    "title": "List the accounts that sign in for monitoring or storage",
    "title_zh": "列出用於監控或儲存而頻繁登入的帳號",
-   "body": "One line per account, the name exactly as DSM writes it between the brackets, then reload the ruleset. Their successful logins stop alerting; their failures and SSH logins still do.",
-   "body_zh": "每個帳號一行，名稱與 DSM 記錄中方括號裡的寫法完全相同，加入後重新載入規則集。這些帳號的成功登入不再告警；失敗與 SSH 登入仍會告警。",
+   "body": "Optional: the defaults already keep a polling account quiet (one first-seen alert per address). One line per account, the name exactly as DSM writes it between the brackets, then reload the ruleset. Their logins from private addresses drop to level 0; logins from outside, failures and SSH logins still alert.",
+   "body_zh": "選用：預設行為已經讓輪詢帳號保持安靜（每個位址只有一則第一次出現的告警）。每個帳號一行，名稱與 DSM 記錄中方括號裡的寫法完全相同，加入後重新載入規則集。這些帳號從私有位址的登入降為 level 0；從外部的登入、失敗與 SSH 登入仍會告警。",
    "code": "echo 'storage-client:service' >> /var/ossec/etc/lists/jt-synology-service-accounts"
   },
   {
    "platform": "manager",
    "required": false,
+   "since": "1.1",
    "title": "List the administrator accounts",
    "title_zh": "列出管理員帳號",
-   "body": "Sign-ins by listed accounts are level 5 instead of 3. DSM's built-in admin is listed by default; add the accounts in the administrators group, then reload the ruleset.",
-   "body_zh": "名單上帳號的登入為 level 5 而不是 3。預設已列入 DSM 內建的 admin；請加入 administrators 群組中的帳號，再重新載入規則集。",
+   "body": "Optional: listed accounts are treated like the built-in administrator names (admin, administrator, root): level 3 from a private address, level 8 from outside, instead of level 2 and 5. Add the accounts in the administrators group, then reload the ruleset.",
+   "body_zh": "選用：名單上的帳號比照內建管理員名稱（admin、administrator、root）處理：從私有位址為 level 3、從外部為 level 8，而不是 level 2 與 5。請加入 administrators 群組中的帳號，再重新載入規則集。",
    "code": "echo 'nas-admin:admin' >> /var/ossec/etc/lists/jt-synology-admin-accounts"
   }
  ],
