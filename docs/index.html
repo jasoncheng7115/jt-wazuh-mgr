@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>jt-wazuh-mgr — web management for Wazuh agents and rules</title>
-<meta name="description" content="A web management tool that supplements the Wazuh Dashboard: agents, groups, cluster nodes, rules and decoders, ready-made detection packs, API users and logs. Bilingual English / 繁體中文, AGPL-3.0.">
+<meta name="description" content="A web management tool that supplements the Wazuh Dashboard: agents, groups, cluster nodes, rules and decoders, ready-made detection packs, API users and logs. English / 繁體中文 / 日本語, AGPL-3.0.">
 <link rel="icon" type="image/svg+xml" href="img/icon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png">
 <link rel="alternate icon" href="img/favicon.ico">
@@ -46,8 +46,24 @@
   .nav-links a{color:var(--muted);font-size:14px}
   .nav-links a:hover{color:var(--text)}
   .lang{border:1px solid var(--line);background:var(--card);color:var(--text);
-    border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;font-weight:600}
-  .lang:hover{border-color:var(--accent)}
+    border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;font-weight:600;
+    display:inline-flex;align-items:center;gap:6px;font-family:inherit}
+  .lang:hover,.lang[aria-expanded="true"]{border-color:var(--accent)}
+  .lang .lico{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .lang .caret{font-size:9px;opacity:.7;transition:transform .15s}
+  .lang[aria-expanded="true"] .caret{transform:rotate(180deg)}
+  /* a menu of our own rather than a <select>: the native list looks different on
+     every platform and cannot show each language in its own script nicely */
+  .lang-wrap{position:relative}
+  .lang-menu{position:absolute;right:0;top:calc(100% + 8px);min-width:170px;z-index:60;
+    background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 0;
+    box-shadow:0 12px 32px rgba(0,0,0,.5)}
+  .lang-menu[hidden]{display:none}
+  .lang-menu button{display:flex;width:100%;align-items:center;gap:10px;padding:9px 16px;
+    background:none;border:0;color:var(--text);font-size:14px;cursor:pointer;text-align:left;font-family:inherit}
+  .lang-menu button:hover,.lang-menu button:focus{background:rgba(79,195,247,.12);outline:none}
+  .lang-menu button[aria-checked="true"]{color:var(--accent);font-weight:600}
+  .lang-menu .chk{width:14px;color:var(--accent)}
   @media(max-width:760px){.nav-links a:not(.gh){display:none}}
   /* hero */
   header.hero{padding:74px 0 40px;text-align:center}
@@ -126,12 +142,10 @@
   .grid .feat:nth-child(6n+4){--hue:var(--c4)}
   .grid .feat:nth-child(6n+5){--hue:var(--c5)}
   .grid .feat:nth-child(6n+6){--hue:var(--c6)}
-  /* packs have no icon, so the hue lands on the edge and on the name, which is
-     a product name and reads better set in mono anyway */
-  #packs .feat{border-left:3px solid var(--hue)}
-  #packs .feat h3{font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
-    font-size:15px;color:var(--hue);letter-spacing:-.2px}
-  #cluster .feat h3,#quality .feat h3{color:var(--hue)}
+  /* every card section shares the capability card: icon chip, plain title.
+     A pack's id is product-like, so it rides along in mono under the title. */
+  .feat .pid{display:block;font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;
+    font-size:12px;color:var(--hue);margin:-2px 0 6px;letter-spacing:-.2px}
   /* shots */
   .shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
   .shot{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}
@@ -173,6 +187,24 @@
   <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18"/></symbol>
   <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></symbol>
   <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12h.01"/></symbol>
+  <symbol id="i-hash" viewBox="0 0 24 24"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"/></symbol>
+  <symbol id="i-package" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5M12 13v8"/></symbol>
+  <symbol id="i-mailguard" viewBox="0 0 24 24"><path d="M21 11V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h7"/><path d="m3 6 9 6 9-6"/><path d="M18 14l-3 1.2v2.3c0 1.7 1.2 3 3 3.5 1.8-.5 3-1.8 3-3.5v-2.3Z"/></symbol>
+  <symbol id="i-wall" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9.3h18M3 14.7h18M9 4v5.3M15 9.3v5.4M9 14.7V20"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 4h18l-7 8.5V19l-4 2v-8.5Z"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5Z"/><path d="m3 12.5 9 5 9-5"/><path d="m3 17 9 5 9-5"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"/><path d="M14 3v6h6M9 13h6M9 17h4"/></symbol>
+  <symbol id="i-diff" viewBox="0 0 24 24"><circle cx="6" cy="18" r="3"/><circle cx="18" cy="6" r="3"/><path d="M6 15V7a3 3 0 0 1 3-3h4M18 9v8a3 3 0 0 1-3 3h-4"/></symbol>
+  <symbol id="i-checks" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m8 12 3 3 5-6"/></symbol>
+  <symbol id="i-browser" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M6.5 6.5h.01M9.5 6.5h.01"/></symbol>
+  <symbol id="i-radar" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12 18.4 5.6"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M10 6h11M10 12h11M10 18h11"/><path d="m3 6 1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 8-5 4 5 4M16 8l5 4-5 4M14 4l-4 16"/></symbol>
   <symbol id="i-github" viewBox="0 0 24 24"><path d="M12 2A10 10 0 0 0 8.8 21.5c.5.1.7-.2.7-.5v-1.8c-2.8.6-3.4-1.3-3.4-1.3-.4-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5a3.9 3.9 0 0 1 1-2.7c-.1-.3-.5-1.3.1-2.6 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .6 1.3.2 2.3.1 2.6a3.9 3.9 0 0 1 1 2.7c0 3.9-2.3 4.7-4.6 5 .4.3.7.9.7 1.9v2.7c0 .3.2.6.7.5A10 10 0 0 0 12 2Z"/></symbol>
 </svg>
 <nav>
@@ -187,7 +219,14 @@
       <a href="#screenshots" data-en="Screenshots" data-zh="截圖" data-ja="スクリーンショット">截圖</a>
       <a id="tsLink" href="troubleshooting-zh-TW.html" data-en="Troubleshooting" data-zh="疑難排解" data-ja="トラブルシューティング">疑難排解</a>
       <a class="gh" href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener">GitHub</a>
-      <button class="lang" id="langBtn" onclick="toggleLang()">EN</button>
+      <div class="lang-wrap">
+        <button class="lang" id="langBtn" type="button" aria-haspopup="menu" aria-expanded="false" onclick="toggleLangMenu(event)"><svg class="lico"><use href="#i-globe"/></svg><span id="langCur">中文</span><span class="caret">&#9662;</span></button>
+        <div class="lang-menu" id="langMenu" role="menu" hidden>
+          <button type="button" role="menuitemradio" data-l="en" lang="en" onclick="setLang('en')"><span class="chk"></span>English</button>
+          <button type="button" role="menuitemradio" data-l="zh-TW" lang="zh-TW" onclick="setLang('zh-TW')"><span class="chk"></span>繁體中文</button>
+          <button type="button" role="menuitemradio" data-l="ja" lang="ja" onclick="setLang('ja')"><span class="chk"></span>日本語</button>
+        </div>
+      </div>
     </div>
   </div>
 </nav>
@@ -198,7 +237,7 @@
       <img src="https://img.shields.io/badge/version-1.14.1-blue" alt="version">
       <img src="https://img.shields.io/badge/python-3.8+-green" alt="python">
       <img src="https://img.shields.io/badge/license-AGPL--3.0-orange" alt="license">
-      <img src="https://img.shields.io/badge/UI-EN%20%7C%20%E7%B9%81%E4%B8%AD-blueviolet" alt="lang">
+      <img src="https://img.shields.io/badge/UI-EN%20%7C%20%E7%B9%81%E4%B8%AD%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet" alt="lang">
     </div>
     <h1 class="title"><span data-en="Supercharge your" data-zh="補強 Wazuh Agent" data-ja="Wazuh のエージェント管理を">補強 Wazuh Agent</span><br><span class="grad" data-en="Wazuh agent management" data-zh="管理能力" data-ja="もっと使いやすく">管理能力</span></h1>
     <p class="tag" data-en="A web-based tool that supplements the Wazuh Dashboard — agents, groups, cluster nodes, rules, API users and logs. Not a replacement, a complement." data-zh="補強 Wazuh Dashboard 的網頁工具 — 涵蓋 Agent、群組、叢集節點、規則、API 使用者與記錄。不是取代，而是互補。" data-ja="Wazuh Dashboard を補う Web ツールです。エージェント、グループ、クラスタノード、ルール、API ユーザー、ログ。置き換えではなく、補完します。">補強 Wazuh Dashboard 的網頁工具 — 涵蓋 Agent、群組、叢集節點、規則、API 使用者與記錄。不是取代，而是互補。</p>
@@ -206,7 +245,7 @@
       <a class="btn btn-primary" href="#install"><svg class="bico"><use href="#i-bolt"/></svg><span data-en="Quick Install" data-zh="快速安裝" data-ja="すぐにインストール">快速安裝</span></a>
       <a class="btn btn-ghost" href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener"><svg class="bico"><use href="#i-github"/></svg><span data-en="View on GitHub" data-zh="前往 GitHub" data-ja="GitHub で見る">前往 GitHub</span></a>
     </div>
-    <p class="note" data-en="Runs on your Wazuh Manager · HTTPS by default · English / 繁體中文" data-zh="安裝於 Wazuh Manager · 預設 HTTPS · 英文 / 繁體中文" data-ja="Wazuh Manager 上で動作 · 既定で HTTPS · English / 繁體中文 / 日本語">安裝於 Wazuh Manager · 預設 HTTPS · 英文 / 繁體中文</p>
+    <p class="note" data-en="Runs on your Wazuh Manager · HTTPS by default · English / 繁體中文 / 日本語" data-zh="安裝於 Wazuh Manager · 預設 HTTPS · 英文 / 繁體中文 / 日文" data-ja="Wazuh Manager 上で動作 · 既定で HTTPS · English / 繁體中文 / 日本語">安裝於 Wazuh Manager · 預設 HTTPS · 英文 / 繁體中文 / 日文</p>
   </div>
 </header>
 
@@ -254,7 +293,7 @@
       <div class="feat"><div class="ico"><svg><use href="#i-database"/></svg></div><h3 data-en="Queue DB tools" data-zh="Queue DB 工具" data-ja="Queue DB ツール">Queue DB 工具</h3><p data-en="Check agent queue DB usage across nodes and batch-clean with automatic restart." data-zh="跨節點檢查 Agent queue DB 用量，批次清除並自動重啟。" data-ja="ノードをまたいでエージェントの queue DB 使用量を確認し、自動再起動付きで一括クリア。">跨節點檢查 Agent queue DB 用量，批次清除並自動重啟。</p></div>
       <div class="feat"><div class="ico"><svg><use href="#i-users"/></svg></div><h3 data-en="API users &amp; logs" data-zh="API 使用者與記錄" data-ja="API ユーザーとログ">API 使用者與記錄</h3><p data-en="Create / manage Wazuh API users and roles; view and download operation logs &amp; audit events." data-zh="建立／管理 Wazuh API 使用者與角色；檢視並下載操作記錄與稽核事件。" data-ja="Wazuh API のユーザーとロールの作成・管理、操作ログと監査イベントの表示・ダウンロード。">建立／管理 Wazuh API 使用者與角色；檢視並下載操作記錄與稽核事件。</p></div>
       <div class="feat"><div class="ico"><svg><use href="#i-shield"/></svg></div><h3 data-en="Secure by design" data-zh="內建安全" data-ja="設計段階からの安全性">內建安全</h3><p data-en="Wazuh-API login (JWT), HTTPS, input validation, path-traversal &amp; injection protection, IP lockout." data-zh="Wazuh API 登入（JWT）、HTTPS、輸入驗證、防路徑穿越與注入、IP 鎖定。" data-ja="Wazuh API によるログイン（JWT）、HTTPS、入力検証、パストラバーサルとインジェクションへの対策、IP ロックアウト。">Wazuh API 登入（JWT）、HTTPS、輸入驗證、防路徑穿越與注入、IP 鎖定。</p></div>
-      <div class="feat"><div class="ico"><svg><use href="#i-globe"/></svg></div><h3 data-en="Bilingual UI" data-zh="雙語介面" data-ja="多言語 UI">雙語介面</h3><p data-en="Switch between English and 繁體中文 with one click in the header; remembered per browser." data-zh="標題列一鍵切換英文與繁體中文，偏好依瀏覽器記住。" data-ja="ヘッダーのワンクリックで English / 繁體中文 / 日本語 を切り替え。ブラウザーごとに記憶されます。">標題列一鍵切換英文與繁體中文，偏好依瀏覽器記住。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-globe"/></svg></div><h3 data-en="Three languages" data-zh="三語介面" data-ja="3 言語の UI">三語介面</h3><p data-en="English, 繁體中文 and 日本語, chosen from a menu in the header and remembered per browser. Values you type are never translated." data-zh="英文、繁體中文與日文，從標題列的選單切換，偏好依瀏覽器記住。你輸入的值永遠不會被翻譯。" data-ja="English・繁體中文・日本語をヘッダーのメニューから選べ、ブラウザーごとに記憶されます。入力した値が翻訳されることはありません。">英文、繁體中文與日文，從標題列的選單切換，偏好依瀏覽器記住。你輸入的值永遠不會被翻譯。</p></div>
       <div class="feat"><div class="ico"><svg><use href="#i-terminal"/></svg></div><h3 data-en="CLI included" data-zh="附 CLI" data-ja="CLI も同梱">附 CLI</h3><p data-en="agent / group / node / stats subcommands with table, JSON, CSV output and --dry-run." data-zh="agent / group / node / stats 子指令，支援 table、JSON、CSV 輸出與 --dry-run。" data-ja="agent / group / node / stats の各サブコマンド。table・JSON・CSV 出力と --dry-run に対応。">agent / group / node / stats 子指令，支援 table、JSON、CSV 輸出與 --dry-run。</p></div>
     </div>
   </div>
@@ -269,14 +308,18 @@
       <p class="note" data-en="Wazuh ships no rules for several products people actually run. These packs add decoders, rules and CDB lists for them, and install as a unit: rule IDs are checked for conflicts, files are backed up, the ruleset is validated, and any failure rolls the whole thing back. Removing a pack restores what it replaced, and refuses to delete a file you edited after installing." data-zh="有些實際在跑的產品，Wazuh 根本沒有對應規則。這些套件為它們補上解碼器、規則與 CDB 清單，並以整包為單位安裝：先偵測規則 ID 衝突、備份原檔、驗證規則集，任何一步失敗就整包回滾。移除時會還原被覆蓋的原檔，且拒絕刪除安裝後被你改過的檔案。" data-ja="実際に使われている製品のいくつかには、Wazuh 標準のルールがありません。これらのパックはそうした製品向けのデコーダー・ルール・CDB リストを追加し、ひとまとまりでインストールします。ルール ID の重複を検査し、ファイルをバックアップし、ルールセットを検証したうえで、いずれかが失敗すれば全体をロールバックします。削除時は置き換えられていたファイルを復元し、インストール後に編集されたファイルは削除を拒否します。">有些實際在跑的產品，Wazuh 根本沒有對應規則。這些套件為它們補上解碼器、規則與 CDB 清單，並以整包為單位安裝：先偵測規則 ID 衝突、備份原檔、驗證規則集，任何一步失敗就整包回滾。移除時會還原被覆蓋的原檔，且拒絕刪除安裝後被你改過的檔案。</p>
     </div>
     <div class="grid">
-      <div class="feat"><h3>jt-ioc</h3><p data-en="Roughly 250,000 addresses from eleven threat feeds, rebuilt every six hours by an updater the pack installs and schedules for you." data-zh="約 25 萬筆位址，來自十一個情資來源，由套件自行安裝並排程的更新程式每六小時重建一次。" data-ja="11 種類の脅威フィードから約 25 万件のアドレス。パックが導入・スケジュール設定する更新プログラムにより 6 時間ごとに再構築されます。">約 25 萬筆位址，來自十一個情資來源，由套件自行安裝並排程的更新程式每六小時重建一次。</p></div>
-      <div class="feat"><h3>jt-malware-hash</h3><p data-en="About 1.1 million SHA-256 values from MalwareBazaar, matched against file integrity events, Sysmon, VirusTotal and osquery. Refreshed nightly." data-zh="約 110 萬筆來自 MalwareBazaar 的 SHA-256，比對檔案完整性事件、Sysmon、VirusTotal 與 osquery，每晚更新。" data-ja="MalwareBazaar 由来の約 110 万件の SHA-256 値。ファイル整合性イベント、Sysmon、VirusTotal、osquery と照合します。毎晩更新。">約 110 萬筆來自 MalwareBazaar 的 SHA-256，比對檔案完整性事件、Sysmon、VirusTotal 與 osquery，每晚更新。</p></div>
-      <div class="feat"><h3>jt-portable-detect</h3><p data-en="Portable executables run from Downloads, Temp and removable drives, tuned against a week of live traffic to keep the noise down." data-zh="偵測從下載、暫存與卸除式磁碟執行的免安裝程式，並以一週實際流量調校以降低誤報。" data-ja="Downloads、Temp、リムーバブルドライブから実行される可搬実行ファイルを検知。ノイズを抑えるため、実環境 1 週間分のデータで調整済み。">偵測從下載、暫存與卸除式磁碟執行的免安裝程式，並以一週實際流量調校以降低誤報。</p></div>
-      <div class="feat"><h3>jt-zimbra</h3><p data-en="Web shells, suspicious mail flow and file integrity for Zimbra, including the directories an attacker reaches for first." data-zh="針對 Zimbra 的 web shell、可疑郵件流與檔案完整性，涵蓋攻擊者最先動手的目錄。" data-ja="Zimbra のウェブシェル、不審なメールの流れ、ファイル整合性。攻撃者が最初に狙うディレクトリも対象です。">針對 Zimbra 的 web shell、可疑郵件流與檔案完整性，涵蓋攻擊者最先動手的目錄。</p></div>
-      <div class="feat"><h3>jt-zenarmor</h3><p data-en="Decoder and rules for Zenarmor. The vendor guide's decoder does not match on 4.14; this one does, and was verified against live traffic." data-zh="Zenarmor 的解碼器與規則。原廠指南的解碼器在 4.14 實測不匹配，這份可以，且以實際流量驗證過。" data-ja="Zenarmor 用のデコーダーとルール。ベンダーのガイドにあるデコーダーは 4.14 では一致しませんが、こちらは一致し、実トラフィックで検証済みです。">Zenarmor 的解碼器與規則。原廠指南的解碼器在 4.14 實測不匹配，這份可以，且以實際流量驗證過。</p></div>
-      <div class="feat"><h3>jt-adguard</h3><p data-en="AdGuard Home DNS filtering, so a blocked lookup is attributable to the client that made it rather than to the resolver." data-zh="AdGuard Home 的 DNS 過濾，讓被封鎖的查詢能追溯到真正發出查詢的用戶端，而不是只看到解析器。" data-ja="AdGuard Home の DNS フィルタリング。ブロックされた名前解決を、リゾルバーではなく実際に要求したクライアントに紐づけられます。">AdGuard Home 的 DNS 過濾，讓被封鎖的查詢能追溯到真正發出查詢的用戶端，而不是只看到解析器。</p></div>
-      <div class="feat"><h3>jt-fail2ban</h3><p data-en="Bans and unbans alike, in a group of its own so hosts running fail2ban for any reason are covered, not just mail servers." data-zh="封鎖與解除封鎖都會告警，並放在獨立群組，讓任何跑 fail2ban 的主機都涵蓋得到，不限郵件伺服器。" data-ja="BAN と解除の両方に対応。独立したグループとして構成しているため、メールサーバーに限らず fail2ban を動かしているホストすべてが対象になります。">封鎖與解除封鎖都會告警，並放在獨立群組，讓任何跑 fail2ban 的主機都涵蓋得到，不限郵件伺服器。</p></div>
-      <div class="feat"><h3 data-en="Honest about scope" data-zh="老實說明範圍" data-ja="できることを正直に">老實說明範圍</h3><p data-en="A pack states what it will do before you press install: which files it writes, which scheduled job it adds and runs as root, and which agent group it creates for the log collection its rules depend on." data-zh="套件在你按下安裝前就說清楚它會做什麼：寫入哪些檔案、加入哪個以 root 執行的排程工作，以及為了規則所需的記錄收集會建立哪個 agent 群組。" data-ja="各パックは、インストールを押す前に何をするかを明示します。書き込むファイル、root 権限で追加・実行するスケジュールジョブ、そしてルールが必要とするログ収集のために作成するエージェントグループです。">套件在你按下安裝前就說清楚它會做什麼：寫入哪些檔案、加入哪個以 root 執行的排程工作，以及為了規則所需的記錄收集會建立哪個 agent 群組。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-target"/></svg></div><h3 data-en="IP threat intelligence" data-zh="IP 威脅情資" data-ja="IP 脅威インテリジェンス">IP 威脅情資</h3><span class="pid">jt-ioc</span><p data-en="Multi-source IP threat lists plus a high-confidence list (two independent feeds, or a curated one such as Spamhaus DROP), matched against logins, outbound connections, Suricata flows and web requests. Rebuilt every six hours by an updater the pack installs." data-zh="多來源的 IP 威脅清單，另有高信心清單（兩個獨立來源都列出，或來自 Spamhaus DROP 等精選來源），比對登入、對外連線、Suricata 連線與網站請求。由套件自行安裝的更新程式每六小時重建。" data-ja="複数ソースの IP 脅威リストに、高信頼度のリスト（独立した 2 つのソースが掲載、または Spamhaus DROP などの厳選ソース）を加え、ログイン、外向き通信、Suricata のフロー、Web リクエストと照合します。パックが導入する更新プログラムが 6 時間ごとに再構築します。">多來源的 IP 威脅清單，另有高信心清單（兩個獨立來源都列出，或來自 Spamhaus DROP 等精選來源），比對登入、對外連線、Suricata 連線與網站請求。由套件自行安裝的更新程式每六小時重建。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-hash"/></svg></div><h3 data-en="Malware hash matching" data-zh="惡意程式雜湊比對" data-ja="マルウェアハッシュ照合">惡意程式雜湊比對</h3><span class="pid">jt-malware-hash</span><p data-en="About 1.1 million SHA-256 values from MalwareBazaar, matched against file integrity events, Sysmon process, driver and download events, Suricata, VirusTotal and osquery. Rebuilt daily, new samples merged every four hours." data-zh="約 110 萬筆 MalwareBazaar 的 SHA-256，比對檔案完整性事件、Sysmon 的程序／驅動程式／下載事件、Suricata、VirusTotal 與 osquery。每天完整重建一次，每四小時併入新樣本。" data-ja="MalwareBazaar 由来の約 110 万件の SHA-256 値を、ファイル整合性イベント、Sysmon のプロセス／ドライバー／ダウンロードのイベント、Suricata、VirusTotal、osquery と照合します。毎日再構築し、新しい検体は 4 時間ごとに取り込みます。">約 110 萬筆 MalwareBazaar 的 SHA-256，比對檔案完整性事件、Sysmon 的程序／驅動程式／下載事件、Suricata、VirusTotal 與 osquery。每天完整重建一次，每四小時併入新樣本。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-package"/></svg></div><h3 data-en="Portable executables" data-zh="免安裝程式偵測" data-ja="可搬実行ファイルの検知">免安裝程式偵測</h3><span class="pid">jt-portable-detect</span><p data-en="Programs run from Downloads, Temp, archives and removable drives on Windows, Linux and macOS, plus remote-access and tunnel tools, tuned against real traffic to keep the noise down." data-zh="偵測在 Windows、Linux、macOS 上從下載、暫存、壓縮檔與卸除式磁碟執行的程式，以及遠端控制與穿隧工具，並以實際流量調校以降低誤報。" data-ja="Windows・Linux・macOS で Downloads・Temp・アーカイブ・リムーバブルドライブから実行されるプログラム、そしてリモート操作ツールやトンネルツールを検知。実トラフィックで調整し、ノイズを抑えています。">偵測在 Windows、Linux、macOS 上從下載、暫存、壓縮檔與卸除式磁碟執行的程式，以及遠端控制與穿隧工具，並以實際流量調校以降低誤報。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-mailguard"/></svg></div><h3 data-en="Zimbra" data-zh="Zimbra" data-ja="Zimbra">Zimbra</h3><span class="pid">jt-zimbra</span><p data-en="Web shells, SMTP command injection (CVE-2026-73570), administrative changes, suspicious logins and file integrity for Zimbra, including the directories an attacker reaches for first." data-zh="Zimbra 的 web shell、SMTP 指令注入（CVE-2026-73570）、管理變更、可疑登入與檔案完整性，涵蓋攻擊者最先動手的目錄。" data-ja="Zimbra のウェブシェル、SMTP コマンドインジェクション（CVE-2026-73570）、管理操作の変更、不審なログイン、ファイル整合性。攻撃者が最初に狙うディレクトリも対象です。">Zimbra 的 web shell、SMTP 指令注入（CVE-2026-73570）、管理變更、可疑登入與檔案完整性，涵蓋攻擊者最先動手的目錄。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-wall"/></svg></div><h3 data-en="Zenarmor" data-zh="Zenarmor" data-ja="Zenarmor">Zenarmor</h3><span class="pid">jt-zenarmor</span><p data-en="Blocked and unblocked threats graded by category, C2 and tunnel names, mining pools. The vendor guide&#39;s decoder does not match on 4.14; this one does, and was verified against live traffic." data-zh="依類別分級已封鎖與未封鎖的威脅、C2 與穿隧網域、挖礦池。原廠指南的解碼器在 4.14 不匹配，這份可以，且以實際流量驗證過。" data-ja="遮断済み／未遮断の脅威をカテゴリーで格付けし、C2 やトンネルのドメイン、マイニングプールを検知。ベンダーのガイドにあるデコーダーは 4.14 では一致しませんが、こちらは一致し、実トラフィックで検証済みです。">依類別分級已封鎖與未封鎖的威脅、C2 與穿隧網域、挖礦池。原廠指南的解碼器在 4.14 不匹配，這份可以，且以實際流量驗證過。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-filter"/></svg></div><h3 data-en="AdGuard Home DNS" data-zh="AdGuard Home DNS" data-ja="AdGuard Home DNS">AdGuard Home DNS</h3><span class="pid">jt-adguard</span><p data-en="DNS filtering graded by list, so a blocked lookup is attributable to the client that made it; logins and vulnerable versions; and, when allowed queries are forwarded, OAST callbacks and DNS tunnelling." data-zh="DNS 過濾依清單分級，被封鎖的查詢能追溯到真正發出查詢的用戶端；另含登入、有漏洞的版本，以及轉送放行查詢時的 OAST 回呼與 DNS 通道偵測。" data-ja="DNS フィルタリングをリストごとに格付けし、ブロックされた名前解決を実際に要求したクライアントに紐づけます。ログインや脆弱なバージョンも検知し、許可したクエリも転送すれば OAST のコールバックや DNS トンネリングも検知します。">DNS 過濾依清單分級，被封鎖的查詢能追溯到真正發出查詢的用戶端；另含登入、有漏洞的版本，以及轉送放行查詢時的 OAST 回呼與 DNS 通道偵測。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-ban"/></svg></div><h3 data-en="fail2ban" data-zh="fail2ban" data-ja="fail2ban">fail2ban</h3><span class="pid">jt-fail2ban</span><p data-en="Bans graded by source and repetition, bans that did not take effect, and fail2ban itself stopping or going blind, in a group of its own so every host running fail2ban is covered." data-zh="依來源與重複程度分級的封鎖、沒有生效的封鎖，以及 fail2ban 本身停止或失明；放在獨立群組，任何跑 fail2ban 的主機都涵蓋得到。" data-ja="送信元と繰り返しで格付けした BAN、効いていない BAN、そして fail2ban 自体の停止や監視漏れを検知。独立したグループなので、fail2ban を動かすすべてのホストが対象になります。">依來源與重複程度分級的封鎖、沒有生效的封鎖，以及 fail2ban 本身停止或失明；放在獨立群組，任何跑 fail2ban 的主機都涵蓋得到。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-layers"/></svg></div><h3 data-en="16 more packs" data-zh="另外 16 個套件" data-ja="ほかに 16 パック">另外 16 個套件</h3><p data-en="Proxmox VE and Ceph, Proxmox Backup Server, Proxmox Mail Gateway, OPNsense, Keycloak, Univention Corporate Server / Samba AD, Nextcloud, LibreNMS, Synology DSM, Odoo, Jitsi Meet, Z-Push, Docker, jt-ipam, jt-vc-portal and a readable alert digest by mail." data-zh="Proxmox VE 與 Ceph、Proxmox Backup Server、Proxmox Mail Gateway、OPNsense、Keycloak、Univention Corporate Server／Samba AD、Nextcloud、LibreNMS、Synology DSM、Odoo、Jitsi Meet、Z-Push、Docker、jt-ipam、jt-vc-portal，以及可讀的告警摘要信。" data-ja="Proxmox VE と Ceph、Proxmox Backup Server、Proxmox Mail Gateway、OPNsense、Keycloak、Univention Corporate Server／Samba AD、Nextcloud、LibreNMS、Synology DSM、Odoo、Jitsi Meet、Z-Push、Docker、jt-ipam、jt-vc-portal、そして読みやすいアラート要約メール。">Proxmox VE 與 Ceph、Proxmox Backup Server、Proxmox Mail Gateway、OPNsense、Keycloak、Univention Corporate Server／Samba AD、Nextcloud、LibreNMS、Synology DSM、Odoo、Jitsi Meet、Z-Push、Docker、jt-ipam、jt-vc-portal，以及可讀的告警摘要信。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-checks"/></svg></div><h3 data-en="Quiet on a fresh install" data-zh="裝上就安靜" data-ja="入れた直後から静か">裝上就安靜</h3><p data-en="No pack needs a site list to stop flooding. A successful login alerts only when it matters: a built-in administrator, a public address, right after failures, or an account seen from an address for the first time." data-zh="不必先填站台清單就不會洗版。登入成功只在有意義時才告警：產品內建的管理帳號、公開位址、多次失敗之後，或某帳號第一次從某位址出現。" data-ja="サイト固有のリストを用意しなくても大量のアラートは出ません。ログインの成功をアラートにするのは意味があるときだけです：組み込みの管理者、パブリックアドレス、失敗が続いた直後、あるいはアカウントが初めて見るアドレスから現れたとき。">不必先填站台清單就不會洗版。登入成功只在有意義時才告警：產品內建的管理帳號、公開位址、多次失敗之後，或某帳號第一次從某位址出現。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-sync"/></svg></div><h3 data-en="Updates with a plan first" data-zh="先看計畫再更新" data-ja="計画を見てから更新">先看計畫再更新</h3><p data-en="The list shows the version on your manager next to the one shipped here. Updating shows first what happens to every file, keeps files you changed and the lists your site maintains, and rolls back on any failure." data-zh="清單並列 manager 上已安裝的版本與這裡提供的版本。更新前先列出每個檔案會怎麼處理，保留你改過的檔案與站台自己維護的清單，任何一步失敗就整包回滾。" data-ja="一覧にはマネージャー上のバージョンと、ここに同梱のバージョンを並べて表示します。更新の前に各ファイルがどうなるかを示し、変更したファイルやサイトで管理しているリストは残し、どこかで失敗すれば全体をロールバックします。">清單並列 manager 上已安裝的版本與這裡提供的版本。更新前先列出每個檔案會怎麼處理，保留你改過的檔案與站台自己維護的清單，任何一步失敗就整包回滾。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-shield"/></svg></div><h3 data-en="Active response, opt-in" data-zh="主動回應，自己決定開不開" data-ja="アクティブレスポンスはオプトイン">主動回應，自己決定開不開</h3><p data-en="A pack can offer to block, for example, the source of a brute force. Switching one on writes it to every cluster node, validates each node, and puts every node back if one rejects it; switching it off restores the file exactly." data-zh="套件可以提供例如「封鎖暴力破解來源」的主動回應。開啟時寫入叢集每個節點並逐一驗證，任一節點不接受就全部還原；關閉時把檔案還原到原本的位元組。" data-ja="パックは、たとえば総当たり攻撃の送信元を遮断する応答を提供できます。有効にするとクラスタの全ノードに書き込んで各ノードで検証し、1 つでも拒否されれば全ノードを元に戻します。無効にするとファイルをバイト単位で元どおりにします。">套件可以提供例如「封鎖暴力破解來源」的主動回應。開啟時寫入叢集每個節點並逐一驗證，任一節點不接受就全部還原；關閉時把檔案還原到原本的位元組。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-eye"/></svg></div><h3 data-en="Honest about scope" data-zh="老實說明範圍" data-ja="できることを正直に">老實說明範圍</h3><p data-en="A pack states what it will do before you press install: which files it writes, which scheduled job it adds and runs as root, and which agent group it creates." data-zh="套件在你按下安裝前就說清楚它會做什麼：寫入哪些檔案、加入哪個以 root 執行的排程工作、建立哪個 agent 群組。" data-ja="各パックは、インストールを押す前に何をするかを明示します。書き込むファイル、root 権限で実行するスケジュールジョブ、作成するエージェントグループ。">套件在你按下安裝前就說清楚它會做什麼：寫入哪些檔案、加入哪個以 root 執行的排程工作、建立哪個 agent 群組。</p></div>
     </div>
   </div>
 </section>
@@ -288,10 +331,10 @@
       <h2 data-en="Built for the things a cluster does not do for you" data-zh="專為「叢集不會幫你做的事」而設計" data-ja="クラスタが自動ではやってくれないことのために">專為「叢集不會幫你做的事」而設計</h2>
     </div>
     <div class="grid">
-      <div class="feat"><h3 data-en="Reload, do not restart" data-zh="熱重載，不重啟" data-ja="再起動ではなく再読み込み">熱重載，不重啟</h3><p data-en="A cluster synchronises rule files but leaves each node running the ruleset already in memory. One button reloads every node, without restarting analysisd." data-zh="叢集會同步規則檔，但每個節點仍跑著記憶體裡的舊規則集。一個按鈕重載所有節點，且不重啟 analysisd。" data-ja="クラスタはルールファイルを同期しますが、各ノードはメモリー上の古いルールセットで動き続けます。ボタン 1 つで全ノードを再読み込みでき、analysisd の再起動は不要です。">叢集會同步規則檔，但每個節點仍跑著記憶體裡的舊規則集。一個按鈕重載所有節點，且不重啟 analysisd。</p></div>
-      <div class="feat"><h3 data-en="Warnings are shown, not swallowed" data-zh="警告會顯示，不會被吞掉" data-ja="警告は握りつぶさず表示する">警告會顯示，不會被吞掉</h3><p data-en="A reload that cannot load a list still answers &quot;ok&quot;, and mentions the rule it has just switched off in a field most tools discard. This one reads that field and shows it." data-zh="載不進清單的重載仍然回應「ok」，只在一個多數工具會丟棄的欄位裡提到它剛剛停掉的規則。這個工具會讀那個欄位並顯示出來。" data-ja="リストを読み込めなかった再読み込みでも応答は &quot;ok&quot; のままで、無効化したルールは多くのツールが捨ててしまうフィールドにしか書かれません。本ツールはそのフィールドを読み取り、画面に表示します。">載不進清單的重載仍然回應「ok」，只在一個多數工具會丟棄的欄位裡提到它剛剛停掉的規則。這個工具會讀那個欄位並顯示出來。</p></div>
-      <div class="feat"><h3 data-en="ossec.conf is not synchronised" data-zh="ossec.conf 不會被同步" data-ja="ossec.conf は同期されない">ossec.conf 不會被同步</h3><p data-en="Rules, decoders and CDB lists reach every worker; the declaration that makes a list usable does not. Installing a pack now writes that declaration to every node and reads it back to confirm." data-zh="規則、解碼器與 CDB 清單都會送到每台 worker，但讓清單真正生效的那行宣告不會。安裝套件時會把宣告寫進每個節點，並讀回確認。" data-ja="ルール、デコーダー、CDB リストは各ワーカーへ届きますが、リストを有効にする宣言は届きません。パックのインストール時にその宣言を全ノードへ書き込み、読み戻して確認します。">規則、解碼器與 CDB 清單都會送到每台 worker，但讓清單真正生效的那行宣告不會。安裝套件時會把宣告寫進每個節點，並讀回確認。</p></div>
-      <div class="feat"><h3 data-en="Configuration drift, visible" data-zh="設定漂移，看得見" data-ja="設定のずれを可視化">設定漂移，看得見</h3><p data-en="Compare the sections of ossec.conf that actually change detection between nodes, rather than diffing the whole file and reading past the noise." data-zh="比對節點之間「真正會影響偵測」的 ossec.conf 區段，而不是整檔比對後在雜訊裡找重點。" data-ja="ファイル全体を差分表示してノイズに埋もれるのではなく、ノード間で実際に検知へ影響する ossec.conf のセクションだけを比較します。">比對節點之間「真正會影響偵測」的 ossec.conf 區段，而不是整檔比對後在雜訊裡找重點。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-sync"/></svg></div><h3 data-en="Reload, do not restart" data-zh="熱重載，不重啟" data-ja="再起動ではなく再読み込み">熱重載，不重啟</h3><p data-en="A cluster synchronises rule files but leaves each node running the ruleset already in memory. One button reloads every node, without restarting analysisd." data-zh="叢集會同步規則檔，但每個節點仍跑著記憶體裡的舊規則集。一個按鈕重載所有節點，且不重啟 analysisd。" data-ja="クラスタはルールファイルを同期しますが、各ノードはメモリー上の古いルールセットで動き続けます。ボタン 1 つで全ノードを再読み込みでき、analysisd の再起動は不要です。">叢集會同步規則檔，但每個節點仍跑著記憶體裡的舊規則集。一個按鈕重載所有節點，且不重啟 analysisd。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-alert"/></svg></div><h3 data-en="Warnings are shown, not swallowed" data-zh="警告會顯示，不會被吞掉" data-ja="警告は握りつぶさず表示する">警告會顯示，不會被吞掉</h3><p data-en="A reload that cannot load a list still answers &quot;ok&quot;, and mentions the rule it has just switched off in a field most tools discard. This one reads that field and shows it." data-zh="載不進清單的重載仍然回應「ok」，只在一個多數工具會丟棄的欄位裡提到它剛剛停掉的規則。這個工具會讀那個欄位並顯示出來。" data-ja="リストを読み込めなかった再読み込みでも応答は &quot;ok&quot; のままで、無効化したルールは多くのツールが捨ててしまうフィールドにしか書かれません。本ツールはそのフィールドを読み取り、画面に表示します。">載不進清單的重載仍然回應「ok」，只在一個多數工具會丟棄的欄位裡提到它剛剛停掉的規則。這個工具會讀那個欄位並顯示出來。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-file"/></svg></div><h3 data-en="ossec.conf is not synchronised" data-zh="ossec.conf 不會被同步" data-ja="ossec.conf は同期されない">ossec.conf 不會被同步</h3><p data-en="Rules, decoders and CDB lists reach every worker; the declaration that makes a list usable does not. Installing a pack now writes that declaration to every node and reads it back to confirm." data-zh="規則、解碼器與 CDB 清單都會送到每台 worker，但讓清單真正生效的那行宣告不會。安裝套件時會把宣告寫進每個節點，並讀回確認。" data-ja="ルール、デコーダー、CDB リストは各ワーカーへ届きますが、リストを有効にする宣言は届きません。パックのインストール時にその宣言を全ノードへ書き込み、読み戻して確認します。">規則、解碼器與 CDB 清單都會送到每台 worker，但讓清單真正生效的那行宣告不會。安裝套件時會把宣告寫進每個節點，並讀回確認。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-diff"/></svg></div><h3 data-en="Configuration drift, visible" data-zh="設定漂移，看得見" data-ja="設定のずれを可視化">設定漂移，看得見</h3><p data-en="Compare the sections of ossec.conf that actually change detection between nodes, rather than diffing the whole file and reading past the noise." data-zh="比對節點之間「真正會影響偵測」的 ossec.conf 區段，而不是整檔比對後在雜訊裡找重點。" data-ja="ファイル全体を差分表示してノイズに埋もれるのではなく、ノード間で実際に検知へ影響する ossec.conf のセクションだけを比較します。">比對節點之間「真正會影響偵測」的 ossec.conf 區段，而不是整檔比對後在雜訊裡找重點。</p></div>
     </div>
   </div>
 </section>
@@ -315,12 +358,13 @@
       <p class="note" data-en="This is an administration console with the power to restart nodes, delete agents and rewrite ossec.conf, so each release is treated as a security deployment rather than a feature bump." data-zh="這是一套能重啟節點、刪除代理程式、改寫 ossec.conf 的管理主控台，所以每次發版都當成資安部署看待，而不是單純的功能更新。" data-ja="本ツールはノードの再起動、エージェントの削除、ossec.conf の書き換えができる管理コンソールです。そのため各リリースを、単なる機能追加ではなくセキュリティ上の配備として扱っています。">這是一套能重啟節點、刪除代理程式、改寫 ossec.conf 的管理主控台，所以每次發版都當成資安部署看待，而不是單純的功能更新。</p>
     </div>
     <div class="grid">
-      <div class="feat"><h3 data-en="180 offline tests" data-zh="180 項離線測試" data-ja="180 件のオフラインテスト">180 項離線測試</h3><p data-en="No Wazuh manager needed. Authentication is derived from the application's own route map, so a route added later is covered without anyone remembering." data-zh="不需要 Wazuh Manager。認證測試由應用程式自己的路由表推導，日後新增的路由會自動被涵蓋，不必靠人記得補。" data-ja="Wazuh Manager は不要です。認証のテストはアプリケーション自身のルートマップから導出されるため、後から追加されたルートも誰かが覚えていなくても対象になります。">不需要 Wazuh Manager。認證測試由應用程式自己的路由表推導，日後新增的路由會自動被涵蓋，不必靠人記得補。</p></div>
-      <div class="feat"><h3 data-en="81 browser checks" data-zh="81 項瀏覽器檢查" data-ja="81 件のブラウザーチェック">81 項瀏覽器檢查</h3><p data-en="Nineteen journeys through a real browser against a mocked API: tabs, filters, dialogs, translation, headers, and any request that failed quietly." data-zh="19 條使用者旅程，在真實瀏覽器中對 mock 過的 API 執行：分頁、篩選、對話框、翻譯、標頭，以及任何靜默失敗的請求。" data-ja="モック化した API に対し、実際のブラウザーで 19 本のシナリオを実行します。タブ、絞り込み、ダイアログ、翻訳、ヘッダー、そして静かに失敗したリクエストまで確認します。">19 條使用者旅程，在真實瀏覽器中對 mock 過的 API 執行：分頁、篩選、對話框、翻譯、標頭，以及任何靜默失敗的請求。</p></div>
-      <div class="feat"><h3 data-en="ZAP on every release" data-zh="每次發版都跑 ZAP" data-ja="リリースごとの ZAP">每次發版都跑 ZAP</h3><p data-en="An OWASP ZAP baseline scan compared plugin by plugin against a recorded result, because the same total can hide one finding leaving as another arrives." data-zh="OWASP ZAP 基線掃描，並逐 plugin 與既有紀錄比對——因為同樣的總數可能藏著「舊的消失、新的出現」。" data-ja="OWASP ZAP のベースラインスキャンを、記録済みの結果とプラグイン単位で比較します。合計値が同じでも、1 件消えて 1 件増えていることがあるためです。">OWASP ZAP 基線掃描，並逐 plugin 與既有紀錄比對——因為同樣的總數可能藏著「舊的消失、新的出現」。</p></div>
-      <div class="feat"><h3 data-en="Mechanical pre-release checks" data-zh="機械式發版前檢查" data-ja="機械的なリリース前チェック">機械式發版前檢查</h3><p data-en="Nineteen of them, including that nothing published contains an internal host name or address. A checklist kept in someone's head fails quietly." data-zh="共 19 項，其中包含「發佈內容不得含有內部主機名或位址」。靠記性維護的清單會靜默失效。" data-ja="全 19 項目。公開物に内部のホスト名やアドレスが含まれていないことの確認も含みます。頭の中だけのチェックリストは、静かに機能しなくなります。">共 19 項，其中包含「發佈內容不得含有內部主機名或位址」。靠記性維護的清單會靜默失效。</p></div>
-      <div class="feat"><h3 data-en="What is not covered" data-zh="尚未涵蓋的部分" data-ja="対象外のこと">尚未涵蓋的部分</h3><p data-en="No load testing, no cross-version upgrade testing, and detection rules are verified by hand on a manager rather than in CI. The test plan says so in writing." data-zh="沒有負載測試、沒有跨版本升級測試，偵測規則是在 Manager 上人工驗證而非在 CI 中驗證。測試計畫裡白紙黑字寫著。" data-ja="負荷試験、バージョン間のアップグレード試験は行っていません。検知ルールは CI ではなく、マネージャー上で手作業により検証しています。テスト計画にもそのとおり明記しています。">沒有負載測試、沒有跨版本升級測試，偵測規則是在 Manager 上人工驗證而非在 CI 中驗證。測試計畫裡白紙黑字寫著。</p></div>
-      <div class="feat"><h3 data-en="AGPL-3.0" data-zh="AGPL-3.0" data-ja="AGPL-3.0">AGPL-3.0</h3><p data-en="Free to run, study, change and share. If you offer a modified version to others over a network, they are entitled to its source — the interface links to it." data-zh="可自由執行、研究、修改與散布。若你以網路服務形式提供修改版，使用者有權取得其原始碼——介面中即附有連結。" data-ja="実行・調査・改変・共有は自由です。改変版をネットワーク越しに他者へ提供する場合、その利用者にはソースコードを受け取る権利があります。画面からそのリンクを辿れます。">可自由執行、研究、修改與散布。若你以網路服務形式提供修改版，使用者有權取得其原始碼——介面中即附有連結。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-checks"/></svg></div><h3 data-en="331 offline tests" data-zh="331 項離線測試" data-ja="331 件のオフラインテスト">331 項離線測試</h3><p data-en="No Wazuh manager needed. Authentication is derived from the application's own route map, so a route added later is covered without anyone remembering." data-zh="不需要 Wazuh Manager。認證測試由應用程式自己的路由表推導，日後新增的路由會自動被涵蓋，不必靠人記得補。" data-ja="Wazuh Manager は不要です。認証のテストはアプリケーション自身のルートマップから導出されるため、後から追加されたルートも誰かが覚えていなくても対象になります。">不需要 Wazuh Manager。認證測試由應用程式自己的路由表推導，日後新增的路由會自動被涵蓋，不必靠人記得補。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-browser"/></svg></div><h3 data-en="116 browser checks" data-zh="116 項瀏覽器檢查" data-ja="116 件のブラウザーチェック">116 項瀏覽器檢查</h3><p data-en="Twenty-three journeys through a real browser against a mocked API: tabs, filters, dialogs, translation, headers, and any request that failed quietly." data-zh="23 條使用者旅程，在真實瀏覽器中對 mock 過的 API 執行：分頁、篩選、對話框、翻譯、標頭，以及任何靜默失敗的請求。" data-ja="モック化した API に対し、実際のブラウザーで 23 本のシナリオを実行します。タブ、絞り込み、ダイアログ、翻訳、ヘッダー、そして静かに失敗したリクエストまで確認します。">23 條使用者旅程，在真實瀏覽器中對 mock 過的 API 執行：分頁、篩選、對話框、翻譯、標頭，以及任何靜默失敗的請求。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-radar"/></svg></div><h3 data-en="ZAP on every release" data-zh="每次發版都跑 ZAP" data-ja="リリースごとの ZAP">每次發版都跑 ZAP</h3><p data-en="An OWASP ZAP baseline scan compared plugin by plugin against a recorded result, because the same total can hide one finding leaving as another arrives." data-zh="OWASP ZAP 基線掃描，並逐 plugin 與既有紀錄比對——因為同樣的總數可能藏著「舊的消失、新的出現」。" data-ja="OWASP ZAP のベースラインスキャンを、記録済みの結果とプラグイン単位で比較します。合計値が同じでも、1 件消えて 1 件増えていることがあるためです。">OWASP ZAP 基線掃描，並逐 plugin 與既有紀錄比對——因為同樣的總數可能藏著「舊的消失、新的出現」。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-list"/></svg></div><h3 data-en="Mechanical pre-release checks" data-zh="機械式發版前檢查" data-ja="機械的なリリース前チェック">機械式發版前檢查</h3><p data-en="Twenty-one of them, including that nothing published contains an internal host name or address. A checklist kept in someone's head fails quietly." data-zh="共 21 項，其中包含「發佈內容不得含有內部主機名或位址」。靠記性維護的清單會靜默失效。" data-ja="全 21 項目。公開物に内部のホスト名やアドレスが含まれていないことの確認も含みます。頭の中だけのチェックリストは、静かに機能しなくなります。">共 21 項，其中包含「發佈內容不得含有內部主機名或位址」。靠記性維護的清單會靜默失效。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-package"/></svg></div><h3 data-en="3,524 pack cases" data-zh="3,524 個套件案例" data-ja="3,524 件のパックケース">3,524 個套件案例</h3><p data-en="Every pack is installed into a throwaway Wazuh manager container and replayed case by case: each rule has an event that must fire and a near miss that must not, including file-integrity events and correlations across hosts." data-zh="每個套件都裝進拋棄式的 Wazuh manager 容器逐案重放：每條規則都有必須命中的事件與不得命中的反例，包含檔案完整性事件與跨主機關聯。" data-ja="各パックを使い捨ての Wazuh マネージャーコンテナーに入れ、1 件ずつ再生します。すべてのルールに発火すべきイベントと発火してはならない紛らわしい例があり、ファイル整合性イベントやホストをまたぐ相関も含みます。">每個套件都裝進拋棄式的 Wazuh manager 容器逐案重放：每條規則都有必須命中的事件與不得命中的反例，包含檔案完整性事件與跨主機關聯。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-info"/></svg></div><h3 data-en="What is not covered" data-zh="尚未涵蓋的部分" data-ja="対象外のこと">尚未涵蓋的部分</h3><p data-en="No load testing, no cross-version upgrade testing, and the pack sandbox runs before a release rather than in CI; Windows event-channel rules still need a real event on a host. The test plan says so in writing." data-zh="沒有負載測試、沒有跨版本升級測試；套件沙箱在發版前執行，而不是在 CI 中；Windows 事件通道規則仍需在主機上以真實事件驗證。測試計畫裡白紙黑字寫著。" data-ja="負荷試験、バージョン間のアップグレード試験は行っていません。パックのサンドボックスは CI ではなくリリース前に実行し、Windows イベントチャネルのルールはホスト上の実イベントで確認します。テスト計画にもそのとおり明記しています。">沒有負載測試、沒有跨版本升級測試；套件沙箱在發版前執行，而不是在 CI 中；Windows 事件通道規則仍需在主機上以真實事件驗證。測試計畫裡白紙黑字寫著。</p></div>
+      <div class="feat"><div class="ico"><svg><use href="#i-code"/></svg></div><h3 data-en="AGPL-3.0" data-zh="AGPL-3.0" data-ja="AGPL-3.0">AGPL-3.0</h3><p data-en="Free to run, study, change and share. If you offer a modified version to others over a network, they are entitled to its source — the interface links to it." data-zh="可自由執行、研究、修改與散布。若你以網路服務形式提供修改版，使用者有權取得其原始碼——介面中即附有連結。" data-ja="実行・調査・改変・共有は自由です。改変版をネットワーク越しに他者へ提供する場合、その利用者にはソースコードを受け取る権利があります。画面からそのリンクを辿れます。">可自由執行、研究、修改與散布。若你以網路服務形式提供修改版，使用者有權取得其原始碼——介面中即附有連結。</p></div>
     </div>
   </div>
 </section>
@@ -393,31 +437,46 @@
 
   // ---- language ----
   var LANG_KEY='jtwz_site_lang';
-  // Order matters: the button cycles through this list and shows the language
-  // it will switch TO.
   var LANGS=['en','zh-TW','ja'];
   var ATTR={'en':'data-en','zh-TW':'data-zh','ja':'data-ja'};
   var LABEL={'en':'EN','zh-TW':'中文','ja':'日本語'};
-  var TITLE={'en':'Switch to English','zh-TW':'切換為繁體中文','ja':'日本語に切り替える'};
-  function getLang(){var l=localStorage.getItem(LANG_KEY);return LANGS.indexOf(l)>=0?l:'zh-TW';}
+  var TITLE={'en':'Language','zh-TW':'語言','ja':'言語'};
+  function getLang(){var l=null;try{l=localStorage.getItem(LANG_KEY);}catch(e){}return LANGS.indexOf(l)>=0?l:'zh-TW';}
   function applyLang(lang){
     document.documentElement.setAttribute('lang', lang);
     var attr = ATTR[lang] || 'data-en';
     document.querySelectorAll('[data-en]').forEach(function(el){
       var v = el.getAttribute(attr); if(v!==null) el.innerHTML = v;
     });
-    var btn=document.getElementById('langBtn');
-    var next=LANGS[(LANGS.indexOf(lang)+1)%LANGS.length];
-    btn.textContent = LABEL[next];
-    btn.title = TITLE[next];
-    // The troubleshooting page is two separate files rather than one toggled
+    document.getElementById('langCur').textContent = LABEL[lang];
+    document.getElementById('langBtn').title = TITLE[lang];
+    document.querySelectorAll('#langMenu button').forEach(function(b){
+      var on = b.getAttribute('data-l')===lang;
+      b.setAttribute('aria-checked', on?'true':'false');
+      b.querySelector('.chk').innerHTML = on ? '&#10003;' : '';
+    });
+    // The troubleshooting page is three separate files rather than one toggled
     // page, because the installer deep-links to it by the machine's locale.
     var ts=document.getElementById('tsLink');
     if(ts) ts.href = lang==='en' ? 'troubleshooting.html'
                    : lang==='ja' ? 'troubleshooting-ja.html'
                                  : 'troubleshooting-zh-TW.html';
   }
-  function toggleLang(){var n=LANGS[(LANGS.indexOf(getLang())+1)%LANGS.length];localStorage.setItem(LANG_KEY,n);applyLang(n);}
+  function langMenuOpen(open){
+    var m=document.getElementById('langMenu'), b=document.getElementById('langBtn');
+    m.hidden=!open; b.setAttribute('aria-expanded', open?'true':'false');
+    if(open){var cur=m.querySelector('[aria-checked="true"]'); if(cur) cur.focus();}
+  }
+  function toggleLangMenu(e){e.stopPropagation();langMenuOpen(document.getElementById('langMenu').hidden);}
+  function setLang(n){try{localStorage.setItem(LANG_KEY,n);}catch(e){}applyLang(n);langMenuOpen(false);document.getElementById('langBtn').focus();}
+  document.addEventListener('click',function(e){var w=document.querySelector('.lang-wrap');if(w&&!w.contains(e.target))langMenuOpen(false);});
+  document.addEventListener('keydown',function(e){
+    var m=document.getElementById('langMenu'); if(m.hidden) return;
+    var items=[].slice.call(m.querySelectorAll('button')), i=items.indexOf(document.activeElement);
+    if(e.key==='Escape'){langMenuOpen(false);document.getElementById('langBtn').focus();}
+    else if(e.key==='ArrowDown'){e.preventDefault();items[(i+1)%items.length].focus();}
+    else if(e.key==='ArrowUp'){e.preventDefault();items[(i-1+items.length)%items.length].focus();}
+  });
   applyLang(getLang());
 </script>
 </body>
