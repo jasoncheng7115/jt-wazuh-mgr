@@ -2,7 +2,7 @@
  "id": "jt-keycloak",
  "name": "Keycloak Detection Suite",
  "name_zh": "Keycloak 偵測套組",
- "version": "1.2",
+ "version": "1.2.1",
  "summary": "Logins, failed logins, brute-force lockouts, credential changes, stolen tokens and authorization codes, and administrator changes from the Keycloak event log, which Wazuh does not decode at all.",
  "summary_zh": "Keycloak 事件記錄中的登入、登入失敗、暴力破解鎖定、憑證變更、被竊的 token 與授權碼，以及管理者變更；Wazuh 內建完全不解碼。",
  "rule_id_range": "131300-131399",
@@ -19,7 +19,8 @@
   "Measured on one site (Keycloak 26.4.7, one realm behind a reverse proxy, 13 days of log, 7,150 lines replayed through the rules): 159 alerts at level 3 or higher with 1.2, the same number as with 1.1 (1.0: 278). The 39 one-time code enrolments now alert under their deprecated name UPDATE_TOTP while the UPDATE_CREDENTIAL twin is only recorded, and the start of 26.4.7 alerts as a vulnerable version. None of the new token, code, redirect, one-time code, enumeration or lockout rules fired on that data. Logins are a small part: four admin console logins, one from a public address, the first-time (user, address) pairs, and three level 12 alerts where a test suite signed in from the address that had just tried an unknown user 19 times. The rest are the setup day's admin changes and failed user deletions. The 6,450 stack trace lines and 88 routine HTTP errors raised none. No wrong-password, wrong-code, token or lockout event occurred in that time; those rules are tested with lines built from the Keycloak 26.4.7 source.",
   "Tokens and codes: at the token endpoint an authorization code with another redirect_uri, from another client or with a failed PKCE check is level 8 (an intercepted code, or a misconfigured client); a refresh token presented again after it was used is level 10, and a refresh token of one client presented by another level 8: both mean a stolen token. At the authorization endpoint a refused redirect_uri is level 5 (usually an application moved to a new address) and level 10 when it is built to fool URI validation: traversal, \"..;\", a backslash, a user part or an encoded separator in the host, an encoded control character. That is the shape of the redirect_uri validation bypasses CVE-2023-6291, CVE-2024-1132, CVE-2024-2419, CVE-2024-8883, CVE-2026-3872 and CVE-2026-7504.",
   "Versions: written for Keycloak 26.4.7 and checked against the 24.0.5 and 26.4.7 sources of the event listener. Keycloak 25 and later write realmName; 24 and older do not, and the realmId stands in for it: the admin console is still recognised by its client, the master realm only where its id is \"master\" (installations created by older releases). Values are quoted by default; values that can contain commas (reason, redirect_uri) are read to their closing quote, and the pack also works with quotes set to none.",
-  "Realm settings some rules need: brute-force detection is off by default, and Keycloak then never locks accounts, so 131318, 131319, 131343 and 131365 stay silent (every other failure rule works without it); a used refresh token can be used again unless Revoke Refresh Token is on, which 131359 needs. See the setup guide. Clearing the stored events, a partial export of a realm (client secrets included) and failed admin operations write no admin event, so no rule can see them."
+  "Realm settings some rules need: brute-force detection is off by default, and Keycloak then never locks accounts, so 131318, 131319, 131343 and 131365 stay silent (every other failure rule works without it); a used refresh token can be used again unless Revoke Refresh Token is on, which 131359 needs. See the setup guide. Clearing the stored events, a partial export of a realm (client secrets included) and failed admin operations write no admin event, so no rule can see them.",
+  "Cross-pack login groups (patch release): jt_auth_success on 131310, 131311, 131312, 131313, 131325, 131327, 131328, 131329; jt_auth_failure on 131341, 131342, 131344, 131349, 131353; jt_auth_lockout on 131343. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. Not tagged: the docker json-file shape (131331-131334, 131346, 131347: no address or account is decoded), one-time code and client secret failures (131348, 131355, 131351), lockout events that name a user id only (131318, 131319)."
  ],
  "notes_zh": [
   "Wazuh 對 Keycloak 沒有任何解碼器或規則。Keycloak 透過 jboss-logging 事件監聽器回報每一次登入、登入失敗與管理者變更，一個事件一行 key=value（logger 為 org.keycloak.events）。本套件解出 realm、client、使用者、來源位址（srcip）、錯誤，以及管理事件的操作、資源類型與資源路徑。",
@@ -34,7 +35,8 @@
   "單一站台實測（Keycloak 26.4.7，一個 realm，位於反向代理之後，13 天、7,150 行記錄重新送過規則）：1.2 版共 159 則 level 3 以上的告警，與 1.1 版相同（1.0 版為 278 則）。39 次一次性密碼註冊改以已棄用的名稱 UPDATE_TOTP 告警，UPDATE_CREDENTIAL 分身只記錄；26.4.7 的啟動則以有弱點的版本告警。新增的 token、授權碼、redirect、一次性密碼、帳號列舉與鎖定規則在這份資料上都沒有觸發。登入只佔一小部分：四次管理主控台登入、一次來自公開位址、第一次出現的（使用者、位址），以及三則 level 12：測試套件剛用不存在的使用者嘗試 19 次，又從同一位址登入。其餘是設定當天的管理變更與刪除使用者失敗。6,450 行 stack trace 與 88 筆例行 HTTP 錯誤都沒有告警。期間沒有發生密碼錯誤、一次性密碼錯誤、token 或鎖定事件；這些規則以依 Keycloak 26.4.7 原始碼組出的記錄行測試。",
   "Token 與授權碼：在 token 端點，授權碼的 redirect_uri 不同、來自其他 client 或 PKCE 檢查失敗為 level 8（授權碼被攔截，或 client 設定錯誤）；已用過的 refresh token 再次被提交為 level 10，某個 client 的 refresh token 由其他 client 提交為 level 8：兩者都表示 token 被竊。在授權端點，redirect_uri 被拒為 level 5（通常是應用程式搬到新網址），刻意構造來騙過 URI 驗證時為 level 10：路徑跳脫、「..;」、反斜線、主機部分帶使用者資訊或編碼過的分隔字元、編碼過的控制字元。這正是 CVE-2023-6291、CVE-2024-1132、CVE-2024-2419、CVE-2024-8883、CVE-2026-3872、CVE-2026-7504 這些 redirect_uri 驗證繞過的樣子。",
   "版本：依 Keycloak 26.4.7 撰寫，並對照事件監聽器 24.0.5 與 26.4.7 的原始碼。Keycloak 25 以後會寫 realmName，24 以前沒有，改以 realmId 代替：管理主控台仍可依其 client 辨識，master realm 則只在其 ID 為「master」時（較舊版本建立的安裝）才認得出來。值預設加引號；可能含逗號的值（reason、redirect_uri）會讀到結尾的引號為止；quotes 設為 none 時本套件同樣可用。",
-  "部分規則需要的 realm 設定：暴力破解偵測預設關閉，此時 Keycloak 從不鎖定帳號，131318、131319、131343、131365 都不會觸發（其他失敗規則不需要它）；未開啟 Revoke Refresh Token 時，用過的 refresh token 可以再用，131359 需要它。請見部署說明。清除已儲存的事件、realm 的部分匯出（含 client secret）與失敗的管理操作都不會寫出管理事件，任何規則都看不到。"
+  "部分規則需要的 realm 設定：暴力破解偵測預設關閉，此時 Keycloak 從不鎖定帳號，131318、131319、131343、131365 都不會觸發（其他失敗規則不需要它）；未開啟 Revoke Refresh Token 時，用過的 refresh token 可以再用，131359 需要它。請見部署說明。清除已儲存的事件、realm 的部分匯出（含 client secret）與失敗的管理操作都不會寫出管理事件，任何規則都看不到。",
+  "跨套件登入群組（修補版）：jt_auth_success：131310, 131311, 131312, 131313, 131325, 131327, 131328, 131329；jt_auth_failure：131341, 131342, 131344, 131349, 131353；jt_auth_lockout：131343。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。未加標記：docker json-file 形狀（131331-131334、131346、131347，解不出位址與帳號）、一次性密碼與用戶端密鑰失敗（131348、131355、131351）、只有使用者 ID 的鎖定事件（131318、131319）。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -55,7 +57,7 @@
    "type": "rule",
    "name": "jt-keycloak_rules.xml",
    "dest": "etc/rules/jt-keycloak_rules.xml",
-   "sha256": "d9d20a9d33383003de69a392c1e680dae63944f447bdd178d6b12271b5b0981a"
+   "sha256": "6efe587080b90b309d5cb1fb27d9bd8fcd0c5d2d82032b43b68d00ae9a7ab842"
   },
   {
    "type": "list",

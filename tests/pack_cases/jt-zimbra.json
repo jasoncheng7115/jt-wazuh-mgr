@@ -906,12 +906,12 @@
    "note": "synthesized: delegated bulk reading from a public address is still counted"
   },
   {
-   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://localhost:7071/service/admin/soap/SearchRequest] [name=user1@example.com;ua=ZCS;soapId=1;] soap - SearchRequest elapsed=12",
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://localhost:7071/service/admin/soap/SearchRequest] [name=user1@example.com;aname=zimbra;ua=ZCS;soapId=1;] soap - SearchRequest elapsed=12",
    "location": "/opt/zimbra/log/mailbox.log",
    "expect_rule": "100970",
    "expect_level": 0,
    "repeat": 30,
-   "note": "near miss: searches by Zimbra itself (ua=ZCS) are not counted"
+   "note": "3.3: near miss: a search by Zimbra itself (a delegated session of the zimbra account, ua=ZCS, no address), real shape (aname=zimbra) is not counted"
   },
   {
    "log": "10.0.0.38:62030 - - [07/Oct/2026:12:46:44 +0800]  \"GET https://zcs2.example.com/service/proxy?target=http%3A%2F%2Fgdata.youtube.com%2Ffeeds%2Fapi%2Fvideos%2FyDlt9dEmNos%3Falt%3Djsonc%26v%3D2 HTTP/2.0\" 403 497 \"https://zcs2.example.com:22443/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
@@ -1322,10 +1322,10 @@
    "expect_level": 3
   },
   {
-   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/ModifyIdentityRequest] [name=user1@example.com;mid=13;oip=198.51.100.60;ua=zmprov/10.1.20_GA_10120;soapId=1;] soap - ModifyIdentityRequest elapsed=120",
+   "log": "2026-10-11 10:00:00,100 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/ModifyIdentityRequest] [name=user1@example.com;aname=zimbra;mid=13;ua=zmprov/10.1.20_GA_10120;soapId=1;] soap - ModifyIdentityRequest elapsed=120",
    "location": "/opt/zimbra/log/mailbox.log",
    "expect_rule": "100970",
-   "note": "3.2: near miss: Zimbra's own tool",
+   "note": "3.3: near miss: Zimbra's own tool (session of the zimbra account, no address) is not reported",
    "expect_level": 0
   },
   {
@@ -1800,6 +1800,407 @@
    "expect_rule": "99901",
    "expect_level": 14,
    "note": "fim: a known malware hash in the web root reaches the hash lookup before the web-shell rules (3.2: 100800 L0 -> L1)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest?x=;oip=10.0.0.250;] [name=user21@example.com;oip=203.0.113.77;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user21@example.com; protocol=soap; error=authentication failed for [user21@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "repeat": 12,
+   "expect_rule": "100859",
+   "expect_level": 10,
+   "note": "3.3 injection: a private oip= in the request URL is ignored; the real client (public) is the source, so the brute force is the external one"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest?x=;oip=192.0.2.250;] [name=user22@example.com;oip=10.0.0.77;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user22@example.com; protocol=soap; error=authentication failed for [user22@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "repeat": 12,
+   "expect_rule": "100842",
+   "expect_level": 10,
+   "note": "3.3 injection: a public oip= in the request URL no longer reaches 100859 (which the opt-in firewall-drop uses); 3.2 decoded srcip 192.0.2.250 here (sandbox)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [oip=203.0.113.78;port=4100;ua=x] security - cmd=Auth;; error=x;; account=admin@example.com;;;soapId=1;] security - cmd=Auth; account=user23@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100837",
+   "expect_level": 5,
+   "note": "3.3 injection: a user agent carrying \"] security - cmd=Auth; error=...\" no longer turns a successful login into a failure of another account (3.2: 100811 for admin@)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [oip=203.0.113.79;port=4100;ua=zmprov/10.1.20_GA_10120;soapId=1;] security - cmd=Auth; account=user24@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100837",
+   "expect_level": 5,
+   "note": "3.3: a stolen password used with a Zimbra tool user agent is a login like any other (3.2: 100853, level 0)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com:7071/service/admin/soap/AuthRequest] [oip=203.0.113.80;port=4100;ua=ZCS;soapId=1;] security - cmd=Auth; account=zimbra; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100849",
+   "expect_level": 8,
+   "note": "3.3: the zimbra account with a tool user agent from a PUBLIC address is an administrator login, not routine"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [ip=10.0.250.1;port=50022;ua=ZCS;soapId=1;] security - cmd=Auth; account=user25@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100838",
+   "expect_level": 3,
+   "note": "3.3 near miss: tool user agent from a private address but an ordinary account: first private login, not routine"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [oip=203.0.113.81;port=4100;ua=preauth error=x;soapId=1;] security - cmd=Auth; account=user26@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100837",
+   "expect_level": 5,
+   "note": "3.3 injection: \"preauth\" or \"error=\" in the user agent no longer hides a login (3.2: 100850, or base level 0)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/NoOpRequest] [name=user27@example.com;mid=13;oip=198.51.100.61;ua=x] soap - DisableTwoFactorAuthRequest elapsed=1;;;soapId=1;] soap - NoOpRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100970",
+   "expect_level": 0,
+   "note": "3.3 injection: the SOAP operation is read after the context, so a user agent naming another operation changes nothing"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/NoOpRequest] [name=user27@example.com;mid=13;oip=198.51.100.61;ua=x] misc - Access from IP 192.0.2.1 suspended, for repeated failed login.;soapId=1;] soap - NoOpRequest elapsed=1",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100970",
+   "expect_level": 0,
+   "note": "3.3 injection: a fake ZimbraInvalidLoginFilter sentence in a user agent is not a suspension"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/GetMsgRequest] [name=user28@example.com;mid=13;oip=203.0.113.82;ua=ZCS;soapId=1;] soap - GetMsgRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "repeat": 30,
+   "expect_rule": "100972",
+   "expect_level": 12,
+   "note": "3.3: bulk reading by an ordinary account with a forged Zimbra tool user agent is counted (3.2: never counted)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/GetMsgRequest?x=;aname=admin@example.com;] [name=user29@example.com;mid=13;oip=203.0.113.83;ua=Mozilla/5.0;soapId=1;] soap - GetMsgRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "repeat": 30,
+   "expect_rule": "100972",
+   "expect_level": 12,
+   "note": "3.3 injection: \";aname=\" in the URL no longer makes a session look delegated (3.2: reads not counted)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/ModifyIdentityRequest] [name=user1@example.com;mid=13;oip=198.51.100.60;ua=zmprov/10.1.20_GA_10120;soapId=1;] soap - ModifyIdentityRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100814",
+   "expect_level": 3,
+   "note": "3.3: an identity change in a user session with a tool user agent is reported (3.2 case 184 expected it hidden)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 WARN  [qtp350068407-1:smtp://zcs1.example.com:7073/service/admin/soap/] [name=user30@example.com;oip=203.0.113.84;oport=40112;oproto=smtp;soapId=1;] security - cmd=Auth; account=user30@example.com; protocol=soap; error=authentication failed for [user30@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "expect_rule": "100811",
+   "expect_level": 5,
+   "note": "3.3: first SMTP AUTH failure of the pair still names the account (100811); real shape of the saslauthd context (oproto=smtp) from the site, failure from source (LdapProvisioning.authAccount)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 WARN  [qtp350068407-1:smtp://zcs1.example.com:7073/service/admin/soap/] [name=user30@example.com;oip=203.0.113.84;oport=40112;oproto=smtp;soapId=1;] security - cmd=Auth; account=user30@example.com; protocol=soap; error=authentication failed for [user30@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "repeat": 2,
+   "expect_rule": "100999",
+   "expect_level": 2,
+   "note": "3.3: later SMTP AUTH failures are level 2 here; Postfix 3332 reports the same attempt"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user31@example.com;oip=203.0.113.85;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user31@example.com; protocol=soap; error=authentication failed for [user31@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "repeat": 2,
+   "expect_rule": "100841",
+   "expect_level": 5,
+   "note": "3.3 near miss: a repeated web/SOAP failure stays at 100841 level 5"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 WARN  [qtp350068407-1:smtp://zcs1.example.com:7073/service/admin/soap/] [name=user30@example.com;oip=203.0.113.84;oport=40112;oproto=smtp;soapId=1;] security - cmd=Auth; account=user30@example.com; protocol=soap; error=authentication failed for [user30@example.com], invalid password;",
+   "location": "/opt/zimbra/log/audit.log",
+   "repeat": 12,
+   "expect_rule": "100859",
+   "expect_level": 10,
+   "note": "3.3: SMTP AUTH failures at level 2 still count for brute force (100842/100859)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:smtp://zcs1.example.com:7073/service/admin/soap/] [name=user32@example.com;oip=203.0.113.86;oport=40113;oproto=smtp;soapId=1;] security - cmd=Auth; account=user32@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "before": [
+    {
+     "log": "Oct 15 10:00:01 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:02 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:03 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:04 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:05 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:06 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:07 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:08 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    }
+   ],
+   "expect_rule": "100998",
+   "expect_level": 14,
+   "note": "3.3: eight Postfix SASL failures from one address (built-in 3357), then an SMTP AUTH success from it (audit.log); Postfix line shape from Postfix smtpd_sasl_glue.c"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:smtp://zcs1.example.com:7073/service/admin/soap/] [name=user33@example.com;oip=203.0.113.87;oport=40113;oproto=smtp;soapId=1;] security - cmd=Auth; account=user33@example.com; protocol=soap;",
+   "location": "/opt/zimbra/log/audit.log",
+   "before": [
+    {
+     "log": "Oct 15 10:00:01 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:02 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:03 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:04 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:05 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:06 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:07 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    },
+    {
+     "log": "Oct 15 10:00:08 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+     "location": "/var/log/zimbra.log"
+    }
+   ],
+   "expect_rule": "100837",
+   "expect_level": 5,
+   "note": "3.3 near miss: the success comes from another address"
+  },
+  {
+   "log": "Oct 15 10:00:01 zcs1 postfix/submission/smtpd[23456]: warning: unknown[203.0.113.86]: SASL LOGIN authentication failed: UGFzc3dvcmQ6",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "3332",
+   "expect_level": 5,
+   "note": "3.3: the Postfix copy of an SMTP AUTH failure is the built-in 3332 (not changed by the pack)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user34@example.com;mid=9;oip=203.0.113.88;ua=ZimbraWebClient - GC152 (Win)/10.1.20_GA_4893;] SoapEngine - handler exception: authentication failed for [user34@example.com], invalid two-factor code",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100991",
+   "expect_level": 5,
+   "note": "3.3: wrong two-factor code after a correct password (SoapEngine.java handler exception; reason string from ZetaTwoFactorAuth.authenticate, zimbra-maldua-2fa)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/EnableTwoFactorAuthRequest] [name=user34@example.com;mid=9;ip=10.0.0.88;port=25641;ua=ZimbraWebClient - GC58 (Win)/8.7.9_GA_1794;] SoapEngine - handler exception: authentication failed for [user34@example.com], invalid TOTP code",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100991",
+   "expect_level": 5,
+   "note": "3.3: wrong TOTP code while setting up two-factor; shape from wiki.zimbra.com \"2FA error:invalid TOTP code\" (8.7.9)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [oip=203.0.113.89;ua=Mozilla/5.0;] SoapEngine - handler exception: authentication failed for [user35@example.com], invalid password",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100990",
+   "expect_level": 0,
+   "note": "3.3 near miss: a wrong password in mailbox.log is the copy of audit.log; until 3.2 the built-in 2501 raised it at level 5 a second time (sandbox)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [oip=203.0.113.89;ua=Mozilla/5.0;] SoapEngine - handler exception: authentication failed for [x], invalid two-factor code], invalid password",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100990",
+   "expect_level": 0,
+   "note": "3.3 near miss: a typed name ending in \", invalid two-factor code\" does not make a password failure a second-factor failure (the reason is read from the end)"
+  },
+  {
+   "log": "Oct 15 10:00:00 zcs1 zimbra_mailbox 2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user34@example.com;mid=9;oip=203.0.113.88;ua=Mozilla/5.0;] SoapEngine - handler exception: authentication failed for [user34@example.com], invalid two-factor code",
+   "location": "/var/log/zimbra.log",
+   "expect_rule": "100990",
+   "expect_level": 0,
+   "note": "3.3 near miss: the syslog copy (zimbraLogToSyslog) is not counted"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user36@example.com;mid=9;oip=203.0.113.90;ua=Mozilla/5.0;] SoapEngine - handler exception: authentication failed for [user36@example.com], invalid two-factor code",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "repeat": 12,
+   "expect_rule": "100859",
+   "expect_level": 10,
+   "note": "3.3: twelve wrong codes from one address are brute force (the second factor is guessed, the password is known)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/SetRecoveryAccountRequest] [name=user37@example.com;mid=13;oip=198.51.100.62;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - SetRecoveryAccountRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100935",
+   "expect_level": 5,
+   "note": "3.3: recovery address set (service/mail/SetRecoveryAccount.java, 10.1.20; mailbox.log names the operation only)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/GrantRightsRequest] [name=user37@example.com;mid=13;oip=10.0.0.62;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - GrantRightsRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100935",
+   "expect_level": 5,
+   "note": "3.3: rights on the account granted (send-as, send-on-behalf, free/busy)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/RevokeRightsRequest] [name=user37@example.com;mid=13;oip=10.0.0.62;ua=ZimbraWebClient - FF152 (Mac)/10.1.20_GA_4893;soapId=1;] soap - RevokeRightsRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100970",
+   "expect_level": 0,
+   "note": "3.3 near miss: revoking rights is not reported"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://localhost:7071/service/admin/soap/GrantRightsRequest] [name=user38@example.com;aname=zimbra;mid=13;ua=zmmailbox/10.1.20_GA_4893;soapId=1;] soap - GrantRightsRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "expect_rule": "100970",
+   "expect_level": 0,
+   "note": "3.3 near miss: Zimbra's own tool (delegated zimbra session, no address)"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/ChangePasswordRequest] [name=user39@example.com;mid=13;oip=203.0.113.91;ua=Mozilla/5.0;soapId=2;] soap - ChangePasswordRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "before": [
+    {
+     "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user39@example.com;oip=203.0.113.91;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user39@example.com; protocol=soap;",
+     "location": "/opt/zimbra/log/audit.log"
+    }
+   ],
+   "expect_rule": "100816",
+   "expect_level": 12,
+   "note": "3.3: first login from a new public address, then password changed by the same account: account takeover chain"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/DisableTwoFactorAuthRequest] [name=user39@example.com;mid=13;oip=203.0.113.91;ua=Mozilla/5.0;soapId=2;] soap - DisableTwoFactorAuthRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "before": [
+    {
+     "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user39@example.com;oip=203.0.113.91;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user39@example.com; protocol=soap;",
+     "location": "/opt/zimbra/log/audit.log"
+    }
+   ],
+   "expect_rule": "100816",
+   "expect_level": 12,
+   "note": "3.3: first login from a new public address, then two-factor turned off by the same account: account takeover chain"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/CreateAppSpecificPasswordRequest] [name=user39@example.com;mid=13;oip=203.0.113.91;ua=Mozilla/5.0;soapId=2;] soap - CreateAppSpecificPasswordRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "before": [
+    {
+     "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user39@example.com;oip=203.0.113.91;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user39@example.com; protocol=soap;",
+     "location": "/opt/zimbra/log/audit.log"
+    }
+   ],
+   "expect_rule": "100816",
+   "expect_level": 12,
+   "note": "3.3: first login from a new public address, then application password created by the same account: account takeover chain"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/SetRecoveryAccountRequest] [name=user39@example.com;mid=13;oip=203.0.113.91;ua=Mozilla/5.0;soapId=2;] soap - SetRecoveryAccountRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "before": [
+    {
+     "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user39@example.com;oip=203.0.113.91;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user39@example.com; protocol=soap;",
+     "location": "/opt/zimbra/log/audit.log"
+    }
+   ],
+   "expect_rule": "100816",
+   "expect_level": 12,
+   "note": "3.3: first login from a new public address, then recovery address set by the same account: account takeover chain"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/ModifyFilterRulesRequest] [name=user39@example.com;mid=13;oip=203.0.113.91;ua=Mozilla/5.0;soapId=2;] soap - ModifyFilterRulesRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "before": [
+    {
+     "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user39@example.com;oip=203.0.113.91;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user39@example.com; protocol=soap;",
+     "location": "/opt/zimbra/log/audit.log"
+    }
+   ],
+   "expect_rule": "100816",
+   "expect_level": 12,
+   "note": "3.3: first login from a new public address, then filter rules changed by the same account: account takeover chain"
+  },
+  {
+   "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/ChangePasswordRequest] [name=user40@example.com;mid=13;oip=203.0.113.92;ua=Mozilla/5.0;soapId=2;] soap - ChangePasswordRequest elapsed=12",
+   "location": "/opt/zimbra/log/mailbox.log",
+   "before": [
+    {
+     "log": "2026-10-15 10:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user39@example.com;oip=203.0.113.91;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user39@example.com; protocol=soap;",
+     "location": "/opt/zimbra/log/audit.log"
+    }
+   ],
+   "expect_rule": "100932",
+   "expect_level": 3,
+   "note": "3.3 near miss: the new-address login was another account"
+  },
+  {
+   "log": "203.0.113.93:62030 - - [15/Oct/2026:10:00:00 +0800]  \"GET https://zcs1.example.com/home/user1%40example.com/?fmt=tgz&types=message,contact&emptyname=No+Data&charset=UTF-8&callback=ZmImportExportController.exportDone HTTP/2.0\" 200 497 \"https://zcs1.example.com/\" \"Mozilla/5.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100922",
+   "expect_level": 14,
+   "note": "3.3: the web client export (zm-web-client ZmImportExportController.js: GET /home/<account>/?fmt=tgz) from a public address; 3.2 never matched it"
+  },
+  {
+   "log": "10.0.0.93:62030 - - [15/Oct/2026:10:00:00 +0800]  \"GET https://zcs1.example.com/home/user1%40example.com/Inbox?fmt=zip&charset=UTF-8 HTTP/2.0\" 200 497 \"https://zcs1.example.com/\" \"Mozilla/5.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100921",
+   "expect_level": 0,
+   "note": "3.3: the same from a private address (normal)"
+  },
+  {
+   "log": "203.0.113.94:62030 - - [15/Oct/2026:10:00:00 +0800]  \"GET https://zcs1.example.com/home/user1%40example.com/Briefcase?fmt=zip&list=301,302 HTTP/2.0\" 200 497 \"https://zcs1.example.com/\" \"Mozilla/5.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100820",
+   "expect_level": 0,
+   "note": "3.3 near miss: Briefcase download of selected files (ZmBriefcaseController.js, fmt=zip&list=) is not a mailbox export"
+  },
+  {
+   "log": "203.0.113.95:62030 - - [15/Oct/2026:10:00:00 +0800]  \"GET https://zcs1.example.com/service/home/~/?auth=co&id=1024&fmt=zip HTTP/2.0\" 200 497 \"https://zcs1.example.com/\" \"Mozilla/5.0\" \"127.0.1.1:8443\" \"10.0.0.34:22443\"",
+   "location": "/opt/zimbra/log/nginx.access.log",
+   "expect_rule": "100820",
+   "expect_level": 0,
+   "note": "3.3 near miss: one item as zip (id=) is not a mailbox export"
+  },
+  {
+   "log": "Oct 14 00:00:48 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/common/sbin/postconf -e smtp_tls_CApath=",
+   "location": "/var/log/auth.log",
+   "expect_rule": "100866",
+   "expect_level": 1,
+   "repeat": 2,
+   "note": "3.3: real (mail1, about 30 a day on two servers stayed at 5402 L3): a setting name with capitals is routine too"
+  },
+  {
+   "log": "Oct 14 00:00:48 zcs1 sudo:   zimbra : TTY=unknown ; PWD=/opt/zimbra ; USER=root ; COMMAND=/opt/zimbra/common/sbin/postconf -e smtpd_tls_CAfile=",
+   "location": "/var/log/auth.log",
+   "expect_rule": "100866",
+   "expect_level": 1,
+   "repeat": 2,
+   "note": "3.3: real (mail1, about 30 a day on two servers stayed at 5402 L3): a setting name with capitals is routine too"
   }
  ],
  "sequences": [],

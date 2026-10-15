@@ -4,6 +4,41 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.15.0 (2026-10-15)
+
+Account security, with mail first.
+
+- **jt-zimbra 3.3: the decoders could be fed.** Zimbra copies the request URL and the
+  client's user agent into its log lines, and 3.2 took the first `oip=`, `ua=` or
+  `account=` it found. A crafted request could set the source address (and aim the
+  opt-in brute-force response at anyone), turn a successful login into a failed one
+  for another account, or silence a login entirely. Every regex is now anchored and
+  reads the context field by field. Also new: password spraying over SMTP AUTH followed
+  by a login from the same address (level 14), second-factor failures, and the
+  takeover chain after a first login from a new public address now includes password
+  changes, 2FA being switched off, app passwords and recovery-address changes. The web
+  client's own whole-mailbox export (`/home/<account>/?fmt=tgz`) is now caught, and a
+  failed login is no longer reported twice.
+- **jt-zpush 1.3:** mailbox harvesting read from Z-Push's own count of items waiting to
+  download (a new device pulling 5,000 or more right after a suspicious login is level
+  13); bursts of mail sent through ActiveSync; a new public device right after rejected
+  logins (level 12); three new devices for one account in 15 minutes; device removal,
+  remote wipe and one account managing another's devices through the webservice.
+- **jt-account-guard 1.0 (new):** account security across services. Packs now tag one
+  event per login attempt with `jt_auth_success`, `jt_auth_failure` or `jt_auth_lockout`
+  (not Wazuh's `authentication_success`, which would raise every night-time login to
+  level 9), and this pack correlates them: one public address failing on several
+  services and accounts (10/12), a login from an address that was just doing that (13),
+  one account failing on several services from several addresses (10), and a login
+  elsewhere right after an account or address was locked out (12). jt-ioc now also
+  checks these logins against its threat lists. Twelve packs carry the tags (x.y.1).
+- **Three packs got in each other's way**, found by installing all of them in one
+  manager: the Zimbra proxy decoder took IPv6 lines of every other web server's access
+  log, a Zimbra rule for any authorized_keys file overrode jt-proxmox's own, and
+  LibreNMS claimed `/api/v1`, which jt-ipam and many other applications use.
+- `tools/pack_sandbox.py`: `sandbox_packs` installs the packs a correlation pack needs
+  into the same container; FIM cases can carry `tags`.
+
 ## v1.14.1 (2026-10-11)
 
 - **Rule packs: a filter bar.** Type part of a name, an id or a description, or a rule

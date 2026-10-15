@@ -2,9 +2,9 @@
  "id": "jt-zimbra",
  "name": "Zimbra Detection Suite",
  "name_zh": "Zimbra 偵測套組",
- "version": "3.2",
- "summary": "FIM, web, authentication, administrative-change, SOAP, MTA and host-noise rules for Zimbra mail servers, with the decoders they need.",
- "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、管理變更、SOAP、MTA 與主機雜訊規則，並附上所需的解碼器。",
+ "version": "3.3",
+ "summary": "FIM, web, authentication, account-takeover, administrative-change, SOAP, MTA and host-noise rules for Zimbra mail servers, with the decoders they need.",
+ "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、帳號接管、管理變更、SOAP、MTA 與主機雜訊規則，並附上所需的解碼器。",
  "rule_id_range": "100800-100999",
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -30,7 +30,7 @@
   "Requests through a proxy (Z-Push, a reverse proxy) are attributed to the client the proxy reported, the first oip address, instead of decoding with no address and no account. The address is only as trustworthy as the proxy chain: where a proxy appends to a client-supplied X-Forwarded-For header instead of replacing it, the client can choose it.",
   "With zimbraLogToSyslog set, mailbox and audit lines also arrive through syslog (programs zimbra_mailbox and zimbra_audit). Only the copies read from /opt/zimbra/log count; rules 100834 and 100839 drop the others. Counting both halved every threshold: a third of the old SOAP alerts came from the syslog copy, and the generic rule 2501 raised every copied login failure a second time.",
   "New in 3.0: infected mail or spam sent by a local account (level 12), virus scanning failing (level 10), Postfix unable to deliver to the mailbox server, remote servers refusing this server's mail as spam, queue growth, service and disk status from zimbramon, opendkim key errors, admin-console changes and logins, an administrator taking over another account's session, account lockout, application passwords and mail-filter changes.",
-  "Left to others on purpose: SMTP AUTH password failures per address are the built-in Postfix rules 3332 and 3357 (Zimbra also logs them in audit.log, where 100841-100844 count them per account); LDAP (slapd) belongs to the jt-ucs pack; Z-Push devices to the jt-zpush pack; known-bad addresses to jt-ioc (100991, which read jt-ioc's list, is removed: without jt-ioc it was ignored with a warning, with it 906001 already covers it).",
+  "Left to others on purpose: SMTP AUTH password failures per address are the built-in Postfix rules 3332 and 3357 (Zimbra also writes each one to audit.log, where 3.3 records it at level 2 in 100999 and counts it per account in 100842-100844); LDAP (slapd) belongs to the jt-ucs pack; Z-Push devices to the jt-zpush pack; known-bad addresses to jt-ioc (the old 100991, which read jt-ioc's list, was removed in 3.0: without jt-ioc it was ignored with a warning, with it 906001 already covers it).",
   "etc/lists/zimbra-service-accounts is optional tuning and ships with a placeholder that matches nothing. Nothing needs to be listed: an internal tool that reads a mailbox through a delegated administrator session is reported once (100897) instead of raising the bulk-reading rules. List an account only to quiet an archiver or probe that reads a lot with its own credentials.",
   "Several 3.0 rules raise a condition that repeats every second until fixed once every six hours (attribute ignore). The window is per rule, not per host, and starts over when the manager restarts or reloads the ruleset. wazuh-logtest does not apply it; it was verified through analysisd itself.",
   "Rules 100860-100865 need an auditd rule file with the zimbra_* keys and rules 100880-100902 and 100992 need state-audit scripts writing /var/log/zimbra-state-audit.json. Neither ships with this pack; without them those rules stay silent.",
@@ -52,7 +52,15 @@
   "Logins: SSOAuth (SAML, JWT, SPNEGO) now follows the login policy; a login with a password-reset recovery code is level 5 (100812); a lockout lifted by a successful login is level 3 (100813); ZimbraInvalidLoginFilter suspending an address is level 8 (100818, at most once every 30 minutes, each refused request recorded at level 2).",
   "File integrity: the zimbra group now monitors /etc/pam.d, /etc/sudoers and /etc/sudoers.d with whodata and report_changes. A change is level 13 (100938 PAM, 100939 sudo), an added \"NOPASSWD: ALL\" line 14 (100936), a write by the package manager 5. These are the persistence steps reported after CVE-2026-73570 exploitation (a pam_exec hook in /etc/pam.d/sudo, NOPASSWD: ALL for the zimbra account). Zimbra's installer rewrites its sudoers file on upgrade, so expect one 100939 then.",
   "100963 re-levels the built-in 503 (agent started) and 504 (agent disconnected) for every agent, not only Zimbra servers. It is level 5 instead of 14 and no longer mentions Zimbra; measured 3 to 36 a day on one manager, mostly a laptop going to sleep. The ID and parents stay, because site rules may count it.",
-  "Versions: decoders and rules follow the Zimbra 10.1.20 source (zm-mailbox, tag 10.1.20); the audit and mailbox log layout has not changed since 8.8.15. mboximport (backup extension) and the two-factor operations exist only in the Network edition; ClientUploader was removed in 10.0.1. Not covered because no log line shows them: SMTP smuggling (CVE-2023-51764), the memcache injection CVE-2022-27924, and amavis archive extraction (CVE-2022-41352 is covered through file integrity)."
+  "Versions: decoders and rules follow the Zimbra 10.1.20 source (zm-mailbox, tag 10.1.20); the audit and mailbox log layout has not changed since 8.8.15. mboximport (backup extension) and the two-factor operations exist only in the Network edition; ClientUploader was removed in 10.0.1. Not covered because no log line shows them: SMTP smuggling (CVE-2023-51764), the memcache injection CVE-2022-27924, and amavis archive extraction (CVE-2022-41352 is covered through file integrity).",
+  "3.3 reads every field from its own place in the line. A Zimbra log line is date, level, [thread], [context], logger, message; the thread carries the request URL and the context the client's user agent, both chosen by the client, and 3.2 took the first \"oip=\", \"ua=\", \"name=\" or \"security - cmd=\" anywhere. Verified in the sandbox: a request to \".../AuthRequest?x=;oip=192.0.2.250;\" was decoded with that address as the source, so the brute-force rules and the opt-in firewall-drop on them could be aimed at any address; and a successful login whose user agent contained \"] security - cmd=Auth; error=x; account=admin@...\" became a failed login of another account, which hid a guessed password from the \"success after failures\" rules. Zimbra doubles every \";\" inside a value, so the decoders now walk the context pair by pair and read the message after it.",
+  "A Zimbra tool user agent (zmprov, zmmailbox, ZCS) no longer silences anything by itself: until 3.2 a login, a mailbox read or a filter or identity change sent with \"User-Agent: ZCS\" was treated as Zimbra talking to itself, a stolen password included. Now only Zimbra's built-in \"zimbra\" account (name=zimbra, or aname=zimbra for a delegated session) from no address or a private one counts as the tool. Measured on two servers over ten days: every zm*/ZCS session was exactly that, so the change adds no alerts there.",
+  "Cross-pack login groups (for the jt-account-guard pack): every rule a successful login can end at carries jt_auth_success (100845, 100812, 100847, 100848, 100849, 100854, 100837, 100838, 100846, 100833, 100852, 100850, 100831, 100832, 100998), every rule a failed attempt can end at jt_auth_failure (100841, 100857, 100811, 100999, 100842, 100859, 100843, 100836, 100844, 100991), and Zimbra locking an account or suspending an address jt_auth_lockout (100856, 100805, 100818). srcip is the client, dstuser the account. One copy per attempt: the syslog copies, the mailbox.log copy of a SOAP failure and Zimbra's own tools end at level 0. DelegateAuth is not a login of the account it names and is not tagged.",
+  "SMTP AUTH: Postfix authenticates through saslauthd, which asks Zimbra, so one wrong password is written by Postfix (built-in 3332, level 5; 3357 for eight from one address in two minutes) and in audit.log. 3.3 records the audit.log copy at level 2 (100999, still counted per account and per address) except the first failure of each (account, address) pair, which keeps naming the account at level 5 (100811). New: a login from an address Postfix had just reported for repeated SMTP AUTH failures is level 14 (100998); those failures reach audit.log only for accounts that exist, so a spray of guessed names could end in a correct guess that no Zimbra rule had counted.",
+  "Second factor: after a correct password Zimbra asks for a code, and audit.log has already logged the password step as a success; a wrong code appears only in mailbox.log (\"SoapEngine - handler exception: authentication failed for [x], invalid two-factor code\", or \"invalid TOTP code\" while setting it up). That is level 5 (100991), a failed login, and counts for brute force from one address (twelve in five minutes, 100842/100859). Two-factor exists in the Network Edition and the open-source zimbra-maldua-2fa extension. The same mailbox.log line for a wrong password was raised by the built-in 2501 at level 5 next to 100841 for every failed web or SOAP login; 3.3 decodes it and keeps it at level 0 (100990).",
+  "Account takeover: 100816 (level 12, a change within 30 minutes of an account's first login from a new public address) now also follows a password change, two-factor turned off, backup codes or an application password created, and a new recovery address or delegated rights (100935, level 5 on its own: SetRecoveryAccountRequest, whoever reads the recovery mailbox can reset the password; GrantRightsRequest, send-as, send-on-behalf-of and calendar rights). The web client's own mailbox export (/home/<account>/?fmt=tgz, without /service) was never matched by 100920-100923; it is now, and a Briefcase multi-file download is not. Not detectable from the logs Zimbra writes at its default level: who a folder was shared with (FolderActionRequest names no grantee), bulk IMAP or POP downloads (FETCH and RETR are not logged), and whether a login used an application password.",
+  "SMTP AUTH session tokens: on a default Zimbra install saslauthd logs, at debug level and into /var/log/zimbra.log, the whole answer Zimbra gives it for every SMTP AUTH, including a session token valid for two days (found in the measured site's central log store for every SMTP AUTH). The zimbra group now has the agent skip those lines, so the tokens no longer reach the manager or its archives; the setup step shows how to stop them being written at all.",
+  "The rule-ID range 100800-100999 is now full: 3.3 uses the last free IDs (100935, 100998, 100999 and the IDs of rules removed in 3.0 and earlier, 100990 and 100991, now different rules in 08-zimbra_soap_rules.xml). A site rule that referred to the removed ones would now refer to the new rules."
  ],
  "notes_zh": [
   "zimbra-webfiles 是原廠檔案基線。隨附的版本產生自 Zimbra 10.1.20（FOSS 與 NETWORK 版聯集），是起點而非自行產生的替代品。",
@@ -70,7 +78,7 @@
   "經代理（Z-Push、反向代理）進來的請求，現在記在代理回報的用戶端，也就是 oip 的第一個位址；原本這類記錄解不出位址也解不出帳號。這個位址的可信度取決於代理鏈：代理若是附加在用戶端自帶的 X-Forwarded-For 之後而不是取代它，用戶端就能自己指定這個位址。",
   "設定 zimbraLogToSyslog 時，mailbox 與 audit 的記錄也會經 syslog 進來（程式名 zimbra_mailbox、zimbra_audit）。只有從 /opt/zimbra/log 讀到的那份會被計數，規則 100834 與 100839 會丟掉另一份。兩份都算會讓每個門檻減半：舊的 SOAP 告警有三分之一來自 syslog 副本，通用規則 2501 也會把每筆複製來的登入失敗再報一次。",
   "3.0 新增：本地帳號寄出中毒信或垃圾信（level 12）、病毒掃描失效（level 10）、Postfix 無法投遞到信箱伺服器、遠端伺服器以垃圾信為由拒收本機的信、佇列暴增、zimbramon 的服務與磁碟狀態、opendkim 金鑰錯誤、管理主控台的變更與登入、管理員接管其他帳號的工作階段、帳號鎖定、應用程式密碼與郵件篩選規則變更。",
-  "刻意交給其他規則：依來源位址的 SMTP AUTH 密碼失敗是內建 Postfix 規則 3332 與 3357（Zimbra 也會記在 audit.log，100841-100844 依帳號計數）；LDAP（slapd）屬於 jt-ucs 套件；Z-Push 裝置屬於 jt-zpush 套件；已知惡意位址屬於 jt-ioc（引用 jt-ioc 清單的 100991 已移除：沒裝 jt-ioc 時它只會被警告後忽略，裝了的話 906001 已經涵蓋）。",
+  "刻意交給其他規則：依來源位址的 SMTP AUTH 密碼失敗是內建 Postfix 規則 3332 與 3357（Zimbra 也會把每一次記在 audit.log，3.3 起由 100999 以 level 2 記錄，並由 100842-100844 依帳號計數）；LDAP（slapd）屬於 jt-ucs 套件；Z-Push 裝置屬於 jt-zpush 套件；已知惡意位址屬於 jt-ioc（引用 jt-ioc 清單的舊 100991 已在 3.0 移除：沒裝 jt-ioc 時它只會被警告後忽略，裝了的話 906001 已經涵蓋）。",
   "etc/lists/zimbra-service-accounts 是選用的調校，隨附的是不會比對到任何帳號的佔位符。不需要列入任何帳號：透過管理員委派工作階段讀取信箱的內部工具只會回報一次（100897），不會觸發大量讀信規則。只有在封存工具或探針以自己的帳號大量讀信時，才需要把它列入。",
   "3.0 有幾條規則對「修好之前每秒重複」的狀況每六小時只告警一次（ignore 屬性）。這個時間窗以規則為單位而非主機，管理端重啟或重新載入規則集後重新起算。wazuh-logtest 不會套用它，這部分是直接用 analysisd 驗證的。",
   "規則 100860-100865 需要帶 zimbra_* 鍵值的 auditd 規則檔，100880-100902 與 100992 需要寫入 /var/log/zimbra-state-audit.json 的狀態稽核腳本。這兩者都不在本套件內；沒有它們，這些規則不會有任何告警。",
@@ -92,20 +100,28 @@
   "登入：SSOAuth（SAML、JWT、SPNEGO）現在套用登入政策；以重設密碼的復原碼登入為 level 5（100812）；成功登入解除了鎖定為 level 3（100813）；ZimbraInvalidLoginFilter 暫停某個位址為 level 8（100818，最多每 30 分鐘一次，每個被拒絕的請求以 level 2 記錄）。",
   "檔案完整性：zimbra 群組現在以 whodata 與 report_changes 監控 /etc/pam.d、/etc/sudoers 與 /etc/sudoers.d。變更為 level 13（100938 PAM、100939 sudo），新增一行「NOPASSWD: ALL」為 14（100936），套件管理程式寫入為 5。這些是 CVE-2026-73570 被利用後公開報告的持久化手法（在 /etc/pam.d/sudo 掛 pam_exec、給 zimbra 帳號 NOPASSWD: ALL）。Zimbra 安裝程式升級時會重寫自己的 sudoers 檔，屆時會出現一筆 100939。",
   "100963 改變的是內建 503（agent 啟動）與 504（agent 斷線）的等級，適用於所有 agent，不只 Zimbra 伺服器。現在是 level 5（原為 14），描述不再提到 Zimbra；實測一台管理端每天 3 到 36 筆，多半是筆電進入睡眠。規則 ID 與父規則不變，因為站台規則可能會計算它。",
-  "版本：解碼器與規則依據 Zimbra 10.1.20 原始碼（zm-mailbox，tag 10.1.20）；audit 與 mailbox 記錄格式自 8.8.15 起未變。mboximport（備份擴充）與兩步驟驗證操作只存在於 Network 版；ClientUploader 在 10.0.1 移除。沒有任何記錄行能看出、因此未涵蓋的：SMTP smuggling（CVE-2023-51764）、memcache 注入 CVE-2022-27924，以及 amavis 解壓縮（CVE-2022-41352 由檔案完整性涵蓋）。"
+  "版本：解碼器與規則依據 Zimbra 10.1.20 原始碼（zm-mailbox，tag 10.1.20）；audit 與 mailbox 記錄格式自 8.8.15 起未變。mboximport（備份擴充）與兩步驟驗證操作只存在於 Network 版；ClientUploader 在 10.0.1 移除。沒有任何記錄行能看出、因此未涵蓋的：SMTP smuggling（CVE-2023-51764）、memcache 注入 CVE-2022-27924，以及 amavis 解壓縮（CVE-2022-41352 由檔案完整性涵蓋）。",
+  "3.3 起每個欄位都從它在記錄中的固定位置讀取。Zimbra 的記錄依序是時間、等級、[執行緒]、[情境]、記錄器、訊息；執行緒名稱帶著請求網址，情境帶著用戶端的 User-Agent，兩者都由用戶端決定，而 3.2 抓的是整行中第一個出現的「oip=」「ua=」「name=」或「security - cmd=」。沙箱實測：對「.../AuthRequest?x=;oip=192.0.2.250;」的請求會被解成以該位址為來源，暴力破解規則與掛在上面的選用 firewall-drop 因此可以被指向任何位址；User-Agent 含「] security - cmd=Auth; error=x; account=admin@...」的成功登入會變成另一個帳號的失敗登入，猜中的密碼就躲過「失敗後成功」規則。Zimbra 會把值裡的每個「;」重複一次，所以解碼器現在逐一走過情境裡的鍵值對，並只讀情境之後的訊息。",
+  "Zimbra 工具的 User-Agent（zmprov、zmmailbox、ZCS）不再單獨決定是否靜音：到 3.2 為止，帶「User-Agent: ZCS」的登入、讀信或篩選器與身分變更都被當成 Zimbra 自己的工具，包括拿偷來的密碼登入。現在只有 Zimbra 內建的「zimbra」帳號（name=zimbra，或委派工作階段的 aname=zimbra）、且沒有位址或來自私有位址，才算工具。兩台伺服器十天的實測：所有 zm*/ZCS 工作階段都正是如此，因此這項變更在那裡不會多出任何告警。",
+  "跨套件登入群組（供 jt-account-guard 套件使用）：成功登入可能停在的每條規則都帶 jt_auth_success（100845、100812、100847、100848、100849、100854、100837、100838、100846、100833、100852、100850、100831、100832、100998），失敗嘗試可能停在的每條規則都帶 jt_auth_failure（100841、100857、100811、100999、100842、100859、100843、100836、100844、100991），Zimbra 鎖定帳號或暫停位址帶 jt_auth_lockout（100856、100805、100818）。srcip 是用戶端，dstuser 是帳號。每次嘗試只算一份：syslog 副本、SOAP 失敗在 mailbox.log 的副本與 Zimbra 自己的工具都停在 level 0。DelegateAuth 不是它所指帳號的登入，不加標記。",
+  "SMTP AUTH：Postfix 透過 saslauthd 向 Zimbra 驗證，所以一次錯誤密碼會由 Postfix 記一次（內建 3332，level 5；同一位址兩分鐘內八次為 3357），audit.log 也記一次。3.3 把 audit.log 那份以 level 2 記錄（100999，仍依帳號與位址計數），只有每個（帳號, 位址）組合的第一次失敗維持 level 5（100811），因為只有它會寫出帳號。新增：Postfix 剛回報一再 SMTP AUTH 失敗的位址隨後登入成功，level 14（100998）；那些失敗只有在帳號存在時才會進 audit.log，所以用猜測帳號名稱的噴灑最後猜中，先前沒有任何 Zimbra 規則算過它。",
+  "第二因素：密碼正確後 Zimbra 才會要驗證碼，而 audit.log 已經把密碼這一步記成成功；驗證碼錯誤只出現在 mailbox.log（「SoapEngine - handler exception: authentication failed for [x], invalid two-factor code」，設定時則是「invalid TOTP code」）。這是 level 5（100991），算一次登入失敗，也計入同一位址的暴力破解（五分鐘十二次，100842/100859）。兩步驟驗證存在於 Network Edition 與開源的 zimbra-maldua-2fa 擴充。同一種 mailbox.log 記錄在密碼錯誤時，過去每一次網頁或 SOAP 登入失敗都會被內建 2501 以 level 5 再報一次（與 100841 重複）；3.3 解碼它並停在 level 0（100990）。",
+  "帳號接管：100816（level 12，帳號第一次從新公開位址登入後 30 分鐘內的變更）現在也涵蓋改密碼、關閉兩步驟驗證、產生備用碼或應用程式密碼，以及新的復原位址或委派權限（100935，單獨為 level 5：SetRecoveryAccountRequest，能讀復原信箱的人就能重設密碼；GrantRightsRequest，代為寄件、代表寄件與行事曆權限）。網頁版自己的整個信箱匯出（/home/<帳號>/?fmt=tgz，沒有 /service）過去從未被 100920-100923 比對到，現在會；公文包多檔下載則不算。以 Zimbra 預設記錄等級無法偵測的：資料夾分享給誰（FolderActionRequest 不寫被授權者）、IMAP 或 POP 的大量下載（FETCH 與 RETR 不記錄）、登入是否用了應用程式密碼。",
+  "SMTP AUTH 工作階段權杖：預設安裝的 Zimbra，saslauthd 會以 debug 等級把每次 SMTP AUTH 時 Zimbra 的完整回應寫進 /var/log/zimbra.log，其中包括有效兩天的工作階段權杖（在實測站台的集中記錄庫中，每一次 SMTP AUTH 都有）。zimbra 群組現在讓 agent 略過這些行，權杖不再送到管理端或它的 archives；部署步驟說明如何讓它們根本不被寫出。",
+  "規則 ID 範圍 100800-100999 已用完：3.3 用掉了最後幾個空號（100935、100998、100999，以及 3.0 以前移除的 100990、100991，現在是 08-zimbra_soap_rules.xml 中的不同規則）。若站台規則曾引用被移除的那兩條，現在會指到新規則。"
  ],
  "files": [
   {
    "type": "decoder",
    "name": "0001-zimbra_decoders.xml",
    "dest": "etc/decoders/0001-zimbra_decoders.xml",
-   "sha256": "6897c24a37d4d2cc51d7771a21b8e3a994a3b56a7119a06196b1ecfc7e3fc9c5"
+   "sha256": "33292444146d7ab767e3f829d8d164f0ae127e1cdf5b3428603e46ae47e43575"
   },
   {
    "type": "decoder",
    "name": "0002-zimbra_mailbox_decoders.xml",
    "dest": "etc/decoders/0002-zimbra_mailbox_decoders.xml",
-   "sha256": "84f48e4ce2ce615553656560b63b8fc6daccffd87687ac4b2bc8073be55bbf4a"
+   "sha256": "dc9292dbfd4f44ebdac4c223d577b87989f98ac787f1c5a2b566fa2547ebefc5"
   },
   {
    "type": "decoder",
@@ -129,7 +145,7 @@
    "type": "rule",
    "name": "03-zimbra_auth_rules.xml",
    "dest": "etc/rules/03-zimbra_auth_rules.xml",
-   "sha256": "60f135eb1e7c1af473127a8ae98a7b25fa5825a7743eda8ebfdc93ca937d6cf3"
+   "sha256": "9fa7262e0361676e17f32886e6761772be55ec1ee061617508de0e2d61c6bb67"
   },
   {
    "type": "rule",
@@ -147,19 +163,19 @@
    "type": "rule",
    "name": "06-zimbra_threat_rules.xml",
    "dest": "etc/rules/06-zimbra_threat_rules.xml",
-   "sha256": "24eb5f57fc6518148709748dd0fa6d89685ba3fe0eb37ccf8981ce02bbd4efe1"
+   "sha256": "abf5f9af057f5092b923c0539aa7407807ada8aa01c4ce7c17abbff91c183617"
   },
   {
    "type": "rule",
    "name": "08-zimbra_soap_rules.xml",
    "dest": "etc/rules/08-zimbra_soap_rules.xml",
-   "sha256": "a5ec97fe95a0bb6ad9b6554f5508f3c1b51629fd68b848399d413f6447560511"
+   "sha256": "6941d25eecf670ca85b961392914d17eb5a28bf8f1f4a531b186aa61b952a76b"
   },
   {
    "type": "rule",
    "name": "zz-100866-zimbra_host_rules.xml",
    "dest": "etc/rules/zz-100866-zimbra_host_rules.xml",
-   "sha256": "9eb5b92b659cc5b50bfd3ec7a7a6ccc4dd828655b99c593677b78822fc508b6b"
+   "sha256": "6b0bacac71112535c783244e123cb41907e7feec05c6b0f5a28dd665b596dbd3"
   },
   {
    "type": "list",
@@ -287,8 +303,8 @@
    "since": "3.2",
    "title": "Optional: log failed logins for accounts that do not exist",
    "title_zh": "選用：記錄不存在帳號的登入失敗",
-   "body": "By default Zimbra writes nothing to audit.log when someone tries an account name that does not exist, so guessing names is invisible. The localconfig key zimbra_additional_logging adds exactly that one line and nothing else in 10.1.20. zmlocalconfig --reload applies it without a restart; if your version does not accept --reload, zmmailboxdctl restart does (web mail, IMAP and POP are unavailable for about a minute).",
-   "body_zh": "預設情況下，有人嘗試不存在的帳號名稱時 Zimbra 不會在 audit.log 寫任何東西，猜帳號因此完全看不到。localconfig 的 zimbra_additional_logging 在 10.1.20 只會多寫這一行，不影響其他記錄。zmlocalconfig --reload 不必重啟即可套用；若你的版本不接受 --reload，就用 zmmailboxdctl restart（網頁信箱、IMAP 與 POP 約有一分鐘無法使用）。",
+   "body": "By default Zimbra writes nothing to audit.log when someone tries an account name that does not exist, so guessing names is invisible. The localconfig key zimbra_additional_logging adds exactly that one line and nothing else in 10.1.20. zmlocalconfig --reload applies it without a restart; if your version does not accept --reload, zmmailboxdctl restart does (web mail, IMAP and POP are unavailable for about a minute). 3.3: that line prints the typed name as it was sent (String.format, not Zimbra's escaping), so a client may be able to put a line break in it and start a line of its own in audit.log. This was not tested on a live server; until it is, do not enable the block-zimbra-bruteforce active response on a server with this setting on.",
+   "body_zh": "預設情況下，有人嘗試不存在的帳號名稱時 Zimbra 不會在 audit.log 寫任何東西，猜帳號因此完全看不到。localconfig 的 zimbra_additional_logging 在 10.1.20 只會多寫這一行，不影響其他記錄。zmlocalconfig --reload 不必重啟即可套用；若你的版本不接受 --reload，就用 zmmailboxdctl restart（網頁信箱、IMAP 與 POP 約有一分鐘無法使用）。3.3：那一行會把輸入的名稱原樣印出（String.format，沒有經過 Zimbra 的跳脫），用戶端可能可以在名稱裡放換行，在 audit.log 寫出自己的一行。尚未在實機上驗證；在驗證之前，開著這個設定的伺服器請不要啟用 block-zimbra-bruteforce 主動回應。",
    "code": "su - zimbra -c 'zmlocalconfig -e zimbra_additional_logging=true && zmlocalconfig --reload'",
    "verify": "grep 'account not found' /opt/zimbra/log/audit.log after a test login with a made-up name; the alert is rule 100811.",
    "verify_zh": "用一個虛構的帳號名稱測試登入後，grep 'account not found' /opt/zimbra/log/audit.log；告警為規則 100811。"
@@ -302,6 +318,19 @@
    "body": "The swatchdog SNMP notification injection (CISA KEV) needs the optional zimbra-snmp package with SNMP notifications on, and is fixed in 10.1.20. Rules 100980/100986 report attempts either way. If the package is installed and the server is older than 10.1.20, upgrade, or remove zimbra-snmp, or turn the notifications off. These commands only read.",
    "body_zh": "swatchdog 的 SNMP 通知注入（CISA KEV）需要安裝選用的 zimbra-snmp 套件並開啟 SNMP 通知，10.1.20 已修正。不論如何，規則 100980/100986 都會回報攻擊嘗試。若已安裝該套件且版本早於 10.1.20，請升級，或移除 zimbra-snmp，或關閉通知。以下指令只做讀取。",
    "code": "dpkg -l zimbra-snmp 2>/dev/null | tail -1   # or: rpm -q zimbra-snmp\nsu - zimbra -c 'zmcontrol -v; zmlocalconfig snmp_notify'"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "3.3",
+   "title": "3.3: keep SMTP AUTH session tokens out of the logs",
+   "title_zh": "3.3：別讓 SMTP AUTH 的工作階段權杖進到記錄",
+   "body": "Zimbra's saslauthd checks every SMTP AUTH password against Zimbra and logs the whole answer at debug level, including a session token valid for two days (\"zmpost: url=... returned buffer->data=...<authToken>...\"). Zimbra's rsyslog file sends auth.* to /var/log/zimbra.log, so every mail client that sends through SMTP AUTH leaves a usable token in that file and in anything that forwards it. The pack's zimbra group now tells the agent to skip those lines (<ignore> on the /var/log/zimbra.log localfile, agent 4.6 or later); an update does not change a group you have modified, so add that <ignore> line to your copy, and note that a /var/log/zimbra.log entry in the agent's own ossec.conf is read first and has no such filter. To stop the file itself receiving them, change auth.* to auth.info in Zimbra's rsyslog file and restart rsyslog: no mail service restarts; Zimbra may rewrite that file on an upgrade, so check it again afterwards. Tokens already written stay valid until they expire: where old copies were shipped elsewhere (a central syslog server, Wazuh archives with logall), delete them there.",
+   "body_zh": "Zimbra 的 saslauthd 每次 SMTP AUTH 都向 Zimbra 驗證密碼，並以 debug 等級記下整個回應，裡面包括有效兩天的工作階段權杖（「zmpost: url=... returned buffer->data=...<authToken>...」）。Zimbra 的 rsyslog 設定把 auth.* 寫進 /var/log/zimbra.log，所以每個透過 SMTP AUTH 寄信的郵件軟體都會在這個檔、以及任何轉送它的地方留下可用的權杖。套件的 zimbra 群組現在讓 agent 略過這些行（/var/log/zimbra.log 這個 localfile 上的 <ignore>，需要 4.6 以後的 agent）；更新不會改動你修改過的群組，請把那一行 <ignore> 加進你的版本，也請注意 agent 自己的 ossec.conf 若列了 /var/log/zimbra.log，會先讀那一份，而那一份沒有這個過濾。要讓檔案本身不再收到這些行，把 Zimbra rsyslog 設定裡的 auth.* 改成 auth.info 並重新啟動 rsyslog：郵件服務不需要重啟；Zimbra 升級時可能改寫這個檔，升級後請再檢查。已經寫出去的權杖在到期前仍然有效：舊的副本若曾送到別處（集中式 syslog、開了 logall 的 Wazuh archives），請在那裡刪除。",
+   "file": "agent/agent.conf",
+   "code": "grep -c 'zmpost: .*authToken' /var/log/zimbra.log\ngrep -n '^auth' /etc/rsyslog.d/60-zimbra.conf\n# then: sed -i 's/^auth\\.\\*\\([[:space:]]\\)/auth.info\\1/' /etc/rsyslog.d/60-zimbra.conf && systemctl restart rsyslog",
+   "verify": "After an SMTP AUTH login, grep 'zmpost:' /var/log/zimbra.log finds no new line (rsyslog changed), or the manager's archives have none from this host (agent filter).",
+   "verify_zh": "SMTP AUTH 登入後，grep 'zmpost:' /var/log/zimbra.log 不再有新的行（已改 rsyslog），或管理端的 archives 沒有來自這台主機的這類記錄（agent 過濾）。"
   }
  ],
  "active_response": [
@@ -316,8 +345,8 @@
    "timeout": 600,
    "title": "Block an external address that keeps failing to log in to Zimbra",
    "title_zh": "封鎖一再登入 Zimbra 失敗的外部位址",
-   "body": "Drops traffic from the source address on the Zimbra server for 10 minutes after repeated login failures (100859) or password spraying (100836) from a public address; private ranges are built into the rules and addresses listed in zimbra-internal-networks are never included. The address is the client Zimbra recorded, which for a request through Z-Push or a reverse proxy is the address that proxy reported: a block on the mail server then has no effect, because the connection comes from the proxy, and blocking belongs on the proxy or the edge firewall instead. Risks: a mobile carrier or office NAT address is shared by many people, who are all locked out together; if a proxy appends to a client-supplied X-Forwarded-For header, an attacker can choose the address and make you block someone else, including an administrator; a proxy with a public address that is not listed in zimbra-internal-networks would be blocked itself and cut off every user behind it (for Z-Push, every phone). Put such addresses in zimbra-internal-networks and in the manager's white_list first. fail2ban on the same server blocks with the same iptables: if it already has a Zimbra jail, leave this off and let the jt-fail2ban pack report its bans.",
-   "body_zh": "公開位址一再登入失敗（100859）或密碼噴灑（100836）時，在 Zimbra 伺服器上封鎖該來源 10 分鐘；私有網段已內建在規則中，列在 zimbra-internal-networks 的位址永遠不會被包含。這個位址是 Zimbra 記下的用戶端；經 Z-Push 或反向代理進來的請求，是代理回報的位址：此時在郵件伺服器上封鎖沒有效果，因為連線來自代理，應改在代理或邊界防火牆封鎖。風險：電信業者或辦公室的 NAT 位址由許多人共用，會一起被擋；代理若把位址附加在用戶端自帶的 X-Forwarded-For 之後，攻擊者可以指定位址，讓你去封鎖別人，包括管理者；使用公開位址、卻沒列入 zimbra-internal-networks 的代理本身會被封鎖，切斷它後面的所有使用者（Z-Push 就是所有手機）。請先把這類位址放進 zimbra-internal-networks 和管理端的 white_list。同一台伺服器上的 fail2ban 用的是同一套 iptables：如果它已經有 Zimbra 的 jail，請不要啟用這項，交給 jt-fail2ban 套件回報封鎖。"
+   "body": "Drops traffic from the source address on the Zimbra server for 10 minutes after repeated login failures (100859) or password spraying (100836) from a public address; private ranges are built into the rules and addresses listed in zimbra-internal-networks are never included. The address is the client Zimbra recorded, which for a request through Z-Push or a reverse proxy is the address that proxy reported: a block on the mail server then has no effect, because the connection comes from the proxy, and blocking belongs on the proxy or the edge firewall instead. Risks: a mobile carrier or office NAT address is shared by many people, who are all locked out together; if a proxy appends to a client-supplied X-Forwarded-For header, an attacker can choose the address and make you block someone else, including an administrator; a proxy with a public address that is not listed in zimbra-internal-networks would be blocked itself and cut off every user behind it (for Z-Push, every phone). Put such addresses in zimbra-internal-networks and in the manager's white_list first. fail2ban on the same server blocks with the same iptables: if it already has a Zimbra jail, leave this off and let the jt-fail2ban pack report its bans. 3.3: the blocked address is the oip= (or ip=) key of the Zimbra log context, read in place; before 3.3 a client could put \";oip=<address>;\" in the request URL and have that address blocked instead of its own. With zimbra_additional_logging on, see the setup step about it first.",
+   "body_zh": "公開位址一再登入失敗（100859）或密碼噴灑（100836）時，在 Zimbra 伺服器上封鎖該來源 10 分鐘；私有網段已內建在規則中，列在 zimbra-internal-networks 的位址永遠不會被包含。這個位址是 Zimbra 記下的用戶端；經 Z-Push 或反向代理進來的請求，是代理回報的位址：此時在郵件伺服器上封鎖沒有效果，因為連線來自代理，應改在代理或邊界防火牆封鎖。風險：電信業者或辦公室的 NAT 位址由許多人共用，會一起被擋；代理若把位址附加在用戶端自帶的 X-Forwarded-For 之後，攻擊者可以指定位址，讓你去封鎖別人，包括管理者；使用公開位址、卻沒列入 zimbra-internal-networks 的代理本身會被封鎖，切斷它後面的所有使用者（Z-Push 就是所有手機）。請先把這類位址放進 zimbra-internal-networks 和管理端的 white_list。同一台伺服器上的 fail2ban 用的是同一套 iptables：如果它已經有 Zimbra 的 jail，請不要啟用這項，交給 jt-fail2ban 套件回報封鎖。3.3：封鎖的位址是 Zimbra 記錄情境裡的 oip=（或 ip=）鍵，就地讀取；3.3 以前，用戶端只要在請求網址放「;oip=<位址>;」，被封鎖的就會是那個位址而不是它自己。若開了 zimbra_additional_logging，請先看關於它的部署步驟。"
   },
   {
    "id": "block-zimbra-scanner",

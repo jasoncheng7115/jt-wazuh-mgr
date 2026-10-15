@@ -1,0 +1,765 @@
+{
+ "pack": "jt-account-guard",
+ "sandbox_packs": [
+  "jt-keycloak",
+  "jt-ucs",
+  "jt-opnsense",
+  "jt-nextcloud",
+  "jt-proxmox",
+  "jt-pmg",
+  "jt-odoo",
+  "jt-synology",
+  "jt-zimbra",
+  "jt-zpush",
+  "jt-ioc"
+ ],
+ "sandbox_lists": {
+  "jason_tools_threat_ip": "\"198.51.100.66\":blocklist_de\n\"198.51.100.67\":blocklist_de,cins\n",
+  "jason_tools_threat_ip_high": "\"198.51.100.67\":blocklist_de,cins\n"
+ },
+ "cases": [],
+ "sequences": [
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-09-28 04:04:02,170 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"null\", ipAddress=\"203.0.113.77\", error=\"user_not_found\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"bob\"",
+     "location": "(kc1) any->/var/log/syslog"
+    }
+   ],
+   "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":2,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"203.0.113.77\",\"user\":\"--\",\"app\":\"no app in context\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login failed: alice@example.com (Remote IP: 203.0.113.77)\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":[]}",
+   "location": "(cloud1) any->/var/www/nextcloud/data/nextcloud.log",
+   "expect_rule": "132701",
+   "note": "fires: two Keycloak failures (alice, unknown bob) then a Nextcloud failure from the same public address; line shapes copied from the packs' case files (tests/pack_cases/jt-keycloak, jt-ucs, jt-nextcloud, jt-opnsense, jt-odoo, jt-proxmox, jt-synology)",
+   "expect_level": 10
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 10:00:00 dc1-example samba-audit:   {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_WRONG_PASSWORD\", \"localAddress\": \"ipv4:192.0.2.10:88\", \"remoteAddress\": \"ipv4:198.51.100.140:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"carol\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"clientPolicyAccessCheck\": null, \"serverPolicyAccessCheck\": null, \"duration\": 4567}}",
+     "location": "(dc1-example) any->/var/log/samba/jt-audit-auth.log"
+    },
+    {
+     "log": "Oct 11 10:00:00 fw1.example.com openvpn_server1[49127]: udp4:198.51.100.140:26822 TLS Auth Error: Auth Username/Password verification failed for peer",
+     "location": "(fw1) any->/var/ossec/logs/opnsense_syslog.log"
+    }
+   ],
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 198.51.100.140 ",
+   "location": "(erp1) any->/var/log/odoo/odoo-server.log",
+   "expect_rule": "132701",
+   "note": "fires: Samba AD failure and OpenVPN failure (no account) on two hosts, then an Odoo failure: the Odoo rule is counted as the current event although it is an if_matched_sid target",
+   "expect_level": 10
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.140\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"dave\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 10:00:00 dc1-example samba-audit:   {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_WRONG_PASSWORD\", \"localAddress\": \"ipv4:192.0.2.10:88\", \"remoteAddress\": \"ipv4:198.51.100.140:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"erin\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"clientPolicyAccessCheck\": null, \"serverPolicyAccessCheck\": null, \"duration\": 4567}}",
+     "location": "(dc1-example) any->/var/log/samba/jt-audit-auth.log"
+    }
+   ],
+   "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:198.51.100.140 - - [04/10/2026:00:40:22 +0800] \"POST /api2/json/access/ticket HTTP/1.1\" 401 50",
+   "location": "(pve1) any->/var/log/pveproxy/access.log",
+   "expect_rule": "132701",
+   "note": "fires: Proxmox VE pveproxy failure (address only) after Keycloak and Samba failures from the same public address",
+   "expect_level": 10
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-09-28 04:04:02,170 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"null\", ipAddress=\"203.0.113.77\", error=\"user_not_found\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"bob\"",
+     "location": "(kc1) any->/var/log/syslog"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"carol\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "131341",
+   "note": "near miss: three accounts but one service (same location): left to the Keycloak pack",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 10:00:00 dc1-example samba-audit:   {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_WRONG_PASSWORD\", \"localAddress\": \"ipv4:192.0.2.10:88\", \"remoteAddress\": \"ipv4:203.0.113.77:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"alice\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"clientPolicyAccessCheck\": null, \"serverPolicyAccessCheck\": null, \"duration\": 4567}}",
+     "location": "(dc1-example) any->/var/log/samba/jt-audit-auth.log"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "131341",
+   "note": "near miss: one account on two services from one address (a front end and its directory, or Z-Push and Zimbra, log the same login): not spraying",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"192.168.0.220\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-09-28 04:04:02,170 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"null\", ipAddress=\"192.168.0.220\", error=\"user_not_found\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"bob\"",
+     "location": "(kc1) any->/var/log/syslog"
+    }
+   ],
+   "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":2,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"192.168.0.220\",\"user\":\"--\",\"app\":\"no app in context\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login failed: alice@example.com (Remote IP: 192.168.0.220)\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":[]}",
+   "location": "(cloud1) any->/var/www/nextcloud/data/nextcloud.log",
+   "expect_rule": "131710",
+   "note": "near miss: the same pattern from a private address (reverse proxy, NAT, scanner): left to the per-pack rules",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":2,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"203.0.113.77\",\"user\":\"--\",\"app\":\"no app in context\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login failed: u1@example.com (Remote IP: 203.0.113.77)\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":[]}",
+     "location": "(cloud1) any->/var/www/nextcloud/data/nextcloud.log"
+    },
+    {
+     "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":2,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"203.0.113.77\",\"user\":\"--\",\"app\":\"no app in context\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login failed: u2@example.com (Remote IP: 203.0.113.77)\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":[]}",
+     "location": "(cloud1) any->/var/www/nextcloud/data/nextcloud.log"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"carol\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "131341",
+   "note": "limitation: the earlier failures ended on Nextcloud 131710, which 131711 counts with if_matched_sid, so they never enter a group list and cannot be counted here",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u1\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u2\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u3\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u4\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u5\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    }
+   ],
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.77",
+   "location": "(fw1) any->/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "132702",
+   "note": "fires: five Keycloak failures for five accounts, then an OPNsense web failure from the same public address",
+   "expect_level": 12
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u1\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u2\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u3\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u4\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    }
+   ],
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.77",
+   "location": "(fw1) any->/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "132701",
+   "note": "near miss for 132702: four earlier failures elsewhere reach 132701 only",
+   "expect_level": 10
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.1\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.2\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.3\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.4\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    }
+   ],
+   "log": "Oct 11 10:00:00 dc1-example samba-audit:   {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_WRONG_PASSWORD\", \"localAddress\": \"ipv4:192.0.2.10:88\", \"remoteAddress\": \"ipv4:203.0.113.90:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"alice\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"clientPolicyAccessCheck\": null, \"serverPolicyAccessCheck\": null, \"duration\": 4567}}",
+   "location": "(dc1-example) any->/var/log/samba/jt-audit-auth.log",
+   "expect_rule": "132703",
+   "note": "fires: alice failed on Keycloak from four addresses, then on Samba AD from a fifth public address",
+   "expect_level": 10
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.1\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.2\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.3\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.4\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.90\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "131341",
+   "note": "near miss: all five failures on one service: left to the Keycloak pack",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.9\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.9\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.9\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.9\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    }
+   ],
+   "log": "Oct 11 10:00:00 dc1-example samba-audit:   {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_WRONG_PASSWORD\", \"localAddress\": \"ipv4:192.0.2.10:88\", \"remoteAddress\": \"ipv4:198.51.100.9:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"alice\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"clientPolicyAccessCheck\": null, \"serverPolicyAccessCheck\": null, \"duration\": 4567}}",
+   "location": "(dc1-example) any->/var/log/samba/jt-audit-auth.log",
+   "expect_rule": "131473",
+   "note": "near miss: one address retrying one account on two services (a device with an old password): not distributed",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.1\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.2\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.3\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.4\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    }
+   ],
+   "log": "Oct 11 10:00:00 dc1-example samba-audit:   {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_WRONG_PASSWORD\", \"localAddress\": \"ipv4:192.0.2.10:88\", \"remoteAddress\": \"ipv4:192.168.0.199:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"alice\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"clientPolicyAccessCheck\": null, \"serverPolicyAccessCheck\": null, \"duration\": 4567}}",
+   "location": "(dc1-example) any->/var/log/samba/jt-audit-auth.log",
+   "expect_rule": "131473",
+   "note": "near miss: the current failure comes from a private address",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-09-28 04:04:02,170 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"null\", ipAddress=\"203.0.113.77\", error=\"user_not_found\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"bob\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":2,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"203.0.113.77\",\"user\":\"--\",\"app\":\"no app in context\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login failed: alice@example.com (Remote IP: 203.0.113.77)\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":[]}",
+     "location": "(cloud1) any->/var/www/nextcloud/data/nextcloud.log"
+    }
+   ],
+   "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":1,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"203.0.113.77\",\"user\":\"dave\",\"app\":\"admin_audit\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login successful: \\\"dave\\\"\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":{\"app\":\"admin_audit\"}}",
+   "location": "(cloud1) any->/var/www/nextcloud/data/audit.log",
+   "expect_rule": "132704",
+   "note": "fires: 132701 reported the address, then dave logged in to Nextcloud from it",
+   "expect_level": 13
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u1\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u2\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u3\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u4\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"u5\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.77",
+     "location": "(fw1) any->/var/ossec/logs/opnsense_syslog.log"
+    }
+   ],
+   "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Successful login for user 'admin' from: 203.0.113.77",
+   "location": "(fw1) any->/var/ossec/logs/opnsense_syslog.log",
+   "expect_rule": "132704",
+   "note": "fires after the level 12 rule 132702 (level 13 is needed to pass it)",
+   "expect_level": 13
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-09-28 04:04:02,170 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"null\", ipAddress=\"203.0.113.77\", error=\"user_not_found\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"bob\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":2,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"203.0.113.77\",\"user\":\"--\",\"app\":\"no app in context\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login failed: alice@example.com (Remote IP: 203.0.113.77)\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":[]}",
+     "location": "(cloud1) any->/var/www/nextcloud/data/nextcloud.log"
+    }
+   ],
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [203.0.113.77] signed in to [DSM] successfully via [password].",
+   "location": "(nas1) any->/var/log/messages",
+   "expect_rule": "132704",
+   "note": "fires: success on Synology DSM, whose login rules are not in Wazuh's authentication_success group",
+   "expect_level": 13
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    }
+   ],
+   "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":1,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"203.0.113.77\",\"user\":\"dave\",\"app\":\"admin_audit\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login successful: \\\"dave\\\"\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":{\"app\":\"admin_audit\"}}",
+   "location": "(cloud1) any->/var/www/nextcloud/data/audit.log",
+   "expect_rule": "131772",
+   "note": "near miss: one failed login elsewhere, then a login: the Nextcloud pack's public-address rule stays (no level 12)",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-09-28 04:04:02,170 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"null\", ipAddress=\"203.0.113.77\", error=\"user_not_found\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"bob\"",
+     "location": "(kc1) any->/var/log/syslog"
+    },
+    {
+     "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":2,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"203.0.113.77\",\"user\":\"--\",\"app\":\"no app in context\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login failed: alice@example.com (Remote IP: 203.0.113.77)\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":[]}",
+     "location": "(cloud1) any->/var/www/nextcloud/data/nextcloud.log"
+    }
+   ],
+   "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":1,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"198.51.100.150\",\"user\":\"dave\",\"app\":\"admin_audit\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login successful: \\\"dave\\\"\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":{\"app\":\"admin_audit\"}}",
+   "location": "(cloud1) any->/var/www/nextcloud/data/audit.log",
+   "expect_rule": "131772",
+   "note": "near miss: the address that sprayed is not the one that logged in",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 10:00:00 dc1-example samba-audit:   {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_ACCOUNT_LOCKED_OUT\", \"localAddress\": \"ipv4:192.0.2.10:88\", \"remoteAddress\": \"ipv4:198.51.100.9:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"alice\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"clientPolicyAccessCheck\": null, \"serverPolicyAccessCheck\": null, \"duration\": 4567}}",
+     "location": "(dc1-example) any->/var/log/samba/jt-audit-auth.log"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 INFO  [org.keycloak.events] (executor-thread-46) type=\"LOGIN\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"037a0cf2-3c86-44d2-9b3a-4b7e31a33b6d\", sessionId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", ipAddress=\"203.0.113.80\", auth_method=\"openid-connect\", auth_type=\"code\", response_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", consent=\"no_consent_required\", code_id=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", username=\"alice\", response_mode=\"query\", authSessionParentId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", authSessionTabId=\"c1V5B4Ts5a0\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "132705",
+   "note": "fires: Samba AD locked alice out (attempt from one address), then alice logged in to Keycloak from another public address",
+   "expect_level": 12
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 11:12:30 nas1 System: SYSTEM:\tUser [alice] was blocked by Account Protection",
+     "location": "(nas1) any->/var/log/messages"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 INFO  [org.keycloak.events] (executor-thread-46) type=\"LOGIN\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"037a0cf2-3c86-44d2-9b3a-4b7e31a33b6d\", sessionId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", ipAddress=\"203.0.113.80\", auth_method=\"openid-connect\", auth_type=\"code\", response_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", consent=\"no_consent_required\", code_id=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", username=\"alice\", response_mode=\"query\", authSessionParentId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", authSessionTabId=\"c1V5B4Ts5a0\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "132705",
+   "note": "fires: Synology account protection blocked alice (no address in the line), then a Keycloak login of alice from a public address",
+   "expect_level": 12
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"198.51.100.9\", error=\"user_temporarily_disabled\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 INFO  [org.keycloak.events] (executor-thread-46) type=\"LOGIN\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"037a0cf2-3c86-44d2-9b3a-4b7e31a33b6d\", sessionId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", ipAddress=\"203.0.113.80\", auth_method=\"openid-connect\", auth_type=\"code\", response_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", consent=\"no_consent_required\", code_id=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", username=\"alice\", response_mode=\"query\", authSessionParentId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", authSessionTabId=\"c1V5B4Ts5a0\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "131327",
+   "note": "near miss: lockout and login on the same service: left to the Keycloak pack",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 10:00:00 dc1-example samba-audit:   {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_ACCOUNT_LOCKED_OUT\", \"localAddress\": \"ipv4:192.0.2.10:88\", \"remoteAddress\": \"ipv4:198.51.100.9:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"alice\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"clientPolicyAccessCheck\": null, \"serverPolicyAccessCheck\": null, \"duration\": 4567}}",
+     "location": "(dc1-example) any->/var/log/samba/jt-audit-auth.log"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 INFO  [org.keycloak.events] (executor-thread-46) type=\"LOGIN\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"037a0cf2-3c86-44d2-9b3a-4b7e31a33b6d\", sessionId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", ipAddress=\"203.0.113.80\", auth_method=\"openid-connect\", auth_type=\"code\", response_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", consent=\"no_consent_required\", code_id=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", username=\"bob\", response_mode=\"query\", authSessionParentId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", authSessionTabId=\"c1V5B4Ts5a0\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "131327",
+   "note": "near miss: another account logged in",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 10:00:00 dc1-example samba-audit:   {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_ACCOUNT_LOCKED_OUT\", \"localAddress\": \"ipv4:192.0.2.10:88\", \"remoteAddress\": \"ipv4:198.51.100.9:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"alice\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"clientPolicyAccessCheck\": null, \"serverPolicyAccessCheck\": null, \"duration\": 4567}}",
+     "location": "(dc1-example) any->/var/log/samba/jt-audit-auth.log"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 INFO  [org.keycloak.events] (executor-thread-46) type=\"LOGIN\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"037a0cf2-3c86-44d2-9b3a-4b7e31a33b6d\", sessionId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", ipAddress=\"192.168.0.205\", auth_method=\"openid-connect\", auth_type=\"code\", response_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", consent=\"no_consent_required\", code_id=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", username=\"alice\", response_mode=\"query\", authSessionParentId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", authSessionTabId=\"c1V5B4Ts5a0\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "131328",
+   "note": "near miss: the owner logged in from a private address: only the Keycloak pack's first-login rule (level 3) answers",
+   "expect_level": 3
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 10:00:00 fw1.example.com lockout_handler[999]: lockout 203.0.113.9 [using table sshlockout] after 6 attempts",
+     "location": "(fw1) any->/var/ossec/logs/opnsense_syslog.log"
+    }
+   ],
+   "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":1,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"203.0.113.9\",\"user\":\"erin\",\"app\":\"admin_audit\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login successful: \\\"erin\\\"\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":{\"app\":\"admin_audit\"}}",
+   "location": "(cloud1) any->/var/www/nextcloud/data/audit.log",
+   "expect_rule": "132706",
+   "note": "fires: OPNsense login protection locked the address out, then erin logged in to Nextcloud from it",
+   "expect_level": 12
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 10:00:00 dc1-example samba-audit:   {\"timestamp\": \"2026-10-11T10:00:00.123456+0800\", \"type\": \"Authentication\", \"Authentication\": {\"version\": {\"major\": 1, \"minor\": 3}, \"eventId\": 4625, \"logonId\": \"0\", \"logonType\": 3, \"status\": \"NT_STATUS_ACCOUNT_LOCKED_OUT\", \"localAddress\": \"ipv4:192.0.2.10:88\", \"remoteAddress\": \"ipv4:198.51.100.9:51234\", \"serviceDescription\": \"Kerberos KDC\", \"authDescription\": \"ENC-TS Pre-authentication\", \"clientDomain\": null, \"clientAccount\": \"alice\", \"workstation\": null, \"becameAccount\": null, \"becameDomain\": null, \"becameSid\": null, \"mappedAccount\": null, \"mappedDomain\": null, \"netlogonComputer\": null, \"netlogonTrustAccount\": null, \"netlogonNegotiateFlags\": \"0x00000000\", \"netlogonSecureChannelType\": 0, \"netlogonTrustAccountSid\": null, \"passwordType\": \"aes256-cts-hmac-sha1-96\", \"clientPolicyAccessCheck\": null, \"serverPolicyAccessCheck\": null, \"duration\": 4567}}",
+     "location": "(dc1-example) any->/var/log/samba/jt-audit-auth.log"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 INFO  [org.keycloak.events] (executor-thread-46) type=\"LOGIN\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"037a0cf2-3c86-44d2-9b3a-4b7e31a33b6d\", sessionId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", ipAddress=\"198.51.100.9\", auth_method=\"openid-connect\", auth_type=\"code\", response_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", consent=\"no_consent_required\", code_id=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", username=\"alice\", response_mode=\"query\", authSessionParentId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", authSessionTabId=\"c1V5B4Ts5a0\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "132706",
+   "note": "fires: the address whose attempts locked alice out on Samba AD logged in as alice on Keycloak",
+   "expect_level": 12
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 10:00:00 fw1.example.com lockout_handler[999]: lockout 192.168.0.209 [using table sshlockout] after 6 attempts",
+     "location": "(fw1) any->/var/ossec/logs/opnsense_syslog.log"
+    }
+   ],
+   "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":1,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"192.168.0.209\",\"user\":\"erin\",\"app\":\"admin_audit\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login successful: \\\"erin\\\"\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":{\"app\":\"admin_audit\"}}",
+   "location": "(cloud1) any->/var/www/nextcloud/data/audit.log",
+   "expect_rule": "131773",
+   "note": "near miss: a private address (the Nextcloud pack's first-login rule stays)",
+   "expect_level": 3
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 11:12:30 nas1 Connection: Host [203.0.113.60] was blocked via [DSM].",
+     "location": "(nas1) any->/var/log/messages"
+    }
+   ],
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [203.0.113.60] signed in to [DSM] successfully via [password].",
+   "location": "(nas1) any->/var/log/messages",
+   "expect_rule": "132017",
+   "note": "near miss: lockout and login on the same host and log file",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.77",
+     "location": "(fw1) any->/var/ossec/logs/opnsense_syslog.log"
+    },
+    {
+     "log": "Oct  1 23:27:19 pmg1 pmgdaemon[1356514]: authentication failure; rhost=::ffff:203.0.113.77 user=root@pam msg=auth failed: Authentication failure",
+     "location": "(pmg1) any->/var/log/syslog"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "132701",
+   "note": "fires: earlier failures on the OPNsense web interface and PMG (both counted with pack-only groups since their x.y.1), then Keycloak",
+   "expect_level": 10
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 10:36:24 pve1 jt-pveproxy: ::ffff:203.0.113.77 - - [04/10/2026:00:40:22 +0800] \"POST /api2/json/access/ticket HTTP/1.1\" 401 50",
+     "location": "(pve1) any->/var/log/pveproxy/access.log"
+    },
+    {
+     "log": "203.0.113.77 - - [02/Sep/2026:15:34:53 +0800] \"POST /univention/auth HTTP/1.1\" 401 695 \"https://dc1.example.com/univention/login/?location=/univention/umc/\" \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:103.0) Gecko/20100101 Firefox/103.0\"",
+     "location": "(dc1-example) any->/var/log/apache2/access.log"
+    }
+   ],
+   "log": "2026-10-11 03:00:00,123 1234 INFO prod odoo.addons.base.models.res_users: Login failed for db:prod login:admin from 203.0.113.77 ",
+   "location": "(erp1) any->/var/log/odoo/odoo-server.log",
+   "expect_rule": "132701",
+   "note": "fires: Proxmox VE and UCS management console failures (address only, no account), then Odoo",
+   "expect_level": 10
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 11 10:00:00 fw1.example.com audit[17624]: /index.php: Web GUI authentication error for 'admin' from 203.0.113.77",
+     "location": "(fw1) any->/var/ossec/logs/opnsense_syslog.log"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"alice\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "131341",
+   "note": "near miss: one earlier failure elsewhere is not enough",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "11/10/2026 11:20:01 [41234] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='K3J9X0EXAMPLEDEVICE00000AA' getUser='user2@example.com' from='203.0.113.77' idle='0s' version='2.7.6 ' method='POST' httpcode='401'",
+     "location": "(push1) any->/var/log/z-push/z-push.log"
+    },
+    {
+     "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;oip=203.0.113.77, 10.0.0.31;ua=Apple-iPhone17C3/2307.90 ZPZB/75;soapId=1;] security - cmd=Auth; account=user2@example.com; protocol=soap; error=authentication failed for [user2@example.com], invalid password;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    },
+    {
+     "log": "11/10/2026 11:20:01 [41234] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='K3J9X0EXAMPLEDEVICE00000AA' getUser='user2@example.com' from='203.0.113.77' idle='0s' version='2.7.6 ' method='POST' httpcode='401'",
+     "location": "(push1) any->/var/log/z-push/z-push.log"
+    },
+    {
+     "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;oip=203.0.113.77, 10.0.0.31;ua=Apple-iPhone17C3/2307.90 ZPZB/75;soapId=1;] security - cmd=Auth; account=user2@example.com; protocol=soap; error=authentication failed for [user2@example.com], invalid password;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    }
+   ],
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='K3J9X0EXAMPLEDEVICE00000AA' getUser='user2@example.com' from='203.0.113.77' idle='0s' version='2.7.6 ' method='POST' httpcode='401'",
+   "location": "(push1) any->/var/log/z-push/z-push.log",
+   "expect_rule": "132210",
+   "note": "near miss: a phone with an old password; Z-Push and Zimbra log every attempt with the same account: not spraying",
+   "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "11/10/2026 11:20:01 [41234] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='K3J9X0EXAMPLEDEVICE00000AA' getUser='user2@example.com' from='203.0.113.77' idle='0s' version='2.7.6 ' method='POST' httpcode='401'",
+     "location": "(push1) any->/var/log/z-push/z-push.log"
+    },
+    {
+     "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;oip=203.0.113.77, 10.0.0.31;ua=Apple-iPhone17C3/2307.90 ZPZB/75;soapId=1;] security - cmd=Auth; account=user2@example.com; protocol=soap; error=authentication failed for [user2@example.com], invalid password;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    },
+    {
+     "log": "11/10/2026 11:20:01 [41234] [ INFO] [user3@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='K3J9X0EXAMPLEDEVICE00000AA' getUser='user3@example.com' from='203.0.113.77' idle='0s' version='2.7.6 ' method='POST' httpcode='401'",
+     "location": "(push1) any->/var/log/z-push/z-push.log"
+    },
+    {
+     "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com:12443/service/soap/] [name=user3@example.com;oip=203.0.113.77, 10.0.0.31;ua=Apple-iPhone17C3/2307.90 ZPZB/75;soapId=1;] security - cmd=Auth; account=user3@example.com; protocol=soap; error=authentication failed for [user3@example.com], invalid password;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"user3@example.com\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "132701",
+   "note": "fires: ActiveSync failures for two accounts (Z-Push and the Zimbra copy), then a Keycloak failure for a third account",
+   "expect_level": 10
+  },
+  {
+   "before": [
+    {
+     "log": "11/10/2026 11:20:01 [41234] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='K3J9X0EXAMPLEDEVICE00000AA' getUser='user2@example.com' from='203.0.113.77' idle='0s' version='2.7.6 ' method='POST' httpcode='401'",
+     "location": "(push1) any->/var/log/z-push/z-push.log"
+    },
+    {
+     "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;oip=203.0.113.77, 10.0.0.31;ua=Apple-iPhone17C3/2307.90 ZPZB/75;soapId=1;] security - cmd=Auth; account=user2@example.com; protocol=soap; error=authentication failed for [user2@example.com], invalid password;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    },
+    {
+     "log": "11/10/2026 11:20:01 [41234] [ INFO] [user3@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='K3J9X0EXAMPLEDEVICE00000AA' getUser='user3@example.com' from='203.0.113.77' idle='0s' version='2.7.6 ' method='POST' httpcode='401'",
+     "location": "(push1) any->/var/log/z-push/z-push.log"
+    },
+    {
+     "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com:12443/service/soap/] [name=user3@example.com;oip=203.0.113.77, 10.0.0.31;ua=Apple-iPhone17C3/2307.90 ZPZB/75;soapId=1;] security - cmd=Auth; account=user3@example.com; protocol=soap; error=authentication failed for [user3@example.com], invalid password;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    }
+   ],
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [user4@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='K3J9X0EXAMPLEDEVICE00000AA' getUser='user4@example.com' from='203.0.113.77' idle='0s' version='2.7.6 ' method='POST' httpcode='401'",
+   "location": "(push1) any->/var/log/z-push/z-push.log",
+   "expect_rule": "132701",
+   "note": "fires: three accounts tried over ActiveSync only: the Zimbra copies on the mail host are another host, so this is reported (Z-Push 132215 needs eight accounts)",
+   "expect_level": 10
+  },
+  {
+   "before": [
+    {
+     "log": "11/10/2026 11:20:01 [41234] [ INFO] [user2@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='K3J9X0EXAMPLEDEVICE00000AA' getUser='user2@example.com' from='203.0.113.77' idle='0s' version='2.7.6 ' method='POST' httpcode='401'",
+     "location": "(push1) any->/var/log/z-push/z-push.log"
+    },
+    {
+     "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com:12443/service/soap/] [name=user2@example.com;oip=203.0.113.77, 10.0.0.31;ua=Apple-iPhone17C3/2307.90 ZPZB/75;soapId=1;] security - cmd=Auth; account=user2@example.com; protocol=soap; error=authentication failed for [user2@example.com], invalid password;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    },
+    {
+     "log": "11/10/2026 11:20:01 [41234] [ INFO] [user3@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='K3J9X0EXAMPLEDEVICE00000AA' getUser='user3@example.com' from='203.0.113.77' idle='0s' version='2.7.6 ' method='POST' httpcode='401'",
+     "location": "(push1) any->/var/log/z-push/z-push.log"
+    },
+    {
+     "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com:12443/service/soap/] [name=user3@example.com;oip=203.0.113.77, 10.0.0.31;ua=Apple-iPhone17C3/2307.90 ZPZB/75;soapId=1;] security - cmd=Auth; account=user3@example.com; protocol=soap; error=authentication failed for [user3@example.com], invalid password;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    },
+    {
+     "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.77\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"user3@example.com\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+     "location": "(kc1) any->/var/log/syslog"
+    }
+   ],
+   "log": "11/10/2026 11:20:01 [41234] [ INFO] [user5@example.com] cmd='Sync' memory='1.60 MiB/2.00 MiB' time='0.10s' devType='iPhone' devId='K3J9X0EXAMPLEDEVICE00000AA' getUser='user5@example.com' from='203.0.113.77' idle='0s' version='2.7.6 ' method='POST' httpcode='200'",
+   "location": "(push1) any->/var/log/z-push/z-push.log",
+   "expect_rule": "132704",
+   "note": "fires: an ActiveSync login from the address that was spraying",
+   "expect_level": 13
+  },
+  {
+   "before": [
+    {
+     "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user1@example.com;oip=198.51.100.31;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user1@example.com; protocol=soap; error=authentication failed for [user1@example.com], invalid password;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    },
+    {
+     "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user1@example.com;oip=198.51.100.32;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user1@example.com; protocol=soap; error=authentication failed for [user1@example.com], invalid password;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    },
+    {
+     "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user1@example.com;oip=198.51.100.33;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user1@example.com; protocol=soap; error=authentication failed for [user1@example.com], invalid password;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    },
+    {
+     "log": "2026-10-11 12:00:00,000 WARN  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user1@example.com;oip=198.51.100.34;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user1@example.com; protocol=soap; error=authentication failed for [user1@example.com], invalid password;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 WARN  [org.keycloak.events] (executor-thread-46) type=\"LOGIN_ERROR\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"baf25d9f-9860-4421-bdcb-96a8749be275\", ipAddress=\"203.0.113.95\", error=\"invalid_user_credentials\", auth_method=\"openid-connect\", auth_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", code_id=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", username=\"user1@example.com\", authSessionParentId=\"3c8434b5-76b6-78fd-da21-9ee23c3f0415\", authSessionTabId=\"osJpmoSaSr4\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "132703",
+   "note": "fires: one mail account guessed from four addresses on Zimbra, then on Keycloak (same account form) from a fifth",
+   "expect_level": 10
+  },
+  {
+   "before": [
+    {
+     "log": "2026-10-11 12:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user5@example.com;oip=198.51.100.41;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user5@example.com; error=account lockout due to too many failed logins;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 INFO  [org.keycloak.events] (executor-thread-46) type=\"LOGIN\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"037a0cf2-3c86-44d2-9b3a-4b7e31a33b6d\", sessionId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", ipAddress=\"203.0.113.96\", auth_method=\"openid-connect\", auth_type=\"code\", response_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", consent=\"no_consent_required\", code_id=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", username=\"user5@example.com\", response_mode=\"query\", authSessionParentId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", authSessionTabId=\"c1V5B4Ts5a0\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "132705",
+   "note": "fires: Zimbra locked the account out, then the same account logged in to Keycloak from another public address",
+   "expect_level": 12
+  },
+  {
+   "before": [
+    {
+     "log": "2026-10-11 12:00:00,000 INFO  [qtp350068407-1:https://zcs1.example.com/service/soap/AuthRequest] [name=user5@example.com;oip=198.51.100.41;ua=Mozilla/5.0;soapId=1;] security - cmd=Auth; account=user5@example.com; error=account lockout due to too many failed logins;",
+     "location": "(mail1) any->/opt/zimbra/log/audit.log"
+    }
+   ],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 INFO  [org.keycloak.events] (executor-thread-46) type=\"LOGIN\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"037a0cf2-3c86-44d2-9b3a-4b7e31a33b6d\", sessionId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", ipAddress=\"203.0.113.96\", auth_method=\"openid-connect\", auth_type=\"code\", response_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", consent=\"no_consent_required\", code_id=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", username=\"user5\", response_mode=\"query\", authSessionParentId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", authSessionTabId=\"c1V5B4Ts5a0\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "131327",
+   "note": "near miss (limitation): Keycloak writes the account without the domain, so the names differ and are not joined",
+   "expect_level": 5
+  },
+  {
+   "before": [],
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [198.51.100.66] signed in to [DSM] successfully via [password].",
+   "location": "(nas1) any->/var/log/messages",
+   "expect_rule": "906050",
+   "note": "jt-ioc 1.5.1: a Synology login (group jt_auth_success only) from a listed address",
+   "expect_level": 10
+  },
+  {
+   "before": [],
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [198.51.100.67] signed in to [DSM] successfully via [password].",
+   "location": "(nas1) any->/var/log/messages",
+   "expect_rule": "906052",
+   "note": "jt-ioc 1.5.1: the same from a high-confidence address",
+   "expect_level": 14
+  },
+  {
+   "before": [],
+   "log": "Oct 11 11:12:30 nas1 Connection: User [alice] from [198.51.100.68] signed in to [DSM] successfully via [password].",
+   "location": "(nas1) any->/var/log/messages",
+   "expect_rule": "132017",
+   "note": "near miss: unlisted address",
+   "expect_level": 5
+  },
+  {
+   "before": [],
+   "log": "jt-nextcloud: {\"reqId\":\"TNv2mbCX8vFgEenEESCt\",\"level\":1,\"time\":\"2026-10-02T21:49:06+08:00\",\"remoteAddr\":\"192.168.0.204\",\"user\":\"frank\",\"app\":\"admin_audit\",\"method\":\"POST\",\"url\":\"/login\",\"scriptName\":\"/index.php\",\"message\":\"Login successful: \\\"frank\\\"\",\"userAgent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36\",\"version\":\"33.0.8.2\",\"data\":{\"app\":\"admin_audit\"}}",
+   "location": "(cloud1) any->/var/www/nextcloud/data/audit.log",
+   "repeat": 50,
+   "expect_rule": "131778",
+   "expect_level": 2,
+   "note": "POLICY: fifty logins of an ordinary account from a private address end at level 2 (no alert from this pack)"
+  },
+  {
+   "before": [],
+   "log": "Oct 11 08:28:21 kc1 keycloak[6439]: 2026-10-11 00:28:21,774 INFO  [org.keycloak.events] (executor-thread-46) type=\"LOGIN\", realmId=\"eb45f842-dd14-4a5f-88c0-75635f43452e\", realmName=\"example\", clientId=\"portal\", userId=\"037a0cf2-3c86-44d2-9b3a-4b7e31a33b6d\", sessionId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", ipAddress=\"203.0.113.81\", auth_method=\"openid-connect\", auth_type=\"code\", response_type=\"code\", redirect_uri=\"https://app.example.com/sso-callback\", consent=\"no_consent_required\", code_id=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", username=\"alice\", response_mode=\"query\", authSessionParentId=\"13bb5fc9-8792-657a-d5fc-dd6f8f15be0c\", authSessionTabId=\"c1V5B4Ts5a0\"",
+   "location": "(kc1) any->/var/log/syslog",
+   "expect_rule": "131327",
+   "note": "POLICY: a login from a public address with nothing before it is left to the Keycloak pack",
+   "expect_level": 5
+  }
+ ]
+}

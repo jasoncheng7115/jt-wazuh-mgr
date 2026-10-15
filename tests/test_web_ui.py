@@ -2563,6 +2563,56 @@ class TestShippedPacks(unittest.TestCase):
                         seen.add(event_rule)
         self.assertEqual(seen, set(need))
 
+    # ---- cross-pack login groups (jt-account-guard, 1.15) ----
+    JT_AUTH = ('jt_auth_success', 'jt_auth_failure', 'jt_auth_lockout')
+
+    def _all_pack_rules(self):
+        import xml.etree.ElementTree as ET
+        for pdir, m in self.packs:
+            for entry in m.get('files', []):
+                if entry['type'] != 'rule':
+                    continue
+                with io.open(os.path.join(pdir, 'rules', entry['name']), encoding='utf-8') as fh:
+                    root = ET.fromstring('<r>' + re.sub(r'<\?xml[^>]*\?>', '', fh.read()) + '</r>')
+                for group in root.iter('group'):
+                    outer = group.get('name') or ''
+                    for rule in group.findall('rule'):
+                        inner = ''.join(g.text or '' for g in rule.findall('group'))
+                        yield m['id'], entry['name'], rule, outer + ',' + inner
+
+    def test_login_groups_are_only_on_single_attempt_rules(self):
+        # jt-account-guard's cross-service rules (levels 10 to 13) are children
+        # of the rules tagged jt_auth_success / jt_auth_failure, and a matching
+        # child replaces its parent's alert. A tagged rule that is itself a
+        # detection at level 10 or more (brute force, "cracked", a login from a
+        # threat address) would lose its alert to a child of the same or a lower
+        # level. A frequency rule is many attempts, not one. Lockouts are only
+        # ever the earlier event, so their level does not matter. Level 0 never
+        # enters correlation at all.
+        for pack, fname, rule, groups in self._all_pack_rules():
+            tags = [t for t in self.JT_AUTH if t in groups]
+            if not tags:
+                continue
+            with self.subTest(pack=pack, rule=rule.get('id')):
+                self.assertGreaterEqual(int(rule.get('level')), 1, 'level 0 never correlates')
+                if set(tags) & {'jt_auth_success', 'jt_auth_failure'}:
+                    self.assertLessEqual(int(rule.get('level')), 9,
+                                         'a level 10+ detection must not carry ' + tags[0])
+                    self.assertIsNone(rule.get('frequency'), 'a frequency rule must not carry ' + tags[0])
+
+    def test_the_cross_pack_correlation_loads_after_every_pack(self):
+        # its rules hang off rules of every other pack, and a parent defined
+        # later is dropped (if_sid) or never matched (if_matched_*), pitfall 35
+        mine, others = [], []
+        for pdir, m in self.packs:
+            for entry in m.get('files', []):
+                if entry['type'] == 'rule':
+                    (mine if m['id'] == 'jt-account-guard' else others).append(os.path.basename(entry['dest']))
+        if not mine:
+            self.skipTest('jt-account-guard not in this catalogue')
+        for name in mine:
+            self.assertGreater(name, max(others), '%s must sort after %s' % (name, max(others)))
+
     def test_mitre_ids_exist_in_the_manager_database(self):
         # An id the manager's MITRE database does not know (sub-techniques added
         # to ATT&CK after Wazuh 4.14.7 froze its copy) makes analysisd write a

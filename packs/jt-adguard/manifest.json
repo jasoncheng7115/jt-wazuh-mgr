@@ -2,7 +2,7 @@
  "id": "jt-adguard",
  "name": "AdGuard Home DNS Detection",
  "name_zh": "AdGuard Home DNS 偵測套組",
- "version": "1.4",
+ "version": "1.4.1",
  "summary": "Grades AdGuard Home blocks by list (threat, filter bypass, dynamic DNS, rebinding, abused TLDs, new domains, ads), reports the first lookup of a threat or bypass domain by each client, optionally grades allowed queries (OAST callbacks, mining pools, tunnels, Tor, DNS tunnelling), and grades web interface logins, vulnerable versions, filter-list abuse and configuration changes.",
  "summary_zh": "依清單類別（威脅、規避過濾、動態 DNS、rebinding、常被濫用的頂級網域、新註冊網域、廣告）分級 AdGuard Home 的封鎖，回報每個用戶端第一次查詢威脅或規避網域，可選擇分級放行的查詢（OAST 回呼、挖礦礦池、通道服務、Tor、DNS 通道），並分級網頁介面登入、有漏洞的版本、過濾清單濫用與設定變更。",
  "rule_id_range": "130900-130999",
@@ -28,7 +28,8 @@
   "Changes in 1.4: HaGeZi's The World's Most Abused TLDs is no longer graded as a threat list (the word Abused matched the threat pattern, so every block from it was level 5 to 12; now 3 the first time per client and domain, 2 after); 130910 (high volume of filtered lookups) counts 100 blocked events in 2 minutes instead of 40 (measured: 2-minute windows with 40 or more ad blocks from one client, 51 in 7 days; 100 or more, 2) and is no longer triggered by an allowed query; 130925 is ANY only (NULL is 130920 at level 8, zone transfers 130921 at 6) and sits under the allowed base; the service-log decoder reads raddr= and request_uri=; MITRE ids added to 130905 (T1090.003) and 130935 (T1562.001). The pack still ships no lists and names no host, address or account of a site.",
   "Deliberately not done: DNS rebinding judged from the answer (the answer is a base64 DNS message, and at the measured site a third of all answers are the site's own internal names, so it would need site data; the DNS Rebind Protection list is the generic way), NXDOMAIN storms (DGA) and rewritten answers (the shipper would have to decode the answer and the reason), remote access software domains (relay names change, about 44 new client and name pairs a week at the measured site: too noisy without a per-client category), alerting on every newly observed domain (1,500 to 2,900 a day), reading querylog.json directly with the agent (no list names, about 380,000 queries a day), and blocking clients from query events (see active responses).",
   "PREREQUISITE: AdGuard must sit in front of the clients. If clients query a resolver that then forwards to AdGuard, every event carries the resolver's address and attribution is lost.",
-  "Verified on Wazuh 4.14.7 in an isolated manager: 149 logtest cases (every new rule with a near miss), plus first-time tracking (queries and logins), the 5-minute alert suppression and the configuration file rule checked with real events; 1.4's program-file rules checked with real file changes (a changed binary is 130974, the same change right after the updater's start line is 130975, files outside the restrict pattern and in data/ raise nothing)."
+  "Verified on Wazuh 4.14.7 in an isolated manager: 149 logtest cases (every new rule with a near miss), plus first-time tracking (queries and logins), the 5-minute alert suppression and the configuration file rule checked with real events; 1.4's program-file rules checked with real file changes (a changed binary is 130974, the same change right after the updater's start line is 130975, files outside the restrict pattern and in data/ raise nothing).",
+  "Cross-pack login groups (patch release): jt_auth_success on 130933, 130941, 130942, 130943; jt_auth_failure on 130931; jt_auth_lockout on 130932. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. The failed login line names no account, so 130931 only serves the address-based correlations."
  ],
  "notes_zh": [
   "本套組是 DNS 偵測的溯源層。遞迴解析器或防火牆只看得到解析器自己的位址；AdGuard Home 位於用戶端前方，它的記錄是唯一記下「哪一台主機查詢了某網域」的地方。",
@@ -52,7 +53,8 @@
   "1.4 的變更：HaGeZi's The World's Most Abused TLDs 不再被當成威脅清單（Abused 這個字會比中威脅樣式，所以它的每次封鎖都是 level 5 到 12；現在每個用戶端與網域第一次為 3、之後為 2）；130910（大量被過濾的查詢）改為 2 分鐘內 100 筆封鎖事件，原為 40（實測同一用戶端 2 分鐘內 40 筆以上廣告封鎖的時段 7 天有 51 個，100 筆以上有 2 個），且不再由放行的查詢觸發；130925 只看 ANY（NULL 為 130920，level 8；區域轉送為 130921，level 6），並移到放行查詢的基礎規則之下；服務記錄解碼器讀取 raddr= 與 request_uri=；130905 加上 MITRE T1090.003、130935 加上 T1562.001。本套件仍不附任何清單，也不指名任何站台的主機、位址或帳號。",
   "刻意不做：依回應內容判斷 DNS rebinding（回應是 base64 的 DNS 訊息，而且實測站台三分之一的回應是站台自己的內部名稱，需要站台資料；DNS Rebind Protection 清單才是通用的做法）、NXDOMAIN 暴增（DGA）與被改寫的回應（需要轉送程式解出回應內容與原因）、遠端控制軟體網域（中繼名稱會變，實測站台每週約 44 組新的用戶端與名稱組合，沒有以用戶端為單位的分類就太吵）、每個新出現的網域都告警（每天 1,500 到 2,900 個）、以 agent 直接讀 querylog.json（沒有清單名稱，每天約 38 萬筆查詢）、依查詢事件封鎖用戶端（見主動回應說明）。",
   "前提條件：AdGuard 必須位於用戶端前方。若用戶端查詢的是另一台解析器再轉給 AdGuard，每筆事件都只會帶解析器的位址，溯源能力就沒了。",
-  "已在隔離的 Wazuh 4.14.7 manager 上驗證：149 個 logtest 情境（每條新規則都有對應的不該命中案例），另以真實事件驗證首次出現判斷（查詢與登入）、5 分鐘告警抑制與設定檔規則；1.4 的程式檔規則以真實檔案變更驗證（程式檔變更為 130974，在更新程式的啟動訊息之後的同樣變更為 130975，restrict 樣式以外的檔案與 data/ 內的檔案都沒有告警）。"
+  "已在隔離的 Wazuh 4.14.7 manager 上驗證：149 個 logtest 情境（每條新規則都有對應的不該命中案例），另以真實事件驗證首次出現判斷（查詢與登入）、5 分鐘告警抑制與設定檔規則；1.4 的程式檔規則以真實檔案變更驗證（程式檔變更為 130974，在更新程式的啟動訊息之後的同樣變更為 130975，restrict 樣式以外的檔案與 data/ 內的檔案都沒有告警）。",
+  "跨套件登入群組（修補版）：jt_auth_success：130933, 130941, 130942, 130943；jt_auth_failure：130931；jt_auth_lockout：130932。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。登入失敗那行沒有帳號，所以 130931 只用於以來源位址關聯的規則。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -73,7 +75,7 @@
    "type": "rule",
    "name": "adguard-rule.xml",
    "dest": "etc/rules/adguard-rule.xml",
-   "sha256": "74cb959407349276c3c523c3ba6af6a63013f1b2920e616ec68074206f4f54a2"
+   "sha256": "d70eea98bc2eafe0093e1a60ac365c99a094af6cdeb58e8ff3707377b03ac09e"
   }
  ],
  "agent_group": {

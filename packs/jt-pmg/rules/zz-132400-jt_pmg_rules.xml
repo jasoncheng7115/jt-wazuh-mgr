@@ -73,7 +73,7 @@
     <mitre>
       <id>T1110.001</id>
     </mitre>
-    <group>authentication_failed,</group>
+    <group>authentication_failed,jt_auth_failure,jt_pmg_login_failure,</group>
   </rule>
 
   <!--
@@ -108,7 +108,7 @@
       <id>T1078</id>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failed,</group>
+    <group>authentication_failed,jt_auth_lockout,</group>
   </rule>
 
   <!--
@@ -126,7 +126,7 @@
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_failed,</group>
+    <group>authentication_failed,jt_auth_failure,</group>
   </rule>
 
   <!-- OpenID Connect failures name no user: the identity provider checked the password. -->
@@ -134,7 +134,7 @@
     <if_sid>132404</if_sid>
     <match type="pcre2">^openid connect authentication failure; </match>
     <description>PMG: OpenID Connect login failed from $(srcip): $(pmg.msg)</description>
-    <group>authentication_failed,</group>
+    <group>authentication_failed,jt_auth_failure,</group>
   </rule>
 
   <!--
@@ -145,7 +145,7 @@
     account as 132405, never both.
   -->
   <rule id="132496" level="10" frequency="6" timeframe="600">
-    <if_matched_sid>132404</if_matched_sid>
+    <if_matched_group>jt_pmg_login_failure</if_matched_group>
     <same_source_ip />
     <different_user />
     <description>[WARN] PMG: failed logins for many different accounts from $(srcip) (password spraying)</description>
@@ -156,7 +156,7 @@
   </rule>
 
   <rule id="132405" level="10" frequency="6" timeframe="300">
-    <if_matched_sid>132404</if_matched_sid>
+    <if_matched_group>jt_pmg_login_failure</if_matched_group>
     <same_source_ip />
     <description>[WARN] PMG: repeated failed logins to the web interface from $(srcip)</description>
     <mitre>
@@ -172,7 +172,7 @@
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,</group>
+    <group>authentication_success,jt_auth_success,</group>
   </rule>
 
   <!-- The children of 132401 are mutually exclusive by realm: pam (root only), quarantine, any other. -->
@@ -183,13 +183,14 @@
     <mitre>
       <id>T1078.003</id>
     </mitre>
-    <group>authentication_success,</group>
+    <group>authentication_success,jt_auth_success,</group>
   </rule>
 
   <rule id="132492" level="2" timeframe="3600">
     <if_matched_sid>132491</if_matched_sid>
     <same_user />
     <description>PMG: $(dstuser) logged in again or renewed the session within the hour</description>
+    <group>jt_auth_success,</group>
   </rule>
 
   <!-- End users opening their own spam quarantine from a spam report link. -->
@@ -197,6 +198,7 @@
     <if_sid>132401</if_sid>
     <field name="pmg.realm" type="pcre2">^quarantine$</field>
     <description>PMG: $(dstuser) opened the spam quarantine</description>
+    <group>jt_auth_success,</group>
   </rule>
 
   <!-- First login of an account of the pmg, LDAP or OpenID realms on this gateway. -->
@@ -208,7 +210,7 @@
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,</group>
+    <group>authentication_success,jt_auth_success,</group>
   </rule>
 
   <!-- Optional tuning: accounts listed by the site never alert on success. -->
@@ -228,7 +230,7 @@
   -->
   <rule id="132490" level="10" frequency="4" timeframe="600">
     <if_sid>132401,132402,132403,132491,132492,132493</if_sid>
-    <if_matched_sid>132404</if_matched_sid>
+    <if_matched_group>jt_pmg_login_failure</if_matched_group>
     <same_user />
     <description>[WARN] PMG: $(dstuser) logged in after repeated failed logins</description>
     <mitre>

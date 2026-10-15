@@ -7,10 +7,14 @@
   相依：
     - 解碼器 zimbra-proxy-access（decoders/0001-zimbra_decoders.xml，3.0 起隨套件提供）
     - CDB 清單 etc/lists/zimbra-internal-networks（3.1 起為選用：私有網段已寫進規則）
-  3.0 起不再引用其他套件的清單（100991 已移除，見該處說明）。
+  3.0 起不再引用其他套件的清單（舊 100991 已移除，見該處說明）。
   3.2: PAM and sudoers FIM (100936, 100938, 100939), ClientUploader (100994),
        CVE-2020-7796 (100995), exploit URLs answered 404 (100997); 100963 at
        level 5; 100976 and 100977 descriptions corrected; 100979 can fire.
+  3.3: 100920 also sees the web client's export (/home/... without
+       /service) and no longer a Briefcase multi-file download. The IDs
+       100990 and 100991, free since 3.0, are used again by different rules
+       in 08-zimbra_soap_rules.xml (the rule-ID range is full).
 -->
 
 <!-- ==========================================================
@@ -20,10 +24,18 @@
      ========================================================== -->
 <group name="zimbra,exfiltration,">
 
-  <!-- REST 信箱整包匯出：大量竊信的主要管道 -->
+  <!-- REST 信箱整包匯出：大量竊信的主要管道
+       3.3: the web client's own export (Preferences, Import/Export) asks
+       for /home/<account>/<folder>?fmt=tgz, without /service: nginx maps
+       /home/ to the REST servlet (zm-web-client ZmImportExportController.js,
+       a GET form). Until 3.2 only /service/home/ was matched, so the export
+       people actually click was never seen. tar is the third archive
+       format (FormatterFactory.java, 10.1.20). A Briefcase multi-file
+       download (fmt=zip with list=) and a single item (id=) are not a
+       mailbox export. -->
   <rule id="100920" level="10">
     <if_sid>100820</if_sid>
-    <url type="pcre2">/service/home/.*fmt=(tgz|zip)</url>
+    <url type="pcre2">(?i)^(?:https?://[^/\s]+)?(?:/service)?/(?:home|user)/[^?\s]*\?(?!(?:[^\s#]*\x26)?(?:list|id)=)(?:[^\s#]*\x26)?fmt=(?:tgz|zip|tar)(?:\x26|$)</url>
     <description>[WARN] Full mailbox export: $(url) from: $(srcip)</description>
     <mitre>
       <id>T1114.001</id>
@@ -192,7 +204,7 @@
 
   <rule id="100942" level="14">
     <if_sid>550,553,554</if_sid>
-    <field name="file" type="pcre2">authorized_keys</field>
+    <field name="file" type="pcre2">^(?!/etc/pve/).*authorized_keys</field>
     <description>[HIGH] SSH authorized_keys written, suggesting persistence: $(file) process: $(process_name)</description>
     <mitre>
       <id>T1098.004</id>
@@ -443,7 +455,8 @@
 <group name="zimbra,ioc,">
 
   <!--
-    100990 removed 2026-09-01. It matched a CDB list that shipped containing one
+    The old 100990 was removed 2026-09-01 (3.3 reuses the ID for another
+    rule, see 08-zimbra_soap_rules.xml). It matched a CDB list that shipped containing one
     placeholder hash, so a level 15 rule had never fired and never could. Two
     further problems came to light on inspection: it read a field named sha256,
     while a syscheck event carries syscheck.sha256_after, and jt-malware-hash
@@ -455,7 +468,8 @@
   -->
 
   <!--
-    100991 removed in 3.0. It looked up srcip in the jt-ioc pack's list
+    The old 100991 was removed in 3.0 (3.3 reuses the ID, see
+    08-zimbra_soap_rules.xml). It looked up srcip in the jt-ioc pack's list
     (etc/lists/jason_tools_threat_ip). Without jt-ioc, analysisd warned that
     the list could not be loaded and ignored the rule; with jt-ioc, the IOC
     pack's own rule 906001 already alerts on any event whose srcip is on that

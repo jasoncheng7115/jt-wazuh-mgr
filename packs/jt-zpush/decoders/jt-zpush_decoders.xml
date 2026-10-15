@@ -160,6 +160,23 @@
   <fts>name, dstuser, extra_data</fts>
 </decoder>
 
+<!--
+  1.3: what a device is about to download. Z-Push's diff backends (Zimbra,
+  IMAP, Maildir, CalDAV, CardDAV) write at the start of every Sync of a folder
+  how many items the device does not have yet
+  (lib/default/diffbackend/exportchangesdiff.php, 2.7.6):
+    ExportChangesDiff->InitializeExporter(): Found '%d' changes for '%s'
+  The folder is a Z-Push folder id ("f2", or "hierarchy" for the folder list).
+  Rule 132290 reads the count. The [..] prefix is read strictly, as in the
+  exception decoder, and the line must end after the folder id.
+-->
+<decoder name="jt-zpush-export">
+  <parent>jt-zpush</parent>
+  <prematch type="pcre2">\] ExportChangesDiff-\x3eInitializeExporter\(\): Found '\d+' changes for '</prematch>
+  <regex type="pcre2">(?:\[\s*(\d+)\] )?\[\s?(FATAL|ERROR|WARN|INFO|DEBUG|WBXML|DEVICEID|WBXMLSTACK)\] \[([^\]#]*)(?:#[^\]]*)?\](?: ?\[[^\]]*\])? ExportChangesDiff-\x3eInitializeExporter\(\): Found '(\d+)' changes for '([^']*)'\]?\s*$</regex>
+  <order>zpush.pid, zpush.level, dstuser, zpush.changes, zpush.folder</order>
+</decoder>
+
 <!-- Everything else: the level, the user and the message. -->
 <decoder name="jt-zpush-message">
   <parent>jt-zpush</parent>

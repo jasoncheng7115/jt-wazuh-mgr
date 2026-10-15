@@ -2,7 +2,7 @@
  "id": "jt-ipam",
  "name": "jt-ipam Audit and Remote Access",
  "name_zh": "jt-ipam 稽核與遠端存取",
- "version": "1.2",
+ "version": "1.2.1",
  "summary": "Logins and brute force, roles and permissions, API tokens, revealed secrets and full exports, console sessions (shadowing, typed-in privileged passwords, one account hopping across hosts), settings and backups of jt-ipam, from its journal, its audit trail, guacd and PostgreSQL; quiets jt-ipam's own nginx noise.",
  "summary_zh": "jt-ipam 的登入與暴力破解、角色與權限、API token、顯示機密與完整匯出、主控台工作階段（共用窺視、手動輸入的特權密碼、同一帳號連往多台主機）、設定與備份，取自服務記錄、稽核軌跡、guacd 與 PostgreSQL；並壓低 jt-ipam 自己的 nginx 雜訊。",
  "rule_id_range": "131600-131699",
@@ -17,7 +17,8 @@
   "From 1.2 the jt-ipam agent group also reads PostgreSQL's log on the jt-ipam host, restricted on the agent to ERROR, FATAL and PANIC lines (measured: about 780 lines a day in all, 98 % of them routine LOG lines, which stay on the host together with the SQL statement lines). jt-ipam's audit table is append-only: its triggers refuse UPDATE, DELETE and TRUNCATE, and from jt-ipam 1.0.6 the application's database role may only read and insert. Either refusal in the log is level 12: someone tried to alter or remove audit records (measured: 8 such lines in 30 days on one installation, from 4 manual checks of the protection). A failed database login is level 5, and 5 within 5 minutes level 10. This needs the Debian and Ubuntu default log line prefix and English server messages (setup guide).",
   "Deliberately quiet: ordinary logins and sessions from private addresses, session ends, routine IP and device edits, scans, AI chats, the anchor heartbeat, deadlocks and other database errors, guacd's own connection messages, and certificate agents fetching a renewed bundle (level 2 from 1.2, measured 31 downloads by 12 agents in one renewal day; level 5 when the agent is outside the private networks). Nothing depends on a site's user names, hosts or lists: admin-class accounts are recognised by generic names only, jt-ipam's web paths are the product's own. A \"first login of this account from this address\" alert is not possible: Wazuh's first-time-seen (fts) never fired on these decoders, which must be children of the built-in FreeIPA decoder. Measured on one installation over 30 days, the change from 1.0 to 1.1 turned 222 level 3 alerts (logins and sessions) and 70 level 5 alerts (root sessions) into 70 level 3 alerts and recorded the rest at level 2.",
   "Limits: an audit record names the acting account by its id, not its name. Turning audit forwarding off is recorded after the change takes effect, so that record is never forwarded: the stream simply stops. jt-ipam records a console session only once it has connected; a failed attempt is only in the journal. RustDesk clients' own alarms (wrong passwords, address not allowed) stay inside jt-ipam and are not in its audit trail. A database superuser who disables the audit table's triggers first leaves no line in PostgreSQL's log.",
-  "Active response is opt-in: blocking the source address of rules 131605, 131606 and 131609 on the jt-ipam host. See the risks below before enabling it."
+  "Active response is opt-in: blocking the source address of rules 131605, 131606 and 131609 on the jt-ipam host. See the risks below before enabling it.",
+  "Cross-pack login groups (patch release): jt_auth_success on 131632, 131678, 131679, 131680; jt_auth_failure on 131633; jt_auth_lockout on 131634. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. One copy per login: tagged on the audit line, which carries both account and address (131632, 131633, 131634), not on the API request line (131602, 131608, 131624, address only). Outbound SSH logins to managed hosts (131615, 131616) belong to those hosts; database logins (131688) are not people."
  ],
  "notes_zh": [
   "jt-ipam 的服務訊息寫入 systemd journal，agent 只要有讀 journald 或 /var/log/syslog 就會送到 Wazuh，主機不必改設定。Wazuh 內建的 FreeIPA 解碼器會接走程式名稱中「任何位置」含 ipa 的程式，所以裝這個套件之前，jt-ipam 的每一行都停在 FreeIPA 規則 82202（level 0），什麼也沒解碼。實測一套安裝每天約 18 萬行，幾乎都是 API 請求與整合功能的 HTTP 呼叫，這些維持 level 0。",
@@ -30,7 +31,8 @@
   "1.2 起 jt-ipam agent 群組也讀取 jt-ipam 主機上 PostgreSQL 的記錄，並在 agent 端只送出 ERROR、FATAL、PANIC 這幾種行（實測每天共約 780 行，98% 是例行的 LOG 行，這些與 SQL 敘述行都留在主機上）。jt-ipam 的稽核資料表只能新增：觸發器會拒絕 UPDATE、DELETE、TRUNCATE，而從 jt-ipam 1.0.6 起應用程式的資料庫角色只能讀取與新增。記錄中出現任一種拒絕都是 level 12：有人試圖修改或刪除稽核記錄（實測一套安裝 30 天內 8 行，來自 4 次手動測試這項保護）。資料庫登入密碼錯誤為 level 5，5 分鐘內 5 次為 level 10。這需要 Debian／Ubuntu 預設的記錄行前綴與英文的伺服器訊息（見設定指南）。",
   "刻意保持安靜：從私有位址的一般登入與工作階段、工作階段結束、例行的 IP 與裝置編輯、掃描、AI 對話、錨定心跳、死結等其他資料庫錯誤、guacd 自己的連線訊息，以及憑證 agent 取回續期後的憑證包（1.2 起為 level 2，實測一次續期當天 12 個 agent 下載 31 次；agent 不在私有網段時為 level 5）。不依賴站台的使用者名稱、主機或清單：admin 類帳號只以通用名稱辨識，網頁路徑是產品本身的路徑。無法提供「這個帳號第一次從這個位址登入」的告警：這些解碼器必須是內建 FreeIPA 解碼器的子解碼器，而 Wazuh 的首次出現（fts）在它們身上從未觸發。以一套安裝 30 天的實測資料，1.0 到 1.1 的變化是：原本 222 筆 level 3（登入與工作階段）與 70 筆 level 5（root 工作階段），變成 70 筆 level 3，其餘只記錄為 level 2。",
   "限制：稽核記錄只以 id 記下執行操作的帳號，沒有名稱。關閉稽核轉送的那筆記錄是在設定生效後才寫入，所以永遠不會被轉送出去：資料流只是停了。jt-ipam 只在主控台工作階段連上之後才記錄；連線失敗只出現在 journal。RustDesk 用戶端自己的警報（密碼錯誤、位址不允許）只留在 jt-ipam 內，不在稽核軌跡裡。資料庫超級使用者若先停用稽核資料表的觸發器，PostgreSQL 記錄中不會留下任何一行。",
-  "主動回應需自行啟用：在 jt-ipam 主機上封鎖觸發規則 131605、131606、131609 的來源位址。啟用前請先看下方的風險說明。"
+  "主動回應需自行啟用：在 jt-ipam 主機上封鎖觸發規則 131605、131606、131609 的來源位址。啟用前請先看下方的風險說明。",
+  "跨套件登入群組（修補版）：jt_auth_success：131632, 131678, 131679, 131680；jt_auth_failure：131633；jt_auth_lockout：131634。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。每次登入只標一份：標在同時有帳號與位址的稽核那行（131632、131633、131634），不標 API 請求那行（131602、131608、131624，只有位址）。對受管主機的 SSH 登入（131615、131616）屬於那些主機；資料庫登入（131688）不是人。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -51,7 +53,7 @@
    "type": "rule",
    "name": "zz-131600-jt_ipam_rules.xml",
    "dest": "etc/rules/zz-131600-jt_ipam_rules.xml",
-   "sha256": "3917ee3e6ee833aa4e3365bb81e0841a204e478d2406d85653962afb220d0b52"
+   "sha256": "8bcadf885e7862b638a90ed7a94e1901515960fb48595da3fec3affd62879c2a"
   }
  ],
  "agent_group": {

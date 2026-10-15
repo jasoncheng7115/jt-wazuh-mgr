@@ -94,7 +94,7 @@
     <if_sid>131302</if_sid>
     <field name="keycloak.type" type="pcre2">^LOGIN$</field>
     <description>Keycloak: $(dstuser) signed in to $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
-    <group>authentication_success,keycloak_login,</group>
+    <group>authentication_success,keycloak_login,jt_auth_success,</group>
   </rule>
 
   <rule id="131311" level="3">
@@ -108,7 +108,7 @@
     <srcip>fc00::/7</srcip>
     <srcip>fe80::/10</srcip>
     <description>Keycloak: $(dstuser) signed in to the admin console of realm $(keycloak.realm) from $(srcip)</description>
-    <group>authentication_success,keycloak_login,keycloak_admin_login,</group>
+    <group>authentication_success,keycloak_login,keycloak_admin_login,jt_auth_success,</group>
     <mitre>
       <id>T1078</id>
     </mitre>
@@ -131,7 +131,7 @@
     <srcip>fc00::/7</srcip>
     <srcip>fe80::/10</srcip>
     <description>Keycloak: $(dstuser) signed in to the master realm through $(keycloak.client) from $(srcip)</description>
-    <group>authentication_success,keycloak_login,keycloak_admin_login,</group>
+    <group>authentication_success,keycloak_login,keycloak_admin_login,jt_auth_success,</group>
   </rule>
 
   <rule id="131325" level="8">
@@ -145,7 +145,7 @@
     <srcip negate="yes">fc00::/7</srcip>
     <srcip negate="yes">fe80::/10</srcip>
     <description>Keycloak: $(dstuser) signed in to the master realm or an admin console ($(keycloak.client), realm $(keycloak.realm)) from public address $(srcip)</description>
-    <group>authentication_success,keycloak_login,keycloak_admin_login,</group>
+    <group>authentication_success,keycloak_login,keycloak_admin_login,jt_auth_success,</group>
     <mitre>
       <id>T1078</id>
     </mitre>
@@ -164,7 +164,7 @@
     <srcip negate="yes">fc00::/7</srcip>
     <srcip negate="yes">fe80::/10</srcip>
     <description>Keycloak: $(dstuser) signed in to $(keycloak.client) in realm $(keycloak.realm) from public address $(srcip)</description>
-    <group>authentication_success,keycloak_login,</group>
+    <group>authentication_success,keycloak_login,jt_auth_success,</group>
     <mitre>
       <id>T1078</id>
     </mitre>
@@ -184,14 +184,14 @@
     <srcip>fe80::/10</srcip>
     <if_fts />
     <description>Keycloak: first login of $(dstuser) from $(srcip) ($(keycloak.client), realm $(keycloak.realm))</description>
-    <group>authentication_success,keycloak_login,</group>
+    <group>authentication_success,keycloak_login,jt_auth_success,</group>
   </rule>
 
   <rule id="131329" level="3">
     <if_sid>131312</if_sid>
     <if_fts />
     <description>Keycloak: first master realm login of $(dstuser) from $(srcip) through $(keycloak.client)</description>
-    <group>authentication_success,keycloak_login,keycloak_admin_login,</group>
+    <group>authentication_success,keycloak_login,keycloak_admin_login,jt_auth_success,</group>
     <mitre>
       <id>T1078</id>
     </mitre>
@@ -209,7 +209,7 @@
     <if_sid>131327,131328,131329</if_sid>
     <list field="user" lookup="match_key">etc/lists/jt-keycloak-service-accounts</list>
     <description>Keycloak: routine login of listed service account $(dstuser) from $(srcip)</description>
-    <group>authentication_success,keycloak_login,</group>
+    <group>authentication_success,keycloak_login,jt_auth_success,</group>
   </rule>
 
   <rule id="131315" level="5">
@@ -564,7 +564,7 @@
     <if_sid>131340</if_sid>
     <field name="keycloak.error" type="pcre2">^invalid_user_credentials$</field>
     <description>Keycloak: wrong password for $(dstuser) at $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
-    <group>authentication_failed,keycloak_auth_failure,</group>
+    <group>authentication_failed,keycloak_auth_failure,jt_auth_failure,</group>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -574,7 +574,7 @@
     <if_sid>131340</if_sid>
     <field name="keycloak.error" type="pcre2">^user_not_found$</field>
     <description>Keycloak: login for unknown user $(dstuser) at $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
-    <group>authentication_failed,keycloak_auth_failure,keycloak_unknown_user,</group>
+    <group>authentication_failed,keycloak_auth_failure,keycloak_unknown_user,jt_auth_failure,</group>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -621,7 +621,7 @@
     <if_sid>131341</if_sid>
     <regex type="pcre2">^(?!.*, selected_credential_id=)(?=.*, (?:realm(?:Name|Id)="?master"?|clientId="?security-admin-console"?),)</regex>
     <description>Keycloak: wrong password for admin-class account $(dstuser) at $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
-    <group>authentication_failed,keycloak_auth_failure,keycloak_admin_failure,</group>
+    <group>authentication_failed,keycloak_auth_failure,keycloak_admin_failure,jt_auth_failure,</group>
     <mitre>
       <id>T1110.001</id>
     </mitre>
@@ -631,7 +631,7 @@
     <if_sid>131342</if_sid>
     <regex type="pcre2">, (?:realm(?:Name|Id)="?master"?|clientId="?security-admin-console"?),</regex>
     <description>Keycloak: login for unknown user $(dstuser) at admin-class $(keycloak.client) in realm $(keycloak.realm) from $(srcip)</description>
-    <group>authentication_failed,keycloak_auth_failure,keycloak_unknown_user,keycloak_admin_failure,</group>
+    <group>authentication_failed,keycloak_auth_failure,keycloak_unknown_user,keycloak_admin_failure,jt_auth_failure,</group>
     <mitre>
       <id>T1110</id>
       <id>T1087</id>
@@ -672,7 +672,7 @@
     <if_sid>131340</if_sid>
     <field name="keycloak.error" type="pcre2">^user_temporarily_disabled$</field>
     <description>[WARN] Keycloak: login attempt for $(dstuser), locked by brute-force protection, in realm $(keycloak.realm) from $(srcip)</description>
-    <group>authentication_failed,keycloak_auth_failure,keycloak_lockout,</group>
+    <group>authentication_failed,keycloak_auth_failure,keycloak_lockout,jt_auth_lockout,</group>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -682,7 +682,7 @@
     <if_sid>131340</if_sid>
     <field name="keycloak.error" type="pcre2">^user_disabled$</field>
     <description>Keycloak: login attempt for disabled account $(dstuser) in realm $(keycloak.realm) from $(srcip)</description>
-    <group>authentication_failed,</group>
+    <group>authentication_failed,jt_auth_failure,</group>
     <mitre>
       <id>T1078</id>
     </mitre>

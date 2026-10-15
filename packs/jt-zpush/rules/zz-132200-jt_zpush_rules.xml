@@ -13,12 +13,26 @@
     132210-132229  logins: rejected, brute force, spraying, success afterwards,
                    mail server refusals that are not a wrong password
     132230-132239  mail backend: Zimbra refusals, availability
-    132240-132249  devices: new device, remote wipe, policy
+    132240-132249  devices: new device, remote wipe, policy, Z-Push webservice
     132250-132259  loop detection, crashes, other fatal errors
-    132260-132269  successful requests: first-seen device, administrator accounts
+    132260-132269  successful requests: first-seen device, administrator
+                   accounts, new devices after failures or several at once
     132270-132279  attack tooling: scripting user agents, file share search,
                    login names shaped like an injection
     132280-132289  web server access log
+    132290-132299  mailbox use: bulk download by a new device, mail sending
+
+  Groups other packs rely on (jt-account-guard, 1.3): every successful login
+  carries jt_auth_success, every failed login jt_auth_failure, one event per
+  attempt. Z-Push writes several lines per request; only the request summary
+  (ActiveSync) and the autodiscover failure line are tagged, never the
+  LOGAUTHFAIL or exception lines of the same request. Z-Push locks nothing,
+  so no rule carries jt_auth_lockout. A tagged rule has exactly one parent
+  and is never named by an if_matched_sid: in 4.14.7 an event whose final
+  rule is an if_matched_sid target is stored only for that rule, not for
+  if_matched_group searches (analysisd.c), and a rule placed under several
+  parents is stored once per parent (rules_list.c OS_MarkGroup). The pack's
+  own counting therefore uses pack groups (jt_zpush_as_failed and the like).
 
   Sources: Z-Push 2.7.6 (github.com/Z-Hub/Z-Push, src/index.php,
   src/lib/request/request.php, src/lib/request/search.php,
@@ -96,7 +110,7 @@
     <match type="pcre2">\] cmd='[^']*' memory='</match>
     <id type="pcre2">^2\d\d$</id>
     <description>Z-Push request completed: $(zpush.cmd) by $(dstuser) from $(srcip)</description>
-    <group>authentication_success,</group>
+    <group>authentication_success,jt_auth_success,</group>
   </rule>
 
   <rule id="132208" level="2">
@@ -116,11 +130,15 @@
       (fts: decoder name, account, device id): level 3 from a private address,
       level 5 from a public one. The device id is used rather than the address
       because a phone on mobile data changes its carrier address several times
-      a day, and its device id never. Requests without a device (OPTIONS, a
-      browser test, a monitoring probe) form one pair per account. Measured
-      on nine days of two hosts: 6 alerts on the first day (one per account
-      and device), then 4 in eight days. On a new installation every device
-      in use alerts once.
+      a day, and its device id never (2026-10-05 to 10-15 on two hosts: 6 to
+      11 public addresses per account, about one new one a day). Measured on
+      nine days of two hosts: 6 alerts on the first day (one per account and
+      device), then 4 in eight days. On a new installation every device in use
+      alerts once.
+      1.3: requests without a device (OPTIONS, a browser, a monitoring probe,
+      the Z-Push webservice, whose device id is "webservice") take 132264 and
+      132265, at the same levels, so that only real devices are counted by the
+      new-device rules further down.
     - Built-in administrator accounts (the local part admin, administrator,
       root, postmaster or zimbra) using ActiveSync at all: level 3 from a
       private address, level 8 from a public one, at most once an hour each,
@@ -130,45 +148,16 @@
     loopback is left out: in 4.14.7 a srcip of ::1 (or ::1/128) also matches
     every IPv4 address (tested in a sandbox). Several srcip elements are alternatives;
     several negated ones mean "in none of them".
-    The administrator rules are also children of the first-seen rules, so that
-    an administrator's first request takes the administrator level whichever
-    rule is tried first. (Defined here, ahead of their number, because the
-    correlation rules 132220 and 132221 hang under them as well.)
+    Children of one rule are tried by level, highest first, and in file order
+    within a level (rules_list.c). 1.3: every rule here has the one parent
+    132207 (see the header). The administrator rules come first in the file,
+    so that an administrator's request takes the administrator rule (level 3
+    beside the level-3 first-seen rules, level 8 above the level-5 one). The
+    first-seen rules check the device field and the address before the fts
+    store is consulted, so a rule that does not apply never uses up a pair.
   -->
-  <rule id="132260" level="3">
-    <if_sid>132207</if_sid>
-    <if_fts />
-    <srcip>10.0.0.0/8</srcip>
-    <srcip>172.16.0.0/12</srcip>
-    <srcip>192.168.0.0/16</srcip>
-    <srcip>127.0.0.0/8</srcip>
-    <srcip>100.64.0.0/10</srcip>
-    <srcip>fc00::/7</srcip>
-    <srcip>fe80::/10</srcip>
-    <description>Z-Push: first request of $(dstuser) with device '$(zpush.devid)' ($(zpush.devtype)) seen by this manager, from $(srcip)</description>
-    <mitre>
-      <id>T1078</id>
-    </mitre>
-  </rule>
-
-  <rule id="132261" level="5">
-    <if_sid>132207</if_sid>
-    <if_fts />
-    <srcip negate="yes">10.0.0.0/8</srcip>
-    <srcip negate="yes">172.16.0.0/12</srcip>
-    <srcip negate="yes">192.168.0.0/16</srcip>
-    <srcip negate="yes">127.0.0.0/8</srcip>
-    <srcip negate="yes">100.64.0.0/10</srcip>
-    <srcip negate="yes">fc00::/7</srcip>
-    <srcip negate="yes">fe80::/10</srcip>
-    <description>Z-Push: first request of $(dstuser) with device '$(zpush.devid)' ($(zpush.devtype)) seen by this manager, from public address $(srcip)</description>
-    <mitre>
-      <id>T1078</id>
-    </mitre>
-  </rule>
-
   <rule id="132262" level="3" ignore="3600">
-    <if_sid>132207,132260</if_sid>
+    <if_sid>132207</if_sid>
     <user type="pcre2">(?i)^(?:admin|administrator|root|postmaster|zimbra)(?:@|$)</user>
     <srcip>10.0.0.0/8</srcip>
     <srcip>172.16.0.0/12</srcip>
@@ -181,10 +170,11 @@
     <mitre>
       <id>T1078.003</id>
     </mitre>
+    <group>jt_auth_success,</group>
   </rule>
 
   <rule id="132263" level="8" ignore="3600">
-    <if_sid>132207,132261</if_sid>
+    <if_sid>132207</if_sid>
     <user type="pcre2">(?i)^(?:admin|administrator|root|postmaster|zimbra)(?:@|$)</user>
     <srcip negate="yes">10.0.0.0/8</srcip>
     <srcip negate="yes">172.16.0.0/12</srcip>
@@ -197,6 +187,79 @@
     <mitre>
       <id>T1078.003</id>
     </mitre>
+    <group>jt_auth_success,</group>
+  </rule>
+
+  <rule id="132260" level="3">
+    <if_sid>132207</if_sid>
+    <field name="zpush.devid" type="pcre2">^(?!webservice$)\w</field>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <if_fts />
+    <description>Z-Push: first request of $(dstuser) with device '$(zpush.devid)' ($(zpush.devtype)) seen by this manager, from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jt_auth_success,jt_zpush_device_new,jt_zpush_private_new_device,</group>
+  </rule>
+
+  <rule id="132261" level="5">
+    <if_sid>132207</if_sid>
+    <field name="zpush.devid" type="pcre2">^(?!webservice$)\w</field>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <if_fts />
+    <description>Z-Push: first request of $(dstuser) with device '$(zpush.devid)' ($(zpush.devtype)) seen by this manager, from public address $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jt_auth_success,jt_zpush_device_new,jt_zpush_public_new_device,</group>
+  </rule>
+
+  <rule id="132264" level="3">
+    <if_sid>132207</if_sid>
+    <field name="zpush.devid" type="pcre2">^(?:webservice)?$</field>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <if_fts />
+    <description>Z-Push: first request of $(dstuser) without a phone or tablet (method $(protocol), command '$(zpush.cmd)') seen by this manager, from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jt_auth_success,</group>
+  </rule>
+
+  <rule id="132265" level="5">
+    <if_sid>132207</if_sid>
+    <field name="zpush.devid" type="pcre2">^(?:webservice)?$</field>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <if_fts />
+    <description>Z-Push: first request of $(dstuser) without a phone or tablet (method $(protocol), command '$(zpush.cmd)') seen by this manager, from public address $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jt_auth_success,</group>
   </rule>
 
   <!--
@@ -211,9 +274,19 @@
     A phone with a stale saved password produces the same failures as an
     attacker, for as long as nobody fixes it.
 
-    The frequency rules use if_matched_sid, which takes one rule id, hence one
-    set per protocol. (if_matched_group with a frequency counted wrongly in
-    4.14.7: one layout fired after 4 of 8 events, another never fired.)
+    1.3: the counting rules use if_matched_group on pack groups that only
+    132210 (jt_zpush_as_failed) and 132211 (jt_zpush_ad_failed) carry, each
+    rule with a single parent. Up to 1.2 they used if_matched_sid, which kept
+    these failures out of every if_matched_group search, so the cross-pack
+    group jt_auth_failure could not have been counted (see the header). An
+    if_matched_group frequency counts wrongly only when a tagged rule has
+    several parents: it is then stored once per parent. 132211 hung under the
+    WARN and the ERROR rule up to 1.2; with if_matched_group, 132217 then
+    fired at the fifth failure instead of the eighth (sandbox), so 132211 now
+    hangs directly under the base rule with a level condition (it has the
+    higher level, so it is tried before 132203 and 132204). The "4 of 8"
+    seen in 1.0 was most likely the same thing. jt_zpush_login_failed (both
+    kinds) is for the new-device rule 132266.
   -->
   <rule id="132210" level="5">
     <if_sid>132202</if_sid>
@@ -223,17 +296,18 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failed,</group>
+    <group>authentication_failed,jt_auth_failure,jt_zpush_as_failed,jt_zpush_login_failed,</group>
   </rule>
 
   <rule id="132211" level="5">
-    <if_sid>132203,132204</if_sid>
+    <if_sid>132200</if_sid>
+    <field name="zpush.level" type="pcre2">^(?:WARN|ERROR)$</field>
     <match type="pcre2">\] (?:ZPushAutodiscover-\x3egetLogin\(\): Login failed for user '|Unable to complete autodiscover because login failed for user with email ')</match>
     <description>Z-Push: autodiscover login rejected for $(dstuser) from $(srcip)</description>
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failed,</group>
+    <group>authentication_failed,jt_auth_failure,jt_zpush_ad_failed,jt_zpush_login_failed,</group>
   </rule>
 
   <rule id="132212" level="2">
@@ -347,6 +421,31 @@
     <group>jt_zpush_backend_refusal,</group>
   </rule>
 
+  <!--
+    1.3: the Z-Push webservice (Cmd=WebserviceDevice and WebserviceUsers,
+    device type and id "webservice"; what the Kopano and grommunio WebApp
+    mobile device plugins call) lets an account list, wipe or remove mobile
+    devices, its own or, with administrator rights on the mail store, another
+    account's. When the rights are missing it answers with the same exception
+    as a wrong password (lib/webservice/webservice.php, 2.7.6):
+      Not enough privileges of '<login>' to setup for user '<account>': Permission denied
+      User '<login>' has no admin privileges
+    The login was correct; somebody tried to manage another account's devices.
+    Level 8, and marked like the mail server refusals above, so that the 401
+    summary of that request is not counted as a wrong password (132223). A
+    login name can contain the quote and the colon, so the account names are
+    shown, not matched. Defined ahead of 132223, which looks for the mark.
+  -->
+  <rule id="132249" level="8">
+    <if_sid>132213</if_sid>
+    <field name="zpush.message" type="pcre2">^(?:Not enough privileges of '.*' to setup for user '.*': Permission denied|User '.*' has no admin privileges)$</field>
+    <description>Z-Push: $(dstuser) tried to manage another account's mobile devices through the Z-Push webservice without the rights to: $(zpush.message)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>jt_zpush_backend_refusal,</group>
+  </rule>
+
   <!-- Z-Push's syslog backend puts the pid in the syslog header, which is not
        a field. Wazuh treats a field missing from both events as the same
        (sandbox), so there the account alone ties the two lines. -->
@@ -376,7 +475,7 @@
     eight events, so a loop that goes on raises it once per eight failures.
   -->
   <rule id="132214" level="10" frequency="8" timeframe="300">
-    <if_matched_sid>132210</if_matched_sid>
+    <if_matched_group>jt_zpush_as_failed</if_matched_group>
     <same_user />
     <description>[WARN] Z-Push: repeated rejected ActiveSync logins for $(dstuser), last from $(srcip) (brute force, or a device with a stale password)</description>
     <mitre>
@@ -398,7 +497,7 @@
     is attached to.
   -->
   <rule id="132215" level="10" frequency="8" timeframe="600">
-    <if_matched_sid>132210</if_matched_sid>
+    <if_matched_group>jt_zpush_as_failed</if_matched_group>
     <same_srcip />
     <different_user />
     <description>[WARN] Z-Push: rejected ActiveSync logins for several accounts from $(srcip) (password spraying), last $(dstuser)</description>
@@ -432,7 +531,7 @@
     nothing.
   -->
   <rule id="132225" level="10" frequency="20" timeframe="600">
-    <if_matched_sid>132210</if_matched_sid>
+    <if_matched_group>jt_zpush_as_failed</if_matched_group>
     <same_location />
     <different_srcip />
     <different_user />
@@ -445,7 +544,7 @@
 
   <!-- The same two patterns through autodiscover. -->
   <rule id="132217" level="10" frequency="8" timeframe="300">
-    <if_matched_sid>132211</if_matched_sid>
+    <if_matched_group>jt_zpush_ad_failed</if_matched_group>
     <same_user />
     <description>[WARN] Z-Push: repeated rejected autodiscover logins for $(dstuser), last from $(srcip)</description>
     <mitre>
@@ -455,7 +554,7 @@
   </rule>
 
   <rule id="132218" level="10" frequency="8" timeframe="600">
-    <if_matched_sid>132211</if_matched_sid>
+    <if_matched_group>jt_zpush_ad_failed</if_matched_group>
     <same_srcip />
     <different_user />
     <description>[WARN] Z-Push: rejected autodiscover logins for several accounts from $(srcip) (password spraying), last $(dstuser)</description>
@@ -481,13 +580,17 @@
     password was guessed. After a spraying alert the address that was trying
     many accounts now has one that works.
     if_matched_group without a frequency works; if_matched_sid would place the
-    rule under the referenced rule and ignore if_sid. Both are also children of
-    132260 to 132263, so that they win whichever sibling is tried first. The level must be above
-    the referenced alert's: Wazuh does not let an event that raised a level-10
-    alert match another rule of level 10 or lower.
+    rule under the referenced rule and ignore if_sid. Both are children of
+    132207 only (1.3; up to 1.2 also of 132260 to 132263): they are tried
+    before those, which have lower levels. The level must be above the
+    referenced alert's: Wazuh does not let an event that raised a level-10
+    alert match another rule of level 10 or lower. 132220 is not a
+    "suspect login" for the bulk-download rule 132293: a phone whose owner
+    re-adds the account after a password change downloads everything again
+    with the same device id. Its child 132267 (a new device) is.
   -->
   <rule id="132220" level="11" timeframe="900">
-    <if_sid>132207,132260,132261,132262,132263</if_sid>
+    <if_sid>132207</if_sid>
     <if_matched_group>jt_zpush_bruteforce</if_matched_group>
     <same_user />
     <description>[WARN] Z-Push: $(dstuser) logged in from $(srcip) after repeated rejected logins (password guessed, or a stale password corrected)</description>
@@ -495,10 +598,10 @@
       <id>T1078</id>
       <id>T1110.001</id>
     </mitre>
-  </rule>
+    </rule>
 
   <rule id="132221" level="12" timeframe="900">
-    <if_sid>132207,132260,132261,132262,132263</if_sid>
+    <if_sid>132207</if_sid>
     <if_matched_group>jt_zpush_spraying</if_matched_group>
     <same_srcip />
     <description>[HIGH] Z-Push: login of $(dstuser) succeeded from $(srcip), which was spraying passwords</description>
@@ -506,6 +609,85 @@
       <id>T1078</id>
       <id>T1110.003</id>
     </mitre>
+    <group>jt_zpush_suspect_login,</group>
+  </rule>
+
+  <!--
+    1.3, account takeover through ActiveSync. Someone who has an account's
+    password adds his own client: a device id this manager has never seen,
+    usually from a public address (a data centre, a VPN, Tor, a phone abroad).
+    Three shapes are raised above the plain first-seen alert:
+    - 132266: a device first seen from a public address after three or more
+      rejected logins for the same account within 15 minutes, from anywhere
+      (spraying from many addresses tries an account once or twice per
+      address; three is above one mistyped password, which Z-Push logs as one
+      rejected OPTIONS or Sync). The same user setting up a new phone outside
+      the office after three typing errors raises it once. Level 12.
+    - 132267: the same after a brute-force alert (132220 above has the higher
+      level and takes the request first; this is its child). Level 12.
+    - 132268/132269: three devices this manager had never seen used by one
+      account within 15 minutes, level 10 when the last one comes from a
+      private address (132260), 12 from a public one (132261). Phones keep their device id (on two hosts in ten days:
+      one device per account, no second one), a new phone is one device; three
+      at once is several clients logging in with the same password. Requests
+      without a device (132264/132265) are not counted.
+    Correlation windows stay at 15 minutes: analysisd keeps the last 8192
+    events of level 1 and above, which on a busy manager covers 15 to 20
+    minutes; a longer timeframe would only look like it worked.
+    An administrator account's first request takes 132262/132263 instead of
+    the first-seen rules, so these do not apply to it (it alerts anyway).
+  -->
+  <rule id="132266" level="12" frequency="4" timeframe="900">
+    <if_sid>132261</if_sid>
+    <if_matched_group>jt_zpush_login_failed</if_matched_group>
+    <same_user />
+    <description>[HIGH] Z-Push: $(dstuser) logged in from public address $(srcip) with a device this manager had never seen ('$(zpush.devid)', $(zpush.devtype)), after three or more rejected logins for the account within 15 minutes</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1110</id>
+    </mitre>
+    <group>jt_zpush_device_new,jt_zpush_public_new_device,jt_zpush_suspect_login,</group>
+  </rule>
+
+  <rule id="132267" level="12">
+    <if_sid>132220</if_sid>
+    <field name="zpush.devid" type="pcre2">^(?!webservice$)\w</field>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <if_fts />
+    <description>[HIGH] Z-Push: $(dstuser) logged in from public address $(srcip) after repeated rejected logins, with a device this manager had never seen ('$(zpush.devid)', $(zpush.devtype))</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1110.001</id>
+    </mitre>
+    <group>jt_zpush_device_new,jt_zpush_public_new_device,jt_zpush_suspect_login,</group>
+  </rule>
+
+  <rule id="132269" level="12" frequency="3" timeframe="900">
+    <if_sid>132261</if_sid>
+    <if_matched_group>jt_zpush_device_new</if_matched_group>
+    <same_user />
+    <description>[HIGH] Z-Push: $(dstuser) used three devices this manager had never seen within 15 minutes, the last '$(zpush.devid)' ($(zpush.devtype)) from public address $(srcip): several clients have the password</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jt_zpush_public_new_device,jt_zpush_suspect_login,</group>
+  </rule>
+
+  <rule id="132268" level="10" frequency="3" timeframe="900">
+    <if_sid>132260</if_sid>
+    <if_matched_group>jt_zpush_device_new</if_matched_group>
+    <same_user />
+    <description>[WARN] Z-Push: $(dstuser) used three devices this manager had never seen within 15 minutes, the last '$(zpush.devid)' ($(zpush.devtype)) from private address $(srcip): several clients have the password</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jt_zpush_private_new_device,jt_zpush_suspect_login,</group>
   </rule>
 
   <!--
@@ -579,6 +761,46 @@
     <if_sid>132202</if_sid>
     <match type="pcre2">ProvisioningRequired\(\): saved policy hash '[^']*' changed</match>
     <description>Z-Push: the device policy changed, devices are provisioned again</description>
+  </rule>
+
+  <!--
+    1.3: device management through the Z-Push webservice (see 132249), at
+    INFO in lib/webservice/webservice.php and webservicedevice.php (2.7.6):
+      Webservice::HandleWebservice('<code>'): user '<login>' executing action for user '<account>'
+      WebserviceDevice::RemoveDevice('<device>'): remove device state data of user '<account>'
+      WebserviceDevice::WipeDevice('<device>'): mark device of user '<account>' for remote wipe
+    The first is written only when the login and the account differ, before
+    the rights are checked. Removing a device partnership also removes the
+    record of a device an intruder added; a wipe requested from a stolen
+    account destroys the owner's phone data. z-push-admin, the command-line
+    tool, writes none of these at INFO. None occurred in ten days on two
+    hosts (a Zimbra site has no WebApp plugin calling the webservice).
+  -->
+  <rule id="132246" level="6">
+    <if_sid>132202</if_sid>
+    <field name="zpush.message" type="pcre2">^WebserviceDevice::RemoveDevice\('.*'\): remove device state data of user '</field>
+    <description>Z-Push: a mobile device partnership was removed through the Z-Push webservice by $(dstuser): $(zpush.message)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+  </rule>
+
+  <rule id="132247" level="7">
+    <if_sid>132202</if_sid>
+    <field name="zpush.message" type="pcre2">^WebserviceDevice::WipeDevice\('.*'\): mark device of user '.*' for remote wipe$</field>
+    <description>Z-Push: a remote wipe of a mobile device was requested through the Z-Push webservice by $(dstuser): $(zpush.message)</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+  </rule>
+
+  <rule id="132248" level="8">
+    <if_sid>132202</if_sid>
+    <field name="zpush.message" type="pcre2">^Webservice::HandleWebservice\('-?\d+'\): user '.*' executing action for user '</field>
+    <description>Z-Push: $(dstuser) is managing the mobile devices of another account through the Z-Push webservice: $(zpush.message)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
   </rule>
 
   <!--
@@ -722,7 +944,7 @@
       <id>T1190</id>
       <id>T1078</id>
     </mitre>
-  </rule>
+    </rule>
 
   <rule id="132276" level="12">
     <if_sid>132207</if_sid>
@@ -732,7 +954,7 @@
       <id>T1190</id>
       <id>T1078</id>
     </mitre>
-  </rule>
+    </rule>
 
   <!--
     Web server access log. Phones synchronise in bursts: one tablet sent 55
@@ -784,5 +1006,114 @@
       <id>T1114.002</id>
     </mitre>
   </rule>
+
+  <!--
+    1.3, mailbox use (132290-132299).
+
+    Bulk download (T1114.002). Whoever has a password can add an ActiveSync
+    client and let it download the mailbox; PEAS does this with a window of
+    512 items per request and no date limit. The number of requests is no
+    measure of it: on two hosts in ten days one ordinary iPhone made 196 Sync
+    requests in a minute and 251 in 15 minutes while catching up a folder
+    (the iOS mail app asks for 25 items at a time), and PEAS needs ten
+    requests for 5,000 messages. The measure used is what Z-Push itself
+    logs at the start of every Sync of a folder in its diff backends (Zimbra,
+    IMAP, Maildir, CalDAV and CardDAV; lib/default/diffbackend/
+    exportchangesdiff.php, decoded by jt-zpush-export):
+      ExportChangesDiff->InitializeExporter(): Found '<n>' changes for '<folder>'
+    n is what the device does not have yet. On a device's first
+    synchronisation of a folder it is the folder's whole content within the
+    device's sync period; it then drops by the window size with every Sync.
+    Measured on two hosts in ten days (4 devices, 90,862 such lines): the
+    largest folder a phone synchronised held 2,640 messages, the largest
+    count was 2,386 (an iPad catching up an archive folder, 56 lines of 1,000
+    or more, all in two minutes), 99.8 per cent were below 100 and 96.8 per cent zero. 132290 marks
+    5,000 or more in one folder, about twice the largest seen (level 2,
+    nothing at all on the measured data). A mark within 15 minutes after the
+    account was first seen with a new device (132260/132261 and the rules
+    built on them) raises it: level 8 when that device came from a public
+    address, 5 from a private one, 13 when that login was itself suspicious
+    (group jt_zpush_suspect_login: a new device after rejected logins, a
+    login from a spraying address, several new devices). At most
+    once every 30 minutes each (ignore), since the count is logged again with
+    every Sync until the folder is complete. The device id is not on the
+    count line, so the account ties the two. A new phone set up for an
+    account whose folders hold more than 5,000 messages within the phone's
+    sync period raises it once, with the device it names. Kopano and
+    grommunio backends do not log the count. Through the agent group the
+    count lines of 5,000 and more are kept on the host (agent.conf).
+  -->
+  <rule id="132290" level="2">
+    <if_sid>132202</if_sid>
+    <field name="zpush.changes" type="pcre2">^(?:[5-9]\d{3}|[1-9]\d{4,})$</field>
+    <field name="zpush.folder" type="pcre2">^(?!hierarchy$)</field>
+    <description>Z-Push: a device of $(dstuser) is fetching $(zpush.changes) items of folder $(zpush.folder)</description>
+    <group>jt_zpush_bulk_export,</group>
+  </rule>
+
+  <rule id="132293" level="13" timeframe="900" ignore="1800">
+    <if_sid>132290</if_sid>
+    <if_matched_group>jt_zpush_suspect_login</if_matched_group>
+    <same_user />
+    <description>[HIGH] Z-Push: a client of $(dstuser) is downloading $(zpush.changes) items of folder $(zpush.folder) within 15 minutes of a suspicious login (after rejected logins, from a spraying address, or several new devices): mailbox being collected</description>
+    <mitre>
+      <id>T1114.002</id>
+      <id>T1078</id>
+    </mitre>
+  </rule>
+
+  <rule id="132291" level="8" timeframe="900" ignore="1800">
+    <if_sid>132290</if_sid>
+    <if_matched_group>jt_zpush_public_new_device</if_matched_group>
+    <same_user />
+    <description>Z-Push: a device of $(dstuser) first seen from a public address within the last 15 minutes is downloading $(zpush.changes) items of folder $(zpush.folder) (mailbox collection, or a new phone with a large mailbox)</description>
+    <mitre>
+      <id>T1114.002</id>
+    </mitre>
+  </rule>
+
+  <rule id="132292" level="5" timeframe="900" ignore="1800">
+    <if_sid>132290</if_sid>
+    <if_matched_group>jt_zpush_private_new_device</if_matched_group>
+    <same_user />
+    <description>Z-Push: a device of $(dstuser) first seen within the last 15 minutes is downloading $(zpush.changes) items of folder $(zpush.folder) (mailbox collection, or a new phone with a large mailbox)</description>
+    <mitre>
+      <id>T1114.002</id>
+    </mitre>
+  </rule>
+
+  <!--
+    Sending (T1534, T1566). A stolen account is worth most for the mail it can
+    send from inside: phishing to colleagues and partners, who trust the
+    sender. ActiveSync sends with three commands, each one message
+    (lib/request/sendmail.php, 2.7.6), and the request summary names them:
+    cmd='SendMail', 'SmartReply' or 'SmartForward'. ActiveSync 16 can also
+    send through Sync (a draft with Send); the Zimbra backend speaks 14.1,
+    where only these three exist. 132294 records each successful one (level
+    2, a login like any request); 132295 raises 20 within ten minutes for one
+    account (level 10). On two hosts in ten days no phone sent anything
+    through ActiveSync (0 of 39,450 requests), so the threshold is set from
+    people, not data: twenty messages in ten minutes is one every thirty
+    seconds, faster than anyone writes on a phone. It is counted per
+    account, whatever the device or address. A first request of a new
+    device and the built-in administrator accounts take the rules above
+    instead, so their messages are not counted.
+  -->
+  <rule id="132294" level="2">
+    <if_sid>132207</if_sid>
+    <field name="zpush.cmd" type="pcre2">^(?:SendMail|SmartReply|SmartForward)$</field>
+    <description>Z-Push: $(dstuser) sent a message through ActiveSync ($(zpush.cmd)) from $(srcip)</description>
+    <group>jt_auth_success,jt_zpush_mail_sent,</group>
+  </rule>
+
+  <rule id="132295" level="10" frequency="20" timeframe="600">
+    <if_matched_group>jt_zpush_mail_sent</if_matched_group>
+    <same_user />
+    <description>[WARN] Z-Push: $(dstuser) sent 20 messages through ActiveSync within ten minutes, last from $(srcip) (a hijacked account sending spam or phishing)</description>
+    <mitre>
+      <id>T1534</id>
+      <id>T1566</id>
+    </mitre>
+    </rule>
 
 </group>

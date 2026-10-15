@@ -15,7 +15,8 @@ Case file format, tests/pack_cases/<pack-id>.json:
     {"pack": "<id>", "sandbox_lists": {"<list>": "key:value\n"},
      "cases": [{"log": "...", "location": "/var/log/x.log",
       "expect_rule": "131201", "expect_level": 5, "repeat": 1, "note": "..."}],
-     "sequences": [{"before": ["line", ...], "log": "...", ...}]}
+     "sequences": [{"before": ["line", ...], "log": "...", ...}],
+     "sandbox_packs": ["jt-zimbra", ...]}   (other packs installed first)
 expect_rule "none" means no rule above level 0 may match. repeat sends the
 line that many times in one logtest session (for frequency rules) and judges
 the last event; "before" lines (or a "log" holding several lines) run first
@@ -113,12 +114,11 @@ def up(pack):
     print('%s is running' % name)
 
 
-def install(pack):
-    name = name_of(pack)
+def copy_pack(name, pack, lists):
+    """Copy one pack's rule, decoder and list files into the container."""
     pdir = os.path.join(ROOT, 'packs', pack)
     with open(os.path.join(pdir, 'manifest.json'), encoding='utf-8') as fh:
         manifest = json.load(fh)
-    lists = []
     for entry in manifest.get('files', []):
         sub = {'rule': 'rules', 'list': 'lists'}.get(entry['type'], 'decoders')
         dest = OSSEC + '/' + entry['dest']
@@ -126,6 +126,24 @@ def install(pack):
         run(['docker', 'exec', name, 'chown', 'wazuh:wazuh', dest])
         if entry['type'] == 'list' and entry.get('declare'):
             lists.append(entry['dest'])
+    return manifest
+
+
+def install(pack):
+    name = name_of(pack)
+    lists = []
+    # A pack that correlates other packs' events (jt-account-guard) names them in
+    # its case file as "sandbox_packs"; they go in first, the pack itself last.
+    cases_path = os.path.join(ROOT, 'tests', 'pack_cases', pack + '.json')
+    partners = []
+    if os.path.isfile(cases_path):
+        with open(cases_path, encoding='utf-8') as fh:
+            partners = json.load(fh).get('sandbox_packs') or []
+    for other in partners:
+        if other != pack:
+            name_of(other)          # validates the id
+            copy_pack(name, other, lists)
+    manifest = copy_pack(name, pack, lists)
     conf = run(['docker', 'exec', name, 'cat', OSSEC + '/etc/ossec.conf']).stdout
     # fim cases are judged from alerts.json; log quiet levels too (logtest is unaffected)
     conf = re.sub(r'<log_alert_level>\d+</log_alert_level>', '<log_alert_level>1</log_alert_level>', conf, count=1)
@@ -135,7 +153,6 @@ def install(pack):
             conf = conf.replace('</ruleset>', '  %s\n  </ruleset>' % tag, 1)
     run(['docker', 'exec', '-i', name, 'sh', '-c', 'cat > %s/etc/ossec.conf' % OSSEC], data=conf)
     # Entries a case file wants in a list for the test only (a site's allowlist).
-    cases_path = os.path.join(ROOT, 'tests', 'pack_cases', pack + '.json')
     if os.path.isfile(cases_path):
         with open(cases_path, encoding='utf-8') as fh:
             extra = json.load(fh).get('sandbox_lists') or {}
@@ -155,8 +172,9 @@ def install(pack):
         raise SystemExit('ruleset check failed')
     run(['docker', 'exec', name, OSSEC + '/bin/wazuh-control', 'restart'])
     wait_ready(name)
-    print('installed %s %s (%d lists declared), ruleset check passed'
-          % (pack, manifest.get('version', ''), len(lists)))
+    print('installed %s %s%s (%d lists declared), ruleset check passed'
+          % (pack, manifest.get('version', ''),
+             ' with ' + ', '.join(partners) if partners else '', len(lists)))
 
 
 def logtest(name, lines, location=None):

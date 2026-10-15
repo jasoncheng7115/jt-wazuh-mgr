@@ -2,7 +2,7 @@
  "id": "jt-pbs",
  "name": "Proxmox Backup Server Detection Suite",
  "name_zh": "Proxmox Backup Server 偵測套組",
- "version": "1.2",
+ "version": "1.2.1",
  "summary": "Failed backups, verification errors, full datastores, deleted and unprotected backups (the ransomware pattern), API token, permission and second-factor changes, configuration changes made on the shell, logins and undelivered notifications on Proxmox Backup Server, for which Wazuh has no rules.",
  "summary_zh": "Proxmox Backup Server 的備份失敗、驗證錯誤、datastore 空間不足、備份被刪除或解除保護（勒索軟體的手法）、API token、權限與雙因素變更、在 shell 上做的設定變更、登入與通知送達失敗；Wazuh 內建完全沒有對應規則。",
  "rule_id_range": "131800-131899",
@@ -19,7 +19,8 @@
   "Datastore disk usage: Proxmox Backup Server writes nothing when a datastore gets close to full (its binaries contain no such message); the first thing it logs is No space left on device, level 12. Fill levels therefore come from df: 90 to 97 per cent is level 10, 98 per cent and more level 12, each at most every 6 hours. With no setup, the df -P command in every Linux agent's default configuration covers mount points under /mnt/datastore/ (disks formatted by Proxmox Backup Server, and removable datastores). A datastore on a ZFS dataset or any other mount (measured on one site: its only datastore was a ZFS pool mounted at its own path) is not recognisable in df -P and stays invisible until one of two optional steps: add the command with the alias jt-pbs-datastores to the server's own ossec.conf, which runs df on every datastore path Proxmox Backup Server has configured and follows new datastores; or list the mount point in etc/lists/jt-pbs-datastore-mounts. The built-in rule 531 covers only /dev/ devices at 100 per cent and drops paths that contain usb.",
   "Versions: written from Proxmox Backup Server 4.2.2 logs and checked against the 4.2.8 source (October 2026). The auth.log, access log and task archive formats are unchanged since 1.x and work on 2.x as well; the syslog copies of task errors exist since 3.3; the real-IP header for reverse proxies since 4.1.4; S3, push sync encryption keys and the move tasks are 4.x. No Proxmox Backup Server vulnerability is in the CISA KEV catalogue (checked October 2026); the one with a CVSS of 8.8, CVE-2023-43320 (a second-factor bypass, fixed after 3.0), leaves no log trace, so keep the server updated.",
   "Not covered: the content of task logs (which chunk is corrupt, which snapshot failed) is one file per task and is not collected, so a rule says where to look rather than what broke. Wazuh cannot alert on something that did not happen: a backup group that silently stops receiving backups (a backup job disabled on Proxmox VE) raises nothing. Certificate expiry is not logged by Proxmox Backup Server. A datastore whose notification mode is legacy-sendmail mails its job results directly; a failed delivery then shows only in the server's mail log. Wazuh rules cannot be limited to an agent group, so the disk usage decoder adds two fields to the df -P lines of every agent; only the mount points above raise alerts.",
-  "Proxmox VE has a pack of its own, jt-proxmox; a failed backup is reported on both sides when both packs are installed (by the node that sent it and by the server that received it)."
+  "Proxmox VE has a pack of its own, jt-proxmox; a failed backup is reported on both sides when both packs are installed (by the node that sent it and by the server that received it).",
+  "Cross-pack login groups (patch release): jt_auth_success on 131801, 131807, 131808; jt_auth_failure on 131802; jt_auth_lockout on 131825. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. One copy per login: successes are tagged on the auth.log line that names the account (131801, 131807, 131808), not on the API access line (131875, 131876, address only). A wrong second factor (131824) is not a failed password and is not tagged."
  ],
  "notes_zh": [
   "Wazuh 對 Proxmox Backup Server 沒有任何解碼器或規則。它的服務程式寫進 syslog（未掛載的卸除式 datastore 每分鐘重複一行；登入失敗、被拒絕的請求與執行中任務的錯誤也會複製一份到這裡），真正重要的內容在三個獨立檔案：登入（api/auth.log）、REST API 請求（api/access.log）、每個完成任務的結果（tasks/archive）。本套件四者都解碼，並透過 pbs agent 群組監看 /etc/proxmox-backup。",
@@ -34,7 +35,8 @@
   "datastore 磁碟用量：Proxmox Backup Server 在 datastore 快滿時不會寫任何記錄（其執行檔中沒有這類訊息）；最早出現的是 No space left on device，level 12。因此用量取自 df：90% 到 97% 為 level 10，98% 以上為 level 12，各自每 6 小時最多一次。不需設定時，每個 Linux agent 預設設定中的 df -P 指令涵蓋 /mnt/datastore/ 底下的掛載點（Proxmox Backup Server 格式化的磁碟與卸除式 datastore）。放在 ZFS dataset 或其他掛載點的 datastore（某站台實測：唯一的 datastore 是掛在自己路徑的 ZFS pool）在 df -P 中無法辨識，在完成以下兩個選用步驟之一前都看不到：在伺服器自己的 ossec.conf 加上別名為 jt-pbs-datastores 的指令，它會對 Proxmox Backup Server 設定的每個 datastore 路徑執行 df，新增的 datastore 也會自動涵蓋；或把掛載點列在 etc/lists/jt-pbs-datastore-mounts。內建規則 531 只看 /dev/ 裝置且達 100% 才觸發，並會丟掉路徑含 usb 的項目。",
   "版本：依 Proxmox Backup Server 4.2.2 的記錄撰寫，並對照 4.2.8 的原始碼（2026 年 10 月）。auth.log、存取記錄與任務封存檔的格式自 1.x 起沒有改變，2.x 也適用；任務錯誤複製到 syslog 自 3.3 起；反向代理的真實 IP 標頭自 4.1.4 起；S3、push 同步加密金鑰與移動任務為 4.x 才有。CISA KEV 目錄中沒有任何 Proxmox Backup Server 的弱點（2026 年 10 月查證）；CVSS 8.8 的 CVE-2023-43320（第二因素繞過，3.0 之後修正）不會留下任何記錄，請保持伺服器更新。",
   "未涵蓋：任務記錄的內容（哪個 chunk 損壞、哪個 snapshot 失敗）是每個任務一個檔案，不收集，所以規則只指出去哪裡看，不說明壞了什麼。Wazuh 無法對「沒有發生的事」告警：某個備份群組悄悄不再收到備份（Proxmox VE 上的備份工作被停用）不會有任何告警。Proxmox Backup Server 不記錄憑證到期。通知模式為 legacy-sendmail 的 datastore 會直接寄送工作結果，寄送失敗只會出現在伺服器的郵件記錄。Wazuh 規則無法限定 agent 群組，因此磁碟用量解碼器會為每台 agent 的 df -P 記錄加上兩個欄位；只有上述掛載點會產生告警。",
-  "Proxmox VE 另有自己的套件 jt-proxmox；兩個套件都安裝時，備份失敗會在兩端各回報一次（送出備份的節點與接收備份的伺服器）。"
+  "Proxmox VE 另有自己的套件 jt-proxmox；兩個套件都安裝時，備份失敗會在兩端各回報一次（送出備份的節點與接收備份的伺服器）。",
+  "跨套件登入群組（修補版）：jt_auth_success：131801, 131807, 131808；jt_auth_failure：131802；jt_auth_lockout：131825。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。每次登入只標一份：成功登入標在有帳號的 auth.log 那行（131801、131807、131808），不標 API 存取記錄那行（131875、131876，只有位址）。第二因素錯誤（131824）不是密碼錯誤，不加標記。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -55,7 +57,7 @@
    "type": "rule",
    "name": "zz-131800-jt_pbs_rules.xml",
    "dest": "etc/rules/zz-131800-jt_pbs_rules.xml",
-   "sha256": "3c54f9a9c901b06b1a79e5ab12cb5e4d8f92635a9e9a608d4790a94cbd5a80fa"
+   "sha256": "31b44e9fbaf3f00eebbaeca06ea6b34d61df7ac5c86a3c6fcd7f6b2a83771628"
   },
   {
    "type": "list",

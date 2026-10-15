@@ -2,7 +2,7 @@
  "id": "jt-synology",
  "name": "Synology DSM Detection Suite",
  "name_zh": "Synology DSM 偵測套組",
- "version": "1.2",
+ "version": "1.2.1",
  "summary": "Sign-ins, brute force, auto block and account protection, Hyper Backup results and integrity, snapshot, replication and backup deletion, log clearing, Task Scheduler, storage and drive health, power, packages and account changes on Synology DSM, from Log Center syslog. Routine logins stay quiet without any configuration; new login pairs, administrators, outside addresses and success after failures alert.",
  "summary_zh": "Synology DSM 的登入、暴力破解、自動封鎖與帳號保護、Hyper Backup 結果與完整性檢查、快照／複寫／備份被刪除、記錄被清除、工作排程器、儲存與硬碟健康、電源、套件與帳號變更，來源為記錄中心的 syslog。例行登入不需任何設定就保持安靜；新的登入組合、管理員、外部位址與失敗後成功才告警。",
  "rule_id_range": "132000-132099",
@@ -18,7 +18,8 @@
   "File transfer logs are off in DSM by default and write one line per file operation. With them on, deletes and renames alert only in bulk: 300 deletions in a minute by one account is level 10, 100 renames in a minute level 12, the second being how file-encrypting malware looks from the NAS. Reads and writes never alert. Every service (SMB, AFP, FTP, TFTP, WebDAV, File Station) uses the same line format.",
   "What was checked: the sign-in, failed sign-in, two-factor, NTLMv1 and Hyper Backup success lines come from a real DSM 7 NAS. Every other line follows DSM's message catalogues in the 7.2.2-72806 and 7.4.1-90080 firmware, word for word; all 1,810 templates of the 7.4.1 System catalogue were replayed against the rules in a test manager, and each template fires only the rule written for it. No System-category line has been captured from a real NAS yet, so the patterns allow for an optional acting account and a missing final period. Shared folder snapshots deleted by retention are expected to say \"by [SYSTEM]\"; if a NAS shows retention deletions at level 8, that wording differs.",
   "Deliberately not done: logins carry no built-in authentication_success group, because that attaches built-in correlation rules (40101 for system account names, which include guest, and 40112) next to the allowlist. Version 1.2 removed the Security Advisor, antivirus and two-factor reset rules of 1.1: their wording is in neither firmware's catalogue, so they could never fire. Not decoded: NFS mounts (the catalogue does not show which field holds the address), Active Backup for Business (its strings are not in the firmware), DSM 6 Local Backup failures. DSM does not log its version when it updates, so the pack cannot tell a patched build from a vulnerable one. The NAS runs no agent, so a response can only act elsewhere (see the active response).",
-  "PREREQUISITE: the manager must accept syslog from the NAS (a <remote> block with connection syslog and the NAS in allowed-ips), and the Log Center package must be installed on the NAS: DSM's built-in Log Center cannot send logs. Send in BSD format, with at least the Connection and System categories. In a cluster, the node that receives the syslog analyses it: declare the two lists in that node's ossec.conf too, because the cluster copies list files but not ossec.conf."
+  "PREREQUISITE: the manager must accept syslog from the NAS (a <remote> block with connection syslog and the NAS in allowed-ips), and the Log Center package must be installed on the NAS: DSM's built-in Log Center cannot send logs. Send in BSD format, with at least the Connection and System categories. In a cluster, the node that receives the syslog analyses it: declare the two lists in that node's ossec.conf too, because the cluster copies list files but not ossec.conf.",
+  "Cross-pack login groups (patch release): jt_auth_success on 132010, 132011, 132012, 132033, 132018, 132017, 132019, 132034, 132035, 132016, 132036; jt_auth_failure on 132020; jt_auth_lockout on 132027, 132028, 132029. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. Shared folder access (132013) and the password step of a two-factor sign-in (132014) are not logins and are not tagged; external shared folder access still reaches 132017, 132019 and 132036. Second-factor and NTLMv1 refusals (132022, 132023) are not wrong passwords."
  ],
  "notes_zh": [
   "Wazuh 4.14.7 沒有內建 Synology 解碼器：DSM 的登入記錄送到管理端後沒有解碼、不命中任何規則，含有 failure 字樣時只命中通用的 1002。本套件解碼 DSM 的 Connection、System、Hyper Backup 類別與檔案傳輸記錄，格式為記錄中心預設送出的 BSD（RFC 3164），也接受 DSM 6 的寫法與 IETF（RFC 5424）格式。1.2 版起，比對的文字依據 DSM 自己的訊息目錄，取自 DSM 7.2.2-72806 與 7.4.1-90080 韌體。",
@@ -32,7 +33,8 @@
   "檔案傳輸記錄在 DSM 預設是關閉的，而且每一個檔案操作就寫一行。開啟後，刪除與重新命名只在大量發生時告警：同一帳號一分鐘內刪除 300 個檔案為 level 10，一分鐘內重新命名 100 個檔案為 level 12，後者正是加密型惡意程式從 NAS 端看起來的樣子。讀取與寫入一律不告警。所有服務（SMB、AFP、FTP、TFTP、WebDAV、File Station）使用同一種記錄格式。",
   "驗證過的：登入、登入失敗、兩步驟驗證、NTLMv1 與 Hyper Backup 成功的記錄來自真實的 DSM 7 NAS。其餘記錄逐字依據 DSM 7.2.2-72806 與 7.4.1-90080 韌體裡的訊息目錄；7.4.1 System 目錄的全部 1,810 個樣板都在測試用管理端重播過，每個樣板只觸發為它而寫的規則。目前還沒從真實的 NAS 收到過 System 類別的記錄，所以比對時允許前面帶執行帳號、也允許結尾沒有句點。保留原則刪除共用資料夾快照時，預期寫的是「by [SYSTEM]」；若某台 NAS 的保留原則刪除出現 level 8，代表寫法不同。",
   "刻意不做的：登入不帶內建的 authentication_success 群組，因為那會把內建的關聯規則（針對系統帳號名稱的 40101，名單包含 guest，以及 40112）掛到允許清單規則的旁邊。1.2 版移除了 1.1 版的資安顧問、防毒與兩步驟驗證重設規則：兩個版本韌體的訊息目錄裡都沒有那些寫法，它們永遠不會觸發。不解碼的：NFS 掛載（目錄看不出哪個欄位是位址）、Active Backup for Business（韌體裡沒有它的字串）、DSM 6 的本機備份失敗。DSM 更新時不記錄版本，所以本套件無法分辨已修補與有漏洞的版本。NAS 上沒有 agent，主動回應只能在別處執行（見主動回應）。",
-  "前提條件：管理端必須接受 NAS 送來的 syslog（<remote> 區段設 connection 為 syslog，並把 NAS 加入 allowed-ips），而且 NAS 上必須安裝「記錄中心」套件：DSM 內建的記錄中心無法傳送記錄。以 BSD 格式送出，至少包含 Connection 與 System 類別。叢集環境由接收 syslog 的那個節點負責分析：請在該節點的 ossec.conf 也宣告這兩份清單，因為叢集只同步清單檔、不同步 ossec.conf。"
+  "前提條件：管理端必須接受 NAS 送來的 syslog（<remote> 區段設 connection 為 syslog，並把 NAS 加入 allowed-ips），而且 NAS 上必須安裝「記錄中心」套件：DSM 內建的記錄中心無法傳送記錄。以 BSD 格式送出，至少包含 Connection 與 System 類別。叢集環境由接收 syslog 的那個節點負責分析：請在該節點的 ossec.conf 也宣告這兩份清單，因為叢集只同步清單檔、不同步 ossec.conf。",
+  "跨套件登入群組（修補版）：jt_auth_success：132010, 132011, 132012, 132033, 132018, 132017, 132019, 132034, 132035, 132016, 132036；jt_auth_failure：132020；jt_auth_lockout：132027, 132028, 132029。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。開啟共用資料夾（132013）與雙因素登入的密碼步驟（132014）不是登入，不加標記；但來自外部的共用資料夾存取仍會走到 132017、132019、132036。第二因素與 NTLMv1 被拒（132022、132023）不是密碼錯誤。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -53,7 +55,7 @@
    "type": "rule",
    "name": "jt-synology_rules.xml",
    "dest": "etc/rules/jt-synology_rules.xml",
-   "sha256": "50c75dcaede18702b9e56a4437a840ee91d95e52c3ad31d9a10a11d07c1b6f3a"
+   "sha256": "de85ed09102a8b69cf6a4c27925f1a410eda5c3f6679d273ee8cc5ec52f02506"
   },
   {
    "type": "list",

@@ -1,6 +1,8 @@
 <!--
   Zimbra authentication rules (audit.log)          range 100831-100859,
-                                                   100811-100813, 100835, 100907-100919
+                                                   100811-100813, 100835, 100907-100919,
+                                                   100990, 100991, 100998, 100999
+  Decoder zimbra-soap-authfail (mailbox.log) for 100990/100991
   Decoders: zimbra-audit and zimbra-audit-fail (decoders/0001-zimbra_decoders.xml)
 
   3.1 (2026-10-11): one policy for every successful login, with no site
@@ -57,9 +59,30 @@
     (100812); a lockout lifted by a login is level 3 (100813).
   * Administrative changes (cmd=ModifyAccount ... in audit.log): 100908-100919.
 
+  3.3 (2026-10-15), account security:
+  * The decoders read every field from its place in the line (see
+    0001-zimbra_decoders.xml): a URL or a user agent can no longer set the
+    source address, the account or "this login failed".
+  * A Zimbra tool user agent (zmprov, ZCS...) silences a login only for
+    Zimbra's own "zimbra" account from no address or a private one
+    (100853); the other rules no longer skip those user agents, so a
+    stolen password used with "User-Agent: zmprov" is reported as usual.
+  * The rules below do not look for "error=", "preauth" or "admin=true"
+    anywhere in the line any more, only in the message itself.
+  * An SMTP AUTH failure is recorded at level 2 (100999): Postfix's own
+    line raises the built-in 3332 for the same attempt.
+  * A login from an address that Postfix reported for repeated SMTP AUTH
+    failures (built-in 3357) is level 14 (100998).
+  * Cross-pack login groups: every rule a login event can end at carries
+    jt_auth_success, every rule a failed attempt can end at jt_auth_failure,
+    and the lockout record jt_auth_lockout (one per attempt: the syslog
+    copies and Zimbra's own tools end at level 0 and carry none).
+    DelegateAuth (an administrator opening another mailbox) is not tagged:
+    it is not a login of the account it names.
+
   Counted correlation uses pack groups (if_matched_group), not
   if_matched_sid: an event is only counted for the rule it finally matched.
-    zimbra_login_failed   every failed attempt (100841, 100857, 100811)
+    zimbra_login_failed   every failed attempt (100841, 100857, 100811, 100999, 100991)
     zimbra_newpair_fail   first failure of an (account, address) pair (100811)
     zimbra_auth_failures  the brute-force alerts (100842, 100843, 100844, 100836, 100859)
     zimbra_auth_success   every real login (not Zimbra's own tools)
@@ -106,7 +129,7 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failed,zimbra_login_failed,</group>
+    <group>authentication_failed,zimbra_login_failed,jt_auth_failure,</group>
   </rule>
 
   <!-- 3.2: Zimbra's own record of locking an account is
@@ -124,7 +147,7 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failures,</group>
+    <group>authentication_failures,jt_auth_lockout,</group>
   </rule>
 
   <!-- A login attempt on an account that is already locked
@@ -136,7 +159,7 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failed,zimbra_login_failed,</group>
+    <group>authentication_failed,zimbra_login_failed,jt_auth_failure,</group>
   </rule>
 
   <!-- 3.2: the first failure of an (account, address) pair (fts of
@@ -150,7 +173,63 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failed,zimbra_login_failed,zimbra_newpair_fail,</group>
+    <group>authentication_failed,zimbra_login_failed,zimbra_newpair_fail,jt_auth_failure,</group>
+  </rule>
+
+  <!-- 3.3: an SMTP AUTH failure. Postfix authenticates through saslauthd,
+       which asks Zimbra (the admin SOAP port, oproto=smtp in the context),
+       so one wrong SMTP password is written twice: here, with the account,
+       and in zimbra.log by Postfix
+         postfix/submission/smtpd[123]: warning: unknown[203.0.113.5]: SASL LOGIN authentication failed: UGFzc3dvcmQ6
+       which the built-in rule 3332 already raises at level 5 (and 3357
+       for eight in two minutes from one address). This copy is recorded
+       at level 2 and still counted (100842-100844, jt_auth_failure). The
+       first failure of each (account, address) pair stays at 100811
+       (level 5), because that is the only alert naming the account. -->
+  <rule id="100999" level="2">
+    <if_sid>100841</if_sid>
+    <field name="zimbra.oproto" type="pcre2">^smtp$</field>
+    <description>Zimbra SMTP AUTH failure (Postfix reports the attempt as well): $(dstuser) from: $(srcip) ($(zimbra.error))</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,zimbra_login_failed,jt_auth_failure,</group>
+  </rule>
+
+  <!-- 3.3: SOAP requests refused for their credentials (mailbox.log)
+       Decoder: zimbra-soap-authfail (0002-zimbra_mailbox_decoders.xml)
+       Every refused SOAP login writes this line, and until 3.3 nothing
+       decoded it: the built-in 2501 raised each one at level 5, next to
+       100841 for the same attempt from audit.log (tested). The base rule
+       records them at level 0; audit.log stays the counted copy.
+       The exception is the second factor, which audit.log never sees: after
+       a correct password the client is asked for a code, and a wrong code
+       ends here only. Two-factor is a Network Edition feature (and the
+       open-source zimbra-maldua-2fa extension); without it nothing fires.
+       Defined here, before 100842: a rule counted through if_matched_group
+       has to be loaded before the counting rule (tested: from
+       08-zimbra_soap_rules.xml the twelfth wrong code stayed at 100991). -->
+  <rule id="100990" level="0">
+    <decoded_as>zimbra-soap-authfail</decoded_as>
+    <description>Zimbra SOAP request refused for its credentials (counted from audit.log)</description>
+  </rule>
+
+  <!-- Each wrong code is one failed login: jt_auth_failure, and counted
+       with the password failures (zimbra_login_failed), so a run of codes
+       guessed from one address raises 100842 (twelve in five minutes).
+       The password step before it was logged as a success (100845), which
+       is why one wrong code already says the password is known. Level 5,
+       not more: people mistype codes. -->
+  <rule id="100991" level="5">
+    <if_sid>100990</if_sid>
+    <location>/opt/zimbra/log/mailbox.log</location>
+    <field name="zimbra.error" type="pcre2">^(?:invalid two-factor code|invalid TOTP code)$</field>
+    <description>Zimbra rejected a two-factor code after a correct password: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>zimbra_login_failed,jt_auth_failure,</group>
   </rule>
 
   <!-- Brute force from one address. Through Z-Push or a reverse proxy the
@@ -242,17 +321,26 @@
   <rule id="100845" level="2">
     <if_sid>100840</if_sid>
     <action type="pcre2">^(?:Auth|AdminAuth|SSOAuth)$</action>
-    <match type="pcre2">^(?!.*(?:\berror=|lockout due to|(?i:preauth)|\] security - cmd=\w+;.*? info=))</match>
+    <match type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*;(?!.*? info=)</match>
     <description>Zimbra authentication succeeded: $(dstuser) from: $(srcip)</description>
-    <group>authentication_success,zimbra_auth_success,</group>
+    <group>authentication_success,zimbra_auth_success,jt_auth_success,</group>
   </rule>
 
   <!-- Zimbra's own tools (zmprov, zmmailbox, zmconfigd, internal "ZCS")
        authenticate as the zimbra admin about once a minute. 3.1: also
-       matches the bare "ZCS" user agent, which has no version. -->
+       matches the bare "ZCS" user agent, which has no version.
+       3.3: the user agent is whatever the client sends, so it is not
+       enough on its own: until 3.2 any login with "ZCS" or "zmprov/1" as
+       its user agent was dropped here, a stolen password included. Now
+       the tool must also log in as Zimbra's built-in "zimbra" account and
+       from no address (localhost, which Zimbra does not log) or a private
+       one. Measured on two servers in ten days: every zm*/ZCS login was
+       account=zimbra, from no address or the server's own. Level 0 is
+       tried before the siblings below, so they no longer need their own
+       user-agent exclusion. -->
   <rule id="100853" level="0">
     <if_sid>100845</if_sid>
-    <field name="zimbra.ua" type="pcre2">^(?:zm[a-z]+|ZCS)(?:/|$)</field>
+    <match type="pcre2">^[^\[]*\[\S*\] \[(?:(?:o?ip=(?:::ffff:)?(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|(?!o?ip=)\w+=)(?:[^;\[\]]|;;)*;)*?ua=(?:zm[a-z]+|ZCS)[/;].*\] security - cmd=\w+; account=zimbra;</match>
     <description>Zimbra command-line tool authenticated (routine)</description>
   </rule>
 
@@ -269,7 +357,7 @@
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,zimbra_auth_success,</group>
+    <group>authentication_success,zimbra_auth_success,jt_auth_success,</group>
   </rule>
 
   <!-- 3.2: a successful login after the lockout period ended lifts the
@@ -293,12 +381,12 @@
        and are ordinary logins. -->
   <rule id="100847" level="3">
     <if_sid>100845</if_sid>
-    <match type="pcre2">^(?!.*(?:[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]])).*(?:\[[^\]\s]*:https?://[^\]\s]*/service/admin/soap|\] security - cmd=AdminAuth;|\] security - cmd=\w+;.*? account=(?:admin|administrator|root)@)</match>
+    <match type="pcre2">^(?:[^\[]*\[[^\]\s]*:https?://[^\]\s]*/service/admin/soap|[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=AdminAuth;|[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w+;.*? account=(?:admin|administrator|root)@)</match>
     <description>Zimbra administrator-class login: $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,zimbra_auth_success,</group>
+    <group>authentication_success,zimbra_auth_success,jt_auth_success,</group>
   </rule>
 
   <rule id="100848" level="3">
@@ -314,7 +402,7 @@
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,zimbra_auth_success,</group>
+    <group>authentication_success,zimbra_auth_success,jt_auth_success,</group>
   </rule>
 
   <!-- 3.1: was level 14. -->
@@ -332,14 +420,14 @@
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,zimbra_auth_success,zimbra_external_login,</group>
+    <group>authentication_success,zimbra_auth_success,zimbra_external_login,jt_auth_success,</group>
   </rule>
 
   <!-- Ordinary account from a public address: recorded (level 2) for 100852,
        raised the first time for the pair (100837). -->
   <rule id="100854" level="2">
     <if_sid>100845</if_sid>
-    <match type="pcre2">^(?!.*(?:[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]]|\[[^\]\s]*:https?://[^\]\s]*/service/admin/soap|\] security - cmd=AdminAuth;|\] security - cmd=\w+;.*? account=(?:admin|administrator|root)@))</match>
+    <match type="pcre2">^(?![^\[]*\[[^\]\s]*:https?://[^\]\s]*/service/admin/soap|[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=AdminAuth;|[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w+;.*? account=(?:admin|administrator|root)@)</match>
     <srcip negate="yes">10.0.0.0/8</srcip>
     <srcip negate="yes">172.16.0.0/12</srcip>
     <srcip negate="yes">192.168.0.0/16</srcip>
@@ -349,7 +437,7 @@
     <srcip negate="yes">fe80::/10</srcip>
     <list field="srcip" lookup="not_address_match_key">etc/lists/zimbra-internal-networks</list>
     <description>Zimbra login from a public address: $(dstuser) from: $(srcip)</description>
-    <group>authentication_success,zimbra_auth_success,zimbra_external_login,</group>
+    <group>authentication_success,zimbra_auth_success,zimbra_external_login,jt_auth_success,</group>
   </rule>
 
   <rule id="100837" level="5">
@@ -359,7 +447,7 @@
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,zimbra_auth_success,zimbra_external_login,</group>
+    <group>authentication_success,zimbra_auth_success,zimbra_external_login,jt_auth_success,</group>
   </rule>
 
   <!-- Ordinary account from a private address, first time for the pair.
@@ -367,7 +455,7 @@
        monitoring probe is reported once per address, ever. -->
   <rule id="100838" level="3">
     <if_sid>100845</if_sid>
-    <match type="pcre2">^(?!.*(?:[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]]|\[[^\]\s]*:https?://[^\]\s]*/service/admin/soap|\] security - cmd=AdminAuth;|\] security - cmd=\w+;.*? account=(?:admin|administrator|root)@))</match>
+    <match type="pcre2">^(?![^\[]*\[[^\]\s]*:https?://[^\]\s]*/service/admin/soap|[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=AdminAuth;|[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w+;.*? account=(?:admin|administrator|root)@)</match>
     <srcip>10.0.0.0/8</srcip>
     <srcip>172.16.0.0/12</srcip>
     <srcip>192.168.0.0/16</srcip>
@@ -377,7 +465,7 @@
     <srcip>fe80::/10</srcip>
     <if_fts />
     <description>First Zimbra login of this account from this private address: $(dstuser) from: $(srcip)</description>
-    <group>authentication_success,zimbra_auth_success,</group>
+    <group>authentication_success,zimbra_auth_success,jt_auth_success,</group>
   </rule>
 
   <!-- Cracked: failures from an address, then a success from it. Attached
@@ -412,7 +500,7 @@
     <mitre>
       <id>T1078</id>
     </mitre>
-  </rule>
+    </rule>
 
   <!-- preauth: a login made with the domain's preauth key, no password.
        An SSO integration does this for every login, so 3.1 records each
@@ -422,17 +510,17 @@
        preauth are raised every time (100832). -->
   <rule id="100850" level="2">
     <if_sid>100840</if_sid>
-    <match type="pcre2">^(?!.*\berror=).*(?i:preauth)</match>
+    <action>PreAuth</action>
     <description>Zimbra preauth login: $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1550.001</id>
     </mitre>
-    <group>authentication_success,</group>
+    <group>authentication_success,jt_auth_success,</group>
   </rule>
 
   <rule id="100832" level="12">
     <if_sid>100850</if_sid>
-    <match type="pcre2">\badmin=true\b|\] security - cmd=\w+;.*? account=(?:admin|administrator|root)@</match>
+    <match type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w+;.*? (?:admin=true;|account=(?:admin|administrator|root)@)</match>
     <description>[HIGH] preauth login to a Zimbra administrator account; unless an SSO integration does this, the preauth key may have leaked: $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1550.001</id>
@@ -443,7 +531,7 @@
 
   <rule id="100831" level="10" ignore="86400">
     <if_sid>100850</if_sid>
-    <match type="pcre2">^(?!.*(?:\badmin=true\b|\] security - cmd=\w+;.*? account=(?:admin|administrator|root)@))</match>
+    <match type="pcre2">^(?![^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w+;.*? (?:admin=true;|account=(?:admin|administrator|root)@))</match>
     <description>[WARN] preauth logins are in use on this Zimbra server (reported once a day); unless an SSO integration uses the domain preauth key, it may have leaked: $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1550.001</id>
@@ -460,7 +548,7 @@
   <rule id="100855" level="3">
     <if_sid>100840</if_sid>
     <action>DelegateAuth</action>
-    <match type="pcre2">^(?!.*(?:\berror=|[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]]))</match>
+    <match type="pcre2">^(?![^\[]*\[\S*\] \[name=zimbra;(?:(?:o?ip=(?:::ffff:)?(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|(?!o?ip=)\w+=)(?:[^;\[\]]|;;)*;)*?ua=(?:zm[a-z]+|ZCS)[/;])</match>
     <description>A Zimbra administrator opened a session as another account: $(srcuser) as $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1550.001</id>
@@ -515,6 +603,27 @@
     <description>[WARN] Zimbra account logged in after a run of failed logins for it; check that it was the owner: $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1110</id>
+      <id>T1078</id>
+    </mitre>
+    <group>credential_access,</group>
+  </rule>
+
+  <!-- 3.3: a login from an address that Postfix had just reported for
+       repeated SMTP AUTH failures (built-in 3357: eight in two minutes from
+       one address). Those failures reach audit.log only for accounts that
+       exist, so a spray of guessed names over SMTP can end in a correct
+       guess without any Zimbra failure rule having counted it (100846
+       needs one). Postfix sees every attempt. The success is the audit.log
+       line of any protocol (an SMTP AUTH through saslauthd carries the
+       client as oip=). Level 14, above the level 10 of 3357, which 4.14.7
+       requires of a correlation rule. -->
+  <rule id="100998" level="14" timeframe="900">
+    <if_group>zimbra_auth_success</if_group>
+    <if_matched_sid>3357</if_matched_sid>
+    <same_source_ip />
+    <description>[HIGH] Zimbra login from an address that had just failed SMTP AUTH repeatedly, the password appears to have been guessed: $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1110.003</id>
       <id>T1078</id>
     </mitre>
     <group>credential_access,</group>

@@ -25,15 +25,20 @@
     The moment the list matters most: failures arrive from listed addresses
     every day on every exposed service, a success means the address got in.
     Attached to every authentication_success rule loaded before this file
-    (sshd 5715, Windows 60106/92651, PAM, the other jt- packs).
+    (sshd 5715, Windows 60106/92651, PAM, the other jt- packs) and, since
+    1.5.1, to every rule tagged jt_auth_success: the cross-pack login group
+    of the jt- packs (see jt-account-guard). Pack login rules that are not
+    in Wazuh's authentication_success group (OPNsense service logins,
+    Synology, several children of the UCS, Odoo and jt-ipam rules) were
+    never looked up before. One rule carrying both groups is attached once.
     One source: level 10 (above the time-of-day rules 17101/17102, level 9,
     which are siblings and would otherwise be tried first). High: level 14.
     Never fired on the site this was built on (30 days, both nodes).
-    ★ These rules' own <group> must not contain authentication_success, or they
-      would become children of each other.
+    ★ These rules' own <group> must not contain authentication_success or
+      jt_auth_success, or they would become children of each other.
   -->
   <rule id="906050" level="10">
-    <if_group>authentication_success</if_group>
+    <if_group>authentication_success|jt_auth_success</if_group>
     <list field="srcip" lookup="address_match_key">etc/lists/jason_tools_threat_ip</list>
     <description>[WARN] jt-ioc: successful login from an address on a threat feed - $(srcip) user: $(dstuser)</description>
     <mitre>

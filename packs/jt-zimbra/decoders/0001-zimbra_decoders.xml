@@ -19,8 +19,11 @@
      web-accesslog decoder never matches this file. The URL is absolute.
      ========================================================== -->
 
+<!-- The proxy logs the absolute URL ("GET https://host/..."). Requiring it keeps
+     ordinary access logs out: an IPv6 client of another web server ("2001:db8::5 - -")
+     otherwise looks like address:port and loses every other pack's web rules. -->
 <decoder name="zimbra-proxy-access">
-  <prematch type="pcre2">^[0-9a-fA-F.:]+:\d+ \S+ \S+ \[\d+/\w+/\d+:\d+:\d+:\d+ [+-]\d+\]\s+"</prematch>
+  <prematch type="pcre2">^[0-9a-fA-F.:]+:\d+ \S+ \S+ \[\d+/\w+/\d+:\d+:\d+:\d+ [+-]\d+\]\s+"\w+ https?://</prematch>
 </decoder>
 
 <decoder name="zimbra-proxy-access-fields">
@@ -60,6 +63,31 @@
      ========================================================== -->
 
 <!-- ==========================================================
+     3.3: every field is read from its own place in the line, not from the
+     first place the text happens to appear. A Zimbra log line is
+       <date> <level> [<thread>] [<context>] <logger> - <message>
+     The thread name carries the request URL and the context carries the
+     client's user agent, and the client chooses both. Up to 3.2 the
+     decoders took the first "oip=", "ua=", "name=" or "] security - cmd="
+     anywhere in the line, so (tested on 4.14.7, sandbox):
+       * a request to ".../service/soap/AuthRequest?x=;oip=192.0.2.250;"
+         was decoded with srcip 192.0.2.250: the brute-force rules, and
+         the opt-in firewall-drop on them, could be pointed at any address;
+       * a successful login whose user agent contained
+         "] security - cmd=Auth; error=x; account=admin@..." was decoded
+         as a FAILED login of that other account, so a password that had
+         just been guessed raised no "success after failures" alert.
+     Now each regex starts at the line start, skips the thread name (it
+     holds no spaces), and walks the context one key=value; pair at a
+     time. Zimbra doubles every ";" inside a value (ZimbraLog.encodeArg),
+     so a value cannot end a pair or the context early, and the message
+     is the text after the context. The client address is the oip= (or,
+     without one, ip=) key that precedes ua= in the context; Zimbra adds
+     the address keys first (RemoteIP.addToLoggingContext, ImapHandler
+     setIDFields), so nothing a client sends can come before them.
+     ========================================================== -->
+
+<!-- ==========================================================
      3.2: failed logins have a decoder of their own, zimbra-audit-fail,
      loaded before zimbra-audit so it claims them first. Two reasons:
 
@@ -80,6 +108,10 @@
        and only when localconfig zimbra_additional_logging is true
        (default false). Without this branch, password spraying with
        guessed names produced no failure at all.
+       3.3: this sentence prints the typed name with String.format, not
+       through ZimbraLog.encodeArg, so its line breaks are not removed: a
+       client may be able to start a line of its own in audit.log while
+       the setting is on (not tested against a live server).
 
      Every line this decoder takes is a failure: cmd=... with error=
      (wrong password, locked account, preauth mismatch, the lockout itself:
@@ -87,94 +119,94 @@
      LdapLockoutPolicy logs at INFO) or the unknown-account sentence.
      ========================================================== -->
 <decoder name="zimbra-audit-fail">
-  <prematch type="pcre2">\] security - (?:cmd=\w[\w ]*;.*? error=|Error occurred during authentication: authentication failed for \[)</prematch>
-  <regex type="pcre2">\] security - cmd=(\w[\w ]*);</regex>
+  <prematch type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - (?:cmd=\w[\w ]*;.*? error=|Error occurred during authentication: authentication failed for \[)</prematch>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=(\w[\w ]*);</regex>
   <order>action</order>
   <fts>name, user, srcip, location</fts>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">\] security - cmd=(\w[\w ]*);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=(\w[\w ]*);</regex>
   <order>action</order>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? account(?:Name)?=([^;\s]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*;.*? account(?:Name)?=([^;\s]+);</regex>
   <order>user</order>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">\] security - Error occurred during authentication: authentication failed for \[([^\]]+)\]</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - Error occurred during authentication: authentication failed for \[([^\]]+)\]</regex>
   <order>user</order>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">[\[;]oip=(?:::ffff:)?([0-9a-fA-F.:]+)[,;]</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oip=(?:::ffff:)?([0-9a-fA-F.:]+)[,;]</regex>
   <order>srcip</order>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">^(?!.*[\[;]oip=).*?[\[;]ip=(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?:name|aname|mid)=[^;\[\]]*;)*ip=(?:::ffff:)?([0-9a-fA-F.:]+);(?!(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oip=)</regex>
   <order>srcip</order>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">[\[;]oip=[^;\]]*, ?(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oip=[^;\[\]]*, ?(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
   <order>zimbra.via_proxy</order>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">[\[;]ua=([^;\]]*)</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*?ua=((?:[^;]|;;)*);</regex>
   <order>zimbra.ua</order>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">\[[^\]:]*:(\w+://[^\]\s]+)\]</regex>
+  <regex type="pcre2">^[^\[]*\[[^\]:\s]*:(\w+://\S+)\] \[</regex>
   <order>url</order>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? protocol=(\w+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*;.*? protocol=(\w+);</regex>
   <order>protocol</order>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? error=([^;]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*;.*? error=([^;]+);</regex>
   <order>zimbra.error</order>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">\] security - Error occurred during authentication: authentication failed for \[[^\]]*\]\. Reason: ([^.]+)</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - Error occurred during authentication: authentication failed for \[[^\]]*\]\. Reason: ([^.]+)</regex>
   <order>zimbra.error</order>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">[\[;]oproto=(\w+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oproto=(\w+);</regex>
   <order>zimbra.oproto</order>
 </decoder>
 
 <!-- The account again, as a dynamic field for same_field (100844). -->
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? account(?:Name)?=([^;\s]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*;.*? account(?:Name)?=([^;\s]+);</regex>
   <order>zimbra.account</order>
 </decoder>
 
 <decoder name="zimbra-audit-fail-fields">
   <parent>zimbra-audit-fail</parent>
-  <regex type="pcre2">\] security - Error occurred during authentication: authentication failed for \[([^\]]+)\]</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - Error occurred during authentication: authentication failed for \[([^\]]+)\]</regex>
   <order>zimbra.account</order>
 </decoder>
 
@@ -196,8 +228,8 @@
      (tested). The key is (account, client address, administrator for a
      DelegateAuth, agent): rules 100837, 100838 and 100896 use it. -->
 <decoder name="zimbra-audit">
-  <prematch type="pcre2">\] security - cmd=\w[\w ]*;</prematch>
-  <regex type="pcre2">\] security - cmd=(\w[\w ]*);</regex>
+  <prematch type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*;</prematch>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=(\w[\w ]*);</regex>
   <order>action</order>
   <fts>name, srcuser, user, srcip, location</fts>
 </decoder>
@@ -206,63 +238,63 @@
      action is decoded again here. -->
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=(\w[\w ]*);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=(\w[\w ]*);</regex>
   <order>action</order>
 </decoder>
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? account(?:Name)?=([^;\s]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*;.*? account(?:Name)?=([^;\s]+);</regex>
   <order>user</order>
 </decoder>
 
 <!-- 3.2: the account an administrative command changed. -->
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=\w[\w ]*; name=([^;]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*; name=([^;]+);</regex>
   <order>user</order>
 </decoder>
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">[\[;]oip=(?:::ffff:)?([0-9a-fA-F.:]+)[,;]</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oip=(?:::ffff:)?([0-9a-fA-F.:]+)[,;]</regex>
   <order>srcip</order>
 </decoder>
 
 <!-- A direct connection (the admin port, no proxy) has ip= and no oip=. -->
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">^(?!.*[\[;]oip=).*?[\[;]ip=(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?:name|aname|mid)=[^;\[\]]*;)*ip=(?:::ffff:)?([0-9a-fA-F.:]+);(?!(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oip=)</regex>
   <order>srcip</order>
 </decoder>
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">[\[;]oip=[^;\]]*, ?(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oip=[^;\[\]]*, ?(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
   <order>zimbra.via_proxy</order>
 </decoder>
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">[\[;]ua=([^;\]]*)</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*?ua=((?:[^;]|;;)*);</regex>
   <order>zimbra.ua</order>
 </decoder>
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\[[^\]:]*:(\w+://[^\]\s]+)\]</regex>
+  <regex type="pcre2">^[^\[]*\[[^\]:\s]*:(\w+://\S+)\] \[</regex>
   <order>url</order>
 </decoder>
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? protocol=(\w+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*;.*? protocol=(\w+);</regex>
   <order>protocol</order>
 </decoder>
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? error=([^;]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*;.*? error=([^;]+);</regex>
   <order>zimbra.error</order>
 </decoder>
 
@@ -271,13 +303,13 @@
      login" (LdapProvisioning.java, LdapLockoutPolicy.java, 10.1.20). -->
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? mode=([^;]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*;.*? mode=([^;]+);</regex>
   <order>zimbra.mode</order>
 </decoder>
 
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? info=([^;]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*;.*? info=([^;]+);</regex>
   <order>zimbra.info</order>
 </decoder>
 
@@ -285,7 +317,7 @@
      smtp:// thread URL on the internal admin port 7073). -->
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">[\[;]oproto=(\w+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oproto=(\w+);</regex>
   <order>zimbra.oproto</order>
 </decoder>
 
@@ -294,7 +326,7 @@
      (account, address). -->
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">[\[;]name=([^;\]]+);.*\] security - cmd=DelegateAuth;</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[name=([^;\[\]]+);(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=DelegateAuth;</regex>
   <order>srcuser</order>
 </decoder>
 
@@ -303,7 +335,7 @@
      stay what they were. -->
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">[\[;]name=([^;\]]+);.*\] security - cmd=(?!(?:Auth|AdminAuth|SSOAuth|PreAuth|DelegateAuth);)\w[\w ]*;</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[name=([^;\[\]]+);(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=(?!(?:Auth|AdminAuth|SSOAuth|PreAuth|DelegateAuth);)\w[\w ]*;</regex>
   <order>srcuser</order>
 </decoder>
 
@@ -311,6 +343,6 @@
      events kept for if_matched_group in 4.14.7, same_field does (tested). -->
 <decoder name="zimbra-audit-fields">
   <parent>zimbra-audit</parent>
-  <regex type="pcre2">\] security - cmd=\w[\w ]*;.*? account(?:Name)?=([^;\s]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] security - cmd=\w[\w ]*;.*? account(?:Name)?=([^;\s]+);</regex>
   <order>zimbra.account</order>
 </decoder>

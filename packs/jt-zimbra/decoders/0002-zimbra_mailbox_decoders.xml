@@ -22,8 +22,8 @@
      administrator of a delegated session, client address, agent), used by
      rule 100897. -->
 <decoder name="zimbra-mailbox-soap">
-  <prematch type="pcre2">\] soap - \w+</prematch>
-  <regex type="pcre2">\] soap - (\w+)</regex>
+  <prematch type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] soap - \w+</prematch>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] soap - (\w+)</regex>
   <order>action</order>
   <fts>name, srcuser, user, srcip, location</fts>
 </decoder>
@@ -32,44 +32,44 @@
      action is decoded again here. -->
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
-  <regex type="pcre2">\] soap - (\w+)</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] soap - (\w+)</regex>
   <order>action</order>
 </decoder>
 
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
-  <regex type="pcre2">\[name=([^;\]]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[name=([^;\[\]]+);</regex>
   <order>user</order>
 </decoder>
 
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
-  <regex type="pcre2">[\[;]oip=(?:::ffff:)?([0-9a-fA-F.:]+)[,;]</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oip=(?:::ffff:)?([0-9a-fA-F.:]+)[,;]</regex>
   <order>srcip</order>
 </decoder>
 
 <!-- A direct connection (the admin port, no proxy) has ip= and no oip=. -->
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
-  <regex type="pcre2">^(?!.*[\[;]oip=).*?[\[;]ip=(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?:name|aname|mid)=[^;\[\]]*;)*ip=(?:::ffff:)?([0-9a-fA-F.:]+);(?!(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oip=)</regex>
   <order>srcip</order>
 </decoder>
 
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
-  <regex type="pcre2">[\[;]oip=[^;\]]*, ?(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oip=[^;\[\]]*, ?(?:::ffff:)?([0-9a-fA-F.:]+);</regex>
   <order>zimbra.via_proxy</order>
 </decoder>
 
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
-  <regex type="pcre2">[\[;]ua=([^;\]]*)</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*?ua=((?:[^;]|;;)*);</regex>
   <order>zimbra.ua</order>
 </decoder>
 
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
-  <regex type="pcre2">\[[^\]:]*:(\w+://[^\]\s]+)\]</regex>
+  <regex type="pcre2">^[^\[]*\[[^\]:\s]*:(\w+://\S+)\] \[</regex>
   <order>url</order>
 </decoder>
 
@@ -77,13 +77,13 @@
      mailbox (an administrator working through a delegated session). -->
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
-  <regex type="pcre2">[\[;]aname=([^;\]]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:name=[^;\[\]]*;)?aname=([^;\[\]]+);</regex>
   <order>zimbra.aname</order>
 </decoder>
 
 <decoder name="zimbra-mailbox-soap-fields">
   <parent>zimbra-mailbox-soap</parent>
-  <regex type="pcre2">[\[;]aname=([^;\]]+);</regex>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:name=[^;\[\]]*;)?aname=([^;\[\]]+);</regex>
   <order>srcuser</order>
 </decoder>
 
@@ -94,7 +94,62 @@
        2026-10-11 12:00:00,000 INFO  [qtp1-9:https://mail.example.com/service/soap/AuthRequest] [] misc - Access from IP 203.0.113.5 suspended, for repeated failed login.
 -->
 <decoder name="zimbra-invalid-login-filter">
-  <prematch type="pcre2">\] misc - Access from IP \S+ suspended, for repeated failed login\.</prematch>
-  <regex type="pcre2">\] misc - Access from IP (?:::ffff:)?([0-9a-fA-F.:]+) suspended</regex>
+  <prematch type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] misc - Access from IP \S+ suspended, for repeated failed login\.</prematch>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] misc - Access from IP (?:::ffff:)?([0-9a-fA-F.:]+) suspended</regex>
   <order>srcip</order>
+</decoder>
+
+<!-- 3.3: a SOAP request refused for its credentials. SoapEngine writes one
+     line per refused request in mailbox.log (store/.../soap/SoapEngine.java,
+     10.1.20, logger SoapEngine, INFO):
+       2026-10-11 12:00:00,000 INFO  [qtp1-9:https://mail.example.com/service/soap/AuthRequest] [name=user1@example.com;mid=9;oip=198.51.100.7;ua=ZimbraWebClient - GC152 (Win)/10.1.20_GA_4893;] SoapEngine - handler exception: authentication failed for [user1@example.com], invalid two-factor code
+     A wrong password is in audit.log too (rules 100841 and below), so the
+     rules here only take the second factor, which audit.log does not log:
+     "invalid two-factor code" (the login step) and "invalid TOTP code"
+     (setting two-factor up). Sources: the two-factor implementation of the
+     Network Edition (wiki.zimbra.com "2FA error:invalid TOTP code", 8.7.9)
+     and the open-source one built on the same interface
+     (maldua-suite/zimbra-maldua-2fa, ZetaTwoFactorAuth.java).
+     The name in "for [...]" is what the client typed and is written
+     unescaped, so the account is taken from the session context (name=,
+     set by Zimbra after the password step) and the reason from the end of
+     the line. -->
+<decoder name="zimbra-soap-authfail">
+  <prematch type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*\] SoapEngine - handler exception: authentication failed for \[</prematch>
+</decoder>
+
+<decoder name="zimbra-soap-authfail-fields">
+  <parent>zimbra-soap-authfail</parent>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[name=([^;\[\]]+);</regex>
+  <order>user</order>
+</decoder>
+
+<decoder name="zimbra-soap-authfail-fields">
+  <parent>zimbra-soap-authfail</parent>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oip=(?:::ffff:)?([0-9a-fA-F.:]+)[,;]</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="zimbra-soap-authfail-fields">
+  <parent>zimbra-soap-authfail</parent>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:(?:name|aname|mid)=[^;\[\]]*;)*ip=(?:::ffff:)?([0-9a-fA-F.:]+);(?!(?:(?!ua=)\w+=(?:[^;\[\]]|;;)*;)*?oip=)</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="zimbra-soap-authfail-fields">
+  <parent>zimbra-soap-authfail</parent>
+  <regex type="pcre2">^[^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*?ua=((?:[^;]|;;)*);</regex>
+  <order>zimbra.ua</order>
+</decoder>
+
+<decoder name="zimbra-soap-authfail-fields">
+  <parent>zimbra-soap-authfail</parent>
+  <regex type="pcre2">^[^\[]*\[[^\]:\s]*:(\w+://\S+)\] \[</regex>
+  <order>url</order>
+</decoder>
+
+<decoder name="zimbra-soap-authfail-fields">
+  <parent>zimbra-soap-authfail</parent>
+  <regex type="pcre2">\] SoapEngine - handler exception: authentication failed for \[.*\], ([^\]]+)$</regex>
+  <order>zimbra.error</order>
 </decoder>

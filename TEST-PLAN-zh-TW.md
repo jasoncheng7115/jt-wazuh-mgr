@@ -15,7 +15,7 @@
 ## 執行方式
 
 ```bash
-python3 -m unittest discover -s tests     # 331 項，完全離線
+python3 -m unittest discover -s tests     # 333 項，完全離線
 python3 tools/preflight.py                # 21 項發版前機械檢查
 
 # 系統沒有 Flask 的主機

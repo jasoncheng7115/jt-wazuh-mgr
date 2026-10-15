@@ -258,7 +258,7 @@
     <if_matched_sid>131940</if_matched_sid>
     <same_source_ip />
     <description>LibreNMS: web login failed from $(srcip), the login form came back right after it was submitted</description>
-    <group>authentication_failed,</group>
+    <group>authentication_failed,jt_auth_failure,</group>
     <mitre>
       <id>T1110</id>
     </mitre>
@@ -305,7 +305,7 @@
     <url type="pcre2">^/(?:2fa)?$</url>
     <id type="pcre2">^200$</id>
     <description>LibreNMS: web login succeeded from $(srcip)</description>
-    <group>authentication_success,</group>
+    <group>authentication_success,jt_auth_success,</group>
   </rule>
 
   <!--
@@ -327,7 +327,7 @@
     <srcip negate="yes">fc00::/7</srcip>
     <srcip negate="yes">fe80::/10</srcip>
     <description>LibreNMS: web login succeeded from external address $(srcip)</description>
-    <group>authentication_success,</group>
+    <group>authentication_success,jt_auth_success,</group>
     <mitre>
       <id>T1078</id>
     </mitre>
@@ -383,9 +383,10 @@
 
   <!--
     /api/v0 is the documented API (X-Auth-Token). /api/v1 (Laravel Restify,
-    config/restify.php base "/api/v1", auth:sanctum) is opt-in through
-    api.v1.enabled and answers 401, 403 and 404 the same way, so the status
-    rules cover both. The path rules below are v0 routes (routes/api.php).
+    opt-in through api.v1.enabled) is NOT matched: these rules read every web
+    server's access log, and /api/v1 is the API path of many other
+    applications (jt-ipam among them), whose refusals were reported as
+    LibreNMS token failures. The path rules below are v0 routes (routes/api.php).
   -->
 
   <!--
@@ -396,14 +397,14 @@
   -->
   <rule id="131950" level="2">
     <if_sid>31101</if_sid>
-    <url type="pcre2">^/api/v[01]/</url>
+    <url type="pcre2">^/api/v0/</url>
     <id type="pcre2">^404$</id>
     <description>LibreNMS API: the requested object does not exist</description>
   </rule>
 
   <rule id="131951" level="5">
     <if_sid>31100,31101,31530</if_sid>
-    <url type="pcre2">^/api/v[01](?:/|$)</url>
+    <url type="pcre2">^/api/v0(?:/|$)</url>
     <id type="pcre2">^40[13]$</id>
     <description>LibreNMS API: request from $(srcip) rejected, the token is missing, invalid or lacks permission</description>
     <group>authentication_failed,</group>
@@ -428,7 +429,7 @@
   <rule id="131953" level="3">
     <if_sid>31100,31108,31530</if_sid>
     <protocol type="pcre2">^(?:POST|PUT|PATCH|DELETE)$</protocol>
-    <url type="pcre2">^/api/v[01]/</url>
+    <url type="pcre2">^/api/v0/</url>
     <id type="pcre2">^2</id>
     <description>LibreNMS API: change request succeeded ($(protocol) $(url)) from $(srcip)</description>
   </rule>
@@ -770,7 +771,7 @@
   -->
   <rule id="131983" level="10">
     <if_sid>31100,31108</if_sid>
-    <url type="pcre2">^/(?:api/v[01]/|ajax_output\.php|graph\.php|ajax_table\.php)(?=[^ ]*(?i:sleep\(|benchmark\(|information_schema|union[\s%+*/]+(?:all[\s%+*/]+)?select|updatexml\(|extractvalue\(|%60|if\((?:ascii|length|substr)|substr\(\s*\(?select|=select%20|select\+|insert%20|%20from%20|%20where%20|union%20|union\+|where\+|null,null|xp_cmdshell))</url>
+    <url type="pcre2">^/(?:api/v0/|ajax_output\.php|graph\.php|ajax_table\.php)(?=[^ ]*(?i:sleep\(|benchmark\(|information_schema|union[\s%+*/]+(?:all[\s%+*/]+)?select|updatexml\(|extractvalue\(|%60|if\((?:ascii|length|substr)|substr\(\s*\(?select|=select%20|select\+|insert%20|%20from%20|%20where%20|union%20|union\+|where\+|null,null|xp_cmdshell))</url>
     <description>[WARN] LibreNMS: SQL injection markers in the request to $(url) from $(srcip)</description>
     <group>attack,sql_injection,</group>
     <mitre>

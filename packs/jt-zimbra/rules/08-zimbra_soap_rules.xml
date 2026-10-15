@@ -24,6 +24,21 @@
     changes) looked for SendMsg and TwoFactorAuth in audit.log, which logs
     neither, so they could not fire. They now read the SOAP operations here.
   * Counting uses the pack group zimbra_soap_read (if_matched_group).
+
+  3.3 (2026-10-15):
+  * Zimbra's own tools are left out only when the session belongs to the
+    built-in "zimbra" account (name=zimbra, or aname=zimbra for a
+    delegated session) from no address or a private one. Until 3.2 the
+    user agent alone decided, so a client sending "User-Agent: ZCS" could
+    read a mailbox, change filters or identities without being counted.
+    The delegated-session test (aname=) and Z-Push's marker (ZPZB/ in the
+    user agent) are read from the context itself, not from anywhere in
+    the line (a URL could carry ";aname=").
+  * 100935: recovery address or delegated rights changed. 100816 also
+    follows a password change, a two-factor change and 100935.
+  * 100990/100991 (in 03-zimbra_auth_rules.xml, because 100842 counts
+    them): SOAP logins refused (the copy of audit.log, level 0) and a
+    wrong two-factor code after a correct password (level 5).
 -->
 
 <group name="zimbra,exfiltration,soap,">
@@ -47,7 +62,7 @@
   <rule id="100971" level="1">
     <if_sid>100970</if_sid>
     <action type="pcre2">^(?:GetMsgRequest|GetConvRequest|ExportContactsRequest|GetContactsRequest|SearchGalRequest)$</action>
-    <match type="pcre2">^(?!.*(?:[\[;]aname=|[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]]))</match>
+    <match type="pcre2">^(?![^\[]*\[\S*\] \[(?:name=zimbra;|name=[^;\[\]]*;aname=zimbra;)(?:(?:o?ip=(?:::ffff:)?(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|(?!o?ip=)\w+=)(?:[^;\[\]]|;;)*;)*?ua=(?:zm[a-z]+|ZCS)[/;])(?![^\[]*\[\S*\] \[(?:name=[^;\[\]]*;)?aname=)</match>
     <options>no_log</options>
     <description>Zimbra content-read SOAP operation, counted for correlation: $(action) by $(dstuser)</description>
     <group>zimbra_soap_read,</group>
@@ -57,7 +72,7 @@
   <rule id="100929" level="1">
     <if_sid>100970</if_sid>
     <action type="pcre2">^(?:SearchRequest|SearchConvRequest)$</action>
-    <match type="pcre2">^(?!.*(?:[\[;]ua=[^;\]]*ZPZB/|[\[;]aname=|[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]]))</match>
+    <match type="pcre2">^(?![^\[]*\[\S*\] \[(?:name=zimbra;|name=[^;\[\]]*;aname=zimbra;)(?:(?:o?ip=(?:::ffff:)?(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|(?!o?ip=)\w+=)(?:[^;\[\]]|;;)*;)*?ua=(?:zm[a-z]+|ZCS)[/;])(?![^\[]*\[\S*\] \[(?:name=[^;\[\]]*;)?aname=)(?![^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*?ua=(?:[^;]|;;)*?ZPZB/)</match>
     <options>no_log</options>
     <description>Zimbra search SOAP operation, counted for correlation: $(action) by $(dstuser)</description>
     <group>zimbra_soap_read,</group>
@@ -77,7 +92,7 @@
   <rule id="100895" level="1">
     <if_sid>100970</if_sid>
     <action type="pcre2">^(?:GetMsgRequest|GetConvRequest|ExportContactsRequest|GetContactsRequest|SearchGalRequest|SearchRequest|SearchConvRequest)$</action>
-    <match type="pcre2">^(?!.*[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]]).*[\[;]aname=</match>
+    <match type="pcre2">^(?![^\[]*\[\S*\] \[(?:name=zimbra;|name=[^;\[\]]*;aname=zimbra;)(?:(?:o?ip=(?:::ffff:)?(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|(?!o?ip=)\w+=)(?:[^;\[\]]|;;)*;)*?ua=(?:zm[a-z]+|ZCS)[/;])(?=[^\[]*\[\S*\] \[(?:name=[^;\[\]]*;)?aname=)</match>
     <options>no_log</options>
     <description>Zimbra mailbox read in a delegated administrator session: $(zimbra.aname) reading $(dstuser)</description>
   </rule>
@@ -158,8 +173,8 @@
     <description>Bulk reading by a listed Zimbra service account (excluded)</description>
   </rule>
 
-  <!-- 100935 (the same for the aname= of a delegated session) is removed in
-       3.1: 100974 already covers it, because a CDB lookup on "user" checks
+  <!-- The old 100935 (the same for the aname= of a delegated session; 3.3
+       reuses the ID for 100935 below) is removed in 3.1: 100974 already covers it, because a CDB lookup on "user" checks
        srcuser first and the decoder now puts aname= there (tested). -->
 
   <!-- Sending: webmail and Z-Push both send with SendMsgRequest. -->
@@ -214,7 +229,7 @@
   <rule id="100814" level="3">
     <if_sid>100970</if_sid>
     <action type="pcre2">^(?:CreateIdentity|ModifyIdentity)Request$</action>
-    <match type="pcre2">^(?!.*[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]])</match>
+    <match type="pcre2">^(?![^\[]*\[\S*\] \[(?:name=zimbra;|name=[^;\[\]]*;aname=zimbra;)(?:(?:o?ip=(?:::ffff:)?(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|(?!o?ip=)\w+=)(?:[^;\[\]]|;;)*;)*?ua=(?:zm[a-z]+|ZCS)[/;])</match>
     <description>Zimbra sending identity created or changed: $(action) by $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1098</id>
@@ -229,33 +244,11 @@
   <rule id="100815" level="2">
     <if_sid>100970</if_sid>
     <action>ModifyPrefsRequest</action>
-    <match type="pcre2">^(?!.*[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]])</match>
+    <match type="pcre2">^(?![^\[]*\[\S*\] \[(?:name=zimbra;|name=[^;\[\]]*;aname=zimbra;)(?:(?:o?ip=(?:::ffff:)?(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|(?!o?ip=)\w+=)(?:[^;\[\]]|;;)*;)*?ua=(?:zm[a-z]+|ZCS)[/;])</match>
     <description>Zimbra preferences saved: $(dstuser) from: $(srcip)</description>
     <group>zimbra_mailflow_change,</group>
   </rule>
 
-  <!-- 3.2: the account-takeover sequence: a login from a public address
-       this account had never used (100837, level 5), then within 30
-       minutes a mail filter, identity or preference change by the same
-       account; the shape of the CVE-2025-27915 and CVE-2023-37580 payloads
-       and of a phished password. A phone (Z-Push) saving its settings is
-       not counted. In practice the window is as long as the manager's
-       correlation memory lasts (8,192 events). Level 12 is above the
-       level 5 it correlates with (4.14.7 skips events matched at or above
-       the correlating rule's level). -->
-  <rule id="100816" level="12" timeframe="1800">
-    <if_sid>100930,100814,100815</if_sid>
-    <if_matched_sid>100837</if_matched_sid>
-    <same_user />
-    <match type="pcre2">^(?!.*[\[;]ua=[^;\]]*ZPZB/)</match>
-    <description>[HIGH] Zimbra account changed its mail filters, identity or preferences right after its first login from a new public address, possible account takeover: $(dstuser) from: $(srcip)</description>
-    <mitre>
-      <id>T1078</id>
-      <id>T1114.003</id>
-      <id>T1564.008</id>
-    </mitre>
-    <group>credential_access,</group>
-  </rule>
 
   <rule id="100932" level="3">
     <if_sid>100970</if_sid>
@@ -272,12 +265,59 @@
     <if_sid>100970</if_sid>
     <url type="pcre2">^https?://\S*/service/admin/soap</url>
     <action type="pcre2">^(?:CreateAccount|DeleteAccount|RenameAccount|SetPassword|ModifyAccount|AddAccountAlias|GrantRight|RevokeRight|ModifyConfig|ModifyCos|ModifyDomain|CreateDomain|DeployZimlet|UndeployZimlet|ModifyZimlet|ModifyServer|CreateDistributionList|AddDistributionListMember|ModifyDistributionList)Request$</action>
-    <match type="pcre2">^(?!.*[\[;]ua=(?:zm[a-z]+|ZCS)[/;\]])</match>
+    <match type="pcre2">^(?![^\[]*\[\S*\] \[(?:name=zimbra;|name=[^;\[\]]*;aname=zimbra;)(?:(?:o?ip=(?:::ffff:)?(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|(?!o?ip=)\w+=)(?:[^;\[\]]|;;)*;)*?ua=(?:zm[a-z]+|ZCS)[/;])</match>
     <description>Zimbra administrative change: $(action) by $(dstuser) from: $(srcip)</description>
     <mitre>
       <id>T1098</id>
     </mitre>
     <group>account_changed,</group>
+  </rule>
+
+  <!-- 3.3: the password-reset recovery address set or verified
+       (SetRecoveryAccountRequest, service/mail/SetRecoveryAccount.java,
+       10.1.20: whoever reads that mailbox can reset the password) or rights
+       on the account granted (GrantRightsRequest in the account namespace:
+       send-as, send-on-behalf-of, free/busy and invitation rights for
+       another account, a group, a domain or everyone). mailbox.log names
+       only the operation, not the right or the grantee. None in ten days
+       on two servers. -->
+  <rule id="100935" level="5">
+    <if_sid>100970</if_sid>
+    <action type="pcre2">^(?:SetRecoveryAccount|GrantRights)Request$</action>
+    <match type="pcre2">^(?![^\[]*\[\S*\] \[(?:name=zimbra;|name=[^;\[\]]*;aname=zimbra;)(?:(?:o?ip=(?:::ffff:)?(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|(?!o?ip=)\w+=)(?:[^;\[\]]|;;)*;)*?ua=(?:zm[a-z]+|ZCS)[/;])</match>
+    <description>Zimbra account recovery address or delegated rights changed: $(action) by $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>zimbra_mailflow_change,</group>
+  </rule>
+
+  <!-- 3.2: the account-takeover sequence: a login from a public address
+       this account had never used (100837, level 5), then within 30
+       minutes a change by the same account that keeps the attacker in or
+       the owner out; the shape of the CVE-2025-27915 and CVE-2023-37580
+       payloads and of a phished password. A phone (Z-Push) saving its
+       settings is not counted. In practice the window is as long as the
+       manager's correlation memory lasts (8,192 events). Level 12 is above
+       the level 5 it correlates with (4.14.7 skips events matched at or
+       above the correlating rule's level).
+       3.3: also a password change (100932), two-factor turned off, backup
+       codes or an application password made (100851), and a new recovery
+       address or delegated rights (100935); defined after them, because
+       4.14.7 drops an if_sid that names a rule loaded later. -->
+  <rule id="100816" level="12" timeframe="1800">
+    <if_sid>100930,100814,100815,100932,100851,100935</if_sid>
+    <if_matched_sid>100837</if_matched_sid>
+    <same_user />
+    <match type="pcre2">^(?![^\[]*\[\S*\] \[(?:\w+=(?:[^;]|;;)*;)*?ua=(?:[^;]|;;)*?ZPZB/)</match>
+    <description>[HIGH] Zimbra account changed its mail filters, identity, preferences, password, two-factor or recovery settings right after its first login from a new public address, possible account takeover: $(action) by $(dstuser) from: $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1098</id>
+      <id>T1114.003</id>
+      <id>T1564.008</id>
+    </mitre>
+    <group>credential_access,</group>
   </rule>
 
 </group>
@@ -303,6 +343,7 @@
     <if_sid>100817</if_sid>
     <location>/opt/zimbra/log/mailbox.log</location>
     <description>Zimbra refused a request from a suspended address: $(srcip)</description>
+    <group>jt_auth_lockout,</group>
   </rule>
 
   <rule id="100818" level="8" ignore="1800">
@@ -311,7 +352,7 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failures,</group>
+    <group>authentication_failures,jt_auth_lockout,</group>
   </rule>
 
 </group>

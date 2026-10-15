@@ -1,0 +1,250 @@
+<!--
+  jt-account-guard: account security across services
+  File:    zzzz-132700-jt_account_guard_rules.xml
+  Range:   132700-132799
+  Licence: AGPL-3.0-or-later    Jason Tools Co., Ltd.
+
+  Every other jt- pack sees one product. An address that sprays the single
+  sign-on, the mail server and the file cloud, or that logs in on one service
+  minutes after it was failing on another, is invisible to each of them. These
+  rules correlate the login events of all packs through three groups that the
+  packs put on their own login rules (the convention, see the manifest notes):
+
+    jt_auth_success   one event per successful login of a named account
+    jt_auth_failure   one event per failed login (wrong password, unknown,
+                      disabled or locked account); one copy per attempt
+    jt_auth_lockout   the product locked or throttled an account or address
+
+  with srcip = the client address (plain, no ::ffff:) and dstuser = the
+  account as the product writes it.
+
+  ★ Why the file is named zzzz-.
+    if_group attaches a rule under the rules that carry the group and are
+    already loaded, and if_matched_group only counts rules that are loaded
+    when it is read (OS_MarkGroup, rules_list.c; a later rule is never
+    counted and analysisd -t says nothing). Rule files load in file name
+    order across the built-in and the custom directory: zzzz- sorts after
+    every pack (zz-...) and after a site file named zzz-.
+
+  ★ How the rules see other services.
+    Correlation is per agent unless the rule says global_frequency
+    (eventinfo.c). Two services are two different locations: an agent's
+    location is "(agent name) address->log file", so different_location
+    means another host or another log file. One product logging to two files
+    on one host would look like two services; the packs tag one copy per
+    attempt so that it does not.
+
+  ★ What the rules can and cannot count.
+    An event enters an if_matched_group list only when the rule it ended on
+    is not the target of an if_matched_sid anywhere (analysisd.c: the sid
+    list wins, the group lists are skipped). A pack that counts its own
+    failures with if_matched_sid on the failure rule therefore shows its
+    failures here as the CURRENT event (the rules below are children of
+    every tagged rule) but never as an EARLIER one. Packs that count with a
+    pack-only group instead are fully visible: Keycloak, Samba AD, the UCS
+    management console, OPNsense (web interface, services, OpenVPN),
+    Proxmox VE (pveproxy), PMG, the jt-ipam audit line, Zimbra and Z-Push.
+    Still if_matched_sid based, so current-event only: Nextcloud 131710,
+    PBS 131802, Synology 132020, LibreNMS 131942, Odoo 132315, AdGuard
+    130931 (their failure rules have several parent paths, see below).
+    A rule with several parents is stored once per parent path (OS_MarkGroup
+    walks every tree node): one jt-ipam audit failure counts twice, one
+    Zimbra brute-force alert five times. An earlier event that already
+    raised a correlation at this rule's level or above (a pack's level 10
+    brute-force alert) ends the search instead of being counted.
+
+  ★ Levels.
+    A correlation rule only fires when its level is above the level an
+    earlier event already reached through another correlation
+    (Search_LastGroups: lf->matched >= rule->level ends the search), hence
+    13 after the level 12 spraying rule. Children replace their parent's
+    alert, so every rule here is above the highest tagged failure (8) and
+    success (10) rule it can hang under.
+
+  ★ Addresses.
+    "Public" is: not in 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10,
+    fc00::/7 or fe80::/10, one negated srcip per range (several positive
+    srcip elements would be OR; a negated ::1 in any spelling also matches
+    every IPv4 address, so IPv6 loopback is not excluded here; the packs
+    drop or re-level it in their own decoders and rules).
+    Address-based rules only use public sources: inside the network the
+    same address belongs to a reverse proxy, a NAT gateway, a vulnerability
+    scanner or a server that checks passwords for others (an LDAP bind is
+    the echo of somebody else's login), and the per-pack rules already
+    count failures by internal address.
+
+  Ideas re-implemented in our own words, not copied (Sigma is DRL 1.1,
+  Elastic detection rules are Elastic License 2.0):
+    MITRE ATT&CK T1110.003 Password Spraying, T1110.004 Credential
+      Stuffing, T1110.001 Password Guessing, T1078 Valid Accounts
+      https://attack.mitre.org/techniques/T1110/003/
+      https://attack.mitre.org/techniques/T1110/004/
+    Sigma correlations, value_count: failed logons for many distinct
+      accounts from one address within a time span (password spraying)
+      https://sigmahq.io/docs/meta/correlations.html
+    Elastic, "Multiple Logon Failure Followed by Logon Success" (same
+      source, failures then success) and "Potential Okta Password Spray
+      (Single Source)"
+      https://github.com/elastic/detection-rules/blob/main/rules/windows/credential_access_bruteforce_multiple_logon_failure_followed_by_success.toml
+    CISA AA24-290A (2024): password spraying and MFA push bombing against
+      many services of one organisation, then logins with the found password
+      https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-290a
+-->
+
+<group name="jt_account_guard,">
+
+  <!-- ===== Cross-service password spraying from one public address =====
+    The current failure (any tagged pack) plus at least two earlier failures
+    from the same address, each on another service or host than the current
+    one and each for another account name than the current one, within ten
+    minutes. different_user leaves out the copies of one login that two
+    products write (an ActiveSync login is logged by Z-Push and by Zimbra
+    with the same account), and a person retrying one account on two
+    services. Per-pack brute-force rules count one service; this one sees an
+    address that stays under each of them. -->
+  <rule id="132701" level="10" frequency="3" timeframe="600">
+    <if_group>jt_auth_failure</if_group>
+    <if_matched_group>jt_auth_failure</if_matched_group>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <same_source_ip />
+    <different_location />
+    <different_user />
+    <global_frequency />
+    <description>[WARN] jt-account-guard: $(srcip) failed to log in on more than one service within 10 minutes, with several account names (cross-service password spraying); last account $(dstuser)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_spray,</group>
+  </rule>
+
+  <rule id="132702" level="12" frequency="6" timeframe="600">
+    <if_group>jt_auth_failure</if_group>
+    <if_matched_group>jt_auth_failure</if_matched_group>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <same_source_ip />
+    <different_location />
+    <different_user />
+    <global_frequency />
+    <description>[HIGH] jt-account-guard: $(srcip) failed to log in six times within 10 minutes on more than one service, with several account names (cross-service password spraying); last account $(dstuser)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_spray,</group>
+  </rule>
+
+  <!-- ===== Distributed guessing of one account across services =====
+    The current failure for an account, from a public address, plus at least
+    four earlier failures for the same account name on other services or
+    hosts, each from another address than the current one, within 15
+    minutes. Same account name only: products that write the name in another
+    form (alice, alice@example.com, EXAMPLE\alice) are not joined. A phone
+    with an old password keeps failing from one address; it reaches this
+    rule only when the account also fails somewhere else from another
+    address within the window. A placeholder instead of a name (one or two dashes,
+    written by web access logs and by Nextcloud for a failed login) is not
+    an account and is left out. -->
+  <rule id="132703" level="10" frequency="5" timeframe="900">
+    <if_group>jt_auth_failure</if_group>
+    <if_matched_group>jt_auth_failure</if_matched_group>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <user type="pcre2">[[:alnum:]]</user>
+    <same_user />
+    <different_srcip />
+    <different_location />
+    <global_frequency />
+    <description>[WARN] jt-account-guard: $(dstuser) failed to log in on more than one service from several addresses within 15 minutes (distributed password guessing); last from $(srcip)</description>
+    <mitre>
+      <id>T1110.001</id>
+      <id>T1110.004</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_guess,</group>
+  </rule>
+
+  <!-- ===== A successful login from an address that was spraying =====
+    Any tagged successful login from an address that 132701 or 132702
+    reported within the last 30 minutes, on any service. Level 13: above the
+    level 12 of 132702, which would otherwise end the search. One alert per
+    10 minutes (ignore), since a phone or a sync client repeats its login
+    every few seconds. -->
+  <rule id="132704" level="13" timeframe="1800" ignore="600">
+    <if_group>jt_auth_success</if_group>
+    <if_matched_group>jt_account_guard_spray</if_matched_group>
+    <same_source_ip />
+    <global_frequency />
+    <description>[HIGH] jt-account-guard: $(dstuser) logged in from $(srcip), an address that was failing logins on several services with several account names (password spraying that found a password)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1110.003</id>
+    </mitre>
+    <group>jt_account_guard_success_after_spray,</group>
+  </rule>
+
+  <!-- ===== Lockouts, then a login somewhere else =====
+    132705: an account locked or throttled on one service (keyed by account
+    name), then a successful login of the same account name on another
+    service or host, from a public address other than the one the lockout
+    named. 132706: an address locked out by one service, then a successful
+    login from that address on another service. Both within 15 minutes and
+    at most one alert per 10 minutes each. -->
+  <rule id="132705" level="12" timeframe="900" ignore="600">
+    <if_group>jt_auth_success</if_group>
+    <if_matched_group>jt_auth_lockout</if_matched_group>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <same_user />
+    <different_srcip />
+    <different_location />
+    <global_frequency />
+    <description>[HIGH] jt-account-guard: $(dstuser) logged in from the public address $(srcip) shortly after another service locked the account out after failed logins from elsewhere</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1110</id>
+    </mitre>
+    <group>jt_account_guard_lockout,</group>
+  </rule>
+
+  <rule id="132706" level="12" timeframe="900" ignore="600">
+    <if_group>jt_auth_success</if_group>
+    <if_matched_group>jt_auth_lockout</if_matched_group>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <same_source_ip />
+    <different_location />
+    <global_frequency />
+    <description>[HIGH] jt-account-guard: $(dstuser) logged in from $(srcip), an address that another service had just locked out after repeated failed logins</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1110</id>
+    </mitre>
+    <group>jt_account_guard_lockout,</group>
+  </rule>
+
+</group>

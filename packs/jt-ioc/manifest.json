@@ -2,7 +2,7 @@
  "id": "jt-ioc",
  "name": "IP Threat Intelligence",
  "name_zh": "IP 威脅情資比對",
- "version": "1.5",
+ "version": "1.5.1",
  "summary": "Matches addresses in logins, outbound connections, Suricata records and web requests against public threat feeds, graded by how many independent sources list them.",
  "summary_zh": "以公開威脅情資比對登入、對外連線、Suricata 記錄與網站請求中的位址，並依被多少獨立來源列入分級。",
  "rule_id_range": "906001-906099",
@@ -20,7 +20,8 @@
   "Sysmon 事件 3：906032 只看 TCP；連往清單位址的 UDP（906036）記為 level 2，因為上線第一晚的 7 筆 level 13 都是地震預警軟體與被來源列入的家用 IP 之間的 UDP 點對點流量。port 53 另外記為 level 3（906035）：DNS 伺服器會向網域指定的任何名稱伺服器查詢，某站台的解析器就曾這樣連到 Spamhaus DROP 網段。1.5 之前 PowerShell 的 TCP 連線（內建 92101）與 port 3389（92108）從來沒被比對過：這兩條 level 0 規則會先被嘗試並結束評估。",
   "Suricata（1.5 新增）：內建 86600 會接走所有 eve.json 事件，所以一般的 src_ip、dest_ip 規則從來看不到 Suricata，1.4 的 906014 用的欄位（data.dest_ip）也不存在。1.5 在 flow、HTTP、TLS 記錄比對 dest_ip（也就是伺服器端）。IDS 告警交給內建 99915／99916 與為它們分級的套件（jt-opnsense）。",
   "沒有做的事：DNS 回應（Sysmon 事件 22、AdGuard、Suricata dns 記錄）把多個位址放在同一個欄位，CDB 查詢無法拆開；原生 IPv6 項目；清單位址的登入失敗（任何對外服務的日常背景；Wazuh 內建 99904／99919 會對它的範例清單做這件事）；連往非出口 Tor 中繼節點的連線。本套件不提供主動回應：網站規則的位址在 remote_addr，主動回應讀不到；登入規則也掛在可能記錄轉送位址的網站應用程式底下；連入的掃描器由防火牆直接使用同樣的來源封鎖比較好。",
-  "1.5 的等級變更：906001-906009 由 12 改為 2（高可信度 906061-906069：5）；906011-906019 由 13／12 改為 6（高可信度 906071-906079：12）；906021／906022 由 12 改為 3（高可信度 906027／906028：8）；906023-906026 由 12 改為 3；906040 由 5 改為 2；906041 由 6 改為 2；906043 由 10 改為 6；906050／906051 由 14 改為 10（高可信度：14）；906031 由 8 改為 2（高可信度 906034：5）；906032 由 13 改為 8（高可信度 906033：13）；906036 由 6 改為 2（高可信度 906037：8）。906080（所有目的位址比對都是 level 14）已移除。不再把戰術代碼 TA0011 當成技術使用。"
+  "1.5 的等級變更：906001-906009 由 12 改為 2（高可信度 906061-906069：5）；906011-906019 由 13／12 改為 6（高可信度 906071-906079：12）；906021／906022 由 12 改為 3（高可信度 906027／906028：8）；906023-906026 由 12 改為 3；906040 由 5 改為 2；906041 由 6 改為 2；906043 由 10 改為 6；906050／906051 由 14 改為 10（高可信度：14）；906031 由 8 改為 2（高可信度 906034：5）；906032 由 13 改為 8（高可信度 906033：13）；906036 由 6 改為 2（高可信度 906037：8）。906080（所有目的位址比對都是 level 14）已移除。不再把戰術代碼 TA0011 當成技術使用。",
+  "1.5.1：成功登入查詢（906050，高信心層 906052）除了 Wazuh 的 authentication_success 群組，也掛到每一條標了 jt_auth_success 的規則（jt- 套件的跨套件登入群組，見 jt-account-guard）。其他套件原本不在那個群組裡的登入規則（OPNsense 的服務登入與外部位址登入、Synology、UCS、Odoo 與 jt-ipam 的部分規則）現在也會查。同時有兩個群組的規則只掛一次；等級不變。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -38,7 +39,7 @@
    "type": "rule",
    "name": "zz-906050-jason_tools_ioc_late.xml",
    "dest": "etc/rules/zz-906050-jason_tools_ioc_late.xml",
-   "sha256": "785646584f8e877bfb9709b36452a4aaa02ce6f17e60456dac0aa5e359443b4f"
+   "sha256": "c1ea462a1d452ee304a7e933cc840eb0b0ec256a3bacbe5a329307c3a2466a51"
   },
   {
    "type": "list",
@@ -71,7 +72,8 @@
   "Sysmon event 3: 906032 requires TCP; UDP to a listed address (906036) is recorded at level 2, after the first night's seven level 13 alerts were an earthquake-alert client's UDP peer-to-peer traffic to home connections that feeds had listed. Port 53 is kept apart at level 3 (906035): a DNS server queries whatever name server a domain names, and one site's resolvers did so with Spamhaus DROP space. Until 1.5 PowerShell over TCP (built-in 92101) and port 3389 (92108) were never looked up: those level 0 rules are tried first and ended the evaluation.",
   "Suricata (new in 1.5): the built-in 86600 takes every eve.json event, so the generic src_ip and dest_ip rules never saw Suricata, and 1.4's 906014 named a field (data.dest_ip) that does not exist. 1.5 looks up dest_ip in flow, HTTP and TLS records, where it is the server. IDS alerts are left to the built-in 99915/99916 and to whatever grades them (jt-opnsense).",
   "What it does not do: DNS answers (Sysmon event 22, AdGuard, Suricata dns records) carry several addresses in one field, which a CDB lookup cannot split; native IPv6 entries; failed logins from listed addresses (the background of any exposed service; Wazuh's built-in 99904/99919 do it for its sample list); connections to Tor relays that are not exits. It offers no active response: web rules carry remote_addr, which a response cannot read, login rules also hang under web applications that may log a forwarded address, and inbound scanners are better blocked by giving the firewall the same feeds.",
-  "1.5 level changes: 906001-906009 12 to 2 (high 906061-906069: 5); 906011-906019 13/12 to 6 (high 906071-906079: 12); 906021/906022 12 to 3 (high 906027/906028: 8); 906023-906026 12 to 3; 906040 5 to 2; 906041 6 to 2; 906043 10 to 6; 906050/906051 14 to 10 (high: 14); 906031 8 to 2 (high 906034: 5); 906032 13 to 8 (high 906033: 13); 906036 6 to 2 (high 906037: 8). 906080 (every destination match at level 14) is removed. The tactic id TA0011 is no longer used as a technique."
+  "1.5 level changes: 906001-906009 12 to 2 (high 906061-906069: 5); 906011-906019 13/12 to 6 (high 906071-906079: 12); 906021/906022 12 to 3 (high 906027/906028: 8); 906023-906026 12 to 3; 906040 5 to 2; 906041 6 to 2; 906043 10 to 6; 906050/906051 14 to 10 (high: 14); 906031 8 to 2 (high 906034: 5); 906032 13 to 8 (high 906033: 13); 906036 6 to 2 (high 906037: 8). 906080 (every destination match at level 14) is removed. The tactic id TA0011 is no longer used as a technique.",
+  "1.5.1: the successful-login lookup (906050, high tier 906052) also attaches to every rule tagged jt_auth_success, the cross-pack login group of the jt- packs (see jt-account-guard), not only to Wazuh's authentication_success group. Login rules of other packs that were outside that group (OPNsense service and outside-address logins, Synology, several UCS, Odoo and jt-ipam rules) are now looked up too. A rule that carries both groups is attached once; levels are unchanged."
  ],
  "scripts": [
   {

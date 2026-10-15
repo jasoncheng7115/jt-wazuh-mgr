@@ -41,7 +41,7 @@
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,pci_dss_10.2.5,gdpr_IV_32.2,</group>
+    <group>authentication_success,pci_dss_10.2.5,gdpr_IV_32.2,jt_auth_success,</group>
   </rule>
 
   <!-- Private source: 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10 (CGNAT),
@@ -57,7 +57,7 @@
     <srcip>fc00::/7</srcip>
     <srcip>fe80::/10</srcip>
     <description>OPNsense: web interface login of $(dstuser) from $(srcip) (private address)</description>
-    <group>authentication_success,</group>
+    <group>authentication_success,jt_auth_success,</group>
   </rule>
 
   <rule id="131533" level="3">
@@ -67,7 +67,7 @@
     <mitre>
       <id>T1078.003</id>
     </mitre>
-    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
+    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,jt_auth_success,</group>
   </rule>
 
   <!-- First time this account logs in from this address on this firewall
@@ -79,7 +79,7 @@
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,pci_dss_10.2.5,</group>
+    <group>authentication_success,pci_dss_10.2.5,jt_auth_success,</group>
   </rule>
 
   <!-- Any source outside the private ranges: one negated <srcip> per range
@@ -98,7 +98,7 @@
       <id>T1078</id>
       <id>T1133</id>
     </mitre>
-    <group>authentication_success,pci_dss_10.2.5,</group>
+    <group>authentication_success,pci_dss_10.2.5,jt_auth_success,</group>
   </rule>
 
   <rule id="131535" level="8">
@@ -109,7 +109,7 @@
       <id>T1078.003</id>
       <id>T1133</id>
     </mitre>
-    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
+    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,jt_auth_success,</group>
   </rule>
 
   <!-- "Web GUI authentication error for '%s' from %s" (src/www/authgui.inc) -->
@@ -120,13 +120,13 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,gdpr_IV_35.7.d,gdpr_IV_32.2,</group>
+    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,gdpr_IV_35.7.d,gdpr_IV_32.2,jt_auth_failure,jt_opnsense_gui_failure,</group>
   </rule>
 
   <!-- Brute force: six failures from one address in two minutes. The address is the
        client as the firewall sees it; behind a reverse proxy it is the proxy. -->
   <rule id="131503" level="10" frequency="6" timeframe="120" ignore="300">
-    <if_matched_sid>131502</if_matched_sid>
+    <if_matched_group>jt_opnsense_gui_failure</if_matched_group>
     <same_source_ip />
     <description>[WARN] OPNsense: repeated failed web interface logins from $(srcip), password guessing</description>
     <mitre>
@@ -191,7 +191,7 @@
       <id>T1190</id>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failed,attack,pci_dss_10.2.4,</group>
+    <group>authentication_failed,attack,pci_dss_10.2.4,jt_auth_failure,</group>
   </rule>
 
   <rule id="131548" level="12">
@@ -240,7 +240,7 @@
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,pci_dss_10.2.5,</group>
+    <group>authentication_success,pci_dss_10.2.5,jt_auth_success,</group>
   </rule>
 
   <rule id="131528" level="3">
@@ -250,7 +250,7 @@
     <mitre>
       <id>T1078.003</id>
     </mitre>
-    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,</group>
+    <group>authentication_success,pci_dss_10.2.2,pci_dss_10.2.5,jt_auth_success,</group>
   </rule>
 
   <!-- First login of this account on this firewall (fts on user, location). -->
@@ -261,7 +261,7 @@
     <mitre>
       <id>T1078</id>
     </mitre>
-    <group>authentication_success,pci_dss_10.2.5,</group>
+    <group>authentication_success,pci_dss_10.2.5,jt_auth_success,</group>
   </rule>
 
   <!-- Optional tuning: accounts in etc/lists/jt-opnsense-service-accounts never
@@ -293,7 +293,7 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+    <group>authentication_failed,pci_dss_10.2.4,pci_dss_10.2.5,jt_auth_failure,jt_opnsense_svc_failure,</group>
   </rule>
 
   <!-- "user %s could not authenticate for %s, failed constraints on %s authenticated via %s":
@@ -765,7 +765,7 @@
   <!-- Eight failures for one account in two minutes (an attempt can write one
        line per authenticator, so eight lines are at least four tries). -->
   <rule id="131556" level="10" frequency="8" timeframe="120" ignore="300">
-    <if_matched_sid>131510</if_matched_sid>
+    <if_matched_group>jt_opnsense_svc_failure</if_matched_group>
     <same_user />
     <description>[WARN] OPNsense: repeated failed logins for $(dstuser) on $(opnsense.service), password guessing</description>
     <mitre>
@@ -803,7 +803,7 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failures,active_response,</group>
+    <group>authentication_failures,active_response,jt_auth_lockout,</group>
   </rule>
 
   <!-- ==============================================================
@@ -853,7 +853,7 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failed,jt_opnsense_vpn_auth_failed,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+    <group>authentication_failed,jt_opnsense_vpn_auth_failed,pci_dss_10.2.4,pci_dss_10.2.5,jt_auth_failure,</group>
   </rule>
 
   <rule id="131564" level="5">
@@ -864,7 +864,7 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failed,jt_opnsense_vpn_auth_failed,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+    <group>authentication_failed,jt_opnsense_vpn_auth_failed,pci_dss_10.2.4,pci_dss_10.2.5,jt_auth_failure,</group>
   </rule>
 
   <rule id="131565" level="10" frequency="6" timeframe="300" ignore="300">
@@ -1071,7 +1071,7 @@
       <id>T1078</id>
       <id>T1133</id>
     </mitre>
-    <group>authentication_success,vpn,</group>
+    <group>authentication_success,vpn,jt_auth_success,</group>
   </rule>
 
   <rule id="131589" level="3">
@@ -1082,7 +1082,7 @@
       <id>T1078</id>
       <id>T1133</id>
     </mitre>
-    <group>authentication_success,vpn,</group>
+    <group>authentication_success,vpn,jt_auth_success,</group>
   </rule>
 
   <!-- "giving up after %d retransmits": the peer stopped answering; the tunnel is down. -->

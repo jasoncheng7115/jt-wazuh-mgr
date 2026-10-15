@@ -53,21 +53,21 @@
     <if_sid>87203</if_sid>
     <match type="pcre2">successful auth for user '(?!root@pam')[^']+@(?:pam|pve)'</match>
     <description>Proxmox VE: login of $(dstuser)</description>
-    <group>authentication_success,</group>
+    <group>authentication_success,jt_auth_success,</group>
   </rule>
 
   <rule id="131204" level="3">
     <if_sid>87203</if_sid>
     <match>successful auth for user 'root@pam'</match>
     <description>Proxmox VE: root@pam logged in</description>
-    <group>authentication_success,</group>
+    <group>authentication_success,jt_auth_success,</group>
   </rule>
 
   <rule id="131205" level="2">
     <if_sid>87203</if_sid>
     <match type="pcre2">successful auth for user '[^']+@(?!pam'|pve')[^']+'$</match>
     <description>Proxmox VE: login through a directory realm</description>
-    <group>authentication_success,</group>
+    <group>authentication_success,jt_auth_success,</group>
   </rule>
 
   <!--
@@ -88,7 +88,7 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failures,</group>
+    <group>authentication_failures,jt_auth_lockout,</group>
   </rule>
 
   <rule id="131207" level="8">
@@ -531,11 +531,11 @@
     <mitre>
       <id>T1110</id>
     </mitre>
-    <group>authentication_failed,pve_auth,</group>
+    <group>authentication_failed,pve_auth,jt_auth_failure,jt_pve_web_failure,</group>
   </rule>
 
   <rule id="131267" level="10" frequency="6" timeframe="120">
-    <if_matched_sid>131266</if_matched_sid>
+    <if_matched_group>jt_pve_web_failure</if_matched_group>
     <same_source_ip />
     <description>[WARN] Proxmox VE: repeated failed logins from $(srcip)</description>
     <mitre>
@@ -818,7 +818,7 @@
     <if_sid>87200</if_sid>
     <match>successful openid auth for user '</match>
     <description>Proxmox VE: login through an OpenID realm</description>
-    <group>authentication_success,</group>
+    <group>authentication_success,jt_auth_success,</group>
   </rule>
 
   <!--
