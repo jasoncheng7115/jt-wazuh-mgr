@@ -4,6 +4,16 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.16.3 (2026-10-19)
+
+- **jt-alert-digest 1.8: Zulip posts are cards laid out for a phone.** The title line, then a
+  two-column table of the short values: host, address, time, the rule (linked to the
+  dashboard), MITRE and short decoded fields such as a source address or an account.
+  Zulip never wraps a table cell, so any value wider than a phone's column (about 28
+  characters, 20 in code) is put in a quoted block under the table, where it wraps. The
+  collapsed log is now wrapped text instead of a code block, which had to be scrolled
+  sideways.
+
 ## v1.16.2 (2026-10-19)
 
 - **jt-alert-digest 1.7: Zulip posts are laid out in Zulip's own markdown.** A coloured

@@ -66,6 +66,7 @@ import subprocess
 import sys
 import time
 import traceback
+import unicodedata
 import urllib.error
 import urllib.request
 from collections import OrderedDict
@@ -74,7 +75,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.7"
+VERSION = "1.8"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -2341,49 +2342,86 @@ def md_quote(lines):
     return "\n".join("> " + line for line in lines)
 
 
-def spoiler(title, lines):
-    """Collapsed block; the inner code block uses ~~~ so its fence cannot close the outer one."""
-    return "```spoiler %s\n%s\n```" % (title, fenced(lines))
+TABLE_TEXT = 28   # widest value kept in the table on a phone; Zulip table cells never wrap
+TABLE_CODE = 20   # the same for code, set in a wider monospace font
+
+
+def text_width(text):
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
+
+
+def fits_table(label, value):
+    plain = " ".join(str(value).split())
+    if "|" in plain or "\n" in str(value):
+        return False
+    code = label in CODE_LABELS or label == "Image"
+    return text_width(plain) <= (TABLE_CODE if code else TABLE_TEXT)
+
+
+def spoiler_text(title, values):
+    """Collapsed block of wrapped text. A code block inside a spoiler does not
+    wrap and has to be scrolled sideways on a phone."""
+    return "```spoiler %s\n%s\n```" % (title, "\n\n".join(md(v) for v in values))
 
 
 def zulip_group(rule_id, agent, group, samples, link=None, compact=False):
+    """One group as a card: a title line, a two-column table of the short
+    values, the long values as a quoted block below it, the raw log collapsed."""
     count = (" \u00d7%d" % group["count"]) if group["count"] > 1 else ""
     mark = (" \u00b7 **%s**" % badge(group)) if badge(group) else ""
-    rule = ("rule [%s](%s)" % (md(rule_id), md_link(link))) if link else "rule %s" % md(rule_id)
+    rule = ("[%s](%s)" % (md(rule_id), md_link(link))) if link else md(rule_id)
     if compact:
-        return "- %s **L%d** \u00b7 **%s** \u00b7 %s%s \u00b7 %s" % (
+        return "- %s **L%d** \u00b7 **%s** \u00b7 rule %s%s \u00b7 %s" % (
             level_mark(group["level"]), group["level"], md(agent), rule, count,
             md(trim(heading(group, rule_id), 90)))
     title = SEVERITY_MARKER.sub("", heading(group, rule_id))
-    lines = ["%s **L%d \u00b7 %s**%s%s" % (level_mark(group["level"]), group["level"],
-                                          md(title), count, mark)]
-    meta = ["**%s**" % md(agent)]
-    if host_detail(group):
-        meta.append(md(host_detail(group)))
-    meta.append(rule)
-    meta.append(md(headline(group)))
+    blocks = ["%s **L%d \u00b7 %s**%s%s" % (level_mark(group["level"]), group["level"],
+                                           md(title), count, mark)]
+    rows, below = [], []
+
+    def place(label, value, shown):
+        if fits_table(label, value):
+            rows.append("| %s | %s |" % (md(label), shown))
+        else:
+            below.append("**%s** %s" % (md(label), shown))
+
+    detail = host_detail(group)
+    if detail:
+        place("Address", detail.replace(", ", " \u00b7 "), md(detail.replace(", ", " \u00b7 ")))
+    when = re.sub(r"^\d{4}-", "", headline(group))
+    place("Time", when, md(when))
+    rows.append("| Rule | %s |" % rule)
     if group.get("mitre"):
-        meta.append(md(mitre_line(group)))
-    lines.append(" \u00b7 ".join(meta))
-    blocks, logs = ["\n".join(lines)], []
-    for fields in card_fields(group, samples):
+        tactics = ", ".join(dedupe(group.get("tactics") or []))
+        text = ", ".join(group["mitre"]) + ((" " + tactics) if tactics else "")
+        place("MITRE", text, md(text))
+    samples_fields = card_fields(group, samples)
+    logs, extra = [], []
+    for index, fields in enumerate(samples_fields):
         shown = [(label, value) for label, value in fields if label != "Log"]
         log = [value for label, value in fields if label == "Log"]
-        if shown:
-            blocks.append(md_quote("**%s** %s" % (md(label), md_value(label, value))
-                                for label, value in shown))
-            logs.extend(log)
-        elif log:
+        if not shown:
             # nothing decoded: the log line is the content, so it stays visible
-            blocks.append(md_quote(md(value) for value in log))
+            extra.append(md_quote(md(value) for value in log))
+            continue
+        logs.extend(log)
+        if index == 0:
+            for label, value in shown:
+                place(label, value, md_value(label, value))
+        else:
+            extra.append(md_quote("**%s** %s" % (md(label), md_value(label, value))
+                                  for label, value in shown))
+    blocks.append("\n".join(["| Host | %s |" % md(agent), "|:--|:--|"] + rows))
+    if below:
+        blocks.append(md_quote(below))
+    blocks.extend(extra)
     if logs:
-        blocks.append(spoiler("Log" if len(logs) == 1 else "Logs (%d)" % len(logs),
-                              [v for value in logs for v in ("", value)][1:]))
-    shown = 0 if listed_in_full(group) \
+        blocks.append(spoiler_text("Log" if len(logs) == 1 else "Logs (%d)" % len(logs), logs))
+    shown_count = 0 if listed_in_full(group) \
         else min(samples, len(group.get("samples", [])))
     notes = []
-    if group["count"] - shown > 0 and shown:
-        notes.append("%d more of the same" % (group["count"] - shown))
+    if group["count"] - shown_count > 0 and shown_count:
+        notes.append("%d more of the same" % (group["count"] - shown_count))
     if group.get("earlier"):
         notes.append("plus %d earlier since the last full post" % group["earlier"])
     if notes:

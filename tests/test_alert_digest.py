@@ -74,6 +74,12 @@ def alert(n, level=12, rule='100001', agent='host1', agent_id='001', when=None, 
     return json.dumps(a, separators=(',', ':'))
 
 
+def names_rule(rule_id):
+    """A Zulip post names a rule in its table row, or as "rule N" on a compact line."""
+    import re
+    return re.compile(r'(\| Rule \| |rule )\[?%d\b' % rule_id)
+
+
 class Tree(object):
     """A manager directory laid out the way analysisd and monitord leave it."""
 
@@ -676,14 +682,34 @@ class TestContent(DigestCase):
         self.assertTrue(out.startswith('\U0001F6A8 **3 alerts** · 3 rules · hosts '), out[:80])
         self.assertIn('\U0001F7E0 **L13 · Scheduled task modified: /etc/cron.d/x**', out)
         self.assertIn('> **File** `/etc/cron.d/x` (modified)', out)
-        # decoded fields shown, the raw line collapsed
-        self.assertIn('> **Source** 203.0.113.9', out)
-        self.assertIn('```spoiler Log\n~~~text\nline 2\n~~~\n```', out)
+        # short values in the table, the raw line collapsed as wrapped text
+        self.assertIn('| Source | 203.0.113.9 |', out)
+        self.assertIn('| Account | bob |', out)
+        self.assertIn('```spoiler Log\nline 2\n```', out)
         # nothing decoded: the line itself is the content and stays visible
         self.assertIn('> line 3', out)
         # Zulip shows _x_ literally; italics are *x*
         self.assertNotRegex(out, r'(^|\s)_[^_\s]')
         self.assertIn('*sent by node01 · jt-alert-digest %s*' % self.mod.VERSION, out)
+
+    def test_zulip_table_cells_stay_narrow_enough_for_a_phone(self):
+        # Zulip never wraps a table cell: a long value goes below the table instead
+        groups = {}
+        a = json.loads(alert(1, level=12, rule='100940', desc='Changed',
+                             syscheck={'path': '/etc/cron.d/x', 'event': 'modified', 'perm_after': 'rw-r--r--',
+                                       'changed_attributes': ['size', 'permission', 'uid', 'gid', 'user_name',
+                                                              'group_name', 'mtime', 'inode', 'md5', 'sha256']}))
+        self.mod.add_alert(groups, a, a['rule'], 12)
+        out = '\n'.join(self.mod.render_zulip(groups, 1, 12, None, {'node': 'n'}))
+        for line in out.split('\n'):
+            if line.startswith('| ') and not line.startswith('| Rule |'):
+                value = line.split(' | ', 1)[1].rstrip(' |')
+                self.assertLessEqual(len(value.replace('`', '').replace('\\', '')), 30, line)
+        self.assertIn('> **Changed** size, permission', out)
+        self.assertTrue(self.mod.fits_table('Account', 'alice'))
+        self.assertFalse(self.mod.fits_table('File', '/var/www/html/wp-content/uploads/x.php'))
+        self.assertFalse(self.mod.fits_table('Account', 'a|b'), 'a pipe would end the cell')
+        self.assertFalse(self.mod.fits_table('User', '\u4f7f\u7528\u8005' * 6), 'wide characters count double')
 
     def test_a_cut_block_closes_a_spoiler_and_its_code_block(self):
         block = '```spoiler Logs\n~~~text\n' + '\n'.join('x' * 80 for _ in range(200)) + '\n~~~\n```'
@@ -865,7 +891,8 @@ class TestZulip(DigestCase):
         form = posts[0]['form']
         self.assertEqual((form['type'], form['to'], form['topic']), ('stream', 'wazuh', '警報'))
         self.assertIn('**L13 · ', form['content'])
-        self.assertIn('**host1** · 192.0.2.10, agent 001 · rule 100002 · ', form['content'])
+        self.assertIn('| Host | host1 |\n|:--|:--|\n| Address | 192.0.2.10 · agent 001 |', form['content'])
+        self.assertIn('| Rule | 100002 |', form['content'])
         self.assertIn('line 1', form['content'])
         token = base64.b64encode(('%s:%s' % (FakeZulip.EMAIL, FakeZulip.KEY)).encode()).decode()
         self.assertEqual(posts[0]['headers']['Authorization'], 'Basic ' + token)
@@ -900,8 +927,8 @@ class TestZulip(DigestCase):
                 fences = [l for l in content.split('\n') if l.startswith(mark)]
                 self.assertEqual(len(fences) % 2, 0, 'a %s block left open' % mark)
         for g in range(40):
-            rule = 'rule %d' % (120000 + g)
-            self.assertEqual(sum(1 for c in posts if rule in c), 1, rule)
+            rule = names_rule(120000 + g)
+            self.assertEqual(sum(1 for c in posts if rule.search(c)), 1, rule.pattern)
 
     def test_zulip_down_does_not_touch_mail(self):
         t = self.tree()
@@ -954,7 +981,7 @@ class TestZulip(DigestCase):
         self.assertNotIn(first[0], resent, 'the part already posted is not posted again')
         self.assertEqual(resent[0], first[1], 'the failed part is retried as it was')
         for g in range(30):
-            ok = [c for c in [first[0]] + resent if 'rule %d' % (130000 + g) in c]
+            ok = [c for c in [first[0]] + resent if names_rule(130000 + g).search(c)]
             self.assertEqual(len(ok), 1)
 
     def test_401_is_a_configuration_failure_and_5xx_is_not(self):
@@ -1019,7 +1046,7 @@ class TestZulip(DigestCase):
         self.run_digest(t)
         content = self.zulip.posts()[0]['form']['content']
         self.assertIn('2 alerts from', content)
-        self.assertIn('rule 100003', content)
+        self.assertRegex(content, names_rule(100003))
         self.assertNotIn('line 1', content)
         self.assertIn('skipped', self.zulip_events())
         self.assertIn('3 alerts at level 12', self.body(), 'mail keeps every alert')
