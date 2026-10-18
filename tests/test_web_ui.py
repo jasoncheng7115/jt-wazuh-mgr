@@ -3206,7 +3206,7 @@ class TestAlertDigest(unittest.TestCase):
             self.assertIn('192.0.2.86', out)
             self.assertIn('agent 047', out)
         self.assertIn('Host: dev1 (192.0.2.86, agent 047)', text)
-        self.assertIn('hosts: dev1', text)
+        self.assertIn('host: dev1', text)
 
     def test_ids_alerts_are_summarised_not_dumped(self):
         """A Suricata alert printed its whole EVE JSON line as the only field."""

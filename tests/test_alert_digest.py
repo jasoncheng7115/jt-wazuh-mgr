@@ -305,7 +305,7 @@ class TestReader(DigestCase):
         self.run_digest(t)
         t.write(alert(1), alert(2, rule='100002'), alert(3, rule='100003', agent='lab1'))
         self.run_digest(t)
-        self.assertIn('1 alerts at level 12', self.body())
+        self.assertIn('1 alert at level 12', self.body())
 
     def test_lock_prevents_an_overlapping_run(self):
         import fcntl
@@ -641,18 +641,56 @@ class TestContent(DigestCase):
             self.mod.add_alert(groups, a, a['rule'], 10)
         group = list(groups.values())[0]
         self.assertEqual(group['kind'], 'container')
-        for render in (lambda: self.mod.render_text(groups, 5, 10, None),
-                       lambda: '\n'.join(self.mod.render_zulip(groups, 5, 10, None)),
-                       lambda: self.mod.render_html(groups, 5, 10, None)):
+        for render, line, containers in (
+                (lambda: self.mod.render_text(groups, 5, 10, None),
+                 'registry.example.com/app%d:1.%d: %d critical', '[containers: web4]'),
+                (lambda: self.mod.render_html(groups, 5, 10, None),
+                 'registry.example.com/app%d:1.%d: %d critical', '[containers: web4]'),
+                (lambda: '\n'.join(self.mod.render_zulip(groups, 5, 10, None)),
+                 '> **Image** `registry.example.com/app%d:1.%d` %d critical', '\\[containers: web4\\]')):
             out = render()
             for i in range(5):
-                self.assertIn('registry.example.com/app%d:1.%d: %d critical' % (i, i, i + 1), out)
-            self.assertIn('[containers: web4]', out)
+                self.assertIn(line % (i, i, i + 1), out)
+            self.assertIn(containers, out)
             self.assertNotIn('more of the same', out)
+        self.assertIn('**L10 · Container image has critical vulnerabilities** ×5',
+                      '\n'.join(self.mod.render_zulip(groups, 5, 10, None)))
         # a status line of the same scanner is an ordinary alert, not an image
         status = json.loads(alert(9, level=10, rule='132821', mail=True,
                                   data={'container_vuln': {'type': 'status', 'msg': 'docker down'}}))
         self.assertEqual(self.mod.alert_kind(status), 'other')
+
+    def test_zulip_layout_uses_zulip_markdown(self):
+        groups = {}
+        a = json.loads(alert(1, level=13, rule='100940', desc='Scheduled task modified: /etc/cron.d/x',
+                             syscheck={'path': '/etc/cron.d/x', 'event': 'modified', 'perm_after': 'rw-r--r--',
+                                       'sha256_after': 'a' * 64, 'changed_attributes': ['md5']}))
+        self.mod.add_alert(groups, a, a['rule'], 13)
+        b = json.loads(alert(2, level=12, rule='5108', agent='h2', desc='Out of memory'))
+        b['data'] = {'srcip': '203.0.113.9', 'dstuser': 'bob'}
+        self.mod.add_alert(groups, b, b['rule'], 12)
+        c = json.loads(alert(3, level=12, rule='5109', agent='h3', desc='Kernel says something'))
+        self.mod.add_alert(groups, c, c['rule'], 12)
+        out = '\n'.join(self.mod.render_zulip(groups, 3, 12, 'https://dash.example.com/',
+                                              {'node': 'node01'}))
+        self.assertTrue(out.startswith('\U0001F6A8 **3 alerts** · 3 rules · hosts '), out[:80])
+        self.assertIn('\U0001F7E0 **L13 · Scheduled task modified: /etc/cron.d/x**', out)
+        self.assertIn('> **File** `/etc/cron.d/x` (modified)', out)
+        # decoded fields shown, the raw line collapsed
+        self.assertIn('> **Source** 203.0.113.9', out)
+        self.assertIn('```spoiler Log\n~~~text\nline 2\n~~~\n```', out)
+        # nothing decoded: the line itself is the content and stays visible
+        self.assertIn('> line 3', out)
+        # Zulip shows _x_ literally; italics are *x*
+        self.assertNotRegex(out, r'(^|\s)_[^_\s]')
+        self.assertIn('*sent by node01 · jt-alert-digest %s*' % self.mod.VERSION, out)
+
+    def test_a_cut_block_closes_a_spoiler_and_its_code_block(self):
+        block = '```spoiler Logs\n~~~text\n' + '\n'.join('x' * 80 for _ in range(200)) + '\n~~~\n```'
+        out = self.mod.cut_block(block, 2000)
+        lines = out.split('\n')
+        self.assertLess(len(out), 2000)
+        self.assertEqual(lines[-3:], ['~~~', '```', '*(cut to fit one message)*'])
 
     def test_headings_are_not_cut_inside_a_token(self):
         p = self.mod.shared_prefix
@@ -826,7 +864,8 @@ class TestZulip(DigestCase):
         self.assertEqual(len(posts), 1)
         form = posts[0]['form']
         self.assertEqual((form['type'], form['to'], form['topic']), ('stream', 'wazuh', '警報'))
-        self.assertIn('L13 · rule 100002 · host1', form['content'])
+        self.assertIn('**L13 · ', form['content'])
+        self.assertIn('**host1** · 192.0.2.10, agent 001 · rule 100002 · ', form['content'])
         self.assertIn('line 1', form['content'])
         token = base64.b64encode(('%s:%s' % (FakeZulip.EMAIL, FakeZulip.KEY)).encode()).decode()
         self.assertEqual(posts[0]['headers']['Authorization'], 'Basic ' + token)
@@ -856,9 +895,10 @@ class TestZulip(DigestCase):
         self.assertTrue(1 < len(posts) <= 4, len(posts))
         for i, content in enumerate(posts):
             self.assertLessEqual(len(content), 9000)
-            self.assertTrue(content.startswith('_(%d/%d)_' % (i + 1, len(posts))))
-            fences = [l for l in content.split('\n') if l.startswith('~~~')]
-            self.assertEqual(len(fences) % 2, 0, 'a code block left open')
+            self.assertTrue(content.startswith('*(%d/%d)*' % (i + 1, len(posts))))
+            for mark in ('~~~', '```'):
+                fences = [l for l in content.split('\n') if l.startswith(mark)]
+                self.assertEqual(len(fences) % 2, 0, 'a %s block left open' % mark)
         for g in range(40):
             rule = 'rule %d' % (120000 + g)
             self.assertEqual(sum(1 for c in posts if rule in c), 1, rule)
@@ -901,7 +941,7 @@ class TestZulip(DigestCase):
         lines = []
         for g in range(30):
             a = json.loads(alert(g, rule=str(130000 + g), agent='h%d' % g))
-            a['full_log'] = 'y' * 190
+            a['full_log'] = 'y' * 300
             lines.append(json.dumps(a))
         t.write(*lines)
         self.zulip.replies = [(200, {'result': 'success', 'id': 1}), (502, {'result': 'error', 'msg': 'x'})]

@@ -4,6 +4,18 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.16.2 (2026-10-19)
+
+- **jt-alert-digest 1.7: Zulip posts are laid out in Zulip's own markdown.** A coloured
+  mark per level (red 14+, orange 12-13, yellow 10-11), the title in bold, then host,
+  address, rule (linked to the dashboard), time and MITRE on one line. Decoded fields are a
+  quoted block of bold labels, with paths and hashes as code; the raw log is collapsed in a
+  spoiler, or shown as a quote when nothing else was decoded. 1.5 and 1.6 used `_x_` for
+  italics, which Zulip shows with the underscores; the code block of fields scrolled
+  sideways on long lines. Container image groups are titled by what the images share
+  instead of "Container image ...". `--test zulip` includes an invented alert to show the
+  layout. Messages also read "1 alert", "1 rule" in the singular.
+
 ## v1.16.1 (2026-10-18)
 
 - **Pack schedules name the system `python3`.** The tool wrote whichever interpreter was

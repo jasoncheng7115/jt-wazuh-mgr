@@ -74,7 +74,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.6.1"
+VERSION = "1.7"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -1139,13 +1139,24 @@ def shared_prefix(values):
     return prefix + " ..." if index < len(low) and prefix else prefix
 
 
+def reduce_names(text, names):
+    for name in names:
+        text = text.replace(name, "")
+    return text
+
+
 KIND_LABEL = {"vulnerability": "Vulnerabilities detected", "fim": "File integrity changes",
               "windows": "Windows events", "container": "Container image vulnerabilities"}
 
 
 def heading(group, rule_id="?"):
     """The group's title; a generic label when the descriptions share too little."""
-    text = shared_prefix(group.get("descriptions") or [])
+    descriptions = group.get("descriptions") or []
+    if group.get("kind") == "container" and group.get("images"):
+        # each image is listed on its own line; the title says what they share
+        names = sorted(group["images"], key=len, reverse=True)
+        descriptions = [" ".join(reduce_names(d, names).split()) for d in descriptions]
+    text = shared_prefix(descriptions)
     if len(text.replace(" ...", "").strip()) >= 8:
         return redact(text)
     return KIND_LABEL.get(group.get("kind"), "Rule %s (descriptions vary)" % rule_id)
@@ -1661,8 +1672,13 @@ def opening(groups, total, min_level, held=None):
     if not groups and held:
         return ("No new rules or hosts: %d more alerts of %d groups already mailed"
                 % (sum(e.get("n", 0) for e in held), len(held)))
-    return ("%d alerts at level %d or above, %d rules, hosts: %s"
-            % (total, min_level, len(groups), host_names(groups)))
+    return ("%s at level %d or above, %s, %s: %s"
+            % (plural(total, "alert"), min_level, plural(len(groups), "rule"),
+               "host" if len({k[1] for k in groups}) == 1 else "hosts", host_names(groups)))
+
+
+def plural(n, word):
+    return "%d %s%s" % (n, word, "" if n == 1 else "s")
 
 
 def held_line(entry):
@@ -2286,27 +2302,83 @@ def fenced(lines):
     return "%stext\n%s\n%s" % (fence, body, fence)
 
 
+# Zulip markdown, not the mail's layout: *x* is italic (an underscore is shown
+# as is), a single newline is a line break, "> " quotes a block, and a
+# ```spoiler block is collapsed until clicked.
+LEVEL_MARK = ((14, "\U0001F534"), (12, "\U0001F7E0"), (10, "\U0001F7E1"), (0, "\U0001F535"))
+CODE_LABELS = ("File", "Path", "Exec", "Command", "SHA256", "Process", "Parent", "Target",
+               "Registry", "Loaded", "Script", "Request", "Query")
+
+
+def level_mark(level):
+    return next(mark for floor, mark in LEVEL_MARK if level >= floor)
+
+
+def md_code(text):
+    """Inline code, which Zulip leaves uninterpreted; plain escaped text if it
+    cannot be fenced safely."""
+    text = " ".join(str(text).split())
+    if not text or "`" in text:
+        return md(text)
+    return "`%s`" % text
+
+
+def md_value(label, value):
+    if label == "Image" and ": " in str(value):
+        # jt-container-vuln: "<image>: <counts>"
+        name, rest = str(value).split(": ", 1)
+        return "%s %s" % (md_code(name), md(rest))
+    if label in CODE_LABELS:
+        # "path (modified)": only the path is code
+        found = re.match(r"^(\S+)(\s+\(.*\))?$", " ".join(str(value).split()))
+        if found:
+            return md_code(found.group(1)) + ((" " + md(found.group(2))) if found.group(2) else "")
+        return md_code(value)
+    return md(value)
+
+
+def md_quote(lines):
+    return "\n".join("> " + line for line in lines)
+
+
+def spoiler(title, lines):
+    """Collapsed block; the inner code block uses ~~~ so its fence cannot close the outer one."""
+    return "```spoiler %s\n%s\n```" % (title, fenced(lines))
+
+
 def zulip_group(rule_id, agent, group, samples, link=None, compact=False):
     count = (" \u00d7%d" % group["count"]) if group["count"] > 1 else ""
     mark = (" \u00b7 **%s**" % badge(group)) if badge(group) else ""
-    title = "**%s L%d \u00b7 rule %s \u00b7 %s**%s%s" % (
-        SEVERITY.get(group["level"], "[HIGH]"), group["level"], md(rule_id), md(agent), count, mark)
+    rule = ("rule [%s](%s)" % (md(rule_id), md_link(link))) if link else "rule %s" % md(rule_id)
     if compact:
-        return "- %s \u00b7 %s" % (title, md(trim(heading(group, rule_id), 90)))
-    lines = [title, md(heading(group, rule_id))]
-    meta = [headline(group)]
+        return "- %s **L%d** \u00b7 **%s** \u00b7 %s%s \u00b7 %s" % (
+            level_mark(group["level"]), group["level"], md(agent), rule, count,
+            md(trim(heading(group, rule_id), 90)))
+    title = SEVERITY_MARKER.sub("", heading(group, rule_id))
+    lines = ["%s **L%d \u00b7 %s**%s%s" % (level_mark(group["level"]), group["level"],
+                                          md(title), count, mark)]
+    meta = ["**%s**" % md(agent)]
     if host_detail(group):
-        meta.append(host_detail(group))
+        meta.append(md(host_detail(group)))
+    meta.append(rule)
+    meta.append(md(headline(group)))
     if group.get("mitre"):
-        meta.append(mitre_line(group))
-    lines.append(md(" \u00b7 ".join(meta)))
-    body = []
+        meta.append(md(mitre_line(group)))
+    lines.append(" \u00b7 ".join(meta))
+    blocks, logs = ["\n".join(lines)], []
     for fields in card_fields(group, samples):
-        if body:
-            body.append("")
-        body.extend("%s: %s" % (label, value) for label, value in fields)
-    if body:
-        lines.append(fenced(body))
+        shown = [(label, value) for label, value in fields if label != "Log"]
+        log = [value for label, value in fields if label == "Log"]
+        if shown:
+            blocks.append(md_quote("**%s** %s" % (md(label), md_value(label, value))
+                                for label, value in shown))
+            logs.extend(log)
+        elif log:
+            # nothing decoded: the log line is the content, so it stays visible
+            blocks.append(md_quote(md(value) for value in log))
+    if logs:
+        blocks.append(spoiler("Log" if len(logs) == 1 else "Logs (%d)" % len(logs),
+                              [v for value in logs for v in ("", value)][1:]))
     shown = 0 if listed_in_full(group) \
         else min(samples, len(group.get("samples", [])))
     notes = []
@@ -2315,25 +2387,31 @@ def zulip_group(rule_id, agent, group, samples, link=None, compact=False):
     if group.get("earlier"):
         notes.append("plus %d earlier since the last full post" % group["earlier"])
     if notes:
-        lines.append("_(%s)_" % "; ".join(notes))
-    if link:
-        lines.append("[Open these alerts in the dashboard](%s)" % md_link(link))
-    return "\n".join(lines)
+        blocks.append("*(%s)*" % "; ".join(notes))
+    return "\n\n".join(blocks)
+
+
+FENCE_LINE = re.compile(r"^(`{3,}|~{3,})(.*)$")
 
 
 def cut_block(block, limit):
-    """Shorten one block to fit a message, closing a code block left open."""
-    out, size, fence = [], 0, None
+    """Shorten one block to fit a message, closing every block left open."""
+    out, size, open_fences = [], 0, []
     for line in block.split("\n"):
-        if size + len(line) + 1 > limit - 60:
+        if size + len(line) + 1 > limit - 60 - 4 * len(open_fences):
             break
         out.append(line)
         size += len(line) + 1
-        if re.match(r"^~{3,}", line):
-            fence = None if fence else re.match(r"^~+", line).group(0)
-    if fence:
-        out.append(fence)
-    out.append("_(cut to fit one message)_")
+        found = FENCE_LINE.match(line)
+        if found:
+            fence, rest = found.group(1), found.group(2).strip()
+            top = open_fences[-1] if open_fences else None
+            if top and not rest and fence[0] == top[0] and len(fence) >= len(top):
+                open_fences.pop()
+            elif not top or top[0] != fence[0]:
+                open_fences.append(fence)
+    out.extend(reversed(open_fences))
+    out.append("*(cut to fit one message)*")
     return "\n".join(out)
 
 
@@ -2352,7 +2430,7 @@ def pack(blocks, limit=ZULIP_LIMIT):
     if current:
         parts.append(current)
     if len(parts) > 1:
-        parts = ["_(%d/%d)_\n%s" % (i + 1, len(parts), p) for i, p in enumerate(parts)]
+        parts = ["*(%d/%d)*\n%s" % (i + 1, len(parts), p) for i, p in enumerate(parts)]
     return parts
 
 
@@ -2374,15 +2452,20 @@ def render_zulip(groups, total, min_level, dashboard, context=None, notice=None,
                                     if context.get("node_type") else ""))
     if zone(first):
         about.append("times %s" % zone(first))
-    head = "**%s**" % md(opening(groups, total, min_level, held))
+    if groups:
+        head = "\U0001F6A8 **%s** \u00b7 %s \u00b7 %s" % (
+            plural(total, "alert"), plural(len(groups), "rule"),
+            md(("host " if len({k[1] for k in groups}) == 1 else "hosts ") + host_names(groups)))
+    else:
+        head = "\U0001F6A8 **%s**" % md(opening(groups, total, min_level, held))
     if about:
-        head += "\n_%s_" % md(", ".join(about))
+        head += "\n*%s*" % md(" \u00b7 ".join(about))
     blocks = [head]
     if notice:
         blocks.append(notice)
     tail = []
     if len(items) > MAX_GROUPS:
-        tail.append("_%d more groups not listed_" % (len(items) - MAX_GROUPS))
+        tail.append("*%d more groups not listed*" % (len(items) - MAX_GROUPS))
     if held:
         lines = ["**Still ongoing**: repeats of groups already posted in full, counted rather than "
                  "repeated (hold %d minutes)" % (context.get("repeat", 3600) // 60)]
@@ -2391,14 +2474,14 @@ def render_zulip(groups, total, min_level, dashboard, context=None, notice=None,
             lines.append("- %d more" % (len(held) - MAX_GROUPS))
         tail.append("\n".join(lines))
     if context.get("more"):
-        tail.append("_More alerts are waiting; the next run continues from here._")
+        tail.append("*More alerts are waiting; the next run continues from here.*")
     footer = []
     if context.get("node"):
-        footer.append("sent by %s, jt-alert-digest %s" % (md(context["node"]), VERSION))
+        footer.append("*sent by %s \u00b7 jt-alert-digest %s*" % (md(context["node"]), VERSION))
     if dashboard and re.match(r"^https?://", dashboard):
         footer.append("[dashboard](%s)" % md_link(dashboard))
     if footer:
-        tail.append("_%s_" % " \u00b7 ".join(footer))
+        tail.append(" \u00b7 ".join(footer))
 
     budget = ZULIP_PARTS * (limit - 40) - sum(len(b) + 2 for b in blocks + tail)
     shown = items[:MAX_GROUPS]
@@ -3381,7 +3464,9 @@ def send_test_zulip(options, context):
         return 1
     content = ("**jt-alert-digest %s test message** from %s\nIf you can read this, alert digests "
                "from this node reach this topic. Nothing was read from the alert file, nothing "
-               "was changed and no mail was sent." % (VERSION, md(context["node"])))
+               "was changed and no mail was sent. Below, an invented alert shows the layout."
+               % (VERSION, md(context["node"])))
+    content += "\n\n" + zulip_group("100001", "example-host", sample_group(), 3)
     try:
         answer = zulip_post(z, z["topic"], content)
     except DeliveryError as exc:
@@ -3389,6 +3474,21 @@ def send_test_zulip(options, context):
         return 1
     print("posted message %s to %s > %s" % (answer.get("id", "?"), z["stream"], z["topic"]))
     return 0
+
+
+def sample_group():
+    """An invented alert for --test zulip, so the layout can be seen before a real one."""
+    groups = {}
+    alert = {"timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.000%z", time.localtime(now())), "agent": {"id": "001", "name": "example-host",
+                                                            "ip": "192.0.2.10"},
+             "rule": {"id": "100001", "level": 12, "description": "Example: login after repeated "
+                      "failures (this is a test, not an alert)",
+                      "mitre": {"id": ["T1110"], "tactic": ["Credential Access"]}},
+             "data": {"srcip": "203.0.113.7", "dstuser": "alice"},
+             "full_log": "Oct 19 09:00:00 example-host sshd[4242]: Accepted password for alice "
+                         "from 203.0.113.7 port 52344 ssh2"}
+    add_alert(groups, alert, alert["rule"], 12)
+    return list(groups.values())[0]
 
 
 def send_test(options, fatal, context):
