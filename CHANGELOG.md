@@ -4,6 +4,14 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.16.4 (2026-10-19)
+
+- **jt-alert-digest 1.8.1: no backslashes in Zulip posts.** Zulip does not honour
+  backslash escapes, so a log line showed as `sshd\[4242\]` and a field as `user\_name`.
+  Alert text is now made inert without them: asterisks and backticks become look-alike
+  characters, and a zero-width space splits link syntax, mentions, LaTeX and
+  strike-through. Alert text still cannot mention anyone or hide a link.
+
 ## v1.16.3 (2026-10-19)
 
 - **jt-alert-digest 1.8: Zulip posts are cards laid out for a phone.** The title line, then a

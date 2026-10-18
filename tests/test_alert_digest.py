@@ -653,7 +653,7 @@ class TestContent(DigestCase):
                 (lambda: self.mod.render_html(groups, 5, 10, None),
                  'registry.example.com/app%d:1.%d: %d critical', '[containers: web4]'),
                 (lambda: '\n'.join(self.mod.render_zulip(groups, 5, 10, None)),
-                 '> **Image** `registry.example.com/app%d:1.%d` %d critical', '\\[containers: web4\\]')):
+                 '> **Image** `registry.example.com/app%d:1.%d` %d critical', '[containers: web4]')):
             out = render()
             for i in range(5):
                 self.assertIn(line % (i, i, i + 1), out)
@@ -710,6 +710,19 @@ class TestContent(DigestCase):
         self.assertFalse(self.mod.fits_table('File', '/var/www/html/wp-content/uploads/x.php'))
         self.assertFalse(self.mod.fits_table('Account', 'a|b'), 'a pipe would end the cell')
         self.assertFalse(self.mod.fits_table('User', '\u4f7f\u7528\u8005' * 6), 'wide characters count double')
+
+    def test_zulip_text_has_no_backslash_escapes(self):
+        # Zulip does not honour them: 1.7 showed "sshd\\[4242\\]" in a log
+        md = self.mod.md
+        self.assertEqual(md('sshd[4242]: oom_score_adj user_name'), 'sshd[4242]: oom_score_adj user_name')
+        for text in ('Hi @**all**', 'see [here](http://evil.example/x)', '$$x$$', '~~gone~~',
+                     '`code`', '**bold**', '@_**silent**'):
+            out = md(text)
+            self.assertNotIn('\\', out, text)
+            for construct in ('@**', '](', '$$', '~~', '`', '**', '@_'):
+                self.assertNotIn(construct, out, text)
+        self.assertTrue(md('- item').startswith('\u200b-'))
+        self.assertTrue(md('1. item').startswith('\u200b1.'))
 
     def test_a_cut_block_closes_a_spoiler_and_its_code_block(self):
         block = '```spoiler Logs\n~~~text\n' + '\n'.join('x' * 80 for _ in range(200)) + '\n~~~\n```'

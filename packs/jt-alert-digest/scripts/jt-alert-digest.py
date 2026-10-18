@@ -75,7 +75,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.8"
+VERSION = "1.8.1"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -2271,23 +2271,24 @@ def zulip_post(z, topic, content):
                       {"type": "stream", "to": z["stream"], "topic": topic, "content": content})
 
 
-_MD_SPECIAL = re.compile(r"([\\`*_\[\]])")
-
-
 def md(text):
-    """Alert text made inert in Zulip markdown.
+    """Alert text made inert in Zulip markdown, without backslashes.
 
-    Descriptions and agent names carry attacker-influenced text. A mention
-    (@**all**) would notify everyone in the channel and a link could be
-    disguised, so markdown characters are escaped and mention, LaTeX and
-    strike-through openers are broken with an invisible zero-width space.
+    Descriptions, agent names and logs carry attacker-influenced text: a
+    mention (@**all**) would notify everyone in the channel and a link could
+    be disguised. Zulip does not honour backslash escapes (1.7 showed
+    "sshd\\[4242\\]"), so each construct is broken instead: asterisks and
+    backticks become look-alikes, and a zero-width space splits a link's "](",
+    "__", "$$", "~~", a mention's "@" and a leading list or quote marker.
     """
     text = " ".join(str(text).split())
-    text = re.sub(r"@(?=[*_])", "@\u200b", text)
-    text = text.replace("$$", "$\u200b$").replace("~~", "~\u200b~")
-    text = _MD_SPECIAL.sub(r"\\\1", text)
+    text = text.replace("*", "\u2217").replace("`", "\u02cb")
+    text = re.sub(r"@(?=[_\u2217])", "@\u200b", text)
+    for pair in ("$$", "~~", "__"):
+        text = text.replace(pair, pair[0] + "\u200b" + pair[1])
+    text = text.replace("](", "]\u200b(")
     # A heading, quote or list marker only counts at the start of a line.
-    return re.sub(r"^([#>+-])", r"\\\1", text)
+    return re.sub(r"^(>|[#+-](?=\s)|\d+[.)](?=\s))", "\u200b\\1", text)
 
 
 def md_link(url):
