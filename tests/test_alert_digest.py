@@ -683,6 +683,38 @@ class TestContent(DigestCase):
         bad = self.mod.group_link(options['link'], options['base'], '1"><x', {'agent_id': '"><'}, 'a')
         self.assertNotIn('"', bad)
 
+    def test_an_empty_ca_store_falls_back_to_the_system_bundle(self):
+        # Wazuh's framework python has no CA certificates (v1.16.0 on a live manager).
+        import shutil
+        import ssl
+        where = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, where, True)
+        bundle = os.path.join(where, 'bundle.pem')
+        source = next((p for p in self.mod.SYSTEM_CA_BUNDLES if os.path.isfile(p)), None)
+        if source is None:
+            source = ssl.get_default_verify_paths().cafile
+        if not source or not os.path.isfile(source):
+            self.skipTest('no CA bundle on this machine')
+        shutil.copy(source, bundle)
+        real = ssl.create_default_context
+
+        def empty(*args, **kwargs):
+            context = real(*args, **kwargs)
+            if not kwargs.get('cafile') and not (args and args[0]):
+                return ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            return context
+        saved = self.mod.SYSTEM_CA_BUNDLES
+        self.mod.ssl.create_default_context = empty
+        try:
+            self.mod.SYSTEM_CA_BUNDLES = (os.path.join(where, 'missing.pem'), bundle)
+            context = self.mod.zulip_context({'verify': True})
+            self.assertGreater(context.cert_store_stats()['x509_ca'], 0)
+            self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+            self.assertGreater(self.mod.tls_context({'verify': True}).cert_store_stats()['x509_ca'], 0)
+        finally:
+            self.mod.ssl.create_default_context = real
+            self.mod.SYSTEM_CA_BUNDLES = saved
+
     def test_the_script_parses_as_python_38(self):
         import ast
         with io.open(SCRIPT, encoding='utf-8') as fh:

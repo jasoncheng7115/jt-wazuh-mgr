@@ -1481,6 +1481,30 @@ class TestRulePacks(PackFixture):
         self.assertTrue(os.path.isfile(os.path.join(self._cron_dir, 'jt-jt-testscript')))
         self.assertFalse(os.path.exists('/etc/cron.d/jt-jt-testscript'))
 
+    def test_the_schedule_names_the_system_python_not_the_running_one(self):
+        # v1.16.0: run from Wazuh's framework python, the tool wrote that interpreter
+        # into the schedule, and it has no CA certificates (Zulip TLS failed).
+        fake = os.path.join(self.tmp, 'system-python3')
+        with open(fake, 'w') as fh:
+            fh.write('#!/bin/sh\n')
+        os.chmod(fake, 0o755)
+        self.addCleanup(setattr, web_ui, 'PACK_SYSTEM_PYTHON', web_ui.PACK_SYSTEM_PYTHON)
+        web_ui.PACK_SYSTEM_PYTHON = fake
+        self._fake_pack('jt-testscript', self._script_manifest(),
+                        {'rules/r.xml': self.RULE_XML, 'scripts/upd.py': self.SCRIPT_BODY})
+        resp = self.client.post('/api/packs/jt-testscript/install')
+        self.assertEqual(resp.status_code, 200, resp.get_json())
+        line = [l for l in io.open(os.path.join(self._cron_dir, 'jt-jt-testscript'), encoding='utf-8').read().splitlines()
+                if 'upd.py' in l][0]
+        self.assertIn(' root %s ' % fake, line)
+        # without it, the running interpreter is the fallback
+        web_ui.PACK_SYSTEM_PYTHON = os.path.join(self.tmp, 'missing-python3')
+        self.assertEqual(self.client.delete('/api/packs/jt-testscript').status_code, 200)
+        self.assertEqual(self.client.post('/api/packs/jt-testscript/install').status_code, 200)
+        line = [l for l in io.open(os.path.join(self._cron_dir, 'jt-jt-testscript'), encoding='utf-8').read().splitlines()
+                if 'upd.py' in l][0]
+        self.assertIn(' root %s ' % sys.executable, line)
+
     def test_uninstall_removes_the_script(self):
         self._fake_pack('jt-testscript', self._script_manifest(),
                         {'rules/r.xml': self.RULE_XML, 'scripts/upd.py': self.SCRIPT_BODY})

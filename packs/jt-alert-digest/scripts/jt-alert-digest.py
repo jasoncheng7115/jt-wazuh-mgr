@@ -74,7 +74,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.6"
+VERSION = "1.6.1"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -1936,9 +1936,34 @@ def describe(exc):
     return trim(redact(text), 300)
 
 
+SYSTEM_CA_BUNDLES = ("/etc/ssl/certs/ca-certificates.crt",   # Debian, Ubuntu
+                     "/etc/pki/tls/certs/ca-bundle.crt",      # RHEL, Rocky, Alma, Amazon
+                     "/etc/ssl/ca-bundle.pem",                # SUSE
+                     "/etc/ssl/cert.pem")                     # Alpine, BSD
+
+
+def verifying_context(cafile=None):
+    """A certificate-checking context that also works on Wazuh's own python.
+
+    The framework python under /var/ossec has an empty CA store, so on it every
+    verified connection fails ("self-signed certificate in certificate chain")
+    unless the system bundle is loaded explicitly.
+    """
+    context = ssl.create_default_context(cafile=cafile)
+    if not cafile and not context.cert_store_stats().get("x509_ca"):
+        for bundle in SYSTEM_CA_BUNDLES:
+            if os.path.isfile(bundle):
+                try:
+                    context.load_verify_locations(cafile=bundle)
+                    break
+                except (ssl.SSLError, OSError):
+                    continue
+    return context
+
+
 def tls_context(options):
     if options.get("verify"):
-        context = ssl.create_default_context(cafile=options.get("ca_file"))
+        context = verifying_context(options.get("ca_file"))
     else:
         # Opportunistic, as Postfix's "may" and "encrypt": the traffic is
         # encrypted but the certificate is not checked. tls = verify checks it.
@@ -2147,7 +2172,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def zulip_context(z):
     if z.get("verify", True):
-        context = ssl.create_default_context(cafile=z.get("ca_file"))
+        context = verifying_context(z.get("ca_file"))
     else:
         context = ssl.create_default_context()
         context.check_hostname = False

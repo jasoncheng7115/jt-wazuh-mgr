@@ -123,6 +123,10 @@ UNKNOWN_SERVER_VERSION = '0.0.0'
 # ran it, and removed it a second later -- which the host's own file integrity
 # monitoring then reported as level 13 persistence.
 PACK_CRON_DIR = '/etc/cron.d'
+# The interpreter written into those schedules when it exists. Pack scripts use
+# the standard library only; Wazuh's framework python has no CA certificates, so
+# a schedule naming it cannot verify any TLS server (v1.16.0 on a live manager).
+PACK_SYSTEM_PYTHON = '/usr/bin/python3'
 
 # Session cookie names. Over HTTPS the __Host- prefix makes the browser refuse
 # the cookie unless it is Secure, host-only and Path=/, so nothing else on the
@@ -14656,6 +14660,13 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             written.append(dest)
         return _schedule_scripts(manifest, wazuh, written)
 
+    def _pack_python():
+        """The interpreter a pack's scheduled scripts run with."""
+        if os.path.isfile(PACK_SYSTEM_PYTHON) and os.access(PACK_SYSTEM_PYTHON, os.X_OK):
+            return PACK_SYSTEM_PYTHON
+        import sys as _sys
+        return _sys.executable if os.path.isabs(_sys.executable or '') else PACK_SYSTEM_PYTHON
+
     def _schedule_scripts(manifest, wazuh, written):
         """Write the pack's cron file from its manifest; returns what is scheduled.
 
@@ -14679,8 +14690,10 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             logfile = os.path.join(wazuh, 'logs', os.path.splitext(entry['name'])[0] + '.log')
             # cron runs with a minimal environment, so the interpreter is named
             # outright rather than relying on PATH or on the shebang resolving.
-            import sys as _sys
-            python = _sys.executable if os.path.isabs(_sys.executable or '') else '/usr/bin/python3'
+            # The system python3 first: whichever interpreter happens to run this
+            # tool (a venv, or Wazuh's own framework python, which has no CA
+            # certificates) would otherwise end up in the schedule.
+            python = _pack_python()
             cron_lines.append('%s root %s %s %s >> %s 2>&1'
                               % (schedule, python, dest, args, logfile))
             scheduled.append({'script': entry['name'], 'schedule': schedule, 'log': logfile})

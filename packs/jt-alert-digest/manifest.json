@@ -2,7 +2,7 @@
  "id": "jt-alert-digest",
  "name": "Readable Alert Digest",
  "name_zh": "可讀的告警摘要信",
- "version": "1.6",
+ "version": "1.6.1",
  "summary": "Replaces wazuh-maild's raw notifications with one grouped, readable message per run, optionally posts the same digest to a Zulip channel, and reports its own failures in the console.",
  "summary_zh": "把 wazuh-maild 的原始通知換成分組整理過、讀得完的摘要信，可選擇同時發到 Zulip 頻道，並在主控台回報自己的故障。",
  "rule_id_range": "131100-131199",
@@ -25,6 +25,7 @@
   "Content: Windows eventchannel alerts show the process, command line, parent, user, file or connection (in 1.3, 93% of one worker's level 12+ alerts printed no fields at all); vulnerability alerts are one line per package with the CVE count and the highest CVSS score. Credentials (passwords and tokens in URLs and command lines, Authorization headers, cookies, private keys) are masked in the mail only; the alert in Wazuh is untouched. Messages carry a Message-ID and Auto-Submitted header, are quoted-printable encoded, and stay below the size at which Gmail cuts a message off.",
   "The schedule is every two minutes rather than immediate. That is deliberate: a burst of forty alerts arrives as one message instead of forty, and two minutes is not the part of an incident response that matters. A lock keeps two overlapping runs from mailing the same alerts.",
   "Container image scan results (jt-container-vuln) are listed one line per image, with the image's counts and containers, instead of three samples and \"N more\": the scanner's first run reports every image on a host at once.",
+  "Certificate checks (SMTP with tls = verify, and Zulip) load the system CA bundle when the interpreter has none. Wazuh's own framework python under /var/ossec ships with an empty CA store, so a schedule naming it failed every verified connection.",
   "Written for Wazuh 4.8 to 4.14, which write logs/alerts/alerts.json; Wazuh 5.0 has no such file, and there the digest raises a configuration alert instead of staying silent. Runs on the manager's own python3 (3.8 or later), standard library only."
  ],
  "notes_zh": [
@@ -41,6 +42,7 @@
   "內容：Windows eventchannel 告警會列出程序、命令列、父程序、使用者、檔案或連線（1.3 時某台 worker 的 level 12 以上告警有 93% 一個欄位都沒印）；弱點告警每個套件一行，附 CVE 數量與最高 CVSS 分數。帳密類資訊（網址與命令列中的密碼和 token、Authorization 標頭、cookie、私鑰）只在信裡遮蔽，Wazuh 裡的告警不受影響。信件帶有 Message-ID 與 Auto-Submitted 標頭、以 quoted-printable 編碼，並維持在 Gmail 會截斷的大小以下。",
   "排程是每兩分鐘一次而不是即時。這是刻意的：40 筆的爆量會變成一封信而不是 40 封，而那兩分鐘不是事件應變中要緊的部分。另有鎖定機制，避免兩次重疊的執行寄出同一批告警。",
   "容器映像掃描結果（jt-container-vuln）每個映像列一行（含弱點數量與容器名稱），不再只列三筆範例加「還有 N 筆」：掃描程式第一次執行時，一台主機的所有映像會同時回報。",
+  "憑證檢查（SMTP 設為 tls = verify 時，以及 Zulip）在直譯器沒有 CA 憑證時會載入系統的 CA 憑證庫。Wazuh 自帶在 /var/ossec 底下的 framework python 的 CA 憑證庫是空的，排程若指向它，每一個需要驗證憑證的連線都會失敗。",
   "適用於會寫 logs/alerts/alerts.json 的 Wazuh 4.8 至 4.14；Wazuh 5.0 沒有這個檔案，在那裡摘要信會發出設定錯誤的告警，而不是默不作聲。使用 manager 本身的 python3（3.8 以上），只用標準函式庫。"
  ],
  "files": [
@@ -55,7 +57,7 @@
   {
    "name": "jt-alert-digest.py",
    "dest": "etc/jt-packs/bin/jt-alert-digest.py",
-   "sha256": "140d85c40b4f1ce5381d208f1c8fda83fa455c35a8856c952062f42484d7218a",
+   "sha256": "448596a8f88426d55206b9fc69ee5c103bfb912e273b100ff161aff6044448d1",
    "cron": "*/2 * * * *",
    "args": "--wazuh-path {wazuh_path}",
    "description": "Groups new alerts and sends one readable message, using the mail settings already in ossec.conf, optionally also to Zulip; reports its own failures to the manager"

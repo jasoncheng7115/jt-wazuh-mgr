@@ -4,6 +4,17 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.16.1 (2026-10-18)
+
+- **Pack schedules name the system `python3`.** The tool wrote whichever interpreter was
+  running it into `/etc/cron.d/jt-<pack>`. Run from Wazuh's framework python (for example
+  by an update script), that interpreter went into the schedule, and it has no CA
+  certificates: the digest's Zulip posts failed certificate verification until the
+  schedule was put back. `/usr/bin/python3` is used when it exists; the running
+  interpreter only when it does not.
+- **jt-alert-digest 1.6.1:** certificate checks load the system CA bundle when the
+  interpreter's own store is empty, so the digest also works on Wazuh's framework python.
+
 ## v1.16.0 (2026-10-18)
 
 - **New pack jt-container-vuln 1.0 (132800-132899): vulnerabilities inside Docker

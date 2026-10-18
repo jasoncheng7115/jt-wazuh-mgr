@@ -4,6 +4,14 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.16.1（2026-10-18）
+
+- **套件排程一律寫系統的 `python3`。** 工具原本把「正在執行工具的直譯器」寫進 `/etc/cron.d/jt-<套件>`。
+  若是用 Wazuh 的 framework python 執行（例如更新腳本），排程就會指向它，而它沒有任何 CA 憑證：摘要程式發到 Zulip
+  時憑證驗證失敗，直到排程改回來為止。現在 `/usr/bin/python3` 存在時一律用它，不存在才用正在執行的直譯器。
+- **jt-alert-digest 1.6.1：** 直譯器自己的憑證庫是空的時候，憑證檢查會載入系統的 CA 憑證庫，所以在 Wazuh 的
+  framework python 上也能用。
+
 ## v1.16.0（2026-10-18）
 
 - **新套件 jt-container-vuln 1.0（132800-132899）：Docker 容器內的弱點。** Wazuh 的弱點偵測只讀主機自己的套件，
