@@ -4,6 +4,14 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.16.5 (2026-10-19)
+
+- **Updating a pack no longer raises a false "scheduled task modified" alert.** The tool
+  rewrote the pack's `/etc/cron.d/jt-<pack>` on every update even when nothing in it had
+  changed. Only the file's modification time moved, but file integrity monitoring on
+  `/etc/cron.d` reported it as a modified scheduled task (jt-zimbra 100940, level 13),
+  once per update. An unchanged schedule is now left alone.
+
 ## v1.16.4 (2026-10-19)
 
 - **jt-alert-digest 1.8.1: no backslashes in Zulip posts.** Zulip does not honour

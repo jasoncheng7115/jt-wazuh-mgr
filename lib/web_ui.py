@@ -63,6 +63,7 @@ from .config import get_config
 
 import re
 import shlex
+import stat
 
 # ============ Security Utilities ============
 
@@ -14703,10 +14704,22 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             body = ('# Installed by jt-wazuh-mgr for pack %s. Removed when the pack is.\n'
                     'SHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n'
                     % manifest.get('id', '')) + '\n'.join(cron_lines) + '\n'
-            with open(path, 'w', encoding='utf-8') as fh:
-                fh.write(body)
-            os.chmod(path, 0o644)
-            written.append(path)
+            try:
+                with open(path, encoding='utf-8') as fh:
+                    current = fh.read()
+            except OSError:
+                current = None
+            if current == body:
+                # Unchanged: rewriting would only move the mtime, and file
+                # integrity monitoring on /etc/cron.d reports that as a modified
+                # scheduled task (jt-zimbra 100940, level 13) on every update.
+                if stat.S_IMODE(os.stat(path).st_mode) != 0o644:
+                    os.chmod(path, 0o644)
+            else:
+                with open(path, 'w', encoding='utf-8') as fh:
+                    fh.write(body)
+                os.chmod(path, 0o644)
+                written.append(path)
         return scheduled
 
     def _install_agent_group(pdir, manifest, wazuh, written):

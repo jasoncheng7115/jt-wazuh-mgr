@@ -1804,6 +1804,26 @@ class TestPackUpdate(PackFixture):
         saved = os.path.join(backups[-1], 'etc__rules__zz-990000-test.xml')
         self.assertIn('site edit', self.slurp(saved))
 
+    def test_an_update_leaves_an_unchanged_schedule_untouched(self):
+        # Rewriting it moved only the mtime, which FIM on /etc/cron.d reported as a
+        # modified scheduled task (jt-zimbra 100940, level 13) on every update.
+        self.install()
+        cron = os.path.join(self._cron_dir, 'jt-jt-test')
+        body = self.slurp(cron)
+        os.utime(cron, (1000000000, 1000000000))
+        self.write_version('1.1')
+        r = self.client.post('/api/packs/jt-test/update', json={})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(os.stat(cron).st_mtime, 1000000000)
+        self.assertEqual(self.slurp(cron), body)
+        # a schedule that differs is written
+        with io.open(cron, 'w', encoding='utf-8') as fh:
+            fh.write('# edited\n')
+        self.write_version('1.2')
+        r = self.client.post('/api/packs/jt-test/update', json={})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(self.slurp(cron), body)
+
     def test_a_failed_ruleset_check_rolls_the_whole_update_back(self):
         self.install()
         conf_before = self.conf()
