@@ -1,0 +1,213 @@
+<!--
+  jt-container-vuln: vulnerabilities in the images of running Docker containers.
+  jt-wazuh-mgr rule pack, rule IDs 132800-132899. License: AGPL-3.0-or-later.
+
+  Source: /var/log/jt-container-vuln.json, written once a day by the pack's
+  scanner (agent/jt-container-vuln.py, Trivy in a container) on every host of
+  the agent group "container-vuln", read by the agent as JSON and decoded by
+  Wazuh's built-in json decoder. Every line is {"container_vuln": {...}} with
+  "type" image (one summary per image) or status (one per run).
+
+  Repeats: the scanner keeps its own state and writes "change" on each image
+  line: new (first scan of this image), grown (critical or KEV CVEs not in the
+  last report), fix_available (a reported critical CVE now has a fix),
+  reminder (a KEV or fixable critical CVE still there, last report 7 days
+  ago), rebuilt (a new image for a known tag with nothing new), same. Only
+  new / grown / fix_available / reminder alert. A status line carries new
+  (problem started or changed), same, reminder (3 days), recovered, ok.
+  An analysisd rule cannot see "nothing changed since yesterday"; the
+  scanner's state can, and it is tested offline (tests/test_container_vuln.py).
+
+  The <location> condition limits the rules to the scanner's own file, so a
+  JSON line with a "container_vuln" key in some other log cannot fake or hide
+  a result.
+
+  Levels follow the pack's policy: an image with a CISA KEV (actively
+  exploited) CVE is level 12, with a critical CVE level 10, both mailed
+  (alert_by_email, so the site's mail and chat digest takes them even with
+  email_alert_level 12). An image with fixable high CVEs and nothing worse is
+  level 5 on its first scan only. A clean or unchanged image is level 2.
+  A scanner that cannot do its job (Docker unreachable, scanner missing,
+  database missing or older than 48 hours, image scans failing, KEV catalogue
+  older than 7 days) is level 10 and mailed when it starts and every 3 days,
+  level 7 on the days between.
+
+  MITRE: T1190 (Exploit Public-Facing Application) and T1210 (Exploitation of
+  Remote Services) for vulnerable images: what the finding makes possible, not
+  an attack in progress. T1562.001 (Impair Defenses: Disable or Modify Tools)
+  for the scanner being removed or disabled.
+-->
+<group name="jt_container_vuln,container_vulnerability,">
+
+  <!-- base: the scanner's own lines only -->
+  <rule id="132800" level="0">
+    <decoded_as>json</decoded_as>
+    <location type="pcre2">jt-container-vuln\.json$</location>
+    <field name="container_vuln.type" type="pcre2">^(image|status)$</field>
+    <description>jt-container-vuln: scanner record</description>
+  </rule>
+
+  <!-- ===================== image summaries ===================== -->
+
+  <rule id="132801" level="2">
+    <if_sid>132800</if_sid>
+    <field name="container_vuln.type">^image$</field>
+    <description>Container image $(container_vuln.image): $(container_vuln.critical) critical, $(container_vuln.high) high, KEV $(container_vuln.kev_count) ($(container_vuln.change))</description>
+  </rule>
+
+  <!-- Siblings below 132801 are mutually exclusive: KEV present / no KEV and
+       a critical / neither, and the change values differ. -->
+  <rule id="132802" level="12">
+    <if_sid>132801</if_sid>
+    <field name="container_vuln.kev_count" type="pcre2">^[1-9]\d*$</field>
+    <field name="container_vuln.change" type="pcre2">^(new|grown|fix_available|reminder)$</field>
+    <options>alert_by_email</options>
+    <description>[HIGH] Container image $(container_vuln.image) has known exploited (CISA KEV) vulnerabilities: $(container_vuln.kev); critical $(container_vuln.critical) ($(container_vuln.fixable_critical) fixable), high $(container_vuln.high); $(container_vuln.change)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1210</id>
+    </mitre>
+    <group>jt_container_vuln_kev,</group>
+  </rule>
+
+  <rule id="132803" level="10">
+    <if_sid>132801</if_sid>
+    <field name="container_vuln.kev_count">^0$</field>
+    <field name="container_vuln.critical" type="pcre2">^[1-9]\d*$</field>
+    <field name="container_vuln.change" type="pcre2">^(new|grown|fix_available|reminder)$</field>
+    <options>alert_by_email</options>
+    <description>[WARN] Container image $(container_vuln.image) has critical vulnerabilities: $(container_vuln.critical) ($(container_vuln.fixable_critical) fixable), high $(container_vuln.high); $(container_vuln.change) $(container_vuln.new)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1210</id>
+    </mitre>
+    <group>jt_container_vuln_critical,</group>
+  </rule>
+
+  <!-- high only: once, when the image is first scanned, and only if updating
+       the image would fix at least one. An image of a current Debian release
+       usually carries dozens of high CVEs that have no fix yet. -->
+  <rule id="132804" level="5">
+    <if_sid>132801</if_sid>
+    <field name="container_vuln.kev_count">^0$</field>
+    <field name="container_vuln.critical">^0$</field>
+    <field name="container_vuln.fixable_high" type="pcre2">^[1-9]\d*$</field>
+    <field name="container_vuln.change">^new$</field>
+    <description>Container image $(container_vuln.image) has high vulnerabilities with a fix: $(container_vuln.fixable_high) of $(container_vuln.high), no critical; first scan</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <!-- a new build of a tag that was already reported, with nothing new:
+       visible, not mailed (the old image's alert said it already) -->
+  <rule id="132805" level="3">
+    <if_sid>132801</if_sid>
+    <field name="container_vuln.change">^rebuilt$</field>
+    <field name="container_vuln.critical" type="pcre2">^[1-9]\d*$</field>
+    <description>Container image $(container_vuln.image) was updated; its critical vulnerabilities ($(container_vuln.critical)) were already reported</description>
+  </rule>
+
+  <!-- ===================== scanner status ===================== -->
+
+  <rule id="132820" level="2">
+    <if_sid>132800</if_sid>
+    <field name="container_vuln.type">^status$</field>
+    <description>jt-container-vuln: $(container_vuln.msg)</description>
+  </rule>
+
+  <rule id="132821" level="10">
+    <if_sid>132820</if_sid>
+    <field name="container_vuln.problem">^docker_unreachable$</field>
+    <field name="container_vuln.change" type="pcre2">^(new|reminder)$</field>
+    <options>alert_by_email</options>
+    <description>[WARN] Container vulnerability scan: Docker daemon not reachable, no image was scanned: $(container_vuln.error)</description>
+  </rule>
+
+  <rule id="132822" level="10">
+    <if_sid>132820</if_sid>
+    <field name="container_vuln.problem">^scanner_unavailable$</field>
+    <field name="container_vuln.change" type="pcre2">^(new|reminder)$</field>
+    <options>alert_by_email</options>
+    <description>[WARN] Container vulnerability scan: the scanner is not available, no image was scanned: $(container_vuln.error)</description>
+  </rule>
+
+  <rule id="132823" level="10">
+    <if_sid>132820</if_sid>
+    <field name="container_vuln.problem" type="pcre2">^(db_missing|db_stale)$</field>
+    <field name="container_vuln.change" type="pcre2">^(new|reminder)$</field>
+    <options>alert_by_email</options>
+    <description>[WARN] Container vulnerability scan: vulnerability database missing or out of date (updated $(container_vuln.db_updated)), new CVEs are not found: $(container_vuln.error)</description>
+  </rule>
+
+  <rule id="132824" level="10">
+    <if_sid>132820</if_sid>
+    <field name="container_vuln.problem">^scan_failed$</field>
+    <field name="container_vuln.change" type="pcre2">^(new|reminder)$</field>
+    <options>alert_by_email</options>
+    <description>[WARN] Container vulnerability scan: $(container_vuln.failed) of $(container_vuln.images) images could not be scanned ($(container_vuln.failed_images)): $(container_vuln.error)</description>
+  </rule>
+
+  <rule id="132825" level="10">
+    <if_sid>132820</if_sid>
+    <field name="container_vuln.problem">^kev_stale$</field>
+    <field name="container_vuln.change" type="pcre2">^(new|reminder)$</field>
+    <options>alert_by_email</options>
+    <description>[WARN] Container vulnerability scan: CISA KEV catalogue missing or older than 7 days, exploited CVEs are not marked: $(container_vuln.error)</description>
+  </rule>
+
+  <!-- the database download failed but the copy is still under 48 hours old:
+       results are still current, visible only -->
+  <rule id="132826" level="3">
+    <if_sid>132820</if_sid>
+    <field name="container_vuln.problem">^db_update_failed$</field>
+    <description>Container vulnerability scan: database update failed, the copy from $(container_vuln.db_updated) was used: $(container_vuln.error)</description>
+  </rule>
+
+  <!-- the same problem on the days between the mailed alerts -->
+  <rule id="132827" level="7">
+    <if_sid>132820</if_sid>
+    <field name="container_vuln.problem" type="pcre2">^(docker_unreachable|scanner_unavailable|db_missing|db_stale|scan_failed|kev_stale)$</field>
+    <field name="container_vuln.change">^same$</field>
+    <description>Container vulnerability scan still failing ($(container_vuln.problem)): $(container_vuln.msg)</description>
+  </rule>
+
+  <rule id="132828" level="3">
+    <if_sid>132820</if_sid>
+    <field name="container_vuln.problem">^none$</field>
+    <field name="container_vuln.change">^recovered$</field>
+    <description>Container vulnerability scan works again: $(container_vuln.msg)</description>
+  </rule>
+
+  <!-- ===================== the scanner itself (agent group FIM) =====================
+       The agent group watches the installed script, its configuration and
+       the systemd units in real time. A host that stops scanning without
+       its agent stopping (timer disabled, script deleted) is otherwise
+       silent: no rule can alert on a line that never arrives. -->
+
+  <rule id="132840" level="10">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^/(usr/local/lib/jt-container-vuln/|etc/jt-container-vuln/|etc/systemd/system/(timers\.target\.wants/)?jt-container-vuln\.(service|timer)$|etc/cron\.d/jt-container-vuln$)</field>
+    <options>alert_by_email</options>
+    <description>[WARN] Container vulnerability scanner removed or disabled: $(file) deleted</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="132841" level="7">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^/(usr/local/lib/jt-container-vuln/|etc/jt-container-vuln/|etc/systemd/system/jt-container-vuln\.(service|timer)$|etc/cron\.d/jt-container-vuln$)</field>
+    <description>Container vulnerability scanner changed: $(file) (expected after running the installer again)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="132842" level="3">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">^/(usr/local/lib/jt-container-vuln/|etc/jt-container-vuln/|etc/systemd/system/(timers\.target\.wants/)?jt-container-vuln\.(service|timer)$|etc/cron\.d/jt-container-vuln$)</field>
+    <description>Container vulnerability scanner installed or enabled: $(file)</description>
+  </rule>
+
+</group>

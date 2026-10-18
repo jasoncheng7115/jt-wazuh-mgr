@@ -1,0 +1,124 @@
+{
+ "id": "jt-container-vuln",
+ "name": "Container Image Vulnerability Scan",
+ "name_zh": "容器映像弱點掃描",
+ "version": "1.0",
+ "summary": "Daily Trivy scan of the images of every running Docker container (OS packages and Java, Python, Node, Go and other dependencies), one summary alert per image: known exploited (CISA KEV) level 12, critical level 10, both mailed; repeats only when something changes or weekly; a failed scan, an unreachable Docker or a stale database alerts too.",
+ "summary_zh": "每天以 Trivy 掃描每個執行中 Docker 容器所用的映像（作業系統套件與 Java、Python、Node、Go 等相依套件），每個映像一則摘要告警：已知遭利用（CISA KEV）為 level 12、嚴重為 level 10，兩者都會寄出；只有內容改變或每週提醒時才重複；掃描失敗、Docker 連不上或資料庫過期也會告警。",
+ "rule_id_range": "132800-132899",
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.7"
+ ],
+ "notes": [
+  "Why: Wazuh 4.14's vulnerability detection reads the packages installed on the host. Software inside a container image, its distribution packages and its Java jars, Python, Node, Go and Ruby dependencies, is invisible to it, so an internet-facing service that runs from an image (an identity provider, a web portal) has no vulnerability coverage at all. This pack adds it without installing anything on the host: a scanner script, delivered through the agent group container-vuln and installed with the script next to it, runs once a day from a systemd timer, scans the image of every running container with Trivy and writes one JSON line per image and one per run to /var/log/jt-container-vuln.json, which the group collects.",
+  "Alerts, one per image: a CVE listed in CISA's Known Exploited Vulnerabilities catalogue, at any severity, is level 12 (132802); a critical CVE is level 10 (132803); both carry alert_by_email, so they reach mail and the jt-alert-digest Zulip channel even where email_alert_level is 12. An image whose worst finding is a high CVE that updating the image would fix is level 5, once, on its first scan (132804): a current Debian or Alpine image carries dozens of high CVEs, many without a fix yet. A clean or unchanged image is level 2 (132801). The description names the image and the counts (critical, fixable, high, KEV ids), so one alert per image stays readable when the digest groups several images of one host.",
+  "Repeats: an analysisd rule cannot tell that nothing changed since yesterday, so the scanner keeps its own state and writes a change field. new is the first scan of an image; grown means critical or KEV CVEs that were not in the last report (a database update or a new build); fix_available means a reported critical CVE now has a fixed version; reminder repeats an image that still has a KEV CVE or a fixable critical CVE, seven days after the last alert; rebuilt is a new image for a tag already reported with nothing new (level 3, 132805); same is everything else (level 2). A critical CVE without any fix is reported once and again when a fix appears, not every week: there is nothing to do until then. An image is scanned at most once in 20 hours, and images are counted by image id, so two containers of one image are one alert.",
+  "Counting: Trivy lists a CVE once per affected package; the pack counts unique CVE ids at their highest severity (a PCRE2 CVE against pcre2 and pcre2-syntax is one). Kernel header packages (linux-libc-dev, kernel-headers) are left out: a container runs the host's kernel and these packages contain no kernel code, yet every kernel CVE is listed against them. In one Debian 13 web application image measured on 2026-10-18 they were 1,028 of 1,281 CVEs and two of its three criticals. The line keeps the ten worst CVEs (KEV first, then severity, fixable, CVSS) with package, installed and fixed version and title. Trivy's own data has errors: a Java driver whose version is written 13.2.1 in the jar and 13.2.1.jre11 in the advisory was reported vulnerable in the fixed version.",
+  "Scanner and supply chain: Trivy (Aqua Security, Apache-2.0) runs as a container from an image pinned by digest; a tag is refused. In March 2026 Trivy's release pipeline was compromised (GHSA-69fq-xp46-6x23, CVE-2026-33634): v0.69.4 and the Docker Hub images 0.69.5 and 0.69.6 carried a credential stealer, and 76 trivy-action tags were moved to it; images referenced by digest were not affected. The pack pins v0.75.0 (ghcr.io/aquasecurity/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa), released on 2026-10-01 after Aqua revoked all tokens, hardened the release workflows and enabled immutable releases and SLSA provenance; its signature was verified with cosign against the release workflow (reusable-release.yaml at tag v0.75.0). The same digest is served by ghcr.io, docker.io and public.ecr.aws.",
+  "Isolation: mounting /var/run/docker.sock read-only does not make the Docker API read-only; whoever can use the socket is root on the host. So the scanner never gets it. The script exports each image with docker save into /var/cache/jt-container-vuln/tmp and hands the file to a Trivy container with no network, no capabilities, a read-only root, the database read-only, and limits of 1 CPU, 3 GB of memory and 512 processes. The image contents, which can hold baked-in secrets, therefore never meet a network. Only vulnerability scanning is enabled (no secret or configuration scanning); container environment variables and registry credentials are never read, and error messages are stripped of URL credentials and tokens before they are written.",
+  "Java: Trivy needs its Java index database (a 985 MB download, 1.5 GB on disk, refreshed every three days) to analyse jar files at all; without it a scan of any image with jars fails. JAVA_DB=auto, the default, downloads it the first time an image with Java packages is found and deletes it after a month without one, so hosts without Java applications never pay for it. JAVA_DB=off skips jar files. Keycloak 26.7.5, measured on 2026-10-18: 4 high CVEs in OS packages and Java libraries, no critical.",
+  "Scanner health: each run writes a status line. Docker not reachable (132821), the scanner image missing or not pinned (132822), the vulnerability database missing or older than 48 hours (132823), images that could not be scanned (132824, for example not enough free disk for the export) and the KEV catalogue missing or older than 7 days (132825) are level 10 and mailed when the problem starts and every three days; on the days between they are level 7 (132827). A failed database download with a copy under 48 hours old is level 3 (132826); recovery is level 3 (132828). The agent group watches the installed script and its configuration in real time, and the default agent configuration scans the systemd units under /etc every 12 hours: deleting the script or a unit, or disabling the timer, is level 10 (132840); changing them is level 7 (132841).",
+  "Limits: a host that simply stops running the scan while its agent stays connected (the timer stopped but not disabled, the host taken out of the group) sends nothing, and no rule can alert on a line that never arrives; a disconnected agent is Wazuh's own rule 504. Only images of running containers are scanned: not stopped containers, images only in a registry, files that a container downloads at run time or keeps in a volume (a Keycloak provider jar in a mounted volume is not seen), Podman, containerd without Docker, or rootless Docker. Trivy reports what its database knows; a vendor fix backported under the same version number can still be listed.",
+  "Costs, measured on a 10-core development host on 2026-10-18: the daily database is a 135 MB download (1.6 GB on disk); four images (265 MB to 1.1 GB) took 105 seconds including the database check, a 1.1 GB image about 40 seconds, at 130 to 200 MB of memory. The export needs free space of about the image size, checked before each image (MIN_FREE_MB, 1 GB, on top). The script runs at nice 19 with idle I/O; docker save itself runs inside dockerd and is not affected by that. The KEV catalogue is about 1.8 MB, fetched at most once a day with If-Modified-Since. A host with ten images writes about 30 KB a day; the file is rotated at 5 MB.",
+  "Prerequisites: Docker Engine with its CLI, python3 3.6 or later (Debian 12, Ubuntu 22.04 and 24.04 and UCS 5.2 have it), systemd (cron is used without it), and outbound HTTPS from each Docker host to the scanner image registry, the database registries and the KEV source, or a local mirror of them. Nothing depends on a site list, host name or account. No active response is offered: these alerts describe software, not an attacker."
+ ],
+ "notes_zh": [
+  "為什麼需要：Wazuh 4.14 的弱點偵測讀的是主機上安裝的套件。容器映像裡的軟體 —— 它的發行版套件，以及 Java jar、Python、Node、Go、Ruby 相依套件 —— 它完全看不到，所以從映像執行的對外服務（身分驗證服務、網頁入口）沒有任何弱點涵蓋。本套件補上這一塊，而且不在主機上安裝任何東西：掃描腳本經由 agent 群組 container-vuln 送到主機，以同目錄的安裝腳本安裝後，每天由 systemd timer 執行一次，以 Trivy 掃描每個執行中容器的映像，每個映像寫一行、每次執行再寫一行 JSON 到 /var/log/jt-container-vuln.json，由該群組收集。",
+  "告警，每個映像一則：列在 CISA 已知遭利用弱點目錄（KEV）中的 CVE，不論嚴重度，為 level 12（132802）；嚴重（critical）CVE 為 level 10（132803）；兩者都帶 alert_by_email，所以即使站台的 email_alert_level 是 12，也會寄出並送到 jt-alert-digest 的 Zulip 頻道。最嚴重只到高風險（high）、且更新映像就能修正的映像，只在第一次掃描時發一次 level 5（132804）：目前的 Debian 或 Alpine 映像常帶有數十個高風險 CVE，其中很多還沒有修正版。乾淨或沒有變化的映像為 level 2（132801）。描述會寫出映像名稱與數量（嚴重、可修正、高風險、KEV 編號），所以摘要信把同一台主機的多個映像併成一組時，每個映像一則仍然讀得懂。",
+  "重複：analysisd 的規則無法判斷「跟昨天相比沒有變化」，所以掃描腳本自己保存狀態並寫出 change 欄位。new 是映像第一次被掃描；grown 表示出現上次回報時沒有的嚴重或 KEV CVE（資料庫更新或新版映像）；fix_available 表示已回報的嚴重 CVE 現在有修正版了；reminder 是映像仍有 KEV CVE 或可修正的嚴重 CVE，距上次告警滿七天時再提醒；rebuilt 是已回報過的標籤換了新映像但沒有新東西（level 3，132805）；其餘為 same（level 2）。沒有任何修正版的嚴重 CVE 只回報一次，等出現修正版時再回報，不會每週重複：在那之前也沒有事可做。同一映像 20 小時內最多掃描一次，映像以 image id 計算，所以同一映像的兩個容器只有一則告警。",
+  "計數方式：Trivy 對每個受影響的套件各列一次 CVE；本套件以不重複的 CVE 編號計算，取最高的嚴重度（PCRE2 的 CVE 同時列在 pcre2 與 pcre2-syntax，算一個）。核心標頭套件（linux-libc-dev、kernel-headers）不列入：容器使用主機的核心，這些套件不含核心程式碼，但每個核心 CVE 都會列在它們名下。2026-10-18 實測某個 Debian 13 網頁應用程式映像，這類 CVE 佔 1,281 個中的 1,028 個，三個嚴重 CVE 中也佔了兩個。每行保留最嚴重的十個 CVE（KEV 優先，再依嚴重度、可否修正、CVSS），附套件、已安裝版本、修正版本與標題。Trivy 自己的資料也有錯：某個 Java 驅動程式在 jar 裡的版本寫成 13.2.1、在公告裡寫成 13.2.1.jre11，因此已修正的版本仍被判定有弱點。",
+  "掃描程式與供應鏈：Trivy（Aqua Security，Apache-2.0）以容器執行，映像以 digest 固定；只給標籤會被拒絕。2026 年 3 月 Trivy 的發行流程遭入侵（GHSA-69fq-xp46-6x23、CVE-2026-33634）：v0.69.4 以及 Docker Hub 上的 0.69.5 與 0.69.6 映像夾帶竊取帳密的程式，trivy-action 有 76 個標籤被改指向它；以 digest 引用映像的使用者不受影響。本套件固定使用 v0.75.0（ghcr.io/aquasecurity/trivy@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa），於 2026-10-01 發行，時間在 Aqua 撤銷所有 token、強化發行工作流程並啟用不可變發行與 SLSA 來源證明之後；其簽章已用 cosign 對照發行工作流程（標籤 v0.75.0 的 reusable-release.yaml）驗證過。ghcr.io、docker.io 與 public.ecr.aws 提供的是同一個 digest。",
+  "隔離：以唯讀方式掛載 /var/run/docker.sock 並不會讓 Docker API 變成唯讀；能使用這個 socket 的人就等於主機的 root。所以掃描程式永遠拿不到它。腳本以 docker save 把每個映像匯出到 /var/cache/jt-container-vuln/tmp，再把檔案交給一個沒有網路、沒有任何 capability、根目錄唯讀、資料庫唯讀，並限制 1 顆 CPU、3 GB 記憶體與 512 個程序的 Trivy 容器。因此映像內容（可能內嵌機密）永遠碰不到網路。只啟用弱點掃描（不做機密與設定掃描）；永遠不讀取容器的環境變數與 registry 帳密，錯誤訊息寫出前也會先去掉網址中的帳密與 token。",
+  "Java：Trivy 必須有它的 Java 索引資料庫（下載 985 MB、磁碟上 1.5 GB、每三天更新）才能分析 jar 檔；沒有它，任何含 jar 的映像都會掃描失敗。預設的 JAVA_DB=auto 會在第一次遇到含 Java 套件的映像時下載，連續一個月沒有這類映像時刪除，所以沒有 Java 應用程式的主機不必負擔。JAVA_DB=off 會略過 jar 檔。2026-10-18 實測 Keycloak 26.7.5：作業系統套件與 Java 函式庫共有 4 個高風險 CVE，沒有嚴重 CVE。",
+  "掃描程式健康狀態：每次執行都寫一行狀態。Docker 連不上（132821）、掃描映像缺少或未以 digest 固定（132822）、弱點資料庫不存在或超過 48 小時（132823）、有映像無法掃描（132824，例如匯出所需的磁碟空間不足）、KEV 目錄不存在或超過 7 天（132825），在問題開始時與每三天一次為 level 10 並寄出；中間的日子為 level 7（132827）。資料庫下載失敗但現有副本未滿 48 小時為 level 3（132826）；恢復正常為 level 3（132828）。agent 群組即時監控已安裝的腳本與其設定，預設的 agent 設定每 12 小時掃描一次 /etc 下的 systemd unit：刪除腳本或 unit、停用 timer 為 level 10（132840）；修改它們為 level 7（132841）。",
+  "限制：agent 仍連線、但主機就是不再執行掃描（timer 被停止但未停用、主機被移出群組）時不會送出任何東西，而沒有規則能對一行永遠不會來的記錄告警；agent 斷線則由 Wazuh 自己的規則 504 處理。只掃描執行中容器的映像：不含已停止的容器、只存在 registry 的映像、容器在執行時才下載或放在 volume 裡的檔案（掛載在 volume 的 Keycloak provider jar 看不到）、Podman、沒有 Docker 的 containerd，以及 rootless Docker。Trivy 回報的是它資料庫知道的內容；廠商以相同版本號回補的修正仍可能被列出。",
+  "成本，2026-10-18 在一台 10 核心開發主機實測：每天的資料庫下載 135 MB（磁碟上 1.6 GB）；四個映像（265 MB 到 1.1 GB）含資料庫檢查共 105 秒，1.1 GB 的映像約 40 秒，記憶體 130 到 200 MB。匯出需要約等於映像大小的可用空間，每個映像掃描前都會檢查（另加 MIN_FREE_MB，預設 1 GB）。腳本以 nice 19 與 idle I/O 執行；docker save 本身在 dockerd 裡執行，不受此影響。KEV 目錄約 1.8 MB，每天最多以 If-Modified-Since 抓取一次。有十個映像的主機每天約寫 30 KB；檔案在 5 MB 時輪替。",
+  "前提：Docker Engine 與其 CLI、python3 3.6 以上（Debian 12、Ubuntu 22.04 與 24.04、UCS 5.2 都有）、systemd（沒有時改用 cron），以及每台 Docker 主機能以 HTTPS 連到掃描映像的 registry、資料庫的 registry 與 KEV 來源，或它們的本地鏡像。不依賴任何站台清單、主機名稱或帳號。不提供主動回應：這些告警描述的是軟體，不是攻擊者。"
+ ],
+ "files": [
+  {
+   "type": "rule",
+   "name": "zz-132800-jt_container_vuln_rules.xml",
+   "dest": "etc/rules/zz-132800-jt_container_vuln_rules.xml",
+   "sha256": "827254c6e5d5a219ff7284d0026eb083f3dc792940416b403034db2c46223730"
+  }
+ ],
+ "agent_group": {
+  "name": "container-vuln",
+  "config": "agent.conf",
+  "files": [
+   "jt-container-vuln.py",
+   "jt-container-vuln-install.sh"
+  ],
+  "description": "Collects the daily container image scan results (/var/log/jt-container-vuln.json), watches the installed scanner in real time, and delivers the scanner and its installer to the host"
+ },
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset on every node",
+   "title_zh": "安裝套件並在所有節點重新載入規則集",
+   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers. The pack needs no list and no decoder: the scanner writes JSON that Wazuh's built-in json decoder reads, and the rules accept it only from /var/log/jt-container-vuln.json.",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔，不會重載 worker。本套件不需要清單也不需要解碼器：掃描腳本寫出的 JSON 由 Wazuh 內建的 json 解碼器讀取，規則只接受來自 /var/log/jt-container-vuln.json 的記錄。"
+  },
+  {
+   "platform": "network",
+   "required": true,
+   "title": "Allow each Docker host to reach the scanner and database sources",
+   "title_zh": "允許每台 Docker 主機連到掃描程式與資料庫來源",
+   "body": "Outbound HTTPS (443) from every Docker host: ghcr.io and pkg-containers.githubusercontent.com for the Trivy image (pulled once, 62 MB) and as the second database source; mirror.gcr.io for the vulnerability database, 135 MB a day, and the Java database, 985 MB every three days when an image has Java packages; www.cisa.gov for the KEV catalogue, with raw.githubusercontent.com as the fallback, 1.8 MB at most once a day. A host without internet access can use a local registry: mirror the image by digest and the two OCI database artifacts (for example with oras or crane), and set TRIVY_IMAGE, DB_REPOSITORY and JAVA_DB_REPOSITORY in /etc/jt-container-vuln/jt-container-vuln.conf; KEV_URL can point at any web server that holds a copy of the JSON. HTTPS_PROXY in the same file is passed to the database download and the KEV fetch; the image pull uses the Docker daemon's own proxy settings.",
+   "body_zh": "每台 Docker 主機需要對外 HTTPS（443）：ghcr.io 與 pkg-containers.githubusercontent.com，用來拉取 Trivy 映像（只拉一次，62 MB），也是資料庫的第二來源；mirror.gcr.io 提供弱點資料庫，每天 135 MB，以及 Java 資料庫，在有映像含 Java 套件時每三天 985 MB；www.cisa.gov 提供 KEV 目錄，備援為 raw.githubusercontent.com，每天最多 1.8 MB。不能上網的主機可以用本地 registry：以 digest 鏡像該映像與兩個 OCI 資料庫產物（例如用 oras 或 crane），並在 /etc/jt-container-vuln/jt-container-vuln.conf 設定 TRIVY_IMAGE、DB_REPOSITORY 與 JAVA_DB_REPOSITORY；KEV_URL 可以指向任何放有該 JSON 副本的網頁伺服器。同一檔案中的 HTTPS_PROXY 會用在資料庫下載與 KEV 抓取；映像拉取則使用 Docker daemon 自己的代理設定。",
+   "code": "# from a Docker host\ncurl -sI https://ghcr.io/v2/ | head -1\ncurl -sI https://mirror.gcr.io/v2/ | head -1\ncurl -sI https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json | head -1",
+   "verify": "Each command prints an HTTP status line (401 from a registry is fine: it answered).",
+   "verify_zh": "每個指令都印出一行 HTTP 狀態（registry 回 401 沒關係，表示它有回應）。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Assign the Docker hosts to the container-vuln group",
+   "title_zh": "把 Docker 主機加入 container-vuln 群組",
+   "body": "The group collects /var/log/jt-container-vuln.json and watches the installed scanner, and it delivers the scanner and its installer to /var/ossec/etc/shared on the host. An agent can be in several groups: keep the docker group of the jt-docker pack as it is. The group runs no command on the agent. The agent applies a new group configuration after a restart.",
+   "body_zh": "群組會收集 /var/log/jt-container-vuln.json、監控已安裝的掃描程式，並把掃描腳本與安裝腳本送到主機的 /var/ossec/etc/shared。一個 agent 可以屬於多個群組：jt-docker 套件的 docker 群組維持原狀即可。這個群組不會在 agent 上執行任何指令。agent 重新啟動後才會套用新的群組設定。",
+   "file": "agent/agent.conf",
+   "code": "/var/ossec/bin/agent_groups -a -i <AGENT_ID> -g container-vuln -q\n/var/ossec/bin/agent_control -R -u <AGENT_ID>",
+   "verify": "On the host: ls /var/ossec/etc/shared/jt-container-vuln-install.sh shows the file.",
+   "verify_zh": "在主機上：ls /var/ossec/etc/shared/jt-container-vuln-install.sh 會看到該檔案。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Install the scanner on each Docker host",
+   "title_zh": "在每台 Docker 主機安裝掃描程式",
+   "body": "Run the installer as root on each host. It copies the scanner to /usr/local/lib/jt-container-vuln, creates /etc/jt-container-vuln/jt-container-vuln.conf (all settings optional, kept on later runs), and a systemd timer that runs the scan once a day at 01:00 plus a fixed random delay of up to four hours per host (cron where there is no systemd). It installs no package and changes no container. Run it again after a pack update to update the scanner. --run-now starts the first scan at once: it pulls the Trivy image and downloads the database (about 135 MB, and 985 MB more if an image has Java packages), so the first run takes a few minutes. The scan reads images through docker save and uses up to one CPU and 3 GB of memory at low priority; running containers are not touched. Uninstall with --uninstall (keeps settings, databases and results) or --uninstall --purge.",
+   "body_zh": "在每台主機以 root 執行安裝腳本。它會把掃描程式複製到 /usr/local/lib/jt-container-vuln、建立 /etc/jt-container-vuln/jt-container-vuln.conf（所有設定都是選用，之後再執行會保留），並建立 systemd timer，每天 01:00 加上每台主機固定的隨機延遲（最多四小時）執行一次掃描（沒有 systemd 時改用 cron）。它不安裝任何套件，也不更動任何容器。套件更新後再執行一次即可更新掃描程式。--run-now 會立即開始第一次掃描：會拉取 Trivy 映像並下載資料庫（約 135 MB，若有映像含 Java 套件再加 985 MB），所以第一次要幾分鐘。掃描以 docker save 讀取映像，以低優先權使用最多一顆 CPU 與 3 GB 記憶體；不會碰觸執行中的容器。以 --uninstall 移除（保留設定、資料庫與結果），或 --uninstall --purge 完全移除。",
+   "file": "agent/jt-container-vuln-install.sh",
+   "code": "sh /var/ossec/etc/shared/jt-container-vuln-install.sh --run-now\npython3 /usr/local/lib/jt-container-vuln/jt-container-vuln.py --list\njournalctl -u jt-container-vuln.service -n 20\ntail -n 1 /var/log/jt-container-vuln.json",
+   "verify": "--list prints one line per image of the running containers. After the first scan, the last line of /var/log/jt-container-vuln.json is a status line with \"status\":\"ok\"; images with critical CVEs appear as rule 132803 (level 10) and KEV matches as 132802 (level 12). A failure appears as 132821-132825 instead.",
+   "verify_zh": "--list 會為執行中容器的每個映像印出一行。第一次掃描完成後，/var/log/jt-container-vuln.json 的最後一行是含 \"status\":\"ok\" 的狀態行；有嚴重 CVE 的映像會出現規則 132803（level 10），KEV 相符則為 132802（level 12）。失敗時改為出現 132821-132825。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "Make sure the alerts reach mail and chat",
+   "title_zh": "確認告警會送到郵件與聊天頻道",
+   "body": "The level 10 and 12 image alerts and the scanner failure alerts carry alert_by_email, so analysisd marks them for mail (rule.mail is true in the alert) whatever email_alert_level is. jt-alert-digest selects alerts by that mark and sends them by mail and, when its zulip_* settings are present, to Zulip; wazuh-maild does the same for mail if it is still in use. A Docker host's alerts are written on the cluster node that handles its agent: the digest must run on every node. Level 5 and level 7 alerts are not mailed.",
+   "body_zh": "level 10 與 12 的映像告警以及掃描程式失敗告警都帶有 alert_by_email，所以不論 email_alert_level 為何，analysisd 都會標記為要寄送（告警中 rule.mail 為 true）。jt-alert-digest 依這個標記挑選告警，以郵件寄出，設定了 zulip_* 時也送到 Zulip；若仍在使用 wazuh-maild，它的郵件也一樣。Docker 主機的告警寫在處理該 agent 的叢集節點上：摘要信必須在每個節點都執行。level 5 與 level 7 的告警不會寄出。",
+   "verify": "After a scan that found a critical CVE: grep 132803 /var/ossec/logs/alerts/alerts.json on the node shows \"mail\":true, and the next digest lists the image.",
+   "verify_zh": "掃描找到嚴重 CVE 之後：在該節點 grep 132803 /var/ossec/logs/alerts/alerts.json 會看到 \"mail\":true，下一封摘要信會列出該映像。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Optional: limit or exclude containers",
+   "title_zh": "選用：限制或排除容器",
+   "body": "By default every running container's image is scanned. CONTAINER_FILTER takes docker ps --filter values (for example label=scan=yes), EXCLUDE_IMAGES a regular expression of image references to leave out, MAX_IMAGES caps a run (100). Lower CPUS or MEMORY on a small host, raise SCAN_TIMEOUT (900 seconds per image) for very large images. Set these in /etc/jt-container-vuln/jt-container-vuln.conf; the next run uses them.",
+   "body_zh": "預設會掃描每個執行中容器的映像。CONTAINER_FILTER 接受 docker ps --filter 的值（例如 label=scan=yes），EXCLUDE_IMAGES 是要排除的映像參照的正規表示式，MAX_IMAGES 限制每次最多幾個（100）。小主機可以調低 CPUS 或 MEMORY，非常大的映像可以調高 SCAN_TIMEOUT（每個映像 900 秒）。設定寫在 /etc/jt-container-vuln/jt-container-vuln.conf，下次執行就會套用。",
+   "code": "# /etc/jt-container-vuln/jt-container-vuln.conf\nEXCLUDE_IMAGES=^registry.example.com/ci-runner\nCPUS=0.5\nMEMORY=2g"
+  }
+ ]
+}

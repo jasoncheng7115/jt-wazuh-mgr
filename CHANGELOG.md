@@ -4,6 +4,27 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.16.0 (2026-10-18)
+
+- **New pack jt-container-vuln 1.0 (132800-132899): vulnerabilities inside Docker
+  containers.** Wazuh's vulnerability detection only reads the host's own packages, so the
+  software inside container images (an SSO server, a web portal) was never checked. Once a
+  day, at a random time in a night window, each host saves the images of its running
+  containers and scans them with a pinned Trivy image (by digest). Trivy runs with no
+  network, no capabilities, a read-only root, resource limits and **no Docker socket**:
+  mounting the socket read-only would still let it control the daemon. One alert per image:
+  a CVE in CISA's known-exploited catalogue at level 12, a critical CVE at level 10, both
+  mailed even with `email_alert_level` 12; fixable high CVEs at level 5 on the first scan.
+  The scanner keeps its own state and reports an image again only when it changes: new
+  critical or KEV CVEs, a fix released for a reported one, or weekly while a KEV or fixable
+  critical CVE remains. Docker unreachable, scanner missing, a vulnerability database older
+  than 48 hours, failed image scans and a stale KEV catalogue are level 10 alerts; removing
+  or disabling the scanner is caught by file integrity monitoring. Linux kernel header
+  packages (1,028 of 1,281 CVEs in one image) are ignored. Installs per host with
+  `jt-container-vuln-install.sh` (systemd timer, or cron).
+- **jt-alert-digest 1.6:** container image results are listed one line per image instead
+  of three samples and "N more", in mail and in Zulip.
+
 ## v1.15.1 (2026-10-18)
 
 - **jt-alert-digest 1.5: alerts can also go to Zulip.** Optional, set in the site's

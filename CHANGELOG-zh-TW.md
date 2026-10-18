@@ -4,6 +4,19 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.16.0（2026-10-18）
+
+- **新套件 jt-container-vuln 1.0（132800-132899）：Docker 容器內的弱點。** Wazuh 的弱點偵測只讀主機自己的套件，
+  容器映像裡的軟體（SSO 伺服器、網頁入口）從來沒被檢查過。每台主機每天在夜間時段的隨機時間，把執行中容器的映像
+  匯出，用以摘要值鎖定的 Trivy 映像掃描。Trivy 執行時沒有網路、沒有任何 capability、根目錄唯讀、有資源上限，
+  而且**不掛 Docker socket**：唯讀掛載 socket 仍然可以控制整個 daemon。每個映像一則告警：有 CISA 已遭利用清單
+  （KEV）裡的 CVE 是 level 12、有嚴重弱點是 level 10，即使 `email_alert_level` 是 12 也會寄出；可修補的高風險弱點
+  在第一次掃描時 level 5。掃描程式自己記錄狀態，只有映像有變化時才再回報：新增嚴重或 KEV 弱點、已回報的弱點有了
+  修補版本，或仍有 KEV／可修補的嚴重弱點時每週提醒。連不到 Docker、掃描器不存在、弱點資料庫超過 48 小時、映像掃描
+  失敗、KEV 清單過舊都是 level 10；掃描程式被移除或停用由檔案完整性監控抓到。Linux 核心標頭套件（其中一個映像
+  1,281 個 CVE 裡佔 1,028 個）不列入。每台主機以 `jt-container-vuln-install.sh` 安裝（systemd timer，或 cron）。
+- **jt-alert-digest 1.6：** 容器映像的掃描結果在郵件與 Zulip 裡每個映像列一行，不再只列三筆範例加「還有 N 筆」。
+
 ## v1.15.1（2026-10-18）
 
 - **jt-alert-digest 1.5：告警也能送到 Zulip。** 選用，在站台的 `jt-alert-digest.conf` 設定（伺服器、bot 帳號、

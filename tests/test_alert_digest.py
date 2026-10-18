@@ -629,6 +629,31 @@ class TestContent(DigestCase):
         self.assertIn('Vulnerabilities detected', text)
         self.assertNotIn('CVE-202 ...', text)
 
+    def test_container_images_are_one_line_per_image(self):
+        groups = {}
+        for i in range(5):
+            image = 'registry.example.com/app%d:1.%d' % (i, i)
+            record = {'type': 'image', 'image': image, 'containers': 'web%d' % i,
+                      'msg': '%s: %d critical (1 fixable), 3 high (2 fixable); first scan' % (image, i + 1)}
+            a = json.loads(alert(i, level=10, rule='132803', mail=True,
+                                 desc='[WARN] Container image %s has critical vulnerabilities' % image,
+                                 data={'container_vuln': record}))
+            self.mod.add_alert(groups, a, a['rule'], 10)
+        group = list(groups.values())[0]
+        self.assertEqual(group['kind'], 'container')
+        for render in (lambda: self.mod.render_text(groups, 5, 10, None),
+                       lambda: '\n'.join(self.mod.render_zulip(groups, 5, 10, None)),
+                       lambda: self.mod.render_html(groups, 5, 10, None)):
+            out = render()
+            for i in range(5):
+                self.assertIn('registry.example.com/app%d:1.%d: %d critical' % (i, i, i + 1), out)
+            self.assertIn('[containers: web4]', out)
+            self.assertNotIn('more of the same', out)
+        # a status line of the same scanner is an ordinary alert, not an image
+        status = json.loads(alert(9, level=10, rule='132821', mail=True,
+                                  data={'container_vuln': {'type': 'status', 'msg': 'docker down'}}))
+        self.assertEqual(self.mod.alert_kind(status), 'other')
+
     def test_headings_are_not_cut_inside_a_token(self):
         p = self.mod.shared_prefix
         self.assertNotIn('202', p(['CVE-2024-1 affects a', 'CVE-2025-2 affects b']))

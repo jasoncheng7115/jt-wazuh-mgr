@@ -74,7 +74,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.5"
+VERSION = "1.6"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -929,6 +929,8 @@ def alert_kind(alert):
     data = alert.get("data") or {}
     if isinstance(data.get("vulnerability"), dict):
         return "vulnerability"
+    if isinstance(data.get("container_vuln"), dict) and data["container_vuln"].get("type") == "image":
+        return "container"
     if isinstance(data.get("win"), dict):
         return "windows"
     return "other"
@@ -962,6 +964,7 @@ def add_alert(groups, alert, rule, level):
             "samples": [],
             "kind": alert_kind(alert),
             "vulns": OrderedDict(),
+            "images": OrderedDict(),
         }
     group["level"] = max(group["level"], level)
     group["count"] += 1
@@ -984,6 +987,12 @@ def add_alert(groups, alert, rule, level):
                 _score(((vuln.get("cvss") or {}).get("cvss3") or {}).get("base_score"))
             if score is not None and (entry["max"] is None or score > entry["max"]):
                 entry["max"] = score
+    if group["kind"] == "container":
+        record = (alert.get("data") or {}).get("container_vuln") or {}
+        image = str(record.get("image") or record.get("image_id") or "?")
+        if image in group["images"] or len(group["images"]) < 100:
+            group["images"][image] = {"msg": str(record.get("msg") or image),
+                                      "containers": str(record.get("containers") or "")}
     if len(group["samples"]) < MAX_SAMPLES:
         group["samples"].append(alert)
 
@@ -1131,7 +1140,7 @@ def shared_prefix(values):
 
 
 KIND_LABEL = {"vulnerability": "Vulnerabilities detected", "fim": "File integrity changes",
-              "windows": "Windows events"}
+              "windows": "Windows events", "container": "Container image vulnerabilities"}
 
 
 def heading(group, rule_id="?"):
@@ -1422,6 +1431,30 @@ def vuln_fields(group, packages=5, cves=10):
     return out
 
 
+def image_fields(group, images=20):
+    """One line per container image (jt-container-vuln), latest report of each.
+
+    The scanner's first run on a host reports every image at once, all under
+    one (rule, host) group; with samples only the first three would show.
+    """
+    items = list(group.get("images", {}).items())
+    out = []
+    for image, entry in items[:images]:
+        line = trim(redact(entry["msg"]))
+        if entry.get("containers"):
+            line += "  [containers: %s]" % trim(redact(entry["containers"]), 120)
+        out.append(("Image", line))
+    if len(items) > images:
+        out.append(("More", "%d more images" % (len(items) - images)))
+    return out
+
+
+def listed_in_full(group):
+    """Groups whose card lists every alert, so no "N more" note applies."""
+    return (group.get("kind") == "vulnerability" and bool(group.get("vulns"))) or \
+        (group.get("kind") == "container" and bool(group.get("images")))
+
+
 def ordered_groups(groups):
     return sorted(groups.items(),
                   key=lambda kv: (-kv[1]["level"], not kv[1].get("new"), -kv[1]["count"]))
@@ -1507,6 +1540,8 @@ def esc(value):
 def card_fields(group, samples):
     if group.get("kind") == "vulnerability" and group.get("vulns"):
         return [vuln_fields(group)]
+    if group.get("kind") == "container" and group.get("images"):
+        return [image_fields(group)]
     return [interesting_fields(sample) for sample in group.get("samples", [])[:samples]]
 
 
@@ -1575,7 +1610,7 @@ def html_card(index, rule_id, agent, group, samples, link=None):
                 % (MUTED, esc(label), style, esc(value)))
         out.append('</table>')
 
-    shown = 0 if group.get("kind") == "vulnerability" and group.get("vulns") \
+    shown = 0 if listed_in_full(group) \
         else min(samples, len(group.get("samples", [])))
     remaining = group["count"] - shown
     notes = []
@@ -1694,7 +1729,7 @@ def render_text(groups, total, min_level, dashboard, context=None):
             for label, value in fields:
                 lines.append("  %s: %s" % (label, value))
             lines.append("")
-        shown = 0 if group.get("kind") == "vulnerability" and group.get("vulns") \
+        shown = 0 if listed_in_full(group) \
             else min(samples, len(group.get("samples", [])))
         remaining = group["count"] - shown
         if remaining > 0 and shown:
@@ -2247,7 +2282,7 @@ def zulip_group(rule_id, agent, group, samples, link=None, compact=False):
         body.extend("%s: %s" % (label, value) for label, value in fields)
     if body:
         lines.append(fenced(body))
-    shown = 0 if group.get("kind") == "vulnerability" and group.get("vulns") \
+    shown = 0 if listed_in_full(group) \
         else min(samples, len(group.get("samples", [])))
     notes = []
     if group["count"] - shown > 0 and shown:

@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.15.1
+# jt-wazuh-mgr v1.16.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@
 
 > **推奨**: Web UI を主なインターフェースとしてお使いください。本ツールの中心となる機能であり、すべての機能が利用できます。
 
-![Version](https://img.shields.io/badge/version-1.15.1-blue)
+![Version](https://img.shields.io/badge/version-1.16.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -97,7 +97,7 @@ curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/un
 - **アクティブレスポンス（任意）：** パックはレスポンス（例：ブルートフォースの送信元をブロック）を提供できます。インストールしても有効にはならず、それぞれ何をどこでブロックするか、リスクを明記しています。有効にすると印を付けたブロックをクラスターの全ノードの `ossec.conf` に書き込み、ノードごとに検証し、いずれかが受け付けなければ全ノードを元に戻します。無効にするとファイルは完全に元どおりになります。各ノードの `white_list` と、再起動が必要なマネージャーも表示します
 - **インストール直後から静か：** 大量のアラートを止めるためにサイトのリストを登録する必要のあるパックはありません。ログインの成功は意味のあるときだけアラートにします（組み込みの管理者、パブリックアドレス、失敗直後の成功、あるアカウントがあるアドレスから初めて現れたとき）。許可リストは任意の調整です
 - **サービスをまたぐアカウントの安全：** 各パックがログインの試行を同じ方法でタグ付けするため、1 つのアドレスが SSO・メールサーバー・Nextcloud に同時にパスワードスプレーを行い、直後にログインしても、無関係な 3 件ではなく 1 件のアラートになります。メールアカウントには乗っ取りの連鎖（新しいアドレスからのログイン後の転送設定、パスワードや二要素認証の変更）、SMTP／ActiveSync のパスワードスプレー、メールボックスの吸い出しの検知もあります
-- 同梱パック 24 個: サービスをまたぐアカウントの安全、可搬実行ファイルの検知（Windows／Linux／macOS）、IP 脅威インテリジェンス、マルウェアのハッシュ照合、読みやすいアラート要約メール、Zimbra、Z-Push、Proxmox VE と Ceph、Proxmox Backup Server、Proxmox Mail Gateway、OPNsense、Zenarmor、AdGuard Home、fail2ban、Keycloak、Univention Corporate Server／Samba AD、Nextcloud、LibreNMS、Synology DSM、Odoo、Jitsi Meet、Docker、jt-ipam、jt-vc-portal。どのパックも、ベンダーのドキュメント、製品のソースコードにある実際のログ形式、セキュリティアドバイザリ（CISA KEV を含む）、MITRE ATT&CK と照らし合わせ、使い捨ての Wazuh マネージャーコンテナで 1 件ずつテストしています
+- 同梱パック 25 個: サービスをまたぐアカウントの安全、稼働中の Docker コンテナのイメージの脆弱性（Trivy、毎日、CISA KEV 付き）、可搬実行ファイルの検知（Windows／Linux／macOS）、IP 脅威インテリジェンス、マルウェアのハッシュ照合、読みやすいアラート要約メール、Zimbra、Z-Push、Proxmox VE と Ceph、Proxmox Backup Server、Proxmox Mail Gateway、OPNsense、Zenarmor、AdGuard Home、fail2ban、Keycloak、Univention Corporate Server／Samba AD、Nextcloud、LibreNMS、Synology DSM、Odoo、Jitsi Meet、Docker、jt-ipam、jt-vc-portal。どのパックも、ベンダーのドキュメント、製品のソースコードにある実際のログ形式、セキュリティアドバイザリ（CISA KEV を含む）、MITRE ATT&CK と照らし合わせ、使い捨ての Wazuh マネージャーコンテナで 1 件ずつテストしています
 
 ### セキュリティ
 - すべてのパラメーターに対する入力検証。コマンドインジェクションとパストラバーサルへの対策
