@@ -8,9 +8,11 @@ here. Everything runs in temporary directories; mail goes to a stand-in or to
 a server on 127.0.0.1 that this file starts and stops.
 """
 
+import base64
 import email
 import email.policy
 import gzip
+import http.server
 import io
 import json
 import os
@@ -21,6 +23,7 @@ import tempfile
 import threading
 import time
 import unittest
+from urllib.parse import parse_qs
 
 sys.dont_write_bytecode = True      # no __pycache__ inside the shipped pack
 
@@ -659,6 +662,327 @@ class TestContent(DigestCase):
         import ast
         with io.open(SCRIPT, encoding='utf-8') as fh:
             ast.parse(fh.read(), feature_version=(3, 8))
+
+
+class FakeZulip(object):
+    """A stand-in for the Zulip API on 127.0.0.1, started and stopped by each test.
+
+    POST /api/v1/messages answers from `replies` (status, body) in order, then
+    success. Every request is recorded with its headers and decoded form.
+    """
+
+    KEY = 'k3yABCDEFghijklmnopQRSTuvwxyz012'
+    EMAIL = 'alerts-bot@example.com'
+
+    def __init__(self, test):
+        self.requests, self.replies = [], []
+        self.private, self.subscribed = False, True
+        fake = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def reply(self, status, body):
+                raw = json.dumps(body).encode()
+                self.send_response(status)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+            def handle_any(self, method):
+                length = int(self.headers.get('Content-Length') or 0)
+                raw = self.rfile.read(length) if length else b''
+                path, _, query = self.path.partition('?')
+                form = parse_qs(raw.decode('utf-8') if raw else query)
+                fake.requests.append({'method': method, 'path': path, 'headers': dict(self.headers),
+                                      'form': {k: v[0] for k, v in form.items()}})
+                expected = 'Basic ' + base64.b64encode(
+                    ('%s:%s' % (fake.EMAIL, fake.KEY)).encode()).decode()
+                if self.headers.get('Authorization') != expected:
+                    return self.reply(401, {'result': 'error', 'code': 'INVALID_API_KEY',
+                                            'msg': 'Invalid API key'})
+                if path == '/api/v1/messages' and method == 'POST':
+                    if fake.replies:
+                        return self.reply(*fake.replies.pop(0))
+                    return self.reply(200, {'result': 'success', 'id': len(fake.requests)})
+                if path == '/api/v1/users/me':
+                    return self.reply(200, {'result': 'success', 'email': fake.EMAIL,
+                                            'full_name': 'Alerts', 'is_bot': True})
+                if path == '/api/v1/get_stream_id':
+                    if form.get('stream', [''])[0] != 'wazuh' or (fake.private and not fake.subscribed):
+                        return self.reply(400, {'result': 'error', 'code': 'BAD_REQUEST',
+                                                'msg': 'Invalid channel name'})
+                    return self.reply(200, {'result': 'success', 'stream_id': 7})
+                if path == '/api/v1/users/me/subscriptions':
+                    subs = [{'stream_id': 7, 'name': 'wazuh'}] if fake.subscribed else []
+                    return self.reply(200, {'result': 'success', 'subscriptions': subs})
+                if path == '/api/v1/streams/7':
+                    return self.reply(200, {'result': 'success', 'stream': {
+                        'stream_id': 7, 'name': 'wazuh', 'invite_only': fake.private}})
+                return self.reply(404, {'result': 'error', 'code': 'BAD_REQUEST', 'msg': 'no'})
+
+            def do_GET(self):
+                self.handle_any('GET')
+
+            def do_POST(self):
+                self.handle_any('POST')
+
+        self.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        self.server.daemon_threads = True
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        test.addCleanup(self.server.server_close)
+        test.addCleanup(self.server.shutdown)
+        self.url = 'http://127.0.0.1:%d' % self.server.server_address[1]
+
+    def posts(self):
+        return [r for r in self.requests if r['method'] == 'POST']
+
+
+class TestZulip(DigestCase):
+
+    def setUp(self):
+        DigestCase.setUp(self)
+        self.zulip = FakeZulip(self)
+
+    def tree(self, extra='', mode=0o600):
+        t = Tree(self)
+        key = t.path('etc/jt-packs/zulip.key')
+        with open(key, 'w') as fh:
+            fh.write(FakeZulip.KEY + '\n')
+        os.chmod(key, mode)
+        t.conf('repeat = 0\ndaily = off\nzulip_url = %s\nzulip_email = %s\nzulip_api_key_file = %s\n'
+               'zulip_stream = wazuh\nzulip_topic = 警報\n%s'
+               % (self.zulip.url, FakeZulip.EMAIL, key, extra))
+        self.run_digest(t)                      # first run: both channels start at the end
+        return t
+
+    def zulip_events(self):
+        return [e['event'] for e in self.events if e.get('channel') == 'zulip']
+
+    def test_message_shape_auth_and_utf8_topic(self):
+        t = self.tree()
+        t.write(alert(1), alert(2, rule='100002', level=13))
+        self.assertEqual(self.run_digest(t), 0)
+        posts = self.zulip.posts()
+        self.assertEqual(len(posts), 1)
+        form = posts[0]['form']
+        self.assertEqual((form['type'], form['to'], form['topic']), ('stream', 'wazuh', '警報'))
+        self.assertIn('L13 · rule 100002 · host1', form['content'])
+        self.assertIn('line 1', form['content'])
+        token = base64.b64encode(('%s:%s' % (FakeZulip.EMAIL, FakeZulip.KEY)).encode()).decode()
+        self.assertEqual(posts[0]['headers']['Authorization'], 'Basic ' + token)
+        self.assertEqual(len(self.sent), 1, 'mail goes out as well')
+        self.run_digest(t)
+        self.assertEqual(len(self.zulip.posts()), 1, 'nothing new, nothing posted')
+
+    def test_alert_text_cannot_mention_or_link(self):
+        t = self.tree()
+        t.write(alert(1, desc='Hi @**all** see [here](http://evil.example/x)', agent='a_b*c'))
+        self.run_digest(t)
+        content = self.zulip.posts()[0]['form']['content']
+        self.assertNotIn('@**all**', content)
+        self.assertNotIn('[here](http', content)
+
+    def test_long_digests_are_split_without_cutting_a_group(self):
+        t = self.tree()
+        lines = []
+        for g in range(40):
+            for n in range(3):
+                a = json.loads(alert(g * 3 + n, rule=str(120000 + g), agent='h%d' % g))
+                a['full_log'] = 'z' * 190 + ' %d' % n
+                lines.append(json.dumps(a))
+        t.write(*lines)
+        self.run_digest(t)
+        posts = [p['form']['content'] for p in self.zulip.posts()]
+        self.assertTrue(1 < len(posts) <= 4, len(posts))
+        for i, content in enumerate(posts):
+            self.assertLessEqual(len(content), 9000)
+            self.assertTrue(content.startswith('_(%d/%d)_' % (i + 1, len(posts))))
+            fences = [l for l in content.split('\n') if l.startswith('~~~')]
+            self.assertEqual(len(fences) % 2, 0, 'a code block left open')
+        for g in range(40):
+            rule = 'rule %d' % (120000 + g)
+            self.assertEqual(sum(1 for c in posts if rule in c), 1, rule)
+
+    def test_zulip_down_does_not_touch_mail(self):
+        t = self.tree()
+        t.write(alert(1))
+        self.zulip.replies = [(503, {'result': 'error', 'msg': 'down'})] * 2
+        self.assertEqual(self.run_digest(t), 1)
+        self.assertEqual(len(self.sent), 1, 'mail delivered while Zulip is down')
+        self.assertEqual(self.zulip_events(), ['delivery_failed'])
+        self.assertEqual(self.events[0]['error_class'], 'http-503')
+        self.mod.NOW = T0 + 120
+        self.run_digest(t)
+        self.assertEqual(len(self.sent), 1, 'mail is not sent again')
+        self.assertEqual(self.zulip_events(), ['delivery_failed'], 'not reported every run')
+        self.mod.NOW = T0 + 240
+        self.run_digest(t)                      # replies used up: Zulip answers again
+        self.assertEqual(self.zulip_events(), ['delivery_failed', 'recovered'])
+        self.assertEqual(sum(1 for p in self.zulip.posts() if 'line 1' in p['form']['content']), 3)
+        self.assertEqual(len(self.sent), 1)
+        self.run_digest(t)
+        self.assertEqual(len(self.zulip.posts()), 3, 'posted once successfully, never again')
+
+    def test_mail_down_does_not_touch_zulip(self):
+        t = self.tree()
+        t.write(alert(1))
+        self.refuse = 'rcpt-450'
+        self.run_digest(t)
+        self.run_digest(t)
+        self.assertEqual(len(self.zulip.posts()), 1, 'posted once, not again while mail fails')
+        self.assertEqual([e['event'] for e in self.events if not e.get('channel')], ['delivery_failed'])
+        self.refuse = None
+        self.run_digest(t)
+        self.assertIn('line 1', self.body())
+        self.assertEqual(len(self.zulip.posts()), 1)
+
+    def test_a_failure_halfway_through_a_split_post_resumes_without_repeating(self):
+        t = self.tree()
+        lines = []
+        for g in range(30):
+            a = json.loads(alert(g, rule=str(130000 + g), agent='h%d' % g))
+            a['full_log'] = 'y' * 190
+            lines.append(json.dumps(a))
+        t.write(*lines)
+        self.zulip.replies = [(200, {'result': 'success', 'id': 1}), (502, {'result': 'error', 'msg': 'x'})]
+        self.run_digest(t)
+        first = [p['form']['content'] for p in self.zulip.posts()]
+        self.assertEqual(len(first), 2)
+        self.run_digest(t)
+        posts = [p['form']['content'] for p in self.zulip.posts()]
+        resent = posts[2:]
+        self.assertNotIn(first[0], resent, 'the part already posted is not posted again')
+        self.assertEqual(resent[0], first[1], 'the failed part is retried as it was')
+        for g in range(30):
+            ok = [c for c in [first[0]] + resent if 'rule %d' % (130000 + g) in c]
+            self.assertEqual(len(ok), 1)
+
+    def test_401_is_a_configuration_failure_and_5xx_is_not(self):
+        t = self.tree()
+        t.write(alert(1))
+        self.zulip.replies = [(401, {'result': 'error', 'code': 'INVALID_API_KEY', 'msg': 'Invalid API key'})] * 5
+        for minute in (0, 2, 4):
+            self.mod.NOW = T0 + minute * 60
+            self.run_digest(t)
+        events = [e for e in self.events if e.get('channel') == 'zulip']
+        self.assertEqual([e['event'] for e in events], ['config_error'])
+        self.assertEqual(events[0]['error_class'], 'http-401-INVALID_API_KEY')
+        self.mod.NOW = T0 + 3 * 3600
+        self.run_digest(t)
+        self.assertEqual(self.zulip_events(), ['config_error'], 'no two-hour escalation for a refused key')
+
+    def test_key_file_must_be_root_only(self):
+        t = self.tree(mode=0o644)
+        t.write(alert(1))
+        self.run_digest(t)
+        self.assertEqual(self.zulip.posts(), [])
+        problems = [e['problem'] for e in self.events if e.get('channel') == 'zulip' and e['event'] == 'config_error']
+        self.assertTrue(problems and 'chmod 600' in problems[0])
+        self.assertEqual(len(self.sent), 1, 'mail is unaffected')
+
+    def test_the_key_appears_nowhere(self):
+        t = self.tree()
+        t.write(alert(1))
+        self.zulip.replies = [(401, {'result': 'error', 'code': 'INVALID_API_KEY',
+                                     'msg': 'Invalid API key %s' % FakeZulip.KEY})]
+        self.run_digest(t)
+        self.run_digest(t)
+        out = io.StringIO()
+        stdout = sys.stdout
+        sys.stdout = out
+        try:
+            options, _, _ = self.mod.build_options(self.mod.read_site_settings(t.root),
+                                                   self.mod.read_global_config(t.root))
+            self.mod.check_zulip(options['zulip'], options['zulip_fatal'])
+        finally:
+            sys.stdout = stdout
+        token = base64.b64encode(('%s:%s' % (FakeZulip.EMAIL, FakeZulip.KEY)).encode()).decode()
+        with open(t.path('var/jt-alert-digest.state')) as fh:
+            state = fh.read()
+        for text in (state, json.dumps(self.events), '\n'.join(self.logs), out.getvalue()):
+            self.assertNotIn(FakeZulip.KEY, text)
+            self.assertNotIn(token, text)
+
+    def test_without_zulip_settings_nothing_changes(self):
+        t = Tree(self)
+        self.run_digest(t)
+        t.write(alert(1))
+        self.run_digest(t)
+        self.assertNotIn('zulip', t.state())
+        self.assertEqual(self.zulip.requests, [])
+        self.assertTrue(all('channel' not in e for e in self.events))
+        self.assertEqual(len(self.sent), 1)
+
+    def test_an_old_backlog_becomes_a_count(self):
+        t = self.tree()
+        t.write(alert(1, when=T0 - 30 * 3600), alert(2, when=T0 - 29 * 3600), alert(3, rule='100003'))
+        self.run_digest(t)
+        content = self.zulip.posts()[0]['form']['content']
+        self.assertIn('2 alerts from', content)
+        self.assertIn('rule 100003', content)
+        self.assertNotIn('line 1', content)
+        self.assertIn('skipped', self.zulip_events())
+        self.assertIn('3 alerts at level 12', self.body(), 'mail keeps every alert')
+
+    def test_check_reads_and_test_posts_but_neither_mails(self):
+        t = self.tree()
+        options, _, _ = self.mod.build_options(self.mod.read_site_settings(t.root),
+                                               self.mod.read_global_config(t.root))
+        stdout = sys.stdout
+        sys.stdout = io.StringIO()
+        try:
+            self.assertEqual(self.mod.check_zulip(options['zulip'], []), 0)
+            self.zulip.private, self.zulip.subscribed = True, False
+            self.assertEqual(self.mod.check_zulip(options['zulip'], []), 1)
+            self.assertEqual(self.run_digest(t, '--test', 'zulip'), 0)
+        finally:
+            sys.stdout = stdout
+        self.assertEqual([r['method'] for r in self.zulip.requests].count('POST'), 1)
+        self.assertEqual(self.sent, [])
+
+    def test_daily_summary_goes_to_its_own_topic_and_mail_still_gets_one(self):
+        daily = time.strftime('%H:%M', time.localtime(T0 + 600))
+        t = Tree(self)
+        key = t.path('etc/jt-packs/zulip.key')
+        with open(key, 'w') as fh:
+            fh.write(FakeZulip.KEY + '\n')
+        os.chmod(key, 0o600)
+        t.conf('repeat = 0\ndaily = %s\nzulip_url = %s\nzulip_email = %s\nzulip_api_key_file = %s\n'
+               'zulip_stream = wazuh\nzulip_topic = 警報\nzulip_summary_topic = summary\n'
+               % (daily, self.zulip.url, FakeZulip.EMAIL, key))
+        self.run_digest(t)
+        self.mod.NOW = T0 + 900
+        self.run_digest(t)
+        posts = self.zulip.posts()
+        self.assertEqual([p['form']['topic'] for p in posts], ['summary'])
+        self.assertIn('Daily summary from node02', posts[0]['form']['content'])
+        self.assertIn('Mail: working', posts[0]['form']['content'])
+        self.assertEqual(sum(1 for m in self.sent if 'Daily summary' in m['Subject']), 1)
+        self.assertIn('Zulip: working', self.body())
+        self.run_digest(t)
+        self.assertEqual(len(self.zulip.posts()), 1, 'once a day')
+
+    def test_a_redirect_is_not_followed_with_the_key(self):
+        t = self.tree()
+        self.zulip.replies = [(302, {'result': 'error'})]
+        options, _, _ = self.mod.build_options(self.mod.read_site_settings(t.root),
+                                               self.mod.read_global_config(t.root))
+        with self.assertRaises(self.mod.DeliveryError) as caught:
+            self.mod.zulip_post(options['zulip'], 't', 'c')
+        self.assertTrue(caught.exception.permanent)
+
+    def test_plain_http_is_refused_except_to_this_host(self):
+        t = Tree(self)
+        site = {'zulip_url': 'http://chat.example.com', 'zulip_email': 'b@example.com',
+                'zulip_api_key_file': t.path('none'), 'zulip_stream': 'wazuh'}
+        options, _, _ = self.mod.build_options(site, self.mod.read_global_config(t.root))
+        self.assertTrue(any('https' in f for f in options['zulip_fatal']))
+        site['zulip_url'] = 'http://127.0.0.1:8080'
+        options, _, _ = self.mod.build_options(site, self.mod.read_global_config(t.root))
+        self.assertFalse(any('https' in f for f in options['zulip_fatal']))
 
 
 if __name__ == '__main__':

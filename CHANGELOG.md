@@ -4,6 +4,21 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.15.1 (2026-10-18)
+
+- **jt-alert-digest 1.5: alerts can also go to Zulip.** Optional, set in the site's
+  `jt-alert-digest.conf` (server, bot e-mail, stream, topic, and a key file that must be
+  root-owned with mode 600). Zulip gets the same groups, repeat hold and daily summary
+  as the mail, as Zulip markdown split under the message limit; alert text cannot
+  mention anyone or hide a link. The two channels are independent: either one failing
+  neither loses nor repeats the other's messages. A Zulip failure becomes an alert
+  (131121-131126): a refused key or a bot that may not post is a level-12 configuration
+  problem, an unreachable server is level 10 and level 12 after two hours. `--check`
+  tests the login and whether the bot may post to the stream; `--test zulip` posts one
+  message. When Zulip is first configured it starts at the end of the alert file rather
+  than posting the backlog; delivery to Zulip is at-least-once; `max_per_hour` applies
+  to mail only. Without any `zulip_` setting nothing changes.
+
 ## v1.15.0 (2026-10-15)
 
 Account security, with mail first.

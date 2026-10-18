@@ -38,6 +38,10 @@ the manager's event queue as JSON, where rules 131110-131116 turn them into
 console alerts: when a failure starts or changes, then hourly, and at a
 higher level once alerts have reached nobody for two hours.
 
+Optionally the same digest is also posted to a Zulip channel (stream and
+topic from the settings file). Each channel keeps its own position in the
+alert file, so a Zulip outage cannot lose or repeat mail, and the reverse.
+
 Once this is delivering, turn wazuh-maild off, or both will send: set
 <email_notification> to no and stop that daemon. Do not raise
 email_alert_level for that purpose; this script reads it too.
@@ -46,8 +50,11 @@ Runs on the manager's own python3 (3.8 or later), standard library only.
 """
 
 import argparse
+import base64
+import copy
 import fcntl
 import gzip
+import http.client
 import json
 import os
 import re
@@ -59,13 +66,15 @@ import subprocess
 import sys
 import time
 import traceback
+import urllib.error
+import urllib.request
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.4"
+VERSION = "1.5"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -272,24 +281,27 @@ def _time_of_day(value):
     return (int(match.group(1)), int(match.group(2)))
 
 
-def read_secret(path):
-    """The SMTP password, only from a file nobody but root can read."""
+def read_secret(path, setting="smtp_password_file"):
+    """A password or key, only from a file nobody but root can read.
+
+    The value itself never appears in a message: the problems name the file.
+    """
     try:
         info = os.stat(path)
     except OSError as exc:
-        return None, "smtp_password_file %s cannot be read: %s" % (path, exc.strerror or exc)
+        return None, "%s %s cannot be read: %s" % (setting, path, exc.strerror or exc)
     if not stat.S_ISREG(info.st_mode):
-        return None, "smtp_password_file %s is not a regular file" % path
+        return None, "%s %s is not a regular file" % (setting, path)
     if info.st_uid not in (0, os.geteuid()) or info.st_mode & 0o077:
-        return None, ("smtp_password_file %s must belong to root and be readable by "
-                      "root only (chmod 600)" % path)
+        return None, ("%s %s must belong to root and be readable by "
+                      "root only (chmod 600)" % (setting, path))
     try:
         with open(path, encoding="utf-8") as fh:
             secret = fh.readline().rstrip("\r\n")
-    except (OSError, UnicodeDecodeError) as exc:
-        return None, "smtp_password_file %s cannot be read: %s" % (path, exc)
+    except (OSError, UnicodeDecodeError):
+        return None, "%s %s cannot be read" % (setting, path)
     if not secret:
-        return None, "smtp_password_file %s is empty" % path
+        return None, "%s %s is empty" % (setting, path)
     return secret, None
 
 
@@ -316,7 +328,7 @@ def build_options(site, config, args=None):
     fatal, warnings = [], []
     o = {}
     for key in sorted(site):
-        if key not in KNOWN_SETTINGS:
+        if key not in KNOWN_SETTINGS and key not in ZULIP_KEYS:
             warnings.append("unknown setting %r ignored" % key)
 
     o["dashboard"] = (getattr(args, "dashboard", None) or site.get("dashboard") or "").strip() or None
@@ -444,6 +456,7 @@ def build_options(site, config, args=None):
     else:
         warnings.append("link must be off, auto or an http(s) URL template")
         o["link"] = None
+    o["zulip"], o["zulip_fatal"] = build_zulip_options(site, warnings)
     return o, fatal, warnings
 
 
@@ -785,6 +798,10 @@ class Batch(object):
         self.health = []
         self.more = False
         self.lost = []
+        self.cutoff = None          # alerts older than this are counted, not collected
+        self.dropped = 0
+        self.dropped_first = None
+        self.dropped_last = None
 
     def qualifies(self, rule, level):
         """rule.mail is analysisd's own verdict (email_alert_level, alert_by_email,
@@ -832,9 +849,17 @@ class Batch(object):
                 str(agent.get("id", "")) in self.options.get("exclude_agents", ()):
             self.excluded += 1
             return False
+        stamp = parse_ts(alert.get("timestamp"))
+        if self.cutoff is not None and stamp is not None and stamp < self.cutoff:
+            self.dropped += 1
+            when = alert.get("timestamp")
+            if self.dropped_first is None or when < self.dropped_first:
+                self.dropped_first = when
+            if self.dropped_last is None or when > self.dropped_last:
+                self.dropped_last = when
+            return False
         add_alert(self.groups, alert, rule, level)
         self.total += 1
-        stamp = parse_ts(alert.get("timestamp"))
         if stamp is not None and (self.oldest is None or stamp < self.oldest[0]):
             self.oldest = (stamp, alert.get("timestamp"))
         return True
@@ -1820,10 +1845,13 @@ def subject(groups, total, held=None):
 # --------------------------------------------------------------------------
 
 class DeliveryError(Exception):
-    def __init__(self, kind, text):
+    """kind: a short stable name; permanent: retrying cannot help (a refused key)."""
+
+    def __init__(self, kind, text, permanent=False):
         Exception.__init__(self, text)
         self.kind = kind
         self.text = text
+        self.permanent = permanent
 
 
 def classify(exc):
@@ -1999,6 +2027,350 @@ def build_message(line, text, html, options, context, total=None):
 
 
 # --------------------------------------------------------------------------
+# Zulip: an optional second channel, independent of the mail
+# --------------------------------------------------------------------------
+
+ZULIP_KEYS = ("zulip_url", "zulip_email", "zulip_api_key_file", "zulip_stream", "zulip_topic",
+              "zulip_summary_topic", "zulip_tls_verify", "zulip_ca_file", "zulip_max_backlog")
+ZULIP_LIMIT = 9000     # Zulip's default max_message_length is 10,000 characters
+ZULIP_PARTS = 4        # one run never posts more than this many messages
+ZULIP_TOPIC_MAX = 60   # Zulip's default max_topic_length
+
+
+def build_zulip_options(site, warnings):
+    """(options, fatal) for the Zulip channel; (None, []) when it is not configured.
+
+    Any zulip_* key switches the channel on, so a half-written configuration
+    is reported (rule 131126) instead of being silently ignored.
+    """
+    if not any(key in site for key in ZULIP_KEYS):
+        return None, []
+    fatal = []
+    z = {}
+    url = (site.get("zulip_url") or "").strip().rstrip("/")
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+    except ValueError:
+        parts, host = None, ""
+    if not parts or not parts.netloc or parts.query or parts.fragment or not (
+            parts.scheme == "https" or (parts.scheme == "http" and host in ("127.0.0.1", "localhost", "::1"))):
+        # The API key travels with every request, so plain http is refused
+        # except to this host itself.
+        fatal.append("zulip_url must be an https:// address of the Zulip server")
+    z["url"] = url
+    z["email"] = (site.get("zulip_email") or "").strip()
+    if "@" not in z["email"]:
+        fatal.append("zulip_email must be the bot's e-mail address")
+    z["key"] = None
+    key_file = site.get("zulip_api_key_file")
+    if not key_file:
+        fatal.append("zulip_api_key_file is not set")
+    else:
+        key, problem = read_secret(key_file, "zulip_api_key_file")
+        if problem:
+            fatal.append(problem)
+        elif not re.match(r"^[A-Za-z0-9_-]{8,256}$", key.strip()):
+            fatal.append("zulip_api_key_file %s does not hold an API key on its first line" % key_file)
+        else:
+            z["key"] = key.strip()
+    z["key_file"] = key_file
+    z["stream"] = (site.get("zulip_stream") or "").strip()
+    if not z["stream"]:
+        fatal.append("zulip_stream is not set")
+    z["topic"] = (site.get("zulip_topic") or "Wazuh alerts").strip()
+    z["summary_topic"] = (site.get("zulip_summary_topic") or z["topic"]).strip()
+    for key in ("topic", "summary_topic"):
+        if len(z[key]) > ZULIP_TOPIC_MAX:
+            warnings.append("zulip_%s is longer than %d characters and was shortened"
+                            % (key, ZULIP_TOPIC_MAX))
+            z[key] = z[key][:ZULIP_TOPIC_MAX]
+    z["verify"] = True
+    if site.get("zulip_tls_verify"):
+        try:
+            z["verify"] = _yes(site["zulip_tls_verify"])
+        except ValueError:
+            fatal.append("zulip_tls_verify must be yes or no")
+    z["ca_file"] = site.get("zulip_ca_file") or None
+    if z["ca_file"] and not os.access(z["ca_file"], os.R_OK):
+        fatal.append("zulip_ca_file %s cannot be read" % z["ca_file"])
+    z["max_backlog"] = 24 * 3600
+    if site.get("zulip_max_backlog"):
+        try:
+            z["max_backlog"] = max(3600, _duration(site["zulip_max_backlog"]))
+        except ValueError:
+            warnings.append("zulip_max_backlog = %s ignored, using 24 hours" % site["zulip_max_backlog"])
+    return z, fatal
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect would carry the Authorization header to wherever it points."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "redirect refused", headers, fp)
+
+
+def zulip_context(z):
+    if z.get("verify", True):
+        context = ssl.create_default_context(cafile=z.get("ca_file"))
+    else:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
+
+
+def zulip_call(z, method, path, fields=None, timeout=20):
+    """One Zulip API request with HTTP basic auth (bot e-mail, API key).
+
+    Returns the decoded JSON on success; raises DeliveryError otherwise, with
+    permanent=True for answers that retrying cannot change (a refused key, a
+    bot that may not post, a channel that does not exist). The key is never
+    part of a URL, a log line or an error text.
+    """
+    url = z["url"] + path
+    body = None
+    if fields and method == "GET":
+        url += "?" + urlencode(fields)
+    elif fields:
+        body = urlencode(fields).encode("utf-8")
+    request = urllib.request.Request(url, data=body, method=method)
+    token = base64.b64encode(("%s:%s" % (z["email"], z["key"])).encode("utf-8")).decode("ascii")
+    request.add_header("Authorization", "Basic " + token)
+    request.add_header("User-Agent", "jt-alert-digest/" + VERSION)
+    request.add_header("Accept", "application/json")
+    if body is not None:
+        request.add_header("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
+    handlers = [_NoRedirect()]
+    if url.startswith("https:"):
+        handlers.append(urllib.request.HTTPSHandler(context=zulip_context(z)))
+    opener = urllib.request.build_opener(*handlers)
+
+    def clean(text):
+        text = str(text)
+        if z.get("key"):
+            text = text.replace(z["key"], REDACTED)
+        return trim(redact(text.replace(token, REDACTED)), 300)
+
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            raw = response.read(1 << 20)
+    except urllib.error.HTTPError as exc:
+        try:
+            raw = exc.read(1 << 16) if exc.fp else b""
+            data = json.loads(raw.decode("utf-8", "replace"))
+        except (OSError, ValueError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        code = re.sub(r"[^A-Z_]", "", str(data.get("code") or ""))[:40]
+        message = data.get("msg") or exc.reason
+        status = exc.code
+        permanent = 300 <= status < 500 and status not in (408, 429)
+        raise DeliveryError("http-%d%s" % (status, ("-" + code) if code else ""),
+                            clean("HTTP %d%s: %s" % (status, (" " + code) if code else "", message)),
+                            permanent=permanent)
+    except urllib.error.URLError as exc:
+        reason = exc.reason
+        kind = classify(reason) if isinstance(reason, BaseException) else "network"
+        raise DeliveryError(kind, clean("%s: %s" % (urlsplit(url).netloc, reason)))
+    except (OSError, http.client.HTTPException, ValueError) as exc:
+        raise DeliveryError(classify(exc), clean("%s: %s: %s" % (urlsplit(url).netloc,
+                                                                   type(exc).__name__, exc)))
+    try:
+        data = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        data = None
+    if not isinstance(data, dict) or data.get("result") != "success":
+        raise DeliveryError("bad-response", clean("unexpected answer from %s" % urlsplit(url).netloc))
+    return data
+
+
+def zulip_post(z, topic, content):
+    """POST /api/v1/messages. type "stream" is accepted by every version; "channel"
+    is only an alias from feature level 248 (Zulip 9.0)."""
+    return zulip_call(z, "POST", "/api/v1/messages",
+                      {"type": "stream", "to": z["stream"], "topic": topic, "content": content})
+
+
+_MD_SPECIAL = re.compile(r"([\\`*_\[\]])")
+
+
+def md(text):
+    """Alert text made inert in Zulip markdown.
+
+    Descriptions and agent names carry attacker-influenced text. A mention
+    (@**all**) would notify everyone in the channel and a link could be
+    disguised, so markdown characters are escaped and mention, LaTeX and
+    strike-through openers are broken with an invisible zero-width space.
+    """
+    text = " ".join(str(text).split())
+    text = re.sub(r"@(?=[*_])", "@\u200b", text)
+    text = text.replace("$$", "$\u200b$").replace("~~", "~\u200b~")
+    text = _MD_SPECIAL.sub(r"\\\1", text)
+    # A heading, quote or list marker only counts at the start of a line.
+    return re.sub(r"^([#>+-])", r"\\\1", text)
+
+
+def md_link(url):
+    return url.replace(" ", "%20").replace("(", "%28").replace(")", "%29")
+
+
+def fenced(lines):
+    """Decoded fields in a code block: nothing inside is interpreted, so no
+    escaping can be got wrong, and the block reads as it does in the mail."""
+    body = "\n".join(lines)
+    longest = max([len(run) for run in re.findall(r"~+", body)] or [0])
+    fence = "~" * max(3, longest + 1)
+    return "%stext\n%s\n%s" % (fence, body, fence)
+
+
+def zulip_group(rule_id, agent, group, samples, link=None, compact=False):
+    count = (" \u00d7%d" % group["count"]) if group["count"] > 1 else ""
+    mark = (" \u00b7 **%s**" % badge(group)) if badge(group) else ""
+    title = "**%s L%d \u00b7 rule %s \u00b7 %s**%s%s" % (
+        SEVERITY.get(group["level"], "[HIGH]"), group["level"], md(rule_id), md(agent), count, mark)
+    if compact:
+        return "- %s \u00b7 %s" % (title, md(trim(heading(group, rule_id), 90)))
+    lines = [title, md(heading(group, rule_id))]
+    meta = [headline(group)]
+    if host_detail(group):
+        meta.append(host_detail(group))
+    if group.get("mitre"):
+        meta.append(mitre_line(group))
+    lines.append(md(" \u00b7 ".join(meta)))
+    body = []
+    for fields in card_fields(group, samples):
+        if body:
+            body.append("")
+        body.extend("%s: %s" % (label, value) for label, value in fields)
+    if body:
+        lines.append(fenced(body))
+    shown = 0 if group.get("kind") == "vulnerability" and group.get("vulns") \
+        else min(samples, len(group.get("samples", [])))
+    notes = []
+    if group["count"] - shown > 0 and shown:
+        notes.append("%d more of the same" % (group["count"] - shown))
+    if group.get("earlier"):
+        notes.append("plus %d earlier since the last full post" % group["earlier"])
+    if notes:
+        lines.append("_(%s)_" % "; ".join(notes))
+    if link:
+        lines.append("[Open these alerts in the dashboard](%s)" % md_link(link))
+    return "\n".join(lines)
+
+
+def cut_block(block, limit):
+    """Shorten one block to fit a message, closing a code block left open."""
+    out, size, fence = [], 0, None
+    for line in block.split("\n"):
+        if size + len(line) + 1 > limit - 60:
+            break
+        out.append(line)
+        size += len(line) + 1
+        if re.match(r"^~{3,}", line):
+            fence = None if fence else re.match(r"^~+", line).group(0)
+    if fence:
+        out.append(fence)
+    out.append("_(cut to fit one message)_")
+    return "\n".join(out)
+
+
+def pack(blocks, limit=ZULIP_LIMIT):
+    """Blocks into messages under the limit; a block is never split between two."""
+    room = limit - 40
+    parts, current = [], ""
+    for block in blocks:
+        if len(block) > room:
+            block = cut_block(block, room)
+        if current and len(current) + 2 + len(block) > room:
+            parts.append(current)
+            current = block
+        else:
+            current = (current + "\n\n" + block) if current else block
+    if current:
+        parts.append(current)
+    if len(parts) > 1:
+        parts = ["_(%d/%d)_\n%s" % (i + 1, len(parts), p) for i, p in enumerate(parts)]
+    return parts
+
+
+def render_zulip(groups, total, min_level, dashboard, context=None, notice=None, limit=ZULIP_LIMIT):
+    """The digest as Zulip messages: the same groups, holds and fields as the mail.
+
+    Written for a phone: one short title line per group, the description,
+    one line of time, host and MITRE, then the decoded fields of 1-3
+    samples in a code block. If everything does not fit in ZULIP_PARTS
+    messages, samples drop to one, then the remaining groups become one line each.
+    """
+    context = context or {}
+    held = context.get("held") or []
+    items = ordered_groups(groups)
+    first = items[0][1]["first"] if items else ""
+    about = []
+    if context.get("node"):
+        about.append("from %s%s" % (context["node"], (" (%s)" % context["node_type"])
+                                    if context.get("node_type") else ""))
+    if zone(first):
+        about.append("times %s" % zone(first))
+    head = "**%s**" % md(opening(groups, total, min_level, held))
+    if about:
+        head += "\n_%s_" % md(", ".join(about))
+    blocks = [head]
+    if notice:
+        blocks.append(notice)
+    tail = []
+    if len(items) > MAX_GROUPS:
+        tail.append("_%d more groups not listed_" % (len(items) - MAX_GROUPS))
+    if held:
+        lines = ["**Still ongoing**: repeats of groups already posted in full, counted rather than "
+                 "repeated (hold %d minutes)" % (context.get("repeat", 3600) // 60)]
+        lines.extend("- " + md(held_line(entry)) for entry in held[:MAX_GROUPS])
+        if len(held) > MAX_GROUPS:
+            lines.append("- %d more" % (len(held) - MAX_GROUPS))
+        tail.append("\n".join(lines))
+    if context.get("more"):
+        tail.append("_More alerts are waiting; the next run continues from here._")
+    footer = []
+    if context.get("node"):
+        footer.append("sent by %s, jt-alert-digest %s" % (md(context["node"]), VERSION))
+    if dashboard and re.match(r"^https?://", dashboard):
+        footer.append("[dashboard](%s)" % md_link(dashboard))
+    if footer:
+        tail.append("_%s_" % " \u00b7 ".join(footer))
+
+    budget = ZULIP_PARTS * (limit - 40) - sum(len(b) + 2 for b in blocks + tail)
+    shown = items[:MAX_GROUPS]
+    for samples in (samples_shown(len(items)), 1):
+        rendered = [zulip_group(r, a, g, samples, link_for(context, r, a, g)) for (r, a), g in shown]
+        if sum(len(b) + 2 for b in rendered) <= budget:
+            break
+    else:
+        # Still too long: full blocks while they fit, then one line per group.
+        out, used, full = [], 0, True
+        for block, ((r, a), g) in zip(rendered, shown):
+            left = len(shown) - len(out) - 1
+            if full and used + len(block) + 2 + 200 * left <= budget:
+                out.append(block)
+                used += len(block) + 2
+                continue
+            full = False
+            line = zulip_group(r, a, g, 1, compact=True)
+            if out and out[-1].startswith("- "):
+                out[-1] += "\n" + line
+            else:
+                out.append(line)
+            used += len(line) + 1
+        rendered = out
+    return pack(blocks + rendered + tail, limit)
+
+
+def zulip_summary(line, text):
+    return "**%s**\n%s" % (md(line.replace("[Wazuh] ", "")), fenced(text.split("\n")))
+
+
+# --------------------------------------------------------------------------
 # Reporting into the manager's own event queue
 # --------------------------------------------------------------------------
 
@@ -2012,7 +2384,8 @@ def emit(event, **fields):
     A notifier that stops working cannot announce that by mail, and nobody
     reads a log file. Writing to the manager's own queue turns the event into
     an ordinary alert: the built-in json decoder decodes it and rules
-    131110-131116 match its jt_alert_digest.event field.
+    131110-131116 match its jt_alert_digest.event field (131121-131126 when
+    jt_alert_digest.channel is "zulip"; mail events carry no channel, as in 1.4).
     """
     body = {"event": event, "node": _NODE}
     for key, value in fields.items():
@@ -2039,7 +2412,8 @@ def local_iso(epoch):
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(epoch)) if epoch else ""
 
 
-def note_failure(state, kind, text, pending, oldest, server, silent=False):
+def note_failure(state, kind, text, pending, oldest, server, silent=False, channel=None,
+                 permanent=False):
     """Report a failed send without reporting it every two minutes.
 
     1.3 raised the same level 10 alert on every run: 703 identical alerts a
@@ -2065,55 +2439,68 @@ def note_failure(state, kind, text, pending, oldest, server, silent=False):
     if silent:
         failure["reported"] = t
         return
+    prefix = ("%s: " % channel) if channel else ""
+    if permanent:
+        # A refused key or a channel the bot may not post to: a configuration
+        # problem (level 12), not a delay, so no two-hour escalation either.
+        if changed or t - failure.get("reported", 0) >= ESCALATE_EVERY:
+            emit("config_error", channel=channel, problem=text, error_class=kind)
+            failure["reported"] = t
+            log("%scannot deliver with this configuration (%s): %s" % (prefix, kind, text))
+        return
     age_from = oldest[0] if oldest else failure["since"]
     age = int(max(0, t - min(age_from, failure["since"])) // 60)
     fields = dict(error_class=kind, error=text, server=server, pending=pending,
                   oldest=failure.get("oldest") or "", age_minutes=age,
                   attempts=failure["attempts"], failing_since=local_iso(failure["since"]))
     if changed or t - failure.get("reported", 0) >= REPORT_EVERY:
-        emit("delivery_failed", **fields)
+        emit("delivery_failed", channel=channel, **fields)
         failure["reported"] = t
-        log("cannot deliver (%s): %s; %s alerts waiting%s"
-            % (kind, text, pending, (", oldest " + failure["oldest"]) if failure.get("oldest") else ""))
+        log("%scannot deliver (%s): %s; %s alerts waiting%s"
+            % (prefix, kind, text, pending,
+               (", oldest " + failure["oldest"]) if failure.get("oldest") else ""))
     if age * 60 >= STALE_AFTER and t - failure.get("escalated", 0) >= ESCALATE_EVERY:
-        emit("undelivered", **fields)
+        emit("undelivered", channel=channel, **fields)
         failure["escalated"] = t
-        log("alerts have reached nobody for %d minutes" % age)
+        log("%salerts have reached nobody for %d minutes" % (prefix, age))
 
 
-def note_success(state, sent):
+def note_success(state, sent, channel=None):
     failure = state.pop("failure", None)
     if isinstance(failure, dict):
         minutes = int(max(0, now() - failure.get("since", now())) // 60)
-        emit("recovered", sent_late=sent, failed_minutes=minutes,
+        emit("recovered", channel=channel, sent_late=sent, failed_minutes=minutes,
              failing_since=local_iso(failure.get("since")), attempts=failure.get("attempts", 0),
              error_class=failure.get("kind", ""))
-        log("delivering again after %d minutes (%s); %d alerts sent late"
-            % (minutes, failure.get("kind", ""), sent))
+        log("%sdelivering again after %d minutes (%s); %d alerts sent late"
+            % (("%s: " % channel) if channel else "", minutes, failure.get("kind", ""), sent))
 
 
-def note_config(state, fatal):
-    """131116 for a configuration that cannot deliver: on change, then every six hours."""
+def note_config(state, fatal, channel=None):
+    """131116 (131126 for Zulip) for a configuration that cannot deliver: on
+    change, then every six hours."""
+    prefix = ("%s: " % channel) if channel else ""
     if not fatal:
         if state.pop("config_error", None):
-            log("configuration problem resolved")
+            log("%sconfiguration problem resolved" % prefix)
         return
     signature = "; ".join(fatal)
     previous = state.get("config_error") or {}
     if previous.get("sig") != signature or now() - previous.get("reported", 0) >= ESCALATE_EVERY:
-        emit("config_error", problem=signature)
-        log("configuration makes delivery impossible: %s" % signature)
+        emit("config_error", channel=channel, problem=signature)
+        log("%sconfiguration makes delivery impossible: %s" % (prefix, signature))
         state["config_error"] = {"sig": signature, "reported": now()}
 
 
-def note_lost(state, lost):
-    """131113, once per reason: a loss is an event, not a condition to repeat."""
+def note_lost(state, lost, channel=None):
+    """131113 (131123 for Zulip), once per reason: a loss is an event, not a
+    condition to repeat."""
     reported = state.setdefault("lost", {})
     for reason in lost:
         if reason in reported:
             continue
-        emit("skipped", reason=reason)
-        log("alerts skipped: %s" % reason)
+        emit("skipped", channel=channel, reason=reason)
+        log("%salerts skipped: %s" % (("%s: " % channel) if channel else "", reason))
         reported[reason] = now()
 
 
@@ -2185,7 +2572,7 @@ def count_batch(state, batch, mailed, held):
             daily["disconnects"][name] = daily["disconnects"].get(name, 0) + 1
 
 
-def render_daily(state, options, context, warnings):
+def render_daily(state, options, context, warnings, others=()):
     daily = state["daily"]
     t = now()
     stopped = sorted((n, s) for n, s in daily.get("stops", {}).items() if t - s >= STOP_GRACE)
@@ -2210,6 +2597,10 @@ def render_daily(state, options, context, warnings):
     else:
         lines.append("Delivery: working (%d failed attempts in this period)"
                      % daily.get("failures", 0))
+    for name, other in others:
+        lines.append("%s: %s" % (name, ("FAILING since %s (%s)" % (local_iso(other.get("since")),
+                                                                    other.get("kind", "?")))
+                                 if isinstance(other, dict) else "working"))
     if daily.get("unparsed"):
         lines.append("Unreadable lines in the alert file: %d" % daily["unparsed"])
     if top:
@@ -2361,6 +2752,8 @@ def run(args):
 
     if args.check:
         return check(wazuh, config, options, fatal, warnings)
+    if args.test == "zulip":
+        return send_test_zulip(options, context)
     if args.test:
         return send_test(options, fatal, context)
     if args.dry_run:
@@ -2376,10 +2769,23 @@ def run(args):
         os.close(lock)
 
 
+def new_channel_state(position, options):
+    sub = fresh_state(position)
+    del sub["v"]
+    sub["daily"] = init_daily(options)
+    return sub
+
+
 def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
-    """One run: read what is new, mail what is worth a message, keep the place."""
+    """One run: each channel reads what is new to it, sends, and keeps its own place.
+
+    Mail keeps the top level of the state file, exactly as in 1.4; Zulip, when
+    configured, keeps its own position, holds and failure record under "zulip".
+    Neither channel's failure or crash moves, loses or repeats the other's work.
+    """
     alerts_path = os.path.join(wazuh, "logs", "alerts", "alerts.json")
     state_path = os.path.join(wazuh, "var", "jt-alert-digest.state")
+    zulip = options.get("zulip")
     try:
         stat_alerts(alerts_path)
         unreadable = None if os.access(alerts_path, os.R_OK) else "permission denied"
@@ -2393,9 +2799,12 @@ def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
         if dry_run:
             print("first run: would start at the end of alerts.json and send nothing")
             return 0
-        state = fresh_state(end_position(alerts_path) if not unreadable else
-                            {"ino": None, "dev": None, "path": None, "offset": 0})
+        start = end_position(alerts_path) if not unreadable else \
+            {"ino": None, "dev": None, "path": None, "offset": 0}
+        state = fresh_state(start)
         state["daily"] = init_daily(options)
+        if zulip:
+            state["zulip"] = new_channel_state(dict(start), options)
         note_config(state, fatal)
         save_state(state_path, state)
         log("first run: starting at the end of alerts.json, nothing mailed")
@@ -2412,58 +2821,131 @@ def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
             state["pos"] = {"ino": info.st_ino, "dev": info.st_dev, "offset": 0,
                             "path": find_by_inode(os.path.dirname(alerts_path),
                                                   info.st_ino, info.st_dev)}
+        if zulip:
+            state["zulip"] = new_channel_state(dict(state["pos"]), options)
         if not dry_run:
             # Saved before the loss is reported: a state that cannot be written
             # either ends here as one (deduplicated) crash, not a 131113 per run.
             save_state(state_path, state)
+
+    def persist():
+        if not dry_run:
+            save_state(state_path, state)
+
+    # Mail. A crash here is reported as in 1.4 (by main), but only after the
+    # Zulip channel has had its turn, and with the mail state as it was.
+    before = copy.deepcopy(state)
+    mail_crash = None
+    try:
+        code = mail_round(alerts_path, state, options, fatal, warnings, context, lost,
+                          unreadable, dry_run, html)
+    except Exception:
+        mail_crash = sys.exc_info()
+        state.clear()
+        state.update(before)
+        code = 3
+    else:
+        persist()
+
+    if zulip and not unreadable:
+        before = copy.deepcopy(state)
+        try:
+            zcode = zulip_round(alerts_path, state, zulip, options.get("zulip_fatal") or [],
+                                options, context, warnings, dry_run, persist)
+        except Exception:
+            traceback.print_exc()
+            state.clear()
+            state.update(before)
+            if not dry_run:
+                report_crash(wazuh, "zulip")
+            zcode = 3
+        else:
+            persist()
+            if not dry_run:
+                clear_crash(wazuh, "zulip")
+        code = max(code, zcode)
+    if mail_crash:
+        raise mail_crash[1].with_traceback(mail_crash[2])
+    return code
+
+
+class Round(object):
+    """One channel's view of the alerts that are new to it."""
+
+
+def prepare(alerts_path, sub, options, lost, dry_run, channel=None, cutoff=None):
+    """Plan, read and split one channel's new alerts into full groups and repeats."""
+    r = Round()
+    segments, more_lost = plan(alerts_path, sub["pos"])
+    lost = list(lost) + more_lost
+    if lost or sub["pos"].get("legacy"):
+        # The starting point moved: a loss, or a 1.3 state converted. Keep the
+        # new start even if this run's send fails, so a loss is reported once.
+        sub["pos"] = where(segments[0], segments[0]["offset"])
+        if not dry_run:
+            note_lost(sub, lost, channel)
+    if len(segments) == 1 and segments[0]["current"]:
+        # Still in the same file: note how much of it exists, so that if it is
+        # rotated away before it is read, the loss is known (see plan()).
+        sub["pos"]["size"] = max(segments[0]["size"] or 0, sub["pos"].get("offset") or 0)
+    batch = Batch(options)
+    batch.cutoff = cutoff
+    r.end = read_alerts(segments, batch)
+    if batch.lost and not dry_run:
+        note_lost(sub, batch.lost, channel)
+    mark_new(sub, batch.groups)
+    r.full, r.held_now = OrderedDict(), OrderedDict()
+    for key, group in batch.groups.items():
+        (r.held_now if is_held(sub, options, gkey(*key), group) else r.full)[key] = group
+    r.merged = merge_held(sub, r.held_now)
+    for key, group in r.full.items():
+        entry = r.merged.pop(gkey(*key), None)
+        if entry:
+            group["earlier"] = entry.get("n", 0)
+    # A repeat whose hold has run out with nothing new after it: say how many
+    # there were rather than let the count wait for the next unrelated alert.
+    r.due = [k for k in r.merged
+             if now() - (sub["mailed"].get(k) or [0])[0] >= options.get("repeat", 3600)]
+    r.held_list = sorted(r.merged.values(), key=lambda e: (-e.get("level", 0), -e.get("n", 0)))
+    r.total = sum(g["count"] for g in r.full.values())
+    r.held_count = sum(g["count"] for g in r.held_now.values())
+    r.sendable = bool(r.full) or bool(r.due)
+    r.batch = batch
+    r.lost = lost
+    return r
+
+
+def consume(sub, r, shown):
+    """The position moves on and the trackers learn what was sent (or held)."""
+    if shown:
+        for key, group in r.full.items():
+            sub["mailed"][gkey(*key)] = [now(), group["level"]]
+        sub["held"] = {}
+        count_batch(sub, r.batch, r.total, r.held_count)
+        sub["daily"]["digests"] = sub["daily"].get("digests", 0) + 1
+    else:
+        sub["held"] = r.merged
+        count_batch(sub, r.batch, 0, r.held_count)
+    remember(sub, r.batch.groups)
+    sub["pos"] = r.end
+
+
+def mail_round(alerts_path, state, options, fatal, warnings, context, lost, unreadable,
+               dry_run, html):
     if not isinstance(state.get("daily"), dict):
         state["daily"] = init_daily(options)
     prune(state, options.get("repeat", 3600))
     if not dry_run:
         note_config(state, fatal)
     if unreadable:
-        if not dry_run:
-            save_state(state_path, state)
         return 2
-
-    segments, more_lost = plan(alerts_path, state["pos"])
-    lost.extend(more_lost)
-    if lost or state["pos"].get("legacy"):
-        # The starting point moved: a loss, or a 1.3 state converted. Keep the
-        # new start even if this run's send fails, so a loss is reported once.
-        state["pos"] = where(segments[0], segments[0]["offset"])
-        if not dry_run:
-            note_lost(state, lost)
-
-    if len(segments) == 1 and segments[0]["current"]:
-        # Still in the same file: note how much of it exists, so that if it is
-        # rotated away before it is read, the loss is known (see plan()).
-        state["pos"]["size"] = max(segments[0]["size"] or 0, state["pos"].get("offset") or 0)
-    batch = Batch(options)
-    end = read_alerts(segments, batch)
-    if batch.lost and not dry_run:
-        note_lost(state, batch.lost)
-    mark_new(state, batch.groups)
-    full, held_now = OrderedDict(), OrderedDict()
-    for key, group in batch.groups.items():
-        (held_now if is_held(state, options, gkey(*key), group) else full)[key] = group
-    merged = merge_held(state, held_now)
-    for key, group in full.items():
-        entry = merged.pop(gkey(*key), None)
-        if entry:
-            group["earlier"] = entry.get("n", 0)
-    # A repeat whose hold has run out with nothing new after it: say how many
-    # there were rather than let the count wait for the next unrelated alert.
-    due = [k for k in merged
-           if now() - (state["mailed"].get(k) or [0])[0] >= options.get("repeat", 3600)]
-    held_list = sorted(merged.values(), key=lambda e: (-e.get("level", 0), -e.get("n", 0)))
-    context = dict(context, held=held_list, more=batch.more)
-    total = sum(g["count"] for g in full.values())
-    held_count = sum(g["count"] for g in held_now.values())
-    sendable = bool(full) or bool(due)
+    r = prepare(alerts_path, state, options, lost, dry_run)
+    batch = r.batch
+    context = dict(context, held=r.held_list, more=batch.more)
+    full, total, held_list = r.full, r.total, r.held_list
 
     if dry_run:
-        if sendable:
+        if r.sendable:
             print("Subject: %s\n" % subject(full, total, held_list))
             print((render_html if html else render_text)(
                 full, total, options["level"], options["dashboard"], context))
@@ -2472,7 +2954,7 @@ def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
                   % (batch.total, options["repeat"] // 60))
         else:
             print("no new alerts at level %d or above" % options["level"])
-        for reason in lost + batch.lost:
+        for reason in r.lost + batch.lost:
             print("would report: alerts skipped: %s" % reason)
         if fatal:
             print("would report: configuration makes delivery impossible: %s" % "; ".join(fatal))
@@ -2481,13 +2963,10 @@ def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
     server_label = options["server"] if options["server"].startswith("/") \
         else "%s:%s" % (options["server"], options["port"])
     delivered = True
-    if not sendable:
+    if not r.sendable:
         # Nothing new worth a message: the repeats are counted and the
         # position moves on, so they are not read again.
-        state["held"] = merged
-        remember(state, batch.groups)
-        count_batch(state, batch, 0, held_count)
-        state["pos"] = end
+        consume(state, r, False)
     elif fatal:
         note_failure(state, "config", "; ".join(fatal), batch.total, batch.oldest,
                      server_label, silent=True)
@@ -2515,13 +2994,7 @@ def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
                 log("delivered, but refused for: %s" % ", ".join(sorted(refused)))
             note_success(state, total)
             state["sent"].append(now())
-            for key, group in full.items():
-                state["mailed"][gkey(*key)] = [now(), group["level"]]
-            state["held"] = {}
-            remember(state, batch.groups)
-            count_batch(state, batch, total, held_count)
-            state["daily"]["digests"] = state["daily"].get("digests", 0) + 1
-            state["pos"] = end
+            consume(state, r, True)
             log("sent %d alerts in %d groups%s, %s"
                 % (total, len(full),
                    (", %d repeats in %d groups listed as ongoing" %
@@ -2529,7 +3002,8 @@ def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
                    message["Message-ID"]))
 
     if delivered and not fatal and daily_due(state, options):
-        line, text, body, shown = render_daily(state, options, context, warnings)
+        others = [("Zulip", (state.get("zulip") or {}).get("failure"))] if options.get("zulip") else []
+        line, text, body, shown = render_daily(state, options, context, warnings, others)
         message = build_message(line, text, body, options, context)
         try:
             deliver(message, options)
@@ -2538,13 +3012,138 @@ def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
             delivered = False
         else:
             note_success(state, 0)
-            stops = {n: s for n, s in state["daily"].get("stops", {}).items() if n not in shown}
-            state["daily"] = new_daily(time.strftime("%Y-%m-%d", time.localtime(now())))
-            state["daily"]["stops"] = stops
+            reset_daily(state, shown)
             log("daily summary sent, %s" % message["Message-ID"])
-
-    save_state(state_path, state)
     return 0 if delivered else 1
+
+
+def reset_daily(sub, shown):
+    stops = {n: s for n, s in sub["daily"].get("stops", {}).items() if n not in shown}
+    sub["daily"] = new_daily(time.strftime("%Y-%m-%d", time.localtime(now())))
+    sub["daily"]["stops"] = stops
+
+
+def zulip_flush(sub, z, persist):
+    """Post the outbox in order, removing each message once Zulip has it.
+
+    A batch is moved into the outbox together with the position, in one save,
+    before anything is posted. A failure halfway through a multi-part post
+    leaves exactly the unposted parts for the next run: nothing is lost and
+    nothing already posted is posted again.
+    """
+    outbox = sub.get("outbox") or []
+    sent = 0
+    while outbox:
+        item = outbox[0]
+        try:
+            zulip_post(z, item["topic"], item["content"])
+        except DeliveryError as exc:
+            note_failure(sub, exc.kind, exc.text, sum(i.get("alerts", 0) for i in outbox),
+                         item.get("oldest"), z["url"], channel="zulip", permanent=exc.permanent)
+            persist()
+            return False
+        sent += item.get("alerts", 0)
+        outbox.pop(0)
+        persist()
+    sub.pop("outbox", None)
+    note_success(sub, sent, channel="zulip")
+    return True
+
+
+def zulip_round(alerts_path, state, z, zfatal, options, context, warnings, dry_run, persist):
+    sub = state.get("zulip")
+    if not isinstance(sub, dict) or not isinstance(sub.get("pos"), dict):
+        # Zulip newly configured: start at the end, as a first run does, so the
+        # channel does not open with the whole day's backlog.
+        if dry_run:
+            print("\n----- Zulip: first run, would start at the end of alerts.json -----")
+            return 0
+        state["zulip"] = new_channel_state(end_position(alerts_path), options)
+        log("zulip: first run, starting at the end of alerts.json, nothing posted")
+        return 0
+    for key, default in (("mailed", {}), ("held", {}), ("sent", []),
+                         ("seen", {"start": now(), "pairs": {}, "rules": {}})):
+        if not isinstance(sub.get(key), type(default)):
+            sub[key] = default
+    if not isinstance(sub.get("daily"), dict):
+        sub["daily"] = init_daily(options)
+    prune(sub, options.get("repeat", 3600))
+    if not dry_run:
+        note_config(sub, zfatal, channel="zulip")
+    if zfatal:
+        if dry_run:
+            print("\n----- Zulip: not posting: %s -----" % "; ".join(zfatal))
+        return 2
+    if sub.get("outbox"):
+        if dry_run:
+            print("\n----- Zulip: %d messages wait in the outbox from an earlier run -----"
+                  % len(sub["outbox"]))
+            return 0
+        if not zulip_flush(sub, z, persist):
+            return 1
+
+    # Alerts older than zulip_max_backlog are counted, not posted: after a long
+    # outage the channel says how many it skipped instead of replaying a day.
+    r = prepare(alerts_path, sub, options, [], dry_run, channel="zulip",
+                cutoff=now() - z["max_backlog"])
+    batch = r.batch
+    if batch.dropped:
+        dropped = sub.get("dropped") or {"n": 0, "first": batch.dropped_first, "last": None}
+        dropped["n"] += batch.dropped
+        dropped["first"] = min(filter(None, (dropped.get("first"), batch.dropped_first)))
+        dropped["last"] = max(filter(None, (dropped.get("last"), batch.dropped_last)))
+        sub["dropped"] = dropped
+    notice = None
+    dropped = sub.get("dropped")
+    if dropped and (r.sendable or not batch.more):
+        hours = z["max_backlog"] // 3600
+        notice = ("**%d alerts from %s to %s were not posted here**: they were more than %d hours "
+                  "old when they could be read. The mail digest and the dashboard have them."
+                  % (dropped["n"], md(dropped["first"] or "?"), md(dropped["last"] or "?"), hours))
+    context = dict(context, held=r.held_list, more=batch.more)
+    if dry_run:
+        print("\n----- Zulip: channel %s, topic %s -----" % (z["stream"], z["topic"]))
+        if r.sendable or notice:
+            for part in render_zulip(r.full, r.total, options["level"], options["dashboard"],
+                                     context, notice):
+                print(part)
+                print("-----")
+        else:
+            print("nothing would be posted")
+        return 0
+
+    if r.sendable or notice:
+        parts = render_zulip(r.full, r.total, options["level"], options["dashboard"],
+                             context, notice)
+        oldest = list(batch.oldest) if batch.oldest else [now(), local_iso(now())]
+        sub["outbox"] = [{"topic": z["topic"], "content": part, "alerts": r.total if i == 0 else 0,
+                          "oldest": oldest} for i, part in enumerate(parts)]
+        consume(sub, r, r.sendable)
+        if notice:
+            note_lost(sub, ["%d alerts from %s to %s were older than %d hours and were not posted "
+                            "to Zulip" % (dropped["n"], dropped["first"], dropped["last"],
+                                          z["max_backlog"] // 3600)], "zulip")
+            sub.pop("dropped", None)
+        persist()
+        if not zulip_flush(sub, z, persist):
+            return 1
+        log("zulip: posted %d alerts in %d groups as %d message%s"
+            % (r.total, len(r.full), len(parts), "" if len(parts) == 1 else "s"))
+    else:
+        consume(sub, r, False)
+
+    if daily_due(sub, options):
+        others = [("Mail", state.get("failure"))]
+        line, text, _, shown = render_daily(sub, options, context, warnings, others)
+        sub["outbox"] = [{"topic": z["summary_topic"], "content": part, "alerts": 0}
+                         for part in pack([zulip_summary(line, text)])]
+        reset_daily(sub, shown)
+        persist()
+        if not zulip_flush(sub, z, persist):
+            return 1
+        log("zulip: daily summary posted")
+    return 0
+
 
 
 # --------------------------------------------------------------------------
@@ -2552,6 +3151,74 @@ def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
 # --------------------------------------------------------------------------
 
 def check(wazuh, config, options, fatal, warnings):
+    """--check: the mail transport, then the Zulip channel when one is configured.
+
+    Nothing is sent on either channel and nothing is written.
+    """
+    code = check_mail(wazuh, config, options, fatal, warnings)
+    if options.get("zulip"):
+        code = max(code, check_zulip(options["zulip"], options.get("zulip_fatal") or []))
+    return code
+
+
+def check_zulip(z, zfatal):
+    """Authenticate, find the channel, and say whether the bot can post to it.
+
+    Read-only API calls (GET); the one way to prove posting is --test zulip.
+    """
+    print("  zulip: %s, bot %s, key file %s, channel %s, topic %s%s%s" % (
+        z.get("url") or "-", z.get("email") or "-", z.get("key_file") or "-",
+        z.get("stream") or "-", z.get("topic"),
+        ("" if z.get("summary_topic") == z.get("topic") else
+         ", daily summary topic %s" % z.get("summary_topic")),
+        "" if z.get("verify", True) else ", certificate NOT verified"))
+    if zfatal:
+        for problem in zfatal:
+            print("  PROBLEM: zulip: %s" % problem)
+        return 1
+    try:
+        me = zulip_call(z, "GET", "/api/v1/users/me")
+    except DeliveryError as exc:
+        print("  PROBLEM: zulip: the server refused the bot: %s (%s)" % (exc.text, exc.kind))
+        return 1
+    print("  zulip auth: accepted as %s <%s>%s" % (me.get("full_name", "?"), me.get("email", "?"),
+                                                  " (bot)" if me.get("is_bot") else ""))
+    try:
+        stream_id = zulip_call(z, "GET", "/api/v1/get_stream_id", {"stream": z["stream"]})["stream_id"]
+    except (DeliveryError, KeyError) as exc:
+        print("  PROBLEM: zulip: channel %s not found, or it is private and the bot is not "
+              "subscribed (%s)" % (z["stream"], getattr(exc, "text", exc)))
+        return 1
+    subscribed = None
+    try:
+        subs = zulip_call(z, "GET", "/api/v1/users/me/subscriptions").get("subscriptions") or []
+        subscribed = any(s.get("stream_id") == stream_id for s in subs if isinstance(s, dict))
+    except DeliveryError:
+        pass
+    info = {}
+    try:
+        info = zulip_call(z, "GET", "/api/v1/streams/%d" % int(stream_id)).get("stream") or {}
+    except (DeliveryError, ValueError, TypeError):
+        pass
+    private = info.get("invite_only")
+    print("  zulip channel: %s (id %s), %s, bot %s" % (
+        z["stream"], stream_id,
+        "private" if private else ("public" if private is False else "visibility unknown"),
+        "subscribed" if subscribed else ("not subscribed" if subscribed is False
+                                         else "subscription unknown")))
+    if private and subscribed is False:
+        print("  PROBLEM: zulip: a private channel only takes posts from subscribers: "
+              "subscribe the bot to %s" % z["stream"])
+        return 1
+    policy = info.get("stream_post_policy")
+    if policy not in (None, 1):
+        print("  warning: zulip: only some members may post in %s (stream_post_policy %s)"
+              % (z["stream"], policy))
+    print("  zulip result: the bot is accepted; --test zulip posts one test message")
+    return 0
+
+
+def check_mail(wazuh, config, options, fatal, warnings):
     """Report the settings and walk the SMTP dialogue up to RCPT TO, then RSET.
 
     Nothing is delivered and nothing is written. On a node whose mail server
@@ -2642,6 +3309,28 @@ def check(wazuh, config, options, fatal, warnings):
     return 0 if ok else 1
 
 
+def send_test_zulip(options, context):
+    """--test zulip: one message to the configured topic, and no mail."""
+    z = options.get("zulip")
+    if not z:
+        print("PROBLEM: zulip is not configured (no zulip_* settings in jt-alert-digest.conf)")
+        return 1
+    if options.get("zulip_fatal"):
+        for problem in options["zulip_fatal"]:
+            print("PROBLEM: zulip: %s" % problem)
+        return 1
+    content = ("**jt-alert-digest %s test message** from %s\nIf you can read this, alert digests "
+               "from this node reach this topic. Nothing was read from the alert file, nothing "
+               "was changed and no mail was sent." % (VERSION, md(context["node"])))
+    try:
+        answer = zulip_post(z, z["topic"], content)
+    except DeliveryError as exc:
+        print("not posted: %s (%s)" % (exc.text, exc.kind))
+        return 1
+    print("posted message %s to %s > %s" % (answer.get("id", "?"), z["stream"], z["topic"]))
+    return 0
+
+
 def send_test(options, fatal, context):
     if fatal:
         for problem in fatal:
@@ -2666,13 +3355,27 @@ def send_test(options, fatal, context):
 
 # --------------------------------------------------------------------------
 
-def report_crash(wazuh):
-    """131115, once per kind of crash and then hourly, not on every run."""
+def crash_file(wazuh, channel=None):
+    return os.path.join(wazuh, "var", "jt-alert-digest%s.crash" % (("-" + channel) if channel else ""))
+
+
+def clear_crash(wazuh, channel=None):
+    path = crash_file(wazuh, channel)
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+            log("%srunning normally again after a crash" % (("%s: " % channel) if channel else ""))
+        except OSError:
+            pass
+
+
+def report_crash(wazuh, channel=None):
+    """131115 (131125 for Zulip), once per kind of crash and then hourly."""
     kind, value, tb = sys.exc_info()
     frames = traceback.extract_tb(tb)
     spot = "%s:%d" % (os.path.basename(frames[-1].filename), frames[-1].lineno) if frames else "?"
     signature = "%s at %s" % (kind.__name__ if kind else "?", spot)
-    path = os.path.join(wazuh, "var", "jt-alert-digest.crash")
+    path = crash_file(wazuh, channel)
     previous = {}
     try:
         with open(path, encoding="utf-8") as fh:
@@ -2682,7 +3385,7 @@ def report_crash(wazuh):
     if not isinstance(previous, dict):
         previous = {}
     if previous.get("sig") != signature or now() - previous.get("reported", 0) >= REPORT_EVERY:
-        emit("crashed", exception=signature, error="%s" % value)
+        emit("crashed", channel=channel, exception=signature, error="%s" % value)
         previous = {"sig": signature, "reported": now()}
         try:
             with open(path, "w", encoding="utf-8") as fh:
@@ -2705,10 +3408,10 @@ def parse_args(argv=None):
     parser.add_argument("--html", action="store_true",
                         help="with --dry-run, print the HTML part")
     parser.add_argument("--check", action="store_true",
-                        help="show the settings and test the mail server up to RCPT TO, "
-                             "without sending anything")
-    parser.add_argument("--test", action="store_true",
-                        help="send one test message and nothing else")
+                        help="show the settings, test the mail server up to RCPT TO and the "
+                             "Zulip login and channel, without sending anything")
+    parser.add_argument("--test", nargs="?", const="mail", choices=("mail", "zulip"),
+                        help="send one test message by mail (default) or to Zulip, nothing else")
     parser.add_argument("--version", action="version", version="jt-alert-digest " + VERSION)
     return parser.parse_args(argv)
 
@@ -2726,13 +3429,8 @@ def main(argv=None):
         if not quiet:
             report_crash(wazuh)
         return 3
-    crash = os.path.join(wazuh, "var", "jt-alert-digest.crash")
-    if not quiet and os.path.exists(crash):
-        try:
-            os.remove(crash)
-            log("running normally again after a crash")
-        except OSError:
-            pass
+    if not quiet:
+        clear_crash(wazuh)
     return code
 
 

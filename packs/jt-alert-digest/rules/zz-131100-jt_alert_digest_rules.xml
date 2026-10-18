@@ -26,6 +26,13 @@
   level 1-4 的基礎規則會輸給 1002（L2，訊息含 error/failed 就命中）。
   事件欄位不認得的（未來版本新增的事件）停在 131110，不告警。
 
+  1.5 起有選用的 Zulip 頻道，它的狀態事件帶 jt_alert_digest.channel = zulip，
+  由 131121-131126 接手；這些是 131111-131116 各自的子規則（同 level），
+  所以郵件的事件（沒有 channel 欄位，與 1.4 相同）仍停在原本的規則，
+  不需要否定比對（negate 不可靠，陷阱 3）。Zulip 回 401/403/其他 4xx
+  （金鑰被拒、bot 不能在該頻道發言、頻道不存在）是設定問題，走 131126（L12）；
+  5xx、逾時、429 是暫時性的，走 131121（L10）。
+
   沒有 MITRE：這些幾乎都是營運故障（郵件伺服器拒收、DNS、設定），
   不是攻擊者行為；攻擊者若要讓通知安靜，最可能的做法是停掉排程，
   那由每日摘要信的「沒收到」來發現，而不是由任何一筆事件。
@@ -88,6 +95,50 @@
     <field name="jt_alert_digest.event">^config_error$</field>
     <description>[HIGH] Alert digest on $(jt_alert_digest.node) cannot deliver with its configuration: $(jt_alert_digest.problem)</description>
     <group>jt_alert_digest_failure,</group>
+  </rule>
+
+  <!-- The optional Zulip channel (1.5): the same events with channel "zulip",
+       each a child of the mail rule for that event. -->
+  <rule id="131121" level="10">
+    <if_sid>131111</if_sid>
+    <field name="jt_alert_digest.channel">^zulip$</field>
+    <description>[WARN] Alert digest on $(jt_alert_digest.node) cannot post to Zulip ($(jt_alert_digest.error_class)), $(jt_alert_digest.pending) alerts waiting: $(jt_alert_digest.error)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_zulip,</group>
+  </rule>
+
+  <rule id="131122" level="12">
+    <if_sid>131112</if_sid>
+    <field name="jt_alert_digest.channel">^zulip$</field>
+    <description>[HIGH] Zulip posts from $(jt_alert_digest.node) have reached nobody for $(jt_alert_digest.age_minutes) minutes, $(jt_alert_digest.pending) alerts waiting ($(jt_alert_digest.error_class))</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_zulip,</group>
+  </rule>
+
+  <rule id="131123" level="12">
+    <if_sid>131113</if_sid>
+    <field name="jt_alert_digest.channel">^zulip$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) skipped alerts that will never be posted to Zulip: $(jt_alert_digest.reason)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_zulip,</group>
+  </rule>
+
+  <rule id="131124" level="3">
+    <if_sid>131114</if_sid>
+    <field name="jt_alert_digest.channel">^zulip$</field>
+    <description>Alert digest on $(jt_alert_digest.node) is posting to Zulip again after $(jt_alert_digest.failed_minutes) minutes ($(jt_alert_digest.error_class)), $(jt_alert_digest.sent_late) alerts posted late</description>
+    <group>jt_alert_digest_zulip,</group>
+  </rule>
+
+  <rule id="131125" level="10">
+    <if_sid>131115</if_sid>
+    <field name="jt_alert_digest.channel">^zulip$</field>
+    <description>[WARN] Zulip channel of the alert digest on $(jt_alert_digest.node) crashed: $(jt_alert_digest.exception)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_zulip,</group>
+  </rule>
+
+  <rule id="131126" level="12">
+    <if_sid>131116</if_sid>
+    <field name="jt_alert_digest.channel">^zulip$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) cannot post to Zulip with its configuration or credentials: $(jt_alert_digest.problem)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_zulip,</group>
   </rule>
 
 </group>
