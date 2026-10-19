@@ -1,0 +1,1338 @@
+{
+ "pack": "jt-linux-integrity",
+ "fim_cases_note": "fim cases: syscheck events sent to the sandbox analysisd queue (tools/pack_sandbox.py). Paths and diffs are synthesized from the file formats (passwd(5), group(5), sudoers(5), pam.d(5)) and from paths seen on a site over 30 days; account names are placeholders.",
+ "cases": [
+  {
+   "fim": {
+    "path": "/etc/passwd",
+    "type": "modified"
+   },
+   "expect_rule": "132910",
+   "expect_level": 6,
+   "note": "fim: passwd changed, no whodata (realtime only, the common case)"
+  },
+  {
+   "fim": {
+    "path": "/etc/passwd",
+    "type": "modified",
+    "process": "/usr/bin/vim.basic"
+   },
+   "expect_rule": "132912",
+   "expect_level": 12,
+   "note": "fim: passwd written by an editor"
+  },
+  {
+   "fim": {
+    "path": "/etc/passwd",
+    "type": "modified",
+    "process": "/usr/sbin/useradd"
+   },
+   "expect_rule": "132914",
+   "expect_level": 3,
+   "note": "fim: near miss: passwd written by useradd"
+  },
+  {
+   "fim": {
+    "path": "/etc/passwd",
+    "type": "modified",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132903",
+   "expect_level": 3,
+   "note": "fim: near miss: passwd written by the package manager"
+  },
+  {
+   "fim": {
+    "path": "/etc/passwd",
+    "type": "modified",
+    "process": "/usr/sbin/usermod",
+    "diff": "12c12\n< backup:x:34:34:backup:/var/backups:/usr/sbin/nologin\n---\n> backup:x:0:34:backup:/var/backups:/bin/bash\n"
+   },
+   "expect_rule": "132916",
+   "expect_level": 14,
+   "note": "fim: usermod -o -u 0 gives a second account UID 0"
+  },
+  {
+   "fim": {
+    "path": "/etc/passwd",
+    "type": "modified",
+    "diff": "30a31\n> toor:x:0:0::/root:/bin/bash\n"
+   },
+   "expect_rule": "132916",
+   "expect_level": 14,
+   "note": "fim: a UID 0 line appended, writer unknown"
+  },
+  {
+   "fim": {
+    "path": "/etc/passwd",
+    "type": "modified",
+    "diff": "1c1\n< root:x:0:0:root:/root:/bin/bash\n---\n> root:x:0:0:root:/root:/bin/zsh\n"
+   },
+   "expect_rule": "132910",
+   "expect_level": 6,
+   "note": "fim: near miss: root's own line changed (shell)"
+  },
+  {
+   "fim": {
+    "path": "/etc/passwd",
+    "type": "modified",
+    "diff": "30a31\n> alice:x:1001:0::/home/alice:/bin/bash\n"
+   },
+   "expect_rule": "132910",
+   "expect_level": 6,
+   "note": "fim: near miss: a normal account added (UID 1001, GID 0 is not UID 0)"
+  },
+  {
+   "fim": {
+    "path": "/etc/passwd",
+    "type": "modified",
+    "changed": [
+     "inode",
+     "mtime"
+    ]
+   },
+   "expect_rule": "132902",
+   "expect_level": 2,
+   "note": "fim: rewritten with identical contents (inode and mtime only)"
+  },
+  {
+   "fim": {
+    "path": "/etc/shadow",
+    "type": "modified"
+   },
+   "expect_rule": "132911",
+   "expect_level": 7,
+   "note": "fim: shadow changed, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/etc/shadow",
+    "type": "modified",
+    "process": "/usr/bin/passwd"
+   },
+   "expect_rule": "132914",
+   "expect_level": 3,
+   "note": "fim: near miss: password changed with passwd"
+  },
+  {
+   "fim": {
+    "path": "/etc/shadow",
+    "type": "modified",
+    "process": "/usr/lib/openssh/sshd-session"
+   },
+   "expect_rule": "132914",
+   "expect_level": 3,
+   "note": "fim: near miss: expired password changed at an SSH login"
+  },
+  {
+   "fim": {
+    "path": "/etc/shadow",
+    "type": "modified",
+    "process": "/usr/bin/python3.12"
+   },
+   "expect_rule": "132913",
+   "expect_level": 13,
+   "note": "fim: shadow written by python"
+  },
+  {
+   "fim": {
+    "path": "/etc/gshadow",
+    "type": "modified",
+    "process": "/usr/bin/sed"
+   },
+   "expect_rule": "132913",
+   "expect_level": 13,
+   "note": "fim: gshadow written by sed"
+  },
+  {
+   "fim": {
+    "path": "/etc/shadow",
+    "type": "modified",
+    "process": "/usr/sbin/vipw"
+   },
+   "expect_rule": "132915",
+   "expect_level": 8,
+   "note": "fim: shadow edited through vipw -s"
+  },
+  {
+   "fim": {
+    "path": "/etc/shadow",
+    "type": "modified",
+    "changed": [
+     "permission"
+    ],
+    "perm": "rw-r--r--",
+    "process": "/usr/bin/chmod"
+   },
+   "expect_rule": "132918",
+   "expect_level": 13,
+   "note": "fim: chmod o+r on shadow"
+  },
+  {
+   "fim": {
+    "path": "/etc/shadow",
+    "type": "modified",
+    "changed": [
+     "permission"
+    ],
+    "perm": "rw-r--r--"
+   },
+   "expect_rule": "132918",
+   "expect_level": 13,
+   "note": "fim: shadow became world readable, writer unknown"
+  },
+  {
+   "fim": {
+    "path": "/etc/shadow",
+    "type": "modified",
+    "changed": [
+     "permission"
+    ],
+    "perm": "rw-------"
+   },
+   "expect_rule": "132911",
+   "expect_level": 7,
+   "note": "fim: near miss: shadow permissions tightened (rw-------)"
+  },
+  {
+   "fim": {
+    "path": "/etc/group",
+    "type": "modified",
+    "diff": "25c25\n< sudo:x:27:alice\n---\n> sudo:x:27:alice,mallory\n"
+   },
+   "expect_rule": "132917",
+   "expect_level": 10,
+   "note": "fim: a member added to sudo, writer unknown"
+  },
+  {
+   "fim": {
+    "path": "/etc/group",
+    "type": "modified",
+    "process": "/usr/sbin/usermod",
+    "diff": "40c40\n< docker:x:999:\n---\n> docker:x:999:mallory\n"
+   },
+   "expect_rule": "132917",
+   "expect_level": 10,
+   "note": "fim: usermod -aG docker"
+  },
+  {
+   "fim": {
+    "path": "/etc/group",
+    "type": "modified",
+    "process": "/usr/bin/vi",
+    "diff": "25c25\n< sudo:x:27:alice\n---\n> sudo:x:27:alice,mallory\n"
+   },
+   "expect_rule": "132912",
+   "expect_level": 12,
+   "note": "fim: sudo membership edited by hand stays at the direct-write level"
+  },
+  {
+   "fim": {
+    "path": "/etc/group",
+    "type": "modified",
+    "diff": "50c50\n< users:x:100:\n---\n> users:x:100:alice\n"
+   },
+   "expect_rule": "132910",
+   "expect_level": 6,
+   "note": "fim: near miss: an unprivileged group gains a member"
+  },
+  {
+   "fim": {
+    "path": "/etc/group",
+    "type": "modified",
+    "diff": "25c25\n< sudo:x:27:alice\n---\n> sudo:x:27:\n"
+   },
+   "expect_rule": "132910",
+   "expect_level": 6,
+   "note": "fim: near miss: the last member of sudo removed (no members left)"
+  },
+  {
+   "fim": {
+    "path": "/etc/passwd.lock",
+    "type": "added"
+   },
+   "expect_rule": "132900",
+   "expect_level": 2,
+   "note": "fim: shadow-utils lock file"
+  },
+  {
+   "fim": {
+    "path": "/etc/shadow-",
+    "type": "modified"
+   },
+   "expect_rule": "132900",
+   "expect_level": 2,
+   "note": "fim: shadow-utils backup copy"
+  },
+  {
+   "fim": {
+    "path": "/etc/group.31432",
+    "type": "deleted"
+   },
+   "expect_rule": "132900",
+   "expect_level": 2,
+   "note": "fim: shadow-utils temporary file"
+  },
+  {
+   "fim": {
+    "path": "/etc/shadow",
+    "type": "deleted"
+   },
+   "expect_rule": "132919",
+   "expect_level": 12,
+   "note": "fim: shadow deleted"
+  },
+  {
+   "fim": {
+    "path": "/etc/passwd.org",
+    "type": "added"
+   },
+   "expect_rule": "554",
+   "expect_level": 5,
+   "note": "fim: near miss: a hand-made copy is not an account database"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers.d/90-x",
+    "type": "added"
+   },
+   "expect_rule": "132920",
+   "expect_level": 10,
+   "note": "fim: sudoers drop-in added, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers.d/90-x",
+    "type": "modified",
+    "process": "/usr/bin/bash",
+    "diff": "1a2\n> x ALL=(ALL) NOPASSWD: ALL\n"
+   },
+   "expect_rule": "132921",
+   "expect_level": 14,
+   "note": "fim: NOPASSWD: ALL added"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers",
+    "type": "modified",
+    "diff": "10a11\n> Defaults:deploy !authenticate\n"
+   },
+   "expect_rule": "132921",
+   "expect_level": 14,
+   "note": "fim: Defaults !authenticate added, writer unknown"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers.d/90-x",
+    "type": "modified",
+    "diff": "1a2\n> # x ALL=(ALL) NOPASSWD: ALL\n"
+   },
+   "expect_rule": "132920",
+   "expect_level": 10,
+   "note": "fim: near miss: a commented-out NOPASSWD line"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers.d/90-x",
+    "type": "modified",
+    "process": "/usr/bin/bash",
+    "diff": "1a2\n> x ALL=(ALL) /usr/bin/systemctl restart nginx\n"
+   },
+   "expect_rule": "132922",
+   "expect_level": 12,
+   "note": "fim: near miss: a narrow rule written by a shell"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers",
+    "type": "modified",
+    "process": "/usr/sbin/visudo"
+   },
+   "expect_rule": "132923",
+   "expect_level": 8,
+   "note": "fim: sudoers edited through visudo"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers",
+    "type": "modified",
+    "process": "/bin/sed"
+   },
+   "expect_rule": "132922",
+   "expect_level": 12,
+   "note": "fim: sudoers edited with sed"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers.d/zfs",
+    "type": "modified",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132905",
+   "expect_level": 5,
+   "note": "fim: near miss: drop-in installed by dpkg"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudo.conf",
+    "type": "modified"
+   },
+   "expect_rule": "132920",
+   "expect_level": 10,
+   "note": "fim: sudo.conf (plugins) changed"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers.d/README.dpkg-new",
+    "type": "added"
+   },
+   "expect_rule": "132901",
+   "expect_level": 2,
+   "note": "fim: dpkg transient copy"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers.d/.90-x.swp",
+    "type": "added"
+   },
+   "expect_rule": "132901",
+   "expect_level": 2,
+   "note": "fim: editor swap file, skipped by sudo"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers",
+    "type": "modified",
+    "changed": [
+     "inode",
+     "mtime"
+    ]
+   },
+   "expect_rule": "132902",
+   "expect_level": 2,
+   "note": "fim: sudoers rewritten identically"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers",
+    "type": "deleted"
+   },
+   "expect_rule": "132924",
+   "expect_level": 10,
+   "note": "fim: /etc/sudoers deleted"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers.d/90-x",
+    "type": "deleted"
+   },
+   "expect_rule": "132925",
+   "expect_level": 6,
+   "note": "fim: drop-in removed"
+  },
+  {
+   "fim": {
+    "path": "/etc/sudoers.d/zfs",
+    "type": "deleted",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132907",
+   "expect_level": 3,
+   "note": "fim: near miss: drop-in removed by dpkg"
+  },
+  {
+   "fim": {
+    "path": "/etc/crontab",
+    "type": "modified"
+   },
+   "expect_rule": "132930",
+   "expect_level": 10,
+   "note": "fim: /etc/crontab changed, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/etc/anacrontab",
+    "type": "modified"
+   },
+   "expect_rule": "132930",
+   "expect_level": 10,
+   "note": "fim: anacrontab changed"
+  },
+  {
+   "fim": {
+    "path": "/etc/cron.weekly/update",
+    "type": "added",
+    "process": "/usr/bin/bash"
+   },
+   "expect_rule": "132931",
+   "expect_level": 12,
+   "note": "fim: cron.weekly script written by a shell"
+  },
+  {
+   "fim": {
+    "path": "/etc/cron.monthly/x",
+    "type": "added"
+   },
+   "expect_rule": "132930",
+   "expect_level": 10,
+   "note": "fim: cron.monthly script, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/etc/cron.allow",
+    "type": "modified"
+   },
+   "expect_rule": "132930",
+   "expect_level": 10,
+   "note": "fim: cron.allow changed"
+  },
+  {
+   "fim": {
+    "path": "/etc/cron.daily/logrotate",
+    "type": "modified",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132903",
+   "expect_level": 3,
+   "note": "fim: near miss: package upgrade"
+  },
+  {
+   "fim": {
+    "path": "/etc/cron.d/puppet-job",
+    "type": "added",
+    "process": "/opt/puppetlabs/puppet/bin/ruby"
+   },
+   "expect_rule": "132903",
+   "expect_level": 3,
+   "note": "fim: near miss: Puppet agent"
+  },
+  {
+   "fim": {
+    "path": "/etc/cron.d/certbot.dpkg-new",
+    "type": "added"
+   },
+   "expect_rule": "132901",
+   "expect_level": 2,
+   "note": "fim: dpkg transient copy"
+  },
+  {
+   "fim": {
+    "path": "/etc/cron.daily/.placeholder",
+    "type": "added"
+   },
+   "expect_rule": "132901",
+   "expect_level": 2,
+   "note": "fim: dotfile, skipped by run-parts"
+  },
+  {
+   "fim": {
+    "path": "/etc/cron.d/x",
+    "type": "modified",
+    "changed": [
+     "inode",
+     "mtime"
+    ]
+   },
+   "expect_rule": "132902",
+   "expect_level": 2,
+   "note": "fim: identical rewrite"
+  },
+  {
+   "fim": {
+    "path": "/var/spool/cron/crontabs/root",
+    "type": "modified"
+   },
+   "expect_rule": "132933",
+   "expect_level": 10,
+   "note": "fim: root's crontab changed, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/var/spool/cron/crontabs/alice",
+    "type": "modified",
+    "process": "/usr/bin/crontab"
+   },
+   "expect_rule": "132935",
+   "expect_level": 8,
+   "note": "fim: crontab -e"
+  },
+  {
+   "fim": {
+    "path": "/var/spool/cron/crontabs/root",
+    "type": "modified",
+    "process": "/usr/bin/bash"
+   },
+   "expect_rule": "132934",
+   "expect_level": 12,
+   "note": "fim: echo into the spool file"
+  },
+  {
+   "fim": {
+    "path": "/var/spool/cron/root",
+    "type": "added"
+   },
+   "expect_rule": "132933",
+   "expect_level": 10,
+   "note": "fim: Red Hat user crontab"
+  },
+  {
+   "fim": {
+    "path": "/var/spool/cron/crontabs/tmp.Ab12Cd",
+    "type": "added"
+   },
+   "expect_rule": "132901",
+   "expect_level": 2,
+   "note": "fim: crontab's temporary file"
+  },
+  {
+   "fim": {
+    "path": "/var/spool/cron/atjobs/a0000101c8f3e2",
+    "type": "added"
+   },
+   "expect_rule": "132937",
+   "expect_level": 10,
+   "note": "fim: at job queued, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/var/spool/cron/atjobs/a0000201c8f3e2",
+    "type": "added",
+    "process": "/usr/bin/at"
+   },
+   "expect_rule": "132939",
+   "expect_level": 8,
+   "note": "fim: at job queued with at"
+  },
+  {
+   "fim": {
+    "path": "/var/spool/at/a0000301c8f3e2",
+    "type": "added",
+    "process": "/usr/bin/bash"
+   },
+   "expect_rule": "132938",
+   "expect_level": 12,
+   "note": "fim: Red Hat at spool written by a shell"
+  },
+  {
+   "fim": {
+    "path": "/var/spool/cron/atjobs/.SEQ",
+    "type": "modified"
+   },
+   "expect_rule": "132901",
+   "expect_level": 2,
+   "note": "fim: at's sequence counter"
+  },
+  {
+   "fim": {
+    "path": "/var/spool/cron/atjobs/=0000101c8f3e2",
+    "type": "added"
+   },
+   "expect_rule": "132901",
+   "expect_level": 2,
+   "note": "fim: running at job (atd renames it)"
+  },
+  {
+   "fim": {
+    "path": "/var/spool/cron/atjobs/a0000101c8f3e2",
+    "type": "deleted"
+   },
+   "expect_rule": "132941",
+   "expect_level": 2,
+   "note": "fim: at job ran"
+  },
+  {
+   "fim": {
+    "path": "/etc/cron.d/x",
+    "type": "deleted"
+   },
+   "expect_rule": "132940",
+   "expect_level": 6,
+   "note": "fim: cron entry removed"
+  },
+  {
+   "fim": {
+    "path": "/var/spool/cron/crontabs/alice",
+    "type": "deleted"
+   },
+   "expect_rule": "132940",
+   "expect_level": 6,
+   "note": "fim: user crontab removed"
+  },
+  {
+   "fim": {
+    "path": "/etc/cron.d/x",
+    "type": "deleted",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132907",
+   "expect_level": 3,
+   "note": "fim: near miss: removed by dpkg"
+  },
+  {
+   "fim": {
+    "path": "/etc/cron.dx/foo",
+    "type": "modified"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: not a cron directory"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/evil.service",
+    "type": "added"
+   },
+   "expect_rule": "132950",
+   "expect_level": 10,
+   "note": "fim: new unit, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/evil.timer",
+    "type": "added",
+    "process": "/usr/bin/python3"
+   },
+   "expect_rule": "132951",
+   "expect_level": 12,
+   "note": "fim: timer written by python"
+  },
+  {
+   "fim": {
+    "path": "/usr/local/lib/systemd/system/x.service",
+    "type": "added"
+   },
+   "expect_rule": "132950",
+   "expect_level": 10,
+   "note": "fim: unit under /usr/local"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/user/x.service",
+    "type": "added"
+   },
+   "expect_rule": "132950",
+   "expect_level": 10,
+   "note": "fim: global user unit"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/nginx.service.d/override.conf",
+    "type": "modified",
+    "process": "/usr/bin/systemctl"
+   },
+   "expect_rule": "132954",
+   "expect_level": 8,
+   "note": "fim: systemctl edit drop-in"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/nginx.service.d/override.conf",
+    "type": "modified",
+    "process": "/usr/bin/tee"
+   },
+   "expect_rule": "132951",
+   "expect_level": 12,
+   "note": "fim: drop-in written by tee"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/sshd.service",
+    "type": "added",
+    "process": "/usr/lib/systemd/systemd"
+   },
+   "expect_rule": "132952",
+   "expect_level": 3,
+   "note": "fim: near miss: alias link written by systemd"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/snap.lxd.daemon.service",
+    "type": "added"
+   },
+   "expect_rule": "132953",
+   "expect_level": 3,
+   "note": "fim: snap refresh unit, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/snap.lxd.daemon.service",
+    "type": "added",
+    "process": "/usr/bin/bash"
+   },
+   "expect_rule": "132951",
+   "expect_level": 12,
+   "note": "fim: snap-named unit written by a shell"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/snap-core24-1643.mount",
+    "type": "added",
+    "process": "/usr/lib/snapd/snapd"
+   },
+   "expect_rule": "132903",
+   "expect_level": 3,
+   "note": "fim: near miss: snapd writes its mount unit"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/x.service",
+    "type": "added",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132903",
+   "expect_level": 3,
+   "note": "fim: near miss: unit from a package"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/multi-user.target.wants/evil.service",
+    "type": "added"
+   },
+   "expect_rule": "132955",
+   "expect_level": 5,
+   "note": "fim: unit enabled, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/multi-user.target.wants/nginx.service",
+    "type": "added",
+    "process": "/usr/lib/systemd/systemd"
+   },
+   "expect_rule": "132956",
+   "expect_level": 3,
+   "note": "fim: enabled by systemd"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/multi-user.target.wants/evil.service",
+    "type": "deleted"
+   },
+   "expect_rule": "132964",
+   "expect_level": 2,
+   "note": "fim: unit disabled"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/snap.cups.cupsd.service.37657729~",
+    "type": "deleted"
+   },
+   "expect_rule": "132901",
+   "expect_level": 2,
+   "note": "fim: snapd atomic-write temporary"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/x.service.dpkg-new",
+    "type": "added"
+   },
+   "expect_rule": "132901",
+   "expect_level": 2,
+   "note": "fim: dpkg transient copy"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system-generators/x",
+    "type": "added"
+   },
+   "expect_rule": "132957",
+   "expect_level": 12,
+   "note": "fim: generator in /etc"
+  },
+  {
+   "fim": {
+    "path": "/usr/local/lib/systemd/system-generators/x",
+    "type": "added",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132905",
+   "expect_level": 5,
+   "note": "fim: near miss: generator from a package"
+  },
+  {
+   "fim": {
+    "path": "/root/.config/systemd/user/miner.service",
+    "type": "added"
+   },
+   "expect_rule": "132958",
+   "expect_level": 10,
+   "note": "fim: user unit in root's home"
+  },
+  {
+   "fim": {
+    "path": "/home/alice/.local/share/systemd/user/x.service",
+    "type": "added"
+   },
+   "expect_rule": "132958",
+   "expect_level": 10,
+   "note": "fim: user unit in a home directory"
+  },
+  {
+   "fim": {
+    "path": "/home/alice/.config/systemd/user/default.target.wants/miner.service",
+    "type": "added"
+   },
+   "expect_rule": "132955",
+   "expect_level": 5,
+   "note": "fim: user unit enabled"
+  },
+  {
+   "fim": {
+    "path": "/usr/lib/systemd/system/ssh.service",
+    "type": "modified"
+   },
+   "expect_rule": "132960",
+   "expect_level": 5,
+   "note": "fim: packaged unit changed, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/lib/systemd/system/ssh.service",
+    "type": "modified",
+    "process": "/usr/bin/bash"
+   },
+   "expect_rule": "132962",
+   "expect_level": 12,
+   "note": "fim: packaged unit written by a shell"
+  },
+  {
+   "fim": {
+    "path": "/usr/lib/systemd/system/ssh.service",
+    "type": "modified",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132903",
+   "expect_level": 3,
+   "note": "fim: near miss: package upgrade"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/evil.service",
+    "type": "deleted"
+   },
+   "expect_rule": "132965",
+   "expect_level": 5,
+   "note": "fim: unit removed"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/snap.lxd.daemon.service",
+    "type": "deleted"
+   },
+   "expect_rule": "132966",
+   "expect_level": 3,
+   "note": "fim: snap unit removed"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/x.service",
+    "type": "deleted",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132907",
+   "expect_level": 3,
+   "note": "fim: near miss: unit removed by dpkg"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system.conf",
+    "type": "modified"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: manager configuration, not a unit directory"
+  },
+  {
+   "fim": {
+    "path": "/etc/systemd/system/x.service",
+    "type": "modified",
+    "changed": [
+     "inode",
+     "mtime"
+    ]
+   },
+   "expect_rule": "132902",
+   "expect_level": 2,
+   "note": "fim: identical rewrite"
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/sshd",
+    "type": "modified"
+   },
+   "expect_rule": "132970",
+   "expect_level": 10,
+   "note": "fim: PAM stack changed, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/common-auth",
+    "type": "modified",
+    "changed": [
+     "inode",
+     "mtime"
+    ]
+   },
+   "expect_rule": "132902",
+   "expect_level": 2,
+   "note": "fim: pam-auth-update rewrote it identically"
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/sudo",
+    "type": "modified",
+    "process": "/usr/bin/vim.basic"
+   },
+   "expect_rule": "132972",
+   "expect_level": 12,
+   "note": "fim: PAM stack edited with vim"
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/common-auth",
+    "type": "modified",
+    "diff": "17a18\n> auth sufficient pam_permit.so\n"
+   },
+   "expect_rule": "132971",
+   "expect_level": 14,
+   "note": "fim: auth sufficient pam_permit.so"
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/sshd",
+    "type": "modified",
+    "process": "/usr/bin/bash",
+    "diff": "1a2\n> auth optional pam_exec.so quiet expose_authtok /usr/local/bin/.x\n"
+   },
+   "expect_rule": "132971",
+   "expect_level": 14,
+   "note": "fim: pam_exec with expose_authtok"
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/su",
+    "type": "modified",
+    "diff": "1a2\n> auth [success=done default=ignore] /tmp/.cache/pam_x.so\n"
+   },
+   "expect_rule": "132971",
+   "expect_level": 14,
+   "note": "fim: module loaded from /tmp"
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/common-auth",
+    "type": "modified",
+    "diff": "17a18\n> auth\trequired\t\t\tpam_permit.so\n"
+   },
+   "expect_rule": "132970",
+   "expect_level": 10,
+   "note": "fim: near miss: stock \"auth required pam_permit.so\""
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/sshd",
+    "type": "modified",
+    "diff": "1a2\n> session optional pam_exec.so /usr/local/bin/login-notify\n"
+   },
+   "expect_rule": "132970",
+   "expect_level": 10,
+   "note": "fim: near miss: pam_exec login notification without expose_authtok"
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/sshd",
+    "type": "modified",
+    "diff": "1a2\n> auth required /usr/lib/x86_64-linux-gnu/security/pam_faillock.so\n"
+   },
+   "expect_rule": "132970",
+   "expect_level": 10,
+   "note": "fim: near miss: module by absolute path inside a PAM directory"
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/sshd",
+    "type": "modified",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132905",
+   "expect_level": 5,
+   "note": "fim: near miss: PAM file written by the package manager"
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/system-auth",
+    "type": "modified",
+    "process": "/usr/bin/authselect"
+   },
+   "expect_rule": "132973",
+   "expect_level": 5,
+   "note": "fim: authselect applied a profile"
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/login.dpkg-dist",
+    "type": "added"
+   },
+   "expect_rule": "132901",
+   "expect_level": 2,
+   "note": "fim: dpkg transient copy"
+  },
+  {
+   "fim": {
+    "path": "/usr/lib/x86_64-linux-gnu/security/pam_unix.so",
+    "type": "modified"
+   },
+   "expect_rule": "132974",
+   "expect_level": 7,
+   "note": "fim: PAM module changed, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/usr/lib64/security/pam_x.so",
+    "type": "added"
+   },
+   "expect_rule": "132975",
+   "expect_level": 10,
+   "note": "fim: new PAM module, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/lib/x86_64-linux-gnu/security/pam_unix.so",
+    "type": "modified",
+    "process": "/usr/bin/cp"
+   },
+   "expect_rule": "132976",
+   "expect_level": 13,
+   "note": "fim: PAM module replaced with cp"
+  },
+  {
+   "fim": {
+    "path": "/usr/lib/x86_64-linux-gnu/security/pam_unix.so",
+    "type": "modified",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132905",
+   "expect_level": 5,
+   "note": "fim: near miss: libpam-modules upgrade"
+  },
+  {
+   "fim": {
+    "path": "/usr/lib/python3/security/x.so",
+    "type": "modified"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: a directory named security that is not PAM"
+  },
+  {
+   "fim": {
+    "path": "/etc/security/access.conf",
+    "type": "modified"
+   },
+   "expect_rule": "132977",
+   "expect_level": 7,
+   "note": "fim: access.conf changed, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/etc/security/namespace.init",
+    "type": "modified",
+    "process": "/usr/bin/nano"
+   },
+   "expect_rule": "132978",
+   "expect_level": 10,
+   "note": "fim: namespace.init written by an editor"
+  },
+  {
+   "fim": {
+    "path": "/etc/security/limits.conf",
+    "type": "modified"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: limits.conf left to the built-in rules"
+  },
+  {
+   "fim": {
+    "path": "/etc/pam.d/su",
+    "type": "deleted"
+   },
+   "expect_rule": "132979",
+   "expect_level": 6,
+   "note": "fim: PAM file removed"
+  },
+  {
+   "fim": {
+    "path": "/etc/ld.so.preload",
+    "type": "added"
+   },
+   "expect_rule": "132980",
+   "expect_level": 13,
+   "note": "fim: ld.so.preload created, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/etc/ld.so.preload",
+    "type": "modified",
+    "process": "/usr/bin/bash"
+   },
+   "expect_rule": "132980",
+   "expect_level": 13,
+   "note": "fim: ld.so.preload written by a shell"
+  },
+  {
+   "fim": {
+    "path": "/etc/ld.so.preload",
+    "type": "added",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132905",
+   "expect_level": 5,
+   "note": "fim: near miss: written by the package manager"
+  },
+  {
+   "fim": {
+    "path": "/etc/ld.so.preload",
+    "type": "deleted"
+   },
+   "expect_rule": "132981",
+   "expect_level": 8,
+   "note": "fim: ld.so.preload removed"
+  },
+  {
+   "fim": {
+    "path": "/etc/ld.so.conf.d/evil.conf",
+    "type": "added",
+    "process": "/usr/bin/python3"
+   },
+   "expect_rule": "132983",
+   "expect_level": 10,
+   "note": "fim: search path added by python"
+  },
+  {
+   "fim": {
+    "path": "/etc/ld.so.conf.d/x86_64-linux-gnu.conf",
+    "type": "modified"
+   },
+   "expect_rule": "132982",
+   "expect_level": 7,
+   "note": "fim: search path changed, no whodata"
+  },
+  {
+   "fim": {
+    "path": "/etc/ld.so.conf.d/libc.conf",
+    "type": "modified",
+    "process": "/usr/bin/dpkg"
+   },
+   "expect_rule": "132903",
+   "expect_level": 3,
+   "note": "fim: near miss: libc6 upgrade"
+  },
+  {
+   "fim": {
+    "path": "/etc/ld.so.cache",
+    "type": "modified"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: the cache ldconfig rebuilds"
+  },
+  {
+   "fim": {
+    "path": "/root/.ssh/authorized_keys",
+    "type": "modified"
+   },
+   "expect_rule": "132985",
+   "expect_level": 12,
+   "note": "fim: root's authorized_keys changed"
+  },
+  {
+   "fim": {
+    "path": "/root/.ssh/authorized_keys2",
+    "type": "added"
+   },
+   "expect_rule": "132985",
+   "expect_level": 12,
+   "note": "fim: authorized_keys2 for root"
+  },
+  {
+   "fim": {
+    "path": "/home/alice/.ssh/authorized_keys",
+    "type": "added"
+   },
+   "expect_rule": "132986",
+   "expect_level": 10,
+   "note": "fim: a user's authorized_keys"
+  },
+  {
+   "fim": {
+    "path": "/opt/app/.ssh/authorized_keys",
+    "type": "modified"
+   },
+   "expect_rule": "132986",
+   "expect_level": 10,
+   "note": "fim: a service account outside /home"
+  },
+  {
+   "fim": {
+    "path": "/home/alice/.ssh/authorized_keys",
+    "type": "modified",
+    "process": "/opt/chef/embedded/bin/ruby"
+   },
+   "expect_rule": "132905",
+   "expect_level": 5,
+   "note": "fim: near miss: written by configuration management"
+  },
+  {
+   "fim": {
+    "path": "/home/alice/.ssh/authorized_keys",
+    "type": "modified",
+    "changed": [
+     "inode",
+     "mtime"
+    ]
+   },
+   "expect_rule": "132902",
+   "expect_level": 2,
+   "note": "fim: identical rewrite"
+  },
+  {
+   "fim": {
+    "path": "/etc/pve/priv/authorized_keys",
+    "type": "modified"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: Proxmox cluster keys are jt-proxmox's"
+  },
+  {
+   "fim": {
+    "path": "/home/alice/.ssh/authorized_keys",
+    "type": "deleted"
+   },
+   "expect_rule": "132987",
+   "expect_level": 7,
+   "note": "fim: authorized_keys removed"
+  },
+  {
+   "fim": {
+    "path": "/root/.ssh/known_hosts",
+    "type": "modified"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: not an authorized_keys file"
+  },
+  {
+   "fim": {
+    "path": "/etc/hostname",
+    "type": "modified"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "fim: near miss: any other /etc file"
+  }
+ ],
+ "sandbox_packs": [
+  "jt-zimbra"
+ ]
+}

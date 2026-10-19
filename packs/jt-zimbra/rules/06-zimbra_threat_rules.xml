@@ -15,6 +15,9 @@
        /service) and no longer a Briefcase multi-file download. The IDs
        100990 and 100991, free since 3.0, are used again by different rules
        in 08-zimbra_soap_rules.xml (the rule-ID range is full).
+  3.4: 100936-100942 removed (generic Linux host rules, now in the
+       jt-linux-integrity pack); 100943 (Zimbra startup scripts and
+       localconfig.xml) stays.
 -->
 
 <!-- ==========================================================
@@ -135,81 +138,16 @@
      ========================================================== -->
 <group name="zimbra,persistence,">
 
-  <!-- ★ 2026-10-06：100940／100941 不再看刪除（553）。刪掉一個排程或 systemd 單元
-       不是植入持久化；實測約一半的 L13 是刪除事件。刪除仍由內建 553 以 level 7 記錄。 -->
-  <rule id="100940" level="13">
-    <if_sid>550,554</if_sid>
-    <field name="file" type="pcre2">^/var/spool/cron/|^/etc/cron\.(d|hourly|daily)/</field>
-    <description>[HIGH] Scheduled task modified, suggesting persistence: $(file) process: $(process_name)</description>
-    <mitre>
-      <id>T1053.003</id>
-    </mitre>
-  </rule>
-
-  <rule id="100941" level="13">
-    <if_sid>550,554</if_sid>
-    <field name="file" type="pcre2">^/etc/systemd/system/</field>
-    <description>[HIGH] systemd unit file modified, suggesting persistence: $(file)</description>
-    <mitre>
-      <id>T1543.002</id>
-    </mitre>
-  </rule>
-
-  <!-- 3.2: PAM and sudoers (the group's agent.conf monitors /etc/pam.d,
-       /etc/sudoers and /etc/sudoers.d with whodata and report_changes).
-       After CVE-2026-73570, attackers added a pam_exec hook to
-       /etc/pam.d/sudo and a "NOPASSWD: ALL" line for the zimbra account
-       (Microsoft Threat Intelligence, 2026-09-30). Zimbra's own installer
-       writes /etc/sudoers.d/02_zimbra-* on install and upgrade, so expect
-       these at an upgrade. Writes by the package manager end at 100937. -->
-  <rule id="100938" level="13">
-    <if_sid>550,554</if_sid>
-    <field name="file" type="pcre2">^/etc/pam\.d/</field>
-    <description>[HIGH] PAM configuration changed, a way to capture passwords or bypass authentication: $(file) process: $(process_name)</description>
-    <mitre>
-      <id>T1556.003</id>
-    </mitre>
-  </rule>
-
-  <rule id="100939" level="13">
-    <if_sid>550,554</if_sid>
-    <field name="file" type="pcre2">^/etc/sudoers$|^/etc/sudoers\.d/</field>
-    <description>[HIGH] sudo configuration changed, a way to escalate privileges: $(file) process: $(process_name)</description>
-    <mitre>
-      <id>T1548.003</id>
-    </mitre>
-  </rule>
-
-  <!-- The diff (report_changes) shows a rule granting every command
-       without a password. Zimbra's own sudoers lines name each command. -->
-  <rule id="100936" level="14">
-    <if_sid>100939</if_sid>
-    <field name="changed_content" type="pcre2">(?m)^\x3e.*NOPASSWD:\s*ALL\b</field>
-    <description>[HIGH] A sudo rule granting every command without a password was added: $(file) process: $(process_name)</description>
-    <mitre>
-      <id>T1548.003</id>
-    </mitre>
-  </rule>
-
-  <!-- 3.0: the package manager and snapd install cron entries and units
-       too. In 41 days on two servers every 100940/100941 was one of them
-       (a snap refresh rewrites its units, a package added a cron.daily
-       script). Only events that NAME the writer are lowered: whodata must be
-       working; a realtime event with no process stays at level 13. -->
-  <rule id="100937" level="5">
-    <if_sid>100940,100941,100938,100939</if_sid>
-    <field name="process_name" type="pcre2">^/usr/bin/dpkg$|^/usr/bin/apt(?:-get)?$|^/usr/lib/apt/|/usr/bin/unattended-upgrade$|^/snap/snapd/\d+/usr/lib/snapd/snapd$|^/usr/lib/snapd/snapd$</field>
-    <description>Scheduled task, systemd unit, PAM or sudo file installed by the package manager or snapd: $(file) process: $(process_name)</description>
-  </rule>
-
-  <rule id="100942" level="14">
-    <if_sid>550,553,554</if_sid>
-    <field name="file" type="pcre2">^(?!/etc/pve/).*authorized_keys</field>
-    <description>[HIGH] SSH authorized_keys written, suggesting persistence: $(file) process: $(process_name)</description>
-    <mitre>
-      <id>T1098.004</id>
-    </mitre>
-  </rule>
+  <!-- 3.4: the host-integrity rules that used to live here (100936 NOPASSWD
+       ALL, 100937 package-manager writes, 100938 PAM, 100939 sudo, 100940
+       cron, 100941 systemd units, 100942 authorized_keys) matched every
+       Linux agent, not only Zimbra servers, and covered only part of each
+       area. They moved to the jt-linux-integrity pack (132900-132999), which
+       covers every cron and at location, user and generator units, PAM
+       modules, the account databases and ld.so.preload, and separates the
+       writer (package manager, the file's own tool, anything else). Install
+       it to keep this coverage; the zimbra group still monitors the files.
+       The IDs stay unused. -->
 
   <rule id="100943" level="14">
     <if_sid>550</if_sid>

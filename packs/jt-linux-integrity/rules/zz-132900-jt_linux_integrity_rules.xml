@@ -1,0 +1,770 @@
+<!--
+  jt-linux-integrity 1.0: Linux host integrity (file integrity monitoring)
+  File: etc/rules/zz-132900-jt_linux_integrity_rules.xml   Range: 132900-132999
+
+  Account databases, sudo, every cron and at location, systemd units, timers,
+  generators and enable links, PAM, the dynamic linker preload, and SSH
+  authorized_keys, including deletions. The rules hang off the built-in FIM
+  rules 550 (modified), 553 (deleted) and 554 (added) and match on the path,
+  so they apply to every Linux agent whose FIM sees these files; the
+  linux-integrity agent group adds real time, whodata and diffs.
+
+  How the levels are built (the same shape in every section):
+    - a section rule for "this file changed, writer unknown". Without whodata
+      (no auditd on the host, the common case) Wazuh does not know which
+      program wrote the file, so this level reflects that weaker evidence;
+    - a child "written by a program that is not the package manager or the
+      file's own tool" (whodata present): the high level;
+    - children of that for the expected writers (the package manager or
+      configuration management, the file's own tool: passwd, visudo, crontab,
+      systemd): low levels;
+    - diff-based children (report_changes) that read what was added: a new
+      UID 0 account, "NOPASSWD: ALL", a PAM authentication bypass. They are
+      tried before their siblings because their level is higher (analysisd
+      orders siblings: level 0 first, then by level, high to low, then by
+      load order);
+    - shared quiet children at the end of the file: identical rewrites (only
+      inode and mtime changed) at level 2, package manager writes at 3 or 5.
+  Temporary and inert names (dpkg-new, ucf, rpmnew, a trailing ~, editor
+  swap files, dotfiles where the loader skips them, shadow-utils lock files)
+  are level 2: measured on one site over 30 days they were about 700 of
+  1,326 alerts on these paths, and none of them is ever loaded by cron, sudo,
+  systemd or PAM.
+
+  Ideas compared with (re-implemented, nothing copied): Elastic
+  detection-rules rules/linux persistence_cron_job_creation,
+  persistence_shadow_file_modification, persistence_systemd_service_creation,
+  persistence_systemd_generator_creation, persistence_at_job_creation,
+  persistence_pluggable_authentication_module_creation; SigmaHQ
+  file_event_lnx_persistence_cron_files, file_event_lnx_persistence_sudoers_files,
+  lnx_auditd_ld_so_preload_mod.
+
+  Every if_sid target is defined above its user (pitfall 35). The ID range
+  132900-132999 is this pack's only range.
+-->
+
+<group name="syscheck,jt_linux_integrity,">
+
+  <!-- ==========================================================
+       Temporary and inert files (level 2)
+       ========================================================== -->
+
+  <!-- shadow-utils writes passwd.lock, passwd.<pid> and passwd+ while it
+       works and keeps the previous version as passwd-. About 330 alerts in
+       30 days on one site. -->
+  <rule id="132900" level="2">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/etc/(?:passwd|shadow|group|gshadow|subuid|subgid)(?:\.lock|\.\d+|\+|-)$</field>
+    <description>Account database lock, temporary or backup file: $(file)</description>
+    <group>jt_li_inert,</group>
+  </rule>
+
+  <!-- Names the loaders never read: the package manager's transient copies
+       (dpkg-new, dpkg-old, ucf-dist, rpmnew...), atomic-write temporaries
+       ending in ~ (snapd writes unit.123456~), editor swap files, dotfiles in
+       cron and sudoers.d (cron, run-parts and sudo skip them), crontab's own
+       temporary file, at's sequence counter and the files of a running or
+       finished at job. -->
+  <rule id="132901" level="2">
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^(?:(?:/etc/(?:sudoers|sudoers\.d/|sudo\.conf|doas\.conf|crontab|anacrontab|cron\.|at\.|systemd/|pam\.d/|pam\.conf|security/|ld\.so\.)|/var/spool/(?:cron|at)/|/usr/local/lib/systemd/|/(?:usr/)?lib(?:64|32)?/(?:[a-z0-9_]+-linux-gnu[a-z]*/)?security/|/(?:usr/)?lib/systemd/|/(?:root|home/[^/]+)/\.(?:config|local/share)/systemd/|.*/authorized_keys)[^\n]*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])|/etc/(?:cron\.[a-z]+|sudoers\.d)/\.[^/]*|/var/spool/cron/(?:crontabs/|tabs/)?#?tmp\.[^/]*|/var/spool/(?:cron/atjobs|at)/(?:\.SEQ|=[^/]*)|/var/spool/(?:cron/atspool|at/spool)/[^/]+)$</field>
+    <description>Temporary or inactive file in a monitored persistence location (never loaded as it is): $(file)</description>
+    <group>jt_li_inert,</group>
+  </rule>
+
+  <!-- ==========================================================
+       Account databases: /etc/passwd, /etc/group, /etc/shadow, /etc/gshadow
+       ========================================================== -->
+
+  <rule id="132910" level="6">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/etc/(?:passwd|group)$</field>
+    <description>Local account or group database changed: $(file) (writer not recorded: no whodata on this host)</description>
+    <mitre>
+      <id>T1136.001</id>
+      <id>T1098</id>
+    </mitre>
+    <group>jt_li_account,</group>
+  </rule>
+
+  <rule id="132911" level="7">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/etc/(?:shadow|gshadow)$</field>
+    <description>Password database changed: $(file) (writer not recorded: no whodata on this host)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>jt_li_account,</group>
+  </rule>
+
+  <!-- A passwd line whose UID field is 0 for any name but root: a second
+       superuser (usermod -o -u 0 counts too). Needs report_changes on
+       /etc/passwd, which the linux-integrity group sets. -->
+  <rule id="132916" level="14">
+    <if_sid>132910</if_sid>
+    <field name="file" type="pcre2">^/etc/passwd$</field>
+    <field name="changed_content" type="pcre2">(?m)^\x3e\s*(?!root:)[^:\s]+:[^:\n]*:0:</field>
+    <description>[HIGH] An account with UID 0 other than root appeared in /etc/passwd, a second superuser</description>
+    <mitre>
+      <id>T1136.001</id>
+      <id>T1078.003</id>
+    </mitre>
+    <group>jt_li_account,</group>
+  </rule>
+
+  <rule id="132912" level="12">
+    <if_sid>132910</if_sid>
+    <field name="process_name" type="pcre2">\S</field>
+    <description>[HIGH] Account database written directly by $(process_name), not by an account tool: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1136.001</id>
+      <id>T1098</id>
+    </mitre>
+    <group>jt_li_account,</group>
+  </rule>
+
+  <!-- shadow made readable by every account (chmod o+r): every password hash
+       can then be read and cracked offline. Defined before 132913 (same level)
+       so that it is tried first. -->
+  <rule id="132918" level="13">
+    <if_sid>132911</if_sid>
+    <field name="changed_fields" type="pcre2">(?:^|,)permission(?:,|$)</field>
+    <field name="perm" type="pcre2">^.{6}r</field>
+    <description>[HIGH] $(file) is now readable by every account (permissions $(perm)): password hashes exposed</description>
+    <mitre>
+      <id>T1003.008</id>
+    </mitre>
+    <group>jt_li_account,</group>
+  </rule>
+
+  <rule id="132913" level="13">
+    <if_sid>132911</if_sid>
+    <field name="process_name" type="pcre2">\S</field>
+    <description>[HIGH] Password database written directly by $(process_name), not by an account tool: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>jt_li_account,</group>
+  </rule>
+
+  <!-- The account tools of shadow-utils and libuser, systemd-sysusers,
+       AccountsService, and the login services that change an expired
+       password through PAM. adduser and deluser are Perl scripts that call
+       useradd and userdel, so the write is attributed to those. -->
+  <rule id="132914" level="3">
+    <if_sid>132912,132913</if_sid>
+    <field name="process_name" type="pcre2">^(?:/usr)?/s?bin/(?:passwd|chpasswd|chgpasswd|chage|chsh|chfn|useradd|userdel|usermod|groupadd|groupdel|groupmod|gpasswd|grpconv|grpunconv|pwconv|pwunconv|newusers|pwck|grpck|luseradd|luserdel|lusermod|lgroupadd|lgroupdel|lgroupmod|lpasswd|lchage|lchfn|lchsh|systemd-sysusers|update-passwd|sshd|login|su)$|/sshd-session$|/gdm-session-worker$|/cockpit-session$|^/usr/(?:libexec|lib/accountsservice)/accounts-daemon$</field>
+    <description>Account database updated by $(process_name): $(file)</description>
+    <group>jt_li_account,</group>
+  </rule>
+
+  <rule id="132915" level="8">
+    <if_sid>132912,132913</if_sid>
+    <field name="process_name" type="pcre2">^(?:/usr)?/s?bin/(?:vipw|vigr)$</field>
+    <description>Account database edited by hand through $(process_name): $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>jt_li_account,</group>
+  </rule>
+
+  <!-- A group line that names members, for a group that grants root or
+       root-equivalent access: sudo, wheel, admin, root, docker, lxd, incus-admin,
+       libvirt, kvm, disk, shadow, adm, systemd-journal. Reached when the writer
+       is unknown or an account tool (usermod -aG); a direct edit stays at 132912. -->
+  <rule id="132917" level="10">
+    <if_sid>132910,132914</if_sid>
+    <field name="file" type="pcre2">^/etc/group$</field>
+    <field name="changed_content" type="pcre2">(?m)^\x3e\s*(?:sudo|wheel|admin|root|docker|lxd|incus-admin|libvirt|kvm|disk|shadow|adm|systemd-journal):[^:\n]*:\d+:[^\s:]</field>
+    <description>[WARN] Membership of a privileged group changed in /etc/group (sudo, wheel, docker, lxd or similar)</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>jt_li_account,</group>
+  </rule>
+
+  <rule id="132919" level="12">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^/etc/(?:passwd|shadow|group|gshadow)$</field>
+    <description>[HIGH] Account database deleted: $(file); logins on this host stop working</description>
+    <mitre>
+      <id>T1531</id>
+    </mitre>
+    <group>jt_li_account,</group>
+  </rule>
+
+  <!-- ==========================================================
+       sudo: /etc/sudoers, /etc/sudoers.d/, /etc/sudo.conf, /etc/doas.conf
+       sudo.conf loads policy and I/O plugins (shared objects run as root).
+       ========================================================== -->
+
+  <rule id="132920" level="10">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)(?:/etc/(?:sudoers|sudo\.conf|doas\.conf)$|/etc/sudoers\.d/(?!\.)[^/]+$)</field>
+    <description>[WARN] sudo configuration changed: $(file) (writer not recorded: no whodata on this host)</description>
+    <mitre>
+      <id>T1548.003</id>
+    </mitre>
+    <group>jt_li_sudo,</group>
+  </rule>
+
+  <!-- The diff adds a rule granting every command without a password, or
+       switches authentication off with Defaults !authenticate. -->
+  <rule id="132921" level="14">
+    <if_sid>132920</if_sid>
+    <field name="changed_content" type="pcre2">(?m)^\x3e(?!\s*#)(?:[^\n]*\bNOPASSWD:\s*ALL\b|\s*Defaults\b[^\n#]*!\s*authenticate\b)</field>
+    <description>[HIGH] A sudo rule granting every command without a password was added: $(file) process: $(process_name)</description>
+    <mitre>
+      <id>T1548.003</id>
+    </mitre>
+    <group>jt_li_sudo,</group>
+  </rule>
+
+  <rule id="132922" level="12">
+    <if_sid>132920</if_sid>
+    <field name="process_name" type="pcre2">\S</field>
+    <description>[HIGH] sudo configuration written by $(process_name), not by visudo or the package manager: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1548.003</id>
+    </mitre>
+    <group>jt_li_sudo,</group>
+  </rule>
+
+  <rule id="132923" level="8">
+    <if_sid>132922</if_sid>
+    <field name="process_name" type="pcre2">^(?:/usr)?/s?bin/visudo$</field>
+    <description>sudo configuration edited through visudo: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1548.003</id>
+    </mitre>
+    <group>jt_li_sudo,</group>
+  </rule>
+
+  <rule id="132924" level="10">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^/etc/sudoers$</field>
+    <description>[WARN] /etc/sudoers deleted: sudo no longer works on this host</description>
+    <mitre>
+      <id>T1531</id>
+    </mitre>
+    <group>jt_li_sudo,</group>
+  </rule>
+
+  <rule id="132925" level="6">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)(?:/etc/(?:sudo\.conf|doas\.conf)$|/etc/sudoers\.d/(?!\.)[^/]+$)</field>
+    <description>sudo drop-in or configuration file removed: $(file)</description>
+    <group>jt_li_sudo,</group>
+  </rule>
+
+  <!-- ==========================================================
+       cron and at
+       ========================================================== -->
+
+  <!-- System tables and directories. cron.allow and cron.deny decide who
+       may have a crontab. -->
+  <rule id="132930" level="10">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)(?:/etc/(?:crontab|anacrontab|cron\.allow|cron\.deny|at\.allow|at\.deny)$|/etc/cron\.(?:d|hourly|daily|weekly|monthly|yearly)/(?!\.)[^/]+$)</field>
+    <description>[WARN] System scheduled task added or changed: $(file) (writer not recorded: no whodata on this host)</description>
+    <mitre>
+      <id>T1053.003</id>
+    </mitre>
+    <group>jt_li_cron,</group>
+  </rule>
+
+  <rule id="132931" level="12">
+    <if_sid>132930</if_sid>
+    <field name="process_name" type="pcre2">\S</field>
+    <description>[HIGH] System scheduled task written by $(process_name), not by the package manager: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1053.003</id>
+    </mitre>
+    <group>jt_li_cron,</group>
+  </rule>
+
+  <!-- Per-user crontabs: /var/spool/cron/crontabs/<user> (Debian),
+       /var/spool/cron/<user> (Red Hat), /var/spool/cron/tabs/<user> (SUSE). -->
+  <rule id="132933" level="10">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)/var/spool/cron/(?:(?:crontabs|tabs)/)?(?!(?:atjobs|atspool|crontabs|tabs)(?:/|$))(?!#?tmp\.)(?!\.)[^/]+$</field>
+    <description>[WARN] User crontab added or changed: $(file) (writer not recorded: no whodata on this host)</description>
+    <mitre>
+      <id>T1053.003</id>
+    </mitre>
+    <group>jt_li_cron,</group>
+  </rule>
+
+  <rule id="132934" level="12">
+    <if_sid>132933</if_sid>
+    <field name="process_name" type="pcre2">\S</field>
+    <description>[HIGH] User crontab written directly by $(process_name), bypassing the crontab command: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1053.003</id>
+    </mitre>
+    <group>jt_li_cron,</group>
+  </rule>
+
+  <rule id="132935" level="8">
+    <if_sid>132934</if_sid>
+    <field name="process_name" type="pcre2">^(?:/usr)?/s?bin/crontab$</field>
+    <description>User crontab replaced through the crontab command: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1053.003</id>
+    </mitre>
+    <group>jt_li_cron,</group>
+  </rule>
+
+  <!-- at jobs: /var/spool/cron/atjobs (Debian), /var/spool/at (Red Hat). -->
+  <rule id="132937" level="10">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/var/spool/(?:cron/atjobs|at)/(?![.=])[^/]+$</field>
+    <description>[WARN] at job queued: $(file)</description>
+    <mitre>
+      <id>T1053.002</id>
+    </mitre>
+    <group>jt_li_cron,</group>
+  </rule>
+
+  <rule id="132938" level="12">
+    <if_sid>132937</if_sid>
+    <field name="process_name" type="pcre2">\S</field>
+    <description>[HIGH] at job written directly by $(process_name), bypassing the at command: $(file)</description>
+    <mitre>
+      <id>T1053.002</id>
+    </mitre>
+    <group>jt_li_cron,</group>
+  </rule>
+
+  <rule id="132939" level="8">
+    <if_sid>132938</if_sid>
+    <field name="process_name" type="pcre2">^(?:/usr)?/s?bin/(?:at|batch|atd)$</field>
+    <description>at job queued through $(process_name): $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1053.002</id>
+    </mitre>
+    <group>jt_li_cron,</group>
+  </rule>
+
+  <!-- Removing a scheduled task is usually cleanup, not persistence. -->
+  <rule id="132940" level="6">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)(?:/etc/(?:crontab|anacrontab|cron\.allow|cron\.deny|at\.allow|at\.deny)$|/etc/cron\.(?:d|hourly|daily|weekly|monthly|yearly)/(?!\.)[^/]+$|/var/spool/cron/(?:(?:crontabs|tabs)/)?(?!(?:atjobs|atspool|crontabs|tabs)(?:/|$))(?!#?tmp\.)(?!\.)[^/]+$)</field>
+    <description>Scheduled task removed: $(file)</description>
+    <group>jt_li_cron,</group>
+  </rule>
+
+  <!-- atd deletes a job file after running it. -->
+  <rule id="132941" level="2">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^/var/spool/(?:cron/atjobs|at)/[^/]+$</field>
+    <description>at job finished or removed: $(file)</description>
+    <group>jt_li_cron,</group>
+  </rule>
+
+  <!-- ==========================================================
+       systemd units, drop-ins, timers, generators, enable links
+       ========================================================== -->
+
+  <!-- Administrator unit directories (units, timers, sockets, paths and
+       their .d drop-ins; ExecStart in a drop-in is as good as a new unit). -->
+  <rule id="132950" level="10">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)/(?:etc/systemd|usr/local/lib/systemd)/(?:system|user)/(?![^/]+\.(?:wants|requires|upholds)/)[^/]+(?:/[^/]+)?$</field>
+    <description>[WARN] systemd unit or drop-in added or changed: $(file) (writer not recorded: no whodata on this host)</description>
+    <mitre>
+      <id>T1543.002</id>
+    </mitre>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <rule id="132951" level="12">
+    <if_sid>132950</if_sid>
+    <field name="process_name" type="pcre2">\S</field>
+    <description>[HIGH] systemd unit written by $(process_name), not by systemd or the package manager: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1543.002</id>
+    </mitre>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <!-- snapd writes snap-<name>-<rev>.mount and snap.<name>.<app>.service for
+       every refresh. Only when the writer is unknown: with whodata a snap
+       name written by anything but snapd stays at 132951. -->
+  <rule id="132953" level="3">
+    <if_sid>132950</if_sid>
+    <field name="file" type="pcre2">/snap[-.][^/]+$</field>
+    <description>snap unit added or changed (snap refresh): $(file)</description>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <!-- Enable links: systemctl enable (through systemd itself), presets and
+       deb-systemd-helper create them for a unit that already exists; the unit
+       file has its own alert when it is new. -->
+  <rule id="132955" level="5">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?:/etc/systemd|/usr/local/lib/systemd|/(?:usr/)?lib/systemd|/(?:root|home/[^/]+)/\.config/systemd)/(?:system|user)/[^/]+\.(?:wants|requires|upholds)/[^/]+$</field>
+    <description>systemd unit enabled: $(file)</description>
+    <mitre>
+      <id>T1543.002</id>
+    </mitre>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <rule id="132956" level="3">
+    <if_sid>132955</if_sid>
+    <field name="process_name" type="pcre2">^(?:/usr)?/lib/systemd/systemd$|^(?:/usr)?/bin/systemctl$|^(?:/usr)?/s?bin/(?:dpkg|rpm|dnf|dnf5|yum|microdnf|zypper|apk|pacman)$|^(?:/snap/snapd/\d+)?/usr/lib/snapd/snapd$</field>
+    <description>systemd unit enabled by $(process_name): $(file)</description>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <!-- Generators run as root very early at every boot and on daemon-reload;
+       packages install theirs under /usr/lib, so one in /etc or /usr/local
+       is a site's or an intruder's. -->
+  <rule id="132957" level="12">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)/(?:etc|usr/local/lib)/systemd/(?:system|user)-generators/[^/]+$</field>
+    <description>[HIGH] systemd generator added or changed, it runs as root at every boot: $(file) process: $(process_name)</description>
+    <mitre>
+      <id>T1543.002</id>
+    </mitre>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <!-- User services in home directories (systemctl user units start at login
+       or, with lingering, at boot). -->
+  <rule id="132958" level="10">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)/(?:root|home/[^/]+)/\.(?:config|local/share)/systemd/user/(?![^/]+\.(?:wants|requires|upholds)/)[^/]+(?:/[^/]+)?$</field>
+    <description>[WARN] User-level systemd unit added or changed in a home directory: $(file) process: $(process_name)</description>
+    <mitre>
+      <id>T1543.002</id>
+    </mitre>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <!-- Vendor unit directories belong to packages. The linux-integrity group
+       does not monitor them (every package upgrade rewrites units there, and
+       without whodata that cannot be told from an intruder); a site that adds
+       them gets these rules. -->
+  <rule id="132960" level="5">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)/(?:usr/)?lib/systemd/(?:system|user)(?:-generators)?/(?![^/]+\.(?:wants|requires|upholds)/)[^/]+(?:/[^/]+)?$</field>
+    <description>Packaged systemd unit or generator added or changed: $(file) (writer not recorded)</description>
+    <mitre>
+      <id>T1543.002</id>
+    </mitre>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <rule id="132962" level="12">
+    <if_sid>132960</if_sid>
+    <field name="process_name" type="pcre2">\S</field>
+    <description>[HIGH] Packaged systemd unit written by $(process_name), not by the package manager: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1543.002</id>
+    </mitre>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <!-- systemd itself writes alias links and the files of systemctl link,
+       enable and preset. -->
+  <rule id="132952" level="3">
+    <if_sid>132951,132962</if_sid>
+    <field name="process_name" type="pcre2">^(?:/usr)?/lib/systemd/systemd$</field>
+    <description>systemd unit file written by systemd itself (enable, link or preset): $(file)</description>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <!-- systemctl edit and systemctl revert: an administrator changing a unit
+       by hand, which is also how an ExecStart override is planted. -->
+  <rule id="132954" level="8">
+    <if_sid>132951,132962</if_sid>
+    <field name="process_name" type="pcre2">^(?:/usr)?/bin/systemctl$</field>
+    <description>systemd unit edited through systemctl: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1543.002</id>
+    </mitre>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <rule id="132964" level="2">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^(?:/etc/systemd|/usr/local/lib/systemd|/(?:usr/)?lib/systemd|/(?:root|home/[^/]+)/\.config/systemd)/(?:system|user)/[^/]+\.(?:wants|requires|upholds)/[^/]+$</field>
+    <description>systemd unit disabled: $(file)</description>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <rule id="132965" level="5">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)(?:/(?:etc/systemd|usr/local/lib/systemd|(?:usr/)?lib/systemd)/(?:system|user)(?:-generators)?/(?![^/]+\.(?:wants|requires|upholds)/)[^/]+(?:/[^/]+)?|/(?:root|home/[^/]+)/\.(?:config|local/share)/systemd/user/(?![^/]+\.(?:wants|requires|upholds)/)[^/]+(?:/[^/]+)?)$</field>
+    <description>systemd unit, drop-in or generator removed: $(file)</description>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <rule id="132966" level="3">
+    <if_sid>132965</if_sid>
+    <field name="file" type="pcre2">/snap[-.][^/]+$</field>
+    <description>snap unit removed (snap refresh or removal): $(file)</description>
+    <group>jt_li_systemd,</group>
+  </rule>
+
+  <!-- ==========================================================
+       PAM: /etc/pam.d, /etc/pam.conf, module directories, /etc/security
+       ========================================================== -->
+
+  <rule id="132970" level="10">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)(?:/etc/pam\.conf|/etc/pam\.d/[^/]+)$</field>
+    <description>[WARN] PAM configuration changed: $(file) (writer not recorded: no whodata on this host)</description>
+    <mitre>
+      <id>T1556.003</id>
+    </mitre>
+    <group>jt_li_pam,</group>
+  </rule>
+
+  <!-- Lines that let anyone in or hand the password to a program:
+       "auth sufficient pam_permit.so" (or a [success=done] control on it),
+       pam_exec with expose_authtok, or a module loaded by absolute path from
+       outside the PAM module directories. Stock Debian common-auth has
+       "auth required pam_permit.so", which this does not match. -->
+  <rule id="132971" level="14">
+    <if_sid>132970</if_sid>
+    <field name="changed_content" type="pcre2">(?m)^\x3e(?:\s*-?auth\s+(?:sufficient|\[[^\]\n]*\b(?:success|default)=done\b[^\]\n]*\])\s+pam_permit\.so\b|(?!\s*#)[^\n]*\bpam_exec\.so\b[^\n]*\bexpose_authtok\b|\s*-?(?:auth|account|password|session)\s+(?:\[[^\]\n]*\]|\S+)\s+/(?!(?:usr/)?lib(?:64|32)?/(?:[a-z0-9_]+-linux-gnu[a-z]*/)?security/)\S+)</field>
+    <description>[HIGH] PAM line added that bypasses authentication or captures passwords: $(file) process: $(process_name)</description>
+    <mitre>
+      <id>T1556.003</id>
+    </mitre>
+    <group>jt_li_pam,</group>
+  </rule>
+
+  <rule id="132972" level="12">
+    <if_sid>132970</if_sid>
+    <field name="process_name" type="pcre2">\S</field>
+    <description>[HIGH] PAM configuration written by $(process_name), not by the package manager: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1556.003</id>
+    </mitre>
+    <group>jt_li_pam,</group>
+  </rule>
+
+  <rule id="132973" level="5">
+    <if_sid>132972</if_sid>
+    <field name="process_name" type="pcre2">^(?:/usr)?/s?bin/(?:authselect|pam-config)$</field>
+    <description>PAM profile applied through $(process_name): $(file)</description>
+    <group>jt_li_pam,</group>
+  </rule>
+
+  <!-- Module directories: /lib/security, /lib64/security, /usr/lib/security,
+       /usr/lib64/security and the multiarch ones (/usr/lib/x86_64-linux-gnu/
+       security). A replaced pam_unix.so is the classic credential backdoor.
+       Without whodata a libpam-modules upgrade rewrites about 50 modules at
+       once, so the writer-unknown level is 7 (10 for a module name that did
+       not exist before). -->
+  <rule id="132974" level="7">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)/(?:usr/)?lib(?:64|32)?/(?:[a-z0-9_]+-linux-gnu[a-z]*/)?security/[^/]+$</field>
+    <description>PAM module changed: $(file) (writer not recorded: no whodata on this host)</description>
+    <mitre>
+      <id>T1556.003</id>
+    </mitre>
+    <group>jt_li_pam,</group>
+  </rule>
+
+  <rule id="132975" level="10">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)/(?:usr/)?lib(?:64|32)?/(?:[a-z0-9_]+-linux-gnu[a-z]*/)?security/[^/]+$</field>
+    <description>[WARN] New PAM module file: $(file) (writer not recorded: no whodata on this host)</description>
+    <mitre>
+      <id>T1556.003</id>
+    </mitre>
+    <group>jt_li_pam,</group>
+  </rule>
+
+  <rule id="132976" level="13">
+    <if_sid>132974,132975</if_sid>
+    <field name="process_name" type="pcre2">\S</field>
+    <description>[HIGH] PAM module written by $(process_name), not by the package manager: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1556.003</id>
+    </mitre>
+    <group>jt_li_pam,</group>
+  </rule>
+
+  <!-- PAM module configuration that decides who may log in (access.conf,
+       time.conf, group.conf), the environment of every session (pam_env), a
+       script pam_namespace runs as root (namespace.init), lockout and
+       password quality. limits.conf is left to the built-in rules. -->
+  <rule id="132977" level="7">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)/etc/security/(?:access\.conf|access\.d/[^/]+|group\.conf|time\.conf|namespace\.conf|namespace\.init|namespace\.d/[^/]+|pam_env\.conf|faillock\.conf|pwquality\.conf|pwquality\.conf\.d/[^/]+|pwhistory\.conf|sepermit\.conf|capability\.conf)$</field>
+    <description>PAM module configuration changed: $(file) (writer not recorded: no whodata on this host)</description>
+    <mitre>
+      <id>T1556.003</id>
+    </mitre>
+    <group>jt_li_pam,</group>
+  </rule>
+
+  <rule id="132978" level="10">
+    <if_sid>132977</if_sid>
+    <field name="process_name" type="pcre2">\S</field>
+    <description>[WARN] PAM module configuration written by $(process_name), not by the package manager: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1556.003</id>
+    </mitre>
+    <group>jt_li_pam,</group>
+  </rule>
+
+  <rule id="132979" level="6">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)(?:/etc/pam\.conf|/etc/pam\.d/[^/]+|/(?:usr/)?lib(?:64|32)?/(?:[a-z0-9_]+-linux-gnu[a-z]*/)?security/[^/]+)$</field>
+    <description>PAM configuration file or module removed: $(file)</description>
+    <group>jt_li_pam,</group>
+  </rule>
+
+  <!-- ==========================================================
+       Dynamic linker: /etc/ld.so.preload, /etc/ld.so.conf(.d)
+       Every library named in ld.so.preload is loaded into every program
+       started on the host: the usual rootkit hook (libprocesshider and
+       others). Almost nothing legitimate writes it.
+       ========================================================== -->
+
+  <rule id="132980" level="13">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/etc/ld\.so\.preload$</field>
+    <description>[HIGH] /etc/ld.so.preload created or changed: a library is injected into every program on this host. Process: $(process_name)</description>
+    <mitre>
+      <id>T1574.006</id>
+    </mitre>
+    <group>jt_li_ldso,</group>
+  </rule>
+
+  <rule id="132981" level="8">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^/etc/ld\.so\.preload$</field>
+    <description>/etc/ld.so.preload removed: check what it preloaded before (the previous alerts for this file)</description>
+    <mitre>
+      <id>T1574.006</id>
+    </mitre>
+    <group>jt_li_ldso,</group>
+  </rule>
+
+  <rule id="132982" level="7">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)/etc/ld\.so\.conf(?:\.d/[^/]+)?$</field>
+    <description>Library search path changed: $(file) (writer not recorded: no whodata on this host)</description>
+    <mitre>
+      <id>T1574.006</id>
+    </mitre>
+    <group>jt_li_ldso,</group>
+  </rule>
+
+  <rule id="132983" level="10">
+    <if_sid>132982</if_sid>
+    <field name="process_name" type="pcre2">\S</field>
+    <description>[WARN] Library search path written by $(process_name), not by the package manager: $(file) (login user: $(audit_name))</description>
+    <mitre>
+      <id>T1574.006</id>
+    </mitre>
+    <group>jt_li_ldso,</group>
+  </rule>
+
+  <rule id="132984" level="5">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$)/etc/ld\.so\.conf(?:\.d/[^/]+)?$</field>
+    <description>Library search path file removed: $(file)</description>
+    <group>jt_li_ldso,</group>
+  </rule>
+
+  <!-- ==========================================================
+       SSH authorized_keys (any account; /etc/pve belongs to jt-proxmox)
+       ========================================================== -->
+
+  <rule id="132985" level="12">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/root/\.ssh/authorized_keys2?$</field>
+    <description>[HIGH] SSH key added or changed for root: $(file) process: $(process_name)</description>
+    <mitre>
+      <id>T1098.004</id>
+    </mitre>
+    <group>jt_li_ssh,</group>
+  </rule>
+
+  <rule id="132986" level="10">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?!/etc/pve/|/root/\.ssh/authorized_keys2?$)(?!.*(?:\.dpkg-[a-z]+|\.ucf-[a-z]+|\.rpm(?:new|save|orig)|~|\.sw[a-px])$).*/authorized_keys2?$</field>
+    <description>[WARN] SSH authorized_keys added or changed: $(file) process: $(process_name)</description>
+    <mitre>
+      <id>T1098.004</id>
+    </mitre>
+    <group>jt_li_ssh,</group>
+  </rule>
+
+  <!-- Removing keys can lock administrators out, or clear a planted key. -->
+  <rule id="132987" level="7">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^(?!/etc/pve/).*/authorized_keys2?$</field>
+    <description>SSH authorized_keys removed: $(file)</description>
+    <mitre>
+      <id>T1531</id>
+    </mitre>
+    <group>jt_li_ssh,</group>
+  </rule>
+
+  <!-- ==========================================================
+       Shared children (defined last: their parents are above)
+       ========================================================== -->
+
+  <!-- Only the inode and the modification time changed: the file was
+       rewritten with the same contents and permissions (pam-auth-update and
+       package scripts do it on every upgrade: 98 of 105 changes of pam.d
+       common-* files in 30 days on one site). -->
+  <rule id="132902" level="2">
+    <if_sid>132910,132911,132912,132913,132920,132922,132930,132931,132933,132934,132950,132951,132955,132957,132958,132960,132962,132970,132972,132974,132976,132977,132978,132980,132982,132983,132985,132986</if_sid>
+    <field name="changed_fields" type="pcre2">^(?:mtime|inode)(?:,(?:mtime|inode))?$</field>
+    <description>Rewritten with identical contents (only inode or modification time changed): $(file)</description>
+    <group>jt_li_inert,</group>
+  </rule>
+
+  <!-- The package manager or configuration management wrote the file, or
+       started the program that did (a maintainer script writing through the
+       shell). Level 3 for accounts, cron, systemd, ld.so.conf and
+       /etc/security; level 5 for sudo, PAM, generators, the preload and SSH
+       keys (132905, 132906). Puppet, Chef and Salt are recognised by their
+       own installation directories under /opt. -->
+  <rule id="132903" level="3">
+    <if_sid>132912,132913,132931,132934,132938,132951,132962,132978,132983</if_sid>
+    <field name="process_name" type="pcre2">^(?:/usr)?/s?bin/(?:dpkg|dpkg-divert|dpkg-statoverride|apt|apt-get|aptitude|rpm|dnf|dnf5|dnf-automatic|yum|microdnf|zypper|apk|pacman)$|^/usr/lib/apt/|^(?:/snap/snapd/\d+)?/usr/lib/snapd/snapd$|^/usr/(?:libexec|lib/packagekit)/packagekitd$|^/opt/(?:puppetlabs|chef|saltstack)/</field>
+    <description>Written by the package manager or configuration management ($(process_name)): $(file)</description>
+    <group>jt_li_package,</group>
+  </rule>
+
+  <rule id="132904" level="3">
+    <if_sid>132912,132913,132931,132934,132938,132951,132962,132978,132983</if_sid>
+    <field name="parent_name" type="pcre2">^(?:/usr)?/s?bin/(?:dpkg|dpkg-divert|dpkg-statoverride|apt|apt-get|aptitude|rpm|dnf|dnf5|dnf-automatic|yum|microdnf|zypper|apk|pacman)$|^/usr/lib/apt/|^(?:/snap/snapd/\d+)?/usr/lib/snapd/snapd$|^/usr/(?:libexec|lib/packagekit)/packagekitd$|^/opt/(?:puppetlabs|chef|saltstack)/</field>
+    <description>Written by $(process_name) under the package manager or configuration management ($(parent_name)): $(file)</description>
+    <group>jt_li_package,</group>
+  </rule>
+
+  <rule id="132905" level="5">
+    <if_sid>132922,132957,132972,132976,132980,132985,132986</if_sid>
+    <field name="process_name" type="pcre2">^(?:/usr)?/s?bin/(?:dpkg|dpkg-divert|dpkg-statoverride|apt|apt-get|aptitude|rpm|dnf|dnf5|dnf-automatic|yum|microdnf|zypper|apk|pacman)$|^/usr/lib/apt/|^(?:/snap/snapd/\d+)?/usr/lib/snapd/snapd$|^/usr/(?:libexec|lib/packagekit)/packagekitd$|^/opt/(?:puppetlabs|chef|saltstack)/</field>
+    <description>Sensitive file written by the package manager or configuration management ($(process_name)): $(file)</description>
+    <group>jt_li_package,</group>
+  </rule>
+
+  <rule id="132906" level="5">
+    <if_sid>132922,132957,132972,132976,132980,132985,132986</if_sid>
+    <field name="parent_name" type="pcre2">^(?:/usr)?/s?bin/(?:dpkg|dpkg-divert|dpkg-statoverride|apt|apt-get|aptitude|rpm|dnf|dnf5|dnf-automatic|yum|microdnf|zypper|apk|pacman)$|^/usr/lib/apt/|^(?:/snap/snapd/\d+)?/usr/lib/snapd/snapd$|^/usr/(?:libexec|lib/packagekit)/packagekitd$|^/opt/(?:puppetlabs|chef|saltstack)/</field>
+    <description>Sensitive file written by $(process_name) under the package manager or configuration management ($(parent_name)): $(file)</description>
+    <group>jt_li_package,</group>
+  </rule>
+
+  <rule id="132907" level="3">
+    <if_sid>132924,132925,132940,132965,132979,132981,132984,132987</if_sid>
+    <field name="process_name" type="pcre2">^(?:/usr)?/s?bin/(?:dpkg|dpkg-divert|apt|apt-get|aptitude|rpm|dnf|dnf5|dnf-automatic|yum|microdnf|zypper|apk|pacman|systemctl)$|^(?:/usr)?/lib/systemd/systemd$|^/usr/lib/apt/|^(?:/snap/snapd/\d+)?/usr/lib/snapd/snapd$|^/usr/(?:libexec|lib/packagekit)/packagekitd$|^/opt/(?:puppetlabs|chef|saltstack)/</field>
+    <description>Removed by the package manager, systemd or configuration management ($(process_name)): $(file)</description>
+    <group>jt_li_package,</group>
+  </rule>
+
+</group>

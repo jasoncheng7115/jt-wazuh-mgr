@@ -16,7 +16,7 @@
 ## すべてを実行する
 
 ```bash
-python3 -m unittest discover -s tests     # 392 件のテスト、完全にオフライン
+python3 -m unittest discover -s tests     # 396 件のテスト、完全にオフライン
 python3 tools/preflight.py                # 21 項目の機械的なリリース前チェック
 
 # システムに Flask が入っていないホストで

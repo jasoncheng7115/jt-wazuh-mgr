@@ -4,6 +4,25 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.17.0（2026-10-19）
+
+- **新パック jt-linux-integrity 1.0（132900-132999）：すべてのホスト向けの Linux ホスト完全性。** アカウント
+  ファイル（passwd、shadow、group、gshadow）、sudo、スケジュールタスクを置けるすべての場所（`/etc/crontab`、
+  anacrontab、`cron.d` から `cron.yearly`、ユーザーの crontab、at ジョブ、systemd タイマー）、systemd ユニット・
+  ドロップイン・ジェネレーター・有効化リンク、PAM の設定とモジュール、`ld.so.preload` と `ld.so.conf`、SSH の
+  `authorized_keys` を、削除も含めて監視します。レベルは誰が書いたかで決まります：エディター・シェル・スクリプトは
+  高く（12-13）、そのファイル専用のツール（passwd、useradd、visudo、crontab）は低め、パッケージ管理や構成管理は 3-5、
+  書き手が不明（ホストに whodata がない）ならその中間。root 以外の UID 0 アカウント、`NOPASSWD: ALL` や
+  `!authenticate` の sudo ルール、`pam_permit`／`pam_exec expose_authtok` はレベル 14。アカウント用ツールのロック・
+  一時・バックアップファイル、パッケージの残り物、同一内容の書き直しはレベル 2。**shadow ファイルの差分は一切
+  取りません**。パスワードハッシュがアラートに載ることはなく、出荷するすべてのエージェントグループをテストで
+  確認します。これまで `/etc/shadow` の変更は `/etc` のどのファイルとも同じレベル 7 で、`/etc/crontab` や
+  sudoers の削除はまったく対象外でした。
+- **jt-zimbra 3.4：** Zimbra のパックに入っていながら全ホストで発火していた汎用ホストルール 100936-100942
+  （sudo、cron、systemd、PAM、authorized_keys）を削除し、jt-linux-integrity に置き換えました。この範囲を
+  維持するには更新と同時にインストールしてください。これらの ID を参照するサイトのルールは `analysisd -t` が
+  警告として報告し、無視されます。
+
 ## v1.16.6（2026-10-19）
 
 - **jt-alert-digest 1.9：Zulip のカードのタイトルの上に色のバー。** レベルの色の四角を一列に並べます

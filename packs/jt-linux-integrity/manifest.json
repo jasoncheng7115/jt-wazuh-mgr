@@ -1,0 +1,117 @@
+{
+ "id": "jt-linux-integrity",
+ "name": "Linux Host Integrity",
+ "name_zh": "Linux 主機完整性",
+ "version": "1.0",
+ "summary": "File integrity rules for Linux persistence and privilege: account databases (a new UID 0 account, privileged group members, shadow made readable), sudo (NOPASSWD: ALL), every cron and at location, systemd units, timers, generators and user units, PAM stacks and modules, ld.so.preload and authorized_keys, including deletions, with levels set by which program wrote the file and temporary or identical rewrites kept quiet.",
+ "summary_zh": "針對 Linux 持久化與提權的檔案完整性規則：帳號資料庫（新的 UID 0 帳號、特權群組成員、shadow 變成可讀）、sudo（NOPASSWD: ALL）、所有 cron 與 at 位置、systemd 單元、timer、generator 與使用者單元、PAM 設定與模組、ld.so.preload 與 authorized_keys，包括刪除；等級依寫入檔案的程式而定，暫存檔與內容相同的改寫保持安靜。",
+ "rule_id_range": "132900-132999",
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.7"
+ ],
+ "notes": [
+  "What it watches: the account databases (/etc/passwd, group, shadow, gshadow), sudo (sudoers, sudoers.d, sudo.conf, doas.conf), every cron and at location (/etc/crontab, anacrontab, cron.d, hourly, daily, weekly, monthly, yearly, cron.allow and deny, the user crontab spools of Debian, Red Hat and SUSE, at jobs), systemd units, drop-ins, timers, generators and enable links in the administrator and user directories, PAM (pam.d, pam.conf, the module directories, /etc/security), /etc/ld.so.preload and ld.so.conf, and SSH authorized_keys, including deletions. Rules match the path, so they work for any Linux agent whose file integrity monitoring sees the file; the linux-integrity group adds real time, the writer (whodata) and diffs.",
+  "Levels follow the evidence. Without whodata (no auditd on the host, which on one measured site was 38 of 40 Linux agents) Wazuh does not know which program wrote a file, so a change is reported at a middle level: account databases 6 and 7, sudo, cron, at, systemd units, user units and pam.d 10, PAM modules 7 (10 for a new one), ld.so.conf 7, root's authorized_keys 12, other accounts' 10, ld.so.preload 13. With whodata, a write by any program other than the package manager or the file's own tool is 12 (13 for shadow and PAM modules), the file's own tool is lower (passwd and useradd 3, vipw 8, visudo 8, crontab 8, at 8, systemctl edit 8, systemd itself 3, authselect 5), and the package manager or configuration management 3, or 5 for sudo, PAM, generators, the preload and SSH keys.",
+  "What the diff adds (report_changes, set by the group): a new account with UID 0 other than root in /etc/passwd (132916, level 14, usermod -o -u 0 included), a member added to sudo, wheel, admin, docker, lxd, libvirt or another root-equivalent group (132917, level 10), a sudo rule granting every command without a password or Defaults !authenticate (132921, level 14), and a PAM line that lets anyone in or hands the password to a program: auth sufficient pam_permit.so, pam_exec with expose_authtok, a module loaded by absolute path from outside the PAM directories (132971, level 14). These fire whoever wrote the file. Commented-out lines, stock \"auth required pam_permit.so\" and a pam_exec login notification without expose_authtok do not.",
+  "Other high-signal cases: /etc/shadow or gshadow made readable by every account (132918, level 13), an account database deleted (132919, level 12), /etc/sudoers deleted (132924, level 10), a systemd generator in /etc or /usr/local (132957, level 12: it runs as root at every boot). Deletions are otherwise low: a sudoers drop-in, cron entry or PAM file removed is 6, a unit 5, an authorized_keys file 7, ld.so.preload 8, an at job that ran and a disabled unit's link 2.",
+  "Quiet by default, measured on one site's 30 days of alerts on these paths (1,326 alerts, 40 Linux agents): about 700 were names the loaders never read (dpkg-new, dpkg-remove, ucf and rpmnew copies, snapd's .123456~ temporaries, editor swap files, dotfiles in cron and sudoers.d, crontab's temporary file, at's counter and running jobs) or shadow-utils lock, temporary and backup files (passwd.lock, passwd.<pid>, passwd+, passwd-): level 2 (132900, 132901). A file rewritten with identical contents (only the inode and modification time changed: 98 of 105 pam.d common-* changes were pam-auth-update doing this) is level 2 (132902). Snap units whose writer is unknown are 3 (132953, 132966). Nothing depends on a host name, address or account list.",
+  "report_changes: on for passwd, group, sudo, cron, systemd, PAM, ld.so and authorized_keys, which hold no secrets (passwd and group carry no hashes on a shadow-password system; authorized_keys holds public keys). Never for /etc/shadow, /etc/gshadow, their backups and /etc/security/opasswd: their diffs would carry password hashes into the manager's alerts and archives. The group lists them with report_changes=\"no\" and under nodiff as well, which also wins when another group turns diffs on for the whole of /etc. at job files hold the submitting user's environment and get no diff. A cron line or a unit's Environment= that contains a password would be copied into the alert: on such hosts set report_changes=\"no\" on those two entries.",
+  "Agent-side facts measured on 4.14.7 that shape the group: a path listed twice keeps only the last entry the agent reads, so the group lists files, never /etc or /root/.ssh (a site group that monitors them keeps its options); a file entry inside a monitored directory keeps its own options. A file that does not exist when the agent starts (/etc/ld.so.preload, doas.conf, a new user's authorized_keys) is not watched in real time: its creation is seen when the parent directory is monitored in real time (the site's own /etc monitoring does that) or at the next scheduled scan. Wildcards (/home/*) are expanded again at every scan. Diffs need the diff program on the agent.",
+  "With jt-zimbra: up to 3.3, jt-zimbra carried generic rules for sudo, PAM, cron, systemd units and authorized_keys (100936-100942) that applied to every Linux agent. When both packs are installed and jt-zimbra is 3.3 or older, those paths end at jt-zimbra's rules (levels 13 and 14, as before) and only the paths jt-zimbra never covered get this pack's levels; nothing alerts twice. jt-zimbra 3.4 removes those rules, and this pack then decides every one of these files. The pack also works alone. /etc/pve is left to jt-proxmox, and a hash on a malware list still ends at the hash rules (level 14), which are tried first.",
+  "Deliberately not covered: log lines (useradd, groupadd, usermod, crontab -e already have built-in rules 5901-5905 and 2832-2833), sshd_config, profile.d, rc.local, udev rules and motd scripts (a later version), and vendor unit directories (/usr/lib/systemd): every package upgrade rewrites them, so the group does not monitor them, although the rules handle them (132960, 132962) for a site that adds them on hosts with whodata. adduser, deluser and pam-auth-update are Perl scripts: a direct write by them is attributed to /usr/bin/perl and looks like any other program. No active response is offered: none of these events carries an attacker address.",
+  "Prerequisites: Wazuh 4.8 or later (tested on 4.14.7), the Linux agents in the linux-integrity group for real time and diffs, auditd on the hosts for whodata (the writer), and the diff program on the agents (part of every standard Linux install)."
+ ],
+ "notes_zh": [
+  "監控範圍：帳號資料庫（/etc/passwd、group、shadow、gshadow）、sudo（sudoers、sudoers.d、sudo.conf、doas.conf）、所有 cron 與 at 的位置（/etc/crontab、anacrontab、cron.d、hourly、daily、weekly、monthly、yearly、cron.allow 與 deny、Debian／Red Hat／SUSE 的使用者 crontab 目錄、at 工作）、管理者與使用者目錄中的 systemd 單元、drop-in、timer、generator 與啟用連結、PAM（pam.d、pam.conf、模組目錄、/etc/security）、/etc/ld.so.preload 與 ld.so.conf，以及 SSH authorized_keys，包括刪除。規則以路徑比對，所以任何檔案完整性監控看得到該檔的 Linux agent 都適用；linux-integrity 群組再加上即時監控、寫入者（whodata）與差異內容。",
+  "等級依證據強弱。沒有 whodata（主機沒有 auditd；某個實測站台 40 台 Linux agent 中有 38 台如此）時 Wazuh 不知道是哪個程式寫入檔案，所以變更以中間等級回報：帳號資料庫 6 與 7，sudo、cron、at、systemd 單元、使用者單元與 pam.d 為 10，PAM 模組 7（新的模組 10），ld.so.conf 7，root 的 authorized_keys 12、其他帳號的 10，ld.so.preload 13。有 whodata 時，由套件管理程式或該檔自己的工具以外的程式寫入為 12（shadow 與 PAM 模組為 13）；該檔自己的工具較低（passwd 與 useradd 3、vipw 8、visudo 8、crontab 8、at 8、systemctl edit 8、systemd 本身 3、authselect 5）；套件管理程式或組態管理工具為 3，sudo、PAM、generator、preload 與 SSH 金鑰為 5。",
+  "差異內容（群組設定的 report_changes）能看出的：/etc/passwd 出現 root 以外 UID 為 0 的帳號（132916，level 14，含 usermod -o -u 0）、sudo、wheel、admin、docker、lxd、libvirt 等等同 root 的群組新增成員（132917，level 10）、允許不輸入密碼執行所有指令的 sudo 規則或 Defaults !authenticate（132921，level 14），以及讓任何人通過或把密碼交給程式的 PAM 設定行：auth sufficient pam_permit.so、帶 expose_authtok 的 pam_exec、從 PAM 目錄以外以絕對路徑載入的模組（132971，level 14）。不論寫入者是誰都會觸發。被註解掉的行、原廠的「auth required pam_permit.so」、以及不帶 expose_authtok 的 pam_exec 登入通知都不會。",
+  "其他訊號強的情況：/etc/shadow 或 gshadow 變成所有帳號可讀（132918，level 13）、帳號資料庫被刪除（132919，level 12）、/etc/sudoers 被刪除（132924，level 10）、/etc 或 /usr/local 下的 systemd generator（132957，level 12：每次開機都以 root 執行）。其餘的刪除等級較低：sudoers drop-in、cron 項目或 PAM 檔被移除為 6，單元 5，authorized_keys 7，ld.so.preload 8，執行完的 at 工作與停用單元的連結為 2。",
+  "預設安靜，以某站台 30 天內這些路徑的告警實測（1,326 筆、40 台 Linux agent）：約 700 筆是載入程式從不讀取的檔名（dpkg-new、dpkg-remove、ucf 與 rpmnew 副本、snapd 的 .123456~ 暫存檔、編輯器的 swap 檔、cron 與 sudoers.d 裡的點檔、crontab 的暫存檔、at 的計數器與執行中的工作），或 shadow-utils 的鎖定、暫存與備份檔（passwd.lock、passwd.<pid>、passwd+、passwd-）：level 2（132900、132901）。內容相同的改寫（只有 inode 與修改時間變動：pam.d 的 common-* 105 次變更中有 98 次是 pam-auth-update 這樣做）為 level 2（132902）。寫入者不明的 snap 單元為 3（132953、132966）。沒有任何規則依賴主機名稱、位址或帳號清單。",
+  "report_changes：passwd、group、sudo、cron、systemd、PAM、ld.so 與 authorized_keys 開啟，這些檔案不含機密（使用 shadow 密碼的系統上 passwd 與 group 沒有雜湊；authorized_keys 是公開金鑰）。/etc/shadow、/etc/gshadow、它們的備份與 /etc/security/opasswd 一律不開：其差異會把密碼雜湊帶進管理端的告警與 archives。群組把它們設為 report_changes=\"no\"，並另外列在 nodiff；即使別的群組對整個 /etc 開啟差異，nodiff 仍然優先。at 工作檔裡是提交者的環境變數，不保留差異。cron 指令或單元的 Environment= 若含密碼，會被複製進告警：這類主機請把那兩個項目改成 report_changes=\"no\"。",
+  "形塑群組設定、在 4.14.7 上實測的 agent 行為：同一路徑列兩次時只保留 agent 最後讀到的那一筆，所以群組只列檔案，從不列 /etc 或 /root/.ssh（站台群組若監控它們，選項不受影響）；監控目錄內的檔案若另有設定，保有自己的選項。agent 啟動時不存在的檔案（/etc/ld.so.preload、doas.conf、新使用者的 authorized_keys）不會被即時監控：只有在其上層目錄被即時監控時（站台自己對 /etc 的監控即是）才會立刻看到建立，否則要等下一次排程掃描。萬用字元路徑（/home/*）在每次掃描時重新展開。差異內容需要 agent 上有 diff 程式。",
+  "與 jt-zimbra：3.3 以前的 jt-zimbra 帶有套用到每一台 Linux agent 的通用 sudo、PAM、cron、systemd 單元與 authorized_keys 規則（100936-100942）。兩個套件都安裝且 jt-zimbra 為 3.3 或更早時，這些路徑仍由 jt-zimbra 的規則處理（level 13 與 14，與以往相同），只有 jt-zimbra 從未涵蓋的路徑套用本套件的等級；不會有重複告警。jt-zimbra 3.4 移除了那些規則，之後這些檔案全部由本套件判斷。本套件也可以單獨使用。/etc/pve 交給 jt-proxmox；雜湊在惡意清單上的檔案仍由先比對的雜湊規則處理（level 14）。",
+  "刻意不涵蓋：記錄行（useradd、groupadd、usermod、crontab -e 已有內建規則 5901-5905 與 2832-2833）、sshd_config、profile.d、rc.local、udev 規則與 motd 腳本（之後的版本），以及廠商單元目錄（/usr/lib/systemd）：每次套件升級都會改寫，所以群組不監控，但規則仍處理它們（132960、132962），供在有 whodata 的主機上自行加入的站台使用。adduser、deluser 與 pam-auth-update 是 Perl 腳本：它們直接寫入時寫入者是 /usr/bin/perl，看起來和其他程式一樣。不提供主動回應：這些事件都不帶攻擊者位址。",
+  "前提：Wazuh 4.8 以上（於 4.14.7 測試），Linux agent 加入 linux-integrity 群組以取得即時監控與差異內容，主機上安裝 auditd 以取得 whodata（寫入者），以及 agent 上有 diff 程式（一般 Linux 安裝都有）。"
+ ],
+ "files": [
+  {
+   "type": "rule",
+   "name": "zz-132900-jt_linux_integrity_rules.xml",
+   "dest": "etc/rules/zz-132900-jt_linux_integrity_rules.xml",
+   "sha256": "4834f1b6fa7611423fb91ce8f7fda8a3ada19629fcdb731ea3ec1293e50d6eac"
+  }
+ ],
+ "agent_group": {
+  "name": "linux-integrity",
+  "config": "agent.conf",
+  "files": [],
+  "description": "Real-time file integrity with whodata for the account databases, sudo, cron and at, systemd units, PAM, the dynamic linker and SSH authorized_keys; diffs for everything except the password databases and at jobs"
+ },
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset on every node",
+   "title_zh": "安裝套件並在所有節點重新載入規則集",
+   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers. The pack is one rule file on the built-in file integrity rules 550, 553 and 554 and needs no list. From then on it applies to every Linux agent whose file integrity monitoring sees these files (by default /etc, scanned every 12 hours).",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔，不會重載 worker。套件是一個掛在內建檔案完整性規則 550、553、554 上的規則檔，不需要任何清單。之後它適用於每一台檔案完整性監控看得到這些檔案的 Linux agent（預設監控 /etc，每 12 小時掃描一次）。",
+   "verify": "/var/ossec/bin/wazuh-analysisd -t prints no error or warning.",
+   "verify_zh": "/var/ossec/bin/wazuh-analysisd -t 沒有任何錯誤或警告。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Assign the Linux hosts to the linux-integrity group and restart their agents",
+   "title_zh": "把 Linux 主機加入 linux-integrity 群組並重啟 agent",
+   "body": "The group adds real-time monitoring, whodata and diffs for exactly the files the rules read (a few hundred small files per host). It lists files, never /etc or /root/.ssh, so a group you already use for those keeps its settings. File integrity settings apply only after the agent restarts: synced in the agent list only means the file arrived. A host can be in this group and in a product group (zimbra, docker...) at the same time.",
+   "body_zh": "群組只對規則會讀的那些檔案加上即時監控、whodata 與差異內容（每台主機幾百個小檔）。它只列檔案，從不列 /etc 或 /root/.ssh，所以你已經用來監控這些位置的群組設定不受影響。檔案完整性設定要在 agent 重啟後才生效：agent 清單顯示 synced 只代表檔案已送達。主機可以同時屬於這個群組與產品群組（zimbra、docker 等）。",
+   "file": "agent/agent.conf",
+   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g linux-integrity -q\n/var/ossec/bin/agent_control -R -u <agent_id>",
+   "verify": "On the agent, after the restart: grep 'Monitoring path' /var/ossec/logs/ossec.log | grep -E 'sudoers.d|cron.d' shows report_changes; then add a comment line to a file in /etc/cron.d and look for rule 132930 or 132931.",
+   "verify_zh": "在 agent 上，重啟後：grep 'Monitoring path' /var/ossec/logs/ossec.log | grep -E 'sudoers.d|cron.d' 顯示 report_changes；接著在 /etc/cron.d 的某個檔案加一行註解，確認出現規則 132930 或 132931。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Install auditd so the alerts name the program that wrote the file",
+   "title_zh": "安裝 auditd，讓告警寫出是哪個程式寫入檔案",
+   "body": "whodata needs the audit userspace. Without it the agent falls back to real time and logs \"Who-data engine could not start\": every change then is \"writer not recorded\" at the middle level, and the package-manager and account-tool levels cannot apply. The agent adds its own audit watches for the monitored paths; nothing else changes. Install, enable, then restart the agent.",
+   "body_zh": "whodata 需要 audit 使用者空間程式。沒有時 agent 會退回即時監控並記錄「Who-data engine could not start」：所有變更都只能以「寫入者不明」的中間等級回報，套件管理程式與帳號工具的較低等級無法套用。agent 會自行為監控路徑加上 audit 監看，其他設定不變。安裝並啟用後重啟 agent。",
+   "code": "apt install auditd        # or: dnf install audit\nsystemctl enable --now auditd\n/var/ossec/bin/wazuh-control restart",
+   "verify": "grep -i who-data /var/ossec/logs/ossec.log | tail shows no 'could not start'; a later alert for these files shows syscheck.audit.process.name.",
+   "verify_zh": "grep -i who-data /var/ossec/logs/ossec.log | tail 沒有「could not start」；之後這些檔案的告警會帶 syscheck.audit.process.name。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "If jt-zimbra is installed, update it to 3.4",
+   "title_zh": "若已安裝 jt-zimbra，更新到 3.4",
+   "body": "jt-zimbra 3.3 and older carry generic rules for sudo, PAM, cron, systemd units and authorized_keys (100936-100942) that apply to every Linux agent and are tried before this pack's rules for those paths (they load first and their levels are 13 and 14). Nothing alerts twice, but those paths keep jt-zimbra's levels and none of this pack's distinctions (package manager, the file's own tool, identical rewrites, transient names). jt-zimbra 3.4 removes them. Before updating, check your own rule files for rules that are children of 100936-100942 (if_sid): they stop loading with a warning, and most of what they quieted (dpkg-new and atomic-write temporaries, .wants links, snap units) is already quiet here.",
+   "body_zh": "jt-zimbra 3.3 及更早版本帶有套用到每一台 Linux agent 的通用 sudo、PAM、cron、systemd 單元與 authorized_keys 規則（100936-100942），在這些路徑上比本套件的規則先比對（它們較早載入且等級為 13 與 14）。不會有重複告警，但這些路徑仍是 jt-zimbra 的等級，也沒有本套件的區分（套件管理程式、該檔自己的工具、相同內容改寫、暫存檔名）。jt-zimbra 3.4 移除了它們。更新前請檢查自己的規則檔中是否有 100936-100942 的子規則（if_sid）：它們會帶著警告不再載入，而它們壓低的大多數情況（dpkg-new 與原子寫入的暫存檔、.wants 連結、snap 單元）在本套件裡已經是安靜的。",
+   "code": "grep -lE 'if_sid>[^<]*\\b1009(3[6-9]|4[0-2])\\b' /var/ossec/etc/rules/*.xml"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Optional: no diffs on hosts whose cron lines or units hold passwords",
+   "title_zh": "選用：cron 指令或單元含密碼的主機不保留差異",
+   "body": "report_changes copies the changed lines of cron files and systemd units into the alert, where everyone who can read alerts sees them. If a host keeps a password in a cron command line or in a unit's Environment= line, give it a copy of this group with report_changes=\"no\" on the cron and systemd entries (or move the secret to a file the unit reads with EnvironmentFile=, which is not monitored). The diff-based rules for sudo, passwd, group and PAM keep working.",
+   "body_zh": "report_changes 會把 cron 檔與 systemd 單元變動的行複製進告警，所有能讀告警的人都看得到。若某台主機把密碼放在 cron 指令或單元的 Environment= 行，請為它另建一份本群組設定，把 cron 與 systemd 的項目改成 report_changes=\"no\"（或把機密移到單元以 EnvironmentFile= 讀取的檔案，該檔不在監控範圍）。sudo、passwd、group 與 PAM 依差異判斷的規則不受影響。",
+   "file": "agent/agent.conf"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Optional: monitor the packaged unit directories on hosts with whodata",
+   "title_zh": "選用：在有 whodata 的主機上監控套件提供的單元目錄",
+   "body": "A unit planted in /usr/lib/systemd/system survives as well as one in /etc. The group leaves those directories out because every package upgrade rewrites units there and, without whodata, each rewrite is level 5. On a host with auditd, adding them is cheap: package writes end at level 3, anything else at 12 (132960, 132962).",
+   "body_zh": "放在 /usr/lib/systemd/system 的單元和放在 /etc 的一樣能常駐。群組沒有監控這些目錄，因為每次套件升級都會改寫那裡的單元，沒有 whodata 時每次改寫都是 level 5。在有 auditd 的主機上加入它們的代價很低：套件寫入為 level 3，其他程式為 12（132960、132962）。",
+   "code": "<directories check_all=\"yes\" realtime=\"yes\" whodata=\"yes\">/usr/lib/systemd/system,/usr/lib/systemd/user,/usr/lib/systemd/system-generators</directories>"
+  }
+ ]
+}

@@ -4,6 +4,21 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.17.0（2026-10-19）
+
+- **新套件 jt-linux-integrity 1.0（132900-132999）：Linux 主機完整性，適用所有主機。** 帳號檔（passwd、shadow、
+  group、gshadow）、sudo、所有可以放排程的位置（`/etc/crontab`、anacrontab、`cron.d` 到 `cron.yearly`、使用者
+  crontab、at 工作、systemd timer）、systemd 單元與 drop-in、generator、啟用連結、PAM 設定與模組、`ld.so.preload`
+  與 `ld.so.conf`、SSH `authorized_keys`，包括刪除。等級依「是誰寫的」決定：編輯器、shell 或腳本是高等級（12-13），
+  檔案自己的工具（passwd、useradd、visudo、crontab）較低，套件管理或組態管理是 3-5，主機沒有 whodata、不知道是誰
+  寫的則介於中間。root 以外的 UID 0 帳號、`NOPASSWD: ALL` 或 `!authenticate` 的 sudo 規則、`pam_permit`／`pam_exec
+  expose_authtok` 是 level 14。帳號工具的鎖定檔、暫存檔與備份檔、套件留下的檔案、內容相同的重寫是 level 2。
+  **shadow 檔一律不記差異**，密碼雜湊不可能進到告警；有測試檢查每個發佈的 agent 群組。在此之前，`/etc/shadow`
+  被改和 `/etc` 裡任何檔案一樣是 level 7，`/etc/crontab` 或刪除 sudoers 則完全沒有涵蓋。
+- **jt-zimbra 3.4：** 移除通用主機規則 100936-100942（sudo、cron、systemd、PAM、authorized_keys）：它們放在 Zimbra
+  套件裡卻對所有主機生效，現在由 jt-linux-integrity 取代。更新時請一併安裝它以保留涵蓋範圍。參照這些 ID 的站台
+  規則，`analysisd -t` 會以警告回報並略過。
+
 ## v1.16.6（2026-10-19）
 
 - **jt-alert-digest 1.9：Zulip 卡片的標題上方加一條色塊。** 一排與等級同色的方塊（14 以上紅、12-13 橘、10-11 黃、

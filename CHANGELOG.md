@@ -4,6 +4,29 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.17.0 (2026-10-19)
+
+- **New pack jt-linux-integrity 1.0 (132900-132999): Linux host integrity, for every
+  host.** The account files (passwd, shadow, group, gshadow), sudo, every place a
+  scheduled task can live (`/etc/crontab`, anacrontab, `cron.d` to `cron.yearly`, user
+  crontabs, at jobs, systemd timers), systemd units, drop-ins, generators and enable links,
+  PAM configuration and modules, `ld.so.preload` and `ld.so.conf`, and SSH
+  `authorized_keys`, including deletions. Levels follow who wrote the file: an editor, a
+  shell or a script is high (12-13), the file's own tool (passwd, useradd, visudo,
+  crontab) lower, the package manager or configuration management 3-5, and an unknown
+  writer (no whodata on the host) in between. A UID 0 account other than root, a
+  `NOPASSWD: ALL` or `!authenticate` sudo rule, and `pam_permit`/`pam_exec
+  expose_authtok` are level 14. Lock, temporary and backup files of the account tools,
+  package leftovers and identical rewrites are level 2. **Shadow files are never diffed**,
+  so no password hash can reach an alert; a test checks every shipped agent group.
+  Before this, `/etc/shadow` changes were the same level 7 as any file in `/etc`, and
+  `/etc/crontab` or a deleted sudoers file was not covered at all.
+- **jt-zimbra 3.4:** the generic host rules 100936-100942 (sudo, cron, systemd, PAM,
+  authorized_keys), which fired on every host although they lived in a Zimbra pack, are
+  removed; jt-linux-integrity replaces them. Install it together with the update to keep
+  that coverage. A site rule that refers to those IDs is reported by `analysisd -t` as a
+  warning and dropped.
+
 ## v1.16.6 (2026-10-19)
 
 - **jt-alert-digest 1.9: a coloured bar above each Zulip card's title.** A row of squares
