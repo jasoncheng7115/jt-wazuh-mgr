@@ -75,7 +75,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.8.1"
+VERSION = "1.9"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -2308,12 +2308,20 @@ def fenced(lines):
 # as is), a single newline is a line break, "> " quotes a block, and a
 # ```spoiler block is collapsed until clicked.
 LEVEL_MARK = ((14, "\U0001F534"), (12, "\U0001F7E0"), (10, "\U0001F7E1"), (0, "\U0001F535"))
+# A row of squares in the level's colour above each title: Zulip has no
+# headings and no larger text, so the bar is what makes a card's start stand out.
+LEVEL_BAR = ((14, "\U0001F7E5"), (12, "\U0001F7E7"), (10, "\U0001F7E8"), (0, "\U0001F7E6"))
+BAR_WIDTH = 10
 CODE_LABELS = ("File", "Path", "Exec", "Command", "SHA256", "Process", "Parent", "Target",
                "Registry", "Loaded", "Script", "Request", "Query")
 
 
 def level_mark(level):
     return next(mark for floor, mark in LEVEL_MARK if level >= floor)
+
+
+def level_bar(level):
+    return next(square for floor, square in LEVEL_BAR if level >= floor) * BAR_WIDTH
 
 
 def md_code(text):
@@ -2376,8 +2384,8 @@ def zulip_group(rule_id, agent, group, samples, link=None, compact=False):
             level_mark(group["level"]), group["level"], md(agent), rule, count,
             md(trim(heading(group, rule_id), 90)))
     title = SEVERITY_MARKER.sub("", heading(group, rule_id))
-    blocks = ["%s **L%d \u00b7 %s**%s%s" % (level_mark(group["level"]), group["level"],
-                                           md(title), count, mark)]
+    blocks = ["%s\n%s **L%d \u00b7 %s**%s%s" % (level_bar(group["level"]), level_mark(group["level"]),
+                                               group["level"], md(title), count, mark)]
     rows, below = [], []
 
     def place(label, value, shown):

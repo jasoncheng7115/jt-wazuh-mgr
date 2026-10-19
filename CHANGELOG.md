@@ -4,6 +4,12 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.16.6 (2026-10-19)
+
+- **jt-alert-digest 1.9: a coloured bar above each Zulip card's title.** A row of squares
+  in the level's colour (red 14+, orange 12-13, yellow 10-11, blue below). Zulip has no
+  headings or larger text, so the bar is what makes the start of each alert stand out.
+
 ## v1.16.5 (2026-10-19)
 
 - **Updating a pack no longer raises a false "scheduled task modified" alert.** The tool

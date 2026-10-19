@@ -681,6 +681,10 @@ class TestContent(DigestCase):
                                               {'node': 'node01'}))
         self.assertTrue(out.startswith('\U0001F6A8 **3 alerts** · 3 rules · hosts '), out[:80])
         self.assertIn('\U0001F7E0 **L13 · Scheduled task modified: /etc/cron.d/x**', out)
+        # a bar in the level's colour marks where each card starts
+        self.assertIn('\U0001F7E7' * 10 + '\n\U0001F7E0 **L13 · ', out)
+        self.assertEqual(self.mod.level_bar(15)[0], '\U0001F7E5')
+        self.assertEqual(self.mod.level_bar(10)[0], '\U0001F7E8')
         self.assertIn('> **File** `/etc/cron.d/x` (modified)', out)
         # short values in the table, the raw line collapsed as wrapped text
         self.assertIn('| Source | 203.0.113.9 |', out)
