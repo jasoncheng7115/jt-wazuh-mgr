@@ -566,9 +566,20 @@ class TestNoise(DigestCase):
     def test_daily_summary_and_agent_health(self):
         t = Tree(self, conf='repeat = 0\ndaily = %s\n' % time.strftime('%H:%M', time.localtime(T0 + 600)))
         self.run_digest(t)
-        t.write(alert(1, level=3, rule='506', agent='win1', agent_id='020', when=T0 - 1800),
-                alert(2, level=3, rule='506', agent='lin1', agent_id='021', when=T0 - 1700),
-                alert(3, level=3, rule='503', agent='lin1', agent_id='021', when=T0 - 1650),
+        # the restart's "started" arrives under a site rule that overrides 503
+        # (on a live manager 43 deliberate restarts were listed as stopped)
+        t.write(alert(1, level=3, rule='506', agent='win1', agent_id='020', when=T0 - 1800,
+                      full_log="ossec: Agent stopped: 'win1->any'."),
+                alert(2, level=3, rule='506', agent='lin1', agent_id='021', when=T0 - 1700,
+                      full_log="ossec: Agent stopped: 'lin1->any'."),
+                alert(3, level=5, rule='100963', agent='lin1', agent_id='021', when=T0 - 1650,
+                      full_log="ossec: Agent started: 'lin1->any'."),
+                alert(5, level=3, rule='506', agent='new1', agent_id='022', when=T0 - 1600,
+                      full_log="ossec: Agent stopped: 'new1->any'."),
+                alert(6, level=3, rule='501', agent='new1', agent_id='022', when=T0 - 1590,
+                      full_log="ossec: Agent started: 'new1->any'."),
+                alert(7, level=3, rule='504', agent='manager1', agent_id='000', when=T0 - 1500,
+                      full_log="ossec: Agent disconnected: 'gone1-any'."),
                 alert(4))
         self.mod.NOW = T0 + 900
         self.run_digest(t)
@@ -577,7 +588,9 @@ class TestNoise(DigestCase):
         text = self.body(summary)
         self.assertIn('win1 (stopped', text)
         self.assertNotIn('lin1', text)
-        self.assertIn('L3: 3', text)
+        self.assertNotIn('new1', text)
+        self.assertIn('gone1 (x1)', text)
+        self.assertIn('L3: 5', text)
         self.run_digest(t)
         self.assertEqual(sum(1 for m in self.sent if 'Daily summary' in m['Subject']), 1)
 
@@ -727,6 +740,23 @@ class TestContent(DigestCase):
                 self.assertNotIn(construct, out, text)
         self.assertTrue(md('- item').startswith('\u200b-'))
         self.assertTrue(md('1. item').startswith('\u200b1.'))
+
+    def test_zulip_daily_summary_collapses_a_long_agent_list(self):
+        t = 1792400000
+        daily = {'since': t - 86400, 'qualifying': 8, 'digests': 6, 'mailed': 5, 'held': 3,
+                 'stops': {}, 'disconnects': {}}
+        stopped = [('host%d' % i, t - 3600) for i in range(12)]
+        out = self.mod.daily_zulip({'node': 'manager1', 'node_type': 'master'}, {'level': 12}, daily, t,
+                                   [(13, 5), (10, 458)], [('100941', (4, 13, 'systemd unit changed'))],
+                                   stopped, None, [], [])
+        self.assertIn('**Agents stopped and not back within 15 minutes** (12)\n```spoiler Show all', out)
+        self.assertIn('> L13 5 · L10 458', out)
+        self.assertIn('- \U0001F7E0 **L13** · rule 100941 ×4 · systemd unit changed', out)
+        failing = self.mod.daily_zulip({'node': 'manager1'}, {'level': 12}, daily, t, [], [], [],
+                                       {'since': t - 7200, 'kind': 'rcpt-450', 'attempts': 9, 'pending': 4},
+                                       [], [])
+        self.assertTrue(failing.startswith('\U0001F7E5'), 'a red bar when delivery is failing')
+        self.assertIn('> **Delivery** \u274c failing since', failing)
 
     def test_a_cut_block_closes_a_spoiler_and_its_code_block(self):
         block = '```spoiler Logs\n~~~text\n' + '\n'.join('x' * 80 for _ in range(200)) + '\n~~~\n```'
@@ -1099,8 +1129,11 @@ class TestZulip(DigestCase):
         self.run_digest(t)
         posts = self.zulip.posts()
         self.assertEqual([p['form']['topic'] for p in posts], ['summary'])
-        self.assertIn('Daily summary from node02', posts[0]['form']['content'])
-        self.assertIn('Mail: working', posts[0]['form']['content'])
+        content = posts[0]['form']['content']
+        self.assertIn('**Daily summary · node02 (worker)**', content)
+        self.assertIn('| Mail | \u2705 working |', content)
+        self.assertIn('| Delivery | \u2705 working |', content)
+        self.assertNotIn('~~~', content, 'Zulip markdown, not a code block that scrolls sideways')
         self.assertEqual(sum(1 for m in self.sent if 'Daily summary' in m['Subject']), 1)
         self.assertIn('Zulip: working', self.body())
         self.run_digest(t)

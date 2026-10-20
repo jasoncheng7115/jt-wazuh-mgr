@@ -75,7 +75,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.9"
+VERSION = "1.10"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -90,6 +90,11 @@ ESCALATE_EVERY = 6 * 3600  # and its escalation every six hours
 TRACK_FOR = 90 * 86400     # how long a (rule, agent) pair counts as known
 LEARN_FOR = 86400          # no NEW badges during the first day of tracking
 STOP_GRACE = 15 * 60       # an agent restart takes less than this
+# Agent lifecycle, recognised by the event text rather than the rule ID: a site
+# rule can take the event over (on one manager an override of 503 meant no
+# "started" was ever seen, and 43 agents restarted on purpose were listed as
+# stopped), and a new agent's first start is 501, not 503.
+AGENT_EVENT = re.compile(r"\bAgent (started|stopped|disconnected): '([^']+)'")
 REDACTED = "[redacted]"
 
 SEVERITY = {12: "[HIGH]", 13: "[HIGH]", 14: "[CRITICAL]", 15: "[CRITICAL]"}
@@ -524,7 +529,9 @@ def redact(value):
 DATED = re.compile(r"^ossec-alerts-(\d{2})(?:-(\d{3}))?\.json(\.gz)?$")
 LEVEL_HINT = re.compile(rb'"rule":\s*\{\s*"level":\s*(\d+)')
 MAIL_HINT = re.compile(rb'"mail":\s*true')
-HEALTH_HINT = re.compile(rb'"id":\s*"50[346]"')
+# Lines worth parsing below the mail level: agent lifecycle events, by their
+# text (see AGENT_EVENT), whatever rule they ended up under.
+HEALTH_HINT = re.compile(rb"Agent (?:started|stopped|disconnected): '")
 
 
 def dated_key(rel):
@@ -840,7 +847,7 @@ class Batch(object):
             return False
         self.levels[level] = self.levels.get(level, 0) + 1
         rule_id = str(rule.get("id", "?"))
-        if rule_id in ("503", "504", "506"):
+        if agent_event(alert):
             self.health.append(alert)
         if not self.qualifies(rule, level):
             return False
@@ -2556,10 +2563,6 @@ def render_zulip(groups, total, min_level, dashboard, context=None, notice=None,
     return pack(blocks + rendered + tail, limit)
 
 
-def zulip_summary(line, text):
-    return "**%s**\n%s" % (md(line.replace("[Wazuh] ", "")), fenced(text.split("\n")))
-
-
 # --------------------------------------------------------------------------
 # Reporting into the manager's own event queue
 # --------------------------------------------------------------------------
@@ -2725,6 +2728,20 @@ def init_daily(options):
     return new_daily(last)
 
 
+def agent_event(alert):
+    """("started"|"stopped"|"disconnected", agent name) or None."""
+    log = alert.get("full_log") or ""
+    if "Agent " not in log:
+        return None
+    match = AGENT_EVENT.search(log)
+    if not match:
+        return None
+    name = re.sub(r"(?:->.*|-any|-[0-9a-fA-F.:]+)$", "", match.group(2))
+    if not name:
+        name = str((alert.get("agent") or {}).get("name", "?"))
+    return match.group(1), name
+
+
 def count_batch(state, batch, mailed, held):
     daily = state.get("daily")
     if not isinstance(daily, dict):
@@ -2745,20 +2762,16 @@ def count_batch(state, batch, mailed, held):
     if len(rules) > 300:
         daily["rules"] = dict(sorted(rules.items(), key=lambda kv: -kv[1][0])[:200])
     for alert in batch.health:
-        rule_id = str((alert.get("rule") or {}).get("id"))
-        agent = alert.get("agent") or {}
-        name = str(agent.get("name", "?"))
-        if rule_id == "504" and str(agent.get("id", "")) == "000":
-            match = re.search(r"Agent disconnected: '([^']+?)(?:-any|-[0-9a-fA-F.:]+)?'",
-                              alert.get("full_log") or "")
-            if match:
-                name = match.group(1)
+        found = agent_event(alert)
+        if not found:
+            continue
+        kind, name = found
         stamp = parse_ts(alert.get("timestamp")) or now()
-        if rule_id == "506":
+        if kind == "stopped":
             daily["stops"][name] = stamp
-        elif rule_id == "503":
+        elif kind == "started":
             daily["stops"].pop(name, None)
-        elif rule_id == "504":
+        else:
             daily["disconnects"][name] = daily["disconnects"].get(name, 0) + 1
 
 
@@ -2829,7 +2842,79 @@ def render_daily(state, options, context, warnings, others=()):
                            daily.get("digests", 0),
                            ", DELIVERY FAILING" if isinstance(failure, dict) else ""))
     shown = [name for name, _ in stopped]
-    return line, text, html, shown
+    zulip = daily_zulip(context, options, daily, t, levels, top, stopped, failure, others, warnings)
+    return line, text, html, shown, zulip
+
+
+DAILY_LIST = 8   # longer lists of agents are collapsed
+
+
+def daily_zulip(context, options, daily, t, levels, top, stopped, failure, others, warnings):
+    """The daily summary in Zulip markdown, laid out like the alert cards."""
+    trouble = isinstance(failure, dict) or any(isinstance(o, dict) for _, o in others)
+    bar = ("\U0001F7E5" if trouble else "\U0001F7E9") * BAR_WIDTH
+    head = "%s\n\U0001F4CA **Daily summary \u00b7 %s%s**\n*%s \u2192 %s*" % (
+        bar, md(context["node"]), (" (%s)" % md(context["node_type"])) if context.get("node_type") else "",
+        md(local_iso(daily.get("since"))[:16]), md(local_iso(t)[:16]))
+    rows, below = [], []
+
+    def place(label, value):
+        if fits_table(label, value):
+            rows.append("| %s | %s |" % (md(label), md(value)))
+        else:
+            below.append("**%s** %s" % (md(label), md(value)))
+
+    place("L%d+ alerts" % options["level"], "{:,}".format(daily.get("qualifying", 0)))
+    place("Digests sent", "{:,}".format(daily.get("digests", 0)))
+    place("Alerts in them", "{:,}".format(daily.get("mailed", 0)))
+    place("Repeats held", "{:,}".format(daily.get("held", 0)))
+    if daily.get("excluded"):
+        place("Excluded", "{:,}".format(daily["excluded"]))
+    if isinstance(failure, dict):
+        place("Delivery", "\u274c failing since %s (%s, %d attempts), %s alerts waiting"
+              % (local_iso(failure.get("since"))[:16], failure.get("kind", "?"),
+                 failure.get("attempts", 0), failure.get("pending", "?")))
+    else:
+        place("Delivery", "\u2705 working" + ((" (%d failed tries)" % daily["failures"])
+                                              if daily.get("failures") else ""))
+    for name, other in others:
+        place(name, ("\u274c failing since %s (%s)" % (local_iso(other.get("since"))[:16],
+                                                       other.get("kind", "?")))
+              if isinstance(other, dict) else "\u2705 working")
+    if daily.get("unparsed"):
+        place("Unreadable lines", "{:,}".format(daily["unparsed"]))
+    blocks = [head, "\n".join(["| Item | Value |", "|:--|:--|"] + rows)]
+    if below:
+        blocks.append(md_quote(below))
+    if levels:
+        blocks.append("**Alerts written by level**\n" + md_quote(
+            [" \u00b7 ".join("L%d %s" % (k, "{:,}".format(v)) for k, v in levels)]))
+    if top:
+        blocks.append("**Most frequent at L%d+**\n" % options["level"] + "\n".join(
+            "- %s **L%d** \u00b7 rule %s \u00d7%s \u00b7 %s"
+            % (level_mark(level), level, md(rule_id), "{:,}".format(count), md(trim(title, 90)))
+            for rule_id, (count, level, title) in top))
+
+    def listed(title, items):
+        lines = ["- " + item for item in items]
+        if len(lines) > DAILY_LIST:
+            return "**%s** (%d)\n%s" % (title, len(lines), spoiler_text("Show all", items))
+        return "**%s** (%d)\n%s" % (title, len(lines), "\n".join(lines))
+
+    if stopped:
+        blocks.append(listed("Agents stopped and not back within %d minutes" % (STOP_GRACE // 60),
+                             ["%s \u00b7 %s" % (md(n), md(local_iso(st)[5:16])) for n, st in stopped]))
+    if daily.get("disconnects"):
+        blocks.append(listed("Agents reported disconnected",
+                             ["%s \u00d7%d" % (md(n), c) for n, c in sorted(daily["disconnects"].items())]))
+    if warnings:
+        blocks.append(md_quote(["**Settings ignored** " + md("; ".join(warnings))]))
+    foot = "*jt-alert-digest %s on %s \u00b7 sent once a day; a day without one means the digest is not running*" % (
+        VERSION, md(context["node"]))
+    if options.get("dashboard") and re.match(r"^https?://", options["dashboard"]):
+        foot += " \u00b7 [dashboard](%s)" % md_link(options["dashboard"])
+    blocks.append(foot)
+    return "\n\n".join(blocks)
 
 
 # --------------------------------------------------------------------------
@@ -3193,7 +3278,7 @@ def mail_round(alerts_path, state, options, fatal, warnings, context, lost, unre
 
     if delivered and not fatal and daily_due(state, options):
         others = [("Zulip", (state.get("zulip") or {}).get("failure"))] if options.get("zulip") else []
-        line, text, body, shown = render_daily(state, options, context, warnings, others)
+        line, text, body, shown, _ = render_daily(state, options, context, warnings, others)
         message = build_message(line, text, body, options, context)
         try:
             deliver(message, options)
@@ -3324,9 +3409,9 @@ def zulip_round(alerts_path, state, z, zfatal, options, context, warnings, dry_r
 
     if daily_due(sub, options):
         others = [("Mail", state.get("failure"))]
-        line, text, _, shown = render_daily(sub, options, context, warnings, others)
+        line, text, _, shown, content = render_daily(sub, options, context, warnings, others)
         sub["outbox"] = [{"topic": z["summary_topic"], "content": part, "alerts": 0}
-                         for part in pack([zulip_summary(line, text)])]
+                         for part in pack([content])]
         reset_daily(sub, shown)
         persist()
         if not zulip_flush(sub, z, persist):

@@ -4,6 +4,18 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.17.1 (2026-10-20)
+
+- **jt-alert-digest 1.10: the daily summary no longer lists restarted agents as stopped.**
+  Agent starts were recognised only as rule 503. A site rule that takes that event over
+  hid every start, so 43 agents restarted on purpose appeared as "stopped and did not
+  start again"; a new agent's first start (501) was not counted either. Starts, stops and
+  disconnections are now recognised by the event text, whatever rule carries them.
+- **The Zulip daily summary is laid out like the alert cards**: a green bar (red when a
+  channel is failing), a status table, alert counts by level and the most frequent rules as
+  lines that wrap, and a long list of agents collapsed. It was a code block that had to be
+  scrolled sideways on a phone. The mail version is unchanged.
+
 ## v1.17.0 (2026-10-19)
 
 - **New pack jt-linux-integrity 1.0 (132900-132999): Linux host integrity, for every

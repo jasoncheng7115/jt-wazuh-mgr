@@ -2,7 +2,7 @@
  "id": "jt-alert-digest",
  "name": "Readable Alert Digest",
  "name_zh": "可讀的告警摘要信",
- "version": "1.9",
+ "version": "1.10",
  "summary": "Replaces wazuh-maild's raw notifications with one grouped, readable message per run, optionally posts the same digest to a Zulip channel, and reports its own failures in the console.",
  "summary_zh": "把 wazuh-maild 的原始通知換成分組整理過、讀得完的摘要信，可選擇同時發到 Zulip 頻道，並在主控台回報自己的故障。",
  "rule_id_range": "131100-131199",
@@ -29,6 +29,7 @@
   "Zulip posts use Zulip's own markdown and are laid out for a phone: a coloured mark per level and the title in bold, then a two-column table of the short values (host, address, time, rule linked to the dashboard, MITRE, short decoded fields). Zulip never wraps a table cell, so a value wider than a phone's column (about 28 characters, 20 in code) goes into a quoted block below the table instead. The raw log is collapsed in a spoiler as wrapped text (a code block there would scroll sideways), or shown as a quote when nothing else was decoded. Italics are *x*; Zulip shows _x_ with the underscores. --test zulip includes an invented alert to show the layout.",
   "Zulip does not honour backslash escapes, so alert text is made inert without them: asterisks and backticks become look-alike characters and a zero-width space splits link syntax, mentions, LaTeX and strike-through. 1.7 and 1.8 showed log lines as \"sshd\\[4242\\]\".",
   "Each Zulip card starts with a row of squares in the level's colour (red 14+, orange 12-13, yellow 10-11, blue below) above the bold title: Zulip has no headings or larger text, and the bar is what makes the start of each alert stand out in a long post.",
+  "Agent starts, stops and disconnections are recognised by the event text, not by rule ID. A site rule that takes over 503 (as one did on a live manager) hid every start, so 43 agents restarted on purpose were listed in the daily summary as stopped; a new agent's first start is 501. The Zulip daily summary is laid out like the alert cards: a green or red bar, a status table, alert counts by level and the most frequent rules as wrapped lines, and a long list of agents collapsed.",
   "Written for Wazuh 4.8 to 4.14, which write logs/alerts/alerts.json; Wazuh 5.0 has no such file, and there the digest raises a configuration alert instead of staying silent. Runs on the manager's own python3 (3.8 or later), standard library only."
  ],
  "notes_zh": [
@@ -49,6 +50,7 @@
   "Zulip 訊息改用 Zulip 本身的 markdown，並以手機為準排版：每個等級一個顏色標記、標題粗體，接著是兩欄表格，放短的值（主機、位址、時間、連到 dashboard 的規則、MITRE、短的解碼欄位）。Zulip 的表格儲存格不會換行，所以超過手機欄寬的值（約 28 個字元，程式碼約 20 個）改放在表格下方的引用區塊。原始記錄以會換行的文字收在可展開的區塊（放程式碼區塊會要左右捲動），沒有其他解碼欄位時直接以引用顯示。斜體用 *x*；Zulip 會把 _x_ 連底線一起顯示。--test zulip 會附一則虛構的告警，讓人先看到版面。",
   "Zulip 不支援反斜線跳脫，所以告警文字改用其他方式失去格式作用：星號與反引號換成外觀相近的字元，連結語法、@ 提及、LaTeX 與刪除線以零寬空白拆開。1.7、1.8 會把記錄顯示成「sshd\\[4242\\]」。",
   "每張 Zulip 卡片在粗體標題上方加一排與等級同色的方塊（14 以上紅、12-13 橘、10-11 黃、其餘藍）：Zulip 沒有標題語法也不能放大字，長訊息裡靠這條色塊看出每則告警從哪裡開始。",
+  "agent 的啟動、停止與斷線改依事件文字判斷，不再看規則 ID。站台若有規則接走 503（正式機上就有），所有啟動事件都看不到，結果 43 台刻意重啟的 agent 在每日摘要裡被列為已停止；新 agent 的第一次啟動則是 501。Zulip 的每日摘要改成和告警卡片相同的排版：綠色或紅色色塊、狀態表格、各等級告警數與最常見規則以會換行的文字列出，agent 清單太長時收合。",
   "適用於會寫 logs/alerts/alerts.json 的 Wazuh 4.8 至 4.14；Wazuh 5.0 沒有這個檔案，在那裡摘要信會發出設定錯誤的告警，而不是默不作聲。使用 manager 本身的 python3（3.8 以上），只用標準函式庫。"
  ],
  "files": [
@@ -63,7 +65,7 @@
   {
    "name": "jt-alert-digest.py",
    "dest": "etc/jt-packs/bin/jt-alert-digest.py",
-   "sha256": "b561ef83c2fe72149109e56506b65dadf9ff12b99df6f18b40bd99242671ee6a",
+   "sha256": "18bef8369d7a8134f469ee55d38bfbf456d9b596c620b0fe05973fb93e3c5d13",
    "cron": "*/2 * * * *",
    "args": "--wazuh-path {wazuh_path}",
    "description": "Groups new alerts and sends one readable message, using the mail settings already in ossec.conf, optionally also to Zulip; reports its own failures to the manager"
