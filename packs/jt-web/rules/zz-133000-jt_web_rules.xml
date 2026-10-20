@@ -1,0 +1,201 @@
+<!--
+  jt-web: web access logs in the combined format, on top of Wazuh's built-in
+  web rules. jt-wazuh-mgr rule pack, rule IDs 133000-133099.
+  License: AGPL-3.0-or-later.
+
+  The attack signatures (SQL injection, XSS, traversal, long URLs, Shellshock,
+  brute force on 4xx/5xx) are Wazuh's own rules 31100-31170 and 31500-31540,
+  maintained with the ruleset. This pack adds what they do not cover:
+    - requests for files that should never be on a web server (.env, .git,
+      cloud credentials, private keys, database dumps), and whether one was
+      answered with a real file (2xx and not an HTML page),
+    - requests for well-known exploit endpoints and web shells,
+    - scanner user agents,
+    - one source probing many such paths,
+    - quiet handling of internal monitoring (server-status, certificate checks),
+      which otherwise fires 31516 and 31101 hundreds of times a day.
+
+  Decoded fields (web-accesslog): srcip, protocol (the method), url, id (the
+  status). Content type: when the server appends "$sent_http_content_type" as
+  the last quoted field (see the manifest's setup), a 2xx answer with text/html
+  to a request for .env or a key file is an SPA or CMS fallback page, not the
+  file. Without that field such answers stay at the middle level.
+
+  Built-in tree (4.14): 31100 base (L0); 31108 (L0, 2xx/3xx) is tried before
+  every sibling, so a rule about successful requests hangs off 31108 and 31100;
+  31101 (L5, 4xx) and 31516 (L6, suspicious URL) are siblings under 31100, and
+  31516 wins for the URLs it lists, so rules about failed requests hang off
+  both. jt-ioc's web rules (906040-906046) are siblings with higher levels and
+  take requests from listed addresses first; that is intended.
+
+  Paths inside WebDAV (Nextcloud /remote.php/, /public.php/webdav) are left
+  alone: sync clients legitimately upload .git folders, .env files and keys
+  that live in users' synced directories.
+-->
+<group name="web,accesslog,jt_web,">
+
+  <!-- ================= internal monitoring ================= -->
+
+  <!-- 31516 lists /server-status; monitoring polls it every minute from
+       loopback or the LAN. -->
+  <rule id="133000" level="2">
+    <if_sid>31516</if_sid>
+    <url type="pcre2">^/(?:server-status|nginx-status|status|stub_status|fpm-status)(?:$|\?)</url>
+    <match type="pcre2">^(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|::1 |\S+ (?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|::1 ))</match>
+    <description>jt-web: status page polled by internal monitoring</description>
+    <group>jt_web_monitoring,</group>
+  </rule>
+
+  <rule id="133001" level="2">
+    <if_sid>31101</if_sid>
+    <url type="pcre2">^/(?:server-status|nginx-status|status|stub_status|fpm-status)(?:$|\?)</url>
+    <match type="pcre2">^(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|::1 |\S+ (?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|::1 ))</match>
+    <description>jt-web: status page polled by internal monitoring (not enabled on this server)</description>
+    <group>jt_web_monitoring,</group>
+  </rule>
+
+  <!-- Monitoring checks (certificate, HTTP and uptime probes) from the LAN
+       that get a 4xx: the check requests / or a health path the site does
+       not serve. -->
+  <rule id="133002" level="2">
+    <if_sid>31101</if_sid>
+    <match type="pcre2">^(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|::1 )\S* .*"(?:check_ssl_cert|check_http|check_curl|monitoring-plugins|Uptime-Kuma|Zabbix|Blackbox Exporter|Prometheus|Go-http-client|LWP::Simple|libwww-perl|Gatus|Better Uptime|Pingdom)[^"]*"</match>
+    <description>jt-web: internal monitoring check answered 4xx</description>
+    <group>jt_web_monitoring,</group>
+  </rule>
+
+  <!-- ================= sensitive files ================= -->
+
+  <!-- Failed request (4xx) for a file that should never be on a web server. -->
+  <rule id="133010" level="6">
+    <if_sid>31101,31516</if_sid>
+    <id>^4</id>
+    <url type="pcre2">(?i)^(?!/remote\.php/|/public\.php/webdav)[^?#]*/(?:(?:\.git|\.svn|\.hg|\.aws|\.ssh)(?:/|$|[?#])|(?:\.env(?:\.[\w.-]+)?|\.docker/config\.json|\.npmrc|\.pypirc|\.netrc|\.htpasswd|\.ds_store|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|wp-config\.php[\w.~-]+|(?:server|localhost|private|privkey|ssl|cert)\.(?:key|pem)|[\w.-]+\.(?:sql|sql\.gz|sqlite3?|mdb)|(?:backup|backups|dump|db|database|site|www|htdocs|web)\.(?:zip|tar|tar\.gz|tgz|rar|7z)|credentials(?:\.json)?|proc/self/environ)(?:$|[/?#]))</url>
+    <description>jt-web: request for a sensitive file (failed, $(id)): $(url)</description>
+    <mitre>
+      <id>T1595.003</id>
+    </mitre>
+    <group>jt_web_probe,</group>
+  </rule>
+
+  <!-- Answered 2xx: possibly the file itself. -->
+  <rule id="133011" level="10">
+    <if_sid>31100,31108,31516</if_sid>
+    <id>^2</id>
+    <url type="pcre2">(?i)^(?!/remote\.php/|/public\.php/webdav)[^?#]*/(?:\.env(?:\.[\w.-]+)?|\.git/(?:config|HEAD|index|logs/HEAD)|\.svn/(?:entries|wc\.db)|\.hg/[^?#]+|\.aws/(?:credentials|config)|\.ssh/[^?#]+|\.docker/config\.json|\.npmrc|\.pypirc|\.netrc|\.htpasswd|id_(?:rsa|dsa|ecdsa|ed25519)|wp-config\.php[\w.~-]+|(?:server|localhost|private|privkey|ssl)\.(?:key|pem)|[\w.-]+\.(?:sql|sql\.gz|sqlite3?|mdb)|(?:backup|backups|dump|db|database|site|www|htdocs|web)\.(?:zip|tar|tar\.gz|tgz|rar|7z)|proc/self/environ)(?:$|[?#])</url>
+    <description>[WARN] jt-web: sensitive file request answered $(id), the file may have been served: $(url)</description>
+    <mitre>
+      <id>T1552.001</id>
+    </mitre>
+    <group>jt_web_probe,jt_web_success,</group>
+  </rule>
+
+  <!-- ...with a non-HTML content type: almost certainly the file. -->
+  <rule id="133012" level="12">
+    <if_sid>133011</if_sid>
+    <match type="pcre2">"(?:text/plain|application/(?:octet-stream|x-[\w.+-]+|json|sql|zip|gzip|x-pem-file|pkix-cert)|binary/[\w.+-]+)[^"]*"\s*$</match>
+    <options>alert_by_email</options>
+    <description>[HIGH] jt-web: sensitive file served (2xx, not an HTML page): $(url)</description>
+    <mitre>
+      <id>T1552.001</id>
+    </mitre>
+    <group>jt_web_probe,jt_web_success,</group>
+  </rule>
+
+  <!-- ...as an HTML page: an SPA or CMS fallback answering every path. -->
+  <rule id="133013" level="3">
+    <if_sid>133011</if_sid>
+    <match type="pcre2">"text/html[^"]*"\s*$</match>
+    <description>jt-web: sensitive file request answered by an HTML page (fallback, not the file): $(url)</description>
+    <group>jt_web_probe,</group>
+  </rule>
+
+  <!-- ================= exploit endpoints and web shells ================= -->
+
+  <rule id="133020" level="6">
+    <if_sid>31101,31516,31120</if_sid>
+    <url type="pcre2">(?i)^[^?#]*(?:/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin\.php|/actuator(?:/(?:env|heapdump|threaddump|gateway/routes|jolokia|loggers|mappings|configprops|beans|httptrace))?(?:$|[/?])|/solr/admin/(?:cores|info)|/_profiler/(?:phpinfo|open)|/(?:phpinfo|info|i|test|php_info)\.php(?:$|[?/])|/cgi-bin/(?:luci|\.%2e|%2e%2e)|/__vite_rsc_findSourceMapURL|/@fs/|/api/fs/read|/HNAP1|/boaform/|/GponForm/|/setup\.cgi|/console/login/LoginForm\.jsp|/owa/auth/x\.js|/autodiscover/autodiscover\.json|/remote/fgt_lang|/vpn/\.\./|/mgmt/tm/util/bash|/wp-admin/(?:install|setup-config)\.php|/(?:wso|c99|r57|alfa|b374k|indoxploit|webshell)\w*\.php)</url>
+    <description>jt-web: request for a known exploit endpoint or web shell (failed, $(id)): $(url)</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>jt_web_probe,</group>
+  </rule>
+
+  <!-- Answered 2xx: the endpoint exists. Narrower than 133020: only paths
+       whose existence alone is a problem (debug, eval, source access). -->
+  <rule id="133021" level="10">
+    <if_sid>31100,31108</if_sid>
+    <id>^2</id>
+    <url type="pcre2">(?i)^[^?#]*(?:/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin\.php|/actuator/(?:env|heapdump|threaddump|gateway/routes|jolokia|configprops)|/_profiler/(?:phpinfo|open)|/__vite_rsc_findSourceMapURL|/@fs/|/api/fs/read|/(?:wso|c99|r57|alfa|b374k|indoxploit|webshell)\w*\.php)</url>
+    <description>[WARN] jt-web: exploit endpoint or web shell answered $(id): $(url)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_web_probe,jt_web_success,</group>
+  </rule>
+
+  <rule id="133022" level="12">
+    <if_sid>133021</if_sid>
+    <match type="pcre2">"(?:text/(?!html)|application/|image/|binary/|audio/|video/)[^"]*"\s*$</match>
+    <options>alert_by_email</options>
+    <description>[HIGH] jt-web: exploit endpoint or web shell answered $(id) with content: $(url)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1505.003</id>
+    </mitre>
+    <group>jt_web_probe,jt_web_success,</group>
+  </rule>
+
+  <rule id="133023" level="3">
+    <if_sid>133021</if_sid>
+    <match type="pcre2">"text/html[^"]*"\s*$</match>
+    <description>jt-web: exploit endpoint request answered by an HTML page (fallback): $(url)</description>
+    <group>jt_web_probe,</group>
+  </rule>
+
+  <!-- ================= scanners ================= -->
+
+  <rule id="133030" level="6">
+    <if_sid>31100,31101,31108,31120,31516</if_sid>
+    <match type="pcre2">"[^"]*(?i:sqlmap|nikto|nuclei|zgrab|masscan|wpscan|gobuster|feroxbuster|ffuf|dirbuster|dirsearch|acunetix|nessus|openvas|netsparker|wapiti|whatweb|joomscan|jaeles|xray/|commix|fuzz faster)[^"]*"</match>
+    <description>jt-web: request from a vulnerability scanner ($(id)): $(url)</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>jt_web_scanner,</group>
+  </rule>
+
+  <!-- ================= one source, many probes ================= -->
+
+  <rule id="133040" level="10" frequency="6" timeframe="300">
+    <if_matched_sid>133010</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] jt-web: one source requested 6 or more sensitive files in 5 minutes</description>
+    <mitre>
+      <id>T1595.003</id>
+    </mitre>
+    <group>jt_web_probe,</group>
+  </rule>
+
+  <rule id="133041" level="10" frequency="6" timeframe="300">
+    <if_matched_sid>133020</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] jt-web: one source requested 6 or more exploit endpoints in 5 minutes</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>jt_web_probe,</group>
+  </rule>
+
+  <rule id="133042" level="10" frequency="20" timeframe="300">
+    <if_matched_sid>133030</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] jt-web: vulnerability scanner sent 20 or more requests in 5 minutes</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>jt_web_scanner,</group>
+  </rule>
+
+</group>

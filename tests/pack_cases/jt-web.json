@@ -1,0 +1,299 @@
+{
+ "pack": "jt-web",
+ "note": "combined-format access logs; the last quoted field is the content type when the server logs it",
+ "cases": [
+  {
+   "log": "127.0.0.1 - - [20/Oct/2026:10:00:00 +0800] \"GET /server-status?auto HTTP/1.1\" 200 1538 \"-\" \"LWP::Simple/6.68 libwww-perl/6.68\"",
+   "location": "/var/log/apache2/access.log",
+   "expect_rule": "133000",
+   "expect_level": 2,
+   "note": "apache status page polled from loopback (2xx goes 31108, quiet)"
+  },
+  {
+   "log": "127.0.0.1 - - [20/Oct/2026:10:00:00 +0800] \"GET /server-status?auto HTTP/1.1\" 404 451 \"-\" \"LWP::Simple/6.68 libwww-perl/6.68\"",
+   "location": "/var/log/apache2/access.log",
+   "expect_rule": "133000",
+   "expect_level": 2,
+   "note": "status page 404 from loopback: 31516 path"
+  },
+  {
+   "log": "127.0.0.1 - - [20/Oct/2026:10:00:00 +0800] \"GET /nginx-status HTTP/1.1\" 404 451 \"-\" \"Python-urllib/3.11\"",
+   "location": "/var/log/apache2/access.log",
+   "expect_rule": "133001",
+   "expect_level": 2,
+   "note": "nginx-status not enabled, polled from loopback"
+  },
+  {
+   "log": "::1 - - [20/Oct/2026:10:00:00 +0800] \"GET /server-status?auto HTTP/1.1\" 403 300 \"-\" \"LWP::Simple/6.68\"",
+   "location": "/var/log/apache2/access.log",
+   "expect_rule": "133000",
+   "expect_level": 2,
+   "note": "IPv6 loopback, matched as text not srcip (pitfall 31)"
+  },
+  {
+   "log": "127.0.0.1 www.example.com - - [20/Oct/2026:10:00:00 +0800] \"GET /server-status?auto HTTP/1.1\" 404 21709 147 23752 515647 \"-\" \"LWP::Simple/6.68 libwww-perl/6.68\"",
+   "location": "/var/log/apache2/access_www.log",
+   "expect_rule": "133000",
+   "expect_level": 2,
+   "note": "vhost-combined line (srcip decodes as the vhost name)"
+  },
+  {
+   "log": "203.0.113.50 - - [20/Oct/2026:10:00:00 +0800] \"GET /server-status HTTP/1.1\" 403 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "31516",
+   "expect_level": 6,
+   "note": "NEGATIVE: status page from a public address stays 31516"
+  },
+  {
+   "log": "10.0.5.68 - - [20/Oct/2026:10:00:00 +0800] \"HEAD / HTTP/1.1\" 404 0 \"-\" \"check_ssl_cert/2.95.0\" \"\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133002",
+   "expect_level": 2,
+   "note": "certificate check from the LAN answered 404"
+  },
+  {
+   "log": "203.0.113.51 - - [20/Oct/2026:10:00:00 +0800] \"HEAD / HTTP/1.1\" 404 0 \"-\" \"check_ssl_cert/2.95.0\" \"\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "NEGATIVE: same check from a public address stays 31101"
+  },
+  {
+   "log": "203.0.113.10 - - [20/Oct/2026:10:00:00 +0800] \"GET /.env HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\" \"text/html\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133010",
+   "expect_level": 6,
+   "note": ".env probe, 404"
+  },
+  {
+   "log": "203.0.113.10 - - [20/Oct/2026:10:00:00 +0800] \"GET /api/.env HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\" \"text/html\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133010",
+   "expect_level": 6,
+   "note": ".env in a subdirectory"
+  },
+  {
+   "log": "203.0.113.10 - - [20/Oct/2026:10:00:00 +0800] \"GET /.git/config HTTP/1.1\" 403 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\" \"text/html\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133010",
+   "expect_level": 6,
+   "note": ".git/config, 403"
+  },
+  {
+   "log": "203.0.113.10 - - [20/Oct/2026:10:00:00 +0800] \"GET /.aws/credentials HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133010",
+   "expect_level": 6,
+   "note": "cloud credentials, no content type logged"
+  },
+  {
+   "log": "203.0.113.10 - - [20/Oct/2026:10:00:00 +0800] \"GET /ssl/server.key HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133010",
+   "expect_level": 6,
+   "note": "private key"
+  },
+  {
+   "log": "203.0.113.10 - - [20/Oct/2026:10:00:00 +0800] \"GET /backup.zip HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133010",
+   "expect_level": 6,
+   "note": "site backup archive"
+  },
+  {
+   "log": "203.0.113.10 - - [20/Oct/2026:10:00:00 +0800] \"GET /.ssh/id_rsa HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133010",
+   "expect_level": 6,
+   "note": ".ssh is also on 31516: hangs off both"
+  },
+  {
+   "log": "203.0.113.11 - - [20/Oct/2026:10:00:00 +0800] \"GET /.env HTTP/1.1\" 200 1820 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\" \"text/plain\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133012",
+   "expect_level": 12,
+   "note": ".env served as text/plain: the file"
+  },
+  {
+   "log": "203.0.113.11 - - [20/Oct/2026:10:00:00 +0800] \"GET /.env HTTP/1.1\" 200 747 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\" \"text/html\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133013",
+   "expect_level": 3,
+   "note": "SPA fallback answers .env with index.html"
+  },
+  {
+   "log": "203.0.113.11 - - [20/Oct/2026:10:00:00 +0800] \"GET /.git/config HTTP/1.1\" 200 92 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133011",
+   "expect_level": 10,
+   "note": "no content type logged: middle level"
+  },
+  {
+   "log": "203.0.113.11 - - [20/Oct/2026:10:00:00 +0800] \"GET /db.sql HTTP/1.1\" 200 99231 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\" \"application/octet-stream\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133012",
+   "expect_level": 12,
+   "note": "database dump served"
+  },
+  {
+   "log": "10.0.5.200 - - [20/Oct/2026:10:00:00 +0800] \"PUT /remote.php/dav/files/alice/scripts/tool/.git/refs/heads/main HTTP/1.1\" 201 0 \"-\" \"Mozilla/5.0 (Macintosh) mirall/35.0.0 (Nextcloud)\" \"\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "31108",
+   "expect_level": 0,
+   "note": "NEGATIVE: Nextcloud sync of a .git folder (WebDAV)"
+  },
+  {
+   "log": "10.0.5.200 - - [20/Oct/2026:10:00:00 +0800] \"GET /remote.php/dav/files/alice/project/.env HTTP/1.1\" 404 0 \"-\" \"Mozilla/5.0 (Macintosh) mirall/35.0.0 (Nextcloud)\" \"\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "NEGATIVE: .env inside a synced folder (WebDAV), failed"
+  },
+  {
+   "log": "203.0.113.12 - - [20/Oct/2026:10:00:00 +0800] \"GET /environment HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "NEGATIVE: /environment is not .env"
+  },
+  {
+   "log": "203.0.113.12 - - [20/Oct/2026:10:00:00 +0800] \"GET /docs/git-guide HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "31101",
+   "expect_level": 5,
+   "note": "NEGATIVE: git in a word"
+  },
+  {
+   "log": "203.0.113.12 - - [20/Oct/2026:10:00:00 +0800] \"GET /assets/app.css HTTP/1.1\" 200 5120 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\" \"text/css\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "31108",
+   "expect_level": 0,
+   "note": "NEGATIVE: normal asset"
+  },
+  {
+   "log": "203.0.113.20 - - [20/Oct/2026:10:00:00 +0800] \"POST /vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133020",
+   "expect_level": 6,
+   "note": "phpunit eval-stdin (CVE-2017-9841) probe"
+  },
+  {
+   "log": "203.0.113.20 - - [20/Oct/2026:10:00:00 +0800] \"GET /actuator/env HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133020",
+   "expect_level": 6,
+   "note": "Spring actuator env"
+  },
+  {
+   "log": "203.0.113.20 - - [20/Oct/2026:10:00:00 +0800] \"GET /_profiler/phpinfo HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133020",
+   "expect_level": 6,
+   "note": "Symfony profiler"
+  },
+  {
+   "log": "203.0.113.20 - - [20/Oct/2026:10:00:00 +0800] \"GET /__vite_rsc_findSourceMapURL?filename=x HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133020",
+   "expect_level": 6,
+   "note": "Vite source map endpoint"
+  },
+  {
+   "log": "203.0.113.20 - - [20/Oct/2026:10:00:00 +0800] \"GET /wso.php HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133020",
+   "expect_level": 6,
+   "note": "web shell name"
+  },
+  {
+   "log": "203.0.113.21 - - [20/Oct/2026:10:00:00 +0800] \"GET /actuator/env HTTP/1.1\" 200 4211 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\" \"application/json\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133022",
+   "expect_level": 12,
+   "note": "actuator env answered with JSON"
+  },
+  {
+   "log": "203.0.113.21 - - [20/Oct/2026:10:00:00 +0800] \"GET /actuator/env HTTP/1.1\" 200 747 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0 Safari/537.36\" \"text/html\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133023",
+   "expect_level": 3,
+   "note": "SPA fallback for actuator"
+  },
+  {
+   "log": "203.0.113.21 - - [20/Oct/2026:10:00:00 +0800] \"GET /_profiler/phpinfo HTTP/1.1\" 200 9000 \"-\" \"curl/7.76.1\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133021",
+   "expect_level": 10,
+   "note": "no content type logged; UA curl/x must not count as content"
+  },
+  {
+   "log": "10.0.5.30 - - [20/Oct/2026:10:00:00 +0800] \"POST /xmlrpc/2/object HTTP/1.1\" 200 812 \"-\" \"Python-xmlrpc/3.11\" \"text/xml; charset=utf-8\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "31108",
+   "expect_level": 0,
+   "note": "NEGATIVE: Odoo XML-RPC API, not WordPress"
+  },
+  {
+   "log": "203.0.113.30 - - [20/Oct/2026:10:00:00 +0800] \"GET / HTTP/1.1\" 200 612 \"-\" \"Mozilla/5.0 (compatible; Nuclei - Open-source project (github.com/projectdiscovery/nuclei))\" \"text/html\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133030",
+   "expect_level": 6,
+   "note": "nuclei user agent, 2xx"
+  },
+  {
+   "log": "203.0.113.30 - - [20/Oct/2026:10:00:00 +0800] \"GET /login HTTP/1.1\" 404 0 \"-\" \"sqlmap/1.8.2#stable (https://sqlmap.org)\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133030",
+   "expect_level": 6,
+   "note": "sqlmap user agent, 4xx"
+  },
+  {
+   "before": [
+    "198.51.100.40 - - [20/Oct/2026:10:00:00 +0800] \"GET /.env HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+    "198.51.100.40 - - [20/Oct/2026:10:00:01 +0800] \"GET /.git/config HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+    "198.51.100.40 - - [20/Oct/2026:10:00:02 +0800] \"GET /.aws/credentials HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+    "198.51.100.40 - - [20/Oct/2026:10:00:03 +0800] \"GET /backup.zip HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+    "198.51.100.40 - - [20/Oct/2026:10:00:04 +0800] \"GET /ssl/server.key HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\""
+   ],
+   "log": "198.51.100.40 - - [20/Oct/2026:10:00:06 +0800] \"GET /.env.production HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133040",
+   "expect_level": 10,
+   "note": "six sensitive-file probes from one source in 5 minutes"
+  },
+  {
+   "before": [
+    "198.51.100.41 - - [20/Oct/2026:10:00:00 +0800] \"GET /.env HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+    "198.51.100.42 - - [20/Oct/2026:10:00:01 +0800] \"GET /.git/config HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+    "198.51.100.43 - - [20/Oct/2026:10:00:02 +0800] \"GET /backup.zip HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+    "198.51.100.44 - - [20/Oct/2026:10:00:03 +0800] \"GET /.aws/credentials HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+    "198.51.100.45 - - [20/Oct/2026:10:00:04 +0800] \"GET /ssl/server.key HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\""
+   ],
+   "log": "198.51.100.46 - - [20/Oct/2026:10:00:05 +0800] \"GET /.env.production HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133010",
+   "expect_level": 6,
+   "note": "NEGATIVE: six probes from six sources do not correlate"
+  },
+  {
+   "before": [
+    "198.51.100.50 - - [20/Oct/2026:10:00:00 +0800] \"GET /actuator/env HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+    "198.51.100.50 - - [20/Oct/2026:10:00:01 +0800] \"GET /_profiler/phpinfo HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+    "198.51.100.50 - - [20/Oct/2026:10:00:02 +0800] \"GET /wso.php HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+    "198.51.100.50 - - [20/Oct/2026:10:00:03 +0800] \"GET /HNAP1 HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+    "198.51.100.50 - - [20/Oct/2026:10:00:04 +0800] \"GET /boaform/admin/formLogin HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\""
+   ],
+   "log": "198.51.100.50 - - [20/Oct/2026:10:00:06 +0800] \"GET /vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php HTTP/1.1\" 404 153 \"-\" \"Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0\" \"text/html\"",
+   "location": "/var/log/nginx/www.example.com.combined.log",
+   "expect_rule": "133041",
+   "expect_level": 10,
+   "note": "six exploit-endpoint probes from one source"
+  }
+ ],
+ "sandbox_packs": [
+  "jt-ioc",
+  "jt-nextcloud",
+  "jt-librenms",
+  "jt-odoo"
+ ]
+}

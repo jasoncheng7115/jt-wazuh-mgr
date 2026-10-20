@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.17.1
+# jt-wazuh-mgr v1.18.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@ A powerful web-based management tool for Wazuh agents in cluster environments.
 
 > **Recommended**: Use the Web UI as the primary interface — it's the main feature of this tool with full functionality.
 
-![Version](https://img.shields.io/badge/version-1.17.1-blue)
+![Version](https://img.shields.io/badge/version-1.18.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -95,7 +95,7 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 - **Active response, opt-in:** a pack can offer responses (for example, block the source of a brute force). None is enabled by installing; each states what it blocks, where, and the risk. Enabling writes a marked block into `ossec.conf` on every cluster node, validates each node and rolls every node back if one rejects it; disabling restores the file exactly. The page shows each node's `white_list` and which managers still need a restart
 - **Quiet on a fresh install:** no pack needs a site list to stop flooding. A successful login alerts only when it matters (built-in administrator, public address, right after failures, or an account seen from an address for the first time); allowlists are optional tuning
 - **Account security across services:** packs tag every login attempt the same way, so one address spraying the SSO, the mail server and Nextcloud at once, or logging in right after it, is one alert rather than three unrelated ones; mail accounts get takeover chains (a new-address login followed by forwarding, password or 2FA changes), SMTP/ActiveSync spraying and mailbox harvesting
-- Ships with 26 packs: cross-service account security, Linux host integrity (accounts, sudo, every scheduled-task location, systemd, PAM, preload, SSH keys), vulnerabilities in the images of running Docker containers (Trivy, daily, with CISA KEV), portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, a readable alert digest by mail, Zimbra, Z-Push, Proxmox VE and Ceph, Proxmox Backup Server, Proxmox Mail Gateway, OPNsense, Zenarmor, AdGuard Home, fail2ban, Keycloak, Univention Corporate Server / Samba AD, Nextcloud, LibreNMS, Synology DSM, Odoo, Jitsi Meet, Docker, jt-ipam and jt-vc-portal. Each one is checked against the vendor's documentation, the product's source code for the exact log lines, its security advisories (including CISA KEV) and MITRE ATT&CK, and is tested case by case in a throwaway Wazuh manager container
+- Ships with 27 packs: cross-service account security, web probes and exposure (sensitive files and exploit endpoints, and whether one was served), Linux host integrity (accounts, sudo, every scheduled-task location, systemd, PAM, preload, SSH keys), vulnerabilities in the images of running Docker containers (Trivy, daily, with CISA KEV), portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, a readable alert digest by mail, Zimbra, Z-Push, Proxmox VE and Ceph, Proxmox Backup Server, Proxmox Mail Gateway, OPNsense, Zenarmor, AdGuard Home, fail2ban, Keycloak, Univention Corporate Server / Samba AD, Nextcloud, LibreNMS, Synology DSM, Odoo, Jitsi Meet, Docker, jt-ipam and jt-vc-portal. Each one is checked against the vendor's documentation, the product's source code for the exact log lines, its security advisories (including CISA KEV) and MITRE ATT&CK, and is tested case by case in a throwaway Wazuh manager container
 
 ### Security
 - Input validation for all parameters; command-injection and path-traversal protection

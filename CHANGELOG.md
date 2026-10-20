@@ -4,6 +4,21 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.18.0 (2026-10-20)
+
+- **New pack jt-web 1.0 (133000-133099): web probes and exposure.** Wazuh's own web rules
+  (31100-31170, 31500-31540) keep the attack signatures; this pack adds what they leave
+  out, on the combined log format. Requests for sensitive files (.env, .git, .svn, cloud
+  and registry credentials, private keys, database dumps, site archives) and for known
+  exploit endpoints and web shells are level 6, six from one source in five minutes level
+  10. An answer 2xx is level 10, and level 12 when the server logs the response content
+  type and it is not HTML; an HTML answer is an SPA or CMS fallback and drops to level 3.
+  Vulnerability scanner user agents are level 6. Internal monitoring (server-status from
+  loopback or private addresses, certificate and uptime checks answered 4xx) is level 2.
+  WebDAV paths are never probes: sync clients upload .git folders and .env files. The
+  agent group web reads every access and error log under /var/log/apache2, /var/log/httpd
+  and /var/log/nginx; the default agent configuration reads only access.log.
+
 ## v1.17.1 (2026-10-20)
 
 - **jt-alert-digest 1.10: the daily summary no longer lists restarted agents as stopped.**

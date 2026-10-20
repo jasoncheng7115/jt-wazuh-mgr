@@ -1,0 +1,88 @@
+{
+ "id": "jt-web",
+ "name": "Web Access Logs: Probes and Exposure",
+ "name_zh": "網頁存取記錄：探測與外洩",
+ "version": "1.0",
+ "summary": "Adds what Wazuh's built-in web rules leave out: requests for sensitive files and exploit endpoints, whether one was answered with real content, vulnerability scanners, and quiet internal monitoring; plus an agent group that reads every web log, not only access.log.",
+ "summary_zh": "補上 Wazuh 內建網頁規則沒有的部分：敏感檔案與漏洞端點的探測、是否真的回應了內容、弱點掃描工具，並讓內部監控不再吵；另附一個讀取所有網頁記錄（而不只是 access.log）的 agent 群組。",
+ "rule_id_range": "133000-133099",
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.7",
+  "4.14.9"
+ ],
+ "notes": [
+  "The attack signatures stay Wazuh's own: SQL injection, XSS, traversal, long URLs, Shellshock and floods of 4xx/5xx are rules 31100-31170 and 31500-31540, maintained with the ruleset. This pack adds what they leave out and needs the combined log format, which those rules read.",
+  "Sensitive files: .env, .git, .svn, .hg, cloud and package-registry credentials, SSH and TLS private keys, database dumps and site archives, /proc/self/environ. A failed request (4xx) is level 6; six of them from one source in five minutes is level 10.",
+  "A request answered 2xx is level 10, and level 12 when the server logs the response content type as the last quoted field and it is not HTML. An HTML answer is an SPA or CMS fallback page serving every path, so it drops to level 3. Without the content type the 2xx answer stays at level 10: check it.",
+  "Known exploit endpoints and web shells (phpunit eval-stdin, Spring actuator, Symfony profiler, Vite source access, router and appliance paths, well-known web shell names): failed requests level 6, six from one source level 10, an answer with content level 12.",
+  "Vulnerability scanner user agents (sqlmap, nuclei, nikto, wpscan and others) are level 6, and 20 requests from one scanner in five minutes level 10.",
+  "Internal monitoring is quiet: server-status and similar pages polled from loopback or private addresses, and monitoring checks (certificate, HTTP, uptime) that get a 4xx from a private address, go to level 2. These were the largest share of web alerts on a live manager: about 380 a day from one host's server-status polling alone.",
+  "Paths inside WebDAV (/remote.php/ and /public.php/webdav, Nextcloud and ownCloud) are never treated as probes: sync clients upload .git folders, .env files and keys that live in users' directories.",
+  "No active response: sites behind a CDN or reverse proxy log the client through realip, but the connection the firewall sees is the proxy's, so blocking it would block the proxy.",
+  "The agent group web reads every access and error log under /var/log/apache2, /var/log/httpd and /var/log/nginx. The default agent configuration reads only access.log and error.log, so sites with their own log files were never analysed. A file also listed elsewhere is read once. JSON access logs in the same directories are read too and decoded by the built-in json decoder; this pack's rules apply to the combined format only."
+ ],
+ "notes_zh": [
+  "攻擊特徵仍然用 Wazuh 自己的規則：SQL injection、XSS、目錄穿越、過長網址、Shellshock 與大量 4xx/5xx 是 31100-31170 與 31500-31540，隨規則集維護。本套件補上它們沒有的部分，需要那些規則讀得懂的 combined 記錄格式。",
+  "敏感檔案：.env、.git、.svn、.hg、雲端與套件庫的憑證、SSH 與 TLS 私鑰、資料庫傾印與網站封存檔、/proc/self/environ。請求失敗（4xx）是 level 6；同一來源五分鐘內六次是 level 10。",
+  "回應 2xx 是 level 10；伺服器把回應的內容類型記在最後一個引號欄位、而且不是 HTML 時是 level 12。HTML 的回應是單頁應用或 CMS 對所有路徑都回首頁，降到 level 3。沒有記內容類型時 2xx 維持 level 10，需要人工確認。",
+  "已知的漏洞端點與 web shell（phpunit eval-stdin、Spring actuator、Symfony profiler、Vite 原始碼存取、路由器與設備的路徑、常見 web shell 檔名）：請求失敗 level 6，同一來源六次 level 10，回應了內容 level 12。",
+  "弱點掃描工具的 User-Agent（sqlmap、nuclei、nikto、wpscan 等）是 level 6，同一個掃描器五分鐘內 20 次是 level 10。",
+  "內部監控不吵：從本機或私有位址輪詢 server-status 這類頁面、以及監控檢查（憑證、HTTP、運作時間）從私有位址得到 4xx，都是 level 2。在一台正式 manager 上這是網頁告警的最大宗：光一台主機的 server-status 輪詢每天約 380 筆。",
+  "WebDAV 底下的路徑（/remote.php/ 與 /public.php/webdav，Nextcloud 與 ownCloud）一律不當成探測：同步程式會上傳使用者目錄裡的 .git 資料夾、.env 與金鑰。",
+  "沒有主動回應：在 CDN 或反向代理後面的網站，記錄裡的來源是經 realip 還原的位址，但防火牆看到的連線是代理的，封鎖它等於封鎖代理。",
+  "agent 群組 web 讀取 /var/log/apache2、/var/log/httpd、/var/log/nginx 底下所有存取與錯誤記錄。agent 預設只讀 access.log 與 error.log，所以有自己記錄檔的網站從來沒被分析過。同一個檔案在別處也有列出時只讀一次。同目錄下的 JSON 存取記錄也會被讀取並由內建 json 解碼器解析；本套件的規則只適用 combined 格式。"
+ ],
+ "files": [
+  {
+   "type": "rule",
+   "name": "zz-133000-jt_web_rules.xml",
+   "dest": "etc/rules/zz-133000-jt_web_rules.xml",
+   "sha256": "f02a5e7402af250de6e94b40e89ea530272f130f568835e34700fffbf099300c"
+  }
+ ],
+ "agent_group": {
+  "name": "web",
+  "config": "agent.conf",
+  "files": [],
+  "description": "Every access and error log under /var/log/apache2, /var/log/httpd and /var/log/nginx"
+ },
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset on every node",
+   "title_zh": "安裝套件並在所有節點重新載入規則集",
+   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers. The pack is one rule file on the built-in web access rules and needs no list.",
+   "body_zh": "從本頁安裝，再到規則分頁按「重新載入規則集」。叢集會同步規則檔，但不會重新載入 worker。本套件是掛在內建網頁存取規則下的一個規則檔，不需要清單。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Add every web server to the web group",
+   "title_zh": "把每台網頁伺服器加入 web 群組",
+   "body": "Assign agents that run Apache or nginx to the group web and restart them (agent_control -R -u <id>). The group reads every access and error log in the usual directories, not only access.log.",
+   "body_zh": "把執行 Apache 或 nginx 的 agent 加入 web 群組並重啟（agent_control -R -u <id>）。這個群組會讀取常見目錄下所有存取與錯誤記錄，而不只是 access.log。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "nginx: log the combined format with the content type",
+   "title_zh": "nginx：以 combined 格式記錄並附上內容類型",
+   "body": "Wazuh's web rules read the combined format. If a site logs JSON for another collector, add a second access_log for Wazuh. Define the format once, in a file nginx reads before the server blocks that use it:\nlog_format jt_combined '$remote_addr - $remote_user [$time_local] \"$request\" $status $body_bytes_sent \"$http_referer\" \"$http_user_agent\" \"$sent_http_content_type\"';\nThen in each server block: access_log /var/log/nginx/<site>.combined.log jt_combined; Run nginx -t before reloading. Behind a CDN, make sure realip is set so $remote_addr is the client.",
+   "body_zh": "Wazuh 的網頁規則讀 combined 格式。網站若為其他收集器記 JSON，就為 Wazuh 再加一份 access_log。在 nginx 先讀到的檔案定義一次格式（要早於使用它的 server 區塊）：\nlog_format jt_combined '$remote_addr - $remote_user [$time_local] \"$request\" $status $body_bytes_sent \"$http_referer\" \"$http_user_agent\" \"$sent_http_content_type\"';\n再於每個 server 區塊加：access_log /var/log/nginx/<site>.combined.log jt_combined; 重新載入前先執行 nginx -t。在 CDN 後面要確認 realip 已設定，$remote_addr 才是真正的用戶端。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Apache: keep the combined format, with the content type if you can",
+   "title_zh": "Apache：維持 combined 格式，可以的話附上內容類型",
+   "body": "Use the standard combined format so the client address comes first: LogFormat \"%h %l %u %t \\\"%r\\\" %>s %b \\\"%{Referer}i\\\" \\\"%{User-Agent}i\\\" \\\"%{Content-Type}o\\\"\" jt_combined. A format that puts the virtual host name second (vhost_combined, or %a %v ...) is decoded by Wazuh with the host name as the source address.",
+   "body_zh": "使用標準 combined 格式，讓用戶端位址在最前面：LogFormat \"%h %l %u %t \\\"%r\\\" %>s %b \\\"%{Referer}i\\\" \\\"%{User-Agent}i\\\" \\\"%{Content-Type}o\\\"\" jt_combined。把虛擬主機名稱放在第二欄的格式（vhost_combined，或 %a %v ...），Wazuh 會把主機名稱當成來源位址。"
+  }
+ ]
+}

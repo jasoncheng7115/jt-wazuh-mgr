@@ -4,6 +4,16 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.18.0（2026-10-20）
+
+- **新套件 jt-web 1.0（133000-133099）：網頁探測與外洩。** 攻擊特徵仍由 Wazuh 自己的網頁規則（31100-31170、
+  31500-31540）負責；本套件在 combined 記錄格式上補上它們沒有的部分。敏感檔案（.env、.git、.svn、雲端與套件庫憑證、
+  私鑰、資料庫傾印、網站封存）與已知漏洞端點、web shell 的請求是 level 6，同一來源五分鐘內六次是 level 10。回應 2xx
+  是 level 10；伺服器記錄回應內容類型且不是 HTML 時是 level 12；HTML 的回應是單頁應用或 CMS 的備援頁，降到 level 3。
+  弱點掃描工具的 User-Agent 是 level 6。內部監控（從本機或私有位址輪詢 server-status、憑證與運作時間檢查得到 4xx）
+  是 level 2。WebDAV 路徑一律不算探測：同步程式會上傳 .git 資料夾與 .env 檔。agent 群組 web 讀取 /var/log/apache2、
+  /var/log/httpd、/var/log/nginx 底下所有存取與錯誤記錄；agent 預設只讀 access.log。
+
 ## v1.17.1（2026-10-20）
 
 - **jt-alert-digest 1.10：每日摘要不再把重啟過的 agent 列為已停止。** agent 啟動原本只認規則 503。站台若有規則接走
