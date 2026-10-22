@@ -563,6 +563,28 @@ class TestNoise(DigestCase):
         self.assertTrue(self.sent[-1]['Subject'].startswith('[Wazuh] NEW '))
         self.assertIn('NEW RULE', self.body())
 
+    def test_a_source_address_names_the_agent_it_belongs_to(self):
+        # an alert about an internal address guessing logins should say which machine that is
+        t = Tree(self, conf='repeat = 0\n')
+        self.run_digest(t)
+        scanner = json.loads(alert(1, level=3, agent='scanner7', agent_id='031'))
+        scanner['agent']['ip'] = '192.0.2.77'
+        hit = json.loads(alert(2, level=12, rule='132711', agent='srv-b', agent_id='044',
+                               desc='internal address guessing logins'))
+        hit['data'] = {'srcip': '192.0.2.77', 'dstuser': 'oxidized'}
+        t.write(json.dumps(scanner), json.dumps(hit))
+        self.run_digest(t)
+        self.assertIn('192.0.2.77 (scanner7)', self.body())
+        path = t.path('var/jt-alert-digest.agents')
+        self.assertEqual(json.load(open(path)).get('192.0.2.77'), 'scanner7')
+        self.assertEqual(oct(os.stat(path).st_mode & 0o777), '0o600')
+        # agents registered with "any" and the manager itself are not learnt
+        self.mod.AGENTS.clear()
+        self.mod.learn_agent(b'{"agent":{"id":"005","name":"web1","ip":"any"}}')
+        self.mod.learn_agent(b'{"agent":{"id":"000","name":"manager","ip":"192.0.2.1"}}')
+        self.assertEqual(self.mod.AGENTS, {})
+        self.assertEqual(self.mod.host_label('198.51.100.9'), '198.51.100.9')
+
     def test_daily_summary_and_agent_health(self):
         t = Tree(self, conf='repeat = 0\ndaily = %s\n' % time.strftime('%H:%M', time.localtime(T0 + 600)))
         self.run_digest(t)

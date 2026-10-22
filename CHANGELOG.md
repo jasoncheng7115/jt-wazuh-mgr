@@ -4,6 +4,23 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.19.0 (2026-10-22)
+
+- **jt-account-guard 1.1: an internal machine guessing logins on many hosts.** The
+  existing rules ignore internal addresses; new rules count them across hosts, because a
+  compromised machine trying passwords on its neighbours stays under every per-host
+  brute-force rule. On one network a misconfigured tool made 8,856 failed SSH logins on
+  seven servers in a week, never more than six per server in two minutes, and nothing
+  above level 5 was raised. Ten failures on other hosts within ten minutes is level 11,
+  thirty level 12, a successful login from that address afterwards level 13. SSH, PAM,
+  pack-tagged services and Windows logons are counted; Windows failures through the
+  authentication_failed group, so that the built-in 60204 and 40111 keep working. Relay
+  addresses (reverse proxies, NAT, servers that check passwords against the directory) go
+  in a new list that ships empty. Two opt-in active responses block the address on every
+  Linux agent (firewall-drop) and every Windows agent (netsh) for 30 minutes.
+- **jt-alert-digest 1.11:** a source address in a message names its agent, as
+  192.0.2.10 (web1), learnt from the alert lines the digest already reads.
+
 ## v1.18.0 (2026-10-20)
 
 - **New pack jt-web 1.0 (133000-133099): web probes and exposure.** Wazuh's own web rules

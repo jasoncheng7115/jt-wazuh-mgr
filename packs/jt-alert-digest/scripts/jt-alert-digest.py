@@ -75,7 +75,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.10"
+VERSION = "1.11"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -792,6 +792,65 @@ def where(segment, offset):
     return position
 
 
+# Which agent an address belongs to, learnt from the "agent" object of every
+# alert line read (also the lines below the mail level, by a cheap match), so
+# that a source address in a message can name the machine: an alert about an
+# internal address guessing logins says 192.168.1.10, the reader wants to know
+# which host that is. Kept in var/jt-alert-digest.agents, beside the state.
+AGENT_HINT = re.compile(rb'"agent":\s*\{\s*"id":\s*"(\d{3,})",\s*"name":\s*"([^"\\]{1,128})",\s*"ip":\s*"([0-9A-Fa-f:.]{3,45})"')
+AGENTS = {}
+AGENTS_CHANGED = [False]
+AGENTS_MAX = 5000
+
+
+def learn_agent(raw):
+    found = AGENT_HINT.search(raw, 0, 4000)
+    if not found or found.group(1) == b"000":
+        return
+    address = found.group(3).decode("ascii", "replace")
+    if address in ("127.0.0.1", "::1"):
+        return
+    name = found.group(2).decode("utf-8", "replace")
+    if AGENTS.get(address) != name and (address in AGENTS or len(AGENTS) < AGENTS_MAX):
+        AGENTS[address] = name
+        AGENTS_CHANGED[0] = True
+
+
+def host_label(address):
+    """'192.0.2.10 (web1)' when the address is a known agent's, else the address."""
+    text = str(address or "")
+    name = AGENTS.get(text)
+    return "%s (%s)" % (text, name) if name and name != text else text
+
+
+def load_agents(path):
+    AGENTS.clear()
+    AGENTS_CHANGED[0] = False
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return
+    if isinstance(data, dict):
+        for k, v in list(data.items())[:AGENTS_MAX]:
+            if isinstance(k, str) and isinstance(v, str):
+                AGENTS[k] = v
+
+
+def save_agents(path):
+    if not AGENTS_CHANGED[0]:
+        return
+    tmp = path + ".tmp"
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(AGENTS, fh, sort_keys=True)
+        os.replace(tmp, path)
+        AGENTS_CHANGED[0] = False
+    except OSError:
+        pass
+
+
 class Batch(object):
     """What one run read: the groups to mail and the counts behind them."""
 
@@ -825,6 +884,7 @@ class Batch(object):
         raw = raw.strip()
         if not raw:
             return False
+        learn_agent(raw)
         hint = LEVEL_HINT.search(raw, 0, 600)
         if hint and not HEALTH_HINT.search(raw):
             level = int(hint.group(1))
@@ -1287,7 +1347,7 @@ def windows_fields(win):
         if account and get("targetDomainName"):
             account = "%s\\%s" % (get("targetDomainName"), account)
         add("Account", account)
-        source = get("ipAddress")
+        source = host_label(get("ipAddress")) if get("ipAddress") else None
         if get("workstationName"):
             source = ("%s (%s)" % (source, get("workstationName"))) if source else get("workstationName")
         add("Source", source)
@@ -1366,7 +1426,7 @@ def interesting_fields(alert):
     if data.get("vhost") or data.get("request") or data.get("http_status"):
         source = data.get("remote_addr") or data.get("srcip") \
             or alert.get("srcip") or "?"
-        out.append(("Source", "%s  ->  %s" % (source, data.get("vhost", "?"))))
+        out.append(("Source", "%s  ->  %s" % (host_label(source), data.get("vhost", "?"))))
         request = data.get("request") or \
             ("%s %s" % (data.get("method", ""), data.get("path", ""))).strip()
         if request:
@@ -1418,7 +1478,7 @@ def interesting_fields(alert):
 
     source = data.get("srcip") or alert.get("srcip")
     if source:
-        out.append(("Source", str(source)))
+        out.append(("Source", host_label(source)))
     if data.get("dstuser"):
         out.append(("Account", data["dstuser"]))
     full_log = (alert.get("full_log") or "").strip()
@@ -3037,10 +3097,13 @@ def run(args):
     lock = take_lock(os.path.join(wazuh, "var", "jt-alert-digest.lock"))
     if lock is None:
         return 0
+    agents_path = os.path.join(wazuh, "var", "jt-alert-digest.agents")
     try:
         trim_log(os.path.join(wazuh, "logs", "jt-alert-digest.log"))
+        load_agents(agents_path)
         return digest(wazuh, options, fatal, warnings, context)
     finally:
+        save_agents(agents_path)
         os.close(lock)
 
 

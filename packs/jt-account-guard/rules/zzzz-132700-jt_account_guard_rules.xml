@@ -247,4 +247,223 @@
     <group>jt_account_guard_lockout,</group>
   </rule>
 
+
+  <!-- ===== An internal address trying logins on many hosts (v1.1) =====
+    The rules above leave internal addresses out on purpose. These count
+    them, across hosts (global_frequency, different_location: the earlier
+    failures were on other hosts or other log files), because a compromised
+    workstation or server guessing passwords on its neighbours stays under
+    every per-host rule: measured on a live network, one internal host made
+    8,856 failed SSH logins on 7 servers in a week, never more than 6 per
+    server in two minutes (the built-in brute-force rules need 8 on one
+    host), and nothing above level 5 was raised.
+    SSH and PAM failures (5710, 5760 for a wrong password, 5503) are
+    counted one by one with if_matched_sid: each is already the target of a
+    built-in if_matched_sid (5712, 5763, 5551), so its events never enter a
+    group list anyway. Windows logon failures (60122) are NOT: the built-in
+    60204 and 40111 count them through the authentication_failed group, and
+    naming 60122 in an if_matched_sid would take every Windows failure out
+    of that group list and silence both. They are counted through the group,
+    keyed on the address field Windows writes. Windows agents report to the
+    node they are connected to: on a cluster a source that tries Windows and
+    Linux hosts is counted on two managers separately.
+    Addresses that relay other people's logins (a reverse proxy, a NAT
+    gateway, a server that checks passwords against the directory) belong
+    in the list jt-account-guard-internal-ignore; it ships empty.
+    Level 11 at 10 failures across hosts, level 12 at 30; one alert per
+    15 minutes per rule (ignore), since a misconfigured tool keeps going.
+    11, not 10: a correlation stops at an earlier event that already reached
+    its level, and the built-in per-host rules (5712, 5763, 5551, 60204) are
+    level 10, so one target that sees 8 attempts would otherwise hide the
+    count across the others. -->
+  <rule id="132710" level="11" frequency="10" timeframe="600" ignore="900">
+    <if_matched_sid>5710</if_matched_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/jt-account-guard-internal-ignore</list>
+    <same_source_ip />
+    <different_location />
+    <global_frequency />
+    <description>[WARN] jt-account-guard: internal address $(srcip) failed SSH logins for non-existent users on several hosts within 10 minutes (lateral password guessing); last on this host for $(dstuser)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1021</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_internal,jt_account_guard_internal_spray,</group>
+  </rule>
+  <rule id="132711" level="12" frequency="30" timeframe="600" ignore="900">
+    <if_matched_sid>5710</if_matched_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/jt-account-guard-internal-ignore</list>
+    <same_source_ip />
+    <different_location />
+    <global_frequency />
+    <description>[HIGH] jt-account-guard: internal address $(srcip) failed SSH logins for non-existent users on several hosts within 10 minutes (lateral password guessing); last on this host for $(dstuser)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1021</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_internal,jt_account_guard_internal_spray,</group>
+  </rule>
+  <rule id="132712" level="11" frequency="10" timeframe="600" ignore="900">
+    <if_matched_sid>5760</if_matched_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/jt-account-guard-internal-ignore</list>
+    <same_source_ip />
+    <different_location />
+    <global_frequency />
+    <description>[WARN] jt-account-guard: internal address $(srcip) failed SSH password logins on several hosts within 10 minutes (lateral password guessing); last on this host for $(dstuser)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1021</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_internal,jt_account_guard_internal_spray,</group>
+  </rule>
+  <rule id="132713" level="12" frequency="30" timeframe="600" ignore="900">
+    <if_matched_sid>5760</if_matched_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/jt-account-guard-internal-ignore</list>
+    <same_source_ip />
+    <different_location />
+    <global_frequency />
+    <description>[HIGH] jt-account-guard: internal address $(srcip) failed SSH password logins on several hosts within 10 minutes (lateral password guessing); last on this host for $(dstuser)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1021</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_internal,jt_account_guard_internal_spray,</group>
+  </rule>
+  <rule id="132714" level="11" frequency="10" timeframe="600" ignore="900">
+    <if_matched_sid>5503</if_matched_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/jt-account-guard-internal-ignore</list>
+    <same_source_ip />
+    <different_location />
+    <global_frequency />
+    <description>[WARN] jt-account-guard: internal address $(srcip) failed logins (PAM) on several hosts within 10 minutes (lateral password guessing); last on this host for $(dstuser)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1021</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_internal,jt_account_guard_internal_spray,</group>
+  </rule>
+  <rule id="132715" level="12" frequency="30" timeframe="600" ignore="900">
+    <if_matched_sid>5503</if_matched_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/jt-account-guard-internal-ignore</list>
+    <same_source_ip />
+    <different_location />
+    <global_frequency />
+    <description>[HIGH] jt-account-guard: internal address $(srcip) failed logins (PAM) on several hosts within 10 minutes (lateral password guessing); last on this host for $(dstuser)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1021</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_internal,jt_account_guard_internal_spray,</group>
+  </rule>
+  <rule id="132716" level="11" frequency="10" timeframe="600" ignore="900">
+    <if_sid>60122</if_sid>
+    <if_matched_group>authentication_failed</if_matched_group>
+    <field name="win.eventdata.ipAddress" type="pcre2">^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|f[cd][0-9a-f]{2}:)</field>
+    <list field="win.eventdata.ipAddress" lookup="not_address_match_key">etc/lists/jt-account-guard-internal-ignore</list>
+    <same_field>win.eventdata.ipAddress</same_field>
+    <different_location />
+    <global_frequency />
+    <description>[WARN] jt-account-guard: internal address $(win.eventdata.ipAddress) failed Windows logons on several hosts within 10 minutes (lateral password guessing); last account $(win.eventdata.targetUserName)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1021</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_internal,jt_account_guard_internal_spray,</group>
+  </rule>
+  <rule id="132717" level="12" frequency="30" timeframe="600" ignore="900">
+    <if_sid>60122</if_sid>
+    <if_matched_group>authentication_failed</if_matched_group>
+    <field name="win.eventdata.ipAddress" type="pcre2">^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|f[cd][0-9a-f]{2}:)</field>
+    <list field="win.eventdata.ipAddress" lookup="not_address_match_key">etc/lists/jt-account-guard-internal-ignore</list>
+    <same_field>win.eventdata.ipAddress</same_field>
+    <different_location />
+    <global_frequency />
+    <description>[HIGH] jt-account-guard: internal address $(win.eventdata.ipAddress) failed Windows logons on several hosts within 10 minutes (lateral password guessing); last account $(win.eventdata.targetUserName)</description>
+    <mitre>
+      <id>T1110</id>
+      <id>T1021</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_internal,jt_account_guard_internal_spray,</group>
+  </rule>
+  <!-- Failures tagged by the packs (web consoles, mail, SSO, file cloud...). -->
+  <rule id="132718" level="11" frequency="10" timeframe="600" ignore="900">
+    <if_group>jt_auth_failure</if_group>
+    <if_matched_group>jt_auth_failure</if_matched_group>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/jt-account-guard-internal-ignore</list>
+    <same_source_ip />
+    <different_location />
+    <global_frequency />
+    <description>[WARN] jt-account-guard: internal address $(srcip) failed to log in on several services or hosts within 10 minutes; last account $(dstuser)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_internal,jt_account_guard_internal_spray,</group>
+  </rule>
+  <rule id="132719" level="12" frequency="30" timeframe="600" ignore="900">
+    <if_group>jt_auth_failure</if_group>
+    <if_matched_group>jt_auth_failure</if_matched_group>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <srcip>fc00::/7</srcip>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/jt-account-guard-internal-ignore</list>
+    <same_source_ip />
+    <different_location />
+    <global_frequency />
+    <description>[HIGH] jt-account-guard: internal address $(srcip) failed to log in 30 times within 10 minutes on several services or hosts; last account $(dstuser)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failures,jt_account_guard_internal,jt_account_guard_internal_spray,</group>
+  </rule>
+  <!-- A successful login, on any host or service, from an internal address
+       that was just failing on several hosts: the guessing worked
+       (lateral movement). Level 13, above the level 12 counters. -->
+  <rule id="132720" level="13" timeframe="1800" ignore="600">
+    <if_group>jt_auth_success|authentication_success</if_group>
+    <if_matched_group>jt_account_guard_internal_spray</if_matched_group>
+    <same_source_ip />
+    <global_frequency />
+    <description>[HIGH] jt-account-guard: $(dstuser) logged in from internal address $(srcip), which was failing logins on several hosts (lateral password guessing that found a password)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1021</id>
+    </mitre>
+    <group>jt_account_guard_internal,jt_account_guard_success_after_spray,</group>
+  </rule>
 </group>

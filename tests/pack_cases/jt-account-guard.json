@@ -15,7 +15,8 @@
  ],
  "sandbox_lists": {
   "jason_tools_threat_ip": "\"198.51.100.66\":blocklist_de\n\"198.51.100.67\":blocklist_de,cins\n",
-  "jason_tools_threat_ip_high": "\"198.51.100.67\":blocklist_de,cins\n"
+  "jason_tools_threat_ip_high": "\"198.51.100.67\":blocklist_de,cins\n",
+  "jt-account-guard-internal-ignore": "10.0.5.143:relay\n"
  },
  "cases": [],
  "sequences": [
@@ -760,6 +761,542 @@
    "expect_rule": "131327",
    "note": "POLICY: a login from a public address with nothing before it is left to the Keycloak pack",
    "expect_level": 5
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 22 01:56:00 srv-a sshd[25000]: Failed password for invalid user oxidized from 198.51.100.77 port 52000 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:01 srv-b sshd[25001]: Failed password for invalid user oxidized from 198.51.100.77 port 52001 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:02 srv-c sshd[25002]: Failed password for invalid user oxidized from 198.51.100.77 port 52002 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:03 srv-d sshd[25003]: Failed password for invalid user oxidized from 198.51.100.77 port 52003 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:04 srv-a sshd[25004]: Failed password for invalid user oxidized from 198.51.100.77 port 52004 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:05 srv-b sshd[25005]: Failed password for invalid user oxidized from 198.51.100.77 port 52005 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:06 srv-c sshd[25006]: Failed password for invalid user oxidized from 198.51.100.77 port 52006 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:07 srv-d sshd[25007]: Failed password for invalid user oxidized from 198.51.100.77 port 52007 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:08 srv-a sshd[25008]: Failed password for invalid user oxidized from 198.51.100.77 port 52008 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    }
+   ],
+   "log": "Oct 22 01:56:09 srv-b sshd[25009]: Failed password for invalid user oxidized from 198.51.100.77 port 52009 ssh2",
+   "location": "(srv-b) any->/var/log/auth-b.log",
+   "expect_rule": "5710",
+   "expect_level": 5,
+   "note": "NEGATIVE: public address (public sources are the existing rules' job, and stay under 5712 per host)"
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 22 01:56:00 srv-a sshd[25000]: Failed password for invalid user oxidized from 10.0.5.150 port 52000 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:01 srv-a sshd[25001]: Failed password for invalid user oxidized from 10.0.5.150 port 52001 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:02 srv-a sshd[25002]: Failed password for invalid user oxidized from 10.0.5.150 port 52002 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:03 srv-a sshd[25003]: Failed password for invalid user oxidized from 10.0.5.150 port 52003 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    }
+   ],
+   "log": "Oct 22 01:56:04 srv-a sshd[25004]: Failed password for invalid user oxidized from 10.0.5.150 port 52004 ssh2",
+   "location": "(srv-a) any->/var/log/auth-a.log",
+   "expect_rule": "5710",
+   "expect_level": 5,
+   "note": "NEGATIVE: five failures on one host only (different_location needs other hosts)"
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 22 01:56:00 srv-a sshd[25000]: Failed password for invalid user oxidized from 10.0.5.143 port 52000 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:01 srv-b sshd[25001]: Failed password for invalid user oxidized from 10.0.5.143 port 52001 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:02 srv-c sshd[25002]: Failed password for invalid user oxidized from 10.0.5.143 port 52002 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:03 srv-d sshd[25003]: Failed password for invalid user oxidized from 10.0.5.143 port 52003 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:04 srv-a sshd[25004]: Failed password for invalid user oxidized from 10.0.5.143 port 52004 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:05 srv-b sshd[25005]: Failed password for invalid user oxidized from 10.0.5.143 port 52005 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:06 srv-c sshd[25006]: Failed password for invalid user oxidized from 10.0.5.143 port 52006 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:07 srv-d sshd[25007]: Failed password for invalid user oxidized from 10.0.5.143 port 52007 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:08 srv-a sshd[25008]: Failed password for invalid user oxidized from 10.0.5.143 port 52008 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:09 srv-b sshd[25009]: Failed password for invalid user oxidized from 10.0.5.143 port 52009 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:10 srv-c sshd[25010]: Failed password for invalid user oxidized from 10.0.5.143 port 52010 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    }
+   ],
+   "log": "Oct 22 01:56:11 srv-d sshd[25011]: Failed password for invalid user oxidized from 10.0.5.143 port 52011 ssh2",
+   "location": "(srv-d) any->/var/log/auth-d.log",
+   "expect_rule": "5710",
+   "expect_level": 5,
+   "note": "NEGATIVE: address in jt-account-guard-internal-ignore (a relay)"
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 22 01:56:00 srv-a sshd[25000]: Failed password for invalid user oxidized from 10.0.5.142 port 52000 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:01 srv-b sshd[25001]: Failed password for invalid user oxidized from 10.0.5.142 port 52001 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:02 srv-c sshd[25002]: Failed password for invalid user oxidized from 10.0.5.142 port 52002 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:03 srv-d sshd[25003]: Failed password for invalid user oxidized from 10.0.5.142 port 52003 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:04 srv-a sshd[25004]: Failed password for invalid user oxidized from 10.0.5.142 port 52004 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:05 srv-b sshd[25005]: Failed password for invalid user oxidized from 10.0.5.142 port 52005 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:06 srv-c sshd[25006]: Failed password for invalid user oxidized from 10.0.5.142 port 52006 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:07 srv-d sshd[25007]: Failed password for invalid user oxidized from 10.0.5.142 port 52007 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:08 srv-a sshd[25008]: Failed password for invalid user oxidized from 10.0.5.142 port 52008 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:09 srv-b sshd[25009]: Failed password for invalid user oxidized from 10.0.5.142 port 52009 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:10 srv-c sshd[25010]: Failed password for invalid user oxidized from 10.0.5.142 port 52010 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    }
+   ],
+   "log": "Oct 22 01:56:11 srv-d sshd[25011]: Failed password for invalid user oxidized from 10.0.5.142 port 52011 ssh2",
+   "location": "(srv-d) any->/var/log/auth-d.log",
+   "expect_rule": "132710",
+   "expect_level": 11,
+   "note": "internal host trying a non-existent SSH user on 4 hosts, at most 4 per host (stays under 5712 on real agents); the 12th line, the first with 9 earlier failures on other hosts"
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 22 01:56:00 srv-a sshd[25000]: Failed password for invalid user oxidized from 10.0.5.142 port 52000 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:01 srv-b sshd[25001]: Failed password for invalid user oxidized from 10.0.5.142 port 52001 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:02 srv-c sshd[25002]: Failed password for invalid user oxidized from 10.0.5.142 port 52002 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:03 srv-d sshd[25003]: Failed password for invalid user oxidized from 10.0.5.142 port 52003 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:04 srv-a sshd[25004]: Failed password for invalid user oxidized from 10.0.5.142 port 52004 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:05 srv-b sshd[25005]: Failed password for invalid user oxidized from 10.0.5.142 port 52005 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:06 srv-c sshd[25006]: Failed password for invalid user oxidized from 10.0.5.142 port 52006 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:07 srv-d sshd[25007]: Failed password for invalid user oxidized from 10.0.5.142 port 52007 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:08 srv-a sshd[25008]: Failed password for invalid user oxidized from 10.0.5.142 port 52008 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:09 srv-b sshd[25009]: Failed password for invalid user oxidized from 10.0.5.142 port 52009 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:10 srv-c sshd[25010]: Failed password for invalid user oxidized from 10.0.5.142 port 52010 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:11 srv-d sshd[25011]: Failed password for invalid user oxidized from 10.0.5.142 port 52011 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:12 srv-a sshd[25012]: Failed password for invalid user oxidized from 10.0.5.142 port 52012 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:13 srv-b sshd[25013]: Failed password for invalid user oxidized from 10.0.5.142 port 52013 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:14 srv-c sshd[25014]: Failed password for invalid user oxidized from 10.0.5.142 port 52014 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:15 srv-d sshd[25015]: Failed password for invalid user oxidized from 10.0.5.142 port 52015 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:16 srv-a sshd[25016]: Failed password for invalid user oxidized from 10.0.5.142 port 52016 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:17 srv-b sshd[25017]: Failed password for invalid user oxidized from 10.0.5.142 port 52017 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:18 srv-c sshd[25018]: Failed password for invalid user oxidized from 10.0.5.142 port 52018 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:19 srv-d sshd[25019]: Failed password for invalid user oxidized from 10.0.5.142 port 52019 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:20 srv-a sshd[25020]: Failed password for invalid user oxidized from 10.0.5.142 port 52020 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:21 srv-b sshd[25021]: Failed password for invalid user oxidized from 10.0.5.142 port 52021 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:22 srv-c sshd[25022]: Failed password for invalid user oxidized from 10.0.5.142 port 52022 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:23 srv-d sshd[25023]: Failed password for invalid user oxidized from 10.0.5.142 port 52023 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:24 srv-a sshd[25024]: Failed password for invalid user oxidized from 10.0.5.142 port 52024 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:25 srv-b sshd[25025]: Failed password for invalid user oxidized from 10.0.5.142 port 52025 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:26 srv-c sshd[25026]: Failed password for invalid user oxidized from 10.0.5.142 port 52026 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:27 srv-d sshd[25027]: Failed password for invalid user oxidized from 10.0.5.142 port 52027 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:28 srv-a sshd[25028]: Failed password for invalid user oxidized from 10.0.5.142 port 52028 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:29 srv-b sshd[25029]: Failed password for invalid user oxidized from 10.0.5.142 port 52029 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:30 srv-c sshd[25030]: Failed password for invalid user oxidized from 10.0.5.142 port 52030 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:31 srv-d sshd[25031]: Failed password for invalid user oxidized from 10.0.5.142 port 52031 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:32 srv-a sshd[25032]: Failed password for invalid user oxidized from 10.0.5.142 port 52032 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:33 srv-b sshd[25033]: Failed password for invalid user oxidized from 10.0.5.142 port 52033 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:34 srv-c sshd[25034]: Failed password for invalid user oxidized from 10.0.5.142 port 52034 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:35 srv-d sshd[25035]: Failed password for invalid user oxidized from 10.0.5.142 port 52035 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:36 srv-a sshd[25036]: Failed password for invalid user oxidized from 10.0.5.142 port 52036 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:37 srv-b sshd[25037]: Failed password for invalid user oxidized from 10.0.5.142 port 52037 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:38 srv-c sshd[25038]: Failed password for invalid user oxidized from 10.0.5.142 port 52038 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:39 srv-d sshd[25039]: Failed password for invalid user oxidized from 10.0.5.142 port 52039 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:40 srv-a sshd[25040]: Failed password for invalid user oxidized from 10.0.5.142 port 52040 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:41 srv-b sshd[25041]: Failed password for invalid user oxidized from 10.0.5.142 port 52041 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:42 srv-c sshd[25042]: Failed password for invalid user oxidized from 10.0.5.142 port 52042 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:43 srv-d sshd[25043]: Failed password for invalid user oxidized from 10.0.5.142 port 52043 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:44 srv-a sshd[25044]: Failed password for invalid user oxidized from 10.0.5.142 port 52044 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:45 srv-b sshd[25045]: Failed password for invalid user oxidized from 10.0.5.142 port 52045 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    }
+   ],
+   "log": "Oct 22 01:56:46 srv-c sshd[25046]: Failed password for invalid user oxidized from 10.0.5.142 port 52046 ssh2",
+   "location": "(srv-c) any->/var/log/auth-c.log",
+   "expect_rule": "132711",
+   "expect_level": 12,
+   "note": "the same, 30 failures on other hosts: level 12 (47 lines here: wazuh-logtest ignores ignore=, so the level 11 rule re-fires every few lines; on a live manager it is silenced for 15 minutes)"
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 22 01:57:00 srv-a sshd[26000]: Failed password for root from 10.0.5.170 port 53000 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:57:01 srv-b sshd[26001]: Failed password for root from 10.0.5.170 port 53001 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:57:02 srv-c sshd[26002]: Failed password for root from 10.0.5.170 port 53002 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:57:03 srv-d sshd[26003]: Failed password for root from 10.0.5.170 port 53003 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:57:04 srv-a sshd[26004]: Failed password for root from 10.0.5.170 port 53004 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:57:05 srv-b sshd[26005]: Failed password for root from 10.0.5.170 port 53005 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:57:06 srv-c sshd[26006]: Failed password for root from 10.0.5.170 port 53006 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:57:07 srv-d sshd[26007]: Failed password for root from 10.0.5.170 port 53007 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:57:08 srv-a sshd[26008]: Failed password for root from 10.0.5.170 port 53008 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:57:09 srv-b sshd[26009]: Failed password for root from 10.0.5.170 port 53009 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:57:10 srv-c sshd[26010]: Failed password for root from 10.0.5.170 port 53010 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    }
+   ],
+   "log": "Oct 22 01:57:11 srv-d sshd[26011]: Failed password for root from 10.0.5.170 port 53011 ssh2",
+   "location": "(srv-d) any->/var/log/auth-d.log",
+   "expect_rule": "132712",
+   "expect_level": 11,
+   "note": "wrong SSH passwords for root on 4 hosts from one internal address (ends at 5760)"
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 22 02:00:00 srv-a sshd[28000]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.5.160  user=root",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 02:00:01 srv-b sshd[28001]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.5.160  user=root",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 02:00:02 srv-c sshd[28002]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.5.160  user=root",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 02:00:03 srv-d sshd[28003]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.5.160  user=root",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 02:00:04 srv-a sshd[28004]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.5.160  user=root",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 02:00:05 srv-b sshd[28005]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.5.160  user=root",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 02:00:06 srv-c sshd[28006]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.5.160  user=root",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 02:00:07 srv-d sshd[28007]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.5.160  user=root",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 02:00:08 srv-a sshd[28008]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.5.160  user=root",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 02:00:09 srv-b sshd[28009]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.5.160  user=root",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 02:00:10 srv-c sshd[28010]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.5.160  user=root",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    }
+   ],
+   "log": "Oct 22 02:00:11 srv-d sshd[28011]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=10.0.5.160  user=root",
+   "location": "(srv-d) any->/var/log/auth-d.log",
+   "expect_rule": "132714",
+   "expect_level": 11,
+   "note": "PAM authentication failures on 4 hosts from one internal address"
+  },
+  {
+   "before": [
+    {
+     "log": "Oct 22 01:56:00 srv-a sshd[25000]: Failed password for invalid user oxidized from 10.0.5.142 port 52000 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:01 srv-b sshd[25001]: Failed password for invalid user oxidized from 10.0.5.142 port 52001 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:02 srv-c sshd[25002]: Failed password for invalid user oxidized from 10.0.5.142 port 52002 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:03 srv-d sshd[25003]: Failed password for invalid user oxidized from 10.0.5.142 port 52003 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:04 srv-a sshd[25004]: Failed password for invalid user oxidized from 10.0.5.142 port 52004 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:05 srv-b sshd[25005]: Failed password for invalid user oxidized from 10.0.5.142 port 52005 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:06 srv-c sshd[25006]: Failed password for invalid user oxidized from 10.0.5.142 port 52006 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:07 srv-d sshd[25007]: Failed password for invalid user oxidized from 10.0.5.142 port 52007 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:08 srv-a sshd[25008]: Failed password for invalid user oxidized from 10.0.5.142 port 52008 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    },
+    {
+     "log": "Oct 22 01:56:09 srv-b sshd[25009]: Failed password for invalid user oxidized from 10.0.5.142 port 52009 ssh2",
+     "location": "(srv-b) any->/var/log/auth-b.log"
+    },
+    {
+     "log": "Oct 22 01:56:10 srv-c sshd[25010]: Failed password for invalid user oxidized from 10.0.5.142 port 52010 ssh2",
+     "location": "(srv-c) any->/var/log/auth-c.log"
+    },
+    {
+     "log": "Oct 22 01:56:11 srv-d sshd[25011]: Failed password for invalid user oxidized from 10.0.5.142 port 52011 ssh2",
+     "location": "(srv-d) any->/var/log/auth-d.log"
+    },
+    {
+     "log": "Oct 22 01:56:12 srv-a sshd[25012]: Failed password for invalid user oxidized from 10.0.5.142 port 52012 ssh2",
+     "location": "(srv-a) any->/var/log/auth-a.log"
+    }
+   ],
+   "log": "Oct 22 01:58:30 srv-b sshd[27001]: Accepted password for admin from 10.0.5.142 port 54001 ssh2",
+   "location": "(srv-b) any->/var/log/auth-b.log",
+   "expect_rule": "132720",
+   "expect_level": 13,
+   "note": "a successful SSH login from the internal address that was guessing on several hosts: lateral movement"
   }
  ]
 }
