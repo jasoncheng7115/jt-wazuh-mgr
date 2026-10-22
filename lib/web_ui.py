@@ -434,99 +434,278 @@ _THEME_HEAD = """
         --border-3a4a6a: #3a4a6a;
         --border-0a0a1a: #0a0a1a;
         --accent-line: #4fc3f7;
+        --solid-17a2b8: #17a2b8;
+        --solid-fd7e14: #fd7e14;
+        --solid-00897b: #00897b;
+        --solid-795548: #795548;
+        --solid-607d8b: #607d8b;
+        --solid-9c27b0: #9c27b0;
+        --solid-6f42c1: #6f42c1;
+        --solid-20c997: #20c997;
+        --solid-e91e63: #e91e63;
+        --solid-7b1fa2: #7b1fa2;
+        --solid-ff9800: #ff9800;
+        --solid-00c853: #00c853;
+        --solid-e94560: #e94560;
+        --solid-888: #888;
+        --chart-f57c00: #f57c00;
+        --chart-558b2f: #558b2f;
+        --chart-d84315: #d84315;
+        --chart-ef6c00: #ef6c00;
+        --chart-9e9d24: #9e9d24;
         --overlay: rgba(0,0,0,0.7);
         --shadow: rgba(0,0,0,0.3);
     }
     html[data-theme="light"] {
-        --text: #1f2937;
-        --text-code: #1f2937;
-        --text-ddd: #334155;
-        --text-ccc: #374151;
-        --text-prose: #1f2937;
-        --text-prose-strong: #111827;
-        --text-chip: #374151;
-        --text-pre: #1e3a5f;
-        --json-fg: #24292f;
-        --json-bracket: #24292f;
-        --text-dim: #4b5563;
+        --text: #1f2328;
+        --text-code: #1f2328;
+        --text-ddd: #424a53;
+        --text-ccc: #424a53;
+        --text-prose: #1f2328;
+        --text-prose-strong: #1f2328;
+        --text-chip: #424a53;
+        --text-pre: #1f2328;
+        --json-fg: #1f2328;
+        --json-bracket: #1f2328;
+        --text-dim: #424a53;
         --text-muted: #59636e;
         --text-meta: #59636e;
         --text-9aa: #59636e;
         --text-94a3b8: #59636e;
         --text-9e9e9e: #59636e;
-        --text-faint: #5d6673;
-        --text-555: #5d6673;
-        --text-comment: #5d6673;
-        --accent: #0369a1;
-        --accent-hover: #075985;
-        --accent-5dade2: #1d5f8a;
-        --accent-60a5fa: #1d4ed8;
-        --info-0dcaf0: #0b6378;
-        --info: #0b6378;
-        --danger: #b91c1c;
-        --danger-ff6b6b: #b91c1c;
-        --danger-ff7b93: #b91c1c;
-        --danger-f87171: #b91c1c;
-        --danger-f44336: #b91c1c;
-        --danger-dc3545: #b91c1c;
-        --json-null: #b91c1c;
-        --warning: #7a5800;
-        --warning-fbbf24: #7a5800;
-        --json-boolean: #9a4a07;
-        --orange: #9a4a07;
-        --orange-fd7e14: #9a4a07;
-        --orange-ff9800: #9a4a07;
-        --success: #166534;
-        --success-4ade80: #166534;
-        --success-28a745: #166534;
-        --success-4caf50: #166534;
-        --success-34d399: #166534;
-        --success-5fd47a: #166534;
-        --json-string: #166534;
-        --purple-c084fc: #7e22ce;
-        --json-number: #6d28d9;
-        --json-key: #be185d;
-        --text-strong: #0f172a;
-        --bg: #f3f5f9;
+        --text-faint: #636c76;
+        --text-555: #636c76;
+        --text-comment: #59636e;
+        --accent: #0860ca;
+        --accent-hover: #0550ae;
+        --accent-5dade2: #0550ae;
+        --accent-60a5fa: #0860ca;
+        --info-0dcaf0: #0e7490;
+        --info: #0e7490;
+        --danger: #cf222e;
+        --danger-ff6b6b: #cf222e;
+        --danger-ff7b93: #cf222e;
+        --danger-f87171: #cf222e;
+        --danger-f44336: #cf222e;
+        --danger-dc3545: #cf222e;
+        --json-null: #cf222e;
+        --warning: #7d4e00;
+        --warning-fbbf24: #7d4e00;
+        --json-boolean: #953800;
+        --orange: #953800;
+        --orange-fd7e14: #953800;
+        --orange-ff9800: #953800;
+        --success: #116329;
+        --success-4ade80: #116329;
+        --success-28a745: #116329;
+        --success-4caf50: #116329;
+        --success-34d399: #116329;
+        --success-5fd47a: #116329;
+        --json-string: #116329;
+        --purple-c084fc: #6639ba;
+        --json-number: #6639ba;
+        --json-key: #8a2a62;
+        --text-strong: #1f2328;
+        --bg: #f6f8fa;
         --panel: #ffffff;
-        --surface: #e4ebf5;
-        --sunken: #eef1f6;
-        --sunken-0a0a1a: #eef1f6;
-        --sunken-0d0d1a: #e9edf3;
+        --surface: #f6f8fa;
+        --sunken: #f6f8fa;
+        --sunken-0a0a1a: #f6f8fa;
+        --sunken-0d0d1a: #eaeef2;
         --code-bg: #f6f8fa;
         --json-bg: #f6f8fa;
-        --tab-hover: #e4e9f1;
-        --hover-0f0f25: #e4ebf5;
-        --card-0f1525: #f8fafc;
-        --card-1a2332: #f8fafc;
-        --tint-ok-0d2018: #ecfdf3;
-        --tint-ok: #ecfdf3;
-        --tint-bad: #fdecec;
-        --tint-warn: #fdf7e3;
-        --th-hover: #d3deee;
-        --hover: #d3e3f5;
-        --hover-1f2a4a: #e4ebf5;
-        --hover-252545: #e4ebf5;
-        --highlight-bg: #dcfce7;
-        --group-bg: #e0ecf8;
-        --chip-bg: #e5e7eb;
-        --chip-bg-hover: #cfd5dd;
-        --badge-muted-bg: #e5e7eb;
-        --badge-untracked-bg: #e2e8f0;
-        --border: #cbd5e1;
-        --border-1a3a6e: #cbd5e1;
-        --border-1a3a5c: #cbd5e1;
-        --border-23304d: #d5dce6;
-        --border-333: #d1d5db;
-        --border-444: #c4cad3;
-        --border-222: #e5e7eb;
-        --border-3a4a6a: #94a3b8;
-        --border-0a0a1a: #d1d5db;
-        --accent-line: #0284c7;
-        --overlay: rgba(15,23,42,0.45);
-        --shadow: rgba(15,23,42,0.12);
+        --tab-hover: #eaeef2;
+        --hover-0f0f25: #eaeef2;
+        --card-0f1525: #ffffff;
+        --card-1a2332: #f6f8fa;
+        --tint-ok-0d2018: #eefbf1;
+        --tint-ok: #dafbe1;
+        --tint-bad: #ffebe9;
+        --tint-warn: #fff8c5;
+        --th-hover: #eaeef2;
+        --hover: #eaeef2;
+        --hover-1f2a4a: #f3f4f6;
+        --hover-252545: #eaeef2;
+        --highlight-bg: #dafbe1;
+        --group-bg: #ddf4ff;
+        --chip-bg: #eaeef2;
+        --chip-bg-hover: #d8dee4;
+        --badge-muted-bg: #eaeef2;
+        --badge-untracked-bg: #eaeef2;
+        --border: #d0d7de;
+        --border-1a3a6e: #d0d7de;
+        --border-1a3a5c: #d0d7de;
+        --border-23304d: #d8dee4;
+        --border-333: #d0d7de;
+        --border-444: #d0d7de;
+        --border-222: #d8dee4;
+        --border-3a4a6a: #afb8c1;
+        --border-0a0a1a: #d8dee4;
+        --accent-line: #0860ca;
+        --solid-17a2b8: #e0f7fa;
+        --solid-fd7e14: #fff1e5;
+        --solid-00897b: #e6f6f4;
+        --solid-795548: #f4ede9;
+        --solid-607d8b: #eaeef2;
+        --solid-9c27b0: #fbefff;
+        --solid-6f42c1: #fbefff;
+        --solid-20c997: #e6f6f4;
+        --solid-e91e63: #ffeff7;
+        --solid-7b1fa2: #fbefff;
+        --solid-ff9800: #fff1e5;
+        --solid-00c853: #dafbe1;
+        --solid-e94560: #ffebe9;
+        --solid-888: #eaeef2;
+        --chart-f57c00: #b45309;
+        --chart-558b2f: #3f6212;
+        --chart-d84315: #b93a0e;
+        --chart-ef6c00: #b45309;
+        --chart-9e9d24: #6b6a12;
+        --overlay: rgba(31,35,40,0.4);
+        --shadow: rgba(31,35,40,0.08);
         color-scheme: light;
     }
+    
+    /* ---- Light theme components ------------------------------------------
+       Everything below is scoped to html[data-theme="light"]; the dark theme
+       is the original look and is not touched. Calm, neutral surfaces, one
+       accent (blue), outline buttons for secondary actions and solid colour
+       only for the main action of a view and for confirming something
+       destructive. Every text/fill pair here is at least 4.5:1 (unit test).
+       Inline fills in the templates use the --solid-* tokens so they can be
+       restyled here; !important is only used where an inline style must lose. */
+    html[data-theme="light"] header { border: 1px solid #d0d7de; border-radius: 10px; box-shadow: 0 1px 2px var(--shadow); }
+    html[data-theme="light"] .stat-item { background: #f6f8fa; border: 1px solid #d0d7de; }
+    html[data-theme="light"] .stat-item:hover { box-shadow: 0 3px 8px var(--shadow); }
+    html[data-theme="light"] .stat-value { color: #1f2328; }
+
+    html[data-theme="light"] .tabs { gap: 2px; border-bottom: 1px solid #d0d7de; margin-bottom: 14px; }
+    html[data-theme="light"] .tab { background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; color: #59636e; bottom: -1px; padding: 10px 14px; }
+    html[data-theme="light"] .tab:hover:not(.active) { background: #eaeef2; color: #1f2328; }
+    html[data-theme="light"] .tab.active { background: transparent; color: #1f2328; font-weight: 600; border-bottom-color: #0860ca; }
+    html[data-theme="light"] .tab.active .icon { color: #0860ca; }
+    html[data-theme="light"] .panel { border: 1px solid #d0d7de; border-radius: 10px; box-shadow: 0 1px 2px var(--shadow); }
+
+    html[data-theme="light"] th { background: #f6f8fa; color: #1f2328; font-weight: 600; border-bottom: 1px solid #d0d7de; }
+    html[data-theme="light"] td { border-bottom-color: #d8dee4; }
+    html[data-theme="light"] th.sortable .sort-icon { color: #59636e; }
+
+    html[data-theme="light"] .action-bar, html[data-theme="light"] .distribution-bar { border: 1px solid #d8dee4; }
+    html[data-theme="light"] .service-indicator { border: 1px solid #d8dee4; }
+    html[data-theme="light"] .badge { border: 1px solid #d0d7de; }
+    html[data-theme="light"] .rule-content, html[data-theme="light"] #logContent, html[data-theme="light"] .pack-summary { border: 1px solid #d8dee4; }
+
+    /* Inputs: white, grey border, accent focus ring */
+    html[data-theme="light"] input[type="text"], html[data-theme="light"] input[type="search"],
+    html[data-theme="light"] input[type="number"], html[data-theme="light"] input[type="password"],
+    html[data-theme="light"] input:not([type]), html[data-theme="light"] select,
+    html[data-theme="light"] textarea, html[data-theme="light"] .multi-select-btn {
+        background-color: #ffffff !important; border-color: #d0d7de !important; color: #1f2328;
+    }
+    html[data-theme="light"] input:focus, html[data-theme="light"] select:focus, html[data-theme="light"] textarea:focus {
+        outline: none; border-color: #0860ca !important; box-shadow: 0 0 0 3px rgba(8,96,202,0.22);
+    }
+    html[data-theme="light"] .multi-select-btn:hover, html[data-theme="light"] .multi-select-btn.active { border-color: #afb8c1 !important; background-color: #f3f4f6 !important; }
+    html[data-theme="light"] .multi-select-dropdown, html[data-theme="light"] .export-menu { background: #ffffff; border-color: #d0d7de; box-shadow: 0 8px 24px rgba(140,149,159,0.25); }
+    html[data-theme="light"] .multi-select-item:hover, html[data-theme="light"] .export-item:hover { background: #f3f4f6; }
+    html[data-theme="light"] .toggle-switch-box input:checked + .toggle-slider { background: #0860ca; }
+    html[data-theme="light"] .toggle-switch-box input:checked ~ .toggle-label { color: #0860ca; }
+
+    /* Buttons: outline by default, coloured text keeps the hint of what it does */
+    html[data-theme="light"] .btn { background: #ffffff !important; color: #1f2328 !important; border: 1px solid #d0d7de; box-shadow: 0 1px 0 rgba(31,35,40,0.04); }
+    html[data-theme="light"] .btn:hover { opacity: 1; background: #f3f4f6 !important; border-color: #afb8c1; }
+    html[data-theme="light"] .btn-primary { color: #0860ca !important; }
+    html[data-theme="light"] .btn-success { color: #116329 !important; }
+    html[data-theme="light"] .btn-warning { color: #7d4e00 !important; }
+    html[data-theme="light"] .btn-danger { color: #cf222e !important; }
+    html[data-theme="light"] .btn-danger:hover { background: #fff5f5 !important; border-color: #cf222e; }
+    html[data-theme="light"] [style*="var(--solid-17a2b8)"] { color: #0e7490 !important; }
+    html[data-theme="light"] [style*="var(--solid-fd7e14)"] { color: #953800 !important; }
+    html[data-theme="light"] [style*="var(--solid-00897b)"] { color: #0f766e !important; }
+    html[data-theme="light"] [style*="var(--solid-795548)"] { color: #6e4b3a !important; }
+    html[data-theme="light"] [style*="var(--solid-607d8b)"] { color: #424a53 !important; }
+    html[data-theme="light"] [style*="var(--solid-9c27b0)"] { color: #6639ba !important; }
+    html[data-theme="light"] [style*="var(--solid-6f42c1)"] { color: #6639ba !important; }
+    html[data-theme="light"] [style*="var(--solid-20c997)"] { color: #0f766e !important; }
+    html[data-theme="light"] [style*="var(--solid-e91e63)"] { color: #99286e !important; }
+    html[data-theme="light"] [style*="var(--solid-7b1fa2)"] { color: #6639ba !important; }
+    html[data-theme="light"] [style*="var(--solid-ff9800)"] { color: #953800 !important; }
+    html[data-theme="light"] [style*="var(--solid-00c853)"] { color: #116329 !important; }
+    html[data-theme="light"] [style*="var(--solid-e94560)"] { color: #a40e26 !important; }
+    html[data-theme="light"] [style*="var(--solid-888)"] { color: #424a53 !important; }
+    /* Solid: the main action of a toolbar or dialog (not table rows, not the bulk-action bar) */
+    html[data-theme="light"] .btn.btn-primary:not(.btn-sm) { background: #0860ca !important; color: #ffffff !important; border-color: #0860ca; }
+    html[data-theme="light"] .btn.btn-primary:not(.btn-sm):hover { background: #0550ae !important; border-color: #0550ae; }
+    html[data-theme="light"] .btn.btn-success:not(.btn-sm) { background: #1a7f37 !important; color: #ffffff !important; border-color: #1a7f37; }
+    html[data-theme="light"] .btn.btn-success:not(.btn-sm):hover { background: #116329 !important; border-color: #116329; }
+    html[data-theme="light"] .modal-footer .btn.btn-danger:not(.btn-sm) { background: #cf222e !important; color: #ffffff !important; border-color: #cf222e; }
+    html[data-theme="light"] .modal-footer .btn.btn-danger:not(.btn-sm):hover { background: #a40e26 !important; border-color: #a40e26; }
+    html[data-theme="light"] .action-bar .btn.btn-primary, html[data-theme="light"] .action-bar .btn.btn-success,
+    html[data-theme="light"] td .btn.btn-primary, html[data-theme="light"] td .btn.btn-success { background: #ffffff !important; border-color: #d0d7de; }
+    html[data-theme="light"] .action-bar .btn.btn-primary, html[data-theme="light"] td .btn.btn-primary { color: #0860ca !important; }
+    html[data-theme="light"] .action-bar .btn.btn-success, html[data-theme="light"] td .btn.btn-success { color: #116329 !important; }
+    html[data-theme="light"] .action-bar .btn:hover, html[data-theme="light"] td .btn:hover { background: #f3f4f6 !important; }
+    /* Refresh / reload buttons are btn-primary for the dark look but are not the
+       main action of a view: outline in the light theme, so a tab has one solid button. */
+    html[data-theme="light"] .btn.btn-primary[onclick^="refresh"], html[data-theme="light"] .btn.btn-primary[onclick^="load"] { background: #ffffff !important; color: #0860ca !important; border-color: #d0d7de; }
+    html[data-theme="light"] .btn.btn-primary[onclick^="refresh"]:hover, html[data-theme="light"] .btn.btn-primary[onclick^="load"]:hover { background: #f3f4f6 !important; border-color: #afb8c1; }
+    /* Disabled: greyed, not faded -- the label stays readable. :not(#jtwz) only
+       raises specificity above the solid rules above. */
+    html[data-theme="light"] .btn:disabled:not(#jtwz), html[data-theme="light"] .btn:disabled:not(#jtwz):hover {
+        opacity: 1; background: #f6f8fa !important; color: #636c76 !important; border-color: #d8dee4; box-shadow: none;
+    }
+
+    html[data-theme="light"] .btn-settings { background: #ffffff; color: #1f2328; border-color: #d0d7de; box-shadow: 0 1px 0 rgba(31,35,40,0.04); }
+    html[data-theme="light"] .btn-settings:hover { background: #f3f4f6; border-color: #afb8c1; }
+    html[data-theme="light"] .btn-settings .icon, html[data-theme="light"] .btn-settings svg { color: #59636e; }
+    html[data-theme="light"] .btn-logout { background: #ffffff; color: #cf222e; border-color: #d0d7de; box-shadow: 0 1px 0 rgba(31,35,40,0.04); }
+    html[data-theme="light"] .btn-logout:hover { background: #fff5f5; border-color: #cf222e; }
+    html[data-theme="light"] .jtwz-lang-fab { background: #ffffff; color: #1f2328; border-color: #d0d7de; }
+    html[data-theme="light"] .jtwz-lang-fab:hover { background: #f3f4f6; color: #1f2328; }
+    html[data-theme="light"] .jtwz-lang-menu { border-color: #d0d7de; }
+    html[data-theme="light"] .jtwz-lang-menu .jtwz-check { color: #0860ca; }
+    html[data-theme="light"] .rules-mode-toggle { border-color: #d0d7de; }
+    html[data-theme="light"] .rules-mode-toggle button { background: #f6f8fa; color: #59636e; }
+    html[data-theme="light"] .rules-mode-toggle button.active { background: #ffffff; color: #1f2328; font-weight: 600; }
+    html[data-theme="light"] .rules-mode-toggle button.active .icon { color: #0860ca; }
+    html[data-theme="light"] .rules-pagination button { background: #ffffff; color: #0860ca; border-color: #d0d7de; }
+    html[data-theme="light"] .rules-pagination button:hover { background: #f3f4f6; }
+    html[data-theme="light"] .rules-pagination button:disabled { opacity: 1; background: #f6f8fa; color: #636c76; }
+    html[data-theme="light"] .btn-login, html[data-theme="light"] .connection-error .retry-btn { background: #0860ca; color: #ffffff; }
+    html[data-theme="light"] .btn-login:hover, html[data-theme="light"] .connection-error .retry-btn:hover { background: #0550ae; }
+    html[data-theme="light"] .btn-login:disabled { background: #eaeef2; color: #424a53; }
+    html[data-theme="light"] .login-container { border: 1px solid #d0d7de; box-shadow: 0 8px 24px rgba(140,149,159,0.2); }
+
+    /* Pills and badges: soft fill, dark coloured text */
+    html[data-theme="light"] .status-active, html[data-theme="light"] .sync-ok, html[data-theme="light"] .api-status.connected,
+    html[data-theme="light"] .rule-level.low, html[data-theme="light"] .rule-type-badge.pack-installed { background: #dafbe1; color: #116329; }
+    html[data-theme="light"] .status-disconnected, html[data-theme="light"] .badge-disconnected, html[data-theme="light"] .api-status.disconnected,
+    html[data-theme="light"] .rule-level.high { background: #ffebe9; color: #a40e26; }
+    html[data-theme="light"] .status-pending, html[data-theme="light"] .sync-pending, html[data-theme="light"] .rule-level.medium { background: #fff8c5; color: #7d4e00; }
+    html[data-theme="light"] .status-never, html[data-theme="light"] .sync-unknown, html[data-theme="light"] .rule-level,
+    html[data-theme="light"] .rule-level.zero, html[data-theme="light"] .rule-type-badge.builtin,
+    html[data-theme="light"] .rule-type-badge.pack-untracked { background: #eaeef2; color: #424a53; }
+    html[data-theme="light"] .rule-custom-badge, html[data-theme="light"] .rule-type-badge.custom,
+    html[data-theme="light"] .rule-type-badge.pack-update, html[data-theme="light"] .badge-not-in-cluster { background: #fff1e5; color: #953800; }
+    html[data-theme="light"] .badge-master, html[data-theme="light"] .rule-if-group-badge { background: #fbefff; color: #6639ba; }
+    html[data-theme="light"] .badge-worker, html[data-theme="light"] .group-label, html[data-theme="light"] .rules-group-tag,
+    html[data-theme="light"] .selected-count { background: #ddf4ff; color: #0550ae; }
+    html[data-theme="light"] .filter-badge, html[data-theme="light"] .pack-step-no { background: #0860ca; color: #ffffff; }
+    html[data-theme="light"] .rule-copy-btn.copied { background: #1a7f37; color: #ffffff; border-color: #1a7f37; }
+    html[data-theme="light"] .alert-success { background: #dafbe1; border-color: #4ac26b; }
+    html[data-theme="light"] .alert-error { background: #ffebe9; border-color: #ff8182; }
+    html[data-theme="light"] .alert-warning, html[data-theme="light"] .dry-run-notice { background: #fff8c5; border-color: #d4a72c; }
+
+    /* Toasts: white card with a coloured edge */
+    html[data-theme="light"] .toast { background: #ffffff; color: #1f2328; border: 1px solid #d0d7de; border-left: 4px solid #0860ca; box-shadow: 0 8px 24px rgba(140,149,159,0.3); }
+    html[data-theme="light"] .toast.success { background: #ffffff; border-left-color: #1a7f37; }
+    html[data-theme="light"] .toast.error { background: #ffffff; border-left-color: #cf222e; }
+    html[data-theme="light"] .toast.warning { background: #ffffff; color: #1f2328; border-left-color: #d4a72c; }
+    html[data-theme="light"] .toast.info { background: #ffffff; color: #1f2328; border-left-color: #0860ca; }
+
+    html[data-theme="light"] .modal-content { border: 1px solid #d0d7de; border-radius: 12px; box-shadow: 0 12px 32px rgba(31,35,40,0.2); }
+    html[data-theme="light"] .modal-close { color: #59636e; }
+    html[data-theme="light"] .pack-step { border-color: #d8dee4; }
     </style>
 """
 
@@ -1117,6 +1296,8 @@ HTML_TEMPLATE = '''
             .tabs { flex-wrap: wrap; }
             .modal-content, .modal-content.resizable { min-width: 0; width: calc(100vw - 24px); padding: 20px 16px; }
             .modal-footer { flex-wrap: wrap; }
+            .toast-container { left: 12px; right: 12px; top: 12px; }
+            .toast { max-width: none; }
         }
     </style>
 </head>
@@ -1253,7 +1434,7 @@ HTML_TEMPLATE = '''
                         <div class="multi-select-item" onclick="toggleColumnItem(event, this, 'synced')"><input type="checkbox" checked data-col="synced"><span class="multi-select-item-text">Sync</span></div>
                     </div>
                 </div>
-                <button class="btn" id="btnUpgradeProgress" style="background:#17a2b8;color:#fff;" onclick="showAllUpgradeProgress()" title="View upgrade progress"><svg class="icon"><use href="#icon-clock"/></svg></button>
+                <button class="btn" id="btnUpgradeProgress" style="background:var(--solid-17a2b8);color:#fff;" onclick="showAllUpgradeProgress()" title="View upgrade progress"><svg class="icon"><use href="#icon-clock"/></svg></button>
                 <div class="export-dropdown">
                     <button class="btn" onclick="toggleExportMenu()" title="Export to file"><svg class="icon"><use href="#icon-download"/></svg></button>
                     <div class="export-menu" id="exportMenu">
@@ -1294,9 +1475,9 @@ HTML_TEMPLATE = '''
                     <button class="btn btn-primary" id="btnMoveToNode" onclick="showMoveToNodeModal()"><svg class="icon"><use href="#icon-move"/></svg>Move to Node</button>
                     <button class="btn btn-warning" id="btnRestart" onclick="restartSelected()"><svg class="icon"><use href="#icon-restart"/></svg>Restart</button>
                     <button class="btn btn-primary" id="btnReconnect" onclick="reconnectSelected()"><svg class="icon"><use href="#icon-link"/></svg>Reconnect</button>
-                    <button class="btn" id="btnUpgrade" style="background:#fd7e14;color:#fff;" onclick="upgradeSelected()"><svg class="icon"><use href="#icon-upload"/></svg>Upgrade</button>
-                    <button class="btn" id="btnActiveResponse" style="background:#00897b;color:#fff;" onclick="showActiveResponseModal()"><svg class="icon"><use href="#icon-bell"/></svg>Active Response</button>
-                    <button class="btn" id="btnCleanQueueDB" style="background:#795548;color:#fff;" onclick="cleanQueueDBSelected()"><svg class="icon"><use href="#icon-trash"/></svg>Clean Queue DB</button>
+                    <button class="btn" id="btnUpgrade" style="background:var(--solid-fd7e14);color:#fff;" onclick="upgradeSelected()"><svg class="icon"><use href="#icon-upload"/></svg>Upgrade</button>
+                    <button class="btn" id="btnActiveResponse" style="background:var(--solid-00897b);color:#fff;" onclick="showActiveResponseModal()"><svg class="icon"><use href="#icon-bell"/></svg>Active Response</button>
+                    <button class="btn" id="btnCleanQueueDB" style="background:var(--solid-795548);color:#fff;" onclick="cleanQueueDBSelected()"><svg class="icon"><use href="#icon-trash"/></svg>Clean Queue DB</button>
                     <button class="btn btn-danger" id="btnDelete" onclick="deleteSelected()"><svg class="icon"><use href="#icon-trash"/></svg>Delete</button>
                 </div>
             </div>
@@ -1368,7 +1549,7 @@ HTML_TEMPLATE = '''
         <!-- Nodes Panel -->
         <div class="panel" id="nodes-panel">
             <div class="toolbar">
-                <button class="btn" style="background:#607d8b;color:#fff;" onclick="showNodeConfigDiff()" title="Compare each node's ossec.conf against the master"><svg class="icon"><use href="#icon-file-code"/></svg>Config Diff</button>
+                <button class="btn" style="background:var(--solid-607d8b);color:#fff;" onclick="showNodeConfigDiff()" title="Compare each node's ossec.conf against the master"><svg class="icon"><use href="#icon-file-code"/></svg>Config Diff</button>
                 <button class="btn btn-primary" onclick="refreshNodes()"><svg class="icon"><use href="#icon-refresh"/></svg>Refresh</button>
             </div>
             <div class="table-container">
@@ -1447,7 +1628,7 @@ HTML_TEMPLATE = '''
                     <button class="btn btn-success btn-sm" onclick="editCdbList('')"><svg class="icon"><use href="#icon-add-group"/></svg>New List</button>
                     <span id="cdbStatus" style="color:var(--text-muted);font-size:13px;"></span>
                 </span>
-                <button class="btn btn-sm" style="background:#00897b;color:#fff;margin-left:auto;" onclick="reloadClusterRuleset()" title="Apply rule changes on every cluster node without restarting"><svg class="icon"><use href="#icon-refresh"/></svg>Reload Ruleset</button>
+                <button class="btn btn-sm" style="background:var(--solid-00897b);color:#fff;margin-left:auto;" onclick="reloadClusterRuleset()" title="Apply rule changes on every cluster node without restarting"><svg class="icon"><use href="#icon-refresh"/></svg>Reload Ruleset</button>
                 <span id="rulesLogtestControls" style="display:none;">
                     <span style="color:var(--text-muted);font-size:12px;">Paste a log line and see which rule and decoder match it.</span>
                 </span>
@@ -2651,12 +2832,12 @@ HTML_TEMPLATE = '''
 
         // Distribution bar colors (dark colors for white text readability)
         const distributionColors = {
-            status: { 'active': '#2e7d32', 'disconnected': '#c62828', 'pending': '#f57c00', 'never_connected': '#616161' },
-            os: ['#1565c0', '#7b1fa2', '#c62828', '#2e7d32', '#ad1457', '#00838f', '#558b2f', '#d84315', '#4527a0', '#00695c'],
-            version: ['#1565c0', '#2e7d32', '#ef6c00', '#c62828', '#6a1b9a', '#00838f', '#558b2f', '#d84315'],
-            group: ['#1565c0', '#2e7d32', '#ef6c00', '#c62828', '#6a1b9a', '#00838f', '#558b2f', '#d84315', '#4527a0', '#00695c'],
-            node: ['#303f9f', '#00695c', '#9e9d24', '#d84315', '#5d4037'],
-            sync: { 'synced': '#2e7d32', 'not synced': '#ef6c00', 'unknown': '#616161' }
+            status: { 'active': '#2e7d32', 'disconnected': '#c62828', 'pending': 'var(--chart-f57c00)', 'never_connected': '#616161' },
+            os: ['#1565c0', '#7b1fa2', '#c62828', '#2e7d32', '#ad1457', '#00838f', 'var(--chart-558b2f)', 'var(--chart-d84315)', '#4527a0', '#00695c'],
+            version: ['#1565c0', '#2e7d32', 'var(--chart-ef6c00)', '#c62828', '#6a1b9a', '#00838f', 'var(--chart-558b2f)', 'var(--chart-d84315)'],
+            group: ['#1565c0', '#2e7d32', 'var(--chart-ef6c00)', '#c62828', '#6a1b9a', '#00838f', 'var(--chart-558b2f)', 'var(--chart-d84315)', '#4527a0', '#00695c'],
+            node: ['#303f9f', '#00695c', 'var(--chart-9e9d24)', 'var(--chart-d84315)', '#5d4037'],
+            sync: { 'synced': '#2e7d32', 'not synced': 'var(--chart-ef6c00)', 'unknown': '#616161' }
         };
 
         // Simplify OS name for display
@@ -2999,18 +3180,18 @@ HTML_TEMPLATE = '''
                     <td style="text-align:center"><a href="#" onclick="showGroupAgents('${jsName}');return false;" style="color:var(--accent);text-decoration:none;cursor:pointer;" title="View agents in this group">${g.count || 0}</a></td>
                     <td>
                         <div class="btn-wrap">
-                            <button class="btn btn-sm" style="background:#607d8b;color:#fff;" onclick="showGroupFiles('${jsName}')" title="Files in this group's directory"><svg class="icon"><use href="#icon-file"/></svg>Files</button>
+                            <button class="btn btn-sm" style="background:var(--solid-607d8b);color:#fff;" onclick="showGroupFiles('${jsName}')" title="Files in this group's directory"><svg class="icon"><use href="#icon-file"/></svg>Files</button>
                             <button class="btn btn-sm btn-success" onclick="showImportCsvModal('${jsName}')"><svg class="icon"><use href="#icon-upload"/></svg>Import CSV</button>
-                            <button class="btn btn-sm" style="background:#17a2b8;color:#fff;" onclick="exportGroupAgentsCsv('${jsName}')" ${g.count ? '' : 'disabled'}><svg class="icon"><use href="#icon-download"/></svg>Export CSV</button>
+                            <button class="btn btn-sm" style="background:var(--solid-17a2b8);color:#fff;" onclick="exportGroupAgentsCsv('${jsName}')" ${g.count ? '' : 'disabled'}><svg class="icon"><use href="#icon-download"/></svg>Export CSV</button>
                             <button class="btn btn-sm btn-warning" onclick="showMoveGroupAgentsModal('${jsName}')" ${g.count ? '' : 'disabled'}><svg class="icon"><use href="#icon-move"/></svg>Move Agents</button>
-                            <button class="btn btn-sm" style="background:#9c27b0;" onclick="setExclusiveGroup('${jsName}')" ${g.count ? '' : 'disabled'}><svg class="icon"><use href="#icon-exclusive"/></svg>Only This</button>
+                            <button class="btn btn-sm" style="background:var(--solid-9c27b0);" onclick="setExclusiveGroup('${jsName}')" ${g.count ? '' : 'disabled'}><svg class="icon"><use href="#icon-exclusive"/></svg>Only This</button>
                             <button class="btn btn-sm btn-danger" onclick="removeAllFromGroup('${jsName}')" ${g.count ? '' : 'disabled'}><svg class="icon"><use href="#icon-remove"/></svg>Remove All</button>
                         </div>
                     </td>
                     <td>
                         <div class="btn-wrap">
                             <button class="btn btn-sm btn-primary" onclick="showGroupAgentConfModal('${jsName}')"><svg class="icon"><use href="#icon-file-code"/></svg>agent.conf</button>
-                            <button class="btn btn-sm" style="background:#6f42c1;color:#fff;" onclick="showRenameGroupModal('${jsName}')"><svg class="icon"><use href="#icon-rename"/></svg>Rename</button>
+                            <button class="btn btn-sm" style="background:var(--solid-6f42c1);color:#fff;" onclick="showRenameGroupModal('${jsName}')"><svg class="icon"><use href="#icon-rename"/></svg>Rename</button>
                             <button class="btn btn-sm btn-danger" onclick="deleteGroup('${jsName}')"><svg class="icon"><use href="#icon-trash"/></svg>Delete</button>
                         </div>
                     </td>
@@ -3145,20 +3326,20 @@ HTML_TEMPLATE = '''
 
                 // Only show cluster.key download for master node
                 const clusterKeyBtn = n.type === 'master' ?
-                    `<button class="btn btn-sm" style="background:#6f42c1;color:#fff;" onclick="downloadFile('${jsName}', 'cluster-key')" title="Download cluster.key for worker nodes"><svg class="icon"><use href="#icon-download"/></svg>cluster.key</button>` : '';
+                    `<button class="btn btn-sm" style="background:var(--solid-6f42c1);color:#fff;" onclick="downloadFile('${jsName}', 'cluster-key')" title="Download cluster.key for worker nodes"><svg class="icon"><use href="#icon-download"/></svg>cluster.key</button>` : '';
 
                 // Log viewer buttons - only show if file exists
                 const logs = nodeArchives[n.name] || {};
                 // Archives buttons
                 const archivesLogBtn = logs.archives_log && logs.archives_log.exists ?
-                    `<button class="btn btn-sm" style="background:#20c997;color:#fff;" onclick="showLogViewerModal('${jsName}', 'archives', 'log')" title="View archives.log (${formatFileSize(logs.archives_log.size)})"><svg class="icon"><use href="#icon-file-text"/></svg>archives.log</button>` : '';
+                    `<button class="btn btn-sm" style="background:var(--solid-20c997);color:#fff;" onclick="showLogViewerModal('${jsName}', 'archives', 'log')" title="View archives.log (${formatFileSize(logs.archives_log.size)})"><svg class="icon"><use href="#icon-file-text"/></svg>archives.log</button>` : '';
                 const archivesJsonBtn = logs.archives_json && logs.archives_json.exists ?
-                    `<button class="btn btn-sm" style="background:#17a2b8;color:#fff;" onclick="showLogViewerModal('${jsName}', 'archives', 'json')" title="View archives.json (${formatFileSize(logs.archives_json.size)})"><svg class="icon"><use href="#icon-file-code"/></svg>archives.json</button>` : '';
+                    `<button class="btn btn-sm" style="background:var(--solid-17a2b8);color:#fff;" onclick="showLogViewerModal('${jsName}', 'archives', 'json')" title="View archives.json (${formatFileSize(logs.archives_json.size)})"><svg class="icon"><use href="#icon-file-code"/></svg>archives.json</button>` : '';
                 // Alerts buttons
                 const alertsLogBtn = logs.alerts_log && logs.alerts_log.exists ?
-                    `<button class="btn btn-sm" style="background:#e91e63;color:#fff;" onclick="showLogViewerModal('${jsName}', 'alerts', 'log')" title="View alerts.log (${formatFileSize(logs.alerts_log.size)})"><svg class="icon"><use href="#icon-bell"/></svg>alerts.log</button>` : '';
+                    `<button class="btn btn-sm" style="background:var(--solid-e91e63);color:#fff;" onclick="showLogViewerModal('${jsName}', 'alerts', 'log')" title="View alerts.log (${formatFileSize(logs.alerts_log.size)})"><svg class="icon"><use href="#icon-bell"/></svg>alerts.log</button>` : '';
                 const alertsJsonBtn = logs.alerts_json && logs.alerts_json.exists ?
-                    `<button class="btn btn-sm" style="background:#9c27b0;color:#fff;" onclick="showLogViewerModal('${jsName}', 'alerts', 'json')" title="View alerts.json (${formatFileSize(logs.alerts_json.size)})"><svg class="icon"><use href="#icon-bell"/></svg>alerts.json</button>` : '';
+                    `<button class="btn btn-sm" style="background:var(--solid-9c27b0);color:#fff;" onclick="showLogViewerModal('${jsName}', 'alerts', 'json')" title="View alerts.json (${formatFileSize(logs.alerts_json.size)})"><svg class="icon"><use href="#icon-bell"/></svg>alerts.json</button>` : '';
 
                 const isDisconnected = n.status === 'disconnected';
                 const isNotInCluster = n.status === 'not_in_cluster';
@@ -3180,14 +3361,14 @@ HTML_TEMPLATE = '''
                             <button class="btn btn-sm btn-success" onclick="restartNodeServices('${jsName}')" title="Restart Wazuh Manager services on this node"><svg class="icon"><use href="#icon-restart"/></svg>Restart</button>
                             <button class="btn btn-sm btn-warning" onclick="reconnectNodeAgents('${jsName}')" title="Force all agents on this node to reconnect"><svg class="icon"><use href="#icon-link"/></svg>Reconnect</button>
                             <button class="btn btn-sm btn-primary" onclick="showConfigModal('${jsName}')" title="View/Edit ossec.conf configuration file"><svg class="icon"><use href="#icon-file-code"/></svg>ossec.conf</button>
-                            <button class="btn btn-sm" style="background:#00897b;color:#fff;" onclick="showDaemonStats('${jsName}')" title="analysisd / remoted queue counters"><svg class="icon"><use href="#icon-stats"/></svg>Health</button>
-                            ${n.type === 'master' ? `<button class="btn btn-sm" style="background:#7b1fa2;color:#fff;" onclick="showEmailAlertsModal('${jsName}')" title="Manage email alert rules"><svg class="icon"><use href="#icon-mail"/></svg>Email Alerts</button>` : ''}
+                            <button class="btn btn-sm" style="background:var(--solid-00897b);color:#fff;" onclick="showDaemonStats('${jsName}')" title="analysisd / remoted queue counters"><svg class="icon"><use href="#icon-stats"/></svg>Health</button>
+                            ${n.type === 'master' ? `<button class="btn btn-sm" style="background:var(--solid-7b1fa2);color:#fff;" onclick="showEmailAlertsModal('${jsName}')" title="Manage email alert rules"><svg class="icon"><use href="#icon-mail"/></svg>Email Alerts</button>` : ''}
                             ${archivesLogBtn}
                             ${archivesJsonBtn}
                             ${alertsLogBtn}
                             ${alertsJsonBtn}
                             ${clusterKeyBtn}
-                            <button class="btn btn-sm" style="background:#fd7e14;color:#fff;" onclick="showUpgradeFiles('${jsName}')" title="Manage WPK upgrade files on this node"><svg class="icon"><use href="#icon-package"/></svg>WPK Files</button>
+                            <button class="btn btn-sm" style="background:var(--solid-fd7e14);color:#fff;" onclick="showUpgradeFiles('${jsName}')" title="Manage WPK upgrade files on this node"><svg class="icon"><use href="#icon-package"/></svg>WPK Files</button>
                         </div>
                     </td>
                 </tr>`;
@@ -3208,11 +3389,11 @@ HTML_TEMPLATE = '''
 
                 let statusBadge = '';
                 if (data.status === 'synced') {
-                    statusBadge = '<span style="background:#00c853;color:#fff;padding:4px 12px;border-radius:4px;font-weight:bold;">Synced</span>';
+                    statusBadge = '<span style="background:var(--solid-00c853);color:#fff;padding:4px 12px;border-radius:4px;font-weight:bold;">Synced</span>';
                 } else if (data.status === 'not_synced') {
-                    statusBadge = '<span style="background:#e94560;color:#fff;padding:4px 12px;border-radius:4px;font-weight:bold;">Not Synced</span>';
+                    statusBadge = '<span style="background:var(--solid-e94560);color:#fff;padding:4px 12px;border-radius:4px;font-weight:bold;">Not Synced</span>';
                 } else {
-                    statusBadge = '<span style="background:#888;color:#fff;padding:4px 12px;border-radius:4px;font-weight:bold;">Unknown</span>';
+                    statusBadge = '<span style="background:var(--solid-888);color:#fff;padding:4px 12px;border-radius:4px;font-weight:bold;">Unknown</span>';
                 }
 
                 let html = `
@@ -3593,7 +3774,7 @@ HTML_TEMPLATE = '''
         }
 
         function formatCleanResults(result) {
-            const dryRunLabel = result.dry_run ? ' <span class="badge" style="background:#ff9800;">DRY-RUN</span>' : '';
+            const dryRunLabel = result.dry_run ? ' <span class="badge" style="background:var(--solid-ff9800);">DRY-RUN</span>' : '';
             let html = '<div style="margin-bottom:12px;">' + escapeHtml(result.message) + dryRunLabel + '</div>';
             html += '<div style="max-height:400px;overflow-y:auto;">';
             html += '<table style="width:100%;border-collapse:collapse;">';
@@ -3706,7 +3887,7 @@ HTML_TEMPLATE = '''
             `;
             const footer = `
                 <button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Cancel</button>
-                <button class="btn" style="background:#fd7e14;color:#fff;" onclick="executeUpgrade()"><svg class="icon"><use href="#icon-upload"/></svg>Upgrade</button>
+                <button class="btn" style="background:var(--solid-fd7e14);color:#fff;" onclick="executeUpgrade()"><svg class="icon"><use href="#icon-upload"/></svg>Upgrade</button>
             `;
             showModal('Upgrade Agents', body, footer);
             loadUpgradeWpkOptions();
@@ -3863,7 +4044,7 @@ HTML_TEMPLATE = '''
                     ${html}
                 </div>
             `;
-            const footer = hasWpkError ? '<button class="btn" style="background:#fd7e14;color:#fff;" onclick="closeModal();showNodeManagement();">Go to Node Management</button>' : '';
+            const footer = hasWpkError ? '<button class="btn" style="background:var(--solid-fd7e14);color:#fff;" onclick="closeModal();showNodeManagement();">Go to Node Management</button>' : '';
             showModal('Upgrade Failed', body, footer);
         }
 
@@ -4764,7 +4945,7 @@ HTML_TEMPLATE = '''
             // Global email status
             let globalHtml = '';
             if (!emailAlertsGlobalConfigured) {
-                globalHtml = `<div style="background:#e94560;color:#fff;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px;">
+                globalHtml = `<div style="background:var(--solid-e94560);color:#fff;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px;">
                     <strong>⚠ Global Email Not Configured</strong> — Please configure email_notification, smtp_server, email_from, email_to in the &lt;global&gt; section of ossec.conf first.
                 </div>`;
             } else {
@@ -4779,7 +4960,7 @@ HTML_TEMPLATE = '''
             // Worker nodes info
             const workerNodes = validNodeNames.filter(n => n !== emailAlertsNodeName);
             const syncBtnHtml = workerNodes.length > 0
-                ? `<button class="btn btn-sm" style="background:#ff9800;color:#fff;margin-left:8px;" onclick="syncEmailAlertsToWorkers()" title="Sync current email alerts config to all worker nodes"><svg class="icon"><use href="#icon-upload"/></svg>Sync to All Workers</button>`
+                ? `<button class="btn btn-sm" style="background:var(--solid-ff9800);color:#fff;margin-left:8px;" onclick="syncEmailAlertsToWorkers()" title="Sync current email alerts config to all worker nodes"><svg class="icon"><use href="#icon-upload"/></svg>Sync to All Workers</button>`
                 : '';
 
             // Table
@@ -5847,7 +6028,7 @@ HTML_TEMPLATE = '''
                             ${versionInfo}
                         </div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                            <a href="https://documentation.wazuh.com/current/user-manual/agent/agent-management/remote-upgrading/wpk-files/wpk-list.html" target="_blank" class="btn btn-sm" style="background:#17a2b8;color:#fff;text-decoration:none;"><svg class="icon"><use href="#icon-link"/></svg>Official WPK List</a>
+                            <a href="https://documentation.wazuh.com/current/user-manual/agent/agent-management/remote-upgrading/wpk-files/wpk-list.html" target="_blank" class="btn btn-sm" style="background:var(--solid-17a2b8);color:#fff;text-decoration:none;"><svg class="icon"><use href="#icon-link"/></svg>Official WPK List</a>
                             <button class="btn btn-sm btn-success" onclick="document.getElementById('wpkFileInput').click()"><svg class="icon"><use href="#icon-upload"/></svg>Upload WPK</button>
                             <input type="file" id="wpkFileInput" accept=".wpk" style="display:none;" onchange="uploadWpkFile(this)">
                         </div>
@@ -7654,7 +7835,7 @@ HTML_TEMPLATE = '''
                 '<div>Arguments <input type="text" id="arArgs" placeholder="space separated, e.g. an IP" style="margin-left:6px;background:var(--surface);border:1px solid var(--border-1a3a6e);color:var(--text);padding:6px 10px;border-radius:4px;width:320px;"></div>';
             showModal('Active Response', body,
                 '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Cancel</button>' +
-                '<button class="btn" style="background:#00897b;color:#fff;" onclick="runActiveResponse()"><svg class="icon"><use href="#icon-bell"/></svg>Send</button>');
+                '<button class="btn" style="background:var(--solid-00897b);color:#fff;" onclick="runActiveResponse()"><svg class="icon"><use href="#icon-bell"/></svg>Send</button>');
         }
 
         async function runActiveResponse() {
@@ -10011,8 +10192,8 @@ _I18N_SCRIPT = r"""
       '.jtwz-lang-wrap.fab .jtwz-lang-fab{position:static}' +
       '.jtwz-fab-bar{position:fixed;top:14px;right:16px;z-index:9999;display:flex;gap:8px;align-items:flex-start}' +
       '.jtwz-fab-bar .jtwz-lang-wrap.fab{position:relative;top:auto;right:auto}' +
-      '#langToggle .jtwz-lang-label,#themeToggle .jtwz-lang-label{display:inline-flex;align-items:center;gap:3px;line-height:1.2}' +
-      '#langToggle .jtwz-caret,#themeToggle .jtwz-caret{font-size:9px;opacity:.8;line-height:1}' +
+      '#langToggle .jtwz-lang-label,#themeToggle .jtwz-lang-label{display:inline-flex;align-items:center;gap:4px;line-height:1.2}' +
+      '.jtwz-caret,#langToggle svg.jtwz-caret,#themeToggle svg.jtwz-caret,.jtwz-lang-fab svg.jtwz-caret{width:13px;height:13px;flex:none;display:inline-block;vertical-align:middle}' +
       '.jtwz-lang-menu{position:absolute;top:calc(100% + 6px);right:0;min-width:160px;z-index:10000;' +
       'background:var(--panel,#16213e);border:1px solid var(--accent-line,#4fc3f7);border-radius:8px;padding:6px 0;margin:0;list-style:none;' +
       'box-shadow:0 8px 24px rgba(0,0,0,.45)}' +
@@ -10031,6 +10212,11 @@ _I18N_SCRIPT = r"""
     (document.head || document.documentElement).appendChild(st);
   }
 
+  // Dropdown chevron: a drawn icon, not the 9px text triangle, which was too
+  // small to see next to the label.
+  var CARET = '<svg class="jtwz-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M6 9l6 6 6-6"/></svg>';
   var GLOBE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" ' +
     'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>' +
@@ -10110,7 +10296,7 @@ _I18N_SCRIPT = r"""
     // (icon over text, like Settings and Logout), and a separate caret became a
     // third row that pushed the button's content out of line with its neighbours
     btn.innerHTML = GLOBE + '<span class="jtwz-lang-label">' + LANG_SHORT[lang] +
-      '<span class="jtwz-caret">&#9662;</span></span>';
+      CARET + '</span>';
     var menu = document.createElement('div');
     menu.className = 'jtwz-lang-menu';
     menu.setAttribute('role', 'menu');
@@ -10167,7 +10353,7 @@ _I18N_SCRIPT = r"""
     function render() {
       var cur = window.jtwzThemePref();
       btn.innerHTML = THEME_ICON[cur] + '<span class="jtwz-lang-label">' + tr('Theme') +
-        '<span class="jtwz-caret">&#9662;</span></span>';
+        CARET + '</span>';
       THEMES.forEach(function (code) {
         items[code].setAttribute('aria-checked', code === cur ? 'true' : 'false');
         items[code].innerHTML = '<span class="jtwz-check">' + (code === cur ? '&#10003;' : '') + '</span>' +

@@ -94,7 +94,8 @@
     <group>jt_php_outdated,vulnerability,</group>
   </rule>
 
-  <!-- The same two with only the command line installed: the October 2026
+  <!-- The same two with only the command line installed, or on a macOS
+       workstation (Homebrew, MAMP: a developer's tool): the October 2026
        issues and most PHP RCEs are in request handling, so this is an update
        to schedule, not an exposed service. -->
   <rule id="133104" level="7">
@@ -102,8 +103,8 @@
     <field name="jt_php.event">^version$</field>
     <field name="jt_php.status" type="pcre2">^(?:behind_security|eol)$</field>
     <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
-    <field name="jt_php.sapi">^cli$</field>
-    <description>jt-php: $(jt_php.agent_name): command-line PHP $(jt_php.installed) is $(jt_php.status) (latest $(jt_php.latest); no web server module or FPM installed; $(jt_php.packages))</description>
+    <field name="jt_php.sapi" type="pcre2">^(?:cli|desktop)$</field>
+    <description>jt-php: $(jt_php.agent_name): PHP $(jt_php.installed) is $(jt_php.status) (latest $(jt_php.latest); $(jt_php.sapi) install, not a web server; $(jt_php.packages))</description>
     <group>jt_php_outdated,</group>
   </rule>
 

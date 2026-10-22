@@ -36,7 +36,7 @@ import sys
 import time
 import urllib.request
 
-VERSION = '1.0'
+VERSION = '1.0.2'
 PROG = 'jt-php-versions'
 LOCATION = 'jt-php'
 PHPNET = 'https://www.php.net/releases/'
@@ -214,7 +214,7 @@ def local_node(wazuh):
 
 
 def inventory(wdb, node):
-    agents = wdb_query(wdb, 'global sql SELECT id, name, ip, node_name, connection_status FROM agent')
+    agents = wdb_query(wdb, 'global sql SELECT id, name, ip, node_name, connection_status, os_platform FROM agent')
     out = {}
     for a in agents:
         aid = int(a.get('id', -1))
@@ -232,7 +232,8 @@ def inventory(wdb, node):
         pkgs = [r for r in rows if RUNTIME.match(r.get('name') or '') and vkey(r.get('version'))]
         if pkgs:
             out['%03d' % aid] = {'name': a.get('name') or '', 'ip': a.get('ip') or 'any',
-                                 'status': a.get('connection_status') or '', 'packages': pkgs}
+                                 'status': a.get('connection_status') or '', 'packages': pkgs,
+                                 'platform': (a.get('os_platform') or '').lower()}
     return out
 
 
@@ -274,7 +275,9 @@ def findings(inv):
                 'package_version': g['versions'][installed],
                 'packages': ','.join(sorted(g['packages']))[:300],
                 'packager': ','.join(sorted(g['packager'])),
-                'sapi': sapi(g['packages']),
+                # PHP on a macOS workstation (Homebrew, MAMP) is a developer's tool,
+                # not a server other machines reach
+                'sapi': 'desktop' if agent.get('platform') == 'darwin' else sapi(g['packages']),
                 'oldest': min(g['versions'], key=vkey) if len(g['versions']) > 1 else ''}
     return found
 

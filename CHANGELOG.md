@@ -4,6 +4,19 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.20.2 (2026-10-22)
+
+- **Light theme, second pass.** Calmer and readable: a neutral grey page with white,
+  bordered panels; one blue accent; secondary buttons as outline buttons with coloured
+  labels (the Groups tab no longer shows eight solid colour blocks per row), solid colour
+  only for a toolbar's or dialog's main action; the Login button is dark blue with white
+  text; soft status pills with dark text; plain tabs with an underline; grey table
+  headers; disabled buttons grey instead of faded. Every changed text/fill pair is at least
+  4.5:1 and a test checks all of them. The dark theme is unchanged. The language and theme
+  menus show a larger drawn arrow instead of a 9-pixel text triangle.
+- **jt-php 1.0.2:** PHP on a macOS workstation (Homebrew, MAMP) is treated as a
+  developer's tool: an outdated or unsupported version there is level 7, not level 12.
+
 ## v1.20.1 (2026-10-22)
 
 - **jt-php 1.0.1: version alerts now reach the console.** 1.0 wrote each finding into

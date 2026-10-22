@@ -2531,6 +2531,82 @@ class TestThemes(unittest.TestCase):
                 with self.subTest(fg=fg, bg=bg):
                     self.assertGreaterEqual(ratio, 4.5, '%s on %s is %.2f:1' % (fg, bg, ratio))
 
+    def _light_rules(self):
+        """(selector, declarations) for every rule scoped to the light theme."""
+        css = self.head[self.head.index('/* ---- Light theme components'):]
+        css = re.sub(r'/\*.*?\*/', '', css, flags=re.S)
+        for m in re.finditer(r'([^{}]+)\{([^{}]*)\}', css):
+            sel = ' '.join(m.group(1).split())
+            if sel.startswith('html[data-theme="light"]'):
+                yield sel, m.group(2)
+
+    @staticmethod
+    def _decl(decls, prop):
+        m = re.search(r'(?:^|;)\s*%s\s*:\s*(#[0-9a-fA-F]{3,6})\b' % prop, decls)
+        return m.group(1) if m else None
+
+    def test_light_buttons_and_pills_meet_wcag_aa(self):
+        """Every fill/text pair the light theme sets, and every coloured outline
+        label on the white (and hover grey) button face, is at least 4.5:1."""
+        checked = 0
+        for sel, decls in self._light_rules():
+            fg = self._decl(decls, 'color')
+            bg = self._decl(decls, 'background') or self._decl(decls, 'background-color')
+            if not fg:
+                continue
+            if bg:
+                pairs = [bg]
+            elif '.btn' in sel or '--solid-' in sel or '.rules-pagination' in sel:
+                pairs = ['#ffffff', '#f3f4f6']    # outline button face and its hover
+            else:
+                pairs = ['#ffffff', '#f6f8fa']    # text on a panel or a grey surface
+            for back in pairs:
+                ratio = self._contrast(fg, back)
+                checked += 1
+                with self.subTest(selector=sel[:90], fg=fg, bg=back):
+                    self.assertGreaterEqual(ratio, 4.5, '%.2f:1' % ratio)
+        self.assertGreater(checked, 60)
+
+    def test_light_fills_from_inline_styles_meet_wcag_aa(self):
+        """Inline fills (badges, banners) use --solid-* tokens; the light fill and the
+        text colour the light theme gives them must reach 4.5:1. Chart segments
+        carry white labels."""
+        rules = dict(self._light_rules())
+        solids = [k for k in self.light if k.startswith('--solid-')]
+        self.assertGreater(len(solids), 10)
+        for tok in solids:
+            sel = 'html[data-theme="light"] [style*="var(%s)"]' % tok
+            self.assertIn(sel, rules, tok)
+            fg = self._decl(rules[sel], 'color')
+            for back in (self.light[tok], '#ffffff', '#f3f4f6'):
+                with self.subTest(token=tok, bg=back):
+                    self.assertGreaterEqual(self._contrast(fg, back), 4.5)
+        for tok in [k for k in self.light if k.startswith('--chart-')]:
+            with self.subTest(token=tok):
+                self.assertGreaterEqual(self._contrast('#ffffff', self.light[tok]), 4.5)
+        for tok in solids + [k for k in self.light if k.startswith('--chart-')]:
+            self.assertEqual(self.dark[tok], '#' + tok.split('-')[-1], 'dark value must stay the original')
+
+    def test_saturated_fills_with_text_are_restyled_in_light(self):
+        """The bright fills of the dark theme (white text on #00c853 and similar)
+        are below 4.5:1 on the light page; each such class has a light rule."""
+        selectors = ' '.join(sel for sel, _ in self._light_rules())
+        for cls in ('.btn-primary', '.btn-success', '.btn-danger', '.btn-warning', '.btn-login',
+                    '.status-active', '.status-disconnected', '.status-pending', '.status-never',
+                    '.badge-master', '.badge-worker', '.badge-disconnected', '.badge-not-in-cluster',
+                    '.rule-level.high', '.rule-level.medium', '.rule-level.low', '.rule-level.zero',
+                    '.rule-if-group-badge', '.rule-custom-badge', '.rule-type-badge.custom',
+                    '.rule-type-badge.pack-installed', '.rule-type-badge.pack-update',
+                    '.rule-copy-btn.copied', '.filter-badge', '.connection-error .retry-btn', '.btn-logout',
+                    '.toast.success', '.toast.error', '.toast.info', '.toast.warning', '.btn:disabled'):
+            with self.subTest(cls=cls):
+                self.assertIn('html[data-theme="light"] ' + cls, selectors)
+        # no inline style may use a raw saturated fill: it would bypass the light theme
+        for name in ('HTML_TEMPLATE', 'LOGIN_TEMPLATE'):
+            raw = re.findall(r'style="[^"]*?background(?:-color)?:\s*(#[0-9a-fA-F]{3,6})\b(?![0-9a-fA-F])',
+                             getattr(web_ui, name))
+            self.assertEqual(sorted(set(raw)), [], name)
+
     def test_dark_values_are_the_original_colours(self):
         """The dark theme is the look the tool always had; spot-check the main ones."""
         expect = {'--bg': '#1a1a2e', '--panel': '#16213e', '--surface': '#0f3460',

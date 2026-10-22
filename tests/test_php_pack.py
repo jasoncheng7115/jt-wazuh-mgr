@@ -92,6 +92,13 @@ class RuntimePackages(unittest.TestCase):
         self.assertEqual(jp.sapi({'php83'}), 'web')          # FreeBSD core package carries CGI and FPM
         self.assertEqual(jp.sapi({'php'}), 'web')
 
+    def test_php_on_a_mac_is_a_desktop_install(self):
+        mac = {'039': {'name': 'mac1', 'ip': '10.0.0.9', 'status': 'active', 'platform': 'darwin',
+                       'packages': [pkg('php', '8.5.9', 'pkg')]}}
+        self.assertEqual(jp.findings(mac)['039|8.5|upstream']['sapi'], 'desktop')
+        linux = {'005': dict(mac['039'], platform='ubuntu')}
+        self.assertEqual(jp.findings(linux)['005|8.5|upstream']['sapi'], 'web')
+
     def test_one_finding_per_branch_and_kind(self):
         found = jp.findings(inv(pkg('php8.1-fpm', '8.1.2-1ubuntu2.22'),
                                 pkg('php8.1-fpm', '8.1.34-8+ubuntu22.04.1+deb.sury.org+1'),
