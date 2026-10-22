@@ -2,7 +2,7 @@
  "id": "jt-php",
  "name": "PHP Versions, Crashes and Web Shells",
  "name_zh": "PHP 版本、異常終止與 Web Shell",
- "version": "1.0",
+ "version": "1.0.1",
  "summary": "Finds every agent whose PHP misses a php.net security release or runs a branch php.net no longer fixes, without waiting for Wazuh's CVE feed (level 12, mailed). Adds the signs exploitation leaves on a PHP host: PHP-FPM workers and PHP processes killed by SIGSEGV and similar faults, memory exhausted before any script ran, repeated crashes; php.ini or pool changes that add auto_prepend_file or allow_url_include; PHP files, .user.ini or .htaccess appearing in upload directories; shells and discovery commands started by the web server's PHP; PHP-CGI argument injection.",
  "summary_zh": "不必等 Wazuh 的 CVE 資料，直接找出 PHP 少了 php.net 安全性版本、或所在分支已不再修補的每台 agent（level 12，會寄出）。另外偵測 PHP 主機被攻擊時留下的痕跡：PHP-FPM 工作程序與 PHP 程序被 SIGSEGV 等錯誤訊號終止、在任何程式執行前就記憶體耗盡、短時間內反覆當掉；php.ini 或 pool 設定被加上 auto_prepend_file、allow_url_include；上傳目錄出現 PHP 檔、.user.ini、.htaccess；網頁伺服器的 PHP 啟動 shell 與探查指令；PHP-CGI 參數注入。",
  "rule_id_range": "133100-133199",
@@ -16,7 +16,7 @@
  ],
  "notes": [
   "Why: on 2026-10-21 php.net fixed two unauthenticated remote code execution flaws in PHP's request handling (CVE-2026-109618 and CVE-2026-109619, CVSS 9.2, PHP-FPM, mod_php, php-cgi, FrankenPHP, LiteSpeed), with no workaround. A day later Wazuh's vulnerability feed still did not know either CVE, so no host was flagged. Packages that follow php.net's versions (deb.sury.org, Remi, FreeBSD ports, Alpine, Homebrew, Windows builds) are the ones a feed matches latest. This pack compares versions instead of CVEs.",
-  "Versions: jt-php-versions.py runs on the manager every six hours. It reads the package inventory syscollector already keeps (through the local wazuh-db socket, SELECT statements only) and php.net's release list (active branches, and each branch's releases with their security tags), and writes one JSON event per agent, PHP branch and kind of package into analysisd's queue, attributed to the agent, so the alert carries the agent's name like any other. Behind a security release of a supported branch: level 12 (133102); a branch php.net no longer supports: level 12 (133103); both are mailed and repeat weekly at level 8 (133105) until fixed, and again at level 12 when a newer release appears. Only the command line installed (no FPM, CGI or server module): level 7 (133104). Behind a bug-fix release only: level 5. Updated or removed: level 3 (133109). A new php.net release: level 3 (133110).",
+  "Versions: jt-php-versions.py runs on the manager every six hours. It reads the package inventory syscollector already keeps (through the local wazuh-db socket, SELECT statements only) and php.net's release list (active branches, and each branch's releases with their security tags), and writes one JSON event per agent, PHP branch and kind of package into analysisd's queue. The events are the manager's own: analysisd drops queue events that claim an agent's identity as soon as any agent is registered (1.0 did that, and on a real manager its events never became alerts). Each description therefore starts with the host's name, and jt-alert-digest 1.12 files the alert under that host. Behind a security release of a supported branch: level 12 (133102); a branch php.net no longer supports: level 12 (133103); both are mailed and repeat weekly at level 8 (133105) until fixed, and again at level 12 when a newer release appears. Only the command line installed (no FPM, CGI or server module): level 7 (133104). Behind a bug-fix release only: level 5. Updated or removed: level 3 (133109). A new php.net release: level 3 (133110).",
   "Distribution packages: Debian, Ubuntu, RHEL and the like keep a version number and backport fixes into it (Ubuntu 22.04's 8.1.2-1ubuntu2.22 is not PHP 8.1.2), so php.net cannot say whether they are fixed. They are reported once at level 3 (133107), or level 5 when php.net no longer supports the branch (133108), and their fixes are the distribution's updates, which Wazuh's vulnerability detection follows from the distribution's advisories. deb.sury.org and Remi packages carry php.net's versions and are compared with php.net.",
   "Cluster: each node keeps the inventory of the agents connected to it, so the script runs on every node and takes only the agents whose node name is its own (agent 000, the node itself, always). Install the pack on the master and copy the script and its cron line to every worker, as for jt-alert-digest. php.net unreachable: the last data is used for 48 hours (level 5 when it starts, 133111), then level 10 every three days (133112); the inventory unreadable: level 10 (133113).",
   "Runtime: PHP-FPM's own log had no decoder in Wazuh 4.14; a worker killed by SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT or SIGTRAP is level 10 (133122/133123), SIGTERM/SIGKILL/SIGQUIT (restarts, request timeouts) level 3. The kernel's segfault line for a PHP process, or for a web server crashing inside libphp, is level 10 (133126; the built-in 1010 says level 5), and a general protection fault or invalid opcode in one, which otherwise ends at the built-in 1002 (level 2), is level 10 (133127). Three crashes on one host in 10 minutes: level 12, mailed (133128). Apache's own 'exit signal Segmentation fault' is already the built-in 30104/30304 (level 12).",
@@ -29,7 +29,7 @@
  ],
  "notes_zh": [
   "為什麼需要：2026-10-21 php.net 修正了 PHP 處理請求時兩個不需登入就能遠端執行程式碼的漏洞（CVE-2026-109618、CVE-2026-109619，CVSS 9.2，影響 PHP-FPM、mod_php、php-cgi、FrankenPHP、LiteSpeed），沒有替代的緩解方式。過了一天，Wazuh 的弱點資料仍然沒有收錄這兩個 CVE，所以沒有任何主機被標出來。而跟著 php.net 版本號發行的套件（deb.sury.org、Remi、FreeBSD ports、Alpine、Homebrew、Windows 版）正是弱點資料最晚比對得到的。本套件改成比對版本，不比對 CVE。",
-  "版本：jt-php-versions.py 每六小時在 manager 上執行一次。它讀取 syscollector 本來就保存的套件清單（透過本機 wazuh-db socket，只用 SELECT）與 php.net 的發行清單（仍受支援的分支，以及每個分支每個版本的 security 標記），每台 agent、每個 PHP 分支、每種套件來源寫一筆 JSON 事件到 analysisd 的佇列，並歸屬到該 agent，所以告警和其他告警一樣帶著 agent 名稱。少了受支援分支的安全性版本：level 12（133102）；php.net 已不再支援的分支：level 12（133103）；兩者都會寄出，修好之前每週以 level 8 提醒（133105），出現更新的版本時再以 level 12 告警。只裝了命令列（沒有 FPM、CGI 或伺服器模組）：level 7（133104）。只少了錯誤修正版本：level 5。已更新或已移除：level 3（133109）。php.net 發行新版本：level 3（133110）。",
+  "版本：jt-php-versions.py 每六小時在 manager 上執行一次。它讀取 syscollector 本來就保存的套件清單（透過本機 wazuh-db socket，只用 SELECT）與 php.net 的發行清單（仍受支援的分支，以及每個分支每個版本的 security 標記），每台 agent、每個 PHP 分支、每種套件來源寫一筆 JSON 事件到 analysisd 的佇列。事件屬於 manager 自己：只要有任何 agent 已登記，analysisd 就會丟掉佇列中宣稱來自某個 agent 的事件（1.0 就是這樣寫，在實際的 manager 上一筆告警都不會產生）。所以每則描述都以主機名稱開頭，jt-alert-digest 1.12 也會把告警歸在該主機底下。少了受支援分支的安全性版本：level 12（133102）；php.net 已不再支援的分支：level 12（133103）；兩者都會寄出，修好之前每週以 level 8 提醒（133105），出現更新的版本時再以 level 12 告警。只裝了命令列（沒有 FPM、CGI 或伺服器模組）：level 7（133104）。只少了錯誤修正版本：level 5。已更新或已移除：level 3（133109）。php.net 發行新版本：level 3（133110）。",
   "發行版套件：Debian、Ubuntu、RHEL 等會固定版本號，把修正回補進去（Ubuntu 22.04 的 8.1.2-1ubuntu2.22 不是 PHP 8.1.2），php.net 無從判斷它們是否已修補。這類套件只回報一次 level 3（133107），php.net 已不支援該分支時為 level 5（133108）；它們的修補是發行版的更新，Wazuh 的弱點偵測會依發行版公告追蹤。deb.sury.org 與 Remi 的套件沿用 php.net 的版本號，所以和 php.net 比對。",
   "叢集：每個節點保存連到自己的 agent 的套件清單，所以腳本要在每個節點執行，只處理節點名稱是自己的 agent（agent 000，也就是節點本身，一律處理）。在 master 安裝套件，再把腳本與排程複製到每個 worker，和 jt-alert-digest 一樣。php.net 連不上時沿用上一份資料 48 小時（開始時 level 5，133111），之後每三天 level 10（133112）；讀不到套件清單：level 10（133113）。",
   "執行時：Wazuh 4.14 沒有 PHP-FPM 自身記錄的解碼器；工作程序被 SIGSEGV、SIGBUS、SIGILL、SIGFPE、SIGABRT 或 SIGTRAP 終止為 level 10（133122／133123），SIGTERM／SIGKILL／SIGQUIT（重啟、請求逾時）為 level 3。核心記錄 PHP 程序 segfault，或網頁伺服器在 libphp 裡當掉，為 level 10（133126；內建 1010 只有 level 5）；PHP 程序的 general protection fault、invalid opcode 原本只到內建 1002（level 2），這裡為 level 10（133127）。同一台主機 10 分鐘內當掉 3 次：level 12，會寄出（133128）。Apache 自己的「exit signal Segmentation fault」已由內建 30104／30304（level 12）處理。",
@@ -51,14 +51,14 @@
    "type": "rule",
    "name": "zz-133100-jt_php_rules.xml",
    "dest": "etc/rules/zz-133100-jt_php_rules.xml",
-   "sha256": "ee078ca4c37138566c75fd51754c8055ad4ca14ca36fe1096eb805c24b18ff0c"
+   "sha256": "6b4252b3bc5c4a43585f5abff71da321aa88dc9438dfb904b465697e5c950202"
   }
  ],
  "scripts": [
   {
    "name": "jt-php-versions.py",
    "dest": "etc/jt-packs/bin/jt-php-versions.py",
-   "sha256": "a3c72c1adb08417bb3172e12ef92479bb0d362a82f044258a90ba068d37bfdca",
+   "sha256": "681a4d69cbf9e229aa8e6da24ca1dfb96fc4905680dd2de1a219bbee459250bb",
    "cron": "41 */6 * * *",
    "args": "--wazuh-path {wazuh_path}",
    "description": "Compares the PHP that syscollector found on each agent of this node with php.net's releases and reports outdated and unsupported versions to the manager"

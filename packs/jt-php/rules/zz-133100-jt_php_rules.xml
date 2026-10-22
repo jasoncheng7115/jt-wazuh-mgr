@@ -8,8 +8,11 @@
 
     133100-133119  versions: jt-php-versions.py on the manager compares the
                    PHP that syscollector found on every agent with php.net's
-                   release list and writes JSON events (location jt-php),
-                   attributed to the agent. No CVE feed needed.
+                   release list and writes JSON events (location jt-php). The
+                   alerts belong to the manager and name the host in
+                   jt_php.agent_name: analysisd drops queue events that claim
+                   an agent's identity once agents are registered. No CVE feed
+                   needed.
     133120-133139  runtime: PHP-FPM workers killed by SIGSEGV/SIGBUS/..., the
                    kernel's segfault and trap lines for PHP processes, and
                    "Allowed memory size exhausted ... in Unknown on line 0",
@@ -55,7 +58,7 @@
     <if_sid>133100</if_sid>
     <field name="jt_php.event">^version$</field>
     <field name="jt_php.status">^current$</field>
-    <description>jt-php: PHP $(jt_php.installed) is the latest release of branch $(jt_php.branch) ($(jt_php.packages))</description>
+    <description>jt-php: $(jt_php.agent_name): PHP $(jt_php.installed) is the latest release of branch $(jt_php.branch) ($(jt_php.packages))</description>
   </rule>
 
   <!-- Behind a security release of a supported branch, on a package that
@@ -67,7 +70,7 @@
     <field name="jt_php.status">^behind_security$</field>
     <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
     <field name="jt_php.sapi">^web$</field>
-    <description>[HIGH] jt-php: PHP $(jt_php.installed) is missing security release $(jt_php.latest) ($(jt_php.security_releases) security releases behind; $(jt_php.packages), $(jt_php.packager))</description>
+    <description>[HIGH] jt-php: $(jt_php.agent_name): PHP $(jt_php.installed) is missing security release $(jt_php.latest) ($(jt_php.security_releases) security releases behind; $(jt_php.packages), $(jt_php.packager))</description>
     <options>alert_by_email</options>
     <mitre>
       <id>T1190</id>
@@ -83,7 +86,7 @@
     <field name="jt_php.status">^eol$</field>
     <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
     <field name="jt_php.sapi">^web$</field>
-    <description>[HIGH] jt-php: PHP branch $(jt_php.branch) ($(jt_php.installed)) no longer receives security fixes from php.net ($(jt_php.packages), $(jt_php.packager))</description>
+    <description>[HIGH] jt-php: $(jt_php.agent_name): PHP branch $(jt_php.branch) ($(jt_php.installed)) no longer receives security fixes from php.net ($(jt_php.packages), $(jt_php.packager))</description>
     <options>alert_by_email</options>
     <mitre>
       <id>T1190</id>
@@ -100,7 +103,7 @@
     <field name="jt_php.status" type="pcre2">^(?:behind_security|eol)$</field>
     <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
     <field name="jt_php.sapi">^cli$</field>
-    <description>jt-php: command-line PHP $(jt_php.installed) is $(jt_php.status) (latest $(jt_php.latest); no web server module or FPM installed; $(jt_php.packages))</description>
+    <description>jt-php: $(jt_php.agent_name): command-line PHP $(jt_php.installed) is $(jt_php.status) (latest $(jt_php.latest); no web server module or FPM installed; $(jt_php.packages))</description>
     <group>jt_php_outdated,</group>
   </rule>
 
@@ -108,7 +111,7 @@
     <if_sid>133100</if_sid>
     <field name="jt_php.event">^version$</field>
     <field name="jt_php.change">^reminder$</field>
-    <description>jt-php: reminder, PHP $(jt_php.installed) is still $(jt_php.status) since $(jt_php.since) (latest $(jt_php.latest); $(jt_php.packages))</description>
+    <description>jt-php: $(jt_php.agent_name): reminder, PHP $(jt_php.installed) is still $(jt_php.status) since $(jt_php.since) (latest $(jt_php.latest); $(jt_php.packages))</description>
     <group>jt_php_outdated,</group>
   </rule>
 
@@ -117,7 +120,7 @@
     <field name="jt_php.event">^version$</field>
     <field name="jt_php.status">^behind$</field>
     <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
-    <description>jt-php: PHP $(jt_php.installed) is behind bug-fix release $(jt_php.latest) (no security release missed; $(jt_php.packages))</description>
+    <description>jt-php: $(jt_php.agent_name): PHP $(jt_php.installed) is behind bug-fix release $(jt_php.latest) (no security release missed; $(jt_php.packages))</description>
   </rule>
 
   <!-- Distribution packages (Debian, Ubuntu, RHEL...) keep their version and
@@ -128,7 +131,7 @@
     <field name="jt_php.event">^version$</field>
     <field name="jt_php.status">^distro$</field>
     <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
-    <description>jt-php: PHP $(jt_php.installed) from the distribution ($(jt_php.packager)); fixes come as distribution updates ($(jt_php.packages))</description>
+    <description>jt-php: $(jt_php.agent_name): PHP $(jt_php.installed) from the distribution ($(jt_php.packager)); fixes come as distribution updates ($(jt_php.packages))</description>
   </rule>
 
   <rule id="133108" level="5">
@@ -136,14 +139,14 @@
     <field name="jt_php.event">^version$</field>
     <field name="jt_php.status">^distro_eol$</field>
     <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
-    <description>jt-php: distribution PHP $(jt_php.installed) is on branch $(jt_php.branch), which php.net no longer supports; fixes depend on the distribution's own long-term support ($(jt_php.packager))</description>
+    <description>jt-php: $(jt_php.agent_name): distribution PHP $(jt_php.installed) is on branch $(jt_php.branch), which php.net no longer supports; fixes depend on the distribution's own long-term support ($(jt_php.packager))</description>
   </rule>
 
   <rule id="133109" level="3">
     <if_sid>133100</if_sid>
     <field name="jt_php.event">^version$</field>
     <field name="jt_php.change">^fixed$</field>
-    <description>jt-php: PHP branch $(jt_php.branch) is no longer $(jt_php.previous_status) (now $(jt_php.status) $(jt_php.installed))</description>
+    <description>jt-php: $(jt_php.agent_name): PHP branch $(jt_php.branch) is no longer $(jt_php.previous_status) (now $(jt_php.status) $(jt_php.installed))</description>
   </rule>
 
   <rule id="133110" level="3">

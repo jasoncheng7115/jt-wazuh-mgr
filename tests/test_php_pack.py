@@ -1,4 +1,4 @@
-"""jt-php 1.0: the version checker's logic, offline, and the rule patterns that
+"""jt-php 1.0.1: the version checker's logic, offline, and the rule patterns that
 the sandbox cannot replay (Windows eventchannel events).
 
 Whether a host alerts, alerts again next week, or is reported fixed is decided
@@ -250,7 +250,10 @@ class Plumbing(unittest.TestCase):
         self.assertFalse(any('agent 006' in q or 'agent 007' in q for q in queries))
         self.assertTrue(all(q.startswith(('global sql SELECT', 'agent')) and ' sql SELECT ' in q for q in queries))
 
-    def test_events_are_attributed_to_the_agent(self):
+    def test_events_are_the_managers_own(self):
+        """analysisd drops queue events written as "[id] (name) ip->location"
+        once any agent is registered (4.14.9, measured), so every event is the
+        manager's and names the agent in its fields."""
         sent = []
 
         class FakeSocket:
@@ -261,12 +264,32 @@ class Plumbing(unittest.TestCase):
         orig = jp.socket.socket
         jp.socket.socket = FakeSocket
         try:
-            jp.send('/q', {'event': 'version'}, {'agent_id': '005', 'agent_name': 'web1', 'agent_ip': '10.0.0.5'})
-            jp.send('/q', {'event': 'status'})
+            jp.send('/q', {'event': 'version', 'agent_id': '005', 'agent_name': 'web1'})
         finally:
             jp.socket.socket = orig
-        self.assertEqual(sent[0], '1:[005] (web1) 10.0.0.5->jt-php:{"jt_php":{"event":"version"}}')
-        self.assertEqual(sent[1], '1:jt-php:{"jt_php":{"event":"status"}}')
+        self.assertEqual(sent, ['1:jt-php:{"jt_php":{"agent_id":"005","agent_name":"web1","event":"version"}}'])
+
+
+class DigestHost(unittest.TestCase):
+    """The version events are the manager's alerts; jt-alert-digest 1.12 files
+    them under the host the event names."""
+
+    def test_digest_groups_by_the_reported_host(self):
+        spec = importlib.util.spec_from_file_location(
+            'jt_alert_digest_for_php', os.path.join(ROOT, 'packs', 'jt-alert-digest', 'scripts', 'jt-alert-digest.py'))
+        dg = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(dg)
+        groups = {}
+        rule = {'id': '133102', 'level': 12, 'description': '[HIGH] jt-php: web1: PHP 8.2.29 is missing security release 8.2.35'}
+        for name, aid in (('web1', '005'), ('web2', '006')):
+            dg.add_alert(groups, {'agent': {'id': '000', 'name': 'manager'}, 'rule': rule, 'location': 'jt-php',
+                                  'data': {'jt_php': {'agent_name': name, 'agent_id': aid, 'agent_ip': '10.0.0.5'}}},
+                         rule, 12)
+        other = {'id': '5715', 'level': 3, 'description': 'sshd: authentication success.'}
+        dg.add_alert(groups, {'agent': {'id': '005', 'name': 'web1'}, 'rule': other,
+                              'data': {'jt_php': {'agent_name': 'not-this'}}}, other, 3)
+        self.assertEqual(sorted(groups), [('133102', 'web1'), ('133102', 'web2'), ('5715', 'web1')])
+        self.assertEqual(groups[('133102', 'web2')]['agent_id'], '006')
 
 
 class WindowsRules(unittest.TestCase):

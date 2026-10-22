@@ -4,6 +4,15 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.20.1 (2026-10-22)
+
+- **jt-php 1.0.1: version alerts now reach the console.** 1.0 wrote each finding into
+  analysisd's queue as if the agent had sent it ("[id] (name) ip->jt-php"); a test
+  manager without agents accepted that, but analysisd drops such events as soon as any
+  agent is registered, so on a real manager the first run produced no alert. The events
+  are now the manager's own, every description starts with the host's name, and
+  **jt-alert-digest 1.12** files these alerts under the host they are about.
+
 ## v1.20.0 (2026-10-22)
 
 - **New pack jt-php 1.0 (133100-133199).** On 2026-10-21 php.net fixed two unauthenticated

@@ -10,8 +10,10 @@ upstream versions (deb.sury.org, Remi, FreeBSD ports, Alpine, Windows builds)
 are often matched late or not at all. This script needs no feed: it reads the
 package inventory that syscollector already keeps on this manager node and the
 release list php.net publishes, and writes one JSON event per finding into
-analysisd's queue, attributed to the agent, for the rules in
-zz-133100-jt_php_rules.xml.
+analysisd's queue for the rules in zz-133100-jt_php_rules.xml. The events are
+the manager's own (location jt-php) and name the agent in their fields:
+analysisd drops events from the local queue that claim to come from an agent
+("[id] (name) ip->location") as soon as any agent is registered (4.14.9).
 
 It only reads: the wazuh-db socket (SELECT statements) and php.net. It writes
 its state file and events. Run it on every node of a cluster: each node keeps
@@ -295,13 +297,9 @@ def save_state(path, state):
     os.replace(tmp, path)
 
 
-def send(queue, event, agent=None, dry=False):
+def send(queue, event, dry=False):
     body = json.dumps({'jt_php': event}, sort_keys=True, separators=(',', ':'))
-    if agent and agent['agent_id'] != '000':
-        loc = '[%s] (%s) %s->%s' % (agent['agent_id'], agent['agent_name'], agent['agent_ip'] or 'any', LOCATION)
-    else:
-        loc = LOCATION
-    msg = '1:%s:%s' % (loc, body)
+    msg = '1:%s:%s' % (LOCATION, body)
     if dry:
         print(msg)
         return
@@ -355,12 +353,11 @@ def evaluate(found, releases, previous, now):
     for key, before in sorted(previous.items()):
         if key not in found and before.get('status') in ('behind_security', 'eol', 'behind', 'distro_eol'):
             aid, br, kind = key.split('|')
-            agent = {'agent_id': aid, 'agent_name': before.get('agent_name') or '', 'agent_ip': before.get('agent_ip') or 'any'}
             events.append(({'event': 'version', 'change': 'fixed', 'status': 'removed', 'branch': br,
-                            'kind': kind, 'agent_id': aid, 'agent_name': agent['agent_name'],
+                            'kind': kind, 'agent_id': aid, 'agent_name': before.get('agent_name') or '',
+                            'agent_ip': before.get('agent_ip') or '',
                             'previous_status': before.get('status'),
-                            'installed': before.get('fingerprint', '').split('|')[1]},
-                           agent if agent['agent_name'] else None))
+                            'installed': before.get('fingerprint', '').split('|')[1]}, None))
     return events, state
 
 
@@ -471,7 +468,7 @@ def main(argv=None):
     state['version'] = VERSION
     for ev, agent in events:
         try:
-            send(queue, ev, agent or (found_agent(ev, inv)), dry=args.dry_run)
+            send(queue, ev, dry=args.dry_run)
         except OSError as exc:
             log('cannot write to the analysisd queue: %s' % exc)
             return 2
@@ -479,14 +476,6 @@ def main(argv=None):
         save_state(state_path, state)
     log('%d agents with PHP, %d findings, %d events' % (len(inv), len(found), len(events)))
     return 0
-
-
-def found_agent(ev, inv):
-    aid = ev.get('agent_id')
-    if aid and aid in inv:
-        a = inv[aid]
-        return {'agent_id': aid, 'agent_name': a['name'], 'agent_ip': a['ip']}
-    return None
 
 
 if __name__ == '__main__':

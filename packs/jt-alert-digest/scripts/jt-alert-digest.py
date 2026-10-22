@@ -75,7 +75,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.11"
+VERSION = "1.12"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -1011,8 +1011,21 @@ def _score(value):
         return None
 
 
-def add_alert(groups, alert, rule, level):
+def reported_agent(alert):
+    """The agent an alert is about. Usually the agent that sent it; a manager
+    script that reports on agents (jt-php's version check) writes events as the
+    manager, because analysisd drops queue events that claim an agent's
+    identity, and names the agent in its own fields instead."""
     agent = alert.get("agent") or {}
+    report = (alert.get("data") or {}).get("jt_php")
+    if isinstance(report, dict) and report.get("agent_name") and str(agent.get("id", "")) == "000":
+        return {"id": str(report.get("agent_id") or ""), "name": str(report["agent_name"]),
+                "ip": str(report.get("agent_ip") or "")}
+    return agent
+
+
+def add_alert(groups, alert, rule, level):
+    agent = reported_agent(alert)
     key = (str(rule.get("id", "?")), str(agent.get("name", "?")))
     group = groups.get(key)
     if group is None:

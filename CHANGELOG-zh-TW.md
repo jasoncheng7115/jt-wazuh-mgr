@@ -4,6 +4,13 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.20.1（2026-10-22）
+
+- **jt-php 1.0.1：版本告警現在會出現在主控台。** 1.0 把每筆結果以「agent 送來的事件」形式（「[id] (名稱) ip->jt-php」）
+  寫進 analysisd 的佇列；沒有 agent 的測試 manager 會接受，但只要有任何 agent 已登記，analysisd 就會丟掉這類事件，
+  所以在實際的 manager 上第一次執行沒有產生任何告警。現在事件屬於 manager 自己，每則描述都以主機名稱開頭，
+  **jt-alert-digest 1.12** 也會把這些告警歸在它們所指的主機底下。
+
 ## v1.20.0（2026-10-22）
 
 - **新套件 jt-php 1.0（133100-133199）。** 2026-10-21 php.net 修正了 PHP 處理請求時兩個不需登入就能遠端執行程式碼
