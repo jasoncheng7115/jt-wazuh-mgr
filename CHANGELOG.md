@@ -4,6 +4,16 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.20.3 (2026-10-22)
+
+- **Light theme, softer.** The page is a muted grey and the panels off-white instead of
+  white, with tables, stat boxes and code areas a step darker, so long sessions are easier
+  on the eyes; no large surface is pure white any more. Action buttons are solid colour
+  blocks again, each in its usual colour but in deeper shades with white text (amber keeps
+  dark text); disabled ones are a pale tint of their colour with a grey label. Every pair
+  is at least 4.5:1 and tested. Toolbar controls in a row now share one height (36 px) in
+  both themes; the Register Agents button was a small chip next to full-size controls.
+
 ## v1.20.2 (2026-10-22)
 
 - **Light theme, second pass.** Calmer and readable: a neutral grey page with white,

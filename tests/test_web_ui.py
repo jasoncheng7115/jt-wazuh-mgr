@@ -2507,7 +2507,9 @@ class TestThemes(unittest.TestCase):
         used = set()
         for src in (web_ui.HTML_TEMPLATE, web_ui.LOGIN_TEMPLATE):
             used |= set(re.findall(r'var\((--[\w-]+)', src))
-        self.assertEqual(sorted(used - set(self.dark)), [])
+        # palette tokens, plus the --btn-* variables the light button rules set
+        defined = set(self.dark) | set(re.findall(r'(--[\w-]+)\s*:', self.head))
+        self.assertEqual(sorted(used - defined), [])
 
     def test_dark_surfaces_are_not_hard_coded_any_more(self):
         """A new rule written with the dark page colour stays dark on the light page."""
@@ -2522,7 +2524,7 @@ class TestThemes(unittest.TestCase):
                     self.assertIsNone(m, m and tpl[max(0, m.start() - 80):m.end() + 20])
 
     def test_light_text_meets_wcag_aa(self):
-        backgrounds = ('--bg', '--panel', '--surface', '--sunken')
+        backgrounds = ('--bg', '--panel', '--surface', '--sunken', '--hover')
         texts = ('--text', '--text-dim', '--text-muted', '--text-faint', '--accent',
                  '--danger', '--warning', '--success', '--info', '--orange')
         for fg in texts:
@@ -2557,9 +2559,9 @@ class TestThemes(unittest.TestCase):
             if bg:
                 pairs = [bg]
             elif '.btn' in sel or '--solid-' in sel or '.rules-pagination' in sel:
-                pairs = ['#ffffff', '#f3f4f6']    # outline button face and its hover
+                pairs = [self.BTN_FACE, self.BTN_HOVER]    # outline button face and its hover
             else:
-                pairs = ['#ffffff', '#f6f8fa']    # text on a panel or a grey surface
+                pairs = [self.light['--panel'], self.light['--surface'], self.ROW_HOVER]
             for back in pairs:
                 ratio = self._contrast(fg, back)
                 checked += 1
@@ -2567,20 +2569,55 @@ class TestThemes(unittest.TestCase):
                     self.assertGreaterEqual(ratio, 4.5, '%.2f:1' % ratio)
         self.assertGreater(checked, 60)
 
+    # the light theme's outline-button face, its hover, the row hover, and the
+    # label of a disabled button
+    BTN_FACE, BTN_HOVER, ROW_HOVER, DISABLED_INK = '#f5f7fa', '#e2e7ed', '#ebeff3', '#57606a'
+
+    def _btn_rules(self):
+        for sel, decls in self._light_rules():
+            if re.search(r'--btn-fill\s*:', decls):
+                v = dict(re.findall(r'(--btn-[a-z]+)\s*:\s*(#[0-9a-fA-F]{6})', decls))
+                yield sel, v
+
+    def test_light_buttons_meet_wcag_aa(self):
+        """Every button colour set: label on the fill and on the hover fill, and the
+        grey label of a disabled button on that button's pale tint."""
+        rules = list(self._btn_rules())
+        self.assertGreater(len(rules), 15)
+        for sel, v in rules:
+            for fill in ('--btn-fill', '--btn-hover'):
+                with self.subTest(selector=sel[:90], fill=fill):
+                    self.assertGreaterEqual(self._contrast(v['--btn-ink'], v[fill]), 4.5)
+            with self.subTest(selector=sel[:90], fill='disabled'):
+                self.assertGreaterEqual(self._contrast(self.DISABLED_INK, v['--btn-tint']), 4.5)
+        disabled = [d for s_, d in self._light_rules() if ':disabled' in s_ and '.btn' in s_]
+        self.assertTrue(any(self.DISABLED_INK in d for d in disabled))
+
+    def test_light_has_no_pure_white_surface(self):
+        """Pure white on large areas was tiring; white is only for text on fills."""
+        for tok in ('--bg', '--panel', '--surface', '--sunken', '--code-bg'):
+            self.assertNotIn(self.light[tok].lower(), ('#fff', '#ffffff'), tok)
+        for sel, decls in self._light_rules():
+            bg = self._decl(decls, 'background') or self._decl(decls, 'background-color')
+            with self.subTest(selector=sel[:90]):
+                self.assertNotIn((bg or '').lower(), ('#fff', '#ffffff'))
+
     def test_light_fills_from_inline_styles_meet_wcag_aa(self):
-        """Inline fills (badges, banners) use --solid-* tokens; the light fill and the
-        text colour the light theme gives them must reach 4.5:1. Chart segments
-        carry white labels."""
+        """Inline fills use --solid-* tokens. As a badge or banner the light theme
+        gives them a tint and dark text; as a button, a deeper fill of the same
+        hue. Chart segments carry white labels."""
         rules = dict(self._light_rules())
+        btn_rules = dict(self._btn_rules())
         solids = [k for k in self.light if k.startswith('--solid-')]
         self.assertGreater(len(solids), 10)
         for tok in solids:
-            sel = 'html[data-theme="light"] [style*="var(%s)"]' % tok
+            sel = 'html[data-theme="light"] :not(.btn)[style*="var(%s)"]' % tok
             self.assertIn(sel, rules, tok)
             fg = self._decl(rules[sel], 'color')
-            for back in (self.light[tok], '#ffffff', '#f3f4f6'):
+            for back in (self.light[tok], self.light['--panel'], self.ROW_HOVER):
                 with self.subTest(token=tok, bg=back):
                     self.assertGreaterEqual(self._contrast(fg, back), 4.5)
+            self.assertIn('html[data-theme="light"] .btn[style*="var(%s)"]' % tok, btn_rules, tok)
         for tok in [k for k in self.light if k.startswith('--chart-')]:
             with self.subTest(token=tok):
                 self.assertGreaterEqual(self._contrast('#ffffff', self.light[tok]), 4.5)
