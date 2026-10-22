@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.19.0
+# jt-wazuh-mgr v1.20.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@ A powerful web-based management tool for Wazuh agents in cluster environments.
 
 > **Recommended**: Use the Web UI as the primary interface — it's the main feature of this tool with full functionality.
 
-![Version](https://img.shields.io/badge/version-1.19.0-blue)
+![Version](https://img.shields.io/badge/version-1.20.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -39,6 +39,29 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 > curl -fsSL https://raw.githubusercontent.com/jasoncheng7115/jt-wazuh-mgr/main/install.sh | sudo bash   # upgrade
 > sudo bash /opt/jt-wazuh-mgr/uninstall.sh                                                                # uninstall
 > ```
+
+### 📦 Offline install / upgrade (no internet on the manager)
+
+On a machine **with** internet access, download the release and the Python wheels for the **manager's** Python version (`/usr/bin/python3 -V` on the manager; `3.9` below):
+
+```bash
+VER=X.Y.Z    # a release tag from https://github.com/jasoncheng7115/jt-wazuh-mgr/releases, without the "v"
+curl -fsSLO https://github.com/jasoncheng7115/jt-wazuh-mgr/archive/refs/tags/v$VER.tar.gz
+tar xzf v$VER.tar.gz
+docker run --rm -v "$PWD":/w -w /w python:3.9-slim \
+    pip download --only-binary=:all: -r jt-wazuh-mgr-$VER/requirements.txt -d jt-wazuh-mgr-$VER/wheels
+tar czf jt-wazuh-mgr-$VER-offline.tar.gz jt-wazuh-mgr-$VER
+```
+
+Copy the archive to the manager, then as root (the same two commands install and upgrade; `config.yaml` is kept):
+
+```bash
+tar xzf /root/jt-wazuh-mgr-X.Y.Z-offline.tar.gz -C /root
+bash /root/jt-wazuh-mgr-X.Y.Z/install.sh --offline
+grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py && systemctl is-active jt-wazuh-mgr
+```
+
+`--offline` never touches the network and does not need pip on the manager. The full procedure (without Docker, backup and rollback, manual steps for v1.19.0 and earlier, wheels that do not match): **[Offline install & upgrade](https://jasoncheng7115.github.io/jt-wazuh-mgr/offline-install.html)**.
 
 ---
 
@@ -95,7 +118,7 @@ The installer downloads the app to `/opt/jt-wazuh-mgr`, installs Python dependen
 - **Active response, opt-in:** a pack can offer responses (for example, block the source of a brute force). None is enabled by installing; each states what it blocks, where, and the risk. Enabling writes a marked block into `ossec.conf` on every cluster node, validates each node and rolls every node back if one rejects it; disabling restores the file exactly. The page shows each node's `white_list` and which managers still need a restart
 - **Quiet on a fresh install:** no pack needs a site list to stop flooding. A successful login alerts only when it matters (built-in administrator, public address, right after failures, or an account seen from an address for the first time); allowlists are optional tuning
 - **Account security across services:** packs tag every login attempt the same way, so one address spraying the SSO, the mail server and Nextcloud at once, or logging in right after it, is one alert rather than three unrelated ones; mail accounts get takeover chains (a new-address login followed by forwarding, password or 2FA changes), SMTP/ActiveSync spraying and mailbox harvesting
-- Ships with 27 packs: cross-service account security, web probes and exposure (sensitive files and exploit endpoints, and whether one was served), Linux host integrity (accounts, sudo, every scheduled-task location, systemd, PAM, preload, SSH keys), vulnerabilities in the images of running Docker containers (Trivy, daily, with CISA KEV), portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, a readable alert digest by mail, Zimbra, Z-Push, Proxmox VE and Ceph, Proxmox Backup Server, Proxmox Mail Gateway, OPNsense, Zenarmor, AdGuard Home, fail2ban, Keycloak, Univention Corporate Server / Samba AD, Nextcloud, LibreNMS, Synology DSM, Odoo, Jitsi Meet, Docker, jt-ipam and jt-vc-portal. Each one is checked against the vendor's documentation, the product's source code for the exact log lines, its security advisories (including CISA KEV) and MITRE ATT&CK, and is tested case by case in a throwaway Wazuh manager container
+- Ships with 28 packs: cross-service account security, web probes and exposure (sensitive files and exploit endpoints, and whether one was served), PHP (hosts missing a php.net security release or on an unsupported branch, without waiting for a CVE feed; worker crashes, configuration back doors, web shells in upload directories, commands started by PHP), Linux host integrity (accounts, sudo, every scheduled-task location, systemd, PAM, preload, SSH keys), vulnerabilities in the images of running Docker containers (Trivy, daily, with CISA KEV), portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, a readable alert digest by mail, Zimbra, Z-Push, Proxmox VE and Ceph, Proxmox Backup Server, Proxmox Mail Gateway, OPNsense, Zenarmor, AdGuard Home, fail2ban, Keycloak, Univention Corporate Server / Samba AD, Nextcloud, LibreNMS, Synology DSM, Odoo, Jitsi Meet, Docker, jt-ipam and jt-vc-portal. Each one is checked against the vendor's documentation, the product's source code for the exact log lines, its security advisories (including CISA KEV) and MITRE ATT&CK, and is tested case by case in a throwaway Wazuh manager container
 
 ### Security
 - Input validation for all parameters; command-injection and path-traversal protection

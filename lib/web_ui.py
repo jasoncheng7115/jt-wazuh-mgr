@@ -302,6 +302,235 @@ def sanitize_for_log(value: str, max_length: int = 200) -> str:
     return sanitized[:max_length]
 
 
+# Colour themes. Every colour the templates use for a surface, a border or text
+# is a CSS custom property; :root holds the dark theme (the original look, value
+# for value, so it renders exactly as before) and html[data-theme="light"]
+# remaps the same names. A token named after a hex value (--text-9aa) is a
+# rarely used shade whose dark value had to be kept exact; new code should use
+# the plain role names (--bg, --panel, --surface, --sunken, --text, --text-dim,
+# --text-muted, --accent, --border, --danger, --warning, --success).
+# Saturated fills that carry their own white or black text (buttons, status
+# pills, chart segments) are deliberately left as literals: they read the same
+# on both backgrounds.
+#
+# The script runs before any stylesheet so the stored theme is in place before
+# the first paint -- no flash of the dark page on a light setting.
+_THEME_HEAD = """
+    <script>
+    (function () {
+        var KEY = 'jtwz_theme', root = document.documentElement, mq = null;
+        try { mq = window.matchMedia('(prefers-color-scheme: light)'); } catch (e) {}
+        function valid(p) { return p === 'light' || p === 'dark' || p === 'system'; }
+        function resolve(p) { return p === 'system' ? (mq && mq.matches ? 'light' : 'dark') : p; }
+        function apply(p) {
+            root.setAttribute('data-theme-pref', p);
+            root.setAttribute('data-theme', resolve(p));
+        }
+        var pref = 'dark';
+        try { var s = localStorage.getItem(KEY); if (valid(s)) pref = s; } catch (e) {}
+        apply(pref);
+        window.jtwzThemePref = function () { var p = root.getAttribute('data-theme-pref'); return valid(p) ? p : 'dark'; };
+        window.jtwzCmTheme = function () { return root.getAttribute('data-theme') === 'light' ? 'default' : 'dracula'; };
+        window.jtwzSetTheme = function (p) {
+            if (!valid(p)) p = 'dark';
+            try { localStorage.setItem(KEY, p); } catch (e) {}
+            apply(p);
+            var cms = document.querySelectorAll('.CodeMirror');
+            for (var i = 0; i < cms.length; i++) {
+                if (cms[i].CodeMirror) cms[i].CodeMirror.setOption('theme', window.jtwzCmTheme());
+            }
+            try { window.dispatchEvent(new CustomEvent('jtwz-theme', { detail: { pref: p, theme: resolve(p) } })); } catch (e) {}
+        };
+        if (mq) {
+            var follow = function () { if (window.jtwzThemePref() === 'system') window.jtwzSetTheme('system'); };
+            if (mq.addEventListener) mq.addEventListener('change', follow); else if (mq.addListener) mq.addListener(follow);
+        }
+    })();
+    </script>
+    <style id="jtwz-theme-tokens">
+    :root {
+        --text: #eee;
+        --text-code: #e0e0e0;
+        --text-ddd: #ddd;
+        --text-ccc: #ccc;
+        --text-prose: #d8dde6;
+        --text-prose-strong: #eef;
+        --text-chip: #c8cfdc;
+        --text-pre: #cfe3ff;
+        --json-fg: #e6edf3;
+        --json-bracket: #f8f8f2;
+        --text-dim: #aaa;
+        --text-muted: #888;
+        --text-meta: #9aa3b5;
+        --text-9aa: #9aa;
+        --text-94a3b8: #94a3b8;
+        --text-9e9e9e: #9e9e9e;
+        --text-faint: #666;
+        --text-555: #555;
+        --text-comment: #6c757d;
+        --accent: #4fc3f7;
+        --accent-hover: #81d4fa;
+        --accent-5dade2: #5dade2;
+        --accent-60a5fa: #60a5fa;
+        --info-0dcaf0: #0dcaf0;
+        --info: #17a2b8;
+        --danger: #e94560;
+        --danger-ff6b6b: #ff6b6b;
+        --danger-ff7b93: #ff7b93;
+        --danger-f87171: #f87171;
+        --danger-f44336: #f44336;
+        --danger-dc3545: #dc3545;
+        --json-null: #ff5555;
+        --warning: #ffc107;
+        --warning-fbbf24: #fbbf24;
+        --json-boolean: #ffb86c;
+        --orange: #f39c12;
+        --orange-fd7e14: #fd7e14;
+        --orange-ff9800: #ff9800;
+        --success: #00c853;
+        --success-4ade80: #4ade80;
+        --success-28a745: #28a745;
+        --success-4caf50: #4caf50;
+        --success-34d399: #34d399;
+        --success-5fd47a: #5fd47a;
+        --json-string: #50fa7b;
+        --purple-c084fc: #c084fc;
+        --json-number: #bd93f9;
+        --json-key: #ff79c6;
+        --text-strong: #fff;
+        --bg: #1a1a2e;
+        --panel: #16213e;
+        --surface: #0f3460;
+        --sunken: #0a0a15;
+        --sunken-0a0a1a: #0a0a1a;
+        --sunken-0d0d1a: #0d0d1a;
+        --code-bg: #060a14;
+        --json-bg: #0d1117;
+        --tab-hover: #0f0f1a;
+        --hover-0f0f25: #0f0f25;
+        --card-0f1525: #0f1525;
+        --card-1a2332: #1a2332;
+        --tint-ok-0d2018: #0d2018;
+        --tint-ok: #1f2d1f;
+        --tint-bad: #2d1f1f;
+        --tint-warn: #2d2d1f;
+        --th-hover: #1a3a70;
+        --hover: #1a4a7a;
+        --hover-1f2a4a: #1f2a4a;
+        --hover-252545: #252545;
+        --highlight-bg: #2d4a3e;
+        --group-bg: #2d3e50;
+        --chip-bg: #333;
+        --chip-bg-hover: #444;
+        --badge-muted-bg: #555;
+        --badge-untracked-bg: #3a4a6a;
+        --border: #0f3460;
+        --border-1a3a6e: #1a3a6e;
+        --border-1a3a5c: #1a3a5c;
+        --border-23304d: #23304d;
+        --border-333: #333;
+        --border-444: #444;
+        --border-222: #222;
+        --border-3a4a6a: #3a4a6a;
+        --border-0a0a1a: #0a0a1a;
+        --accent-line: #4fc3f7;
+        --overlay: rgba(0,0,0,0.7);
+        --shadow: rgba(0,0,0,0.3);
+    }
+    html[data-theme="light"] {
+        --text: #1f2937;
+        --text-code: #1f2937;
+        --text-ddd: #334155;
+        --text-ccc: #374151;
+        --text-prose: #1f2937;
+        --text-prose-strong: #111827;
+        --text-chip: #374151;
+        --text-pre: #1e3a5f;
+        --json-fg: #24292f;
+        --json-bracket: #24292f;
+        --text-dim: #4b5563;
+        --text-muted: #59636e;
+        --text-meta: #59636e;
+        --text-9aa: #59636e;
+        --text-94a3b8: #59636e;
+        --text-9e9e9e: #59636e;
+        --text-faint: #5d6673;
+        --text-555: #5d6673;
+        --text-comment: #5d6673;
+        --accent: #0369a1;
+        --accent-hover: #075985;
+        --accent-5dade2: #1d5f8a;
+        --accent-60a5fa: #1d4ed8;
+        --info-0dcaf0: #0b6378;
+        --info: #0b6378;
+        --danger: #b91c1c;
+        --danger-ff6b6b: #b91c1c;
+        --danger-ff7b93: #b91c1c;
+        --danger-f87171: #b91c1c;
+        --danger-f44336: #b91c1c;
+        --danger-dc3545: #b91c1c;
+        --json-null: #b91c1c;
+        --warning: #7a5800;
+        --warning-fbbf24: #7a5800;
+        --json-boolean: #9a4a07;
+        --orange: #9a4a07;
+        --orange-fd7e14: #9a4a07;
+        --orange-ff9800: #9a4a07;
+        --success: #166534;
+        --success-4ade80: #166534;
+        --success-28a745: #166534;
+        --success-4caf50: #166534;
+        --success-34d399: #166534;
+        --success-5fd47a: #166534;
+        --json-string: #166534;
+        --purple-c084fc: #7e22ce;
+        --json-number: #6d28d9;
+        --json-key: #be185d;
+        --text-strong: #0f172a;
+        --bg: #f3f5f9;
+        --panel: #ffffff;
+        --surface: #e4ebf5;
+        --sunken: #eef1f6;
+        --sunken-0a0a1a: #eef1f6;
+        --sunken-0d0d1a: #e9edf3;
+        --code-bg: #f6f8fa;
+        --json-bg: #f6f8fa;
+        --tab-hover: #e4e9f1;
+        --hover-0f0f25: #e4ebf5;
+        --card-0f1525: #f8fafc;
+        --card-1a2332: #f8fafc;
+        --tint-ok-0d2018: #ecfdf3;
+        --tint-ok: #ecfdf3;
+        --tint-bad: #fdecec;
+        --tint-warn: #fdf7e3;
+        --th-hover: #d3deee;
+        --hover: #d3e3f5;
+        --hover-1f2a4a: #e4ebf5;
+        --hover-252545: #e4ebf5;
+        --highlight-bg: #dcfce7;
+        --group-bg: #e0ecf8;
+        --chip-bg: #e5e7eb;
+        --chip-bg-hover: #cfd5dd;
+        --badge-muted-bg: #e5e7eb;
+        --badge-untracked-bg: #e2e8f0;
+        --border: #cbd5e1;
+        --border-1a3a6e: #cbd5e1;
+        --border-1a3a5c: #cbd5e1;
+        --border-23304d: #d5dce6;
+        --border-333: #d1d5db;
+        --border-444: #c4cad3;
+        --border-222: #e5e7eb;
+        --border-3a4a6a: #94a3b8;
+        --border-0a0a1a: #d1d5db;
+        --accent-line: #0284c7;
+        --overlay: rgba(15,23,42,0.45);
+        --shadow: rgba(15,23,42,0.12);
+        color-scheme: light;
+    }
+    </style>
+"""
+
+
 # Login page template
 LOGIN_TEMPLATE = '''
 <!DOCTYPE html>
@@ -318,17 +547,17 @@ LOGIN_TEMPLATE = '''
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: linear-gradient(135deg, var(--bg) 0%, var(--panel) 100%);
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
         }
         .login-container {
-            background: #16213e;
+            background: var(--panel);
             padding: 40px;
             border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            box-shadow: 0 10px 40px var(--shadow);
             width: 100%;
             max-width: 440px;
         }
@@ -337,13 +566,13 @@ LOGIN_TEMPLATE = '''
             margin-bottom: 30px;
         }
         .logo h1 {
-            color: #4fc3f7;
+            color: var(--accent);
             font-size: 28px;
             margin-bottom: 5px;
             white-space: nowrap;
         }
         .logo p {
-            color: #888;
+            color: var(--text-muted);
             font-size: 14px;
         }
         .form-group {
@@ -351,29 +580,29 @@ LOGIN_TEMPLATE = '''
         }
         .form-group label {
             display: block;
-            color: #aaa;
+            color: var(--text-dim);
             margin-bottom: 8px;
             font-size: 14px;
         }
         .form-group input {
             width: 100%;
             padding: 12px 15px;
-            border: 2px solid #0f3460;
-            background: #1a1a2e;
-            color: #eee;
+            border: 2px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
             border-radius: 6px;
             font-size: 16px;
             transition: border-color 0.3s;
         }
         .form-group input:focus {
             outline: none;
-            border-color: #4fc3f7;
+            border-color: var(--accent-line);
         }
         .form-group input:disabled {
-            background: #0d0d1a;
-            color: #666;
+            background: var(--sunken-0d0d1a);
+            color: var(--text-faint);
             cursor: not-allowed;
-            border-color: #0a0a1a;
+            border-color: var(--border-0a0a1a);
         }
         .btn-login {
             width: 100%;
@@ -391,20 +620,20 @@ LOGIN_TEMPLATE = '''
             background: #81d4fa;
         }
         .btn-login:disabled {
-            background: #555;
+            background: var(--badge-muted-bg);
             cursor: not-allowed;
         }
         .error-message {
             background: #e9456033;
             border: 1px solid #e94560;
-            color: #ff6b6b;
+            color: var(--danger-ff6b6b);
             padding: 12px;
             border-radius: 6px;
             margin-bottom: 20px;
             font-size: 14px;
         }
         .info-text {
-            color: #666;
+            color: var(--text-faint);
             font-size: 12px;
             text-align: center;
             margin-top: 20px;
@@ -415,7 +644,7 @@ LOGIN_TEMPLATE = '''
     <div class="login-container">
         <div class="logo">
             <h1>jt-wazuh-mgr</h1>
-            <div style="font-size: 14px; color: #888; margin-top: 5px;">v{{ version }}</div>
+            <div style="font-size: 14px; color: var(--text-muted); margin-top: 5px;">v{{ version }}</div>
             <p style="margin-top: 15px;">Login with your Wazuh credentials</p>
         </div>
 
@@ -434,15 +663,15 @@ LOGIN_TEMPLATE = '''
             <div class="form-group">
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password" required autocomplete="current-password">
-                <p style="margin-top: 8px; font-size: 12px; color: #ffc107;">Session expires after {{ token_timeout_minutes }} minutes</p>
+                <p style="margin-top: 8px; font-size: 12px; color: var(--warning);">Session expires after {{ token_timeout_minutes }} minutes</p>
             </div>
             <button type="submit" class="btn-login">Login</button>
         </form>
         <p class="info-text">
             API: {{ host or 'localhost' }}:{{ port or '55000' }}
-            <a href="#" onclick="toggleAdvanced(); return false;" style="color:#4fc3f7;margin-left:10px;font-size:11px;">Settings</a>
+            <a href="#" onclick="toggleAdvanced(); return false;" style="color:var(--accent);margin-left:10px;font-size:11px;">Settings</a>
         </p>
-        <div id="advancedSettings" style="display:none;margin-top:15px;padding:15px;background:#1a1a2e;border-radius:6px;">
+        <div id="advancedSettings" style="display:none;margin-top:15px;padding:15px;background:var(--bg);border-radius:6px;">
             <div class="form-group" style="margin-bottom:10px;">
                 <label for="hostInput" style="font-size:12px;">API Host</label>
                 <input type="text" id="hostInput" value="{{ host or 'localhost' }}" style="font-size:14px;" onchange="document.querySelector('input[name=host]').value=this.value">
@@ -507,76 +736,76 @@ HTML_TEMPLATE = '''
         /* CodeMirror custom styles */
         .CodeMirror { font-size: 14px; line-height: 1.6; }
         .CodeMirror-lines { padding: 10px 0; }
-        .CodeMirror-gutters { background: #1a1a2e; border-right: 2px solid #4fc3f7; }
-        .CodeMirror-linenumber { color: #666; padding: 0 8px 0 8px; min-width: 40px; text-align: right; }
+        .CodeMirror-gutters { background: var(--bg); border-right: 2px solid var(--accent-line); }
+        .CodeMirror-linenumber { color: var(--text-faint); padding: 0 8px 0 8px; min-width: 40px; text-align: right; }
         .json-gutter { width: 28px; display: flex; align-items: center; justify-content: center; }
         .json-expand-marker { cursor: pointer; display: flex; align-items: center; justify-content: center; width: 100%; height: 21px; }
-        .json-expand-marker svg { width: 12px; height: 12px; color: #4fc3f7; transition: color 0.2s; }
-        .json-expand-marker:hover svg { color: #fff; }
-        .json-expand-marker.expanded svg { color: #4ade80; }
-        .json-expanded-widget { background: #0d1117; border-left: 3px solid #4fc3f7; margin: 4px 0 4px 20px; padding: 8px 12px; font-family: monospace; font-size: 13px; white-space: pre; overflow-x: auto; max-height: 300px; overflow-y: auto; color: #e6edf3; }
-        .json-expanded-widget .json-key { color: #ff79c6; }
-        .json-expanded-widget .json-string { color: #50fa7b; }
-        .json-expanded-widget .json-number { color: #bd93f9; }
-        .json-expanded-widget .json-boolean { color: #ffb86c; }
-        .json-expanded-widget .json-null { color: #ff5555; }
-        .json-expanded-widget .json-bracket { color: #f8f8f2; }
+        .json-expand-marker svg { width: 12px; height: 12px; color: var(--accent); transition: color 0.2s; }
+        .json-expand-marker:hover svg { color: var(--text-strong); }
+        .json-expand-marker.expanded svg { color: var(--success-4ade80); }
+        .json-expanded-widget { background: var(--json-bg); border-left: 3px solid var(--accent-line); margin: 4px 0 4px 20px; padding: 8px 12px; font-family: monospace; font-size: 13px; white-space: pre; overflow-x: auto; max-height: 300px; overflow-y: auto; color: var(--json-fg); }
+        .json-expanded-widget .json-key { color: var(--json-key); }
+        .json-expanded-widget .json-string { color: var(--json-string); }
+        .json-expanded-widget .json-number { color: var(--json-number); }
+        .json-expanded-widget .json-boolean { color: var(--json-boolean); }
+        .json-expanded-widget .json-null { color: var(--json-null); }
+        .json-expanded-widget .json-bracket { color: var(--json-bracket); }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html { height: 100%; overflow: hidden; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100%; overflow: hidden; }
         .container { margin: 0 auto; padding: 20px 20px 10px 20px; flex: 1; display: flex; flex-direction: column; width: 100%; overflow: hidden; min-height: 0; }
-        header { background: #16213e; padding: 20px; margin-bottom: 20px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
-        header h1 { color: #4fc3f7; }
+        header { background: var(--panel); padding: 20px; margin-bottom: 20px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        header h1 { color: var(--accent); }
         .header-right { display: flex; align-items: center; gap: 20px; }
-        .user-info { color: #aaa; font-size: 13px; text-align: center; }
+        .user-info { color: var(--text-dim); font-size: 13px; text-align: center; }
         .user-info > div { margin-bottom: 6px; }
         .user-info > div:last-child { margin-bottom: 0; }
-        .user-info strong { color: #4fc3f7; }
+        .user-info strong { color: var(--accent); }
         .header-buttons { display: flex; flex-direction: row; gap: 8px; align-self: stretch; }
-        .btn-settings { box-sizing: border-box; height: 100%; min-width: 62px; padding: 6px 14px; background: #0f3460; color: #4fc3f7; border: 1px solid #4fc3f7; border-radius: 6px; cursor: pointer; font-size: 12px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; text-decoration: none; }
-        .btn-settings:hover { background: #1a4a7a; }
+        .btn-settings { box-sizing: border-box; height: 100%; min-width: 62px; padding: 6px 14px; background: var(--surface); color: var(--accent); border: 1px solid var(--accent-line); border-radius: 6px; cursor: pointer; font-size: 12px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; text-decoration: none; }
+        .btn-settings:hover { background: var(--hover); }
         .btn-settings .icon { width: 18px; height: 18px; }
         .btn-logout { box-sizing: border-box; height: 100%; min-width: 62px; padding: 6px 14px; background: #e94560; color: #fff; border: 1px solid #e94560; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 12px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; }
         .btn-logout:hover { background: #ff6b6b; border-color: #ff6b6b; }
         .btn-logout .icon { width: 18px; height: 18px; }
         .stats-bar { display: flex; gap: 20px; }
-        .stat-item { background: #0f3460; padding: 10px 20px; border-radius: 6px; text-align: center; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
-        .stat-item:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-        .stat-value { font-size: 24px; font-weight: bold; color: #4fc3f7; overflow: hidden; position: relative; height: 32px; line-height: 32px; }
+        .stat-item { background: var(--surface); padding: 10px 20px; border-radius: 6px; text-align: center; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
+        .stat-item:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--shadow); }
+        .stat-value { font-size: 24px; font-weight: bold; color: var(--accent); overflow: hidden; position: relative; height: 32px; line-height: 32px; }
         .stat-value span { display: block; }
         .stat-value span.slide-in { animation: slideIn 0.3s ease-out; }
         @keyframes slideIn { from { transform: translateY(-100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        .stat-label { font-size: 12px; color: #aaa; }
-        .stat-item.disconnected .stat-value { color: #e94560; }
-        .stat-item.pending .stat-value { color: #ffc107; }
-        .stat-item.active .stat-value { color: #00c853; }
+        .stat-label { font-size: 12px; color: var(--text-dim); }
+        .stat-item.disconnected .stat-value { color: var(--danger); }
+        .stat-item.pending .stat-value { color: var(--warning); }
+        .stat-item.active .stat-value { color: var(--success); }
 
         .tabs { display: flex; gap: 2px; margin-bottom: 0; }
-        .tab { padding: 10px 20px; background: #0a0a15; border: none; color: #888; cursor: pointer; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; gap: 8px; position: relative; bottom: -1px; border: 1px solid transparent; border-bottom: none; }
-        .tab.active { background: #16213e; color: #4fc3f7; border-color: #0f3460; z-index: 1; }
-        .tab:hover:not(.active) { color: #aaa; background: #0f0f1a; }
+        .tab { padding: 10px 20px; background: var(--sunken); border: none; color: var(--text-muted); cursor: pointer; border-radius: 6px 6px 0 0; display: inline-flex; align-items: center; gap: 8px; position: relative; bottom: -1px; border: 1px solid transparent; border-bottom: none; }
+        .tab.active { background: var(--panel); color: var(--accent); border-color: var(--border); z-index: 1; }
+        .tab:hover:not(.active) { color: var(--text-dim); background: var(--tab-hover); }
 
-        .panel { background: #16213e; border-radius: 0 8px 8px 8px; padding: 20px 20px 10px 20px; display: none; flex-direction: column; flex: 1; overflow: hidden; border: 1px solid #0f3460; min-height: 0; }
+        .panel { background: var(--panel); border-radius: 0 8px 8px 8px; padding: 20px 20px 10px 20px; display: none; flex-direction: column; flex: 1; overflow: hidden; border: 1px solid var(--border); min-height: 0; }
         .panel.active { display: flex; }
 
         .toolbar { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; flex-shrink: 0; }
         .toolbar-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
         .toolbar-spacer { flex: 1; min-width: 10px; }
         .action-bar-container { position: relative; min-height: 52px; margin-bottom: 10px; }
-        .action-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; flex-shrink: 0; padding: 10px 15px; background: #0f3460; border-radius: 6px; min-height: 44px; position: absolute; top: 0; left: 0; right: 0; z-index: 10; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+        .action-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; flex-shrink: 0; padding: 10px 15px; background: var(--surface); border-radius: 6px; min-height: 44px; position: absolute; top: 0; left: 0; right: 0; z-index: 10; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
         .action-bar.visible { opacity: 1; pointer-events: auto; }
-        .distribution-bar { display: flex; gap: 12px; align-items: center; padding: 10px 15px; background: #0f3460; border-radius: 6px; min-height: 44px; }
-        .distribution-bar select { padding: 4px 8px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; font-size: 12px; cursor: pointer; }
-        .distribution-chart { flex: 1; height: 24px; background: #1a1a2e; border-radius: 4px; overflow: hidden; display: flex; gap: 2px; padding: 0 1px; }
+        .distribution-bar { display: flex; gap: 12px; align-items: center; padding: 10px 15px; background: var(--surface); border-radius: 6px; min-height: 44px; }
+        .distribution-bar select { padding: 4px 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; font-size: 12px; cursor: pointer; }
+        .distribution-chart { flex: 1; height: 24px; background: var(--bg); border-radius: 4px; overflow: hidden; display: flex; gap: 2px; padding: 0 1px; }
         .distribution-chart.animating .distribution-segment { animation: segmentExpand 0.4s ease-out; }
         @keyframes segmentExpand { from { transform: scaleX(0); } to { transform: scaleX(1); } }
         .distribution-segment { transform-origin: left center; }
         .distribution-segment { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; overflow: hidden; min-width: 0; transition: width 0.3s; cursor: pointer; border-radius: 2px; }
         .distribution-segment:hover { filter: brightness(1.2); }
         .distribution-segment span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 0 2px rgba(0,0,0,0.5); padding: 0 6px; }
-        .toolbar select { padding: 8px 12px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; }
-        .toolbar > input[type="text"], .toolbar-filters > input[type="text"] { padding: 8px 12px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; min-width: 180px; flex-shrink: 1; }
+        .toolbar select { padding: 8px 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; }
+        .toolbar > input[type="text"], .toolbar-filters > input[type="text"] { padding: 8px 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; min-width: 180px; flex-shrink: 1; }
         .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
         .btn-primary { background: #4fc3f7; color: #1a1a2e; }
         .btn-danger { background: #e94560; color: #fff; }
@@ -595,11 +824,11 @@ HTML_TEMPLATE = '''
         .tab .icon { width: 18px; height: 18px; }
 
         table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #0f3460; vertical-align: middle; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; }
         tbody tr { height: 50px; }
-        th { background: #0f3460; color: #4fc3f7; position: sticky; top: 0; z-index: 2; }
+        th { background: var(--surface); color: var(--accent); position: sticky; top: 0; z-index: 2; }
         th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
-        th.sortable:hover { background: #1a3a70; }
+        th.sortable:hover { background: var(--th-hover); }
         th.sortable .sort-icon { width: 12px; height: 12px; margin-left: 4px; opacity: 0.3; vertical-align: middle; }
         th.sortable .sort-asc, th.sortable .sort-desc { display: none; }
         th.sortable.asc .sort-asc { display: inline; opacity: 1; }
@@ -607,7 +836,7 @@ HTML_TEMPLATE = '''
         th.sortable.desc .sort-desc { display: inline; opacity: 1; }
         th.sortable.desc .sort-asc { display: none; }
         th.sortable:not(.asc):not(.desc) .sort-asc { display: inline; }
-        tr:hover { background: #1a1a2e; }
+        tr:hover { background: var(--bg); }
         .modal-body table tr td { padding-left: 8px; padding-right: 8px; border-radius: 4px; }
 
         .checkbox-cell { width: 40px; }
@@ -620,15 +849,15 @@ HTML_TEMPLATE = '''
         .status-never { background: #666; color: #fff; }
 
         .sync-status { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; white-space: nowrap; }
-        .sync-ok { background: #00c85333; color: #00c853; }
-        .sync-pending { background: #ffc10733; color: #ffc107; }
-        .sync-unknown { background: #66666633; color: #888; }
+        .sync-ok { background: #00c85333; color: var(--success); }
+        .sync-pending { background: #ffc10733; color: var(--warning); }
+        .sync-unknown { background: #66666633; color: var(--text-muted); }
 
-        .group-label { display: inline-block; padding: 1px 4px; margin: 1px 2px; border-radius: 3px; font-size: 11px; background: #0f3460; color: #4fc3f7; }
+        .group-label { display: inline-block; padding: 1px 4px; margin: 1px 2px; border-radius: 3px; font-size: 11px; background: var(--surface); color: var(--accent); }
 
         .queue-entry { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
         .queue-size { font-weight: 500; min-width: 60px; text-align: right; }
-        .queue-node { color: #888; font-size: 11px; }
+        .queue-node { color: var(--text-muted); font-size: 11px; }
 
         .table-container { flex: 1; overflow-y: auto; min-height: 0; }
         .log-container { flex: 1; overflow: hidden; min-height: 0; display: flex; flex-direction: column; }
@@ -642,158 +871,158 @@ HTML_TEMPLATE = '''
         .rule-tree ul { list-style: none; padding-left: 20px; margin: 0; }
         .rule-tree > ul { padding-left: 0; }
         .rule-tree li { position: relative; padding: 5px 0; }
-        .rule-tree li::before { content: ''; position: absolute; left: -15px; top: 0; border-left: 1px solid #444; height: 100%; }
-        .rule-tree li::after { content: ''; position: absolute; left: -15px; top: 15px; border-top: 1px solid #444; width: 15px; }
+        .rule-tree li::before { content: ''; position: absolute; left: -15px; top: 0; border-left: 1px solid var(--border-444); height: 100%; }
+        .rule-tree li::after { content: ''; position: absolute; left: -15px; top: 15px; border-top: 1px solid var(--border-444); width: 15px; }
         .rule-tree li:last-child::before { height: 15px; }
         .rule-tree > ul > li::before, .rule-tree > ul > li::after { display: none; }
-        .rule-node { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; background: #1a1a2e; border: 1px solid #333; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
-        .rule-node:hover { background: #252545; border-color: #4fc3f7; }
-        .rule-node.highlight { background: #2d4a3e; border-color: #4ade80; box-shadow: 0 0 10px rgba(74, 222, 128, 0.3); }
+        .rule-node { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border-333); border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+        .rule-node:hover { background: var(--hover-252545); border-color: var(--accent-line); }
+        .rule-node.highlight { background: var(--highlight-bg); border-color: #4ade80; box-shadow: 0 0 10px rgba(74, 222, 128, 0.3); }
         .rule-node.parent { border-color: #ffc107; }
         .rule-node.child { border-color: #17a2b8; }
-        .rule-id { font-weight: bold; color: #4fc3f7; }
-        .rule-level { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: #333; }
+        .rule-id { font-weight: bold; color: var(--accent); }
+        .rule-level { font-size: 11px; padding: 2px 6px; border-radius: 3px; background: var(--chip-bg); }
         .rule-level.high { background: #dc3545; }
         .rule-level.medium { background: #ffc107; color: #000; }
         .rule-level.low { background: #28a745; }
         .rule-level.zero { background: #6c757d; color: #ccc; font-style: italic; }
-        .rule-desc { color: #aaa; font-size: 12px; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .rule-file { color: #888; font-size: 11px; }
-        .rule-file.custom { color: #f39c12; }
+        .rule-desc { color: var(--text-dim); font-size: 12px; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .rule-file { color: var(--text-muted); font-size: 11px; }
+        .rule-file.custom { color: var(--orange); }
         .rule-custom-badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: #f39c12; color: #000; font-weight: bold; margin-left: 5px; }
         .rule-if-group-badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: #9b59b6; color: #fff; font-weight: bold; margin-left: 5px; }
-        .rule-node.group { background: #2d3e50; border-color: #5dade2; cursor: default; }
-        .rule-node.group .rule-id { color: #5dade2; font-weight: bold; }
-        .rule-node.more { background: transparent; border: none; color: #888; cursor: default; font-style: italic; }
-        .rule-expand { color: #888; cursor: pointer; margin-left: -5px; padding: 4px; border-radius: 4px; background: rgba(255,255,255,0.05); transition: all 0.2s; }
-        .rule-expand:hover { color: #4fc3f7; background: rgba(79,195,247,0.2); }
-        .rule-content { margin-top: 0; padding: 0; background: #0a0a15; border-radius: 4px; font-size: 12px; line-height: 1.6; overflow: hidden; max-height: 0; opacity: 0; transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease, margin 0.3s ease; position: relative; }
+        .rule-node.group { background: var(--group-bg); border-color: #5dade2; cursor: default; }
+        .rule-node.group .rule-id { color: var(--accent-5dade2); font-weight: bold; }
+        .rule-node.more { background: transparent; border: none; color: var(--text-muted); cursor: default; font-style: italic; }
+        .rule-expand { color: var(--text-muted); cursor: pointer; margin-left: -5px; padding: 4px; border-radius: 4px; background: rgba(255,255,255,0.05); transition: all 0.2s; }
+        .rule-expand:hover { color: var(--accent); background: rgba(79,195,247,0.2); }
+        .rule-content { margin-top: 0; padding: 0; background: var(--sunken); border-radius: 4px; font-size: 12px; line-height: 1.6; overflow: hidden; max-height: 0; opacity: 0; transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease, margin 0.3s ease; position: relative; }
         .rule-content.show { max-height: 2000px; opacity: 1; padding: 15px; padding-right: 50px; overflow-x: auto; margin-top: 10px; }
-        .rule-content code { color: #e0e0e0; white-space: pre; display: block; tab-size: 2; }
-        .rule-copy-btn { position: absolute; top: 8px; right: 8px; background: #333; border: 1px solid #444; color: #aaa; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; transition: all 0.2s; }
-        .rule-copy-btn:hover { background: #444; color: #fff; border-color: #4fc3f7; }
+        .rule-content code { color: var(--text-code); white-space: pre; display: block; tab-size: 2; }
+        .rule-copy-btn { position: absolute; top: 8px; right: 8px; background: var(--chip-bg); border: 1px solid var(--border-444); color: var(--text-dim); padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; transition: all 0.2s; }
+        .rule-copy-btn:hover { background: var(--chip-bg-hover); color: var(--text-strong); border-color: var(--accent-line); }
         .rule-copy-btn.copied { background: #28a745; color: #fff; border-color: #28a745; }
-        .rule-content .xml-tag { color: #4fc3f7; }
-        .rule-content .xml-attr { color: #f39c12; }
-        .rule-content .xml-value { color: #4ade80; }
-        .rule-content .xml-comment { color: #6c757d; font-style: italic; }
-        .rule-content .xml-text { color: #e0e0e0; }
+        .rule-content .xml-tag { color: var(--accent); }
+        .rule-content .xml-attr { color: var(--orange); }
+        .rule-content .xml-value { color: var(--success-4ade80); }
+        .rule-content .xml-comment { color: var(--text-comment); font-style: italic; }
+        .rule-content .xml-text { color: var(--text-code); }
         .rule-tree li > ul { max-height: 5000px; overflow: hidden; transition: max-height 0.3s ease-out, opacity 0.3s ease-out; opacity: 1; }
         .collapsed > ul { max-height: 0 !important; opacity: 0; transition: max-height 0.2s ease-in, opacity 0.2s ease-in; }
         .rule-expand svg { transition: transform 0.2s ease; }
         .collapsed .rule-expand svg { transform: rotate(-90deg); }
 
         /* Rules Mode Toggle */
-        .rules-mode-toggle { display: inline-flex; border-radius: 4px; overflow: hidden; border: 1px solid #0f3460; }
-        .rules-mode-toggle button { padding: 6px 14px; background: #1a1a2e; color: #888; border: none; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s; }
-        .rules-mode-toggle button:not(:last-child) { border-right: 1px solid #0f3460; }
-        .rules-mode-toggle button.active { background: #0f3460; color: #4fc3f7; }
-        .rules-mode-toggle button:hover:not(.active) { background: #0f0f25; color: #aaa; }
+        .rules-mode-toggle { display: inline-flex; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+        .rules-mode-toggle button { padding: 6px 14px; background: var(--bg); color: var(--text-muted); border: none; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 5px; transition: all 0.2s; }
+        .rules-mode-toggle button:not(:last-child) { border-right: 1px solid var(--border); }
+        .rules-mode-toggle button.active { background: var(--surface); color: var(--accent); }
+        .rules-mode-toggle button:hover:not(.active) { background: var(--hover-0f0f25); color: var(--text-dim); }
         .rules-mode-toggle button .icon { width: 14px; height: 14px; }
 
         /* Rules All Table */
         #rulesAllTable th, #rulesAllTable td { font-size: 13px; }
-        #rulesAllTable .rule-id-link { color: #4fc3f7; cursor: pointer; text-decoration: none; font-weight: 600; }
-        #rulesAllTable .rule-id-link:hover { text-decoration: underline; color: #81d4fa; }
+        #rulesAllTable .rule-id-link { color: var(--accent); cursor: pointer; text-decoration: none; font-weight: 600; }
+        #rulesAllTable .rule-id-link:hover { text-decoration: underline; color: var(--accent-hover); }
         .rule-type-badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: bold; }
         /* Rule pack detail and setup guide: read as prose, at a size that can be read. */
-        .pack-detail { font-size: 14px; line-height: 1.6; color: #d8dde6; }
+        .pack-detail { font-size: 14px; line-height: 1.6; color: var(--text-prose); }
         .pack-detail .alert { font-size: 14px; }
-        .pack-summary { background: #0a0a15; padding: 14px 16px; border-radius: 6px; margin-bottom: 14px; }
-        .pack-summary-text { font-size: 16px; color: #eef; margin-bottom: 6px; }
-        .pack-meta { color: #9aa3b5; font-size: 13px; }
-        .pack-lead { color: #9aa3b5; margin: 0 0 12px; }
-        .pack-h { color: #4fc3f7; font-size: 15px; margin: 18px 0 8px; }
+        .pack-summary { background: var(--sunken); padding: 14px 16px; border-radius: 6px; margin-bottom: 14px; }
+        .pack-summary-text { font-size: 16px; color: var(--text-prose-strong); margin-bottom: 6px; }
+        .pack-meta { color: var(--text-meta); font-size: 13px; }
+        .pack-lead { color: var(--text-meta); margin: 0 0 12px; }
+        .pack-h { color: var(--accent); font-size: 15px; margin: 18px 0 8px; }
         .pack-notes { margin: 0 0 0 20px; padding: 0; }
         .pack-notes li { margin-bottom: 6px; }
-        .pack-step { background: #0f1525; border: 1px solid #23304d; border-radius: 6px; padding: 12px 14px; margin-bottom: 10px; }
+        .pack-step { background: var(--card-0f1525); border: 1px solid var(--border-23304d); border-radius: 6px; padding: 12px 14px; margin-bottom: 10px; }
         .pack-step-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
         .pack-step-no { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: #1a4a7a; color: #fff; font-size: 13px; font-weight: bold; }
-        .pack-step-title { font-weight: bold; color: #fff; font-size: 15px; }
-        .pack-chip { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid #3a4a6a; color: #9aa3b5; }
-        .pack-chip-req { border-color: #fd7e14; color: #fd7e14; }
-        .pack-chip-new { border-color: #4fc3f7; color: #4fc3f7; }
-        .pack-chip-on { border-color: #28a745; color: #28a745; }
-        .pack-ar-meta { font-size: 12px; color: #9aa3b5; margin: 6px 0; }
+        .pack-step-title { font-weight: bold; color: var(--text-strong); font-size: 15px; }
+        .pack-chip { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border-3a4a6a); color: var(--text-meta); }
+        .pack-chip-req { border-color: #fd7e14; color: var(--orange-fd7e14); }
+        .pack-chip-new { border-color: var(--accent-line); color: var(--accent); }
+        .pack-chip-on { border-color: #28a745; color: var(--success-28a745); }
+        .pack-ar-meta { font-size: 12px; color: var(--text-meta); margin: 6px 0; }
         .pack-ar-actions { margin-top: 8px; }
-        .pack-ar-form label { display: block; font-size: 13px; color: #ccc; margin: 10px 0 4px; }
+        .pack-ar-form label { display: block; font-size: 13px; color: var(--text-ccc); margin: 10px 0 4px; }
         .pack-ar-form input { width: 160px; }
-        .pack-act { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid #3a4a6a; color: #c8cfdc; white-space: nowrap; }
-        .pack-act-add, .pack-act-update { border-color: #28a745; color: #5fd47a; }
-        .pack-act-replace, .pack-act-remove { border-color: #fd7e14; color: #fd7e14; }
-        .pack-act-modified, .pack-act-remove-modified { border-color: #e94560; color: #ff7b93; }
+        .pack-act { font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border-3a4a6a); color: var(--text-chip); white-space: nowrap; }
+        .pack-act-add, .pack-act-update { border-color: #28a745; color: var(--success-5fd47a); }
+        .pack-act-replace, .pack-act-remove { border-color: #fd7e14; color: var(--orange-fd7e14); }
+        .pack-act-modified, .pack-act-remove-modified { border-color: #e94560; color: var(--danger-ff7b93); }
         .pack-choice { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; cursor: pointer; }
         .pack-step-body { margin: 4px 0 8px; }
         .pack-code { position: relative; margin: 8px 0; }
-        .pack-code pre { background: #060a14; border: 1px solid #23304d; border-radius: 4px; padding: 10px 12px; margin: 0; overflow-x: auto; font-size: 13px; line-height: 1.5; color: #cfe3ff; white-space: pre; }
+        .pack-code pre { background: var(--code-bg); border: 1px solid var(--border-23304d); border-radius: 4px; padding: 10px 12px; margin: 0; overflow-x: auto; font-size: 13px; line-height: 1.5; color: var(--text-pre); white-space: pre; }
         .pack-code .pack-copy { position: absolute; top: 6px; right: 6px; z-index: 1; }
         .pack-file-view { max-height: 420px; overflow: auto; }
         .pack-file-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
-        .pack-file-row code { color: #4fc3f7; }
-        .pack-verify { background: #0d2018; border-left: 3px solid #28a745; padding: 8px 12px; border-radius: 4px; margin-top: 8px; }
-        .pack-verify-label { display: block; color: #28a745; font-size: 12px; font-weight: bold; margin-bottom: 2px; }
+        .pack-file-row code { color: var(--accent); }
+        .pack-verify { background: var(--tint-ok-0d2018); border-left: 3px solid #28a745; padding: 8px 12px; border-radius: 4px; margin-top: 8px; }
+        .pack-verify-label { display: block; color: var(--success-28a745); font-size: 12px; font-weight: bold; margin-bottom: 2px; }
         .pack-files { margin-top: 16px; }
-        .pack-files summary { cursor: pointer; color: #4fc3f7; font-size: 15px; font-weight: bold; }
+        .pack-files summary { cursor: pointer; color: var(--accent); font-size: 15px; font-weight: bold; }
         .pack-files table { font-size: 13px; }
         .rule-type-badge.custom { background: #f39c12; color: #000; }
-        .rule-type-badge.builtin { background: #555; color: #ccc; }
+        .rule-type-badge.builtin { background: var(--badge-muted-bg); color: var(--text-ccc); }
         .rule-type-badge.pack-installed { background: #28a745; color: #fff; }
         .rule-type-badge.pack-update { background: #fd7e14; color: #000; }
-        .rule-type-badge.pack-untracked { background: #3a4a6a; color: #ddd; }
-        .pack-ver-new { color: #fd7e14; font-weight: bold; }
-        .pack-ver-note { display: block; color: #888; font-size: 11px; }
+        .rule-type-badge.pack-untracked { background: var(--badge-untracked-bg); color: var(--text-ddd); }
+        .pack-ver-new { color: var(--orange-fd7e14); font-weight: bold; }
+        .pack-ver-note { display: block; color: var(--text-muted); font-size: 11px; }
         .pack-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
         .pack-actions .btn { width: 100%; justify-content: center; white-space: nowrap; margin: 0; }
         .rules-group-tags { display: flex; flex-wrap: wrap; gap: 2px; max-width: 250px; }
-        .rules-group-tag { display: inline-block; padding: 1px 4px; border-radius: 3px; font-size: 10px; background: #0f3460; color: #4fc3f7; white-space: nowrap; }
+        .rules-group-tag { display: inline-block; padding: 1px 4px; border-radius: 3px; font-size: 10px; background: var(--surface); color: var(--accent); white-space: nowrap; }
         .rules-toolbar-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-        .rules-toolbar-filters select, .rules-toolbar-filters input[type="number"] { padding: 6px 8px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; font-size: 13px; }
+        .rules-toolbar-filters select, .rules-toolbar-filters input[type="number"] { padding: 6px 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; font-size: 13px; }
         .rules-toolbar-filters input[type="number"] { width: 60px; }
         .rules-content-search { display: inline-flex; gap: 6px; align-items: center; }
-        .rules-content-search input { padding: 6px 8px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; font-size: 13px; min-width: 220px; }
-        .rules-content-search select { padding: 6px 8px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; font-size: 13px; }
-        .rules-pagination { display: flex; gap: 8px; align-items: center; justify-content: center; padding: 8px 0; flex-shrink: 0; font-size: 13px; color: #888; }
-        .rules-pagination button { padding: 4px 10px; background: #0f3460; color: #4fc3f7; border: 1px solid #0f3460; border-radius: 4px; cursor: pointer; font-size: 12px; }
-        .rules-pagination button:hover { background: #1a4a7a; }
+        .rules-content-search input { padding: 6px 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; font-size: 13px; min-width: 220px; }
+        .rules-content-search select { padding: 6px 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; font-size: 13px; }
+        .rules-pagination { display: flex; gap: 8px; align-items: center; justify-content: center; padding: 8px 0; flex-shrink: 0; font-size: 13px; color: var(--text-muted); }
+        .rules-pagination button { padding: 4px 10px; background: var(--surface); color: var(--accent); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .rules-pagination button:hover { background: var(--hover); }
         .rules-pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
-        .rules-pagination input { width: 50px; padding: 4px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; text-align: center; font-size: 12px; }
-        .rules-pagination select { padding: 4px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; font-size: 12px; }
+        .rules-pagination input { width: 50px; padding: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; text-align: center; font-size: 12px; }
+        .rules-pagination select { padding: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; font-size: 12px; }
 
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--overlay); z-index: 1000; }
         .modal.show { display: flex; justify-content: center; align-items: center; }
-        .modal-content { background: #16213e; padding: 30px; border-radius: 8px; min-width: 500px; max-width: 800px; max-height: 90vh; overflow-y: auto; }
+        .modal-content { background: var(--panel); padding: 30px; border-radius: 8px; min-width: 500px; max-width: 800px; max-height: 90vh; overflow-y: auto; }
         .modal-content.resizable { resize: both; overflow: auto; min-width: 600px; min-height: 400px; max-width: 95vw; max-height: 90vh; cursor: default; position: relative; }
         .modal-content.resizable::after { content: ''; position: absolute; bottom: 5px; right: 5px; width: 15px; height: 15px; cursor: se-resize; background: linear-gradient(135deg, transparent 50%, #4fc3f7 50%, #4fc3f7 60%, transparent 60%, transparent 70%, #4fc3f7 70%, #4fc3f7 80%, transparent 80%); pointer-events: none; z-index: 10; }
         .modal-content.wide { max-width: 95vw; width: 1000px; }
         .modal-header { display: flex; justify-content: space-between; margin-bottom: 20px; }
-        .modal-close { background: none; border: none; color: #aaa; font-size: 24px; cursor: pointer; }
+        .modal-close { background: none; border: none; color: var(--text-dim); font-size: 24px; cursor: pointer; }
         .modal-body { margin-bottom: 20px; }
         .modal-content.resizable .modal-body { flex: 1; overflow: auto; display: flex; flex-direction: column; min-height: 0; margin-bottom: 10px; }
         .modal-content.resizable { display: flex; flex-direction: column; }
         .modal-footer { display: flex; gap: 10px; justify-content: flex-end; }
 
         .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; color: #aaa; }
-        .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; }
+        .form-group label { display: block; margin-bottom: 5px; color: var(--text-dim); }
+        .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; }
 
         .alert { padding: 15px; border-radius: 4px; margin-bottom: 15px; }
         .alert-success { background: #00c85333; border: 1px solid #00c853; }
         .alert-error { background: #e9456033; border: 1px solid #e94560; }
         .alert-warning { background: #ffc10733; border: 1px solid #ffc107; }
 
-        .loading { text-align: center; padding: 40px; color: #aaa; }
-        .spinner { border: 3px solid #0f3460; border-top: 3px solid #4fc3f7; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
+        .loading { text-align: center; padding: 40px; color: var(--text-dim); }
+        .spinner { border: 3px solid var(--border); border-top: 3px solid var(--accent-line); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
         .icon-spin { animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .connection-error { text-align: center; padding: 60px 40px; color: #aaa; }
-        .connection-error .error-icon { font-size: 48px; margin-bottom: 15px; color: #e94560; }
-        .connection-error .error-title { font-size: 18px; color: #e94560; margin-bottom: 10px; font-weight: bold; }
-        .connection-error .error-message { font-size: 14px; color: #888; margin-bottom: 20px; }
+        .connection-error { text-align: center; padding: 60px 40px; color: var(--text-dim); }
+        .connection-error .error-icon { font-size: 48px; margin-bottom: 15px; color: var(--danger); }
+        .connection-error .error-title { font-size: 18px; color: var(--danger); margin-bottom: 10px; font-weight: bold; }
+        .connection-error .error-message { font-size: 14px; color: var(--text-muted); margin-bottom: 20px; }
         .connection-error .retry-btn { padding: 10px 24px; background: #4fc3f7; color: #0a0a1a; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; }
         .connection-error .retry-btn:hover { background: #81d4fa; }
         .api-status.disconnected { background: #e94560; color: #fff; }
 
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #0f3460; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: var(--surface); }
         .badge-master { background: #9c27b0; color: #fff; }
         .badge-worker { background: #0288d1; color: #fff; }
         .badge-disconnected { background: #e94560; color: #fff; }
@@ -801,7 +1030,7 @@ HTML_TEMPLATE = '''
 
         /* Service status indicators */
         .service-status { display: flex; flex-wrap: wrap; gap: 4px; max-width: 500px; }
-        .service-indicator { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; font-size: 11px; background: #0f3460; width: 90px; }
+        .service-indicator { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; font-size: 11px; background: var(--surface); width: 90px; }
         .service-indicator .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
         .service-indicator .dot.running { background: #00c853; box-shadow: 0 0 4px #00c853; }
         .service-indicator .dot.stopped { background: #e94560; box-shadow: 0 0 4px #e94560; }
@@ -813,63 +1042,63 @@ HTML_TEMPLATE = '''
 
         .dry-run-notice { background: #ffc10722; border: 1px dashed #ffc107; padding: 10px; border-radius: 4px; margin-bottom: 15px; }
 
-        .selected-count { background: #4fc3f733; padding: 6px 14px; border-radius: 4px; color: #4fc3f7; font-weight: 500; }
+        .selected-count { background: #4fc3f733; padding: 6px 14px; border-radius: 4px; color: var(--accent); font-weight: 500; }
 
         .api-status { font-size: 12px; padding: 4px 8px; border-radius: 4px; }
-        .api-status.connected { background: #00c85333; color: #00c853; }
-        .api-status.disconnected { background: #e9456033; color: #e94560; }
+        .api-status.connected { background: #00c85333; color: var(--success); }
+        .api-status.disconnected { background: #e9456033; color: var(--danger); }
 
-        .pagination-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 0 0 0; border-top: 1px solid #0f3460; margin-top: 10px; flex-shrink: 0; }
-        .pagination-info { color: #aaa; font-size: 14px; }
+        .pagination-bar { display: flex; justify-content: space-between; align-items: center; padding: 8px 0 0 0; border-top: 1px solid var(--border); margin-top: 10px; flex-shrink: 0; }
+        .pagination-info { color: var(--text-dim); font-size: 14px; }
         .pagination-controls { display: flex; align-items: center; gap: 10px; }
-        .pagination-controls label { color: #aaa; font-size: 14px; display: flex; align-items: center; gap: 8px; }
-        .pagination-controls select { padding: 6px 10px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; }
+        .pagination-controls label { color: var(--text-dim); font-size: 14px; display: flex; align-items: center; gap: 8px; }
+        .pagination-controls select { padding: 6px 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; }
         .pagination-controls .btn { padding: 6px 12px; min-width: auto; }
         .pagination-controls .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .page-indicator { color: #aaa; font-size: 14px; display: flex; align-items: center; gap: 5px; }
-        .page-indicator input { width: 60px; padding: 6px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; text-align: center; }
+        .page-indicator { color: var(--text-dim); font-size: 14px; display: flex; align-items: center; gap: 5px; }
+        .page-indicator input { width: 60px; padding: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; text-align: center; }
 
         #stats-panel table { table-layout: fixed; margin-bottom: 10px; }
-        #stats-panel h3 { color: #4fc3f7; margin-bottom: 10px; }
+        #stats-panel h3 { color: var(--accent); margin-bottom: 10px; }
 
         /* Multi-select dropdown */
         .multi-select { position: relative; display: inline-block; }
-        .multi-select-btn { padding: 8px 14px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; border-radius: 4px; cursor: pointer; font-size: 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
-        .multi-select-btn:hover { border-color: #4fc3f7; background: #1f2a4a; }
-        .multi-select-btn.active { border-color: #4fc3f7; background: #1f2a4a; }
-        .multi-select-btn .icon { width: 12px; height: 12px; color: #888; }
-        .multi-select-dropdown { display: none; position: absolute; top: calc(100% + 4px); left: 0; background: #1a1a2e; border: 1px solid #0f3460; border-radius: 6px; max-height: 280px; overflow-y: auto; overflow-x: hidden; z-index: 100; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+        .multi-select-btn { padding: 8px 14px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; cursor: pointer; font-size: 14px; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+        .multi-select-btn:hover { border-color: var(--accent-line); background: var(--hover-1f2a4a); }
+        .multi-select-btn.active { border-color: var(--accent-line); background: var(--hover-1f2a4a); }
+        .multi-select-btn .icon { width: 12px; height: 12px; color: var(--text-muted); }
+        .multi-select-dropdown { display: none; position: absolute; top: calc(100% + 4px); left: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; max-height: 280px; overflow-y: auto; overflow-x: hidden; z-index: 100; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
         .multi-select-dropdown.show { display: block; }
         .multi-select-item { padding: 6px 12px; cursor: pointer; font-size: 13px; white-space: nowrap; line-height: 20px; }
-        .multi-select-item:hover { background: #0f3460; }
-        .multi-select-item input[type="checkbox"] { width: 14px; height: 14px; vertical-align: middle; accent-color: #4fc3f7; cursor: pointer; margin: 0; }
+        .multi-select-item:hover { background: var(--surface); }
+        .multi-select-item input[type="checkbox"] { width: 14px; height: 14px; vertical-align: middle; accent-color: var(--accent-line); cursor: pointer; margin: 0; }
         .multi-select-item-text { vertical-align: middle; margin-left: 8px; }
-        .multi-select-clear { padding: 8px 12px; border-top: 1px solid #0f3460; color: #4fc3f7; cursor: pointer; text-align: center; font-size: 13px; }
-        .multi-select-clear:hover { background: #0f3460; }
+        .multi-select-clear { padding: 8px 12px; border-top: 1px solid var(--border); color: var(--accent); cursor: pointer; text-align: center; font-size: 13px; }
+        .multi-select-clear:hover { background: var(--surface); }
         .filter-badge { background: #4fc3f7; color: #1a1a2e; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; margin-left: 6px; }
         /* Toggle switch with box background */
-        .toggle-switch-box { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; background: #0f3460; padding: 6px 12px; border-radius: 6px; border: 1px solid #1a3a5c; }
-        .toggle-switch-box:hover { border-color: #4fc3f7; }
+        .toggle-switch-box { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; background: var(--surface); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border-1a3a5c); }
+        .toggle-switch-box:hover { border-color: var(--accent-line); }
         .toggle-switch-box input { display: none; }
-        .toggle-switch-box .toggle-slider { width: 36px; height: 20px; background: #444; border-radius: 10px; position: relative; transition: background 0.2s; flex-shrink: 0; }
+        .toggle-switch-box .toggle-slider { width: 36px; height: 20px; background: var(--chip-bg-hover); border-radius: 10px; position: relative; transition: background 0.2s; flex-shrink: 0; }
         .toggle-switch-box .toggle-slider::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: #888; border-radius: 50%; transition: transform 0.2s, background 0.2s; }
         .toggle-switch-box input:checked + .toggle-slider { background: #4fc3f7; }
         .toggle-switch-box input:checked + .toggle-slider::after { transform: translateX(16px); background: #fff; }
-        .toggle-switch-box .toggle-label { color: #aaa; font-size: 13px; white-space: nowrap; }
-        .toggle-switch-box input:checked ~ .toggle-label { color: #4fc3f7; }
+        .toggle-switch-box .toggle-label { color: var(--text-dim); font-size: 13px; white-space: nowrap; }
+        .toggle-switch-box input:checked ~ .toggle-label { color: var(--accent); }
 
         /* Export dropdown */
         .export-dropdown { position: relative; display: inline-block; }
-        .export-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; background: #1a1a2e; border: 1px solid #0f3460; border-radius: 6px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.3); min-width: 80px; }
+        .export-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; z-index: 100; box-shadow: 0 4px 12px var(--shadow); min-width: 80px; }
         .export-menu.show { display: block; }
         .export-item { padding: 8px 14px; cursor: pointer; font-size: 13px; transition: background 0.15s; }
-        .export-item:hover { background: #0f3460; }
+        .export-item:hover { background: var(--surface); }
         .export-item:first-child { border-radius: 6px 6px 0 0; }
         .export-item:last-child { border-radius: 0 0 6px 6px; }
 
         /* Toast notifications */
         .toast-container { position: fixed; top: 20px; right: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 10px; }
-        .toast { padding: 14px 20px; border-radius: 6px; color: #fff; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: toastIn 0.3s ease-out; max-width: 400px; display: flex; align-items: center; gap: 10px; }
+        .toast { padding: 14px 20px; border-radius: 6px; color: #fff; font-size: 14px; box-shadow: 0 4px 12px var(--shadow); animation: toastIn 0.3s ease-out; max-width: 400px; display: flex; align-items: center; gap: 10px; }
         .toast.success { background: #00c853; }
         .toast.error { background: #e94560; }
         .toast.warning { background: #ffc107; color: #1a1a2e; }
@@ -878,6 +1107,17 @@ HTML_TEMPLATE = '''
         .toast-close:hover { opacity: 1; }
         @keyframes toastIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         @keyframes toastOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+
+        /* Narrow screens: let the header wrap so the language, theme, settings and
+           logout buttons stay on screen (the page itself does not scroll sideways). */
+        @media (max-width: 760px) {
+            header { flex-wrap: wrap; gap: 12px; }
+            .header-right { flex-wrap: wrap; gap: 12px; }
+            .stats-bar { flex-wrap: wrap; gap: 8px; }
+            .tabs { flex-wrap: wrap; }
+            .modal-content, .modal-content.resizable { min-width: 0; width: calc(100vw - 24px); padding: 20px 16px; }
+            .modal-footer { flex-wrap: wrap; }
+        }
     </style>
 </head>
 <body>
@@ -931,7 +1171,7 @@ HTML_TEMPLATE = '''
     </svg>
     <div class="container">
         <header>
-            <h1>jt-wazuh-mgr <span style="font-size: 14px; color: #888; font-weight: normal;">v{{ version }}</span></h1>
+            <h1>jt-wazuh-mgr <span style="font-size: 14px; color: var(--text-muted); font-weight: normal;">v{{ version }}</span></h1>
             <div class="header-right">
                 <div class="stats-bar" id="statsBar">
                     <div class="stat-item" onclick="filterByStatus('')" title="Show all agents"><div class="stat-value" id="totalAgents"><span>-</span></div><div class="stat-label">Total Agents</div></div>
@@ -942,7 +1182,7 @@ HTML_TEMPLATE = '''
                 <div class="user-info">
                     <div><span class="api-status connected">API Connected</span></div>
                     <div><strong>{{ username }}</strong></div>
-                    <div id="sessionTimer" style="font-size:11px;color:#888;"></div>
+                    <div id="sessionTimer" style="font-size:11px;color:var(--text-muted);"></div>
                 </div>
                 <div class="header-buttons">
                     <button class="btn-settings" onclick="showSettingsModal()"><svg class="icon"><use href="#icon-settings"/></svg>Settings</button>
@@ -1162,20 +1402,20 @@ HTML_TEMPLATE = '''
                 </div>
                 <span id="rulesHierarchyControls" style="display:contents;">
                     <div class="search-box" style="flex:1;max-width:400px;">
-                        <input type="text" id="ruleIdSearch" placeholder="Rule ID (100001) or file name (zenarmor, adguard-rule.xml)" style="width:100%;padding:8px 12px;border:1px solid #333;border-radius:4px;background:#1a1a2e;color:#fff;" onkeydown="if(event.key==='Enter')searchRuleHierarchy()">
+                        <input type="text" id="ruleIdSearch" placeholder="Rule ID (100001) or file name (zenarmor, adguard-rule.xml)" style="width:100%;padding:8px 12px;border:1px solid var(--border-333);border-radius:4px;background:var(--bg);color:var(--text-strong);" onkeydown="if(event.key==='Enter')searchRuleHierarchy()">
                     </div>
                     <button class="btn btn-primary" onclick="searchRuleHierarchy()"><svg class="icon"><use href="#icon-search"/></svg>Search</button>
                     <button class="btn" onclick="clearRuleSearch()"><svg class="icon"><use href="#icon-xmark"/></svg>Clear</button>
                     <button class="btn" onclick="expandAllRules()" title="Expand All"><svg class="icon"><use href="#icon-nav-arrow-down"/></svg>Expand</button>
                     <button class="btn" onclick="collapseAllRules()" title="Collapse All"><svg class="icon"><use href="#icon-nav-arrow-up"/></svg>Collapse</button>
-                    <span id="ruleSearchStatus" style="margin-left:15px;color:#888;font-size:13px;"></span>
+                    <span id="ruleSearchStatus" style="margin-left:15px;color:var(--text-muted);font-size:13px;"></span>
                 </span>
                 <span id="rulesAllControls" style="display:none;contents;">
-                    <input type="text" id="rulesAllSearch" placeholder="Search rules..." style="padding:8px 12px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;min-width:200px;" oninput="filterAllRulesDebounced()">
+                    <input type="text" id="rulesAllSearch" placeholder="Search rules..." style="padding:8px 12px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:4px;min-width:200px;" oninput="filterAllRulesDebounced()">
                     <div class="rules-toolbar-filters">
-                        <span style="color:#888;font-size:12px;">Level:</span>
+                        <span style="color:var(--text-muted);font-size:12px;">Level:</span>
                         <input type="number" id="rulesLevelMin" min="0" max="16" placeholder="Min" onchange="renderAllRules()">
-                        <span style="color:#666;">-</span>
+                        <span style="color:var(--text-faint);">-</span>
                         <input type="number" id="rulesLevelMax" min="0" max="16" placeholder="Max" onchange="renderAllRules()">
                         <select id="rulesFileFilter" onchange="renderAllRules()"><option value="">All Files</option></select>
                         <select id="rulesTypeFilter" onchange="renderAllRules()">
@@ -1193,33 +1433,33 @@ HTML_TEMPLATE = '''
                         </select>
                         <button class="btn btn-primary btn-sm" onclick="searchRulesContent()" title="Search inside every rule's XML"><svg class="icon"><use href="#icon-search"/></svg>Content</button>
                     </span>
-                    <span id="rulesAllStatus" style="color:#888;font-size:13px;"></span>
+                    <span id="rulesAllStatus" style="color:var(--text-muted);font-size:13px;"></span>
                     <span id="rulesParseWarn" style="font-size:13px;"></span>
                 </span>
                 <span id="rulesDecoderControls" style="display:none;">
-                    <input type="text" id="decoderSearch" placeholder="Search decoders..." style="padding:8px 12px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;min-width:220px;" onkeydown="if(event.key==='Enter')loadDecoders()">
+                    <input type="text" id="decoderSearch" placeholder="Search decoders..." style="padding:8px 12px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:4px;min-width:220px;" onkeydown="if(event.key==='Enter')loadDecoders()">
                     <button class="btn btn-primary btn-sm" onclick="loadDecoders()"><svg class="icon"><use href="#icon-search"/></svg>Search</button>
                     <button class="btn btn-sm" onclick="document.getElementById('decoderSearch').value='';loadDecoders()"><svg class="icon"><use href="#icon-xmark"/></svg>Clear</button>
-                    <span id="decoderStatus" style="color:#888;font-size:13px;"></span>
+                    <span id="decoderStatus" style="color:var(--text-muted);font-size:13px;"></span>
                 </span>
                 <span id="rulesListsControls" style="display:none;">
                     <button class="btn btn-primary btn-sm" onclick="loadCdbLists()" title="Refresh"><svg class="icon"><use href="#icon-refresh"/></svg></button>
                     <button class="btn btn-success btn-sm" onclick="editCdbList('')"><svg class="icon"><use href="#icon-add-group"/></svg>New List</button>
-                    <span id="cdbStatus" style="color:#888;font-size:13px;"></span>
+                    <span id="cdbStatus" style="color:var(--text-muted);font-size:13px;"></span>
                 </span>
                 <button class="btn btn-sm" style="background:#00897b;color:#fff;margin-left:auto;" onclick="reloadClusterRuleset()" title="Apply rule changes on every cluster node without restarting"><svg class="icon"><use href="#icon-refresh"/></svg>Reload Ruleset</button>
                 <span id="rulesLogtestControls" style="display:none;">
-                    <span style="color:#888;font-size:12px;">Paste a log line and see which rule and decoder match it.</span>
+                    <span style="color:var(--text-muted);font-size:12px;">Paste a log line and see which rule and decoder match it.</span>
                 </span>
             </div>
             <!-- Hierarchy View -->
             <div id="rulesHierarchyView" style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;">
-                <div style="padding:10px 15px 0 15px;color:#888;font-size:12px;flex-shrink:0;">
+                <div style="padding:10px 15px 0 15px;color:var(--text-muted);font-size:12px;flex-shrink:0;">
                     Search by Rule ID to view the rule hierarchy (parent-child relationships via if_sid/if_matched_sid/if_group), or by rule file name to see everything that file contains. Click on a rule to view its XML content.
                 </div>
                 <div class="rules-content" style="padding:15px;">
                     <div id="ruleTreeContainer" style="min-height:200px;">
-                        <div style="color:#888;text-align:center;padding:40px;">
+                        <div style="color:var(--text-muted);text-align:center;padding:40px;">
                             <svg class="icon" style="width:48px;height:48px;opacity:0.5;margin-bottom:15px;"><use href="#icon-tree"/></svg>
                             <p>Enter a Rule ID to view its hierarchy and relationships, or a rule file name to list its rules.</p>
                             <p style="font-size:12px;margin-top:10px;">The tree will show parent rules (if_sid, if_matched_sid) and child rules.</p>
@@ -1239,7 +1479,7 @@ HTML_TEMPLATE = '''
                             <th style="width:70px;">Type</th>
                         </tr></thead>
                         <tbody id="decodersBody">
-                            <tr><td colspan="5" style="text-align:center;color:#888;padding:40px;">Click Decoders to load.</td></tr>
+                            <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:40px;">Click Decoders to load.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1255,7 +1495,7 @@ HTML_TEMPLATE = '''
                             <th style="width:170px;">Actions</th>
                         </tr></thead>
                         <tbody id="cdbBody">
-                            <tr><td colspan="4" style="text-align:center;color:#888;padding:40px;">Click CDB Lists to load.</td></tr>
+                            <tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:40px;">Click CDB Lists to load.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1263,8 +1503,8 @@ HTML_TEMPLATE = '''
             <!-- Log Test View -->
             <div id="rulesLogtestView" style="display:none;flex:1;overflow:auto;min-height:0;flex-direction:column;padding:15px;">
                 <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
-                    <label style="color:#888;font-size:13px;">Format</label>
-                    <select id="logtestFormat" style="padding:6px 8px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;">
+                    <label style="color:var(--text-muted);font-size:13px;">Format</label>
+                    <select id="logtestFormat" style="padding:6px 8px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:4px;">
                         <option value="syslog" selected>syslog</option>
                         <option value="json">json</option>
                         <option value="eventchannel">eventchannel</option>
@@ -1278,13 +1518,13 @@ HTML_TEMPLATE = '''
                         <option value="mysql_log">mysql_log</option>
                         <option value="postgresql_log">postgresql_log</option>
                     </select>
-                    <label style="color:#888;font-size:13px;">Location</label>
-                    <input type="text" id="logtestLocation" value="stdin" style="width:200px;padding:6px 8px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;">
+                    <label style="color:var(--text-muted);font-size:13px;">Location</label>
+                    <input type="text" id="logtestLocation" value="stdin" style="width:200px;padding:6px 8px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:4px;">
                     <button class="btn btn-primary btn-sm" onclick="runLogtest()"><svg class="icon"><use href="#icon-search"/></svg>Run Test</button>
                     <button class="btn btn-sm" onclick="clearLogtest()"><svg class="icon"><use href="#icon-xmark"/></svg>Clear</button>
-                    <span id="logtestStatus" style="color:#888;font-size:12px;"></span>
+                    <span id="logtestStatus" style="color:var(--text-muted);font-size:12px;"></span>
                 </div>
-                <textarea id="logtestEvent" placeholder="Paste one log line here" style="width:100%;height:110px;background:#0a0a15;color:#eee;border:1px solid #1a3a6e;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;"></textarea>
+                <textarea id="logtestEvent" placeholder="Paste one log line here" style="width:100%;height:110px;background:var(--sunken);color:var(--text);border:1px solid var(--border-1a3a6e);border-radius:4px;padding:10px;font-family:monospace;font-size:12px;"></textarea>
                 <div id="logtestResult" style="margin-top:12px;"></div>
             </div>
             <!-- All Rules View -->
@@ -1302,7 +1542,7 @@ HTML_TEMPLATE = '''
                             </tr>
                         </thead>
                         <tbody id="rulesAllBody">
-                            <tr><td colspan="6" style="text-align:center;color:#888;padding:40px;">Click "All Rules" to load all rules.</td></tr>
+                            <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:40px;">Click "All Rules" to load all rules.</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1326,16 +1566,16 @@ HTML_TEMPLATE = '''
         <!-- Stats Panel -->
         <div class="panel" id="packs-panel">
             <div class="toolbar" style="gap:8px;">
-                <input type="search" id="packsFilter" placeholder="Filter by name, description or rule ID" oninput="renderPacks()" style="padding:8px 12px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;min-width:280px;">
+                <input type="search" id="packsFilter" placeholder="Filter by name, description or rule ID" oninput="renderPacks()" style="padding:8px 12px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:4px;min-width:280px;">
                 <select id="packsStateFilter" onchange="renderPacks()">
                     <option value="">All packs</option>
                     <option value="update">Update available</option>
                     <option value="installed">Installed</option>
                     <option value="not-installed">Not installed</option>
                 </select>
-                <span style="color:#888;font-size:12px;">Rule series maintained by Jason Tools. Each pack bundles rules, decoders and CDB lists, and can be removed again.</span>
+                <span style="color:var(--text-muted);font-size:12px;">Rule series maintained by Jason Tools. Each pack bundles rules, decoders and CDB lists, and can be removed again.</span>
                 <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="refreshPacks()" title="Refresh"><svg class="icon"><use href="#icon-refresh"/></svg></button>
-                <span id="packsStatus" style="color:#888;font-size:13px;"></span>
+                <span id="packsStatus" style="color:var(--text-muted);font-size:13px;"></span>
             </div>
             <div class="table-container" style="flex:1;overflow:auto;min-height:0;">
                 <table id="packsTable">
@@ -1349,7 +1589,7 @@ HTML_TEMPLATE = '''
                         <th style="width:230px;">Actions</th>
                     </tr></thead>
                     <tbody id="packsBody">
-                        <tr><td colspan="7" style="text-align:center;color:#888;padding:40px;">Loading...</td></tr>
+                        <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:40px;">Loading...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1357,7 +1597,7 @@ HTML_TEMPLATE = '''
 
         <div class="panel" id="inventory-panel">
             <div class="toolbar" style="gap:8px;">
-                <select id="invType" onchange="onInventoryTypeChange()" style="padding:8px 10px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;">
+                <select id="invType" onchange="onInventoryTypeChange()" style="padding:8px 10px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:4px;">
                     <option value="packages">Packages</option>
                     <option value="ports">Open Ports</option>
                     <option value="processes">Processes</option>
@@ -1368,22 +1608,22 @@ HTML_TEMPLATE = '''
                     <option value="os">Operating System</option>
                     <option value="browser_extensions">Browser Extensions</option>
                 </select>
-                <input type="text" id="invQuery" placeholder="Search across agents..." style="padding:8px 12px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;min-width:240px;" onkeydown="if(event.key==='Enter')runInventorySearch()">
-                <select id="invScope" style="padding:8px 10px;border:1px solid #0f3460;background:#1a1a2e;color:#eee;border-radius:4px;">
+                <input type="text" id="invQuery" placeholder="Search across agents..." style="padding:8px 12px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:4px;min-width:240px;" onkeydown="if(event.key==='Enter')runInventorySearch()">
+                <select id="invScope" style="padding:8px 10px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:4px;">
                     <option value="active">Active agents</option>
                     <option value="all">All agents</option>
                     <option value="selected">Selected agents</option>
                 </select>
                 <button class="btn btn-primary" onclick="runInventorySearch()"><svg class="icon"><use href="#icon-search"/></svg>Search</button>
                 <button class="btn" onclick="exportInventoryCsv()" title="Export results as CSV"><svg class="icon"><use href="#icon-download"/></svg>CSV</button>
-                <span id="invStatus" style="color:#888;font-size:13px;"></span>
+                <span id="invStatus" style="color:var(--text-muted);font-size:13px;"></span>
                 <span id="invWarn" style="font-size:13px;"></span>
             </div>
             <div class="table-container" style="flex:1;overflow:auto;min-height:0;">
                 <table id="invTable">
                     <thead><tr id="invHead"><th>Agent</th><th>Result</th></tr></thead>
                     <tbody id="invBody">
-                        <tr><td colspan="2" style="text-align:center;color:#888;padding:40px;">Pick a category and search to see which agents match.</td></tr>
+                        <tr><td colspan="2" style="text-align:center;color:var(--text-muted);padding:40px;">Pick a category and search to see which agents match.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1429,13 +1669,13 @@ HTML_TEMPLATE = '''
                     <option value="1000">Last 1000 lines</option>
                 </select>
                 <button class="btn" onclick="downloadLogs()"><svg class="icon"><use href="#icon-download"/></svg>Download Full Log</button>
-                <span style="margin-left:auto;color:#888;font-size:12px;">
-                    <strong>Log file:</strong> <code id="logFilePath" style="color:#4fc3f7;">-</code>
+                <span style="margin-left:auto;color:var(--text-muted);font-size:12px;">
+                    <strong>Log file:</strong> <code id="logFilePath" style="color:var(--accent);">-</code>
                     <span id="logFileInfo" style="margin-left:10px;"></span>
                 </span>
             </div>
             <div class="log-container" id="logContainer">
-                <pre id="logContent" style="padding:15px;background:#0a0a15;border-radius:4px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;">Click Refresh to load logs...</pre>
+                <pre id="logContent" style="padding:15px;background:var(--sunken);border-radius:4px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;">Click Refresh to load logs...</pre>
             </div>
         </div>
     </div>
@@ -1458,10 +1698,10 @@ HTML_TEMPLATE = '''
       uses this over a network must be offered the corresponding source, and for
       a hosted admin console that is the only way most users ever meet it.
     -->
-    <footer style="text-align:center;padding:5px;color:#555;font-size:12px;flex-shrink:0;">
-        by <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" style="color:#666;text-decoration:none;">Jason Cheng (Jason Tools)</a>
+    <footer style="text-align:center;padding:5px;color:var(--text-555);font-size:12px;flex-shrink:0;">
+        by <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" style="color:var(--text-faint);text-decoration:none;">Jason Cheng (Jason Tools)</a>
     &nbsp;&middot;&nbsp;
-        <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener" style="color:#666;text-decoration:none;">AGPL-3.0 &mdash; source code</a>
+        <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener" style="color:var(--text-faint);text-decoration:none;">AGPL-3.0 &mdash; source code</a>
     </footer>
 
     <!-- Toast Container -->
@@ -1533,7 +1773,7 @@ HTML_TEMPLATE = '''
             }
 
             if (remaining <= 0) {
-                timerEl.innerHTML = '<span style="color:#e94560;">Session expired</span>';
+                timerEl.innerHTML = '<span style="color:var(--danger);">Session expired</span>';
                 clearInterval(sessionTimerInterval);
                 showToast('Session expired. Redirecting to login...', 'warning');
                 setTimeout(() => { window.location.href = '/logout'; }, 2000);
@@ -1546,9 +1786,9 @@ HTML_TEMPLATE = '''
             const timeStr = (hrs > 0 ? hrs + ':' + String(mins).padStart(2, '0') : mins) + ':' + String(secs).padStart(2, '0');
 
             if (remaining <= 60) {
-                timerEl.innerHTML = '<span style="color:#e94560;">Expires: ' + timeStr + '</span>';
+                timerEl.innerHTML = '<span style="color:var(--danger);">Expires: ' + timeStr + '</span>';
             } else if (remaining <= 180) {
-                timerEl.innerHTML = '<span style="color:#ffc107;">Expires: ' + timeStr + '</span>';
+                timerEl.innerHTML = '<span style="color:var(--warning);">Expires: ' + timeStr + '</span>';
             } else {
                 timerEl.textContent = 'Expires: ' + timeStr;
             }
@@ -1648,7 +1888,7 @@ HTML_TEMPLATE = '''
             const agentNode = agent.node_name || '';
             const otherNode = queueOtherNodes.find(n => n.name === agentNode);
             if (otherNode && agentNode !== queueSizeNode && !queueLoadedNodes.includes(agentNode)) {
-                return `<a href="#" onclick="showSSHSetupTutorial('${escapeHtml(agentNode)}', '${escapeHtml(otherNode.ip)}'); return false;" style="color:#f39c12;text-decoration:underline;cursor:pointer;" title="SSH access required for ${escapeHtml(agentNode)}">SSH required</a>`;
+                return `<a href="#" onclick="showSSHSetupTutorial('${escapeHtml(agentNode)}', '${escapeHtml(otherNode.ip)}'); return false;" style="color:var(--orange);text-decoration:underline;cursor:pointer;" title="SSH access required for ${escapeHtml(agentNode)}">SSH required</a>`;
             }
 
             return '-';
@@ -1661,7 +1901,7 @@ HTML_TEMPLATE = '''
 
             // Check if this node exists in the current cluster
             if (validNodeNames.length > 0 && !validNodeNames.includes(nodeName)) {
-                return `<span style="color:#e94560;text-decoration:line-through;" title="Node '${escaped}' no longer exists in cluster">${escaped}</span>`;
+                return `<span style="color:var(--danger);text-decoration:line-through;" title="Node '${escaped}' no longer exists in cluster">${escaped}</span>`;
             }
 
             return escaped;
@@ -1718,13 +1958,13 @@ HTML_TEMPLATE = '''
             const cmp = compareVersions(version, managerVersion);
             if (cmp < 0) {
                 // Older than manager - show in orange/warning color
-                return `<span style="color:#fd7e14;" title="Older than manager (${managerVersion})">${v}</span>`;
+                return `<span style="color:var(--orange-fd7e14);" title="Older than manager (${managerVersion})">${v}</span>`;
             } else if (cmp > 0) {
                 // Newer than manager - show in cyan (unusual)
-                return `<span style="color:#17a2b8;" title="Newer than manager (${managerVersion})">${v}</span>`;
+                return `<span style="color:var(--info);" title="Newer than manager (${managerVersion})">${v}</span>`;
             }
             // Same version - normal color (green)
-            return `<span style="color:#28a745;">${v}</span>`;
+            return `<span style="color:var(--success-28a745);">${v}</span>`;
         }
 
         // Tab switching
@@ -1878,7 +2118,7 @@ HTML_TEMPLATE = '''
                 if (!agentData) return;
 
                 if (agentData.error) {
-                    body.innerHTML = `<tr><td colspan="20" class="loading" style="color:#e94560;">Error: ${agentData.error}</td></tr>`;
+                    body.innerHTML = `<tr><td colspan="20" class="loading" style="color:var(--danger);">Error: ${agentData.error}</td></tr>`;
                     showToast('Failed to load agents: ' + agentData.error, 'error');
                     return;
                 }
@@ -1897,7 +2137,7 @@ HTML_TEMPLATE = '''
                 if (err.message === 'BACKEND_UNAVAILABLE') {
                     body.innerHTML = `<tr><td colspan="20">${getConnectionErrorHtml('refreshAgents()')}</td></tr>`;
                 } else {
-                    body.innerHTML = `<tr><td colspan="20" class="loading" style="color:#e94560;">Error loading agents: ${escapeHtml(err.message)}</td></tr>`;
+                    body.innerHTML = `<tr><td colspan="20" class="loading" style="color:var(--danger);">Error loading agents: ${escapeHtml(err.message)}</td></tr>`;
                     showToast('Error loading agents: ' + err.message, 'error');
                 }
                 console.error('refreshAgents error:', err);
@@ -2210,30 +2450,30 @@ HTML_TEMPLATE = '''
                 const queueEntries = queueSizes[a.id] || [];
                 let queueSizeDisplay = '-';
                 if (queueEntries.length === 1) {
-                    queueSizeDisplay = `${formatBytes(queueEntries[0].size)} <span style="color:#888;font-size:11px">(on ${queueEntries[0].node})</span>`;
+                    queueSizeDisplay = `${formatBytes(queueEntries[0].size)} <span style="color:var(--text-muted);font-size:11px">(on ${queueEntries[0].node})</span>`;
                 } else if (queueEntries.length > 1) {
                     queueSizeDisplay = queueEntries.map(e =>
-                        `${formatBytes(e.size)} <span style="color:#888;font-size:11px">(on ${e.node})</span>`
+                        `${formatBytes(e.size)} <span style="color:var(--text-muted);font-size:11px">(on ${e.node})</span>`
                     ).join('<br>');
                 }
 
                 const html = `
                     <table style="width:100%">
-                        <tr><td style="color:#aaa;width:40%">ID</td><td><strong>${a.id || '-'}</strong></td></tr>
-                        <tr><td style="color:#aaa">Name</td><td><strong>${a.name || '-'}</strong></td></tr>
-                        <tr><td style="color:#aaa">IP</td><td>${a.ip || '-'}</td></tr>
-                        <tr><td style="color:#aaa">Status</td><td><span class="status status-${getStatusClass(a.status || '')}">${a.status || '-'}</span></td></tr>
-                        <tr><td style="color:#aaa">Manager</td><td>${a.manager || '-'}</td></tr>
-                        <tr><td style="color:#aaa">Node</td><td>${a.node_name || '-'}</td></tr>
-                        <tr><td style="color:#aaa">Version</td><td>${a.version || '-'}</td></tr>
-                        <tr><td style="color:#aaa">OS</td><td>${(a.os && a.os.name) || (a.os && a.os.platform) || '-'} ${(a.os && a.os.version) || ''}</td></tr>
-                        <tr><td style="color:#aaa">OS Architecture</td><td>${(a.os && a.os.arch) || '-'}</td></tr>
-                        <tr><td style="color:#aaa">Groups</td><td>${(a.group || []).join(', ') || '-'}</td></tr>
-                        <tr><td style="color:#aaa">Registration Date</td><td>${formatDate(a.dateAdd)}</td></tr>
-                        <tr><td style="color:#aaa">Last Keep Alive</td><td>${formatDate(a.lastKeepAlive)}</td></tr>
-                        <tr><td style="color:#aaa">Queue DB Size</td><td>${queueSizeDisplay}</td></tr>
-                        <tr><td style="color:#aaa">Config Sum</td><td style="font-family:monospace;font-size:11px">${a.configSum || '-'}</td></tr>
-                        <tr><td style="color:#aaa">Merged Sum</td><td style="font-family:monospace;font-size:11px">${a.mergedSum || '-'}</td></tr>
+                        <tr><td style="color:var(--text-dim);width:40%">ID</td><td><strong>${a.id || '-'}</strong></td></tr>
+                        <tr><td style="color:var(--text-dim)">Name</td><td><strong>${a.name || '-'}</strong></td></tr>
+                        <tr><td style="color:var(--text-dim)">IP</td><td>${a.ip || '-'}</td></tr>
+                        <tr><td style="color:var(--text-dim)">Status</td><td><span class="status status-${getStatusClass(a.status || '')}">${a.status || '-'}</span></td></tr>
+                        <tr><td style="color:var(--text-dim)">Manager</td><td>${a.manager || '-'}</td></tr>
+                        <tr><td style="color:var(--text-dim)">Node</td><td>${a.node_name || '-'}</td></tr>
+                        <tr><td style="color:var(--text-dim)">Version</td><td>${a.version || '-'}</td></tr>
+                        <tr><td style="color:var(--text-dim)">OS</td><td>${(a.os && a.os.name) || (a.os && a.os.platform) || '-'} ${(a.os && a.os.version) || ''}</td></tr>
+                        <tr><td style="color:var(--text-dim)">OS Architecture</td><td>${(a.os && a.os.arch) || '-'}</td></tr>
+                        <tr><td style="color:var(--text-dim)">Groups</td><td>${(a.group || []).join(', ') || '-'}</td></tr>
+                        <tr><td style="color:var(--text-dim)">Registration Date</td><td>${formatDate(a.dateAdd)}</td></tr>
+                        <tr><td style="color:var(--text-dim)">Last Keep Alive</td><td>${formatDate(a.lastKeepAlive)}</td></tr>
+                        <tr><td style="color:var(--text-dim)">Queue DB Size</td><td>${queueSizeDisplay}</td></tr>
+                        <tr><td style="color:var(--text-dim)">Config Sum</td><td style="font-family:monospace;font-size:11px">${a.configSum || '-'}</td></tr>
+                        <tr><td style="color:var(--text-dim)">Merged Sum</td><td style="font-family:monospace;font-size:11px">${a.mergedSum || '-'}</td></tr>
                     </table>
                 `;
 
@@ -2265,7 +2505,7 @@ HTML_TEMPLATE = '''
             const options = AGENT_CONFIG_SECTIONS.map(([c, cf, label]) =>
                 '<option value="' + c + '|' + cf + '"' + (c === comp && cf === conf ? ' selected' : '') + '>' + label + '</option>').join('');
             const header =
-                '<div style="margin-bottom:10px;">Section: <select id="agentConfigSection" style="background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;" ' +
+                '<div style="margin-bottom:10px;">Section: <select id="agentConfigSection" style="background:var(--surface);border:1px solid var(--border-1a3a6e);color:var(--text);padding:6px 10px;border-radius:4px;" ' +
                 'onchange="const v=this.value.split(\\'|\\');showAgentRuntimeConfig(\\'' + agentId + '\\', v[0], v[1]);">' + options + '</select></div>';
             showModal('Running Config - Agent ' + agentId,
                 header + '<div id="agentRuntimeBody"><div class="loading"><div class="spinner"></div>Loading...</div></div>',
@@ -2275,15 +2515,15 @@ HTML_TEMPLATE = '''
             if (!target) return;
             if (!result || result.error) {
                 target.innerHTML = '<div class="alert alert-error">' + escapeHtml((result && result.error) || 'Failed to load') +
-                    '<div style="margin-top:6px;color:#888;font-size:12px;">The agent must be active for this to work.</div></div>';
+                    '<div style="margin-top:6px;color:var(--text-muted);font-size:12px;">The agent must be active for this to work.</div></div>';
                 return;
             }
             const cfg = result.config || {};
             if (!Object.keys(cfg).length) {
-                target.innerHTML = '<div style="color:#888;padding:20px;text-align:center;">This section is not configured on the agent.</div>';
+                target.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">This section is not configured on the agent.</div>';
                 return;
             }
-            target.innerHTML = '<pre style="background:#0a0a15;padding:15px;border-radius:4px;font-size:12px;max-height:55vh;overflow:auto;">' +
+            target.innerHTML = '<pre style="background:var(--sunken);padding:15px;border-radius:4px;font-size:12px;max-height:55vh;overflow:auto;">' +
                 escapeHtml(JSON.stringify(cfg, null, 2)) + '</pre>';
         }
 
@@ -2294,8 +2534,8 @@ HTML_TEMPLATE = '''
                 return;
             }
             showModal('Agent Key - ' + agentId,
-                '<p style="color:#888;font-size:12px;margin-bottom:10px;">Use this key to re-register the agent with <code>manage_agents</code>. Treat it as a secret.</p>' +
-                '<textarea readonly id="agentKeyText" style="width:100%;height:110px;background:#0a0a15;color:#eee;border:1px solid #1a3a6e;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;">' +
+                '<p style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">Use this key to re-register the agent with <code>manage_agents</code>. Treat it as a secret.</p>' +
+                '<textarea readonly id="agentKeyText" style="width:100%;height:110px;background:var(--sunken);color:var(--text);border:1px solid var(--border-1a3a6e);border-radius:4px;padding:10px;font-family:monospace;font-size:12px;">' +
                 escapeHtml(result.key || '') + '</textarea>',
                 '<button class="btn" data-copy="' + escapeHtml(result.key || '') + '" onclick="copyToClipboard(this)"><svg class="icon"><use href="#icon-copy"/></svg>Copy</button>' +
                 '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>');
@@ -2462,7 +2702,7 @@ HTML_TEMPLATE = '''
             }
 
             if (!agents || agents.length === 0) {
-                chart.innerHTML = '<div style="color:#666;padding:0 10px;font-size:11px;">No data</div>';
+                chart.innerHTML = '<div style="color:var(--text-faint);padding:0 10px;font-size:11px;">No data</div>';
                 return;
             }
 
@@ -2707,7 +2947,7 @@ HTML_TEMPLATE = '''
                 if (err.message === 'BACKEND_UNAVAILABLE') {
                     body.innerHTML = `<tr><td colspan="4">${getConnectionErrorHtml('refreshGroups()')}</td></tr>`;
                 } else {
-                    body.innerHTML = `<tr><td colspan="4" class="loading" style="color:#e94560;">Error loading groups: ${escapeHtml(err.message)}</td></tr>`;
+                    body.innerHTML = `<tr><td colspan="4" class="loading" style="color:var(--danger);">Error loading groups: ${escapeHtml(err.message)}</td></tr>`;
                 }
             }
         }
@@ -2756,7 +2996,7 @@ HTML_TEMPLATE = '''
                 return `
                 <tr>
                     <td>${safeName}</td>
-                    <td style="text-align:center"><a href="#" onclick="showGroupAgents('${jsName}');return false;" style="color:#4fc3f7;text-decoration:none;cursor:pointer;" title="View agents in this group">${g.count || 0}</a></td>
+                    <td style="text-align:center"><a href="#" onclick="showGroupAgents('${jsName}');return false;" style="color:var(--accent);text-decoration:none;cursor:pointer;" title="View agents in this group">${g.count || 0}</a></td>
                     <td>
                         <div class="btn-wrap">
                             <button class="btn btn-sm" style="background:#607d8b;color:#fff;" onclick="showGroupFiles('${jsName}')" title="Files in this group's directory"><svg class="icon"><use href="#icon-file"/></svg>Files</button>
@@ -2817,7 +3057,7 @@ HTML_TEMPLATE = '''
                 body.querySelector('.loading-status')?.remove();
                 const loadingRow = document.createElement('tr');
                 loadingRow.className = 'loading-status-row';
-                loadingRow.innerHTML = '<td colspan="9" style="padding:8px;color:#888;font-size:12px;text-align:center;"><span class="icon-spin" style="display:inline-block;margin-right:6px;">⟳</span>Loading services...</td>';
+                loadingRow.innerHTML = '<td colspan="9" style="padding:8px;color:var(--text-muted);font-size:12px;text-align:center;"><span class="icon-spin" style="display:inline-block;margin-right:6px;">⟳</span>Loading services...</td>';
                 body.appendChild(loadingRow);
 
                 const servicesData = await api('/nodes/services');
@@ -2827,7 +3067,7 @@ HTML_TEMPLATE = '''
                 }
 
                 // Step 3: Load sync status
-                loadingRow.innerHTML = '<td colspan="9" style="padding:8px;color:#888;font-size:12px;text-align:center;"><span class="icon-spin" style="display:inline-block;margin-right:6px;">⟳</span>Loading sync status...</td>';
+                loadingRow.innerHTML = '<td colspan="9" style="padding:8px;color:var(--text-muted);font-size:12px;text-align:center;"><span class="icon-spin" style="display:inline-block;margin-right:6px;">⟳</span>Loading sync status...</td>';
                 syncStatusLoading = true;
                 renderNodes(nodes);  // Re-render to show loading indicator
 
@@ -2839,7 +3079,7 @@ HTML_TEMPLATE = '''
                 renderNodes(nodes);
 
                 // Step 4: Load logs info (archives and alerts) for each node (in parallel)
-                loadingRow.innerHTML = '<td colspan="9" style="padding:8px;color:#888;font-size:12px;text-align:center;"><span class="icon-spin" style="display:inline-block;margin-right:6px;">⟳</span>Loading logs info...</td>';
+                loadingRow.innerHTML = '<td colspan="9" style="padding:8px;color:var(--text-muted);font-size:12px;text-align:center;"><span class="icon-spin" style="display:inline-block;margin-right:6px;">⟳</span>Loading logs info...</td>';
 
                 const logsPromises = nodes.map(n =>
                     api('/nodes/' + encodeURIComponent(n.name) + '/logs-info')
@@ -2859,7 +3099,7 @@ HTML_TEMPLATE = '''
                 if (err.message === 'BACKEND_UNAVAILABLE') {
                     body.innerHTML = `<tr><td colspan="9">${getConnectionErrorHtml('refreshNodes()')}</td></tr>`;
                 } else {
-                    body.innerHTML = `<tr><td colspan="9" class="loading" style="color:#e94560;">Error loading nodes: ${escapeHtml(err.message)}</td></tr>`;
+                    body.innerHTML = `<tr><td colspan="9" class="loading" style="color:var(--danger);">Error loading nodes: ${escapeHtml(err.message)}</td></tr>`;
                 }
             }
         }
@@ -2870,7 +3110,7 @@ HTML_TEMPLATE = '''
                 const safeName = escapeHtml(n.name);
                 const jsName = n.name.replace(/'/g, "\\'").replace(/"/g, '\\"');
                 const services = nodeServices[n.name] || null;
-                let servicesHtml = '<span style="color:#888">-</span>';
+                let servicesHtml = '<span style="color:var(--text-muted)">-</span>';
                 if (services) {
                     servicesHtml = '<div class="service-status">' + services.map(s =>
                         `<span class="service-indicator"><span class="dot ${escapeHtml(s.status)}"></span>${escapeHtml(s.name)}</span>`
@@ -2878,7 +3118,7 @@ HTML_TEMPLATE = '''
                 }
 
                 // Sync status (only for worker nodes)
-                let syncHtml = '<span style="color:#888">-</span>';
+                let syncHtml = '<span style="color:var(--text-muted)">-</span>';
                 if (n.type === 'worker') {
                     const sync = nodeSyncStatus[n.name];
                     if (sync && sync.length > 0) {
@@ -2891,9 +3131,9 @@ HTML_TEMPLATE = '''
                         }).join('') + '</div>';
                     } else if (syncStatusLoading) {
                         // Show loading indicator while sync status is being fetched
-                        syncHtml = '<span style="color:#888;font-size:12px;"><span class="icon-spin" style="display:inline-block;margin-right:4px;">⟳</span>Loading...</span>';
+                        syncHtml = '<span style="color:var(--text-muted);font-size:12px;"><span class="icon-spin" style="display:inline-block;margin-right:4px;">⟳</span>Loading...</span>';
                     } else {
-                        syncHtml = '<span style="color:#888">-</span>';
+                        syncHtml = '<span style="color:var(--text-muted)">-</span>';
                     }
                 } else {
                     // Master node - show as reference source with blue indicators
@@ -2928,11 +3168,11 @@ HTML_TEMPLATE = '''
                 const rowStyle = isDimmed ? ' style="opacity:0.7"' : '';
 
                 return `<tr${rowStyle}>
-                    <td>${safeName}${statusBadge}${n.hostname ? `<br><span style="color:#888;">(${escapeHtml(n.hostname)})</span>` : ''}</td>
+                    <td>${safeName}${statusBadge}${n.hostname ? `<br><span style="color:var(--text-muted);">(${escapeHtml(n.hostname)})</span>` : ''}</td>
                     <td style="text-align:center"><span class="badge ${n.type === 'master' ? 'badge-master' : 'badge-worker'}">${escapeHtml(n.type)}</span></td>
                     <td style="text-align:center">${escapeHtml(n.version)}</td>
                     <td>${escapeHtml(n.ip)}</td>
-                    <td style="text-align:center">${n.count ? `<a href="#" onclick="filterByNode('${jsName}'); return false;" style="color:#4fc3f7;text-decoration:none;font-weight:bold;" title="View agents on this node">${n.count}</a>` : "-"}</td>
+                    <td style="text-align:center">${n.count ? `<a href="#" onclick="filterByNode('${jsName}'); return false;" style="color:var(--accent);text-decoration:none;font-weight:bold;" title="View agents on this node">${n.count}</a>` : "-"}</td>
                     <td>${servicesHtml}</td>
                     <td>${syncHtml}</td>
                     <td>
@@ -2981,10 +3221,10 @@ HTML_TEMPLATE = '''
                             <strong style="font-size:16px;">${escapeHtml(itemName)}</strong>
                             ${statusBadge}
                         </div>
-                        <div style="color:#888;font-size:13px;">
-                            <strong>Path:</strong> <code style="background:#0f3460;padding:2px 6px;border-radius:3px;">${escapeHtml(itemPath)}</code>
+                        <div style="color:var(--text-muted);font-size:13px;">
+                            <strong>Path:</strong> <code style="background:var(--surface);padding:2px 6px;border-radius:3px;">${escapeHtml(itemPath)}</code>
                         </div>
-                        <div style="color:#888;font-size:13px;margin-top:5px;">
+                        <div style="color:var(--text-muted);font-size:13px;margin-top:5px;">
                             <strong>Worker Node:</strong> ${escapeHtml(nodeName)}
                         </div>
                     </div>
@@ -2993,29 +3233,29 @@ HTML_TEMPLATE = '''
                 if (data.status === 'synced') {
                     html += '<div class="alert alert-success">All files are synchronized between master and worker.</div>';
                     if (data.file_count !== undefined) {
-                        html += '<div style="color:#aaa;font-size:13px;">Total files: ' + data.file_count + '</div>';
+                        html += '<div style="color:var(--text-dim);font-size:13px;">Total files: ' + data.file_count + '</div>';
                     }
                 } else if (data.status === 'not_synced') {
                     html += '<div class="alert alert-warning" style="background:#ffc10722;border-color:#ffc107;">Files are different between master and worker.</div>';
 
                     if (data.master_only && data.master_only.length > 0) {
-                        html += '<h4 style="margin:15px 0 10px;color:#4fc3f7;">Only on Master (' + data.master_only.length + ')</h4>';
-                        html += '<div style="max-height:150px;overflow-y:auto;background:#0a0a1a;padding:10px;border-radius:4px;font-family:monospace;font-size:12px;">';
-                        html += data.master_only.map(f => '<div style="color:#00c853;">+ ' + escapeHtml(f) + '</div>').join('');
+                        html += '<h4 style="margin:15px 0 10px;color:var(--accent);">Only on Master (' + data.master_only.length + ')</h4>';
+                        html += '<div style="max-height:150px;overflow-y:auto;background:var(--sunken-0a0a1a);padding:10px;border-radius:4px;font-family:monospace;font-size:12px;">';
+                        html += data.master_only.map(f => '<div style="color:var(--success);">+ ' + escapeHtml(f) + '</div>').join('');
                         html += '</div>';
                     }
 
                     if (data.worker_only && data.worker_only.length > 0) {
-                        html += '<h4 style="margin:15px 0 10px;color:#4fc3f7;">Only on Worker (' + data.worker_only.length + ')</h4>';
-                        html += '<div style="max-height:150px;overflow-y:auto;background:#0a0a1a;padding:10px;border-radius:4px;font-family:monospace;font-size:12px;">';
-                        html += data.worker_only.map(f => '<div style="color:#e94560;">- ' + escapeHtml(f) + '</div>').join('');
+                        html += '<h4 style="margin:15px 0 10px;color:var(--accent);">Only on Worker (' + data.worker_only.length + ')</h4>';
+                        html += '<div style="max-height:150px;overflow-y:auto;background:var(--sunken-0a0a1a);padding:10px;border-radius:4px;font-family:monospace;font-size:12px;">';
+                        html += data.worker_only.map(f => '<div style="color:var(--danger);">- ' + escapeHtml(f) + '</div>').join('');
                         html += '</div>';
                     }
 
                     if (data.different && data.different.length > 0) {
-                        html += '<h4 style="margin:15px 0 10px;color:#4fc3f7;">Different Content (' + data.different.length + ')</h4>';
-                        html += '<div style="max-height:150px;overflow-y:auto;background:#0a0a1a;padding:10px;border-radius:4px;font-family:monospace;font-size:12px;">';
-                        html += data.different.map(f => '<div style="color:#ffc107;">~ ' + escapeHtml(f) + '</div>').join('');
+                        html += '<h4 style="margin:15px 0 10px;color:var(--accent);">Different Content (' + data.different.length + ')</h4>';
+                        html += '<div style="max-height:150px;overflow-y:auto;background:var(--sunken-0a0a1a);padding:10px;border-radius:4px;font-family:monospace;font-size:12px;">';
+                        html += data.different.map(f => '<div style="color:var(--warning);">~ ' + escapeHtml(f) + '</div>').join('');
                         html += '</div>';
                     }
                 }
@@ -3095,7 +3335,7 @@ HTML_TEMPLATE = '''
                 const data = sortStatsData(statsData[section] || [], section, state.col, state.dir);
                 return `
                     <h3 style="margin-top:20px">${title}</h3>
-                    ${note ? `<p style="color:#888;font-size:12px;margin:5px 0 10px 0;font-style:italic;">${note}</p>` : ''}
+                    ${note ? `<p style="color:var(--text-muted);font-size:12px;margin:5px 0 10px 0;font-style:italic;">${note}</p>` : ''}
                     <table>
                         <thead><tr>
                             <th class="sortable ${getSortClass(section, 'name')}" style="width:50%" onclick="sortStats('${section}','name')">${nameCol}${sortIcons}</th>
@@ -3248,11 +3488,11 @@ HTML_TEMPLATE = '''
         async function showMoveToNodeModal() {
             const body = `
                 <div style="text-align:center;padding:30px;">
-                    <svg class="icon" style="width:48px;height:48px;color:#ffc107;margin-bottom:15px;"><use href="#icon-move"/></svg>
-                    <h3 style="color:#ffc107;margin-bottom:15px;">Under Development</h3>
-                    <p style="color:#aaa;">Move to Node feature is still under development.</p>
-                    <p style="color:#888;font-size:12px;margin-top:10px;">This feature will allow you to force agents to reconnect to a specific cluster node.</p>
-                    <p style="color:#888;font-size:12px;margin-top:8px;">Will integrate with HAProxy LB to route agents to designated nodes.</p>
+                    <svg class="icon" style="width:48px;height:48px;color:var(--warning);margin-bottom:15px;"><use href="#icon-move"/></svg>
+                    <h3 style="color:var(--warning);margin-bottom:15px;">Under Development</h3>
+                    <p style="color:var(--text-dim);">Move to Node feature is still under development.</p>
+                    <p style="color:var(--text-muted);font-size:12px;margin-top:10px;">This feature will allow you to force agents to reconnect to a specific cluster node.</p>
+                    <p style="color:var(--text-muted);font-size:12px;margin-top:8px;">Will integrate with HAProxy LB to route agents to designated nodes.</p>
                 </div>
             `;
             showModal('Move Agents to Node', body, '');
@@ -3357,7 +3597,7 @@ HTML_TEMPLATE = '''
             let html = '<div style="margin-bottom:12px;">' + escapeHtml(result.message) + dryRunLabel + '</div>';
             html += '<div style="max-height:400px;overflow-y:auto;">';
             html += '<table style="width:100%;border-collapse:collapse;">';
-            html += '<thead><tr style="border-bottom:1px solid #333;">';
+            html += '<thead><tr style="border-bottom:1px solid var(--border-333);">';
             html += '<th style="text-align:left;padding:6px;">Agent</th>';
             html += '<th style="text-align:left;padding:6px;">Node</th>';
             html += '<th style="text-align:left;padding:6px;">Status</th>';
@@ -3369,9 +3609,9 @@ HTML_TEMPLATE = '''
                 if (d.deleted && d.deleted.length > 0) {
                     d.deleted.forEach(del => {
                         const status = del.dry_run
-                            ? '<span style="color:#ff9800;">Would delete</span>'
-                            : '<span style="color:#4caf50;">Deleted</span>';
-                        html += '<tr style="border-bottom:1px solid #222;">';
+                            ? '<span style="color:var(--orange-ff9800);">Would delete</span>'
+                            : '<span style="color:var(--success-4caf50);">Deleted</span>';
+                        html += '<tr style="border-bottom:1px solid var(--border-222);">';
                         html += '<td style="padding:6px;">' + escapeHtml(agentLabel) + '</td>';
                         html += '<td style="padding:6px;">' + escapeHtml(del.node) + '</td>';
                         html += '<td style="padding:6px;">' + status + '</td>';
@@ -3380,18 +3620,18 @@ HTML_TEMPLATE = '''
                 }
                 if (d.errors && d.errors.length > 0) {
                     d.errors.forEach(err => {
-                        html += '<tr style="border-bottom:1px solid #222;">';
+                        html += '<tr style="border-bottom:1px solid var(--border-222);">';
                         html += '<td style="padding:6px;">' + escapeHtml(agentLabel) + '</td>';
                         html += '<td style="padding:6px;">' + escapeHtml(err.node) + '</td>';
-                        html += '<td style="padding:6px;"><span style="color:#f44336;">Error: ' + escapeHtml(err.error) + '</span></td>';
+                        html += '<td style="padding:6px;"><span style="color:var(--danger-f44336);">Error: ' + escapeHtml(err.error) + '</span></td>';
                         html += '</tr>';
                     });
                 }
                 if ((!d.deleted || d.deleted.length === 0) && (!d.errors || d.errors.length === 0)) {
-                    html += '<tr style="border-bottom:1px solid #222;">';
+                    html += '<tr style="border-bottom:1px solid var(--border-222);">';
                     html += '<td style="padding:6px;">' + escapeHtml(agentLabel) + '</td>';
                     html += '<td style="padding:6px;">-</td>';
-                    html += '<td style="padding:6px;"><span style="color:#aaa;">No DB file found</span></td>';
+                    html += '<td style="padding:6px;"><span style="color:var(--text-dim);">No DB file found</span></td>';
                     html += '</tr>';
                 }
             });
@@ -3402,16 +3642,16 @@ HTML_TEMPLATE = '''
                 const data = result.restart_result.data || {};
                 const affected = data.affected_items || [];
                 const failed = data.failed_items || [];
-                const borderColor = failed.length > 0 ? '#f44336' : '#4caf50';
-                html += '<div style="margin-top:12px;padding:8px 12px;background:#1a1a2e;border-left:3px solid ' + borderColor + ';border-radius:4px;">';
+                const borderColor = failed.length > 0 ? 'var(--danger-f44336)' : 'var(--success-4caf50)';
+                html += '<div style="margin-top:12px;padding:8px 12px;background:var(--bg);border-left:3px solid ' + borderColor + ';border-radius:4px;">';
                 html += 'Agent restart: ' + affected.length + ' agent(s) restarted';
                 if (failed.length > 0) {
-                    html += ', <span style="color:#f44336;">' + failed.length + ' failed</span>';
-                    html += '<div style="margin-top:6px;font-size:12px;color:#aaa;">';
+                    html += ', <span style="color:var(--danger-f44336);">' + failed.length + ' failed</span>';
+                    html += '<div style="margin-top:6px;font-size:12px;color:var(--text-dim);">';
                     failed.forEach(f => {
                         const fid = f.id || (f.error && f.error.code) || '?';
                         const fmsg = (f.error && f.error.message) || 'Unknown error';
-                        html += '<div style="margin:2px 0;"><span style="color:#f44336;">&#x2716;</span> Agent ' + escapeHtml(String(fid)) + ': ' + escapeHtml(fmsg) + '</div>';
+                        html += '<div style="margin:2px 0;"><span style="color:var(--danger-f44336);">&#x2716;</span> Agent ' + escapeHtml(String(fid)) + ': ' + escapeHtml(fmsg) + '</div>';
                     });
                     html += '</div>';
                 }
@@ -3444,22 +3684,22 @@ HTML_TEMPLATE = '''
 
             const body = `
                 ${dryRunNotice}
-                <div style="background:#1a1a2e;border-left:3px solid #fd7e14;padding:10px 15px;margin-bottom:15px;border-radius:4px;">
-                    <p style="color:#aaa;font-size:12px;margin:0;">Upgrade will update agents to the latest available version from Wazuh repository. Make sure the manager has internet access or the WPK files are available locally.</p>
+                <div style="background:var(--bg);border-left:3px solid #fd7e14;padding:10px 15px;margin-bottom:15px;border-radius:4px;">
+                    <p style="color:var(--text-dim);font-size:12px;margin:0;">Upgrade will update agents to the latest available version from Wazuh repository. Make sure the manager has internet access or the WPK files are available locally.</p>
                 </div>
-                <p style="color:#aaa;margin-bottom:5px;">Selected Agents (${selectedList.length})</p>
-                <div style="max-height:120px;overflow-y:auto;background:#1a1a2e;padding:10px;border-radius:4px;margin-bottom:15px;">
+                <p style="color:var(--text-dim);margin-bottom:5px;">Selected Agents (${selectedList.length})</p>
+                <div style="max-height:120px;overflow-y:auto;background:var(--bg);padding:10px;border-radius:4px;margin-bottom:15px;">
                     ${versionSummary}
                 </div>
-                <p style="color:#aaa;margin-bottom:5px;">Upgrade Options</p>
-                <div style="background:#1a1a2e;padding:12px;border-radius:4px;margin-bottom:15px;">
-                    <div style="margin-bottom:10px;"><input type="radio" name="upgradeType" value="latest" id="upgradeLatest" checked style="margin-right:8px;"><label for="upgradeLatest" style="cursor:pointer;"><span>Upgrade to manager version</span>${managerVersion ? ' (<span style="color:#4fc3f7;">v' + managerVersion + '</span>)' : ''}</label></div>
-                    <div style="margin-bottom:10px;"><input type="radio" name="upgradeType" value="custom" id="upgradeCustom" style="margin-right:8px;"><label for="upgradeCustom" style="cursor:pointer;">Specify version:</label> <input type="text" id="customVersion" placeholder="e.g., 4.14.0" style="width:100px;margin-left:5px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;" onfocus="document.getElementById('upgradeCustom').checked=true;"></div>
+                <p style="color:var(--text-dim);margin-bottom:5px;">Upgrade Options</p>
+                <div style="background:var(--bg);padding:12px;border-radius:4px;margin-bottom:15px;">
+                    <div style="margin-bottom:10px;"><input type="radio" name="upgradeType" value="latest" id="upgradeLatest" checked style="margin-right:8px;"><label for="upgradeLatest" style="cursor:pointer;"><span>Upgrade to manager version</span>${managerVersion ? ' (<span style="color:var(--accent);">v' + managerVersion + '</span>)' : ''}</label></div>
+                    <div style="margin-bottom:10px;"><input type="radio" name="upgradeType" value="custom" id="upgradeCustom" style="margin-right:8px;"><label for="upgradeCustom" style="cursor:pointer;">Specify version:</label> <input type="text" id="customVersion" placeholder="e.g., 4.14.0" style="width:100px;margin-left:5px;background:var(--surface);border:1px solid var(--border-1a3a6e);color:var(--text);padding:6px 10px;border-radius:4px;" onfocus="document.getElementById('upgradeCustom').checked=true;"></div>
                     <div><input type="radio" name="upgradeType" value="wpk" id="upgradeWpk" style="margin-right:8px;"><label for="upgradeWpk" style="cursor:pointer;">WPK file on the manager:</label>
-                        <select id="upgradeWpkFile" style="margin-left:5px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;max-width:340px;" onfocus="document.getElementById('upgradeWpk').checked=true;">
+                        <select id="upgradeWpkFile" style="margin-left:5px;background:var(--surface);border:1px solid var(--border-1a3a6e);color:var(--text);padding:6px 10px;border-radius:4px;max-width:340px;" onfocus="document.getElementById('upgradeWpk').checked=true;">
                             <option value="">Loading...</option>
                         </select>
-                        <div style="color:#888;font-size:11px;margin-top:4px;">Use this when the manager has no internet access.</div>
+                        <div style="color:var(--text-muted);font-size:11px;margin-top:4px;">Use this when the manager has no internet access.</div>
                     </div>
                 </div>
                 <div><input type="checkbox" id="upgradeForce" style="margin-right:8px;"><label for="upgradeForce" style="cursor:pointer;">Force upgrade (even if same version)</label></div>
@@ -3575,7 +3815,7 @@ HTML_TEMPLATE = '''
             );
 
             let html = '<table style="width:100%;border-collapse:collapse;">';
-            html += '<thead><tr style="background:#0f3460;"><th style="padding:10px;text-align:left;">Agent</th><th style="padding:10px;text-align:left;">Error</th></tr></thead>';
+            html += '<thead><tr style="background:var(--surface);"><th style="padding:10px;text-align:left;">Agent</th><th style="padding:10px;text-align:left;">Error</th></tr></thead>';
             html += '<tbody>';
 
             for (const fa of failedAgents) {
@@ -3583,11 +3823,11 @@ HTML_TEMPLATE = '''
                 const agentName = agent.name || fa.id;
                 const agentVersion = agent.version || '';
                 const agentNode = agent.node_name || '';
-                html += '<tr style="border-bottom:1px solid #1a3a6e;">';
-                html += '<td style="padding:10px;"><span style="color:#0dcaf0;">' + escapeHtml(fa.id) + '</span><br><span style="color:#888;font-size:11px;">' + escapeHtml(agentName) + (agentVersion ? ' (' + agentVersion + ')' : '') + '</span></td>';
+                html += '<tr style="border-bottom:1px solid var(--border-1a3a6e);">';
+                html += '<td style="padding:10px;"><span style="color:var(--info-0dcaf0);">' + escapeHtml(fa.id) + '</span><br><span style="color:var(--text-muted);font-size:11px;">' + escapeHtml(agentName) + (agentVersion ? ' (' + agentVersion + ')' : '') + '</span></td>';
                 // Format error message with line breaks for readability
                 const errorHtml = escapeHtml(fa.error || 'Unknown error').replace(/\\n/g, '<br>');
-                html += '<td style="padding:10px;color:#dc3545;white-space:pre-line;">' + errorHtml + '</td>';
+                html += '<td style="padding:10px;color:var(--danger-dc3545);white-space:pre-line;">' + errorHtml + '</td>';
                 html += '</tr>';
             }
 
@@ -3597,26 +3837,26 @@ HTML_TEMPLATE = '''
             let wpkHint = '';
             if (hasWpkError) {
                 wpkHint = `
-                    <div style="background:#1a1a2e;border-left:3px solid #fd7e14;padding:15px;margin-bottom:15px;border-radius:4px;">
-                        <p style="color:#fd7e14;font-size:13px;font-weight:600;margin:0 0 10px 0;">WPK File Required</p>
-                        <p style="color:#aaa;font-size:12px;margin:0 0 10px 0;">
+                    <div style="background:var(--bg);border-left:3px solid #fd7e14;padding:15px;margin-bottom:15px;border-radius:4px;">
+                        <p style="color:var(--orange-fd7e14);font-size:13px;font-weight:600;margin:0 0 10px 0;">WPK File Required</p>
+                        <p style="color:var(--text-dim);font-size:12px;margin:0 0 10px 0;">
                             The agent upgrade requires a WPK (Wazuh PacKage) file that is not available on the manager.
                             Please go to <strong>Node Management</strong> → select the node → <strong>Upgrade Files</strong> to:
                         </p>
-                        <ul style="color:#aaa;font-size:12px;margin:0;padding-left:20px;">
+                        <ul style="color:var(--text-dim);font-size:12px;margin:0;padding-left:20px;">
                             <li>Upload the WPK file manually, or</li>
                             <li>Check if the WPK files exist for your target version</li>
                         </ul>
-                        <p style="color:#888;font-size:11px;margin:10px 0 0 0;">
-                            WPK files can be downloaded from: <a href="https://packages.wazuh.com/4.x/wpk/" target="_blank" style="color:#4fc3f7;">https://packages.wazuh.com/4.x/wpk/</a>
+                        <p style="color:var(--text-muted);font-size:11px;margin:10px 0 0 0;">
+                            WPK files can be downloaded from: <a href="https://packages.wazuh.com/4.x/wpk/" target="_blank" style="color:var(--accent);">https://packages.wazuh.com/4.x/wpk/</a>
                         </p>
                     </div>
                 `;
             }
 
             const body = `
-                <div style="background:#1a1a2e;border-left:3px solid #dc3545;padding:10px 15px;margin-bottom:15px;border-radius:4px;">
-                    <p style="color:#dc3545;font-size:14px;margin:0;">Upgrade failed for ${failedAgents.length} agent(s)</p>
+                <div style="background:var(--bg);border-left:3px solid #dc3545;padding:10px 15px;margin-bottom:15px;border-radius:4px;">
+                    <p style="color:var(--danger-dc3545);font-size:14px;margin:0;">Upgrade failed for ${failedAgents.length} agent(s)</p>
                 </div>
                 ${wpkHint}
                 <div style="max-height:350px;overflow-y:auto;">
@@ -3636,11 +3876,11 @@ HTML_TEMPLATE = '''
             lastUpgradedAgentIds = agentIds;
             upgradeHistoryCleared = false;
             const body = `
-                <div style="background:#1a1a2e;border-left:3px solid #17a2b8;padding:10px 15px;margin-bottom:15px;border-radius:4px;">
-                    <p style="color:#aaa;font-size:12px;margin:0;">Tracking upgrade progress for ${agentIds.length} agent(s). Status updates every 5 seconds.</p>
+                <div style="background:var(--bg);border-left:3px solid #17a2b8;padding:10px 15px;margin-bottom:15px;border-radius:4px;">
+                    <p style="color:var(--text-dim);font-size:12px;margin:0;">Tracking upgrade progress for ${agentIds.length} agent(s). Status updates every 5 seconds.</p>
                 </div>
                 <div id="upgradeProgressContent" style="max-height:400px;overflow-y:auto;">
-                    <div style="text-align:center;padding:30px;color:#888;">
+                    <div style="text-align:center;padding:30px;color:var(--text-muted);">
                         <div class="spinner" style="margin:0 auto 15px;"></div>
                         Loading upgrade status...
                     </div>
@@ -3681,13 +3921,13 @@ HTML_TEMPLATE = '''
 
                 if (data.error) {
                     document.getElementById('upgradeProgressContent').innerHTML =
-                        '<div style="color:#dc3545;padding:20px;">Error: ' + escapeHtml(data.error) + '</div>';
+                        '<div style="color:var(--danger-dc3545);padding:20px;">Error: ' + escapeHtml(data.error) + '</div>';
                     return;
                 }
 
                 const results = data.results || [];
                 let html = '<table style="width:100%;border-collapse:collapse;">';
-                html += '<thead><tr style="background:#0f3460;"><th style="padding:10px;text-align:left;">Agent</th><th style="padding:10px;text-align:left;">Status</th><th style="padding:10px;text-align:left;">Details</th></tr></thead>';
+                html += '<thead><tr style="background:var(--surface);"><th style="padding:10px;text-align:left;">Agent</th><th style="padding:10px;text-align:left;">Status</th><th style="padding:10px;text-align:left;">Details</th></tr></thead>';
                 html += '<tbody>';
 
                 // Get agent names from cache
@@ -3703,7 +3943,7 @@ HTML_TEMPLATE = '''
                     const agentName = agentMap[agentId] || agentId;
 
                     let status = 'Pending';
-                    let statusColor = '#888';
+                    let statusColor = 'var(--text-muted)';
                     let statusIcon = 'clock';
                     let iconSpin = false;
                     let details = '';
@@ -3712,17 +3952,17 @@ HTML_TEMPLATE = '''
                         const s = result.status.toLowerCase();
                         if (s === 'updated' || s === 'done' || s === 'success') {
                             status = 'Updated';
-                            statusColor = '#28a745';
+                            statusColor = 'var(--success-28a745)';
                             statusIcon = 'check';
                             completedCount++;
                         } else if (s === 'updating' || s === 'in progress' || s === 'downloading') {
                             status = s.charAt(0).toUpperCase() + s.slice(1);
-                            statusColor = '#17a2b8';
+                            statusColor = 'var(--info)';
                             statusIcon = 'refresh';
                             iconSpin = true;
                         } else if (s === 'error' || s === 'failed') {
                             status = 'Failed';
-                            statusColor = '#dc3545';
+                            statusColor = 'var(--danger-dc3545)';
                             statusIcon = 'xmark';
                             details = result.error || '';
                             failedCount++;
@@ -3733,10 +3973,10 @@ HTML_TEMPLATE = '''
                     }
 
                     const iconClass = iconSpin ? 'icon icon-spin' : 'icon';
-                    html += '<tr style="border-bottom:1px solid #1a3a6e;">';
-                    html += '<td style="padding:10px;"><span style="color:#0dcaf0;">' + escapeHtml(agentId) + '</span><br><span style="color:#888;font-size:11px;">' + escapeHtml(agentName) + '</span></td>';
+                    html += '<tr style="border-bottom:1px solid var(--border-1a3a6e);">';
+                    html += '<td style="padding:10px;"><span style="color:var(--info-0dcaf0);">' + escapeHtml(agentId) + '</span><br><span style="color:var(--text-muted);font-size:11px;">' + escapeHtml(agentName) + '</span></td>';
                     html += '<td style="padding:10px;"><span style="color:' + statusColor + ';"><svg class="' + iconClass + '" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-' + statusIcon + '"/></svg>' + status + '</span></td>';
-                    html += '<td style="padding:10px;color:#888;font-size:12px;">' + escapeHtml(details) + '</td>';
+                    html += '<td style="padding:10px;color:var(--text-muted);font-size:12px;">' + escapeHtml(details) + '</td>';
                     html += '</tr>';
                 }
 
@@ -3744,13 +3984,13 @@ HTML_TEMPLATE = '''
 
                 // Summary
                 const remaining = agentIds.length - completedCount;
-                let summary = '<div style="padding:15px;background:#0a0a15;border-radius:4px;margin-top:15px;">';
-                summary += '<span style="color:#28a745;margin-right:15px;"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-check"/></svg>' + (completedCount - failedCount) + ' Updated</span>';
+                let summary = '<div style="padding:15px;background:var(--sunken);border-radius:4px;margin-top:15px;">';
+                summary += '<span style="color:var(--success-28a745);margin-right:15px;"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-check"/></svg>' + (completedCount - failedCount) + ' Updated</span>';
                 if (failedCount > 0) {
-                    summary += '<span style="color:#dc3545;margin-right:15px;"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-xmark"/></svg>' + failedCount + ' Failed</span>';
+                    summary += '<span style="color:var(--danger-dc3545);margin-right:15px;"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-xmark"/></svg>' + failedCount + ' Failed</span>';
                 }
                 if (remaining > 0) {
-                    summary += '<span style="color:#888;"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-clock"/></svg>' + remaining + ' In Progress</span>';
+                    summary += '<span style="color:var(--text-muted);"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-clock"/></svg>' + remaining + ' In Progress</span>';
                 }
                 summary += '</div>';
 
@@ -3771,10 +4011,10 @@ HTML_TEMPLATE = '''
             // If history was cleared and no new upgrades, show empty state
             if (upgradeHistoryCleared && lastUpgradedAgentIds.length === 0) {
                 const body = `
-                    <div style="text-align:center;padding:40px;color:#888;">
+                    <div style="text-align:center;padding:40px;color:var(--text-muted);">
                         <svg class="icon" style="width:48px;height:48px;margin-bottom:15px;opacity:0.5;"><use href="#icon-check"/></svg>
                         <p>No recent upgrade tasks.</p>
-                        <p style="font-size:12px;color:#666;">Upgrade history has been cleared.</p>
+                        <p style="font-size:12px;color:var(--text-faint);">Upgrade history has been cleared.</p>
                     </div>
                 `;
                 showModal('Upgrade Progress', body, '');
@@ -3787,11 +4027,11 @@ HTML_TEMPLATE = '''
 
             // Show modal with loading state
             const body = `
-                <div style="background:#1a1a2e;border-left:3px solid #17a2b8;padding:10px 15px;margin-bottom:15px;border-radius:4px;">
-                    <p style="color:#aaa;font-size:12px;margin:0;">${useAgentIds ? `Showing upgrade progress for ${agentCount} recent agent(s).` : 'Showing all recent upgrade tasks from Wazuh API.'}</p>
+                <div style="background:var(--bg);border-left:3px solid #17a2b8;padding:10px 15px;margin-bottom:15px;border-radius:4px;">
+                    <p style="color:var(--text-dim);font-size:12px;margin:0;">${useAgentIds ? `Showing upgrade progress for ${agentCount} recent agent(s).` : 'Showing all recent upgrade tasks from Wazuh API.'}</p>
                 </div>
                 <div id="allUpgradeProgressContent" style="max-height:400px;overflow-y:auto;">
-                    <div style="text-align:center;padding:30px;color:#888;">
+                    <div style="text-align:center;padding:30px;color:var(--text-muted);">
                         <div class="spinner" style="margin:0 auto 15px;"></div>
                         Loading upgrade tasks...
                     </div>
@@ -3815,13 +4055,13 @@ HTML_TEMPLATE = '''
                 if (!container) return;
 
                 if (data.error) {
-                    container.innerHTML = '<div style="color:#dc3545;padding:20px;">Error: ' + escapeHtml(data.error) + '</div>';
+                    container.innerHTML = '<div style="color:var(--danger-dc3545);padding:20px;">Error: ' + escapeHtml(data.error) + '</div>';
                     return;
                 }
 
                 const results = data.results || [];
                 if (results.length === 0) {
-                    container.innerHTML = '<div style="text-align:center;padding:30px;color:#888;">No recent upgrade tasks found.</div>';
+                    container.innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-muted);">No recent upgrade tasks found.</div>';
                     return;
                 }
 
@@ -3830,7 +4070,7 @@ HTML_TEMPLATE = '''
                 agents.forEach(a => { agentMap[a.id] = a; });
 
                 let html = '<table style="width:100%;border-collapse:collapse;">';
-                html += '<thead><tr style="background:#0f3460;"><th style="padding:10px;text-align:left;">Agent</th><th style="padding:10px;text-align:left;">Status</th><th style="padding:10px;text-align:left;">Time</th></tr></thead>';
+                html += '<thead><tr style="background:var(--surface);"><th style="padding:10px;text-align:left;">Agent</th><th style="padding:10px;text-align:left;">Status</th><th style="padding:10px;text-align:left;">Time</th></tr></thead>';
                 html += '<tbody>';
 
                 let updatedCount = 0, failedCount = 0, inProgressCount = 0;
@@ -3840,48 +4080,48 @@ HTML_TEMPLATE = '''
                     const agentName = agent.name || result.agent_id;
 
                     let status = result.status || 'Unknown';
-                    let statusColor = '#888';
+                    let statusColor = 'var(--text-muted)';
                     let statusIcon = 'clock';
 
                     const s = status.toLowerCase();
                     if (s === 'updated' || s === 'done' || s === 'success') {
-                        statusColor = '#28a745';
+                        statusColor = 'var(--success-28a745)';
                         statusIcon = 'check';
                         updatedCount++;
                     } else if (s === 'updating' || s === 'in progress' || s === 'downloading') {
-                        statusColor = '#17a2b8';
+                        statusColor = 'var(--info)';
                         statusIcon = 'refresh';
                         inProgressCount++;
                     } else if (s === 'error' || s === 'failed') {
-                        statusColor = '#dc3545';
+                        statusColor = 'var(--danger-dc3545)';
                         statusIcon = 'xmark';
                         failedCount++;
                     } else if (s === 'legacy') {
-                        statusColor = '#ffc107';
+                        statusColor = 'var(--warning)';
                         statusIcon = 'clock';
                     }
 
                     const timeStr = result.update_time || result.create_time || '';
 
-                    html += '<tr style="border-bottom:1px solid #1a3a6e;">';
-                    html += '<td style="padding:10px;"><span style="color:#0dcaf0;">' + escapeHtml(result.agent_id) + '</span><br><span style="color:#888;font-size:11px;">' + escapeHtml(agentName) + '</span></td>';
+                    html += '<tr style="border-bottom:1px solid var(--border-1a3a6e);">';
+                    html += '<td style="padding:10px;"><span style="color:var(--info-0dcaf0);">' + escapeHtml(result.agent_id) + '</span><br><span style="color:var(--text-muted);font-size:11px;">' + escapeHtml(agentName) + '</span></td>';
                     html += '<td style="padding:10px;"><span style="color:' + statusColor + ';"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-' + statusIcon + '"/></svg>' + escapeHtml(status) + '</span>';
                     if (result.error) {
-                        html += '<br><span style="color:#888;font-size:11px;">' + escapeHtml(result.error) + '</span>';
+                        html += '<br><span style="color:var(--text-muted);font-size:11px;">' + escapeHtml(result.error) + '</span>';
                     }
                     html += '</td>';
-                    html += '<td style="padding:10px;color:#888;font-size:12px;">' + escapeHtml(timeStr) + '</td>';
+                    html += '<td style="padding:10px;color:var(--text-muted);font-size:12px;">' + escapeHtml(timeStr) + '</td>';
                     html += '</tr>';
                 }
 
                 html += '</tbody></table>';
 
                 // Summary
-                let summary = '<div style="padding:15px;background:#0a0a15;border-radius:4px;margin-top:15px;">';
+                let summary = '<div style="padding:15px;background:var(--sunken);border-radius:4px;margin-top:15px;">';
                 summary += '<span style="margin-right:15px;">Total: ' + results.length + '</span>';
-                if (updatedCount > 0) summary += '<span style="color:#28a745;margin-right:15px;"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-check"/></svg>' + updatedCount + ' Updated</span>';
-                if (failedCount > 0) summary += '<span style="color:#dc3545;margin-right:15px;"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-xmark"/></svg>' + failedCount + ' Failed</span>';
-                if (inProgressCount > 0) summary += '<span style="color:#17a2b8;"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-clock"/></svg>' + inProgressCount + ' In Progress</span>';
+                if (updatedCount > 0) summary += '<span style="color:var(--success-28a745);margin-right:15px;"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-check"/></svg>' + updatedCount + ' Updated</span>';
+                if (failedCount > 0) summary += '<span style="color:var(--danger-dc3545);margin-right:15px;"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-xmark"/></svg>' + failedCount + ' Failed</span>';
+                if (inProgressCount > 0) summary += '<span style="color:var(--info);"><svg class="icon" style="width:14px;height:14px;vertical-align:middle;margin-right:5px;"><use href="#icon-clock"/></svg>' + inProgressCount + ' In Progress</span>';
                 summary += '</div>';
 
                 container.innerHTML = html + summary;
@@ -3890,7 +4130,7 @@ HTML_TEMPLATE = '''
                 console.error('Failed to fetch upgrade progress:', e);
                 const container = document.getElementById('allUpgradeProgressContent');
                 if (container) {
-                    container.innerHTML = '<div style="color:#dc3545;padding:20px;">Error: ' + e.message + '</div>';
+                    container.innerHTML = '<div style="color:var(--danger-dc3545);padding:20px;">Error: ' + e.message + '</div>';
                 }
             }
         }
@@ -3948,13 +4188,13 @@ HTML_TEMPLATE = '''
             const body = `
                 <div class="form-group">
                     <label>Current Name</label>
-                    <input type="text" value="${groupName}" disabled style="background:#0a0a15;">
+                    <input type="text" value="${groupName}" disabled style="background:var(--sunken);">
                 </div>
                 <div class="form-group">
                     <label>New Name</label>
                     <input type="text" id="newGroupNameInput" placeholder="Enter new group name">
                 </div>
-                <p style="color:#888;font-size:12px;margin-top:10px;">
+                <p style="color:var(--text-muted);font-size:12px;margin-top:10px;">
                     This will: 1) Create new group, 2) Move ${count} agent(s) to new group, 3) Delete old group
                 </p>
                 ${dryRunNotice}
@@ -4034,7 +4274,7 @@ HTML_TEMPLATE = '''
                 '<label>Move ' + count + ' agent(s) from "' + groupName + '" to:</label>' +
                 '<select id="moveTargetGroup">' + options + '</select>' +
                 '</div>' +
-                '<p style="color:#888;font-size:12px;">Note: Agents will be added to the target group and removed from "' + groupName + '".</p>';
+                '<p style="color:var(--text-muted);font-size:12px;">Note: Agents will be added to the target group and removed from "' + groupName + '".</p>';
             const footer = '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Cancel</button>' +
                 '<button class="btn btn-primary" onclick="moveGroupAgents()"><svg class="icon"><use href="#icon-move"/></svg>Move</button>';
             showModal('Move Agents to Another Group', body, footer);
@@ -4065,16 +4305,16 @@ HTML_TEMPLATE = '''
                 '<label>Select CSV file to import agents into group "' + groupName + '"</label>' +
                 '<input type="file" id="csvFileInput" accept=".csv" style="margin-top:10px;">' +
                 '</div>' +
-                '<div style="background:#1a1a2e;padding:12px;border-radius:4px;margin-top:15px;font-size:12px;">' +
-                '<p style="color:#4fc3f7;margin:0 0 8px 0;font-weight:bold;">CSV Format Rules:</p>' +
-                '<ul style="color:#aaa;margin:0;padding-left:20px;line-height:1.8;">' +
-                '<li>Must have at least one column: <b style="color:#fff;">ID</b>, <b style="color:#fff;">Name</b> (or Hostname), or <b style="color:#fff;">IP</b> (or Address)</li>' +
+                '<div style="background:var(--bg);padding:12px;border-radius:4px;margin-top:15px;font-size:12px;">' +
+                '<p style="color:var(--accent);margin:0 0 8px 0;font-weight:bold;">CSV Format Rules:</p>' +
+                '<ul style="color:var(--text-dim);margin:0;padding-left:20px;line-height:1.8;">' +
+                '<li>Must have at least one column: <b style="color:var(--text-strong);">ID</b>, <b style="color:var(--text-strong);">Name</b> (or Hostname), or <b style="color:var(--text-strong);">IP</b> (or Address)</li>' +
                 '<li>Column order does not matter</li>' +
                 '<li>If multiple match columns exist, leftmost takes priority</li>' +
                 '<li>Other columns will be ignored</li>' +
                 '<li>First row must be header</li>' +
                 '</ul></div>' +
-                '<p style="margin-top:10px;"><a href="#" onclick="downloadCsvTemplate(); return false;" style="color:#4fc3f7;">Download CSV Template</a></p>';
+                '<p style="margin-top:10px;"><a href="#" onclick="downloadCsvTemplate(); return false;" style="color:var(--accent);">Download CSV Template</a></p>';
             const footer = '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Cancel</button>' +
                 '<button class="btn btn-primary" onclick="previewCsvImport()"><svg class="icon"><use href="#icon-eye"/></svg>Preview</button>';
             showModal('Import Agents from CSV', body, footer);
@@ -4210,28 +4450,28 @@ HTML_TEMPLATE = '''
             let previewHtml = '<div style="margin-bottom:15px;">' +
                 '<div style="display:flex;gap:20px;flex-wrap:wrap;">' +
                 '<div style="background:#00c85333;padding:10px 15px;border-radius:6px;text-align:center;min-width:100px;">' +
-                '<div style="font-size:24px;font-weight:bold;color:#00c853;">' + (result.added ? result.added.length : 0) + '</div>' +
-                '<div style="font-size:12px;color:#aaa;">Will be added</div></div>' +
+                '<div style="font-size:24px;font-weight:bold;color:var(--success);">' + (result.added ? result.added.length : 0) + '</div>' +
+                '<div style="font-size:12px;color:var(--text-dim);">Will be added</div></div>' +
                 '<div style="background:#ffc10733;padding:10px 15px;border-radius:6px;text-align:center;min-width:100px;">' +
-                '<div style="font-size:24px;font-weight:bold;color:#ffc107;">' + (result.already_in_group ? result.already_in_group.length : 0) + '</div>' +
-                '<div style="font-size:12px;color:#aaa;">Already in group</div></div>' +
+                '<div style="font-size:24px;font-weight:bold;color:var(--warning);">' + (result.already_in_group ? result.already_in_group.length : 0) + '</div>' +
+                '<div style="font-size:12px;color:var(--text-dim);">Already in group</div></div>' +
                 '<div style="background:#e9456033;padding:10px 15px;border-radius:6px;text-align:center;min-width:100px;">' +
-                '<div style="font-size:24px;font-weight:bold;color:#e94560;">' + (result.not_found ? result.not_found.length : 0) + '</div>' +
-                '<div style="font-size:12px;color:#aaa;">Not found</div></div>' +
+                '<div style="font-size:24px;font-weight:bold;color:var(--danger);">' + (result.not_found ? result.not_found.length : 0) + '</div>' +
+                '<div style="font-size:12px;color:var(--text-dim);">Not found</div></div>' +
                 '</div></div>';
 
-            previewHtml += '<div style="max-height:300px;overflow-y:auto;background:#0a0a15;border-radius:4px;padding:10px;">';
+            previewHtml += '<div style="max-height:300px;overflow-y:auto;background:var(--sunken);border-radius:4px;padding:10px;">';
 
             if (result.added && result.added.length > 0) {
-                previewHtml += '<div style="margin-bottom:10px;"><span style="color:#00c853;font-weight:bold;">Will be added:</span><div style="margin-top:5px;padding-left:10px;color:#ccc;font-size:13px;">' +
+                previewHtml += '<div style="margin-bottom:10px;"><span style="color:var(--success);font-weight:bold;">Will be added:</span><div style="margin-top:5px;padding-left:10px;color:var(--text-ccc);font-size:13px;">' +
                     result.added.map(a => '<div>' + escapeHtml(a) + '</div>').join('') + '</div></div>';
             }
             if (result.already_in_group && result.already_in_group.length > 0) {
-                previewHtml += '<div style="margin-bottom:10px;"><span style="color:#ffc107;font-weight:bold;">Already in group (will skip):</span><div style="margin-top:5px;padding-left:10px;color:#888;font-size:13px;">' +
+                previewHtml += '<div style="margin-bottom:10px;"><span style="color:var(--warning);font-weight:bold;">Already in group (will skip):</span><div style="margin-top:5px;padding-left:10px;color:var(--text-muted);font-size:13px;">' +
                     result.already_in_group.map(a => '<div>' + escapeHtml(a) + '</div>').join('') + '</div></div>';
             }
             if (result.not_found && result.not_found.length > 0) {
-                previewHtml += '<div style="margin-bottom:10px;"><span style="color:#e94560;font-weight:bold;">Not found (no matching agent):</span><div style="margin-top:5px;padding-left:10px;color:#888;font-size:13px;">' +
+                previewHtml += '<div style="margin-bottom:10px;"><span style="color:var(--danger);font-weight:bold;">Not found (no matching agent):</span><div style="margin-top:5px;padding-left:10px;color:var(--text-muted);font-size:13px;">' +
                     result.not_found.map(a => '<div>' + escapeHtml(a) + '</div>').join('') + '</div></div>';
             }
             previewHtml += '</div>';
@@ -4310,7 +4550,7 @@ HTML_TEMPLATE = '''
                         <button class="btn btn-sm" onclick="configEditor && configEditor.redo()"><svg class="icon"><use href="#icon-redo"/></svg>Redo</button>
                     </div>
                 </div>
-                <div id="configEditorContainer" style="border:1px solid #444;border-radius:4px;overflow:auto;flex:1;min-height:300px;height:60vh;">
+                <div id="configEditorContainer" style="border:1px solid var(--border-444);border-radius:4px;overflow:auto;flex:1;min-height:300px;height:60vh;">
                     <textarea id="configEditorArea">${escapeHtml(configContent)}</textarea>
                 </div>
                 <div id="configSaveResult" style="margin-top:10px;"></div>
@@ -4338,7 +4578,7 @@ HTML_TEMPLATE = '''
                 if (textarea && typeof CodeMirror !== 'undefined') {
                     configEditor = CodeMirror.fromTextArea(textarea, {
                         mode: 'xml',
-                        theme: 'dracula',
+                        theme: (window.jtwzCmTheme ? window.jtwzCmTheme() : 'dracula'),
                         lineNumbers: true,
                         lineWrapping: true,
                         indentUnit: 2,
@@ -4362,7 +4602,7 @@ HTML_TEMPLATE = '''
             const node = nodeName || currentConfigNode;
             if (!node) return;
             const target = document.getElementById('configSaveResult');
-            if (target) target.innerHTML = '<span style="color:#888;">Validating...</span>';
+            if (target) target.innerHTML = '<span style="color:var(--text-muted);">Validating...</span>';
             const result = await api('/nodes/' + node + '/config/validate');
             if (!result || result.error) {
                 const msg = (result && result.error) || 'Validation failed';
@@ -4470,25 +4710,25 @@ HTML_TEMPLATE = '''
             }
 
             const resultDiv = document.getElementById('configSaveResult');
-            resultDiv.innerHTML = '<span style="color:#888;">Saving...</span>';
+            resultDiv.innerHTML = '<span style="color:var(--text-muted);">Saving...</span>';
 
             const result = await api('/nodes/' + currentConfigNode + '/config', 'PUT', { content: content });
 
             if (!result) {
-                resultDiv.innerHTML = '<span style="color:#e94560;">Failed to save config</span>';
+                resultDiv.innerHTML = '<span style="color:var(--danger);">Failed to save config</span>';
                 return;
             }
 
             if (result.error) {
-                resultDiv.innerHTML = '<span style="color:#e94560;">Error: ' + result.error + '</span>';
+                resultDiv.innerHTML = '<span style="color:var(--danger);">Error: ' + result.error + '</span>';
                 return;
             }
 
-            let msg = '<span style="color:#4ade80;">Config saved successfully!</span>';
+            let msg = '<span style="color:var(--success-4ade80);">Config saved successfully!</span>';
             if (result.backup_path) {
-                msg += '<br><span style="color:#888;font-size:12px;">Backup: ' + result.backup_path + '</span>';
+                msg += '<br><span style="color:var(--text-muted);font-size:12px;">Backup: ' + result.backup_path + '</span>';
             }
-            msg += '<br><br><span style="color:#f39c12;font-weight:bold;">Remember to restart services for changes to take effect!</span>';
+            msg += '<br><br><span style="color:var(--orange);font-weight:bold;">Remember to restart services for changes to take effect!</span>';
             resultDiv.innerHTML = msg;
 
             showToast('Config saved! Remember to restart services.', 'success', 5000);
@@ -4528,11 +4768,11 @@ HTML_TEMPLATE = '''
                     <strong>⚠ Global Email Not Configured</strong> — Please configure email_notification, smtp_server, email_from, email_to in the &lt;global&gt; section of ossec.conf first.
                 </div>`;
             } else {
-                globalHtml = `<div style="background:#1a2332;border:1px solid #333;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px;">
-                    <strong style="color:#4fc3f7;">Global Email Settings</strong><br>
-                    <span style="color:#888;">SMTP:</span> ${escapeHtml(emailAlertsGlobal.smtp_server || '-')}
-                    &nbsp;&nbsp;<span style="color:#888;">From:</span> ${escapeHtml(emailAlertsGlobal.email_from || '-')}
-                    &nbsp;&nbsp;<span style="color:#888;">Default To:</span> ${escapeHtml(emailAlertsGlobal.email_to || '-')}
+                globalHtml = `<div style="background:var(--card-1a2332);border:1px solid var(--border-333);padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px;">
+                    <strong style="color:var(--accent);">Global Email Settings</strong><br>
+                    <span style="color:var(--text-muted);">SMTP:</span> ${escapeHtml(emailAlertsGlobal.smtp_server || '-')}
+                    &nbsp;&nbsp;<span style="color:var(--text-muted);">From:</span> ${escapeHtml(emailAlertsGlobal.email_from || '-')}
+                    &nbsp;&nbsp;<span style="color:var(--text-muted);">Default To:</span> ${escapeHtml(emailAlertsGlobal.email_to || '-')}
                 </div>`;
             }
 
@@ -4545,7 +4785,7 @@ HTML_TEMPLATE = '''
             // Table
             let tableHtml = '';
             if (emailAlertsData.length === 0) {
-                tableHtml = `<div style="color:#888;text-align:center;padding:30px 0;">No email alert rules configured. Click "Add Rule" to create one.</div>`;
+                tableHtml = `<div style="color:var(--text-muted);text-align:center;padding:30px 0;">No email alert rules configured. Click "Add Rule" to create one.</div>`;
             } else {
                 tableHtml = `<div style="overflow-x:auto;"><table class="data-table" style="width:100%;font-size:13px;">
                     <thead><tr>
@@ -4581,19 +4821,19 @@ HTML_TEMPLATE = '''
             }
 
             // Edit form (hidden by default)
-            const formHtml = `<div id="emailAlertFormArea" style="display:none;margin-top:14px;background:#1a2332;border:1px solid #444;border-radius:6px;padding:16px;">
-                <h4 style="margin:0 0 12px 0;color:#4fc3f7;" id="emailAlertFormTitle">Add Rule</h4>
+            const formHtml = `<div id="emailAlertFormArea" style="display:none;margin-top:14px;background:var(--card-1a2332);border:1px solid var(--border-444);border-radius:6px;padding:16px;">
+                <h4 style="margin:0 0 12px 0;color:var(--accent);" id="emailAlertFormTitle">Add Rule</h4>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                     <div class="form-group" style="grid-column:1/3;">
-                        <label>Recipient Email * <span style="color:#888;font-size:11px;">(separate multiple with commas)</span></label>
+                        <label>Recipient Email * <span style="color:var(--text-muted);font-size:11px;">(separate multiple with commas)</span></label>
                         <input type="text" id="eaEmailTo" placeholder="security@example.com, admin@example.com">
                     </div>
                     <div class="form-group">
-                        <label>Rule ID <span style="color:#888;font-size:11px;">(separate multiple with commas, e.g. 5710, 5711)</span></label>
+                        <label>Rule ID <span style="color:var(--text-muted);font-size:11px;">(separate multiple with commas, e.g. 5710, 5711)</span></label>
                         <input type="text" id="eaRuleId" placeholder="5710, 5711">
                     </div>
                     <div class="form-group">
-                        <label>Min Level <span style="color:#888;font-size:11px;">(1-16)</span></label>
+                        <label>Min Level <span style="color:var(--text-muted);font-size:11px;">(1-16)</span></label>
                         <input type="number" id="eaLevel" min="1" max="16" placeholder="">
                     </div>
                     <div class="form-group">
@@ -4684,7 +4924,7 @@ HTML_TEMPLATE = '''
             // Validate
             const emailToStr = document.getElementById('eaEmailTo').value.trim();
             if (!emailToStr) {
-                resultDiv.innerHTML = '<span style="color:#e94560;">Recipient email is required</span>';
+                resultDiv.innerHTML = '<span style="color:var(--danger);">Recipient email is required</span>';
                 return;
             }
 
@@ -4692,14 +4932,14 @@ HTML_TEMPLATE = '''
             const emailPattern = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
             for (const e of emailTo) {
                 if (!emailPattern.test(e)) {
-                    resultDiv.innerHTML = '<span style="color:#e94560;">Invalid email format: ' + escapeHtml(e) + '</span>';
+                    resultDiv.innerHTML = '<span style="color:var(--danger);">Invalid email format: ' + escapeHtml(e) + '</span>';
                     return;
                 }
             }
 
             const ruleId = document.getElementById('eaRuleId').value.trim();
             if (ruleId && !/^[0-9,\\s]+$/.test(ruleId)) {
-                resultDiv.innerHTML = '<span style="color:#e94560;">Rule ID can only contain numbers and commas</span>';
+                resultDiv.innerHTML = '<span style="color:var(--danger);">Rule ID can only contain numbers and commas</span>';
                 return;
             }
 
@@ -4708,7 +4948,7 @@ HTML_TEMPLATE = '''
             if (levelStr) {
                 level = parseInt(levelStr, 10);
                 if (isNaN(level) || level < 1 || level > 16) {
-                    resultDiv.innerHTML = '<span style="color:#e94560;">Level must be between 1 and 16</span>';
+                    resultDiv.innerHTML = '<span style="color:var(--danger);">Level must be between 1 and 16</span>';
                     return;
                 }
             }
@@ -4732,15 +4972,15 @@ HTML_TEMPLATE = '''
                 newAlerts.push(alert);
             }
 
-            resultDiv.innerHTML = '<span style="color:#888;">Saving...</span>';
+            resultDiv.innerHTML = '<span style="color:var(--text-muted);">Saving...</span>';
 
             const result = await api('/nodes/' + emailAlertsNodeName + '/email-alerts', 'PUT', { alerts: newAlerts });
             if (!result) {
-                resultDiv.innerHTML = '<span style="color:#e94560;">Failed to save</span>';
+                resultDiv.innerHTML = '<span style="color:var(--danger);">Failed to save</span>';
                 return;
             }
             if (result.error) {
-                resultDiv.innerHTML = '<span style="color:#e94560;">' + escapeHtml(result.error).replace(/\\n/g, '<br>') + '</span>';
+                resultDiv.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(result.error).replace(/\\n/g, '<br>') + '</span>';
                 return;
             }
 
@@ -4780,7 +5020,7 @@ HTML_TEMPLATE = '''
             const confirmed = await showConfirm(
                 'Sync current email alerts config to the following worker nodes?<br><br>' +
                 workerNodes.map(n => '<code>' + escapeHtml(n) + '</code>').join('<br>') +
-                '<br><br><span style="color:#f39c12;">Each node&apos;s ossec.conf will be backed up before modification.</span>',
+                '<br><br><span style="color:var(--orange);">Each node&apos;s ossec.conf will be backed up before modification.</span>',
                 false
             );
             if (!confirmed) return;
@@ -4839,15 +5079,15 @@ HTML_TEMPLATE = '''
                 <div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
                     <div>
                         <strong>File:</strong> <code>${escapeHtml(result.path) || '/var/ossec/logs/' + category + '/' + fileName}</code>
-                        <span style="margin-left:15px;color:#888;">Size: <strong>${fileSize}</strong></span>
+                        <span style="margin-left:15px;color:var(--text-muted);">Size: <strong>${fileSize}</strong></span>
                     </div>
                     <div style="display:flex;align-items:center;gap:10px;">
-                        <label style="color:#888;font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer;">
+                        <label style="color:var(--text-muted);font-size:13px;display:flex;align-items:center;gap:4px;cursor:pointer;">
                             <input type="checkbox" id="logWrapToggle" onchange="toggleLogWrap()" style="cursor:pointer;">
                             Wrap
                         </label>
-                        <label style="color:#888;font-size:13px;">Lines:</label>
-                        <select id="logLinesSelect" onchange="refreshLogViewerContent()" style="background:#1a1a2e;color:#eee;border:1px solid #444;padding:4px 8px;border-radius:4px;">
+                        <label style="color:var(--text-muted);font-size:13px;">Lines:</label>
+                        <select id="logLinesSelect" onchange="refreshLogViewerContent()" style="background:var(--bg);color:var(--text);border:1px solid var(--border-444);padding:4px 8px;border-radius:4px;">
                             <option value="100" selected>Last 100</option>
                             <option value="500">Last 500</option>
                             <option value="1000">Last 1,000</option>
@@ -4857,7 +5097,7 @@ HTML_TEMPLATE = '''
                         <button class="btn btn-sm btn-primary" onclick="refreshLogViewerContent()" title="Refresh content"><svg class="icon"><use href="#icon-refresh"/></svg>Refresh</button>
                     </div>
                 </div>
-                <div id="logViewerContainer" style="border:1px solid #444;border-radius:4px;overflow:auto;flex:1;min-height:0;">
+                <div id="logViewerContainer" style="border:1px solid var(--border-444);border-radius:4px;overflow:auto;flex:1;min-height:0;">
                     <textarea id="logViewerArea">${escapeHtml(result.content || '')}</textarea>
                 </div>
             `;
@@ -4879,7 +5119,7 @@ HTML_TEMPLATE = '''
                     const gutters = currentLogType === 'json' ? ['json-gutter', 'CodeMirror-linenumbers'] : ['CodeMirror-linenumbers'];
                     logViewerEditor = CodeMirror.fromTextArea(textarea, {
                         mode: mode,
-                        theme: 'dracula',
+                        theme: (window.jtwzCmTheme ? window.jtwzCmTheme() : 'dracula'),
                         lineNumbers: true,
                         lineWrapping: false,
                         readOnly: true,
@@ -5075,7 +5315,7 @@ HTML_TEMPLATE = '''
 
             navigator.clipboard.writeText(text).then(() => {
                 const originalHtml = btn.innerHTML;
-                btn.innerHTML = '<svg class="icon" style="width:14px;height:14px;color:#4ade80;"><use href="#icon-check"/></svg>';
+                btn.innerHTML = '<svg class="icon" style="width:14px;height:14px;color:var(--success-4ade80);"><use href="#icon-check"/></svg>';
                 showToast('Copied to clipboard', 'success', 1500);
                 setTimeout(() => { btn.innerHTML = originalHtml; }, 1500);
             }).catch((err) => {
@@ -5089,7 +5329,7 @@ HTML_TEMPLATE = '''
                 try {
                     document.execCommand('copy');
                     const originalHtml = btn.innerHTML;
-                    btn.innerHTML = '<svg class="icon" style="width:14px;height:14px;color:#4ade80;"><use href="#icon-check"/></svg>';
+                    btn.innerHTML = '<svg class="icon" style="width:14px;height:14px;color:var(--success-4ade80);"><use href="#icon-check"/></svg>';
                     showToast('Copied to clipboard', 'success', 1500);
                     setTimeout(() => { btn.innerHTML = originalHtml; }, 1500);
                 } catch (e) {
@@ -5119,36 +5359,36 @@ HTML_TEMPLATE = '''
 
                 const body = `
                     <div style="display:flex;flex-direction:column;gap:20px;">
-                        <div style="background:#0f3460;padding:15px;border-radius:8px;">
-                            <h4 style="color:#4fc3f7;margin:0 0 15px 0;">API Connection</h4>
+                        <div style="background:var(--surface);padding:15px;border-radius:8px;">
+                            <h4 style="color:var(--accent);margin:0 0 15px 0;">API Connection</h4>
                             <table style="width:100%;font-size:14px;">
-                                <tr><td style="color:#888;padding:5px 8px;width:120px;">Host</td><td style="color:#eee;padding:5px 8px;">{{ host }}</td></tr>
-                                <tr><td style="color:#888;padding:5px 8px;">Port</td><td style="color:#eee;padding:5px 8px;">{{ port }}</td></tr>
-                                <tr><td style="color:#888;padding:5px 8px;">Username</td><td style="color:#eee;padding:5px 8px;">{{ username }}</td></tr>
-                                <tr><td style="color:#888;padding:5px 8px;">SSL Verify</td><td style="color:#eee;padding:5px 8px;">${data.api_verify_ssl ? '<span style="color:#4ade80;">Enabled</span>' : '<span style="color:#ffc107;">Disabled</span>'}</td></tr>
+                                <tr><td style="color:var(--text-muted);padding:5px 8px;width:120px;">Host</td><td style="color:var(--text);padding:5px 8px;">{{ host }}</td></tr>
+                                <tr><td style="color:var(--text-muted);padding:5px 8px;">Port</td><td style="color:var(--text);padding:5px 8px;">{{ port }}</td></tr>
+                                <tr><td style="color:var(--text-muted);padding:5px 8px;">Username</td><td style="color:var(--text);padding:5px 8px;">{{ username }}</td></tr>
+                                <tr><td style="color:var(--text-muted);padding:5px 8px;">SSL Verify</td><td style="color:var(--text);padding:5px 8px;">${data.api_verify_ssl ? '<span style="color:var(--success-4ade80);">Enabled</span>' : '<span style="color:var(--warning);">Disabled</span>'}</td></tr>
                             </table>
                         </div>
 
-                        <div style="background:#0f3460;padding:15px;border-radius:8px;">
+                        <div style="background:var(--surface);padding:15px;border-radius:8px;">
                             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
-                                <h4 style="color:#4fc3f7;margin:0;">SSH Configuration</h4>
-                                <button onclick="closeModal(); showSSHSetupTutorial('${escapeHtml(sshGuideNode)}', '${escapeHtml(sshGuideIp)}')" style="background:#1a1a2e;border:1px solid #4fc3f7;border-radius:4px;padding:4px 10px;cursor:pointer;color:#4fc3f7;font-size:12px;display:flex;align-items:center;gap:5px;" title="SSH Setup Guide"><svg class="icon" style="width:14px;height:14px;"><use href="#icon-info"/></svg> Setup Guide</button>
+                                <h4 style="color:var(--accent);margin:0;">SSH Configuration</h4>
+                                <button onclick="closeModal(); showSSHSetupTutorial('${escapeHtml(sshGuideNode)}', '${escapeHtml(sshGuideIp)}')" style="background:var(--bg);border:1px solid var(--accent-line);border-radius:4px;padding:4px 10px;cursor:pointer;color:var(--accent);font-size:12px;display:flex;align-items:center;gap:5px;" title="SSH Setup Guide"><svg class="icon" style="width:14px;height:14px;"><use href="#icon-info"/></svg> Setup Guide</button>
                             </div>
                             <table style="width:100%;font-size:14px;">
-                                <tr><td style="color:#888;padding:5px 8px;width:120px;">Status</td><td style="padding:5px 8px;">${sshEnabled ? '<span style="color:#4ade80;">Enabled</span>' : '<span style="color:#888;">Disabled</span>'}</td></tr>
-                                <tr><td style="color:#888;padding:5px 8px;">Key File</td><td style="color:#eee;padding:5px 8px;">${data.ssh_key_file || '<span style="color:#666;">Not configured</span>'}</td></tr>
-                                <tr><td style="color:#888;padding:5px 8px;">Configured Nodes</td><td style="color:#eee;padding:5px 8px;">${sshNodesCount > 0 ? sshNodesCount + ' node(s)' : '<span style="color:#666;">None</span>'}</td></tr>
+                                <tr><td style="color:var(--text-muted);padding:5px 8px;width:120px;">Status</td><td style="padding:5px 8px;">${sshEnabled ? '<span style="color:var(--success-4ade80);">Enabled</span>' : '<span style="color:var(--text-muted);">Disabled</span>'}</td></tr>
+                                <tr><td style="color:var(--text-muted);padding:5px 8px;">Key File</td><td style="color:var(--text);padding:5px 8px;">${data.ssh_key_file || '<span style="color:var(--text-faint);">Not configured</span>'}</td></tr>
+                                <tr><td style="color:var(--text-muted);padding:5px 8px;">Configured Nodes</td><td style="color:var(--text);padding:5px 8px;">${sshNodesCount > 0 ? sshNodesCount + ' node(s)' : '<span style="color:var(--text-faint);">None</span>'}</td></tr>
                             </table>
-                            ${sshNodesCount > 0 ? '<div style="margin-top:10px;padding:10px;background:#1a1a2e;border-radius:4px;font-size:12px;color:#aaa;">' + Object.entries(sshNodes).map(([name, cfg]) => name + ' → ' + (cfg.host || cfg.ip || '?') + ':' + (cfg.port || 22)).join('<br>') + '</div>' : ''}
-                            ${!sshEnabled ? '<p style="color:#888;font-size:12px;margin:10px 0 0 0;">SSH is required for remote node config editing and service management.</p>' : ''}
+                            ${sshNodesCount > 0 ? '<div style="margin-top:10px;padding:10px;background:var(--bg);border-radius:4px;font-size:12px;color:var(--text-dim);">' + Object.entries(sshNodes).map(([name, cfg]) => name + ' → ' + (cfg.host || cfg.ip || '?') + ':' + (cfg.port || 22)).join('<br>') + '</div>' : ''}
+                            ${!sshEnabled ? '<p style="color:var(--text-muted);font-size:12px;margin:10px 0 0 0;">SSH is required for remote node config editing and service management.</p>' : ''}
                         </div>
 
-                        <div style="background:#0f3460;padding:15px;border-radius:8px;">
-                            <h4 style="color:#4fc3f7;margin:0 0 15px 0;">About</h4>
+                        <div style="background:var(--surface);padding:15px;border-radius:8px;">
+                            <h4 style="color:var(--accent);margin:0 0 15px 0;">About</h4>
                             <table style="width:100%;font-size:14px;">
-                                <tr><td style="color:#888;padding:5px 8px;width:120px;">Version</td><td style="color:#eee;padding:5px 8px;">v{{ version }}</td></tr>
-                                <tr><td style="color:#888;padding:5px 8px;">Author</td><td style="color:#eee;padding:5px 8px;">Jason Cheng</td></tr>
-                                <tr><td style="color:#888;padding:5px 8px;">Repository</td><td style="padding:5px 8px;"><a href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" style="color:#4fc3f7;">GitHub</a></td></tr>
+                                <tr><td style="color:var(--text-muted);padding:5px 8px;width:120px;">Version</td><td style="color:var(--text);padding:5px 8px;">v{{ version }}</td></tr>
+                                <tr><td style="color:var(--text-muted);padding:5px 8px;">Author</td><td style="color:var(--text);padding:5px 8px;">Jason Cheng</td></tr>
+                                <tr><td style="color:var(--text-muted);padding:5px 8px;">Repository</td><td style="padding:5px 8px;"><a href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" style="color:var(--accent);">GitHub</a></td></tr>
                             </table>
                         </div>
                     </div>
@@ -5175,67 +5415,67 @@ HTML_TEMPLATE = '''
             const cmd3 = 'ssh -i /root/.ssh/wazuh_cluster_key root@' + nodeIp + ' "hostname"';
             const cmd4 = 'ssh:\\n  enabled: true\\n  key_file: /root/.ssh/wazuh_cluster_key\\n  nodes:\\n    ' + nodeName + ':\\n      host: ' + nodeIp + '\\n      user: root';
 
-            const codeBlockStyle = 'background:#0d0d1a;padding:12px;border-radius:6px;overflow-x:auto;color:#4ade80;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:10px;';
-            const copyBtnStyle = 'background:transparent;border:1px solid #444;border-radius:4px;padding:4px 8px;cursor:pointer;color:#888;flex-shrink:0;display:flex;align-items:center;';
+            const codeBlockStyle = 'background:var(--sunken-0d0d1a);padding:12px;border-radius:6px;overflow-x:auto;color:var(--success-4ade80);font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:10px;';
+            const copyBtnStyle = 'background:transparent;border:1px solid var(--border-444);border-radius:4px;padding:4px 8px;cursor:pointer;color:var(--text-muted);flex-shrink:0;display:flex;align-items:center;';
 
             const body = `
                 <div style="line-height:1.8;">
-                    <div style="background:#1f2d1f;padding:15px;border-radius:8px;margin-bottom:15px;border-left:4px solid #4ade80;">
-                        <strong style="color:#4ade80;">Optional Setup</strong>
-                        <p style="margin:10px 0 0 0;color:#aaa;">
+                    <div style="background:var(--tint-ok);padding:15px;border-radius:8px;margin-bottom:15px;border-left:4px solid #4ade80;">
+                        <strong style="color:var(--success-4ade80);">Optional Setup</strong>
+                        <p style="margin:10px 0 0 0;color:var(--text-dim);">
                             SSH configuration is <strong>optional</strong>. Only needed if you want to edit worker node configs
                             or restart services remotely from this web interface.
                         </p>
                     </div>
 
-                    <div style="background:#1a1a2e;padding:15px;border-radius:8px;margin-bottom:20px;border-left:4px solid #4fc3f7;">
-                        <strong style="color:#4fc3f7;">Why SSH Setup?</strong>
-                        <p style="margin:10px 0 0 0;color:#aaa;">
+                    <div style="background:var(--bg);padding:15px;border-radius:8px;margin-bottom:20px;border-left:4px solid var(--accent-line);">
+                        <strong style="color:var(--accent);">Why SSH Setup?</strong>
+                        <p style="margin:10px 0 0 0;color:var(--text-dim);">
                             Wazuh API does not provide access to raw config files on worker nodes.
                             To enable remote config editing, you need to set up SSH key-based authentication
                             from the master node to worker nodes.
                         </p>
                     </div>
 
-                    <h4 style="color:#4fc3f7;margin:20px 0 10px 0;">Step 1: Generate SSH Key on Master Node</h4>
-                    <p style="color:#aaa;margin-bottom:10px;">Run this on the <strong>master node</strong> (as root):</p>
+                    <h4 style="color:var(--accent);margin:20px 0 10px 0;">Step 1: Generate SSH Key on Master Node</h4>
+                    <p style="color:var(--text-dim);margin-bottom:10px;">Run this on the <strong>master node</strong> (as root):</p>
                     <div style="${codeBlockStyle}">
                         <code style="white-space:pre-wrap;word-break:break-all;">${escapeHtml(cmd1)}</code>
                         <button style="${copyBtnStyle}" data-copy="${escapeHtml(cmd1)}" onclick="copyToClipboard(this)" title="Copy to clipboard"><svg class="icon" style="width:14px;height:14px;"><use href="#icon-copy"/></svg></button>
                     </div>
 
-                    <h4 style="color:#4fc3f7;margin:20px 0 10px 0;">Step 2: Copy Public Key to Worker Node</h4>
-                    <p style="color:#aaa;margin-bottom:10px;">Copy the public key to <strong>${escapeHtml(nodeName)}</strong> (${escapeHtml(nodeIp)}):</p>
+                    <h4 style="color:var(--accent);margin:20px 0 10px 0;">Step 2: Copy Public Key to Worker Node</h4>
+                    <p style="color:var(--text-dim);margin-bottom:10px;">Copy the public key to <strong>${escapeHtml(nodeName)}</strong> (${escapeHtml(nodeIp)}):</p>
                     <div style="${codeBlockStyle}">
                         <code style="white-space:pre-wrap;word-break:break-all;">${escapeHtml(cmd2)}</code>
                         <button style="${copyBtnStyle}" data-copy="${escapeHtml(cmd2)}" onclick="copyToClipboard(this)" title="Copy to clipboard"><svg class="icon" style="width:14px;height:14px;"><use href="#icon-copy"/></svg></button>
                     </div>
-                    <p style="color:#888;font-size:12px;margin-top:5px;">Or manually append the public key to <code>/root/.ssh/authorized_keys</code> on the worker node.</p>
+                    <p style="color:var(--text-muted);font-size:12px;margin-top:5px;">Or manually append the public key to <code>/root/.ssh/authorized_keys</code> on the worker node.</p>
 
-                    <h4 style="color:#4fc3f7;margin:20px 0 10px 0;">Step 3: Test SSH Connection</h4>
-                    <p style="color:#aaa;margin-bottom:10px;">Verify passwordless SSH works:</p>
+                    <h4 style="color:var(--accent);margin:20px 0 10px 0;">Step 3: Test SSH Connection</h4>
+                    <p style="color:var(--text-dim);margin-bottom:10px;">Verify passwordless SSH works:</p>
                     <div style="${codeBlockStyle}">
                         <code style="white-space:pre-wrap;word-break:break-all;">${escapeHtml(cmd3)}</code>
                         <button style="${copyBtnStyle}" data-copy="${escapeHtml(cmd3)}" onclick="copyToClipboard(this)" title="Copy to clipboard"><svg class="icon" style="width:14px;height:14px;"><use href="#icon-copy"/></svg></button>
                     </div>
 
-                    <h4 style="color:#4fc3f7;margin:20px 0 10px 0;">Step 4: Configure This Tool</h4>
-                    <p style="color:#aaa;margin-bottom:10px;">Add SSH settings to <code style="color:#4ade80;">${escapeHtml(configFilePath)}</code>:</p>
+                    <h4 style="color:var(--accent);margin:20px 0 10px 0;">Step 4: Configure This Tool</h4>
+                    <p style="color:var(--text-dim);margin-bottom:10px;">Add SSH settings to <code style="color:var(--success-4ade80);">${escapeHtml(configFilePath)}</code>:</p>
                     <div style="${codeBlockStyle}">
                         <code style="white-space:pre-wrap;">${escapeHtml(cmd4)}</code>
                         <button style="${copyBtnStyle}" data-copy="${escapeHtml(cmd4).replace(/\\n/g, '&#10;')}" onclick="copyToClipboard(this)" title="Copy to clipboard"><svg class="icon" style="width:14px;height:14px;"><use href="#icon-copy"/></svg></button>
                     </div>
 
-                    <div style="background:#2d2d1f;padding:15px;border-radius:8px;margin-top:15px;border-left:4px solid #ffc107;">
-                        <strong style="color:#ffc107;">Important</strong>
-                        <p style="margin:10px 0 0 0;color:#aaa;">
+                    <div style="background:var(--tint-warn);padding:15px;border-radius:8px;margin-top:15px;border-left:4px solid #ffc107;">
+                        <strong style="color:var(--warning);">Important</strong>
+                        <p style="margin:10px 0 0 0;color:var(--text-dim);">
                             After modifying <code>config.yaml</code>, you must <strong>restart this tool</strong> for changes to take effect.
                         </p>
                     </div>
 
-                    <div style="background:#2d1f1f;padding:15px;border-radius:8px;margin-top:15px;border-left:4px solid #e94560;">
-                        <strong style="color:#e94560;">Security Note</strong>
-                        <p style="margin:10px 0 0 0;color:#aaa;">
+                    <div style="background:var(--tint-bad);padding:15px;border-radius:8px;margin-top:15px;border-left:4px solid #e94560;">
+                        <strong style="color:var(--danger);">Security Note</strong>
+                        <p style="margin:10px 0 0 0;color:var(--text-dim);">
                             Ensure proper file permissions on SSH keys (600 for private key).
                             Consider using a dedicated service account instead of root for production environments.
                         </p>
@@ -5277,10 +5517,10 @@ HTML_TEMPLATE = '''
                         ` : ''}
                     </div>
                 </div>
-                <div id="groupConfigEditorContainer" style="border:1px solid #444;border-radius:4px;overflow:auto;flex:1;min-height:300px;height:60vh;">
+                <div id="groupConfigEditorContainer" style="border:1px solid var(--border-444);border-radius:4px;overflow:auto;flex:1;min-height:300px;height:60vh;">
                     <textarea id="groupConfigEditorArea">${escapeHtml(content) || ''}</textarea>
                 </div>
-                ${isEdit ? `<p style="color:#888;font-size:12px;margin-top:10px;">This config will be applied to all agents in group "${escapeHtml(groupName)}".</p>` : ''}
+                ${isEdit ? `<p style="color:var(--text-muted);font-size:12px;margin-top:10px;">This config will be applied to all agents in group "${escapeHtml(groupName)}".</p>` : ''}
                 <div id="groupConfigSaveResult" style="margin-top:10px;"></div>
             `;
             const footer = isEdit ? `
@@ -5308,7 +5548,7 @@ HTML_TEMPLATE = '''
                 if (textarea && typeof CodeMirror !== 'undefined') {
                     groupConfigEditor = CodeMirror.fromTextArea(textarea, {
                         mode: 'xml',
-                        theme: 'dracula',
+                        theme: (window.jtwzCmTheme ? window.jtwzCmTheme() : 'dracula'),
                         lineNumbers: true,
                         lineWrapping: true,
                         indentUnit: 2,
@@ -5340,25 +5580,25 @@ HTML_TEMPLATE = '''
 
             const content = groupConfigEditor.getValue();
             const resultDiv = document.getElementById('groupConfigSaveResult');
-            resultDiv.innerHTML = '<span style="color:#888;">Saving...</span>';
+            resultDiv.innerHTML = '<span style="color:var(--text-muted);">Saving...</span>';
 
             const result = await api('/groups/' + encodeURIComponent(currentConfigGroup) + '/config', 'PUT', { content: content });
 
             if (!result) {
-                resultDiv.innerHTML = '<span style="color:#e94560;">Failed to save config</span>';
+                resultDiv.innerHTML = '<span style="color:var(--danger);">Failed to save config</span>';
                 return;
             }
 
             if (result.error) {
-                resultDiv.innerHTML = '<span style="color:#e94560;">Error: ' + escapeHtml(result.error) + '</span>';
+                resultDiv.innerHTML = '<span style="color:var(--danger);">Error: ' + escapeHtml(result.error) + '</span>';
                 return;
             }
 
-            let msg = '<span style="color:#4ade80;">Config saved successfully!</span>';
+            let msg = '<span style="color:var(--success-4ade80);">Config saved successfully!</span>';
             if (result.backup_path) {
-                msg += '<br><span style="color:#888;font-size:12px;">Backup: ' + escapeHtml(result.backup_path) + '</span>';
+                msg += '<br><span style="color:var(--text-muted);font-size:12px;">Backup: ' + escapeHtml(result.backup_path) + '</span>';
             }
-            msg += '<br><br><span style="color:#f39c12;">Agents will receive updated config on next keepalive.</span>';
+            msg += '<br><br><span style="color:var(--orange);">Agents will receive updated config on next keepalive.</span>';
             resultDiv.innerHTML = msg;
 
             showToast('Group config saved!', 'success', 5000);
@@ -5375,8 +5615,8 @@ HTML_TEMPLATE = '''
             const modalBody = `
                 <div style="text-align:center;padding:20px;">
                     <div class="spinner" style="margin:0 auto 20px;"></div>
-                    <div id="restartStatus" style="color:#4fc3f7;font-size:16px;margin-bottom:10px;">Sending restart command...</div>
-                    <div id="restartProgress" style="color:#888;font-size:13px;"></div>
+                    <div id="restartStatus" style="color:var(--accent);font-size:16px;margin-bottom:10px;">Sending restart command...</div>
+                    <div id="restartProgress" style="color:var(--text-muted);font-size:13px;"></div>
                 </div>
             `;
             showModal('Restarting ' + nodeName, modalBody, '', false);
@@ -5509,7 +5749,7 @@ HTML_TEMPLATE = '''
             const data = await api('/nodes/' + nodeName + '/upgrade-files');
 
             if (!data) {
-                content.innerHTML = '<div style="color:#e94560;">Failed to load upgrade files</div>';
+                content.innerHTML = '<div style="color:var(--danger);">Failed to load upgrade files</div>';
                 return;
             }
 
@@ -5518,7 +5758,7 @@ HTML_TEMPLATE = '''
                     showSSHSetupTutorial(nodeName, data.node_ip || '');
                     return;
                 }
-                content.innerHTML = '<div style="color:#e94560;">Error: ' + escapeHtml(data.error) + '</div>';
+                content.innerHTML = '<div style="color:var(--danger);">Error: ' + escapeHtml(data.error) + '</div>';
                 return;
             }
 
@@ -5582,7 +5822,7 @@ HTML_TEMPLATE = '''
 
             let tableRows = '';
             if (sorted.length === 0) {
-                tableRows = '<tr><td colspan="5" style="text-align:center;color:#888;padding:20px;">No WPK files found</td></tr>';
+                tableRows = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px;">No WPK files found</td></tr>';
             } else {
                 tableRows = sorted.map(f => `<tr>
                     <td style="font-family:monospace;font-size:12px;">${escapeHtml(f.name)}</td>
@@ -5594,16 +5834,16 @@ HTML_TEMPLATE = '''
             }
 
             const versionInfo = upgradeFilesManagerVersion ?
-                `<span style="background:#0f3460;padding:4px 10px;border-radius:4px;margin-left:10px;">Manager: <strong style="color:#4fc3f7;">v${escapeHtml(upgradeFilesManagerVersion)}</strong></span>` : '';
+                `<span style="background:var(--surface);padding:4px 10px;border-radius:4px;margin-left:10px;">Manager: <strong style="color:var(--accent);">v${escapeHtml(upgradeFilesManagerVersion)}</strong></span>` : '';
 
             content.innerHTML = `
                 <div style="display:flex;flex-direction:column;height:100%;">
-                    <div style="background:#1a1a2e;border-left:3px solid #4fc3f7;padding:10px 15px;margin-bottom:15px;border-radius:4px;flex-shrink:0;">
-                        <p style="color:#aaa;font-size:12px;margin:0;">These WPK packages are automatically downloaded from Wazuh official site when an agent connected to this node requests an upgrade. You can also manually upload WPK files for offline environments.</p>
+                    <div style="background:var(--bg);border-left:3px solid var(--accent-line);padding:10px 15px;margin-bottom:15px;border-radius:4px;flex-shrink:0;">
+                        <p style="color:var(--text-dim);font-size:12px;margin:0;">These WPK packages are automatically downloaded from Wazuh official site when an agent connected to this node requests an upgrade. You can also manually upload WPK files for offline environments.</p>
                     </div>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;flex-wrap:wrap;gap:10px;flex-shrink:0;">
                         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-                            <span style="color:#888;">Path: <code style="background:#1a1a2e;padding:4px 8px;border-radius:4px;">${escapeHtml(path)}</code></span>
+                            <span style="color:var(--text-muted);">Path: <code style="background:var(--bg);padding:4px 8px;border-radius:4px;">${escapeHtml(path)}</code></span>
                             ${versionInfo}
                         </div>
                         <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -5624,7 +5864,7 @@ HTML_TEMPLATE = '''
                             <tbody>${tableRows}</tbody>
                         </table>
                     </div>
-                    <p style="color:#888;margin-top:15px;font-size:12px;flex-shrink:0;">Total: ${upgradeFilesData.length} file(s)</p>
+                    <p style="color:var(--text-muted);margin-top:15px;font-size:12px;flex-shrink:0;">Total: ${upgradeFilesData.length} file(s)</p>
                 </div>
             `;
         }
@@ -5717,7 +5957,7 @@ HTML_TEMPLATE = '''
                 if (!data) return;
 
                 if (data.error) {
-                    body.innerHTML = '<tr><td colspan="4" class="loading" style="color:#e94560;">Error: ' + data.error + '</td></tr>';
+                    body.innerHTML = '<tr><td colspan="4" class="loading" style="color:var(--danger);">Error: ' + data.error + '</td></tr>';
                     return;
                 }
 
@@ -5738,16 +5978,16 @@ HTML_TEMPLATE = '''
                     const roles = (u.roles || []).map(r => `<span class="badge">${r}</span>`).join(' ');
                     const isSystem = u.username === 'wazuh' || u.username === 'wazuh-wui';
                     let userNote = '';
-                    if (u.username === 'wazuh') userNote = " <span style='color:#888;font-size:11px;'>(system - API admin)</span>";
-                    else if (u.username === 'wazuh-wui') userNote = " <span style='color:#888;font-size:11px;'>(system - Dashboard)</span>";
-                    else userNote = " <span style='color:#888;font-size:11px;'>(API user)</span>";
+                    if (u.username === 'wazuh') userNote = " <span style='color:var(--text-muted);font-size:11px;'>(system - API admin)</span>";
+                    else if (u.username === 'wazuh-wui') userNote = " <span style='color:var(--text-muted);font-size:11px;'>(system - Dashboard)</span>";
+                    else userNote = " <span style='color:var(--text-muted);font-size:11px;'>(API user)</span>";
                     const actionBtns = isSystem ?
-                        '<div class="btn-wrap"><span style="display:inline-block;padding:4px 8px;color:#888;font-size:12px;">Protected</span></div>' :
+                        '<div class="btn-wrap"><span style="display:inline-block;padding:4px 8px;color:var(--text-muted);font-size:12px;">Protected</span></div>' :
                         `<div class="btn-wrap"><button class="btn btn-sm btn-warning" onclick="showEditUserRolesModal('${u.username}')"><svg class="icon"><use href="#icon-edit"/></svg>Edit Roles</button>
                          <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.username}')"><svg class="icon"><use href="#icon-trash"/></svg>Delete</button></div>`;
                     return `<tr>
                         <td>${u.username}${userNote}</td>
-                        <td>${roles || "<span style='color:#888'>none</span>"}</td>
+                        <td>${roles || "<span style='color:var(--text-muted)'>none</span>"}</td>
                         <td>${u.allow_run_as ? "Yes" : "No"}</td>
                         <td>${actionBtns}</td>
                     </tr>`;
@@ -5756,7 +5996,7 @@ HTML_TEMPLATE = '''
                 if (err.message === 'BACKEND_UNAVAILABLE') {
                     body.innerHTML = `<tr><td colspan="4">${getConnectionErrorHtml('refreshUsers()')}</td></tr>`;
                 } else {
-                    body.innerHTML = `<tr><td colspan="4" class="loading" style="color:#e94560;">Error loading users: ${escapeHtml(err.message)}</td></tr>`;
+                    body.innerHTML = `<tr><td colspan="4" class="loading" style="color:var(--danger);">Error loading users: ${escapeHtml(err.message)}</td></tr>`;
                 }
             }
         }
@@ -5765,8 +6005,8 @@ HTML_TEMPLATE = '''
             let roleOptions;
             let roleNote = '';
             if (availableRoles.length === 0) {
-                roleOptions = '<span style="color:#888;font-style:italic;">Roles will be assigned after creation using "Edit Roles"</span>';
-                roleNote = '<p style="color:#f39c12;font-size:12px;margin-top:5px;">Note: Use "Edit Roles" button after creating user to assign roles.</p>';
+                roleOptions = '<span style="color:var(--text-muted);font-style:italic;">Roles will be assigned after creation using "Edit Roles"</span>';
+                roleNote = '<p style="color:var(--orange);font-size:12px;margin-top:5px;">Note: Use "Edit Roles" button after creating user to assign roles.</p>';
             } else {
                 roleOptions = availableRoles.map(r =>
                     `<div class="multi-select-item" onclick="toggleCheckbox(this, event)">
@@ -5781,11 +6021,11 @@ HTML_TEMPLATE = '''
                 <div class="form-group">
                 <label>Password</label>
                 <input type="password" id="newPassword" placeholder="Enter password">
-                <p style="color:#888;font-size:11px;margin-top:5px;">Must contain: uppercase, lowercase, number, special char, min 8 chars</p>
+                <p style="color:var(--text-muted);font-size:11px;margin-top:5px;">Must contain: uppercase, lowercase, number, special char, min 8 chars</p>
                 </div>
                 <div class="form-group">
                 <label>Roles (optional)</label>
-                <div id="roleCheckboxes" style="max-height:200px;overflow-y:auto;background:#1a1a2e;padding:10px;border-radius:4px;">${roleOptions}</div>
+                <div id="roleCheckboxes" style="max-height:200px;overflow-y:auto;background:var(--bg);padding:10px;border-radius:4px;">${roleOptions}</div>
                 ${roleNote}
                 </div>`;
             const footer = `<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Cancel</button>
@@ -5841,7 +6081,7 @@ HTML_TEMPLATE = '''
 
             const body = `<div class="form-group">
                 <label>Roles for user "${username}"</label>
-                <div id="roleCheckboxes" style="max-height:200px;overflow-y:auto;background:#1a1a2e;padding:10px;border-radius:4px;">${roleOptions}</div>
+                <div id="roleCheckboxes" style="max-height:200px;overflow-y:auto;background:var(--bg);padding:10px;border-radius:4px;">${roleOptions}</div>
                 </div>`;
             const footer = `<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Cancel</button>
                 <button class="btn btn-primary" onclick="updateUserRoles('${username}')"><svg class="icon"><use href="#icon-save"/></svg>Save</button>`;
@@ -5888,38 +6128,38 @@ HTML_TEMPLATE = '''
             if (!text) return '';
             return text
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')  // Escape HTML
-                .replace(/^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})/gm, '<span style="color:#888">$1</span>')  // Timestamp
-                .replace(/\\[INFO\\]/g, '<span style="color:#4fc3f7;font-weight:bold">[INFO]</span>')
-                .replace(/\\[WARNING\\]/g, '<span style="color:#ffc107;font-weight:bold">[WARNING]</span>')
-                .replace(/\\[ERROR\\]/g, '<span style="color:#e94560;font-weight:bold">[ERROR]</span>')
-                .replace(/\\[DEBUG\\]/g, '<span style="color:#9e9e9e">[DEBUG]</span>')
-                .replace(/(LOGIN SUCCESS:)/g, '<span style="color:#4ade80">$1</span>')
-                .replace(/(LOGIN FAILED:)/g, '<span style="color:#f87171">$1</span>')
-                .replace(/(SERVER START:)/g, '<span style="color:#60a5fa">$1</span>')
-                .replace(/(USER DELETE:?|USER CREATE:?|USER ROLES UPDATE:?)/g, '<span style="color:#c084fc">$1</span>')
-                .replace(/(GROUP |AGENT )/g, '<span style="color:#34d399">$1</span>')
-                .replace(/(user=\\w+|operator=\\w+)/g, '<span style="color:#fbbf24">$1</span>')
-                .replace(/(from=[\\d\\.]+)/g, '<span style="color:#94a3b8">$1</span>');
+                .replace(/^(\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})/gm, '<span style="color:var(--text-muted)">$1</span>')  // Timestamp
+                .replace(/\\[INFO\\]/g, '<span style="color:var(--accent);font-weight:bold">[INFO]</span>')
+                .replace(/\\[WARNING\\]/g, '<span style="color:var(--warning);font-weight:bold">[WARNING]</span>')
+                .replace(/\\[ERROR\\]/g, '<span style="color:var(--danger);font-weight:bold">[ERROR]</span>')
+                .replace(/\\[DEBUG\\]/g, '<span style="color:var(--text-9e9e9e)">[DEBUG]</span>')
+                .replace(/(LOGIN SUCCESS:)/g, '<span style="color:var(--success-4ade80)">$1</span>')
+                .replace(/(LOGIN FAILED:)/g, '<span style="color:var(--danger-f87171)">$1</span>')
+                .replace(/(SERVER START:)/g, '<span style="color:var(--accent-60a5fa)">$1</span>')
+                .replace(/(USER DELETE:?|USER CREATE:?|USER ROLES UPDATE:?)/g, '<span style="color:var(--purple-c084fc)">$1</span>')
+                .replace(/(GROUP |AGENT )/g, '<span style="color:var(--success-34d399)">$1</span>')
+                .replace(/(user=\\w+|operator=\\w+)/g, '<span style="color:var(--warning-fbbf24)">$1</span>')
+                .replace(/(from=[\\d\\.]+)/g, '<span style="color:var(--text-94a3b8)">$1</span>');
         }
 
         async function refreshLogs() {
             const lines = document.getElementById('logLines').value;
             const content = document.getElementById('logContent');
-            content.innerHTML = '<span style="color:#888">Loading...</span>';
+            content.innerHTML = '<span style="color:var(--text-muted)">Loading...</span>';
 
             try {
                 const data = await api('/logs?lines=' + lines);
                 if (!data) {
-                    content.innerHTML = '<span style="color:#e94560">Failed to load logs</span>';
+                    content.innerHTML = '<span style="color:var(--danger)">Failed to load logs</span>';
                     return;
                 }
 
                 if (data.error) {
-                    content.innerHTML = '<span style="color:#e94560">Error: ' + escapeHtml(data.error) + '</span>';
+                    content.innerHTML = '<span style="color:var(--danger)">Error: ' + escapeHtml(data.error) + '</span>';
                     return;
                 }
 
-                content.innerHTML = highlightLog(data.content) || '<span style="color:#888">No log entries</span>';
+                content.innerHTML = highlightLog(data.content) || '<span style="color:var(--text-muted)">No log entries</span>';
 
                 // Update path and info
                 if (data.path) {
@@ -5938,7 +6178,7 @@ HTML_TEMPLATE = '''
                 if (err.message === 'BACKEND_UNAVAILABLE') {
                     content.innerHTML = getConnectionErrorHtml('refreshLogs()').replace('class="connection-error"', 'class="connection-error" style="padding:30px 20px;"');
                 } else {
-                    content.innerHTML = '<span style="color:#e94560">Error loading logs: ' + escapeHtml(err.message) + '</span>';
+                    content.innerHTML = '<span style="color:var(--danger)">Error loading logs: ' + escapeHtml(err.message) + '</span>';
                 }
             }
         }
@@ -5979,7 +6219,7 @@ HTML_TEMPLATE = '''
             try {
                 const data = await api('/rules/hierarchy?rule_id=' + encodeURIComponent(ruleId));
                 if (!data || data.error) {
-                    container.innerHTML = '<div style="color:#e94560;text-align:center;padding:20px;">' +
+                    container.innerHTML = '<div style="color:var(--danger);text-align:center;padding:20px;">' +
                         escapeHtml((data && data.error) || 'Rule not found') + '</div>';
                     return;
                 }
@@ -5995,7 +6235,7 @@ HTML_TEMPLATE = '''
                     status.textContent = 'Found ' + ruleCount + ' related rules';
                 }
             } catch (err) {
-                container.innerHTML = '<div style="color:#e94560;text-align:center;padding:20px;">Error: ' +
+                container.innerHTML = '<div style="color:var(--danger);text-align:center;padding:20px;">Error: ' +
                     escapeHtml(err.message) + '</div>';
             }
         }
@@ -6007,11 +6247,11 @@ HTML_TEMPLATE = '''
             const byFile = data.mode === 'file';
 
             if (!byFile && !targetRule) {
-                container.innerHTML = '<div style="color:#e94560;text-align:center;padding:20px;">Rule not found</div>';
+                container.innerHTML = '<div style="color:var(--danger);text-align:center;padding:20px;">Rule not found</div>';
                 return;
             }
             if (byFile && !hierarchy.length) {
-                container.innerHTML = '<div style="color:#e94560;text-align:center;padding:20px;">No rule file matched</div>';
+                container.innerHTML = '<div style="color:var(--danger);text-align:center;padding:20px;">No rule file matched</div>';
                 return;
             }
 
@@ -6128,17 +6368,17 @@ HTML_TEMPLATE = '''
 
             // Load content if not cached
             if (!contentEl.querySelector('code')) {
-                contentEl.innerHTML = '<span style="color:#888">Loading...</span>';
+                contentEl.innerHTML = '<span style="color:var(--text-muted)">Loading...</span>';
                 try {
                     const data = await api('/rules/' + encodeURIComponent(ruleId));
                     if (data && data.content) {
                         contentEl.innerHTML = '<button class="rule-copy-btn" onclick="copyRuleContent(this, \\'' + ruleId + '\\')">Copy</button><code>' + highlightXml(data.content) + '</code>';
                         contentEl.dataset.rawContent = data.content;
                     } else {
-                        contentEl.innerHTML = '<span style="color:#888">No content available</span>';
+                        contentEl.innerHTML = '<span style="color:var(--text-muted)">No content available</span>';
                     }
                 } catch (err) {
-                    contentEl.innerHTML = '<span style="color:#e94560">Error loading rule</span>';
+                    contentEl.innerHTML = '<span style="color:var(--danger)">Error loading rule</span>';
                 }
             }
 
@@ -6156,14 +6396,14 @@ HTML_TEMPLATE = '''
 
             // Load content if not cached
             if (!contentEl.querySelector('code')) {
-                contentEl.innerHTML = '<span style="color:#888">Loading member rules...</span>';
+                contentEl.innerHTML = '<span style="color:var(--text-muted)">Loading member rules...</span>';
                 try {
                     let html = '';
                     for (const ruleId of memberRules) {
                         const data = await api('/rules/' + encodeURIComponent(ruleId));
                         if (data && data.content) {
-                            html += '<div style="margin-bottom:15px;border-bottom:1px solid #333;padding-bottom:15px;">';
-                            html += '<div style="color:#5dade2;font-weight:bold;margin-bottom:8px;">Rule ' + ruleId + '</div>';
+                            html += '<div style="margin-bottom:15px;border-bottom:1px solid var(--border-333);padding-bottom:15px;">';
+                            html += '<div style="color:var(--accent-5dade2);font-weight:bold;margin-bottom:8px;">Rule ' + ruleId + '</div>';
                             html += '<code>' + highlightXml(data.content) + '</code>';
                             html += '</div>';
                         }
@@ -6171,10 +6411,10 @@ HTML_TEMPLATE = '''
                     if (html) {
                         contentEl.innerHTML = html;
                     } else {
-                        contentEl.innerHTML = '<span style="color:#888">No member rule content available</span>';
+                        contentEl.innerHTML = '<span style="color:var(--text-muted)">No member rule content available</span>';
                     }
                 } catch (err) {
-                    contentEl.innerHTML = '<span style="color:#e94560">Error loading rules</span>';
+                    contentEl.innerHTML = '<span style="color:var(--danger)">Error loading rules</span>';
                 }
             }
 
@@ -6184,7 +6424,7 @@ HTML_TEMPLATE = '''
         function clearRuleSearch() {
             document.getElementById('ruleIdSearch').value = '';
             document.getElementById('ruleSearchStatus').textContent = '';
-            document.getElementById('ruleTreeContainer').innerHTML = '<div style="color:#888;text-align:center;padding:40px;">' +
+            document.getElementById('ruleTreeContainer').innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:40px;">' +
                 '<svg class="icon" style="width:48px;height:48px;opacity:0.5;margin-bottom:15px;"><use href="#icon-tree"/></svg>' +
                 '<p>Enter a Rule ID to view its hierarchy and relationships.</p>' +
                 '<p style="font-size:12px;margin-top:10px;">The tree will show parent rules (if_sid, if_matched_sid) and child rules.</p>' +
@@ -6284,7 +6524,7 @@ HTML_TEMPLATE = '''
             try {
                 const data = await api('/rules');
                 if (!data || data.error) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#e94560;padding:30px;">' + escapeHtml((data && data.error) || 'Failed to load rules') + '</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:30px;">' + escapeHtml((data && data.error) || 'Failed to load rules') + '</td></tr>';
                     return;
                 }
 
@@ -6298,7 +6538,7 @@ HTML_TEMPLATE = '''
                 if (allRulesParseErrors.length) {
                     const n = allRulesParseErrors.length;
                     warn.innerHTML = '<a href="#" onclick="showRuleParseErrors();return false;" ' +
-                        'style="color:#fd7e14;text-decoration:none;" ' +
+                        'style="color:var(--orange-fd7e14);text-decoration:none;" ' +
                         'title="Click for details">&#9888; ' + n +
                         (n === 1 ? ' rule file could not be parsed' : ' rule files could not be parsed') + '</a>';
                 } else {
@@ -6313,7 +6553,7 @@ HTML_TEMPLATE = '''
                 rulesCurrentPage = 1;
                 renderAllRules();
             } catch (err) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#e94560;padding:30px;">Error: ' + escapeHtml(err.message) + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:30px;">Error: ' + escapeHtml(err.message) + '</td></tr>';
             }
         }
 
@@ -6329,9 +6569,9 @@ HTML_TEMPLATE = '''
             }
             const rows = (result.nodes || []).map(n =>
                 '<tr><td style="padding:6px 10px;">' + escapeHtml(n.node) + '</td>' +
-                '<td style="padding:6px 10px;color:' + (n.ok ? '#28a745' : '#e94560') + ';">' +
+                '<td style="padding:6px 10px;color:' + (n.ok ? 'var(--success-28a745)' : 'var(--danger)') + ';">' +
                 (n.ok ? 'reloaded' : 'failed') + '</td>' +
-                '<td style="padding:6px 10px;color:#888;font-size:11px;">' +
+                '<td style="padding:6px 10px;color:var(--text-muted);font-size:11px;">' +
                 escapeHtml((n.warnings || []).join('; ')) + '</td></tr>').join('');
             showModal('Reload Ruleset',
                 '<div class="alert ' + (result.fail_count ? 'alert-error' : 'alert-success') + '">' +
@@ -6342,7 +6582,7 @@ HTML_TEMPLATE = '''
                 '<th style="text-align:left;padding:6px 10px;">Warnings</th></tr></thead><tbody>' +
                 rows + '</tbody></table></div>' +
                 ((result.errors && result.errors.length) ?
-                    '<div style="margin-top:10px;color:#e94560;font-size:12px;">' +
+                    '<div style="margin-top:10px;color:var(--danger);font-size:12px;">' +
                     result.errors.map(e => escapeHtml(e)).join('<br>') + '</div>' : ''),
                 '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>');
         }
@@ -6355,14 +6595,14 @@ HTML_TEMPLATE = '''
             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:30px;"><div class="loading"><div class="spinner"></div>Loading decoders...</div></td></tr>';
             const data = await api('/decoders' + (search ? '?search=' + encodeURIComponent(search) : ''));
             if (!data || data.error) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#e94560;padding:30px;">' + escapeHtml((data && data.error) || 'Failed to load decoders') + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--danger);padding:30px;">' + escapeHtml((data && data.error) || 'Failed to load decoders') + '</td></tr>';
                 return;
             }
             decodersData = data.decoders || [];
             decodersLoaded = true;
             status.textContent = decodersData.length + ' decoders';
             if (!decodersData.length) {
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#888;padding:30px;">No decoders match.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:30px;">No decoders match.</td></tr>';
                 return;
             }
             tbody.innerHTML = decodersData.map(d => {
@@ -6371,7 +6611,7 @@ HTML_TEMPLATE = '''
                     '<td><a class="rule-id-link" onclick="showDecoderFile(\\'' + escapeHtml(file) + '\\')">' + escapeHtml(d.name || '') + '</a></td>' +
                     '<td>' + escapeHtml(String(d.position !== undefined ? d.position : '')) + '</td>' +
                     '<td>' + escapeHtml(d.parent || '') + '</td>' +
-                    '<td' + (d.is_custom ? ' style="color:#f39c12;"' : '') + '>' + escapeHtml(file) + '</td>' +
+                    '<td' + (d.is_custom ? ' style="color:var(--orange);"' : '') + '>' + escapeHtml(file) + '</td>' +
                     '<td><span class="rule-type-badge ' + (d.is_custom ? 'custom' : 'builtin') + '">' + (d.is_custom ? 'Custom' : 'Built-in') + '</span></td>' +
                     '</tr>';
             }).join('');
@@ -6388,7 +6628,7 @@ HTML_TEMPLATE = '''
                 body.innerHTML = '<div class="alert alert-error">' + escapeHtml((data && data.error) || 'Failed to load') + '</div>';
                 return;
             }
-            body.innerHTML = '<pre style="background:#0a0a15;padding:15px;border-radius:4px;font-size:12px;max-height:60vh;overflow:auto;"><code>' +
+            body.innerHTML = '<pre style="background:var(--sunken);padding:15px;border-radius:4px;font-size:12px;max-height:60vh;overflow:auto;"><code>' +
                 highlightXml(escapeHtml(data.content || '')) + '</code></pre>';
         }
 
@@ -6399,21 +6639,21 @@ HTML_TEMPLATE = '''
             tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;"><div class="loading"><div class="spinner"></div>Loading lists...</div></td></tr>';
             const data = await api('/lists');
             if (!data || data.error) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#e94560;padding:30px;">' + escapeHtml((data && data.error) || 'Failed to load lists') + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--danger);padding:30px;">' + escapeHtml((data && data.error) || 'Failed to load lists') + '</td></tr>';
                 return;
             }
             cdbListsData = data.lists || [];
             cdbListsLoaded = true;
             status.textContent = cdbListsData.length + ' lists';
             if (!cdbListsData.length) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#888;padding:30px;">No CDB lists found.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:30px;">No CDB lists found.</td></tr>';
                 return;
             }
             tbody.innerHTML = cdbListsData.map(l => {
                 const name = l.filename || '';
                 return '<tr>' +
                     '<td><a class="rule-id-link" onclick="editCdbList(\\'' + escapeHtml(name) + '\\')">' + escapeHtml(name) + '</a></td>' +
-                    '<td style="color:#888;">' + escapeHtml(l.relative_dirname || '') + '</td>' +
+                    '<td style="color:var(--text-muted);">' + escapeHtml(l.relative_dirname || '') + '</td>' +
                     '<td><span class="rule-type-badge ' + (l.is_custom ? 'custom' : 'builtin') + '">' + (l.is_custom ? 'Custom' : 'Built-in') + '</span></td>' +
                     '<td><button class="btn btn-sm" onclick="editCdbList(\\'' + escapeHtml(name) + '\\')"><svg class="icon"><use href="#icon-edit"/></svg>Edit</button>' +
                     '<button class="btn btn-sm btn-danger" style="margin-left:6px;" onclick="deleteCdbList(\\'' + escapeHtml(name) + '\\')"><svg class="icon"><use href="#icon-trash"/></svg>Delete</button></td>' +
@@ -6433,10 +6673,10 @@ HTML_TEMPLATE = '''
                 content = data.content || '';
             }
             const body =
-                '<p style="color:#888;font-size:12px;margin-bottom:10px;">One <code>key:value</code> pair per line. The ruleset must be reloaded before changes take effect.</p>' +
+                '<p style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">One <code>key:value</code> pair per line. The ruleset must be reloaded before changes take effect.</p>' +
                 '<div style="margin-bottom:10px;">Name <input type="text" id="cdbName" value="' + escapeHtml(filename || '') + '"' +
-                (isNew ? '' : ' readonly') + ' style="width:280px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;"></div>' +
-                '<textarea id="cdbContent" style="width:100%;height:45vh;background:#0a0a15;color:#eee;border:1px solid #1a3a6e;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;">' +
+                (isNew ? '' : ' readonly') + ' style="width:280px;background:var(--surface);border:1px solid var(--border-1a3a6e);color:var(--text);padding:6px 10px;border-radius:4px;"></div>' +
+                '<textarea id="cdbContent" style="width:100%;height:45vh;background:var(--sunken);color:var(--text);border:1px solid var(--border-1a3a6e);border-radius:4px;padding:10px;font-family:monospace;font-size:12px;">' +
                 escapeHtml(content) + '</textarea>' +
                 '<div id="cdbSaveResult" style="margin-top:10px;"></div>';
             showModal(isNew ? 'New CDB List' : 'CDB List - ' + filename, body,
@@ -6502,27 +6742,27 @@ HTML_TEMPLATE = '''
             if (rule) {
                 const level = rule.level !== undefined ? rule.level : '-';
                 const levelClass = level === 0 ? 'zero' : (level >= 12 ? 'high' : (level >= 6 ? 'medium' : 'low'));
-                html += '<div style="background:#0a0a15;padding:15px;border-radius:4px;border-left:3px solid #28a745;margin-bottom:12px;">' +
+                html += '<div style="background:var(--sunken);padding:15px;border-radius:4px;border-left:3px solid #28a745;margin-bottom:12px;">' +
                     '<div style="margin-bottom:6px;">Matched rule <a class="rule-id-link" onclick="browseToRuleHierarchy(\\'' + escapeHtml(String(rule.id)) + '\\')">' + escapeHtml(String(rule.id)) + '</a> ' +
                     '<span class="rule-level ' + levelClass + '">' + escapeHtml(String(level)) + '</span></div>' +
-                    '<div style="color:#eee;">' + escapeHtml(rule.description || '') + '</div>' +
+                    '<div style="color:var(--text);">' + escapeHtml(rule.description || '') + '</div>' +
                     (rule.groups && rule.groups.length ? '<div class="rules-group-tags" style="margin-top:8px;">' + rule.groups.map(g => '<span class="rules-group-tag">' + escapeHtml(g) + '</span>').join('') + '</div>' : '') +
                     '</div>';
             } else {
-                html += '<div style="background:#0a0a15;padding:15px;border-radius:4px;border-left:3px solid #888;margin-bottom:12px;color:#888;">No rule matched this log line.</div>';
+                html += '<div style="background:var(--sunken);padding:15px;border-radius:4px;border-left:3px solid #888;margin-bottom:12px;color:var(--text-muted);">No rule matched this log line.</div>';
             }
-            html += '<div style="background:#0a0a15;padding:15px;border-radius:4px;margin-bottom:12px;">' +
-                '<div style="color:#888;font-size:12px;margin-bottom:4px;">Decoder</div>' +
+            html += '<div style="background:var(--sunken);padding:15px;border-radius:4px;margin-bottom:12px;">' +
+                '<div style="color:var(--text-muted);font-size:12px;margin-bottom:4px;">Decoder</div>' +
                 '<div>' + escapeHtml(decoder.name || 'none') + (decoder.parent ? ' (parent: ' + escapeHtml(decoder.parent) + ')' : '') + '</div></div>';
             const fields = out.data || {};
             if (Object.keys(fields).length) {
-                html += '<div style="background:#0a0a15;padding:15px;border-radius:4px;margin-bottom:12px;">' +
-                    '<div style="color:#888;font-size:12px;margin-bottom:4px;">Extracted fields</div>' +
+                html += '<div style="background:var(--sunken);padding:15px;border-radius:4px;margin-bottom:12px;">' +
+                    '<div style="color:var(--text-muted);font-size:12px;margin-bottom:4px;">Extracted fields</div>' +
                     '<pre style="margin:0;font-size:12px;">' + escapeHtml(JSON.stringify(fields, null, 2)) + '</pre></div>';
             }
             if (result.messages && result.messages.length) {
-                html += '<div style="background:#0a0a15;padding:15px;border-radius:4px;">' +
-                    '<div style="color:#888;font-size:12px;margin-bottom:4px;">Messages</div><pre style="margin:0;font-size:12px;">' +
+                html += '<div style="background:var(--sunken);padding:15px;border-radius:4px;">' +
+                    '<div style="color:var(--text-muted);font-size:12px;margin-bottom:4px;">Messages</div><pre style="margin:0;font-size:12px;">' +
                     escapeHtml(result.messages.join('\\n')) + '</pre></div>';
             }
             target.innerHTML = html;
@@ -6543,7 +6783,7 @@ HTML_TEMPLATE = '''
 
         function onInventoryTypeChange() {
             document.getElementById('invBody').innerHTML =
-                '<tr><td colspan="2" style="text-align:center;color:#888;padding:40px;">Press Search to query this category.</td></tr>';
+                '<tr><td colspan="2" style="text-align:center;color:var(--text-muted);padding:40px;">Press Search to query this category.</td></tr>';
             document.getElementById('invStatus').textContent = '';
             document.getElementById('invWarn').innerHTML = '';
         }
@@ -6574,7 +6814,7 @@ HTML_TEMPLATE = '''
             const data = await api('/inventory/search?type=' + encodeURIComponent(type) +
                 '&q=' + encodeURIComponent(query) + '&agents=' + encodeURIComponent(agents));
             if (!data || data.error) {
-                body.innerHTML = '<tr><td colspan="2" style="text-align:center;color:#e94560;padding:30px;">' +
+                body.innerHTML = '<tr><td colspan="2" style="text-align:center;color:var(--danger);padding:30px;">' +
                     escapeHtml((data && data.error) || 'Search failed') + '</td></tr>';
                 return;
             }
@@ -6588,14 +6828,14 @@ HTML_TEMPLATE = '''
             const notes = [];
             if (data.truncated) notes.push('results truncated at ' + data.max_rows);
             if (data.agents_failed && data.agents_failed.length) notes.push(data.agents_failed.length + ' agents returned no data');
-            warn.innerHTML = notes.length ? '<span style="color:#fd7e14;">&#9888; ' + escapeHtml(notes.join('; ')) + '</span>' : '';
+            warn.innerHTML = notes.length ? '<span style="color:var(--orange-fd7e14);">&#9888; ' + escapeHtml(notes.join('; ')) + '</span>' : '';
             if (!inventoryRows.length) {
                 body.innerHTML = '<tr><td colspan="' + (inventoryColumns.length + 1) +
-                    '" style="text-align:center;color:#888;padding:30px;">No agent matched.</td></tr>';
+                    '" style="text-align:center;color:var(--text-muted);padding:30px;">No agent matched.</td></tr>';
                 return;
             }
             body.innerHTML = inventoryRows.map(r =>
-                '<tr><td><span style="color:#0dcaf0;">' + escapeHtml(r.agent_id) + '</span> ' +
+                '<tr><td><span style="color:var(--info-0dcaf0);">' + escapeHtml(r.agent_id) + '</span> ' +
                 escapeHtml(r.agent_name || '') + '</td>' +
                 inventoryColumns.map(c => {
                     const v = invCell(r, c);
@@ -6647,7 +6887,7 @@ HTML_TEMPLATE = '''
                 body.innerHTML = '<div class="alert alert-error">' + escapeHtml((data && data.error) || 'Failed to compare') + '</div>';
                 return;
             }
-            let html = '<p style="color:#888;font-size:12px;margin-bottom:12px;">ossec.conf is not synchronised by the cluster. ' +
+            let html = '<p style="color:var(--text-muted);font-size:12px;margin-bottom:12px;">ossec.conf is not synchronised by the cluster. ' +
                 'Compared against the master <strong>' + escapeHtml(data.reference) + '</strong>: ' +
                 escapeHtml(data.nodes.join(', ')) + '</p>';
             if (!data.differences.length) {
@@ -6655,17 +6895,17 @@ HTML_TEMPLATE = '''
             } else {
                 html += '<div class="alert alert-error">' + data.diff_count + ' difference(s) found</div>';
                 for (const d of data.differences) {
-                    html += '<div style="background:#0a0a15;padding:12px;border-radius:4px;margin-bottom:10px;">' +
-                        '<div style="color:#4fc3f7;margin-bottom:6px;">' + escapeHtml(d.node) +
+                    html += '<div style="background:var(--sunken);padding:12px;border-radius:4px;margin-bottom:10px;">' +
+                        '<div style="color:var(--accent);margin-bottom:6px;">' + escapeHtml(d.node) +
                         ' &mdash; section <code>' + escapeHtml(d.section) + '</code></div>';
                     if (d.missing_on_node.length) {
-                        html += '<div style="color:#e94560;font-size:12px;margin-bottom:4px;">Missing on this node (present on master):</div>' +
-                            '<ul style="margin:0 0 8px 18px;font-family:monospace;font-size:12px;color:#eee;">' +
+                        html += '<div style="color:var(--danger);font-size:12px;margin-bottom:4px;">Missing on this node (present on master):</div>' +
+                            '<ul style="margin:0 0 8px 18px;font-family:monospace;font-size:12px;color:var(--text);">' +
                             d.missing_on_node.map(i => '<li>' + escapeHtml(i) + '</li>').join('') + '</ul>';
                     }
                     if (d.extra_on_node.length) {
-                        html += '<div style="color:#fd7e14;font-size:12px;margin-bottom:4px;">Only on this node:</div>' +
-                            '<ul style="margin:0 0 0 18px;font-family:monospace;font-size:12px;color:#eee;">' +
+                        html += '<div style="color:var(--orange-fd7e14);font-size:12px;margin-bottom:4px;">Only on this node:</div>' +
+                            '<ul style="margin:0 0 0 18px;font-family:monospace;font-size:12px;color:var(--text);">' +
                             d.extra_on_node.map(i => '<li>' + escapeHtml(i) + '</li>').join('') + '</ul>';
                     }
                     html += '</div>';
@@ -6687,7 +6927,7 @@ HTML_TEMPLATE = '''
             body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:30px;"><div class="loading"><div class="spinner"></div>Loading...</div></td></tr>';
             const data = await api('/packs');
             if (!data || data.error) {
-                body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#e94560;padding:30px;">' +
+                body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--danger);padding:30px;">' +
                     escapeHtml((data && data.error) || 'Failed to load packs') + '</td></tr>';
                 return;
             }
@@ -6723,11 +6963,11 @@ HTML_TEMPLATE = '''
             const shown = packsData.filter(p => packMatchesFilter(p, fq, fs));
             if (fq || fs) status.innerHTML += ' &middot; <span>Showing ' + shown.length + ' of ' + packsData.length + '</span>';
             if (!packsData.length) {
-                body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;padding:30px;">No packs available.</td></tr>';
+                body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No packs available.</td></tr>';
                 return;
             }
             if (!shown.length) {
-                body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#888;padding:30px;">No pack matches the filter.</td></tr>';
+                body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:30px;">No pack matches the filter.</td></tr>';
                 return;
             }
             body.innerHTML = shown.map(p => {
@@ -6739,12 +6979,12 @@ HTML_TEMPLATE = '''
                     'untracked': '<span class="rule-type-badge pack-untracked" title="Files are in place but there is no install record"><span>Installed (untracked)</span></span>',
                 }[vs] || '<span class="rule-type-badge builtin">Not installed</span>';
                 // the version on the manager, then the one this tool can install
-                let have = '<span style="color:#666;">&mdash;</span>';
+                let have = '<span style="color:var(--text-faint);">&mdash;</span>';
                 if (p.installed_version) {
                     have = escapeHtml(p.installed_version);
                     if (vs === 'untracked') have += '<span class="pack-ver-note">files match, not recorded</span>';
                 } else if (vs === 'untracked') {
-                    have = '<span style="color:#888;">Unknown</span><span class="pack-ver-note">files differ from this version</span>';
+                    have = '<span style="color:var(--text-muted);">Unknown</span><span class="pack-ver-note">files differ from this version</span>';
                 }
                 let ship = escapeHtml(p.version);
                 if (vs === 'update') ship = '<span class="pack-ver-new">' + ship + '</span>';
@@ -6762,8 +7002,8 @@ HTML_TEMPLATE = '''
                     '</div>';
                 return '<tr>' +
                     '<td><strong>' + escapeHtml(packLang(p.name, p.name_zh)) + '</strong><br>' +
-                        '<span style="color:#888;font-size:11px;font-family:monospace;">' + escapeHtml(p.id) + '</span></td>' +
-                    '<td style="font-size:12px;color:#ccc;">' + escapeHtml(packLang(p.summary, p.summary_zh)) + '</td>' +
+                        '<span style="color:var(--text-muted);font-size:11px;font-family:monospace;">' + escapeHtml(p.id) + '</span></td>' +
+                    '<td style="font-size:12px;color:var(--text-ccc);">' + escapeHtml(packLang(p.summary, p.summary_zh)) + '</td>' +
                     '<td style="font-family:monospace;font-size:12px;">' + escapeHtml(p.rule_id_range) + '</td>' +
                     '<td style="font-family:monospace;">' + have + '</td>' +
                     '<td style="font-family:monospace;">' + ship + '</td>' +
@@ -6883,7 +7123,7 @@ HTML_TEMPLATE = '''
 
             if (d.installed) {
                 const vs = d.version_status;
-                const when = (d.state && (d.state.updated_at || d.state.installed_at)) ? ' &nbsp; <span style="color:#888;">' + escapeHtml(String(d.state.updated_at || d.state.installed_at)) + '</span>' : '';
+                const when = (d.state && (d.state.updated_at || d.state.installed_at)) ? ' &nbsp; <span style="color:var(--text-muted);">' + escapeHtml(String(d.state.updated_at || d.state.installed_at)) + '</span>' : '';
                 if (vs === 'update') {
                     html += '<div class="alert alert-warning" style="display:flex;align-items:center;gap:10px;">' +
                         '<div style="flex:1;"><div><span>Update available</span>: ' +
@@ -6945,7 +7185,7 @@ HTML_TEMPLATE = '''
                 (d.files || []).map(f =>
                     '<tr><td style="padding:6px 10px;">' + escapeHtml(f.type) + '</td>' +
                     '<td style="padding:6px 10px;font-family:monospace;">' + escapeHtml(f.name) + '</td>' +
-                    '<td style="padding:6px 10px;font-family:monospace;color:#9aa;">' + escapeHtml(f.dest) + '</td>' +
+                    '<td style="padding:6px 10px;font-family:monospace;color:var(--text-9aa);">' + escapeHtml(f.dest) + '</td>' +
                     '<td style="padding:6px 10px;text-align:right;">' + formatFileSize(f.size) + '</td></tr>').join('') +
                 '</tbody></table></div></details>';
 
@@ -6959,7 +7199,7 @@ HTML_TEMPLATE = '''
                     'This pack installs an updater and runs it as root on a schedule. ' +
                     'It is removed again when the pack is removed.<ul style="margin:6px 0 0 18px;">' +
                     jobs.map(j => '<li><code>' + escapeHtml(j.name) + '</code> &nbsp; ' +
-                        '<span style="color:#4fc3f7;">' + escapeHtml(j.cron) + '</span>' +
+                        '<span style="color:var(--accent);">' + escapeHtml(j.cron) + '</span>' +
                         (j.description ? ' &nbsp; ' + escapeHtml(j.description) : '') + '</li>').join('') +
                     '</ul></div>';
             }
@@ -7069,7 +7309,7 @@ HTML_TEMPLATE = '''
                 }
                 const aid = escapeHtml(r.id);
                 html += '<div class="pack-ar-actions">' + (!d.installed
-                    ? '<span style="color:#888;font-size:12px;">Install the pack before enabling its responses.</span>'
+                    ? '<span style="color:var(--text-muted);font-size:12px;">Install the pack before enabling its responses.</span>'
                     : (on ? '<button class="btn btn-sm btn-warning" onclick="disablePackAr(\\'' + pid + '\\', \\'' + aid + '\\')"><svg class="icon"><use href="#icon-xmark"/></svg><span>Disable</span></button>'
                           : '<button class="btn btn-sm btn-danger" onclick="enablePackAr(\\'' + pid + '\\', \\'' + aid + '\\')"><svg class="icon"><use href="#icon-check"/></svg><span>Enable</span></button>')) +
                     '</div></div>';
@@ -7334,14 +7574,14 @@ HTML_TEMPLATE = '''
             }
             const daemons = data.daemons || [];
             if (!daemons.length) {
-                body.innerHTML = '<div style="color:#888;padding:20px;text-align:center;">No daemon statistics returned.</div>';
+                body.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">No daemon statistics returned.</div>';
                 return;
             }
             body.innerHTML = daemons.map(d => {
                 const name = d.name || d.daemon || 'daemon';
                 const metrics = d.metrics || d;
-                return '<div style="background:#0a0a15;padding:15px;border-radius:4px;margin-bottom:12px;">' +
-                    '<div style="color:#4fc3f7;margin-bottom:8px;">' + escapeHtml(name) + '</div>' +
+                return '<div style="background:var(--sunken);padding:15px;border-radius:4px;margin-bottom:12px;">' +
+                    '<div style="color:var(--accent);margin-bottom:8px;">' + escapeHtml(name) + '</div>' +
                     '<pre style="margin:0;font-size:12px;max-height:40vh;overflow:auto;">' +
                     escapeHtml(JSON.stringify(metrics, null, 2)) + '</pre></div>';
             }).join('') +
@@ -7362,7 +7602,7 @@ HTML_TEMPLATE = '''
             }
             const files = data.files || [];
             if (!files.length) {
-                body.innerHTML = '<div style="color:#888;padding:20px;text-align:center;">This group has no files.</div>';
+                body.innerHTML = '<div style="color:var(--text-muted);padding:20px;text-align:center;">This group has no files.</div>';
                 return;
             }
             body.innerHTML = '<div style="overflow-x:auto;"><table class="data-table" style="width:100%;font-size:13px;">' +
@@ -7370,7 +7610,7 @@ HTML_TEMPLATE = '''
                 files.map(f => {
                     const fn = f.filename || '';
                     return '<tr><td style="padding:6px 10px;font-family:monospace;">' + escapeHtml(fn) + '</td>' +
-                        '<td style="padding:6px 10px;color:#888;font-family:monospace;font-size:11px;">' + escapeHtml(f.hash || '') + '</td>' +
+                        '<td style="padding:6px 10px;color:var(--text-muted);font-family:monospace;font-size:11px;">' + escapeHtml(f.hash || '') + '</td>' +
                         '<td style="padding:6px 10px;"><button class="btn btn-sm" onclick="showGroupFileContent(\\'' + escapeHtml(groupName) + '\\', \\'' + escapeHtml(fn) + '\\')">View</button></td></tr>';
                 }).join('') + '</tbody></table></div>';
         }
@@ -7382,7 +7622,7 @@ HTML_TEMPLATE = '''
                 return;
             }
             showModal(filename + ' - ' + groupName,
-                '<pre style="background:#0a0a15;padding:15px;border-radius:4px;font-size:12px;max-height:60vh;overflow:auto;"><code>' +
+                '<pre style="background:var(--sunken);padding:15px;border-radius:4px;font-size:12px;max-height:60vh;overflow:auto;"><code>' +
                 highlightXml(escapeHtml(data.content || '')) + '</code></pre>',
                 '<button class="btn" onclick="showGroupFiles(\\'' + escapeHtml(groupName) + '\\')"><svg class="icon"><use href="#icon-nav-arrow-up"/></svg>Back</button>' +
                 '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
@@ -7405,13 +7645,13 @@ HTML_TEMPLATE = '''
             const options = AR_PRESETS.map(([cmd, desc]) =>
                 '<option value="' + cmd + '">' + cmd + ' - ' + desc + '</option>').join('');
             const body =
-                '<div style="background:#1a1a2e;border-left:3px solid #00897b;padding:10px 15px;margin-bottom:15px;border-radius:4px;">' +
-                '<p style="color:#aaa;font-size:12px;margin:0;">The command must be configured as an active response on the manager. A name starting with ! refers to a script.</p></div>' +
-                '<p style="color:#aaa;margin-bottom:5px;">Target: ' + count + ' agent(s)</p>' +
-                '<div style="margin-bottom:12px;">Command <select id="arCommand" style="margin-left:6px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;min-width:320px;">' +
+                '<div style="background:var(--bg);border-left:3px solid #00897b;padding:10px 15px;margin-bottom:15px;border-radius:4px;">' +
+                '<p style="color:var(--text-dim);font-size:12px;margin:0;">The command must be configured as an active response on the manager. A name starting with ! refers to a script.</p></div>' +
+                '<p style="color:var(--text-dim);margin-bottom:5px;">Target: ' + count + ' agent(s)</p>' +
+                '<div style="margin-bottom:12px;">Command <select id="arCommand" style="margin-left:6px;background:var(--surface);border:1px solid var(--border-1a3a6e);color:var(--text);padding:6px 10px;border-radius:4px;min-width:320px;">' +
                 options + '<option value="__custom">Custom...</option></select></div>' +
-                '<div style="margin-bottom:12px;">Custom command <input type="text" id="arCustom" placeholder="!my-script.sh" style="margin-left:6px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;width:260px;"></div>' +
-                '<div>Arguments <input type="text" id="arArgs" placeholder="space separated, e.g. an IP" style="margin-left:6px;background:#0f3460;border:1px solid #1a3a6e;color:#eee;padding:6px 10px;border-radius:4px;width:320px;"></div>';
+                '<div style="margin-bottom:12px;">Custom command <input type="text" id="arCustom" placeholder="!my-script.sh" style="margin-left:6px;background:var(--surface);border:1px solid var(--border-1a3a6e);color:var(--text);padding:6px 10px;border-radius:4px;width:260px;"></div>' +
+                '<div>Arguments <input type="text" id="arArgs" placeholder="space separated, e.g. an IP" style="margin-left:6px;background:var(--surface);border:1px solid var(--border-1a3a6e);color:var(--text);padding:6px 10px;border-radius:4px;width:320px;"></div>';
             showModal('Active Response', body,
                 '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Cancel</button>' +
                 '<button class="btn" style="background:#00897b;color:#fff;" onclick="runActiveResponse()"><svg class="icon"><use href="#icon-bell"/></svg>Send</button>');
@@ -7446,8 +7686,8 @@ HTML_TEMPLATE = '''
         // ---------- Pre-register agents ----------
         function showRegisterAgentsModal() {
             showModal('Register Agents',
-                '<p style="color:#888;font-size:12px;margin-bottom:10px;">One agent name per line. Each gets an ID and key you can use to enrol the machine later.</p>' +
-                '<textarea id="registerNames" placeholder="web-01&#10;web-02" style="width:100%;height:150px;background:#0a0a15;color:#eee;border:1px solid #1a3a6e;border-radius:4px;padding:10px;font-family:monospace;font-size:12px;"></textarea>' +
+                '<p style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">One agent name per line. Each gets an ID and key you can use to enrol the machine later.</p>' +
+                '<textarea id="registerNames" placeholder="web-01&#10;web-02" style="width:100%;height:150px;background:var(--sunken);color:var(--text);border:1px solid var(--border-1a3a6e);border-radius:4px;padding:10px;font-family:monospace;font-size:12px;"></textarea>' +
                 '<div id="registerResult" style="margin-top:12px;"></div>',
                 '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>' +
                 '<button class="btn btn-success" onclick="runRegisterAgents()"><svg class="icon"><use href="#icon-add-group"/></svg>Register</button>', true);
@@ -7477,7 +7717,7 @@ HTML_TEMPLATE = '''
                     '</tbody></table></div>';
             }
             if (failed.length) {
-                html += '<div style="margin-top:10px;color:#e94560;font-size:12px;">' +
+                html += '<div style="margin-top:10px;color:var(--danger);font-size:12px;">' +
                     failed.map(f => escapeHtml(f.name) + ': ' + escapeHtml(f.error)).join('<br>') + '</div>';
             }
             target.innerHTML = html;
@@ -7487,7 +7727,7 @@ HTML_TEMPLATE = '''
         function showRuleParseErrors() {
             const rows = allRulesParseErrors.map(e =>
                 '<tr><td style="padding:6px 10px;font-family:monospace;">' + escapeHtml(e.file) +
-                '</td><td style="padding:6px 10px;color:#e94560;">' + escapeHtml(e.error) + '</td></tr>'
+                '</td><td style="padding:6px 10px;color:var(--danger);">' + escapeHtml(e.error) + '</td></tr>'
             ).join('');
             showModal('Rule Files That Could Not Be Parsed',
                 '<p style="margin-bottom:12px;">These rule files contain XML the parser rejected, so their rules are ' +
@@ -7516,7 +7756,7 @@ HTML_TEMPLATE = '''
             try {
                 const data = await api('/rules/search?q=' + encodeURIComponent(q) + '&match=' + encodeURIComponent(match));
                 if (!data || data.error) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#e94560;padding:30px;">' + escapeHtml((data && data.error) || 'Search failed') + '</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:30px;">' + escapeHtml((data && data.error) || 'Search failed') + '</td></tr>';
                     return;
                 }
                 allRulesData = data.rules || [];
@@ -7529,7 +7769,7 @@ HTML_TEMPLATE = '''
                     showToast('Too many matches, showing first ' + data.max_results, 'warning', 6000);
                 }
             } catch (err) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#e94560;padding:30px;">Error: ' + escapeHtml(err.message) + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:30px;">Error: ' + escapeHtml(err.message) + '</td></tr>';
             }
         }
 
@@ -7610,7 +7850,7 @@ HTML_TEMPLATE = '''
             }
 
             if (pageData.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;padding:30px;">No rules match the current filters.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:30px;">No rules match the current filters.</td></tr>';
             } else {
                 let html = '';
                 for (const r of pageData) {
@@ -7622,15 +7862,15 @@ HTML_TEMPLATE = '''
                     if (groups.length > 0) {
                         const showGroups = groups.slice(0, 4);
                         groupsHtml = '<div class="rules-group-tags">' + showGroups.map(g => '<span class="rules-group-tag">' + escapeHtml(g) + '</span>').join('');
-                        if (groups.length > 4) groupsHtml += '<span class="rules-group-tag" style="background:#333;color:#888;">+' + (groups.length - 4) + '</span>';
+                        if (groups.length > 4) groupsHtml += '<span class="rules-group-tag" style="background:var(--chip-bg);color:var(--text-muted);">+' + (groups.length - 4) + '</span>';
                         groupsHtml += '</div>';
                     }
-                    const fileClass = r.is_custom ? ' style="color:#f39c12;"' : '';
+                    const fileClass = r.is_custom ? ' style="color:var(--orange);"' : '';
                     html += '<tr>' +
                         '<td><a class="rule-id-link" onclick="browseToRuleHierarchy(\\'' + escapeHtml(r.id) + '\\')">' + escapeHtml(r.id) + '</a></td>' +
                         '<td><span class="rule-level ' + levelClass + '">' + r.level + '</span></td>' +
                         '<td style="max-width:400px;" title="' + escapeHtml(r.description || '') + '"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(r.description || '') + '</div>' +
-                            (r.snippet ? '<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#888;font-size:11px;font-family:monospace;margin-top:2px;" title="' + escapeHtml(r.snippet) + '">' + escapeHtml(r.snippet) + '</div>' : '') + '</td>' +
+                            (r.snippet ? '<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);font-size:11px;font-family:monospace;margin-top:2px;" title="' + escapeHtml(r.snippet) + '">' + escapeHtml(r.snippet) + '</div>' : '') + '</td>' +
                         '<td>' + groupsHtml + '</td>' +
                         '<td' + fileClass + '>' + escapeHtml(r.file || '') + '</td>' +
                         '<td><span class="rule-type-badge ' + typeClass + '">' + typeLabel + '</span></td>' +
@@ -8639,7 +8879,12 @@ _I18N_SCRIPT = r"""
       // --- Rules tab helper ---
       'Search by Rule ID to view the rule hierarchy (parent-child relationships via if_sid/if_matched_sid/if_group), or by rule file name to see everything that file contains. Click on a rule to view its XML content.': '輸入規則 ID 以檢視規則階層（透過 if_sid／if_matched_sid／if_group 的父子關係），或輸入規則檔名以檢視該檔的完整內容。點選規則可檢視其 XML 內容。',
       'Summary': '摘要',
-      'Report': '報表'
+      'Report': '報表',
+      // --- Theme menu ---
+      'Theme': '主題',
+      'Dark': '深色',
+      'Light': '淺色',
+      'Follow system': '跟隨系統'
     },
     'ja': {
       // --- App / header / nav ---
@@ -9390,7 +9635,12 @@ _I18N_SCRIPT = r"""
       // --- Rules tab helper ---
       'Search by Rule ID to view the rule hierarchy (parent-child relationships via if_sid/if_matched_sid/if_group), or by rule file name to see everything that file contains. Click on a rule to view its XML content.': 'ルール ID で検索するとルールの階層（if_sid／if_matched_sid／if_group による親子関係）を確認でき、ルールファイル名で検索するとそのファイルの全内容を確認できます。ルールをクリックすると XML の内容が表示されます。',
       'Summary': '概要',
-      'Report': 'レポート'
+      'Report': 'レポート',
+      // --- Theme menu ---
+      'Theme': 'テーマ',
+      'Dark': 'ダーク',
+      'Light': 'ライト',
+      'Follow system': 'システムに合わせる'
     }
   };
 
@@ -9668,7 +9918,8 @@ _I18N_SCRIPT = r"""
   var SKIP_TAGS = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, CODE: 1, PRE: 1, svg: 1, SVG: 1 };
 
   function getLang() {
-    var l = localStorage.getItem(LANG_KEY);
+    var l = null;
+    try { l = localStorage.getItem(LANG_KEY); } catch (e) {}
     return SUPPORTED.indexOf(l) >= 0 ? l : 'en';
   }
 
@@ -9737,35 +9988,46 @@ _I18N_SCRIPT = r"""
 
   function setLang(lang) {
     if (SUPPORTED.indexOf(lang) < 0) lang = 'en';
-    localStorage.setItem(LANG_KEY, lang);
+    try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
     location.reload();
   }
   window.jtwzSetLang = setLang;
 
+  // Colours come from the theme tokens defined in the page head; the fallbacks
+  // are the dark values, so the menus still render if the tokens are missing.
   function injectStyle() {
     if (document.getElementById('jtwz-i18n-style')) return;
     var st = document.createElement('style');
     st.id = 'jtwz-i18n-style';
     st.textContent =
-      '#langToggle svg{width:18px;height:18px;flex:0 0 auto}' +
+      '#langToggle svg,#themeToggle svg{width:18px;height:18px;flex:0 0 auto}' +
       '.jtwz-lang-fab svg{width:16px;height:16px}' +
       '.jtwz-lang-fab{position:fixed;top:14px;right:16px;z-index:9999;display:inline-flex;align-items:center;gap:6px;' +
-      'padding:7px 13px;background:#16213e;color:#4fc3f7;border:1px solid #4fc3f7;border-radius:8px;' +
+      'padding:7px 13px;background:var(--panel,#16213e);color:var(--accent,#4fc3f7);border:1px solid var(--accent-line,#4fc3f7);border-radius:8px;' +
       'font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}' +
-      '.jtwz-lang-fab:hover{background:#1a4a7a;color:#81d4fa}' +
+      '.jtwz-lang-fab:hover{background:var(--hover,#1a4a7a);color:var(--accent-hover,#81d4fa)}' +
       '.jtwz-lang-wrap{position:relative;display:inline-flex}' +
       '.jtwz-lang-wrap.fab{position:fixed;top:14px;right:16px;z-index:9999}' +
       '.jtwz-lang-wrap.fab .jtwz-lang-fab{position:static}' +
-      '#langToggle .jtwz-lang-label{display:inline-flex;align-items:center;gap:3px;line-height:1.2}' +
-      '#langToggle .jtwz-caret{font-size:9px;opacity:.8;line-height:1}' +
+      '.jtwz-fab-bar{position:fixed;top:14px;right:16px;z-index:9999;display:flex;gap:8px;align-items:flex-start}' +
+      '.jtwz-fab-bar .jtwz-lang-wrap.fab{position:relative;top:auto;right:auto}' +
+      '#langToggle .jtwz-lang-label,#themeToggle .jtwz-lang-label{display:inline-flex;align-items:center;gap:3px;line-height:1.2}' +
+      '#langToggle .jtwz-caret,#themeToggle .jtwz-caret{font-size:9px;opacity:.8;line-height:1}' +
       '.jtwz-lang-menu{position:absolute;top:calc(100% + 6px);right:0;min-width:160px;z-index:10000;' +
-      'background:#16213e;border:1px solid #4fc3f7;border-radius:8px;padding:6px 0;margin:0;list-style:none;' +
+      'background:var(--panel,#16213e);border:1px solid var(--accent-line,#4fc3f7);border-radius:8px;padding:6px 0;margin:0;list-style:none;' +
       'box-shadow:0 8px 24px rgba(0,0,0,.45)}' +
+      'html[data-theme="light"] .jtwz-lang-menu{box-shadow:0 8px 24px rgba(15,23,42,.18)}' +
       '.jtwz-lang-menu[hidden]{display:none}' +
       '.jtwz-lang-menu button{display:flex;width:100%;align-items:center;gap:10px;padding:9px 16px;' +
-      'background:none;border:0;color:#e0e0e0;font-size:15px;font-family:inherit;cursor:pointer;text-align:left}' +
-      '.jtwz-lang-menu button:hover,.jtwz-lang-menu button:focus{background:#1a4a7a;color:#fff;outline:none}' +
-      '.jtwz-lang-menu .jtwz-check{width:14px;color:#4fc3f7}';
+      'background:none;border:0;color:var(--text-code,#e0e0e0);font-size:15px;font-family:inherit;cursor:pointer;text-align:left}' +
+      '.jtwz-lang-menu button:hover,.jtwz-lang-menu button:focus{background:var(--hover,#1a4a7a);color:var(--text-strong,#fff);outline:none}' +
+      '.jtwz-lang-menu .jtwz-check{width:14px;color:var(--accent,#4fc3f7)}' +
+      '.jtwz-theme-menu{min-width:190px}.jtwz-theme-menu button{white-space:nowrap}' +
+      '.jtwz-theme-menu .jtwz-ico{display:inline-flex;width:16px;height:16px}' +
+      '.jtwz-theme-menu .jtwz-ico svg{width:16px;height:16px}' +
+      // narrow screens: the header wraps and these buttons sit at its left edge,
+      // so open the menus rightwards (the login page keeps them right-aligned)
+      '@media (max-width:760px){.header-buttons .jtwz-lang-menu{right:auto;left:0}}';
     (document.head || document.documentElement).appendChild(st);
   }
 
@@ -9773,6 +10035,62 @@ _I18N_SCRIPT = r"""
     'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/>' +
     '<path d="M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></svg>';
+
+  var SVG_OPEN = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">';
+  var THEME_ICON = {
+    'dark': SVG_OPEN + '<path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg>',
+    'light': SVG_OPEN + '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4' +
+      'M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+    'system': SVG_OPEN + '<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg>'
+  };
+  // The order is the order of the theme menu.
+  var THEMES = ['dark', 'light', 'system'];
+  var THEME_LABEL = { 'dark': 'Dark', 'light': 'Light', 'system': 'Follow system' };
+
+  function tr(text) {
+    var lang = getLang();
+    if (lang === 'en') return text;
+    var t = translate(text, lang);
+    return t === null ? text : t;
+  }
+
+  // Shared behaviour of the header menus: open on click, arrow keys move,
+  // Escape or a click elsewhere closes.
+  function wireMenu(wrap, btn, menu) {
+    function open() {
+      menu.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+      var cur = menu.querySelector('[aria-checked="true"]');
+      if (cur) cur.focus();
+    }
+    function close() {
+      menu.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    }
+    btn.onclick = function (e) { e.stopPropagation(); if (menu.hidden) open(); else close(); };
+    menu.addEventListener('keydown', function (e) {
+      var items = Array.prototype.slice.call(menu.querySelectorAll('button'));
+      var i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+      else if (e.key === 'Escape') { close(); btn.focus(); }
+    });
+    document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) close(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !menu.hidden) close(); });
+    return close;
+  }
+
+  // Login page: no header, so the menus float in the top-right corner, side by side.
+  function fabBar() {
+    var bar = document.querySelector('.jtwz-fab-bar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.className = 'jtwz-fab-bar';
+      document.body.appendChild(bar);
+    }
+    return bar;
+  }
 
   // A menu, not a toggle: with three languages a button that steps to "the next
   // one" made people click through a language they cannot read to reach theirs.
@@ -9797,6 +10115,7 @@ _I18N_SCRIPT = r"""
     menu.className = 'jtwz-lang-menu';
     menu.setAttribute('role', 'menu');
     menu.hidden = true;
+    var close;
     SUPPORTED.forEach(function (code) {
       var item = document.createElement('button');
       item.type = 'button';
@@ -9807,37 +10126,68 @@ _I18N_SCRIPT = r"""
       item.onclick = function () { if (code !== lang) setLang(code); else close(); };
       menu.appendChild(item);
     });
-    function open() {
-      menu.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
-      var cur = menu.querySelector('[aria-checked="true"]');
-      if (cur) cur.focus();
-    }
-    function close() {
-      menu.hidden = true;
-      btn.setAttribute('aria-expanded', 'false');
-    }
-    btn.onclick = function (e) { e.stopPropagation(); if (menu.hidden) open(); else close(); };
-    menu.addEventListener('keydown', function (e) {
-      var items = Array.prototype.slice.call(menu.querySelectorAll('button'));
-      var i = items.indexOf(document.activeElement);
-      if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
-      else if (e.key === 'Escape') { close(); btn.focus(); }
-    });
-    document.addEventListener('click', function (e) { if (!wrap.contains(e.target)) close(); });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !menu.hidden) close(); });
+    close = wireMenu(wrap, btn, menu);
     wrap.appendChild(btn);
     wrap.appendChild(menu);
     var hb = document.querySelector('.header-buttons');
     if (hb) { btn.className = 'btn-settings'; hb.insertBefore(wrap, hb.firstChild); }
-    else { btn.className = 'jtwz-lang-fab'; wrap.className += ' fab'; document.body.appendChild(wrap); }
+    else { btn.className = 'jtwz-lang-fab'; wrap.className += ' fab'; fabBar().appendChild(wrap); }
+    return wrap;
+  }
+
+  // Theme menu, next to the language menu. The theme itself is applied by the
+  // script at the top of <head> (window.jtwzSetTheme); this is only the control.
+  // Switching does not reload: every colour is a CSS variable.
+  function buildThemeToggle(langWrap) {
+    if (typeof window.jtwzSetTheme !== 'function') return;
+    var wrap = document.createElement('div');
+    wrap.className = 'jtwz-lang-wrap jtwz-theme-wrap';
+    wrap.setAttribute('data-noi18n', '');
+    var btn = document.createElement('button');
+    btn.id = 'themeToggle';
+    btn.type = 'button';
+    btn.title = tr('Theme');
+    btn.setAttribute('aria-haspopup', 'menu');
+    btn.setAttribute('aria-expanded', 'false');
+    var menu = document.createElement('div');
+    menu.className = 'jtwz-lang-menu jtwz-theme-menu';
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', tr('Theme'));
+    menu.hidden = true;
+    var items = {};
+    THEMES.forEach(function (code) {
+      var item = document.createElement('button');
+      item.type = 'button';
+      item.setAttribute('role', 'menuitemradio');
+      item.setAttribute('data-theme-choice', code);
+      item.onclick = function () { window.jtwzSetTheme(code); close(); btn.focus(); };
+      items[code] = item;
+      menu.appendChild(item);
+    });
+    function render() {
+      var cur = window.jtwzThemePref();
+      btn.innerHTML = THEME_ICON[cur] + '<span class="jtwz-lang-label">' + tr('Theme') +
+        '<span class="jtwz-caret">&#9662;</span></span>';
+      THEMES.forEach(function (code) {
+        items[code].setAttribute('aria-checked', code === cur ? 'true' : 'false');
+        items[code].innerHTML = '<span class="jtwz-check">' + (code === cur ? '&#10003;' : '') + '</span>' +
+          '<span class="jtwz-ico">' + THEME_ICON[code] + '</span>' + tr(THEME_LABEL[code]);
+      });
+    }
+    render();
+    window.addEventListener('jtwz-theme', render);
+    var close = wireMenu(wrap, btn, menu);
+    wrap.appendChild(btn);
+    wrap.appendChild(menu);
+    var hb = document.querySelector('.header-buttons');
+    if (hb) { btn.className = 'btn-settings'; hb.insertBefore(wrap, langWrap.nextSibling); }
+    else { btn.className = 'jtwz-lang-fab'; wrap.className += ' fab'; fabBar().appendChild(wrap); }
   }
 
   function init() {
     var lang = getLang();
     document.documentElement.setAttribute('lang', SUPPORTED.indexOf(lang) >= 0 ? lang : 'en');
-    buildToggle();
+    buildThemeToggle(buildToggle());
     if (lang !== 'en') {
       translateTree(document.body, lang);
       var obs = new MutationObserver(function (muts) {
@@ -9868,6 +10218,12 @@ _I18N_SCRIPT = r"""
 LOGIN_TEMPLATE = LOGIN_TEMPLATE.replace('</body>', _I18N_SCRIPT + '</body>')
 HTML_TEMPLATE = HTML_TEMPLATE.replace('</body>', _I18N_SCRIPT + '</body>')
 # === END i18n auto-embed ===
+
+# The theme script and tokens go right after the viewport meta, ahead of every
+# stylesheet, so the stored theme applies before the first paint.
+_VIEWPORT_META = '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+LOGIN_TEMPLATE = LOGIN_TEMPLATE.replace(_VIEWPORT_META, _VIEWPORT_META + _THEME_HEAD, 1)
+HTML_TEMPLATE = HTML_TEMPLATE.replace(_VIEWPORT_META, _VIEWPORT_META + _THEME_HEAD, 1)
 
 
 

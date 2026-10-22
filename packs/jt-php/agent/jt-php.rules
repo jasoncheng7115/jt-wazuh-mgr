@@ -1,0 +1,32 @@
+## jt-php - auditd rules: programs started by the web server's PHP
+##
+## Manager rules 133170-133172 read the key set here. Without this file they
+## never fire; the rest of the pack works on its own.
+##
+## Install (as root, on a Linux host that runs PHP):
+##
+##     cp /var/ossec/etc/shared/jt-php.rules /etc/audit/rules.d/
+##     # edit the uid below if PHP does not run as uid 33
+##     augenrules --load          # or: service auditd restart
+##     auditctl -l | grep jt_php_exec
+##
+## The agent reads /var/log/audit/audit.log in the default configuration of
+## most hosts; if yours does not, add a localfile with log_format audit.
+##
+## Which account. 33 is www-data on Debian and Ubuntu (Apache with mod_php and
+## the default PHP-FPM pool). Find yours with: ps -o uid,user,comm -C php-fpm8.2
+## (or httpd, apache2, php-fpm). RHEL and Fedora: apache is 48; nginx and
+## custom FPM pool users have whatever uid useradd gave them. One line pair per
+## account. A name works only if the account exists when the rules load.
+##
+## auid=4294967295 ("unset") keeps only processes outside any login session:
+## the web server and its PHP. A person running "sudo -u www-data php occ" or
+## the account's own cron jobs have an audit uid and are left out on purpose.
+##
+## Cost: one record per program the web server starts. PHP applications start
+## few (mail() runs "sh -c sendmail", image and document previews run convert,
+## ffmpeg or LibreOffice); a busy preview server can still write thousands a
+## day. Check with: ausearch -k jt_php_exec --start today | grep -c type=SYSCALL
+
+-a always,exit -F arch=b64 -S execve -F euid=33 -F auid=4294967295 -k jt_php_exec
+-a always,exit -F arch=b32 -S execve -F euid=33 -F auid=4294967295 -k jt_php_exec

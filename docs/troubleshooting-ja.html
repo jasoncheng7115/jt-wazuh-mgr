@@ -101,6 +101,9 @@
 
   footer{border-top:1px solid var(--line);padding:26px 0 44px;color:var(--muted);font-size:14px}
   footer a{color:var(--muted);text-decoration:underline}
+  /* grid items default to min-width:auto, so a long <pre> would widen the page on phones */
+  .layout > *{min-width:0}
+  .brand span{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -110,6 +113,7 @@
     <a class="brand" href="index.html"><img src="img/icon.svg" alt="" width="28" height="28"><span>jt-wazuh-mgr</span></a>
     <div class="nav-links">
       <a href="index.html">ホーム</a>
+      <a href="offline-install-ja.html">オフライン</a>
       <a class="gh" href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener">GitHub</a>
       <a class="lang" href="troubleshooting.html" hreflang="en">English</a>
       <a class="lang" href="troubleshooting-zh-TW.html" hreflang="zh-TW">繁體中文</a>
@@ -407,40 +411,16 @@ sudo systemctl start jt-wazuh-mgr</code></pre>
         <h2><span class="dot"></span>オフライン・閉域環境でのインストール</h2>
 
         <div class="qa">
-          <h3>マネージャーに外部接続がまったくない場合</h3>
-          <p>接続できるマシンで取得し、その結果を持ち込みます。</p>
-          <p><b>接続できるマシンで:</b></p>
-          <pre><code>git clone --depth 1 https://github.com/jasoncheng7115/jt-wazuh-mgr.git
-tar czf jt-wazuh-mgr.tgz -C jt-wazuh-mgr lib packs images \
-    wazuh_agent_mgr.py create_api_user.py requirements.txt \
-    config.yaml jt-wazuh-mgr.service uninstall.sh
-pip download -r jt-wazuh-mgr/requirements.txt -d wheels
-tar czf wheels.tgz wheels</code></pre>
-          <p><b>マネージャー上で:</b></p>
-          <pre><code>sudo mkdir -p /opt/jt-wazuh-mgr
-sudo tar xzf jt-wazuh-mgr.tgz -C /opt/jt-wazuh-mgr
-tar xzf wheels.tgz
-sudo pip install --no-index --find-links=wheels -r /opt/jt-wazuh-mgr/requirements.txt
-sudo cp /opt/jt-wazuh-mgr/jt-wazuh-mgr.service /etc/systemd/system/
-sudo systemctl daemon-reload &amp;&amp; sudo systemctl enable --now jt-wazuh-mgr</code></pre>
-          <div class="note"><b>wheel は同じ Python バージョンで作成してください。</b>
-            コンパイルを伴うパッケージはインタープリターのバージョンに固定されます。
-            Python 3.10 向けに作った wheel は 3.12 では読み込みに失敗します。
-            作業前に両方のマシンで <code>python3 -V</code> を確認してください。</div>
-        </div>
-
-        <div class="qa">
-          <h3>オフライン環境でのアップグレード</h3>
-          <p><b>そこで <code>install.sh</code> を実行しないでください。</b>GitHub と PyPI へ
-             接続しようとしますし、その環境向けにカスタマイズしたサービス定義を上書きします。
-             プログラムファイルだけを入れ替えます:</p>
-          <pre><code>sudo systemctl stop jt-wazuh-mgr
-sudo tar xzf jt-wazuh-mgr.tgz -C /opt/jt-wazuh-mgr
-sudo rm -rf /opt/jt-wazuh-mgr/lib/__pycache__
-sudo systemctl start jt-wazuh-mgr
-grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py</code></pre>
-          <p>依存パッケージがバージョン間で変わることはめったにありません。
-             <code>requirements.txt</code> が変わっていた場合は、新しい wheel も併せて持ち込んでください。</p>
+          <h3>Manager がインターネットに接続できない場合のインストールとアップグレード</h3>
+          <p>インターネットに接続できるマシンで、リリース本体と Manager の Python バージョンに合う wheel を 1 つのアーカイブにまとめて
+             持ち込み、その中のインストーラーを実行します：</p>
+          <pre><code>tar xzf /root/jt-wazuh-mgr-X.Y.Z-offline.tar.gz -C /root
+sudo bash /root/jt-wazuh-mgr-X.Y.Z/install.sh --offline</code></pre>
+          <p><code>--offline</code> を付けると、インストーラーは展開したディレクトリからすべてをコピーし、その <code>wheels/</code> の
+             パッケージを <code>/opt/jt-wazuh-mgr/vendor</code> に入れます。<code>curl</code>・<code>apt</code>・<code>dnf</code> は実行せず、
+             pip も必須ではありません。アップグレードも同じ手順で、<code>config.yaml</code> は保持されます。</p>
+          <p>アーカイブの作り方、Python バージョンの合わせ方、確認、アップグレード、切り戻し、v1.19.0 以前向けの手動の手順は
+             専用ページにまとめています：<a href="offline-install-ja.html"><b>オフラインでのインストールとアップグレード</b></a>。</p>
         </div>
       </section>
 

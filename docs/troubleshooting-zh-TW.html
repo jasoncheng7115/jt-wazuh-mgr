@@ -101,6 +101,9 @@
 
   footer{border-top:1px solid var(--line);padding:26px 0 44px;color:var(--muted);font-size:14px}
   footer a{color:var(--muted);text-decoration:underline}
+  /* grid items default to min-width:auto, so a long <pre> would widen the page on phones */
+  .layout > *{min-width:0}
+  .brand span{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -110,6 +113,7 @@
     <a class="brand" href="index.html"><img src="img/icon.svg" alt="" width="28" height="28"><span>jt-wazuh-mgr</span></a>
     <div class="nav-links">
       <a href="index.html">首頁</a>
+      <a href="offline-install-zh-TW.html">離線安裝</a>
       <a class="gh" href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener">GitHub</a>
       <a class="lang" href="troubleshooting.html" hreflang="en">English</a>
       <a class="lang" href="troubleshooting-ja.html" hreflang="ja">日本語</a>
@@ -391,38 +395,15 @@ sudo systemctl start jt-wazuh-mgr</code></pre>
         <h2><span class="dot"></span>離線與封閉網路安裝</h2>
 
         <div class="qa">
-          <h3>manager 完全沒有對外網路時怎麼裝</h3>
-          <p>在有網路的機器上抓好，再把結果搬過去。</p>
-          <p><b>在有網路的機器上：</b></p>
-          <pre><code>git clone --depth 1 https://github.com/jasoncheng7115/jt-wazuh-mgr.git
-tar czf jt-wazuh-mgr.tgz -C jt-wazuh-mgr lib packs images \
-    wazuh_agent_mgr.py create_api_user.py requirements.txt \
-    config.yaml jt-wazuh-mgr.service uninstall.sh
-pip download -r jt-wazuh-mgr/requirements.txt -d wheels
-tar czf wheels.tgz wheels</code></pre>
-          <p><b>在 manager 上：</b></p>
-          <pre><code>sudo mkdir -p /opt/jt-wazuh-mgr
-sudo tar xzf jt-wazuh-mgr.tgz -C /opt/jt-wazuh-mgr
-tar xzf wheels.tgz
-sudo pip install --no-index --find-links=wheels -r /opt/jt-wazuh-mgr/requirements.txt
-sudo cp /opt/jt-wazuh-mgr/jt-wazuh-mgr.service /etc/systemd/system/
-sudo systemctl daemon-reload &amp;&amp; sudo systemctl enable --now jt-wazuh-mgr</code></pre>
-          <div class="note"><b>wheel 要用相同的 Python 版本產生。</b>編譯型套件是綁直譯器版本的：
-            為 Python 3.10 產生的 wheel 在 3.12 上匯入會失敗。
-            動手前先在兩台機器上都確認 <code>python3 -V</code>。</div>
-        </div>
-
-        <div class="qa">
-          <h3>離線環境要怎麼升級</h3>
-          <p><b>不要在那台跑 <code>install.sh</code></b> —— 它會嘗試連 GitHub 與 PyPI，
-             而且會覆蓋掉你可能為了這個環境而客製過的服務設定檔。只換程式檔案就好：</p>
-          <pre><code>sudo systemctl stop jt-wazuh-mgr
-sudo tar xzf jt-wazuh-mgr.tgz -C /opt/jt-wazuh-mgr
-sudo rm -rf /opt/jt-wazuh-mgr/lib/__pycache__
-sudo systemctl start jt-wazuh-mgr
-grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py</code></pre>
-          <p>相依套件很少在版本之間變動；若 <code>requirements.txt</code> 真的改了，
-             再一併把新的 wheel 搬過去。</p>
+          <h3>manager 沒有對外網路時，怎麼安裝或升級</h3>
+          <p>在有網路的機器上做好一個壓縮檔 —— 程式本身加上符合 manager Python 版本的 wheel —— 搬過去，再從裡面執行安裝腳本：</p>
+          <pre><code>tar xzf /root/jt-wazuh-mgr-X.Y.Z-offline.tar.gz -C /root
+sudo bash /root/jt-wazuh-mgr-X.Y.Z/install.sh --offline</code></pre>
+          <p>加上 <code>--offline</code> 後，安裝腳本從解壓出來的目錄複製所有檔案，並把其中 <code>wheels/</code> 的套件裝進
+             <code>/opt/jt-wazuh-mgr/vendor</code>；完全不執行 <code>curl</code>、<code>apt</code>、<code>dnf</code>，pip 也不是必要的。
+             升級的做法相同，並保留 <code>config.yaml</code>。</p>
+          <p>完整流程 —— 製作壓縮檔、對應 Python 版本、驗證、升級、退回，以及 v1.19.0 以前版本的手動步驟 —— 另有專頁：
+             <a href="offline-install-zh-TW.html"><b>離線安裝與升級</b></a>。</p>
         </div>
       </section>
 

@@ -1,0 +1,131 @@
+{
+ "id": "jt-php",
+ "name": "PHP Versions, Crashes and Web Shells",
+ "name_zh": "PHP 版本、異常終止與 Web Shell",
+ "version": "1.0",
+ "summary": "Finds every agent whose PHP misses a php.net security release or runs a branch php.net no longer fixes, without waiting for Wazuh's CVE feed (level 12, mailed). Adds the signs exploitation leaves on a PHP host: PHP-FPM workers and PHP processes killed by SIGSEGV and similar faults, memory exhausted before any script ran, repeated crashes; php.ini or pool changes that add auto_prepend_file or allow_url_include; PHP files, .user.ini or .htaccess appearing in upload directories; shells and discovery commands started by the web server's PHP; PHP-CGI argument injection.",
+ "summary_zh": "不必等 Wazuh 的 CVE 資料，直接找出 PHP 少了 php.net 安全性版本、或所在分支已不再修補的每台 agent（level 12，會寄出）。另外偵測 PHP 主機被攻擊時留下的痕跡：PHP-FPM 工作程序與 PHP 程序被 SIGSEGV 等錯誤訊號終止、在任何程式執行前就記憶體耗盡、短時間內反覆當掉；php.ini 或 pool 設定被加上 auto_prepend_file、allow_url_include；上傳目錄出現 PHP 檔、.user.ini、.htaccess；網頁伺服器的 PHP 啟動 shell 與探查指令；PHP-CGI 參數注入。",
+ "rule_id_range": "133100-133199",
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.9"
+ ],
+ "notes": [
+  "Why: on 2026-10-21 php.net fixed two unauthenticated remote code execution flaws in PHP's request handling (CVE-2026-109618 and CVE-2026-109619, CVSS 9.2, PHP-FPM, mod_php, php-cgi, FrankenPHP, LiteSpeed), with no workaround. A day later Wazuh's vulnerability feed still did not know either CVE, so no host was flagged. Packages that follow php.net's versions (deb.sury.org, Remi, FreeBSD ports, Alpine, Homebrew, Windows builds) are the ones a feed matches latest. This pack compares versions instead of CVEs.",
+  "Versions: jt-php-versions.py runs on the manager every six hours. It reads the package inventory syscollector already keeps (through the local wazuh-db socket, SELECT statements only) and php.net's release list (active branches, and each branch's releases with their security tags), and writes one JSON event per agent, PHP branch and kind of package into analysisd's queue, attributed to the agent, so the alert carries the agent's name like any other. Behind a security release of a supported branch: level 12 (133102); a branch php.net no longer supports: level 12 (133103); both are mailed and repeat weekly at level 8 (133105) until fixed, and again at level 12 when a newer release appears. Only the command line installed (no FPM, CGI or server module): level 7 (133104). Behind a bug-fix release only: level 5. Updated or removed: level 3 (133109). A new php.net release: level 3 (133110).",
+  "Distribution packages: Debian, Ubuntu, RHEL and the like keep a version number and backport fixes into it (Ubuntu 22.04's 8.1.2-1ubuntu2.22 is not PHP 8.1.2), so php.net cannot say whether they are fixed. They are reported once at level 3 (133107), or level 5 when php.net no longer supports the branch (133108), and their fixes are the distribution's updates, which Wazuh's vulnerability detection follows from the distribution's advisories. deb.sury.org and Remi packages carry php.net's versions and are compared with php.net.",
+  "Cluster: each node keeps the inventory of the agents connected to it, so the script runs on every node and takes only the agents whose node name is its own (agent 000, the node itself, always). Install the pack on the master and copy the script and its cron line to every worker, as for jt-alert-digest. php.net unreachable: the last data is used for 48 hours (level 5 when it starts, 133111), then level 10 every three days (133112); the inventory unreadable: level 10 (133113).",
+  "Runtime: PHP-FPM's own log had no decoder in Wazuh 4.14; a worker killed by SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT or SIGTRAP is level 10 (133122/133123), SIGTERM/SIGKILL/SIGQUIT (restarts, request timeouts) level 3. The kernel's segfault line for a PHP process, or for a web server crashing inside libphp, is level 10 (133126; the built-in 1010 says level 5), and a general protection fault or invalid opcode in one, which otherwise ends at the built-in 1002 (level 2), is level 10 (133127). Three crashes on one host in 10 minutes: level 12, mailed (133128). Apache's own 'exit signal Segmentation fault' is already the built-in 30104/30304 (level 12).",
+  "Memory exhausted 'in Unknown on line 0' means PHP ran out of memory before any script file was running, while it was still reading the request: headers, POST body, uploads. That is where request-parsing bugs are attacked, and the October 2026 issue starts from an out-of-memory condition. One is level 8 (nginx and PHP-FPM: below the built-in 31420; Apache 2.4, which the built-in PHP rules never reach: below 30301); five in 10 minutes level 12 (133134). Scripts that use too much memory name their own file and line and stay at the built-in 31420.",
+  "Configuration: the agent group watches php.ini, conf.d and the FPM pool files in real time with diffs (Debian/Ubuntu /etc/php, RHEL /etc/php.ini, /etc/php.d, /etc/php-fpm.*, Remi /etc/opt/remi, FreeBSD /usr/local/etc/php*). A change is level 7 (133140), a deletion level 5. A diff that adds auto_prepend_file or auto_append_file with a value, or turns allow_url_include on (also as php_admin_value in a pool), is level 12 and mailed (133142): PHP then runs that file before every page, the usual way to keep access after the web shell is deleted. A diff that removes or rewrites disable_functions, open_basedir or security.limit_extensions is level 10 (133143). Diffs go into the alert: see the agent.conf comment if your pool files hold credentials.",
+  "Web shells, on whatever paths the hosts' own FIM already watches (the group adds no web root, because a path listed in two groups keeps only one set of options): a PHP file (.php, .phtml, .phar, .php5, also double extensions such as .php.jpg) created or changed in an upload, media, image, avatar or attachment directory, outside vendor, node_modules, 3rdparty and similar library trees, is level 12 and mailed (133150/133151); Nextcloud and ownCloud user data directories are level 3. A .user.ini created anywhere outside /etc is level 12 (133153), changed level 10; Nextcloud's own is left to jt-nextcloud. An .htaccess in an upload directory is level 10 (133155). WordPress plugins that drop an empty index.php into new upload folders will raise 133150 once per folder.",
+  "Commands: on Windows with Sysmon, a shell, script host or discovery tool (cmd, powershell, certutil, whoami, net, nltest...) started by php-cgi.exe, php-win.exe, httpd.exe or lsphp.exe is level 12 and mailed (133160); by php.exe, which is also the command line, level 6. On Linux, the optional auditd file jt-php.rules records every program the web server account starts outside a login session (level 3, 133170); a shell, downloader, interpreter or discovery command among them is level 12 and mailed (133171), except the sendmail shell that PHP's mail() starts (level 2). Linux has no process telemetry without auditd.",
+  "Requests: a query string that starts with a dash, %2d or the soft hyphen %ad is PHP-CGI argument injection (CVE-2012-1823, and CVE-2024-4577 on Windows, in CISA KEV): level 8 on any URL (133180); answered 2xx by php-cgi or php.exe itself, which means the interpreter is reachable from the web, level 12 (133181). Other request attacks are the built-in web rules and jt-web.",
+  "Limits: versions come from the package inventory, so PHP built from source, inside containers (see jt-container-vuln) or bundled in an application (XAMPP, a control panel) is not seen unless it is a registered program. The inventory is refreshed hourly by default, so an update shows as fixed within about seven hours. php.net's release list cannot judge distribution backports. Crash and memory rules show that something is wrong, not that an attack succeeded; the fix for the October 2026 issues is the update. No site list, host name or account is needed. No active response is offered: these alerts describe software, or a crash whose source address the log does not hold."
+ ],
+ "notes_zh": [
+  "為什麼需要：2026-10-21 php.net 修正了 PHP 處理請求時兩個不需登入就能遠端執行程式碼的漏洞（CVE-2026-109618、CVE-2026-109619，CVSS 9.2，影響 PHP-FPM、mod_php、php-cgi、FrankenPHP、LiteSpeed），沒有替代的緩解方式。過了一天，Wazuh 的弱點資料仍然沒有收錄這兩個 CVE，所以沒有任何主機被標出來。而跟著 php.net 版本號發行的套件（deb.sury.org、Remi、FreeBSD ports、Alpine、Homebrew、Windows 版）正是弱點資料最晚比對得到的。本套件改成比對版本，不比對 CVE。",
+  "版本：jt-php-versions.py 每六小時在 manager 上執行一次。它讀取 syscollector 本來就保存的套件清單（透過本機 wazuh-db socket，只用 SELECT）與 php.net 的發行清單（仍受支援的分支，以及每個分支每個版本的 security 標記），每台 agent、每個 PHP 分支、每種套件來源寫一筆 JSON 事件到 analysisd 的佇列，並歸屬到該 agent，所以告警和其他告警一樣帶著 agent 名稱。少了受支援分支的安全性版本：level 12（133102）；php.net 已不再支援的分支：level 12（133103）；兩者都會寄出，修好之前每週以 level 8 提醒（133105），出現更新的版本時再以 level 12 告警。只裝了命令列（沒有 FPM、CGI 或伺服器模組）：level 7（133104）。只少了錯誤修正版本：level 5。已更新或已移除：level 3（133109）。php.net 發行新版本：level 3（133110）。",
+  "發行版套件：Debian、Ubuntu、RHEL 等會固定版本號，把修正回補進去（Ubuntu 22.04 的 8.1.2-1ubuntu2.22 不是 PHP 8.1.2），php.net 無從判斷它們是否已修補。這類套件只回報一次 level 3（133107），php.net 已不支援該分支時為 level 5（133108）；它們的修補是發行版的更新，Wazuh 的弱點偵測會依發行版公告追蹤。deb.sury.org 與 Remi 的套件沿用 php.net 的版本號，所以和 php.net 比對。",
+  "叢集：每個節點保存連到自己的 agent 的套件清單，所以腳本要在每個節點執行，只處理節點名稱是自己的 agent（agent 000，也就是節點本身，一律處理）。在 master 安裝套件，再把腳本與排程複製到每個 worker，和 jt-alert-digest 一樣。php.net 連不上時沿用上一份資料 48 小時（開始時 level 5，133111），之後每三天 level 10（133112）；讀不到套件清單：level 10（133113）。",
+  "執行時：Wazuh 4.14 沒有 PHP-FPM 自身記錄的解碼器；工作程序被 SIGSEGV、SIGBUS、SIGILL、SIGFPE、SIGABRT 或 SIGTRAP 終止為 level 10（133122／133123），SIGTERM／SIGKILL／SIGQUIT（重啟、請求逾時）為 level 3。核心記錄 PHP 程序 segfault，或網頁伺服器在 libphp 裡當掉，為 level 10（133126；內建 1010 只有 level 5）；PHP 程序的 general protection fault、invalid opcode 原本只到內建 1002（level 2），這裡為 level 10（133127）。同一台主機 10 分鐘內當掉 3 次：level 12，會寄出（133128）。Apache 自己的「exit signal Segmentation fault」已由內建 30104／30304（level 12）處理。",
+  "「in Unknown on line 0」的記憶體耗盡，表示 PHP 在任何程式檔開始執行前就用完了記憶體，也就是還在讀取請求（標頭、POST 內容、上傳檔案）的時候。請求解析的漏洞就是從這裡被攻擊，2026 年 10 月的漏洞也是從記憶體不足的狀況開始。單次為 level 8（nginx 與 PHP-FPM 掛在內建 31420 之下；Apache 2.4 的記錄內建 PHP 規則從來接不到，掛在 30301 之下）；10 分鐘內 5 次為 level 12（133134）。程式本身用太多記憶體時會寫出自己的檔名與行號，維持內建 31420。",
+  "設定：agent 群組即時監控 php.ini、conf.d 與 FPM pool 設定檔並記錄差異（Debian／Ubuntu 的 /etc/php、RHEL 的 /etc/php.ini、/etc/php.d、/etc/php-fpm.*、Remi 的 /etc/opt/remi、FreeBSD 的 /usr/local/etc/php*）。變更為 level 7（133140），刪除為 level 5。差異中新增了有值的 auto_prepend_file 或 auto_append_file，或開啟 allow_url_include（包含 pool 裡的 php_admin_value），為 level 12 並寄出（133142）：PHP 會在每個頁面之前執行那個檔案，這是刪掉 web shell 之後仍保有存取的常見方式。差異中移除或改寫 disable_functions、open_basedir 或 security.limit_extensions 為 level 10（133143）。差異會進到告警：若 pool 設定檔含有帳密，請看 agent.conf 的說明。",
+  "Web shell：作用在各主機自己的 FIM 已經監控的路徑上（群組不加任何網站根目錄，因為同一路徑列在兩個群組時只會保留一組選項）：上傳、media、圖片、頭像、附件目錄中，在 vendor、node_modules、3rdparty 等函式庫目錄之外，建立或修改 PHP 檔（.php、.phtml、.phar、.php5，以及 .php.jpg 這類雙副檔名）為 level 12 並寄出（133150／133151）；Nextcloud 與 ownCloud 的使用者資料目錄為 level 3。在 /etc 以外任何地方建立 .user.ini 為 level 12（133153），修改為 level 10；Nextcloud 自己的那份交給 jt-nextcloud。上傳目錄中的 .htaccess 為 level 10（133155）。會在新上傳資料夾放空白 index.php 的 WordPress 外掛，每個資料夾會觸發一次 133150。",
+  "指令：Windows 有 Sysmon 時，php-cgi.exe、php-win.exe、httpd.exe 或 lsphp.exe 啟動 shell、腳本主機或探查工具（cmd、powershell、certutil、whoami、net、nltest 等）為 level 12 並寄出（133160）；由同時也是命令列的 php.exe 啟動則為 level 6。Linux 上，選用的 auditd 規則檔 jt-php.rules 會記錄網頁伺服器帳號在登入工作階段之外啟動的每個程式（level 3，133170）；其中的 shell、下載工具、直譯器或探查指令為 level 12 並寄出（133171），PHP 的 mail() 啟動的 sendmail shell 除外（level 2）。Linux 沒有 auditd 就沒有程序執行的記錄。",
+  "請求：查詢字串以減號、%2d 或軟連字號 %ad 開頭，就是 PHP-CGI 參數注入（CVE-2012-1823，以及 Windows 上列於 CISA KEV 的 CVE-2024-4577）：任何網址都是 level 8（133180）；若由 php-cgi 或 php.exe 本身回應 2xx，表示直譯器可以從網路直接存取，為 level 12（133181）。其他請求攻擊由內建網頁規則與 jt-web 處理。",
+  "限制：版本來自套件清單，所以從原始碼編譯、在容器裡（請見 jt-container-vuln）或包在應用程式裡（XAMPP、主機控制台）的 PHP，除非是已登記的程式，否則看不到。套件清單預設每小時更新，所以更新後約七小時內會顯示為已修補。php.net 的發行清單無法判斷發行版的回補。當掉與記憶體規則只能說明有異常，不能說明攻擊成功；2026 年 10 月的漏洞要靠更新修補。不需要任何站台清單、主機名稱或帳號。不提供主動回應：這些告警描述的是軟體，或是記錄中沒有來源位址的當掉事件。"
+ ],
+ "files": [
+  {
+   "type": "decoder",
+   "name": "jt-php_decoders.xml",
+   "dest": "etc/decoders/jt-php_decoders.xml",
+   "sha256": "e1c3239b4ce579638e2c8fd806bf3e24c759d555c97d095b77f9ae199542c317"
+  },
+  {
+   "type": "rule",
+   "name": "zz-133100-jt_php_rules.xml",
+   "dest": "etc/rules/zz-133100-jt_php_rules.xml",
+   "sha256": "ee078ca4c37138566c75fd51754c8055ad4ca14ca36fe1096eb805c24b18ff0c"
+  }
+ ],
+ "scripts": [
+  {
+   "name": "jt-php-versions.py",
+   "dest": "etc/jt-packs/bin/jt-php-versions.py",
+   "sha256": "a3c72c1adb08417bb3172e12ef92479bb0d362a82f044258a90ba068d37bfdca",
+   "cron": "41 */6 * * *",
+   "args": "--wazuh-path {wazuh_path}",
+   "description": "Compares the PHP that syscollector found on each agent of this node with php.net's releases and reports outdated and unsupported versions to the manager"
+  }
+ ],
+ "agent_group": {
+  "name": "php",
+  "config": "agent.conf",
+  "files": [
+   "jt-php.rules"
+  ],
+  "description": "Reads PHP-FPM's log and the web servers' error logs, watches php.ini, conf.d and FPM pools with diffs, and delivers the optional auditd rules file"
+ },
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset on every node",
+   "title_zh": "安裝套件並在所有節點重新載入規則集",
+   "body": "Install from this page, then use Reload Ruleset on the Rules tab (a cluster synchronises rule and decoder files but does not reload the workers). Installing also schedules jt-php-versions.py every six hours on this node. The first run reports every agent whose PHP is behind or unsupported, once.",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」（叢集會同步規則與解碼器檔，但不會重載 worker）。安裝時也會在本節點排程每六小時執行 jt-php-versions.py。第一次執行會把 PHP 落後或不受支援的每台 agent 各回報一次。",
+   "code": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-php-versions.py --wazuh-path /var/ossec --list\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-php-versions.py --wazuh-path /var/ossec --dry-run",
+   "verify": "--list prints the PHP packages of the agents this node handles; --dry-run prints the events it would send (one per agent and PHP branch on the first run) without sending them.",
+   "verify_zh": "--list 會列出本節點負責的 agent 的 PHP 套件；--dry-run 會印出將送出的事件（第一次執行時每台 agent、每個 PHP 分支一筆），但不會真的送出。"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Cluster: run the version check on every worker too",
+   "title_zh": "叢集：在每個 worker 也執行版本檢查",
+   "body": "Each node holds the package inventory of the agents connected to it, and the script reads only its own agents. Copy the script to each worker and add the same cron line there. It needs outbound HTTPS to www.php.net from every node (or a mirror of https://www.php.net/releases/ given with --source).",
+   "body_zh": "每個節點只保存連到自己的 agent 的套件清單，腳本也只讀自己的 agent。把腳本複製到每個 worker 並加上同樣的排程。每個節點都需要能以 HTTPS 連到 www.php.net（或以 --source 指定 https://www.php.net/releases/ 的鏡像）。",
+   "code": "scp /var/ossec/etc/jt-packs/bin/jt-php-versions.py <worker>:/var/ossec/etc/jt-packs/bin/\nssh <worker> 'echo \"41 */6 * * * root /usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-php-versions.py --wazuh-path /var/ossec\" > /etc/cron.d/jt-jt-php'",
+   "verify": "On the worker, --list prints the PHP packages of the Windows or other agents connected to it.",
+   "verify_zh": "在 worker 上執行 --list，會列出連到它的 agent 的 PHP 套件。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Assign the hosts that run PHP to the php group",
+   "title_zh": "把有執行 PHP 的主機加入 php 群組",
+   "body": "The group reads PHP-FPM's log and the web servers' error logs and watches the PHP configuration with diffs. The version check, the kernel crash rules and the web shell rules work without it. An agent can be in several groups. The agent applies a new group configuration after a restart.",
+   "body_zh": "群組會讀取 PHP-FPM 的記錄與網頁伺服器的錯誤記錄，並監控 PHP 設定與其差異。版本檢查、核心當掉規則與 web shell 規則不需要這個群組也能運作。一個 agent 可以屬於多個群組。agent 重新啟動後才會套用新的群組設定。",
+   "file": "agent/agent.conf",
+   "code": "/var/ossec/bin/agent_groups -a -i <AGENT_ID> -g php -q\n/var/ossec/bin/agent_control -R -u <AGENT_ID>",
+   "verify": "After the restart, the agent's ossec.log lists the PHP-FPM log among the files it analyses, and editing a comment in php.ini raises 133140 with the diff.",
+   "verify_zh": "重新啟動後，agent 的 ossec.log 會列出 PHP-FPM 記錄為分析中的檔案；在 php.ini 改一行註解會觸發 133140 並附上差異。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Optional: record the commands the web server's PHP runs (auditd)",
+   "title_zh": "選用：記錄網頁伺服器的 PHP 執行的指令（auditd）",
+   "body": "Needs auditd on the host. The file is delivered by the php group to /var/ossec/etc/shared/. It records every program started by uid 33 (www-data on Debian and Ubuntu) outside a login session; change the uid for other systems (apache is 48 on RHEL) as described in the file. Rules 133170-133172 read it.",
+   "body_zh": "主機需要有 auditd。這個檔案由 php 群組送到 /var/ossec/etc/shared/。它會記錄 uid 33（Debian 與 Ubuntu 的 www-data）在登入工作階段之外啟動的每個程式；其他系統請依檔案中的說明修改 uid（RHEL 的 apache 是 48）。規則 133170-133172 讀取這些記錄。",
+   "file": "agent/jt-php.rules",
+   "code": "cp /var/ossec/etc/shared/jt-php.rules /etc/audit/rules.d/\naugenrules --load\nauditctl -l | grep jt_php_exec",
+   "verify": "auditctl -l shows the two jt_php_exec lines; a page that calls exec('id') raises 133171.",
+   "verify_zh": "auditctl -l 會顯示兩行 jt_php_exec；呼叫 exec('id') 的頁面會觸發 133171。"
+  },
+  {
+   "platform": "windows",
+   "required": false,
+   "title": "Windows: Sysmon process creation",
+   "title_zh": "Windows：Sysmon 程序建立事件",
+   "body": "133160 and 133161 read Sysmon event 1. A Sysmon configuration that excludes processes started by php-cgi.exe or httpd.exe, or that includes only selected images, will not report them.",
+   "body_zh": "133160 與 133161 讀取 Sysmon 事件 1。若 Sysmon 設定排除了 php-cgi.exe 或 httpd.exe 啟動的程序，或只納入指定的映像，就不會回報。"
+  }
+ ]
+}

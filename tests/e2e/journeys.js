@@ -584,6 +584,34 @@ async function run() {
     await closeModal();
   });
 
+  await journey('J24 the theme menu switches to light and the choice survives a reload', async () => {
+    await page.evaluate(() => { try { localStorage.removeItem('jtwz_theme'); } catch (e) {} });
+    await page.reload({ waitUntil: 'networkidle2' });
+    await wait(1500);
+    const theme = () => page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+    const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    check('dark is the default', await theme() === 'dark', await theme());
+    check('the dark page keeps its original background', await bg() === 'rgb(26, 26, 46)', await bg());
+    const order = await page.evaluate(() => [...document.querySelectorAll('.header-buttons > *')]
+      .map(e => (e.querySelector('button') || e).id || e.className).join(','));
+    check('the theme button sits right after the language button', /^langToggle,themeToggle,/.test(order), order);
+    await page.click('#themeToggle');
+    await wait(300);
+    check('the theme menu opens', await page.evaluate(() => !document.querySelector('.jtwz-theme-menu').hidden));
+    await page.click('.jtwz-theme-menu [data-theme-choice="light"]');
+    await wait(400);
+    check('choosing light switches without a reload', await theme() === 'light', await theme());
+    check('the page background turns light', await bg() !== 'rgb(26, 26, 46)', await bg());
+    check('the choice is stored', await page.evaluate(() => localStorage.getItem('jtwz_theme')) === 'light');
+    await page.reload({ waitUntil: 'networkidle2' });
+    await wait(1500);
+    check('the light theme survives a reload', await theme() === 'light', await theme());
+    check('the menu marks light as current', await page.evaluate(() =>
+      document.querySelector('.jtwz-theme-menu [data-theme-choice="light"]').getAttribute('aria-checked')) === 'true');
+    await page.evaluate(() => jtwzSetTheme('dark'));
+    check('switching back restores dark', await theme() === 'dark' && await bg() === 'rgb(26, 26, 46)', await bg());
+  });
+
   await journey('J16 security headers are present on a real response', async () => {
     const resp = await page.goto(BASE + '/login', { waitUntil: 'networkidle2' });
     const h = resp.headers();

@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Offline install &amp; upgrade — jt-wazuh-mgr</title>
+<meta name="description" content="Step-by-step procedure for installing and upgrading jt-wazuh-mgr on a Wazuh manager with no internet access: build a bundle with the release and Python wheels on a connected machine, carry it over, install with install.sh --offline, verify, upgrade and roll back.">
+<link rel="icon" type="image/svg+xml" href="img/icon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="img/icon-32.png">
+<link rel="alternate icon" href="img/favicon.ico">
+<link rel="apple-touch-icon" sizes="180x180" href="img/icon-180.png">
+<style>
+  :root{
+    --bg:#12121f; --card:#1a1a2e; --card2:#151527; --line:#243056;
+    --accent:#4fc3f7; --accent2:#81d4fa; --text:#e9edf5; --muted:#9aa6c0;
+    --ok:#34d399; --warn:#ffc107; --orange:#f7941e; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang TC','Noto Sans TC',sans-serif;
+    background:radial-gradient(1200px 600px at 50% -10%,#1d2547 0,var(--bg) 55%) no-repeat,var(--bg);
+    color:var(--text);line-height:1.7;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{color:var(--accent2);text-decoration:underline}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em;
+    background:#0e0e1a;border:1px solid var(--line);border-radius:4px;padding:.1em .4em;color:#cfe8ff}
+  pre{background:#0e0e1a;border:1px solid var(--line);border-radius:8px;padding:13px 15px;
+    overflow-x:auto;margin:12px 0;font-size:13.5px;line-height:1.6}
+  pre code{background:none;border:none;padding:0;color:#cfe8ff}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(10px);
+    background:rgba(18,18,31,.82);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;gap:16px;height:62px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:var(--text)}
+  .brand img{width:28px;height:28px;border-radius:6px}
+  .nav-links{margin-left:auto;display:flex;gap:20px;align-items:center}
+  .nav-links a{color:var(--muted);font-size:14px}
+  .nav-links a:hover{color:var(--text);text-decoration:none}
+  .lang{border:1px solid var(--line);background:var(--card);color:var(--text);
+    border-radius:8px;padding:6px 12px;font-size:13px;font-weight:600}
+  .lang:hover{border-color:var(--accent);text-decoration:none}
+  @media(max-width:820px){.nav-links a:not(.lang):not(.gh){display:none}}
+
+  header.top{padding:52px 0 26px}
+  h1{font-size:clamp(26px,4vw,38px);line-height:1.2;font-weight:800;letter-spacing:-.4px}
+  h1 .grad{background:linear-gradient(96deg,var(--accent) 0%,var(--violet) 52%,var(--orange) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .lede{color:var(--muted);margin-top:14px;max-width:70ch;font-size:16px}
+
+  .searchbar{margin:26px 0 8px;position:relative;max-width:560px}
+  .searchbar input{width:100%;padding:13px 15px 13px 42px;border-radius:10px;
+    border:1px solid var(--line);background:var(--card);color:var(--text);font-size:15px;
+    font-family:inherit}
+  .searchbar input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+  .searchbar svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);opacity:.5}
+  .count{color:var(--muted);font-size:13.5px;min-height:20px;margin-bottom:8px}
+
+  .layout{display:grid;grid-template-columns:250px 1fr;gap:38px;align-items:start;padding-bottom:70px}
+  @media(max-width:900px){.layout{grid-template-columns:1fr;gap:22px}}
+
+  aside{position:sticky;top:86px}
+  @media(max-width:900px){aside{position:static}}
+  aside .toc-title{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+    font-weight:700;margin-bottom:12px}
+  aside ol{list-style:none;counter-reset:toc}
+  aside li{counter-increment:toc;margin:2px 0}
+  aside a{display:block;padding:7px 10px 7px 32px;border-radius:7px;color:var(--muted);
+    font-size:14px;position:relative;line-height:1.45}
+  aside a::before{content:counter(toc);position:absolute;left:10px;top:7px;
+    font-size:11.5px;color:var(--line);font-weight:700}
+  aside a:hover{background:var(--card);color:var(--text);text-decoration:none}
+  aside a:hover::before{color:var(--accent)}
+
+  section{margin-bottom:40px;scroll-margin-top:82px}
+  section > h2{font-size:20px;font-weight:700;padding-bottom:10px;border-bottom:1px solid var(--line);
+    margin-bottom:18px;display:flex;align-items:center;gap:10px}
+  section > h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none}
+  section:nth-of-type(3n+2) > h2 .dot{background:var(--orange)}
+  section:nth-of-type(3n) > h2 .dot{background:var(--ok)}
+
+  .qa{background:var(--card2);border:1px solid var(--line);border-radius:10px;
+    padding:18px 20px;margin-bottom:14px}
+  .qa h3{font-size:16px;font-weight:650;line-height:1.45;margin-bottom:8px;color:#fff}
+  .qa p{margin:9px 0;font-size:15px}
+  .qa ul,.qa ol{margin:9px 0 9px 22px;font-size:15px}
+  .qa li{margin:5px 0}
+  .sym{display:block;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:13px;color:#ffb4b4;background:rgba(255,90,90,.07);
+    border-left:3px solid #e5534b;border-radius:0 6px 6px 0;padding:8px 12px;margin:4px 0 12px;
+    overflow-x:auto;white-space:pre-wrap;word-break:break-word}
+  .note{border-left:3px solid var(--warn);background:rgba(255,193,7,.07);
+    border-radius:0 6px 6px 0;padding:10px 13px;margin:12px 0;font-size:14.5px;color:#ffe9b0}
+  .note b{color:var(--warn)}
+  .good{border-left:3px solid var(--ok);background:rgba(52,211,153,.07);
+    border-radius:0 6px 6px 0;padding:10px 13px;margin:12px 0;font-size:14.5px;color:#b8f0da}
+  .good b{color:var(--ok)}
+  .qa.hide,section.hide{display:none}
+  .empty{display:none;text-align:center;color:var(--muted);padding:50px 0;font-size:16px}
+  .empty.show{display:block}
+
+  footer{border-top:1px solid var(--line);padding:26px 0 44px;color:var(--muted);font-size:14px}
+  footer a{color:var(--muted);text-decoration:underline}
+  /* grid items default to min-width:auto, so a long <pre> would widen the page on phones */
+  .layout > *{min-width:0}
+  .brand span{white-space:nowrap}
+  .where{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.03em;
+    padding:2px 10px;border-radius:999px;margin-right:6px;vertical-align:2px}
+  .where.net{background:rgba(79,195,247,.14);color:var(--accent)}
+  .where.mgr{background:rgba(247,148,30,.16);color:var(--orange)}
+  .tbl{overflow-x:auto;margin:10px 0}
+  .qa table{border-collapse:collapse;width:100%;font-size:14.5px}
+  .qa th,.qa td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  .qa th{background:var(--card);font-weight:650;white-space:nowrap}
+  kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85em;
+    border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 .35em}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="img/icon.svg" alt="" width="28" height="28"><span>jt-wazuh-mgr</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+      <a class="gh" href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener">GitHub</a>
+      <a class="lang" href="offline-install-zh-TW.html" hreflang="zh-TW">繁體中文</a>
+      <a class="lang" href="offline-install-ja.html" hreflang="ja">日本語</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+  <header class="top">
+    <h1><span class="grad">Offline</span> install &amp; upgrade</h1>
+    <p class="lede">For a Wazuh manager that cannot reach GitHub or PyPI. You build one archive on a machine that has internet access &mdash; the release plus the Python packages it needs &mdash; carry it over, and run the installer from it. Nothing on the manager reaches the network.</p>
+  </header>
+
+  <div class="layout">
+    <aside>
+      <div class="toc-title">Steps</div>
+      <ol id="toc"></ol>
+    </aside>
+
+    <main id="main">
+
+      <section id="overview">
+        <h2><span class="dot"></span>Before you start</h2>
+
+        <div class="qa">
+          <h3>What you need</h3>
+          <ul>
+            <li>A <b>connected machine</b> with Python&nbsp;3 and <code>pip</code> (Linux, macOS or Windows) &mdash;
+                or, simplest, a Linux machine with Docker.</li>
+            <li>A way to copy one file (about 10&nbsp;MB) to the manager: USB drive, <code>scp</code> through a jump host, etc.</li>
+            <li><b>root</b> on the Wazuh manager &mdash; the <b>master node</b> in a cluster. Nothing goes on workers or agents.</li>
+          </ul>
+        </div>
+
+        <div class="qa">
+          <h3>Two facts to note on the manager first</h3>
+          <p><span class="where mgr">Wazuh manager</span> The Python packages are compiled per Python version and CPU, so the bundle has to match them:</p>
+          <pre><code>/usr/bin/python3 -V
+uname -m</code></pre>
+          <p>The service runs <code>/usr/bin/python3</code>, so that is the version that counts &mdash; for example
+             <code>Python 3.9.25</code> &rarr; <b>3.9</b>, and <code>x86_64</code>. <code>pip</code> does <b>not</b> need to be
+             installed on the manager.</p>
+          <div class="note"><b>Pick the release.</b> Releases are listed on
+            <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr/releases" target="_blank" rel="noopener">GitHub Releases</a>;
+            below, <code>X.Y.Z</code> stands for the version you choose (without the leading <code>v</code>).
+            <code>install.sh --offline</code> exists in releases <b>after v1.19.0</b>; for v1.19.0 and earlier, use the
+            <a href="#manual">manual steps</a>.</div>
+        </div>
+      </section>
+
+      <section id="prepare">
+        <h2><span class="dot"></span>1. Build the bundle</h2>
+
+        <div class="qa">
+          <h3>Download the release</h3>
+          <p><span class="where net">connected machine</span></p>
+          <pre><code>VER=X.Y.Z
+curl -fsSLO https://github.com/jasoncheng7115/jt-wazuh-mgr/archive/refs/tags/v$VER.tar.gz
+tar xzf v$VER.tar.gz                  # creates jt-wazuh-mgr-$VER/</code></pre>
+          <p>GitHub names the directory inside the archive <code>jt-wazuh-mgr-X.Y.Z</code> (no <code>v</code>).</p>
+        </div>
+
+        <div class="qa">
+          <h3>Download the Python packages (wheels) &mdash; recommended way</h3>
+          <p><span class="where net">connected machine</span> Run <code>pip download</code> with <b>the same Python version as the manager</b>. A throwaway
+             container is the easiest way to get it; replace <code>3.9</code> with the manager's version:</p>
+          <pre><code>docker run --rm -v "$PWD":/w -w /w python:3.9-slim \
+    pip download --only-binary=:all: -r jt-wazuh-mgr-$VER/requirements.txt -d jt-wazuh-mgr-$VER/wheels</code></pre>
+          <p>Running the same <code>pip download</code> on a machine with the same OS release as the manager works just as well.
+             <code>--only-binary=:all:</code> makes a missing wheel fail here, on the connected machine, rather than on the manager.
+             The container runs on the CPU of the machine it is started on; for an ARM manager prepared on an x86 machine,
+             use the method below.</p>
+        </div>
+
+        <div class="qa">
+          <h3>Without Docker: download for another Python version</h3>
+          <p><span class="where net">connected machine</span> <code>pip</code> can fetch wheels for a version other than its own:</p>
+          <pre><code>python3 -m pip download -r jt-wazuh-mgr-$VER/requirements.txt "importlib-metadata&gt;=3.6" \
+    --only-binary=:all: --implementation cp --python-version 3.9 \
+    --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 \
+    -d jt-wazuh-mgr-$VER/wheels</code></pre>
+          <ul>
+            <li><code>--python-version</code> is the manager's version from the first step.</li>
+            <li>On an ARM manager (<code>aarch64</code>) write <code>manylinux2014_aarch64</code> and <code>manylinux_2_17_aarch64</code>.</li>
+            <li><b>Keep <code>"importlib-metadata&gt;=3.6"</code>.</b> In this mode pip evaluates conditional requirements against
+                <i>its own</i> Python, so it skips the package Flask needs only on Python&nbsp;3.9 &mdash; the install on a 3.9 manager
+                (RHEL&nbsp;9, Rocky/Alma&nbsp;9, Amazon Linux&nbsp;2023, the Wazuh manager container) then stops with
+                <code>No matching distribution found for importlib-metadata</code>. It is harmless on other versions.</li>
+          </ul>
+          <div class="note"><b>One Python version per <code>wheels/</code> directory.</b> If your managers run different Python
+            versions, build one bundle per version.</div>
+        </div>
+
+        <div class="qa">
+          <h3>Pack it up</h3>
+          <p><span class="where net">connected machine</span></p>
+          <pre><code>tar czf jt-wazuh-mgr-$VER-offline.tar.gz jt-wazuh-mgr-$VER
+sha256sum jt-wazuh-mgr-$VER-offline.tar.gz &gt; jt-wazuh-mgr-$VER-offline.tar.gz.sha256</code></pre>
+        </div>
+      </section>
+
+      <section id="install">
+        <h2><span class="dot"></span>2. Install on the manager</h2>
+
+        <div class="qa">
+          <h3>Copy, check, extract, install</h3>
+          <p><span class="where mgr">Wazuh manager</span> Copy both files over (for example to <code>/root</code>), then as root:</p>
+          <pre><code>cd /root
+sha256sum -c jt-wazuh-mgr-X.Y.Z-offline.tar.gz.sha256
+tar xzf /root/jt-wazuh-mgr-X.Y.Z-offline.tar.gz -C /root
+bash /root/jt-wazuh-mgr-X.Y.Z/install.sh --offline</code></pre>
+          <p>Always extract with <code>-C</code> and run the installer by its full path; that way the result does not depend on
+             the directory you happen to be in.</p>
+        </div>
+
+        <div class="qa">
+          <h3>What <code>--offline</code> does</h3>
+          <ul>
+            <li>Copies the program, the rule-pack catalogue, icons, the service file and <code>uninstall.sh</code> from the extracted
+                directory to <code>/opt/jt-wazuh-mgr</code>. No <code>curl</code>, no <code>apt</code>/<code>dnf</code>, no PyPI.</li>
+            <li>Writes <code>config.yaml</code> <b>only if it does not exist yet</b>.</li>
+            <li>Installs the Python packages from <code>wheels/</code> into <code>/opt/jt-wazuh-mgr/vendor</code>, never into the system
+                Python: with <code>pip install --no-index</code> when pip is present, otherwise by unpacking the wheels that fit this
+                Python (a wheel is a zip). They are built in <code>vendor.new</code> and swapped in only after they import, so a bad
+                bundle leaves the working copy alone.</li>
+            <li>Installs <code>/etc/systemd/system/jt-wazuh-mgr.service</code>, enables and starts it, and checks two seconds later that it
+                is still running.</li>
+          </ul>
+          <p>Wheels kept somewhere else: <code>install.sh --offline --wheels /path/to/wheels</code>.</p>
+        </div>
+      </section>
+
+      <section id="verify">
+        <h2><span class="dot"></span>3. Verify</h2>
+
+        <div class="qa">
+          <h3>Read the result back from the system, not from the installer</h3>
+          <p><span class="where mgr">Wazuh manager</span></p>
+          <pre><code>grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py     # the version you installed
+systemctl is-active jt-wazuh-mgr                       # active
+curl -ks -o /dev/null -w '%{http_code}\n' https://127.0.0.1:5000/login   # 200
+journalctl -u jt-wazuh-mgr -n 20 --no-pager            # if any of the above is wrong</code></pre>
+          <p>Then open <b>https://YOUR_WAZUH_MANAGER_IP:5000</b> and log in with a Wazuh API user (not the
+             <code>wazuh-wui</code> account the dashboard uses). If the browser does not get through but the
+             <code>curl</code> above returns 200, open TCP&nbsp;5000 in the manager's firewall.</p>
+        </div>
+      </section>
+
+      <section id="upgrade">
+        <h2><span class="dot"></span>4. Upgrade</h2>
+
+        <div class="qa">
+          <h3>Same bundle, newer version</h3>
+          <ol>
+            <li><span class="where net">connected machine</span> Build the bundle for the new <code>X.Y.Z</code> exactly as in <a href="#prepare">step 1</a>.</li>
+            <li><span class="where mgr">Wazuh manager</span> Back up the current installation and the service file:
+              <pre><code>tar czf /root/jt-wazuh-mgr-backup-$(date +%F).tar.gz -C /opt jt-wazuh-mgr
+cp /etc/systemd/system/jt-wazuh-mgr.service /root/jt-wazuh-mgr.service.bak-$(date +%F)</code></pre></li>
+            <li><span class="where mgr">Wazuh manager</span> Extract the new release and run its installer:
+              <pre><code>tar xzf /root/jt-wazuh-mgr-X.Y.Z-offline.tar.gz -C /root
+bash /root/jt-wazuh-mgr-X.Y.Z/install.sh --offline</code></pre></li>
+            <li><span class="where mgr">Wazuh manager</span> Verify as in <a href="#verify">step 3</a> &mdash; the version must be read from <code>/opt/jt-wazuh-mgr</code>,
+                then reload the browser with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>.</li>
+          </ol>
+        </div>
+
+        <div class="qa">
+          <h3>What an upgrade keeps and what it replaces</h3>
+          <div class="tbl"><table>
+            <tr><th>Kept</th><td><code>config.yaml</code>; the certificate <code>--ssl-auto</code> generated (<code>ssl_cert.pem</code>,
+              <code>ssl_key.pem</code>); <code>wazuh_agent_mgr.log</code>; your drop-ins in
+              <code>/etc/systemd/system/jt-wazuh-mgr.service.d/</code>; <b>rule packs already installed on the manager</b>
+              (<code>/var/ossec/etc/...</code>, state in <code>/var/ossec/etc/jt-packs/</code>).</td></tr>
+            <tr><th>Replaced</th><td>Program files, the rule-pack catalogue in <code>/opt/jt-wazuh-mgr/packs</code>, the icons,
+              <code>/etc/systemd/system/jt-wazuh-mgr.service</code>, and <code>vendor/</code> when the bundle has wheels.</td></tr>
+          </table></div>
+          <p>Packs are updated separately, from the <b>Rule Packs</b> tab: it marks the packs whose catalogue version is newer than
+             what the manager has and shows a plan before changing anything. Reload the ruleset on all nodes afterwards.</p>
+          <p>If the new release's <code>requirements.txt</code> is the same as the installed one
+             (<code>diff /opt/jt-wazuh-mgr/requirements.txt /root/jt-wazuh-mgr-X.Y.Z/requirements.txt</code>), you may leave the
+             wheels out: without a <code>wheels/</code> directory the installer keeps the current <code>vendor/</code> as long as it still
+             imports. Carrying the wheels every time is simpler.</p>
+        </div>
+      </section>
+
+      <section id="rollback">
+        <h2><span class="dot"></span>5. Roll back</h2>
+
+        <div class="qa">
+          <h3>Back to the backup from step 4</h3>
+          <p><span class="where mgr">Wazuh manager</span> Move the failed version aside rather than deleting it, so you can still look at it:</p>
+          <pre><code>systemctl stop jt-wazuh-mgr
+mv /opt/jt-wazuh-mgr /opt/jt-wazuh-mgr.failed
+tar xzf /root/jt-wazuh-mgr-backup-YYYY-MM-DD.tar.gz -C /opt
+cp /root/jt-wazuh-mgr.service.bak-YYYY-MM-DD /etc/systemd/system/jt-wazuh-mgr.service
+systemctl daemon-reload
+systemctl start jt-wazuh-mgr
+grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py</code></pre>
+          <p>Replace <code>YYYY-MM-DD</code> with the date in the backup's file name. Once the old version runs again,
+             <code>/opt/jt-wazuh-mgr.failed</code> can be removed.</p>
+        </div>
+      </section>
+
+      <section id="manual">
+        <h2><span class="dot"></span>Manual steps (without --offline)</h2>
+
+        <div class="qa">
+          <h3>For v1.19.0 and earlier, or if you prefer to see every step</h3>
+          <p><span class="where mgr">Wazuh manager</span> This is what <code>install.sh --offline</code> does, written out. Run as root, after extracting the bundle as in
+             <a href="#install">step 2</a> (and, for an upgrade, after the backup in <a href="#upgrade">step 4</a>):</p>
+          <pre><code>VER=X.Y.Z
+SRC=/root/jt-wazuh-mgr-$VER
+DST=/opt/jt-wazuh-mgr
+mkdir -p "$DST"
+cp -r "$SRC"/wazuh_agent_mgr.py "$SRC"/create_api_user.py "$SRC"/requirements.txt \
+      "$SRC"/lib "$SRC"/packs "$SRC"/images "$SRC"/jt-wazuh-mgr.service "$SRC"/uninstall.sh "$DST"/
+[ -f "$DST/config.yaml" ] || cp "$SRC/config.yaml" "$DST/"      # never overwrite your config
+rm -rf "$DST/vendor.new"</code></pre>
+          <p>Then install the Python packages into <code>vendor.new</code>, <b>one</b> of the two:</p>
+          <pre><code># a) pip is installed on the manager
+python3 -m pip install --no-index --find-links "$SRC/wheels" --target "$DST/vendor.new" -r "$DST/requirements.txt"
+
+# b) no pip: a wheel is a zip
+mkdir "$DST/vendor.new"
+for w in "$SRC"/wheels/*.whl; do python3 -m zipfile -e "$w" "$DST/vendor.new"; done</code></pre>
+          <p>Swap them in only if they import, and (re)start the service:</p>
+          <pre><code>PYTHONPATH="$DST/vendor.new" /usr/bin/python3 -c 'import flask, yaml, requests, rich, tabulate' \
+  &amp;&amp; rm -rf "$DST/vendor" &amp;&amp; mv "$DST/vendor.new" "$DST/vendor"
+cp "$DST/jt-wazuh-mgr.service" /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable jt-wazuh-mgr
+systemctl restart jt-wazuh-mgr</code></pre>
+          <p>Verify as in <a href="#verify">step 3</a>.</p>
+        </div>
+      </section>
+
+      <section id="python">
+        <h2><span class="dot"></span>When the wheels do not fit</h2>
+
+        <div class="qa">
+          <h3>No matching distribution found</h3>
+          <span class="sym">ERROR: No matching distribution found for PyYAML&gt;=6.0
+The wheels in /root/jt-wazuh-mgr-X.Y.Z/wheels do not cover requirements.txt for Python 3.12.</span>
+          <p>The wheels were downloaded for another Python version or CPU. The installer stops before touching
+             <code>vendor/</code> or restarting the service, so the running version keeps working (the program files were already
+             copied and take effect at the next restart). Check <code>/usr/bin/python3 -V</code> and <code>uname -m</code> again, rebuild the
+             <code>wheels/</code> directory for that version (<a href="#prepare">step 1</a>), and run the installer again &mdash;
+             or <a href="#rollback">roll back</a>.</p>
+          <p>If the missing package is <code>importlib-metadata</code>, the wheels were made with the
+             <code>--python-version</code> method without that extra argument; see step&nbsp;1.</p>
+        </div>
+
+        <div class="qa">
+          <h3>The wheels do not import on Python 3.x</h3>
+          <span class="sym">The wheels in ... do not import on Python 3.9 (missing, or built for another Python version).</span>
+          <p>Same cause, seen on a manager without pip: the compiled packages (PyYAML, MarkupSafe, charset-normalizer) carry the Python
+             version in their file names, e.g. <code>cp39</code>, and only fitting ones are used. Rebuild the wheels for the
+             manager's version.</p>
+        </div>
+
+        <div class="qa">
+          <h3>A Python version with no published wheels</h3>
+          <p>Very new or unusual Python versions can be ahead of the binary wheels on PyPI, and <code>--only-binary=:all:</code> then
+             fails on the connected machine. Build the wheels yourself there, with the same OS release and Python version as the manager
+             (packages without a published wheel are built from source, which may need a compiler):</p>
+          <pre><code>python3 -m pip wheel -r jt-wazuh-mgr-$VER/requirements.txt -w jt-wazuh-mgr-$VER/wheels</code></pre>
+        </div>
+
+        <div class="qa">
+          <h3>Distribution packages instead of wheels</h3>
+          <p>If the manager has a local package mirror, the distribution's own packages work too. Install them, leave
+             <code>wheels/</code> out of the bundle, and the installer keeps going because the modules already import:</p>
+          <pre><code>apt install python3-flask python3-yaml python3-requests python3-rich python3-tabulate   # Debian / Ubuntu</code></pre>
+          <p><code>requirements.txt</code> asks for Flask 2.3 or newer; check what your distribution ships
+             (<code>apt-cache policy python3-flask</code>) before choosing this route.</p>
+        </div>
+      </section>
+
+      <section id="notes">
+        <h2><span class="dot"></span>What else to know offline</h2>
+
+        <div class="qa">
+          <h3>What works without internet, and what does not</h3>
+          <ul>
+            <li><b>Everything that talks to Wazuh</b> works: the tool only uses the manager's own API and files.</li>
+            <li><b>Rule packs</b> install from the catalogue that ships in the release. A few packs include scheduled scripts that
+                fetch data (threat-intelligence lists, vulnerability databases); those parts need outbound access or a local mirror
+                &mdash; read each pack's setup notes before installing it.</li>
+            <li>The <b>configuration editor's syntax highlighting</b> is loaded by your <i>browser</i> from cdnjs. Without it the editor
+                still works, just without colours.</li>
+          </ul>
+        </div>
+
+        <div class="qa">
+          <h3>Uninstall</h3>
+          <p>Works offline as is: <code>bash /opt/jt-wazuh-mgr/uninstall.sh</code>. Remove installed rule packs from the
+             <b>Rule Packs</b> tab first if you want the original files restored.</p>
+          <p>Something else went wrong? See <a href="troubleshooting.html">Install &amp; upgrade troubleshooting</a>.</p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    jt-wazuh-mgr — AGPL-3.0 ·
+    <a href="index.html">Project home</a> ·
+    <a href="troubleshooting.html">Troubleshooting</a> ·
+    <a href="offline-install-zh-TW.html">繁體中文</a> ·
+    <a href="offline-install-ja.html">日本語</a> ·
+    <a href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener">Source</a>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // The table of contents is built from the sections so it cannot drift from them.
+  var toc = document.getElementById('toc');
+  [].slice.call(document.querySelectorAll('#main > section')).forEach(function (s) {
+    var li = document.createElement('li');
+    var a = document.createElement('a');
+    a.href = '#' + s.id;
+    a.textContent = s.querySelector('h2').textContent.trim();
+    li.appendChild(a);
+    toc.appendChild(li);
+  });
+})();
+</script>
+</body>
+</html>

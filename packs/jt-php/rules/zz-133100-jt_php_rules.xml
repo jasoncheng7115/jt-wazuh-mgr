@@ -1,0 +1,547 @@
+<!--
+  jt-php - PHP versions, crashes, configuration and web shells
+  File:    zz-133100-jt_php_rules.xml
+  Range:   133100-133199
+  Licence: AGPL-3.0-or-later    Jason Tools Co., Ltd.
+
+  Five parts, each usable without the others:
+
+    133100-133119  versions: jt-php-versions.py on the manager compares the
+                   PHP that syscollector found on every agent with php.net's
+                   release list and writes JSON events (location jt-php),
+                   attributed to the agent. No CVE feed needed.
+    133120-133139  runtime: PHP-FPM workers killed by SIGSEGV/SIGBUS/..., the
+                   kernel's segfault and trap lines for PHP processes, and
+                   "Allowed memory size exhausted ... in Unknown on line 0",
+                   memory running out before any script ran. These are what
+                   memory corruption in request handling leaves behind
+                   (CVE-2026-109618/109619 in October 2026), and repeated, they
+                   are what someone probing for it leaves behind.
+    133140-133149  configuration: php.ini, conf.d and FPM pool files (the
+                   agent group watches them with diffs); a diff that adds
+                   auto_prepend_file or allow_url_include, or removes
+                   disable_functions or open_basedir, is the attack.
+    133150-133159  web shells: a PHP file, .user.ini or .htaccess appearing in
+                   an upload or media directory, on any path an agent already
+                   watches.
+    133160-133179  commands run by PHP: Sysmon process creation with a PHP
+                   parent on Windows; auditd execve by the web server account
+                   on Linux (optional rules file in the agent group).
+    133180-133189  requests for PHP-CGI argument injection (CVE-2012-1823,
+                   CVE-2024-4577) beyond the built-in 31110.
+
+  Not here, because Wazuh or another pack already does it: SQL injection, XSS
+  and path traversal in requests (built-in 31100-31170, 31500-31550), Apache's
+  own "exit signal Segmentation fault" (built-in 30104/30304, level 12),
+  phpinfo pages, phpunit eval-stdin and web shell names in requests (jt-web).
+
+  Ordering (4.14 rules.c): among the children of one rule, level 0 first, then
+  highest level first. The siblings here use disjoint conditions, and the
+  quieter exceptions are children of the rule they quiet.
+-->
+
+<group name="jt_php,">
+
+  <!-- ================= versions (jt-php-versions.py) ================= -->
+
+  <rule id="133100" level="0">
+    <decoded_as>json</decoded_as>
+    <location>^jt-php$</location>
+    <field name="jt_php.event">\.+</field>
+    <description>jt-php: version check event</description>
+  </rule>
+
+  <rule id="133101" level="2">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^version$</field>
+    <field name="jt_php.status">^current$</field>
+    <description>jt-php: PHP $(jt_php.installed) is the latest release of branch $(jt_php.branch) ($(jt_php.packages))</description>
+  </rule>
+
+  <!-- Behind a security release of a supported branch, on a package that
+       serves web requests. New finding or changed (a newer release, a
+       partial update): level 12, mailed. -->
+  <rule id="133102" level="12">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^version$</field>
+    <field name="jt_php.status">^behind_security$</field>
+    <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
+    <field name="jt_php.sapi">^web$</field>
+    <description>[HIGH] jt-php: PHP $(jt_php.installed) is missing security release $(jt_php.latest) ($(jt_php.security_releases) security releases behind; $(jt_php.packages), $(jt_php.packager))</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_php_outdated,vulnerability,</group>
+  </rule>
+
+  <!-- php.net no longer publishes fixes for this branch, and the package
+       follows php.net (it is not a distribution backport). -->
+  <rule id="133103" level="12">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^version$</field>
+    <field name="jt_php.status">^eol$</field>
+    <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
+    <field name="jt_php.sapi">^web$</field>
+    <description>[HIGH] jt-php: PHP branch $(jt_php.branch) ($(jt_php.installed)) no longer receives security fixes from php.net ($(jt_php.packages), $(jt_php.packager))</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_php_outdated,vulnerability,</group>
+  </rule>
+
+  <!-- The same two with only the command line installed: the October 2026
+       issues and most PHP RCEs are in request handling, so this is an update
+       to schedule, not an exposed service. -->
+  <rule id="133104" level="7">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^version$</field>
+    <field name="jt_php.status" type="pcre2">^(?:behind_security|eol)$</field>
+    <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
+    <field name="jt_php.sapi">^cli$</field>
+    <description>jt-php: command-line PHP $(jt_php.installed) is $(jt_php.status) (latest $(jt_php.latest); no web server module or FPM installed; $(jt_php.packages))</description>
+    <group>jt_php_outdated,</group>
+  </rule>
+
+  <rule id="133105" level="8">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^version$</field>
+    <field name="jt_php.change">^reminder$</field>
+    <description>jt-php: reminder, PHP $(jt_php.installed) is still $(jt_php.status) since $(jt_php.since) (latest $(jt_php.latest); $(jt_php.packages))</description>
+    <group>jt_php_outdated,</group>
+  </rule>
+
+  <rule id="133106" level="5">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^version$</field>
+    <field name="jt_php.status">^behind$</field>
+    <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
+    <description>jt-php: PHP $(jt_php.installed) is behind bug-fix release $(jt_php.latest) (no security release missed; $(jt_php.packages))</description>
+  </rule>
+
+  <!-- Distribution packages (Debian, Ubuntu, RHEL...) keep their version and
+       backport fixes: php.net cannot say whether they are fixed, the
+       distribution's advisories (and Wazuh's vulnerability detection) can. -->
+  <rule id="133107" level="3">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^version$</field>
+    <field name="jt_php.status">^distro$</field>
+    <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
+    <description>jt-php: PHP $(jt_php.installed) from the distribution ($(jt_php.packager)); fixes come as distribution updates ($(jt_php.packages))</description>
+  </rule>
+
+  <rule id="133108" level="5">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^version$</field>
+    <field name="jt_php.status">^distro_eol$</field>
+    <field name="jt_php.change" type="pcre2">^(?:new|changed)$</field>
+    <description>jt-php: distribution PHP $(jt_php.installed) is on branch $(jt_php.branch), which php.net no longer supports; fixes depend on the distribution's own long-term support ($(jt_php.packager))</description>
+  </rule>
+
+  <rule id="133109" level="3">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^version$</field>
+    <field name="jt_php.change">^fixed$</field>
+    <description>jt-php: PHP branch $(jt_php.branch) is no longer $(jt_php.previous_status) (now $(jt_php.status) $(jt_php.installed))</description>
+  </rule>
+
+  <rule id="133110" level="3">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^release$</field>
+    <description>jt-php: php.net released PHP $(jt_php.latest) (branch $(jt_php.branch), security: $(jt_php.security), previous $(jt_php.previous))</description>
+  </rule>
+
+  <rule id="133111" level="5">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^status$</field>
+    <field name="jt_php.state">^failing$</field>
+    <description>jt-php: php.net release data could not be read; the last copy is used for up to 48 hours ($(jt_php.detail))</description>
+  </rule>
+
+  <rule id="133112" level="10">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^status$</field>
+    <field name="jt_php.state">^stale$</field>
+    <description>[WARN] jt-php: no php.net release data for $(jt_php.hours) hours; PHP versions are not being checked ($(jt_php.detail))</description>
+    <options>alert_by_email</options>
+  </rule>
+
+  <rule id="133113" level="10">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^status$</field>
+    <field name="jt_php.state">^wdb_error$</field>
+    <description>[WARN] jt-php: the package inventory could not be read from wazuh-db; PHP versions are not being checked ($(jt_php.detail))</description>
+    <options>alert_by_email</options>
+  </rule>
+
+  <rule id="133114" level="3">
+    <if_sid>133100</if_sid>
+    <field name="jt_php.event">^status$</field>
+    <field name="jt_php.state">^recovered$</field>
+    <description>jt-php: php.net release data read again after $(jt_php.hours) hours</description>
+  </rule>
+
+  <!-- ================= runtime: crashes and early memory exhaustion ================= -->
+
+  <rule id="133120" level="0">
+    <decoded_as>jt-php-fpm</decoded_as>
+    <description>jt-php: PHP-FPM log message</description>
+  </rule>
+
+  <rule id="133121" level="0">
+    <decoded_as>jt-php-fpm-syslog</decoded_as>
+    <description>jt-php: PHP-FPM log message (syslog)</description>
+  </rule>
+
+  <!-- A worker killed by a fault signal: memory corruption, either a bug or
+       an exploit attempt. SIGTERM/SIGKILL/SIGQUIT are restarts and timeouts. -->
+  <rule id="133122" level="10">
+    <if_sid>133120</if_sid>
+    <field name="php.signal_name" type="pcre2">^SIG(?:SEGV|BUS|ILL|FPE|ABRT|SYS|TRAP)$</field>
+    <description>[WARN] jt-php: PHP-FPM worker crashed with $(php.signal_name) (pool $(php.pool), child $(php.child))</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_php_crash,service_availability,</group>
+  </rule>
+
+  <rule id="133123" level="10">
+    <if_sid>133121</if_sid>
+    <field name="php.signal_name" type="pcre2">^SIG(?:SEGV|BUS|ILL|FPE|ABRT|SYS|TRAP)$</field>
+    <description>[WARN] jt-php: PHP-FPM worker crashed with $(php.signal_name) (pool $(php.pool), child $(php.child))</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_php_crash,service_availability,</group>
+  </rule>
+
+  <rule id="133124" level="3">
+    <if_sid>133120,133121</if_sid>
+    <match>exited on signal </match>
+    <description>jt-php: PHP-FPM worker ended by $(php.signal_name) (restart, timeout or memory limit; pool $(php.pool))</description>
+  </rule>
+
+  <rule id="133125" level="4" ignore="600">
+    <if_sid>133120,133121</if_sid>
+    <match>reached pm.max_children setting|reached max_children setting</match>
+    <description>jt-php: PHP-FPM pool reached its process limit; requests are queuing (load or a flood of slow requests)</description>
+    <group>service_availability,</group>
+  </rule>
+
+  <!-- The kernel's own record of the crash (1010 "segfault at"), for PHP
+       processes: FPM, CGI, LiteSpeed, FrankenPHP, or a web server with mod_php
+       crashing inside libphp. -->
+  <rule id="133126" level="10">
+    <if_sid>1010</if_sid>
+    <regex type="pcre2">(?:\bphp[\w.@-]*|\blsphp\w*|\bfrankenphp)\[\d+\]: segfault at |segfault at .* in (?:lib)?php[\w.-]*\.so</regex>
+    <description>[WARN] jt-php: a PHP process segfaulted (kernel)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_php_crash,service_availability,</group>
+  </rule>
+
+  <!-- General protection fault, invalid opcode and the like, which 1010 does
+       not cover and which otherwise end at 1002 (level 2). -->
+  <rule id="133127" level="10">
+    <if_sid>1002</if_sid>
+    <regex type="pcre2">traps: (?:(?:php[\w.@-]*|lsphp\w*|frankenphp)\[\d+\] (?:general protection fault|trap invalid opcode|trap divide error|trap stack segment|trap int3)|(?:apache2|httpd)\[\d+\] (?:general protection fault|trap invalid opcode|trap divide error|trap stack segment|trap int3).* in (?:lib)?php[\w.-]*\.so)</regex>
+    <description>[WARN] jt-php: a PHP process was killed by a CPU fault (kernel)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_php_crash,service_availability,</group>
+  </rule>
+
+  <rule id="133128" level="12" frequency="3" timeframe="600">
+    <if_group>jt_php_crash</if_group>
+    <if_matched_group>jt_php_crash</if_matched_group>
+    <description>[HIGH] jt-php: PHP processes crashed 3 or more times in 10 minutes on this host (exploit attempts on memory corruption look like this)</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_php_crash_burst,</group>
+  </rule>
+
+  <!-- "Allowed memory size ... exhausted ... in Unknown on line 0": memory ran
+       out before any script file was running, while PHP was still reading the
+       request (headers, POST body, uploads). Ordinary scripts that use too
+       much memory name their own file and line and stay at the built-in 31420. -->
+  <rule id="133130" level="8">
+    <if_sid>31420</if_sid>
+    <regex type="pcre2">Allowed memory size of \d+ bytes exhausted[^"]*? in Unknown on line 0</regex>
+    <description>jt-php: PHP ran out of memory before any script ran (while parsing the request)</description>
+    <mitre>
+      <id>T1499.004</id>
+    </mitre>
+    <group>jt_php_early_oom,</group>
+  </rule>
+
+  <!-- Apache 2.4 error lines ([php:error]) end at 30301, not at the PHP rules. -->
+  <rule id="133131" level="8">
+    <if_sid>30301</if_sid>
+    <regex type="pcre2">PHP Fatal error: +Allowed memory size of \d+ bytes exhausted.*? in Unknown on line 0</regex>
+    <description>jt-php: PHP ran out of memory before any script ran (while parsing the request)</description>
+    <mitre>
+      <id>T1499.004</id>
+    </mitre>
+    <group>jt_php_early_oom,</group>
+  </rule>
+
+  <rule id="133132" level="8">
+    <if_sid>133120</if_sid>
+    <regex type="pcre2">Allowed memory size of \d+ bytes exhausted.*? in Unknown on line 0</regex>
+    <description>jt-php: PHP ran out of memory before any script ran (pool $(php.pool))</description>
+    <mitre>
+      <id>T1499.004</id>
+    </mitre>
+    <group>jt_php_early_oom,</group>
+  </rule>
+
+  <rule id="133133" level="8">
+    <if_sid>133121</if_sid>
+    <regex type="pcre2">Allowed memory size of \d+ bytes exhausted.*? in Unknown on line 0</regex>
+    <description>jt-php: PHP ran out of memory before any script ran</description>
+    <mitre>
+      <id>T1499.004</id>
+    </mitre>
+    <group>jt_php_early_oom,</group>
+  </rule>
+
+  <rule id="133134" level="12" frequency="5" timeframe="600">
+    <if_group>jt_php_early_oom</if_group>
+    <if_matched_group>jt_php_early_oom</if_matched_group>
+    <description>[HIGH] jt-php: PHP ran out of memory while parsing requests 5 or more times in 10 minutes on this host</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_php_early_oom_burst,</group>
+  </rule>
+
+  <!-- ================= configuration ================= -->
+
+  <!-- php.ini, conf.d and FPM pools: Debian/Ubuntu /etc/php/<v>/..., RHEL
+       /etc/php.ini /etc/php.d /etc/php-fpm.*, Remi SCL /etc/opt/remi/phpNN,
+       FreeBSD /usr/local/etc/php*. -->
+  <rule id="133140" level="7">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?:/etc/php/[^/]+/[^\n]*\.(?:ini|conf)|/etc/php\.ini|/etc/php\.d/[^\n]*\.ini|/etc/php-fpm\.conf|/etc/php-fpm\.d/[^\n]*\.conf|/etc/opt/remi/php\d+/[^\n]*\.(?:ini|conf)|/usr/local/etc/php\.ini|/usr/local/etc/php/[^\n]*\.ini|/usr/local/etc/php-fpm\.conf|/usr/local/etc/php-fpm\.d/[^\n]*\.conf)$</field>
+    <description>jt-php: PHP configuration changed: $(file)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>jt_php_config,</group>
+  </rule>
+
+  <rule id="133141" level="5">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^(?:/etc/php/[^/]+/[^\n]*\.(?:ini|conf)|/etc/php\.ini|/etc/php\.d/[^\n]*\.ini|/etc/php-fpm\.conf|/etc/php-fpm\.d/[^\n]*\.conf|/etc/opt/remi/php\d+/[^\n]*\.(?:ini|conf)|/usr/local/etc/php\.ini|/usr/local/etc/php/[^\n]*\.ini|/usr/local/etc/php-fpm\.conf|/usr/local/etc/php-fpm\.d/[^\n]*\.conf)$</field>
+    <description>jt-php: PHP configuration file deleted: $(file)</description>
+    <group>jt_php_config,</group>
+  </rule>
+
+  <!-- The diff adds a file PHP runs before or after every script, or lets
+       include() load code from a URL: the classic way to keep a back door
+       that survives deleting the web shell. php_admin_value[...] in a pool
+       file is the same setting. An empty or "none" value turns it off. -->
+  <rule id="133142" level="12">
+    <if_sid>133140</if_sid>
+    <field name="changed_content" type="pcre2">(?mi)^\x3e(?!\s*;)[^\n]*\b(?:auto_prepend_file|auto_append_file)\b\]?\s*=\s*(?!\s*(?:"\s*"|'\s*'|none\b|$))\S|(?mi)^\x3e(?!\s*;)[^\n]*\ballow_url_include\b\]?\s*=\s*"?(?:on|1|true|yes)\b</field>
+    <description>[HIGH] jt-php: PHP configuration now runs a file before or after every script, or includes code from URLs: $(file)</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>jt_php_config,</group>
+  </rule>
+
+  <!-- The diff removes or rewrites a restriction: disable_functions,
+       open_basedir, or FPM's security.limit_extensions (which file names
+       may run as PHP). -->
+  <rule id="133143" level="10">
+    <if_sid>133140</if_sid>
+    <field name="changed_content" type="pcre2">(?mi)^\x3c(?!\s*;)[^\n]*\b(?:disable_functions|open_basedir|security\.limit_extensions)\b\]?\s*=\s*\S</field>
+    <description>[WARN] jt-php: a PHP restriction was removed or changed (disable_functions, open_basedir or security.limit_extensions): $(file)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>jt_php_config,</group>
+  </rule>
+
+  <!-- ================= web shells in upload and media directories ================= -->
+
+  <!-- A file PHP would run (.php, .phtml, .phar, .php5, double extensions such
+       as .php.jpg) created or changed in a directory that should only hold
+       uploaded data. Library trees are left out: a package may have an
+       images/ or media/ directory of its own. -->
+  <rule id="133150" level="12">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">^(?!.*/(?:vendor|node_modules|3rdparty|libraries|app/code)/).*/(?:uploads?|user_?uploads|userfiles|images?|img|media|avatars?|attachments?|sites/[^/]+/files|storage/app/public|public/storage)/(?:[^/]+/)*[^/]+\.(?:php[0-9s]?|phtml|pht|phar|pgif)(?:\.[a-z0-9]{1,5})?$</field>
+    <description>[HIGH] jt-php: PHP file created in an upload or media directory (possible web shell): $(file)</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>jt_php_webshell,</group>
+  </rule>
+
+  <rule id="133151" level="12">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^(?!.*/(?:vendor|node_modules|3rdparty|libraries|app/code)/).*/(?:uploads?|user_?uploads|userfiles|images?|img|media|avatars?|attachments?|sites/[^/]+/files|storage/app/public|public/storage)/(?:[^/]+/)*[^/]+\.(?:php[0-9s]?|phtml|pht|phar|pgif)(?:\.[a-z0-9]{1,5})?$</field>
+    <description>[HIGH] jt-php: PHP file changed in an upload or media directory (possible web shell): $(file)</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>jt_php_webshell,</group>
+  </rule>
+
+  <!-- Nextcloud and ownCloud user data: people store source code there, and
+       the data directory is never executed. -->
+  <rule id="133152" level="3">
+    <if_sid>133150,133151</if_sid>
+    <field name="file" type="pcre2">/data/[^/]+/(?:files|files_versions|files_trashbin|uploads|cache)/</field>
+    <description>jt-php: PHP file in a file-sharing user's data directory (stored, not executed): $(file)</description>
+  </rule>
+
+  <!-- .user.ini: PHP-FPM and CGI read it in every directory a script runs
+       from, and auto_prepend_file there turns every page into a back door.
+       Nextcloud ships and rewrites its own (jt-nextcloud watches it). -->
+  <rule id="133153" level="12">
+    <if_sid>554</if_sid>
+    <field name="file" type="pcre2">^(?!.*/nextcloud[^/]*/\.user\.ini$)(?!/etc/).*/\.user\.ini$</field>
+    <description>[HIGH] jt-php: .user.ini created (per-directory PHP settings, a known persistence method): $(file)</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>jt_php_webshell,</group>
+  </rule>
+
+  <rule id="133154" level="10">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^(?!.*/nextcloud[^/]*/\.user\.ini$)(?!/etc/).*/\.user\.ini$</field>
+    <description>[WARN] jt-php: .user.ini changed (per-directory PHP settings): $(file)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>jt_php_webshell,</group>
+  </rule>
+
+  <!-- .htaccess in an upload directory: AddType/SetHandler there makes an
+       uploaded "image" run as PHP. -->
+  <rule id="133155" level="10">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^(?!.*/(?:vendor|node_modules|3rdparty|libraries)/).*/(?:uploads?|user_?uploads|userfiles|images?|img|media|avatars?|attachments?|sites/[^/]+/files|storage/app/public|public/storage)/(?:[^/]+/)*\.htaccess$</field>
+    <description>[WARN] jt-php: .htaccess created or changed in an upload or media directory: $(file)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>jt_php_webshell,</group>
+  </rule>
+
+  <!-- ================= commands run by PHP ================= -->
+
+  <!-- Windows: PHP's exec(), system(), shell_exec() and backticks all start
+       cmd.exe /c. php-cgi.exe is the web server's PHP; a shell, script host
+       or discovery tool under it is a web shell at work. Hung under the
+       built-in level 0 siblings of 61603 as well (WMI, reg, PowerShell
+       script, netsh), or those starts would end at level 0. -->
+  <rule id="133160" level="12">
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\+(?:php-cgi|php-win|httpd|lsphp)\.exe$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\+(?:cmd|powershell|pwsh|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|whoami|net1?|nltest|systeminfo|ipconfig|tasklist|quser|query|wmic|reg|schtasks|sc|curl|hostname|netstat|arp|route|nslookup)\.exe$</field>
+    <description>[HIGH] jt-php: the web server's PHP started $(win.eventdata.image) - $(win.eventdata.commandLine)</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1505.003</id>
+      <id>T1059.003</id>
+    </mitre>
+    <group>jt_php_exec,</group>
+  </rule>
+
+  <!-- php.exe is also the command line (composer, artisan, scheduled jobs),
+       which starts git and cmd as a matter of course: recorded, not mailed. -->
+  <rule id="133161" level="6">
+    <if_sid>61603,92025,92028,92042,92069</if_sid>
+    <field name="win.eventdata.parentImage" type="pcre2">(?i)\\+php\.exe$</field>
+    <field name="win.eventdata.image" type="pcre2">(?i)\\+(?:cmd|powershell|pwsh|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|whoami|net1?|nltest|systeminfo|tasklist|wmic|schtasks)\.exe$</field>
+    <description>jt-php: php.exe started $(win.eventdata.image) - $(win.eventdata.commandLine)</description>
+    <mitre>
+      <id>T1059.003</id>
+    </mitre>
+    <group>jt_php_exec,</group>
+  </rule>
+
+  <!-- Linux, with the agent group's jt-php.rules loaded into auditd: every
+       program started by the web server account outside a login session
+       (auid unset: the web server, not a person running sudo -u www-data or
+       its cron jobs). -->
+  <rule id="133170" level="3">
+    <if_sid>80700,92600</if_sid>
+    <field name="audit.key">^jt_php_exec$</field>
+    <description>jt-php: the web server account ran $(audit.exe)</description>
+    <group>jt_php_exec,</group>
+  </rule>
+
+  <!-- A shell, a downloader, an interpreter or a discovery command: what a
+       web shell runs first. -->
+  <rule id="133171" level="12">
+    <if_sid>133170</if_sid>
+    <field name="audit.exe" type="pcre2">/(?:bash|dash|sh|zsh|ksh|busybox|id|whoami|uname|hostname|ifconfig|ip|netstat|ss|ps|w|who|last|nc|ncat|netcat|socat|telnet|wget|curl|python[\d.]*|perl[\d.]*|ruby[\d.]*|base64|xxd|nslookup|dig|host|getent|crontab|at|nohup|setsid|chmod|chattr|useradd|passwd|ssh|scp)$</field>
+    <description>[HIGH] jt-php: the web server account ran $(audit.exe) ($(audit.execve.a0) $(audit.execve.a1) $(audit.execve.a2))</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1505.003</id>
+      <id>T1059.004</id>
+    </mitre>
+    <group>jt_php_exec,</group>
+  </rule>
+
+  <!-- mail() runs "sh -c /usr/sbin/sendmail -t -i": the one shell PHP
+       starts on its own. auditd writes an argument that contains a space in
+       hex, and the built-in decoder only extracts quoted arguments, so the
+       EXECVE record is read from the log itself: a2 is either quoted or hex
+       for "/usr/sbin/", "/usr/lib/" or "/usr/bin/" (optional), "sendmail",
+       then a space. Anything chained after it in the same shell is a new
+       execve and is judged by itself. -->
+  <rule id="133172" level="2">
+    <if_sid>133171</if_sid>
+    <regex type="pcre2">type=EXECVE msg=audit\([^)]*\): argc=3 a0="(?:/usr/bin/|/bin/)?(?:sh|dash|bash)" a1="-c" a2=(?:"(?:/usr/s?bin/|/usr/lib/)?sendmail"|(?:2F7573722F7362696E2F|2F7573722F6C69622F|2F7573722F62696E2F)?73656E646D61696C20[0-9A-F]*)(?:\s|$)</regex>
+    <description>jt-php: PHP mail() started the sendmail shell</description>
+  </rule>
+
+  <!-- ================= PHP-CGI argument injection ================= -->
+
+  <!-- A query string that starts with a dash, or its encodings (%2d, and the
+       soft hyphen %ad that Windows turns into a dash, CVE-2024-4577), is read
+       by php-cgi as command line options (-d allow_url_include=1, -s for the
+       source). The built-in 31110 sees only a literal "?-d" and a few others. -->
+  <rule id="133180" level="8">
+    <if_sid>31100,31108</if_sid>
+    <url type="pcre2">\?(?:-|%2[dD]|%[aA][dD])[a-zA-Z]</url>
+    <description>jt-php: PHP-CGI argument injection attempt: $(url)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>attack,jt_php_cgi,</group>
+  </rule>
+
+  <!-- The same request to php-cgi itself answered 2xx: the interpreter is
+       reachable from the web, the configuration the vulnerability needs. -->
+  <rule id="133181" level="12">
+    <if_sid>133180</if_sid>
+    <id>^2</id>
+    <url type="pcre2">(?i)^/(?:[^?]*/)?(?:php-cgi(?:\.exe)?|php\d?(?:\.exe)?)(?:\?|$)</url>
+    <description>[HIGH] jt-php: PHP-CGI argument injection answered $(id) by php-cgi itself: $(url)</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>attack,jt_php_cgi,</group>
+  </rule>
+
+</group>

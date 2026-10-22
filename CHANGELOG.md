@@ -4,6 +4,41 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.20.0 (2026-10-22)
+
+- **New pack jt-php 1.0 (133100-133199).** On 2026-10-21 php.net fixed two unauthenticated
+  remote code execution flaws in PHP's request handling (CVE-2026-109618/109619, CVSS 9.2);
+  a day later Wazuh's vulnerability feed still did not list them. A manager-side script,
+  run every six hours on every cluster node, compares the PHP that syscollector found on
+  each agent with php.net's release list and reports, attributed to the agent: behind a
+  security release of a supported branch, or on a branch php.net no longer fixes, level 12
+  and mailed, reminded weekly, reported again when a newer release appears and as fixed
+  when updated. Packages that carry php.net's versions (deb.sury.org, Remi, FreeBSD,
+  Alpine, Homebrew, Windows) are compared with php.net; distribution packages that
+  backport fixes (Debian, Ubuntu, RHEL) are reported once at level 3, or 5 on a branch
+  php.net no longer supports; command-line-only installs are level 7. Also: PHP-FPM
+  workers killed by SIGSEGV and similar faults (PHP-FPM's log had no decoder), the
+  kernel's segfault and CPU-fault lines for PHP processes, memory exhausted "in Unknown on
+  line 0" (before any script ran), with bursts at level 12; php.ini and FPM pool diffs
+  that add auto_prepend_file or allow_url_include (level 12) or remove disable_functions,
+  open_basedir or security.limit_extensions (level 10); PHP files, .user.ini and .htaccess
+  in upload and media directories; shells and discovery tools started by php-cgi.exe
+  (Sysmon) or by the web server account (optional auditd rules); PHP-CGI argument
+  injection including the soft-hyphen form of CVE-2024-4577.
+- **Light theme.** A Theme menu next to the language menu, on the login page too, switches
+  between the dark theme (unchanged, the default), a light theme and following the
+  system setting. The choice is kept in the browser and applied before the page is drawn,
+  so a light page never flashes dark; open configuration editors switch with it. Light
+  text meets WCAG AA contrast on its backgrounds (a test enforces 4.5:1). On screens
+  760 px wide or narrower the header, statistics and tabs now wrap instead of pushing the
+  language, settings and logout buttons off-screen.
+- **Offline install and upgrade.** install.sh --offline installs or upgrades from an
+  extracted release with its Python wheels next to it (or --wheels DIR), without network
+  access and without pip on the manager; the new environment is checked before it replaces
+  the old one. New pages on the project site (English, 繁體中文, 日本語) describe preparing
+  the bundle, installing, upgrading, rolling back and mismatched wheels; the README links
+  them. The installer now also fetches every icon the interface uses, not only the logo.
+
 ## v1.19.0 (2026-10-22)
 
 - **jt-account-guard 1.1: an internal machine guessing logins on many hosts.** The

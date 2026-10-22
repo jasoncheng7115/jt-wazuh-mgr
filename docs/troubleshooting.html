@@ -101,6 +101,9 @@
 
   footer{border-top:1px solid var(--line);padding:26px 0 44px;color:var(--muted);font-size:14px}
   footer a{color:var(--muted);text-decoration:underline}
+  /* grid items default to min-width:auto, so a long <pre> would widen the page on phones */
+  .layout > *{min-width:0}
+  .brand span{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -110,6 +113,7 @@
     <a class="brand" href="index.html"><img src="img/icon.svg" alt="" width="28" height="28"><span>jt-wazuh-mgr</span></a>
     <div class="nav-links">
       <a href="index.html">Home</a>
+      <a href="offline-install.html">Offline install</a>
       <a class="gh" href="https://github.com/jasoncheng7115/jt-wazuh-mgr" target="_blank" rel="noopener">GitHub</a>
       <a class="lang" href="troubleshooting-zh-TW.html" hreflang="zh-TW">繁體中文</a>
       <a class="lang" href="troubleshooting-ja.html" hreflang="ja">日本語</a>
@@ -413,39 +417,17 @@ sudo systemctl start jt-wazuh-mgr</code></pre>
         <h2><span class="dot"></span>Offline and air-gapped installs</h2>
 
         <div class="qa">
-          <h3>Installing where the manager has no internet at all</h3>
-          <p>Do the fetching on a machine that has a connection, then carry the result across.</p>
-          <p><b>On the connected machine:</b></p>
-          <pre><code>git clone --depth 1 https://github.com/jasoncheng7115/jt-wazuh-mgr.git
-tar czf jt-wazuh-mgr.tgz -C jt-wazuh-mgr lib packs images \
-    wazuh_agent_mgr.py create_api_user.py requirements.txt \
-    config.yaml jt-wazuh-mgr.service uninstall.sh
-pip download -r jt-wazuh-mgr/requirements.txt -d wheels
-tar czf wheels.tgz wheels</code></pre>
-          <p><b>On the manager:</b></p>
-          <pre><code>sudo mkdir -p /opt/jt-wazuh-mgr
-sudo tar xzf jt-wazuh-mgr.tgz -C /opt/jt-wazuh-mgr
-tar xzf wheels.tgz
-sudo pip install --no-index --find-links=wheels -r /opt/jt-wazuh-mgr/requirements.txt
-sudo cp /opt/jt-wazuh-mgr/jt-wazuh-mgr.service /etc/systemd/system/
-sudo systemctl daemon-reload &amp;&amp; sudo systemctl enable --now jt-wazuh-mgr</code></pre>
-          <div class="note"><b>Build the wheels on a matching Python.</b> Compiled packages are built
-            for one interpreter version: wheels made for Python 3.10 fail to import on 3.12. Check
-            <code>python3 -V</code> on both machines first.</div>
-        </div>
-
-        <div class="qa">
-          <h3>Upgrading an offline install</h3>
-          <p>Do not run <code>install.sh</code> there — it will try to reach GitHub and PyPI, and it
-             will overwrite a service unit you may have customised for this environment. Replace the
-             program files only:</p>
-          <pre><code>sudo systemctl stop jt-wazuh-mgr
-sudo tar xzf jt-wazuh-mgr.tgz -C /opt/jt-wazuh-mgr
-sudo rm -rf /opt/jt-wazuh-mgr/lib/__pycache__
-sudo systemctl start jt-wazuh-mgr
-grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py</code></pre>
-          <p>Dependencies rarely change between releases; if <code>requirements.txt</code> did change,
-             carry across a fresh set of wheels as well.</p>
+          <h3>How do I install or upgrade when the manager has no internet access?</h3>
+          <p>Build one archive on a machine that has internet access &mdash; the release plus the Python wheels for the
+             manager's Python version &mdash; copy it over, and run the installer from it:</p>
+          <pre><code>tar xzf /root/jt-wazuh-mgr-X.Y.Z-offline.tar.gz -C /root
+sudo bash /root/jt-wazuh-mgr-X.Y.Z/install.sh --offline</code></pre>
+          <p>With <code>--offline</code> the installer copies everything from the extracted directory and installs the wheels
+             from its <code>wheels/</code> directory into <code>/opt/jt-wazuh-mgr/vendor</code>; it never runs <code>curl</code>,
+             <code>apt</code> or <code>dnf</code>, and pip is optional. Upgrades work the same way and keep <code>config.yaml</code>.</p>
+          <p>The full procedure &mdash; building the archive, matching the Python version, verifying, upgrading, rolling back and
+             the manual steps for v1.19.0 and earlier &mdash; is on its own page:
+             <a href="offline-install.html"><b>Offline install &amp; upgrade</b></a>.</p>
         </div>
       </section>
 

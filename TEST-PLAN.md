@@ -16,7 +16,7 @@ the screen. None of them substitutes for another.
 ## Running everything
 
 ```bash
-python3 -m unittest discover -s tests     # 398 tests, fully offline
+python3 -m unittest discover -s tests     # 433 tests, fully offline
 python3 tools/preflight.py                # 21 mechanical pre-release checks
 
 # on a host without a system Flask
@@ -136,7 +136,7 @@ release-time change.
 ## Layer 4 — browser journeys, automated
 
 ```bash
-tests/e2e/run.sh          # 23 journeys, 116 checks, needs docker
+tests/e2e/run.sh          # 24 journeys, 126 checks, needs docker
 ```
 
 `tests/e2e/mock_api.py` serves the real application against a mocked, stateful
@@ -322,7 +322,7 @@ Stated plainly, because a test plan that implies more coverage than exists is
 worse than a short one.
 
 - **Browser automation covers the main journeys only.** Layer 4 drives a real
-  browser through 23 journeys; everything in Layer 4b is still checked by hand.
+  browser through 24 journeys; everything in Layer 4b is still checked by hand.
 - **The success paths of destructive routes are not exercised in CI**, for the
   reason given in Layer 1.
 - **No load or concurrency testing.** Behaviour with thousands of agents, or with

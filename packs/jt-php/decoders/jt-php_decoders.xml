@@ -1,0 +1,38 @@
+<!--
+  jt-php - PHP-FPM's own log
+  File:    jt-php_decoders.xml
+  Licence: AGPL-3.0-or-later    Jason Tools Co., Ltd.
+
+  Wazuh 4.14 has no decoder for PHP-FPM's master log, so a worker killed by a
+  signal was never seen. Two shapes:
+
+    file   (error_log = /var/log/php8.2-fpm.log, the Debian/Ubuntu/RHEL default)
+      [22-Oct-2026 10:00:01] WARNING: [pool www] child 4242 exited on signal 11 (SIGSEGV - core dumped) after 3.5 seconds from start
+    syslog (error_log = syslog, FreeBSD and some containers)
+      php-fpm[812]: [WARNING] [pool www] child 4242 exited on signal 11 (SIGSEGV) after 3.5 seconds from start
+
+  The file shape has no program name, so the pre-decoder leaves the line whole
+  and a top-level decoder without program_name is tried on it. Fields are
+  dynamic (php.*). No JSON here, so nothing is a child of the json decoder.
+-->
+
+<decoder name="jt-php-fpm">
+  <prematch type="pcre2">^\[\d\d-\w{3}-\d{4} \d\d:\d\d:\d\d(?:\.\d+)?\] (?:NOTICE|WARNING|ERROR|ALERT|DEBUG): </prematch>
+</decoder>
+
+<decoder name="jt-php-fpm-exit">
+  <parent>jt-php-fpm</parent>
+  <regex type="pcre2">\[pool ([^\]\s]+)\] child (\d+) exited on signal (\d+) \((SIG[A-Z0-9]+)</regex>
+  <order>php.pool, php.child, php.signal, php.signal_name</order>
+</decoder>
+
+<decoder name="jt-php-fpm-syslog">
+  <program_name type="pcre2">^php-fpm</program_name>
+  <prematch type="pcre2">^\[(?:NOTICE|WARNING|ERROR|ALERT|DEBUG)\] </prematch>
+</decoder>
+
+<decoder name="jt-php-fpm-syslog-exit">
+  <parent>jt-php-fpm-syslog</parent>
+  <regex type="pcre2">\[pool ([^\]\s]+)\] child (\d+) exited on signal (\d+) \((SIG[A-Z0-9]+)</regex>
+  <order>php.pool, php.child, php.signal, php.signal_name</order>
+</decoder>

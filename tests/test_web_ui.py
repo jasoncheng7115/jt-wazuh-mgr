@@ -16,6 +16,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import textwrap
@@ -2445,6 +2446,167 @@ class TestPythonCompatibility(unittest.TestCase):
         for name in ('wazuh_agent_mgr.py', 'create_api_user.py'):
             with open(os.path.join(self.ROOT, name), encoding='utf-8') as fh:
                 self.assertIn("'vendor')", fh.read(), name)
+
+
+# --------------------------------------------------------------------------
+# Colour themes
+# --------------------------------------------------------------------------
+
+class TestThemes(unittest.TestCase):
+    """Dark (the original look, the default) and light, switched in the header."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.head = web_ui._THEME_HEAD
+        cls.dark = cls._palette(cls.head, ':root {')
+        cls.light = cls._palette(cls.head, 'html[data-theme="light"] {')
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with io.open(os.path.join(root, 'lib', 'i18n_engine.js'), encoding='utf-8') as fh:
+            cls.engine = fh.read()
+
+    @staticmethod
+    def _palette(src, marker):
+        start = src.index(marker) + len(marker)
+        body = src[start:src.index('}', start)]
+        return dict(re.findall(r'(--[\w-]+)\s*:\s*([^;]+);', body))
+
+    @staticmethod
+    def _contrast(a, b):
+        def lum(h):
+            h = h.lstrip('#')
+            if len(h) == 3:
+                h = ''.join(c * 2 for c in h)
+            def ch(c):
+                c = int(c, 16) / 255.0
+                return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+            r, g, b_ = ch(h[0:2]), ch(h[2:4]), ch(h[4:6])
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b_
+        hi, lo = sorted((lum(a), lum(b)), reverse=True)
+        return (hi + 0.05) / (lo + 0.05)
+
+    def test_both_pages_load_the_theme_before_any_stylesheet(self):
+        """Applied before the first paint, or a light setting flashes dark first."""
+        for name in ('HTML_TEMPLATE', 'LOGIN_TEMPLATE'):
+            tpl = getattr(web_ui, name)
+            head = tpl[:tpl.index('</head>')]
+            with self.subTest(page=name):
+                self.assertIn(self.head, head)
+                at = head.index("localStorage.getItem(KEY)")
+                for css in ('<style>', 'rel="stylesheet"'):
+                    if css in head:
+                        self.assertLess(at, head.index(css), css)
+
+    def test_dark_is_the_default_and_light_redefines_every_token(self):
+        self.assertIn("var pref = 'dark';", self.head)
+        self.assertGreater(len(self.dark), 40)
+        self.assertEqual(set(self.dark) - set(self.light), set(),
+                         'a token with no light value stays dark on the light page')
+
+    def test_every_variable_used_is_defined(self):
+        """var(--typo) silently falls back to nothing: text vanishes, no error."""
+        used = set()
+        for src in (web_ui.HTML_TEMPLATE, web_ui.LOGIN_TEMPLATE):
+            used |= set(re.findall(r'var\((--[\w-]+)', src))
+        self.assertEqual(sorted(used - set(self.dark)), [])
+
+    def test_dark_surfaces_are_not_hard_coded_any_more(self):
+        """A new rule written with the dark page colour stays dark on the light page."""
+        surfaces = ('#1a1a2e', '#16213e', '#0f3460', '#0a0a15')
+        for name in ('HTML_TEMPLATE', 'LOGIN_TEMPLATE'):
+            # a fallback inside var(--token, #hex) is fine: it is the dark value
+            tpl = re.sub(r'var\([^)]*\)', 'var()', getattr(web_ui, name).replace(self.head, ''))
+            for hexv in surfaces:
+                with self.subTest(page=name, colour=hexv):
+                    m = re.search(r'(?:background(?:-color)?|border(?:-[a-z]+)?)\s*:\s*[^;"\']*'
+                                  + hexv + r'\b', tpl)
+                    self.assertIsNone(m, m and tpl[max(0, m.start() - 80):m.end() + 20])
+
+    def test_light_text_meets_wcag_aa(self):
+        backgrounds = ('--bg', '--panel', '--surface', '--sunken')
+        texts = ('--text', '--text-dim', '--text-muted', '--text-faint', '--accent',
+                 '--danger', '--warning', '--success', '--info', '--orange')
+        for fg in texts:
+            for bg in backgrounds:
+                ratio = self._contrast(self.light[fg], self.light[bg])
+                with self.subTest(fg=fg, bg=bg):
+                    self.assertGreaterEqual(ratio, 4.5, '%s on %s is %.2f:1' % (fg, bg, ratio))
+
+    def test_dark_values_are_the_original_colours(self):
+        """The dark theme is the look the tool always had; spot-check the main ones."""
+        expect = {'--bg': '#1a1a2e', '--panel': '#16213e', '--surface': '#0f3460',
+                  '--sunken': '#0a0a15', '--text': '#eee', '--text-dim': '#aaa',
+                  '--text-muted': '#888', '--accent': '#4fc3f7', '--danger': '#e94560',
+                  '--border': '#0f3460'}
+        for k, v in expect.items():
+            self.assertEqual(self.dark[k], v, k)
+
+    def test_editors_follow_the_theme(self):
+        self.assertNotIn("theme: 'dracula',", web_ui.HTML_TEMPLATE)
+        self.assertIn('window.jtwzCmTheme()', web_ui.HTML_TEMPLATE)
+        # no new external resource: the light editor uses CodeMirror's built-in default theme
+        self.assertEqual(len(re.findall(r'cdnjs\.cloudflare\.com', web_ui.HTML_TEMPLATE)), 6)
+
+    def test_theme_control_is_next_to_the_language_menu(self):
+        self.assertIn("btn.id = 'themeToggle';", self.engine)
+        self.assertIn('buildThemeToggle(buildToggle());', self.engine)
+        self.assertIn('hb.insertBefore(wrap, langWrap.nextSibling)', self.engine)
+        for name in ('HTML_TEMPLATE', 'LOGIN_TEMPLATE'):
+            self.assertIn("btn.id = 'themeToggle';", getattr(web_ui, name), name)
+
+    def test_theme_strings_are_translated(self):
+        block = self.engine[self.engine.index('var I18N ='):self.engine.index('var I18N_PATTERNS =')]
+        for lang in ('zh-TW', 'ja'):
+            sub = block[block.index("'%s': {" % lang):]
+            sub = sub[:sub.index('\n    }')]
+            for key in ('Theme', 'Dark', 'Light', 'Follow system'):
+                with self.subTest(lang=lang, key=key):
+                    self.assertRegex(sub, r"\n\s*'%s':\s*'[^']+'" % re.escape(key))
+        self.assertIn("'Light': '淺色'", block)
+        self.assertIn("'Dark': '深色'", block)
+
+    def test_head_script_applies_and_persists_the_choice(self):
+        if not shutil.which('node'):
+            self.skipTest('node not available')
+        script = self.head[self.head.index('<script>') + 8:self.head.index('</script>')]
+        harness = textwrap.dedent('''
+            function run(stored, opts) {
+                opts = opts || {};
+                const attrs = {}, store = {};
+                if (stored !== undefined) store.jtwz_theme = stored;
+                global.document = {
+                    documentElement: { setAttribute: (k, v) => { attrs[k] = v; }, getAttribute: k => attrs[k] },
+                    querySelectorAll: () => [],
+                };
+                global.localStorage = opts.storageThrows
+                    ? { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } }
+                    : { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); } };
+                global.window = {
+                    matchMedia: () => ({ matches: !!opts.osLight, addEventListener() {} }),
+                    dispatchEvent() {},
+                };
+                global.CustomEvent = function () {};
+                new Function(SCRIPT)();
+                return { attrs, store, win: global.window };
+            }
+            const out = [];
+            let r = run(undefined); out.push(['nothing stored -> dark', r.attrs['data-theme'] === 'dark']);
+            r = run('light'); out.push(['stored light', r.attrs['data-theme'] === 'light']);
+            out.push(['editor theme follows', r.win.jtwzCmTheme() === 'default']);
+            r = run('nonsense'); out.push(['garbage -> dark', r.attrs['data-theme'] === 'dark']);
+            r = run(undefined, { storageThrows: true }); out.push(['blocked storage -> dark', r.attrs['data-theme'] === 'dark']);
+            r = run('system', { osLight: true }); out.push(['system + light OS', r.attrs['data-theme'] === 'light' && r.attrs['data-theme-pref'] === 'system']);
+            r = run('system', { osLight: false }); out.push(['system + dark OS', r.attrs['data-theme'] === 'dark']);
+            r = run(undefined); r.win.jtwzSetTheme('light');
+            out.push(['set persists', r.store.jtwz_theme === 'light' && r.attrs['data-theme'] === 'light']);
+            out.push(['pref reported', r.win.jtwzThemePref() === 'light']);
+            r = run(undefined, { storageThrows: true }); r.win.jtwzSetTheme('light');
+            out.push(['set works without storage', r.attrs['data-theme'] === 'light']);
+            const bad = out.filter(o => !o[1]).map(o => o[0]);
+            if (bad.length) { console.log(bad.join('; ')); process.exit(1); }
+        ''')
+        result = subprocess.run(['node', '-e', 'const SCRIPT = %s;\n%s' % (json.dumps(script), harness)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 # --------------------------------------------------------------------------

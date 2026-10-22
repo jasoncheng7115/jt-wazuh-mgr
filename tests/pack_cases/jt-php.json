@@ -1,0 +1,547 @@
+{
+ "pack": "jt-php",
+ "note": "log lines synthesized from PHP-FPM (fpm_children.c), kernel, nginx and Apache formats; version events in the shape jt-php-versions.py writes; addresses are documentation ranges",
+ "fim_cases_note": "fim cases are syscheck events sent to the sandbox analysisd queue (tools/pack_sandbox.py)",
+ "cases": [
+  {
+   "log": "[22-Oct-2026 10:00:01] WARNING: [pool www] child 4242 exited on signal 11 (SIGSEGV - core dumped) after 3.512034 seconds from start",
+   "expect_rule": "133122",
+   "expect_level": 10,
+   "note": "fpm file log: worker SIGSEGV",
+   "location": "/var/log/php8.2-fpm.log"
+  },
+  {
+   "log": "[22-Oct-2026 10:00:01] WARNING: [pool www] child 4242 exited on signal 7 (SIGBUS) after 0.101 seconds from start",
+   "expect_rule": "133122",
+   "expect_level": 10,
+   "note": "fpm: SIGBUS",
+   "location": "/var/log/php8.2-fpm.log"
+  },
+  {
+   "log": "Oct 22 10:00:01 web1 php-fpm[812]: [WARNING] [pool www] child 4242 exited on signal 11 (SIGSEGV) after 3.512034 seconds from start",
+   "expect_rule": "133123",
+   "expect_level": 10,
+   "note": "fpm via syslog: SIGSEGV"
+  },
+  {
+   "log": "Oct 22 10:00:01 web1 php-fpm8.3[812]: [WARNING] [pool nextcloud] child 4242 exited on signal 6 (SIGABRT - core dumped) after 9.1 seconds from start",
+   "expect_rule": "133123",
+   "expect_level": 10,
+   "note": "fpm via syslog, versioned program name: SIGABRT"
+  },
+  {
+   "log": "[22-Oct-2026 10:00:01] WARNING: [pool www] child 4242 exited on signal 9 (SIGKILL) after 300.001 seconds from start",
+   "expect_rule": "133124",
+   "expect_level": 3,
+   "note": "near miss: SIGKILL after request_terminate_timeout",
+   "location": "/var/log/php8.2-fpm.log"
+  },
+  {
+   "log": "[22-Oct-2026 10:00:01] NOTICE: [pool www] child 4250 exited on signal 15 (SIGTERM) after 0.2 seconds from start",
+   "expect_rule": "133124",
+   "expect_level": 3,
+   "note": "near miss: SIGTERM on reload",
+   "location": "/var/log/php8.2-fpm.log"
+  },
+  {
+   "log": "[22-Oct-2026 10:00:01] NOTICE: [pool www] child 4250 started",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: worker started",
+   "location": "/var/log/php8.2-fpm.log"
+  },
+  {
+   "log": "[22-Oct-2026 10:00:01] WARNING: [pool www] server reached pm.max_children setting (5), consider raising it",
+   "expect_rule": "133125",
+   "expect_level": 4,
+   "note": "fpm pool saturated",
+   "location": "/var/log/php8.2-fpm.log"
+  },
+  {
+   "log": "[22-Oct-2026 10:00:01] WARNING: [pool www] child 4242 exited on signal 11 (SIGSEGV - core dumped) after 3.512034 seconds from start",
+   "expect_rule": "133128",
+   "expect_level": 12,
+   "note": "three worker crashes in one session: burst",
+   "location": "/var/log/php8.2-fpm.log",
+   "repeat": 3
+  },
+  {
+   "log": "Oct 22 10:00:01 web1 kernel: [123456.789012] php-fpm8.2[4242]: segfault at 10 ip 00007f1c2a3b4c5d sp 00007ffd1e2f3a40 error 4 in libphp8.2.so[7f1c2a200000+400000]",
+   "expect_rule": "133126",
+   "expect_level": 10,
+   "note": "kernel: php-fpm segfault"
+  },
+  {
+   "log": "Oct 22 10:00:01 web1 kernel: [123456.789012] apache2[4242]: segfault at 0 ip 00007f1c2a3b4c5d sp 00007ffd1e2f3a40 error 6 in libphp8.2.so[7f1c2a200000+400000]",
+   "expect_rule": "133126",
+   "expect_level": 10,
+   "note": "kernel: apache2 crashing inside mod_php"
+  },
+  {
+   "log": "Oct 22 10:00:01 web1 kernel: [123456.789012] python3[4242]: segfault at 0 ip 00007f1c2a3b4c5d sp 00007ffd1e2f3a40 error 6 in libc.so.6[7f1c2a028000+195000]",
+   "expect_rule": "1010",
+   "expect_level": 5,
+   "note": "near miss: another program segfaulted (built-in)"
+  },
+  {
+   "log": "Oct 22 10:00:01 web1 kernel: [123456.789012] traps: php-fpm8.2[4242] general protection fault ip:7f1c2a3b4c5d sp:7ffd1e2f3a40 error:0 in libc.so.6[7f1c2a028000+195000]",
+   "expect_rule": "133127",
+   "expect_level": 10,
+   "note": "kernel: general protection fault in php-fpm"
+  },
+  {
+   "log": "Oct 22 10:00:01 web1 kernel: [123456.789012] traps: node[4242] general protection fault ip:7f1c2a3b4c5d sp:7ffd1e2f3a40 error:0 in node[400000+2000000]",
+   "expect_rule": "1002",
+   "expect_level": 2,
+   "note": "near miss: general protection fault in another program (built-in)"
+  },
+  {
+   "log": "2026/10/22 10:00:01 [error] 812#812: *123 FastCGI sent in stderr: \"PHP message: PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 65536 bytes) in Unknown on line 0\" while reading response header from upstream, client: 203.0.113.9, server: example.org, request: \"POST /index.php HTTP/1.1\", upstream: \"fastcgi://unix:/run/php/php8.2-fpm.sock:\", host: \"example.org\"",
+   "expect_rule": "133130",
+   "expect_level": 8,
+   "note": "nginx: memory exhausted before any script ran",
+   "location": "/var/log/nginx/error.log"
+  },
+  {
+   "log": "2026/10/22 10:00:01 [error] 812#812: *123 FastCGI sent in stderr: \"PHP message: PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 20480 bytes) in /var/www/html/lib/Report.php on line 212\" while reading response header from upstream, client: 203.0.113.9, server: example.org, request: \"GET /report HTTP/1.1\", upstream: \"fastcgi://unix:/run/php/php8.2-fpm.sock:\", host: \"example.org\"",
+   "expect_rule": "31420",
+   "expect_level": 5,
+   "note": "near miss: a script used too much memory (built-in)",
+   "location": "/var/log/nginx/error.log"
+  },
+  {
+   "log": "[Wed Oct 22 10:00:01.123456 2026] [php:error] [pid 4242] [client 203.0.113.9:51234] PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 65536 bytes) in Unknown on line 0",
+   "expect_rule": "133131",
+   "expect_level": 8,
+   "note": "apache 2.4: memory exhausted before any script ran",
+   "location": "/var/log/apache2/error.log"
+  },
+  {
+   "log": "[Wed Oct 22 10:00:01.123456 2026] [php:error] [pid 4242] [client 203.0.113.9:51234] PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 20480 bytes) in /var/www/html/index.php on line 10",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: apache 2.4, script memory (built-in 30301, level 0)",
+   "location": "/var/log/apache2/error.log"
+  },
+  {
+   "log": "[22-Oct-2026 10:00:01] WARNING: [pool www] child 4242 said into stderr: \"PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 65536 bytes) in Unknown on line 0\"",
+   "expect_rule": "133132",
+   "expect_level": 8,
+   "note": "fpm catch_workers_output: early memory exhaustion",
+   "location": "/var/log/php8.2-fpm.log"
+  },
+  {
+   "log": "2026/10/22 10:00:01 [error] 812#812: *123 FastCGI sent in stderr: \"PHP message: PHP Fatal error:  Allowed memory size of 134217728 bytes exhausted (tried to allocate 65536 bytes) in Unknown on line 0\" while reading response header from upstream, client: 203.0.113.9, server: example.org, request: \"POST /index.php HTTP/1.1\", upstream: \"fastcgi://unix:/run/php/php8.2-fpm.sock:\", host: \"example.org\"",
+   "expect_rule": "133134",
+   "expect_level": 12,
+   "note": "early memory exhaustion repeated: burst (through nginx and the built-in 31420 it fires on the sixth line in logtest, through PHP-FPM on the fifth)",
+   "location": "/var/log/nginx/error.log",
+   "repeat": 6
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"8.2\",\"kind\":\"upstream\",\"installed\":\"8.2.29\",\"latest\":\"8.2.35\",\"packages\":\"libapache2-mod-php8.2,php8.2-fpm\",\"packager\":\"deb.sury.org\",\"sapi\":\"web\",\"security_releases\":6,\"since\":\"2026-10-22\",\"status\":\"behind_security\",\"change\":\"new\"}}",
+   "expect_rule": "133102",
+   "expect_level": 12,
+   "note": "version: behind a security release, web SAPI",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"8.2\",\"kind\":\"upstream\",\"installed\":\"8.2.29\",\"latest\":\"8.2.35\",\"packages\":\"libapache2-mod-php8.2,php8.2-fpm\",\"packager\":\"deb.sury.org\",\"sapi\":\"web\",\"security_releases\":6,\"since\":\"2026-10-22\",\"status\":\"behind_security\",\"change\":\"changed\",\"previous_status\":\"behind\"}}",
+   "expect_rule": "133102",
+   "expect_level": 12,
+   "note": "version: a new security release made it behind",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"8.0\",\"kind\":\"upstream\",\"installed\":\"8.0.29\",\"latest\":\"8.0.30\",\"packages\":\"libapache2-mod-php8.2,php8.2-fpm\",\"packager\":\"deb.sury.org\",\"sapi\":\"web\",\"security_releases\":1,\"since\":\"2026-10-22\",\"status\":\"eol\",\"change\":\"new\"}}",
+   "expect_rule": "133103",
+   "expect_level": 12,
+   "note": "version: unsupported branch",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"8.2\",\"kind\":\"upstream\",\"installed\":\"8.2.29\",\"latest\":\"8.2.35\",\"packages\":\"php8.2-cli,php8.2-common\",\"packager\":\"deb.sury.org\",\"sapi\":\"cli\",\"security_releases\":6,\"since\":\"2026-10-22\",\"status\":\"behind_security\",\"change\":\"new\"}}",
+   "expect_rule": "133104",
+   "expect_level": 7,
+   "note": "version: command line only",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"7.4\",\"kind\":\"upstream\",\"installed\":\"7.4.33\",\"latest\":\"8.2.35\",\"packages\":\"libapache2-mod-php8.2,php8.2-fpm\",\"packager\":\"deb.sury.org\",\"sapi\":\"cli\",\"security_releases\":6,\"since\":\"2026-10-22\",\"status\":\"eol\",\"change\":\"new\"}}",
+   "expect_rule": "133104",
+   "expect_level": 7,
+   "note": "version: command line only, unsupported branch",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"8.2\",\"kind\":\"upstream\",\"installed\":\"8.2.29\",\"latest\":\"8.2.35\",\"packages\":\"libapache2-mod-php8.2,php8.2-fpm\",\"packager\":\"deb.sury.org\",\"sapi\":\"web\",\"security_releases\":6,\"since\":\"2026-10-22\",\"status\":\"behind_security\",\"change\":\"reminder\"}}",
+   "expect_rule": "133105",
+   "expect_level": 8,
+   "note": "version: weekly reminder",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"8.2\",\"kind\":\"upstream\",\"installed\":\"8.2.29\",\"latest\":\"8.2.35\",\"packages\":\"libapache2-mod-php8.2,php8.2-fpm\",\"packager\":\"deb.sury.org\",\"sapi\":\"web\",\"security_releases\":0,\"since\":\"2026-10-22\",\"status\":\"behind\",\"change\":\"new\"}}",
+   "expect_rule": "133106",
+   "expect_level": 5,
+   "note": "version: behind a bug-fix release only",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"8.2\",\"kind\":\"distro\",\"installed\":\"8.1.2\",\"latest\":\"8.2.35\",\"packages\":\"php8.1-fpm\",\"packager\":\"ubuntu\",\"sapi\":\"web\",\"security_releases\":6,\"since\":\"2026-10-22\",\"status\":\"distro\",\"change\":\"new\"}}",
+   "expect_rule": "133107",
+   "expect_level": 3,
+   "note": "version: distribution package",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"7.4\",\"kind\":\"distro\",\"installed\":\"7.4.33\",\"latest\":\"8.2.35\",\"packages\":\"libapache2-mod-php8.2,php8.2-fpm\",\"packager\":\"debian\",\"sapi\":\"web\",\"security_releases\":6,\"since\":\"2026-10-22\",\"status\":\"distro_eol\",\"change\":\"new\"}}",
+   "expect_rule": "133108",
+   "expect_level": 5,
+   "note": "version: distribution package on an unsupported branch",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"8.2\",\"kind\":\"upstream\",\"installed\":\"8.2.35\",\"latest\":\"8.2.35\",\"packages\":\"libapache2-mod-php8.2,php8.2-fpm\",\"packager\":\"deb.sury.org\",\"sapi\":\"web\",\"security_releases\":6,\"since\":\"2026-10-22\",\"status\":\"current\",\"change\":\"fixed\",\"previous_status\":\"behind_security\"}}",
+   "expect_rule": "133109",
+   "expect_level": 3,
+   "note": "version: updated",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"8.2\",\"kind\":\"upstream\",\"installed\":\"8.2.29\",\"latest\":\"8.2.35\",\"packages\":\"libapache2-mod-php8.2,php8.2-fpm\",\"packager\":\"deb.sury.org\",\"sapi\":\"web\",\"security_releases\":6,\"since\":\"2026-10-22\",\"status\":\"removed\",\"change\":\"fixed\",\"previous_status\":\"eol\"}}",
+   "expect_rule": "133109",
+   "expect_level": 3,
+   "note": "version: PHP removed",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"8.2\",\"kind\":\"upstream\",\"installed\":\"8.2.35\",\"latest\":\"8.2.35\",\"packages\":\"libapache2-mod-php8.2,php8.2-fpm\",\"packager\":\"deb.sury.org\",\"sapi\":\"web\",\"security_releases\":6,\"since\":\"2026-10-22\",\"status\":\"current\",\"change\":\"new\"}}",
+   "expect_rule": "133101",
+   "expect_level": 2,
+   "note": "version: current (quiet)",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"release\",\"branch\":\"8.3\",\"latest\":\"8.3.36\",\"previous\":\"8.3.35\",\"security\":\"yes\"}}",
+   "expect_rule": "133110",
+   "expect_level": 3,
+   "note": "php.net released a version",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"status\",\"state\":\"failing\",\"hours\":0,\"detail\":\"URLError: timed out\"}}",
+   "expect_rule": "133111",
+   "expect_level": 5,
+   "note": "php.net unreachable",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"status\",\"state\":\"stale\",\"hours\":49,\"detail\":\"URLError: timed out\"}}",
+   "expect_rule": "133112",
+   "expect_level": 10,
+   "note": "php.net unreachable for two days",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"status\",\"state\":\"wdb_error\",\"detail\":\"wazuh-db: err\"}}",
+   "expect_rule": "133113",
+   "expect_level": 10,
+   "note": "inventory unreadable",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"status\",\"state\":\"recovered\",\"hours\":50}}",
+   "expect_rule": "133114",
+   "expect_level": 3,
+   "note": "php.net reachable again",
+   "location": "jt-php"
+  },
+  {
+   "log": "{\"jt_php\":{\"event\":\"version\",\"agent_id\":\"005\",\"agent_name\":\"web1\",\"branch\":\"8.2\",\"kind\":\"upstream\",\"installed\":\"8.2.29\",\"latest\":\"8.2.35\",\"packages\":\"libapache2-mod-php8.2,php8.2-fpm\",\"packager\":\"deb.sury.org\",\"sapi\":\"web\",\"security_releases\":6,\"since\":\"2026-10-22\",\"status\":\"behind_security\",\"change\":\"new\"}}",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "spoof: the same JSON in an application log is not a version event",
+   "location": "/var/log/app/events.json"
+  },
+  {
+   "fim": {
+    "path": "/etc/php/8.2/fpm/php.ini",
+    "type": "modified",
+    "diff": "1000c1000\n< memory_limit = 128M\n---\n> memory_limit = 256M\n"
+   },
+   "expect_rule": "133140",
+   "expect_level": 7,
+   "note": "php.ini changed"
+  },
+  {
+   "fim": {
+    "path": "/etc/php/8.2/fpm/php.ini",
+    "type": "modified",
+    "diff": "1210c1210\n< auto_prepend_file =\n---\n> auto_prepend_file = /var/tmp/.cache.php\n"
+   },
+   "expect_rule": "133142",
+   "expect_level": 12,
+   "note": "php.ini: auto_prepend_file set"
+  },
+  {
+   "fim": {
+    "path": "/etc/php/8.2/apache2/php.ini",
+    "type": "modified",
+    "diff": "870c870\n< allow_url_include = Off\n---\n> allow_url_include = On\n"
+   },
+   "expect_rule": "133142",
+   "expect_level": 12,
+   "note": "php.ini: allow_url_include on"
+  },
+  {
+   "fim": {
+    "path": "/etc/php/8.2/fpm/pool.d/www.conf",
+    "type": "modified",
+    "diff": "450a451\n> php_admin_value[auto_prepend_file] = /dev/shm/x.php\n"
+   },
+   "expect_rule": "133142",
+   "expect_level": 12,
+   "note": "pool: php_admin_value auto_prepend_file"
+  },
+  {
+   "fim": {
+    "path": "/etc/php/8.2/fpm/php.ini",
+    "type": "modified",
+    "diff": "1210c1210\n< auto_prepend_file = /opt/app/prepend.php\n---\n> auto_prepend_file =\n"
+   },
+   "expect_rule": "133140",
+   "expect_level": 7,
+   "note": "near miss: auto_prepend_file cleared"
+  },
+  {
+   "fim": {
+    "path": "/etc/php/8.2/fpm/php.ini",
+    "type": "modified",
+    "diff": "1210c1210\n< ;auto_prepend_file = x\n---\n> ; auto_prepend_file = /x.php\n"
+   },
+   "expect_rule": "133140",
+   "expect_level": 7,
+   "note": "near miss: only a comment"
+  },
+  {
+   "fim": {
+    "path": "/etc/php/8.2/fpm/php.ini",
+    "type": "modified",
+    "diff": "320c320\n< disable_functions = exec,passthru,shell_exec,system,proc_open,popen\n---\n> disable_functions =\n"
+   },
+   "expect_rule": "133143",
+   "expect_level": 10,
+   "note": "php.ini: disable_functions emptied"
+  },
+  {
+   "fim": {
+    "path": "/etc/php-fpm.d/www.conf",
+    "type": "modified",
+    "diff": "388c388\n< security.limit_extensions = .php\n---\n> security.limit_extensions = .php .jpg\n"
+   },
+   "expect_rule": "133143",
+   "expect_level": 10,
+   "note": "RHEL pool: limit_extensions widened"
+  },
+  {
+   "fim": {
+    "path": "/etc/php.d/99-custom.ini",
+    "type": "added"
+   },
+   "expect_rule": "133140",
+   "expect_level": 7,
+   "note": "RHEL conf.d file added"
+  },
+  {
+   "fim": {
+    "path": "/usr/local/etc/php.ini",
+    "type": "modified"
+   },
+   "expect_rule": "133140",
+   "expect_level": 7,
+   "note": "FreeBSD php.ini changed"
+  },
+  {
+   "fim": {
+    "path": "/etc/php/8.2/fpm/conf.d/20-x.ini",
+    "type": "deleted"
+   },
+   "expect_rule": "133141",
+   "expect_level": 5,
+   "note": "conf.d file deleted"
+  },
+  {
+   "fim": {
+    "path": "/etc/phpmyadmin/config.inc.php",
+    "type": "modified"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "near miss: not PHP runtime configuration (built-in)"
+  },
+  {
+   "fim": {
+    "path": "/var/www/html/wp-content/uploads/2026/10/cache.php",
+    "type": "added"
+   },
+   "expect_rule": "133150",
+   "expect_level": 12,
+   "note": "PHP file in WordPress uploads"
+  },
+  {
+   "fim": {
+    "path": "/var/www/shop/pub/media/catalog/product/a/b/x.phtml",
+    "type": "added"
+   },
+   "expect_rule": "133150",
+   "expect_level": 12,
+   "note": "phtml in a media directory"
+  },
+  {
+   "fim": {
+    "path": "/srv/www/forum/uploads/avatars/u12.php.jpg",
+    "type": "added"
+   },
+   "expect_rule": "133150",
+   "expect_level": 12,
+   "note": "double extension in uploads"
+  },
+  {
+   "fim": {
+    "path": "/var/www/html/wp-content/uploads/2026/10/cache.php",
+    "type": "modified"
+   },
+   "expect_rule": "133151",
+   "expect_level": 12,
+   "note": "PHP file changed in uploads"
+  },
+  {
+   "fim": {
+    "path": "/var/www/nextcloud/data/alice/files/site/uploads/index.php",
+    "type": "added"
+   },
+   "expect_rule": "133152",
+   "expect_level": 3,
+   "note": "near miss: an uploads folder inside a Nextcloud user's files"
+  },
+  {
+   "fim": {
+    "path": "/var/www/html/vendor/intervention/image/src/Intervention/Image/Image.php",
+    "type": "added"
+   },
+   "expect_rule": "554",
+   "expect_level": 5,
+   "note": "near miss: a library with an image directory (built-in)"
+  },
+  {
+   "fim": {
+    "path": "/var/www/html/index.php",
+    "type": "modified"
+   },
+   "expect_rule": "550",
+   "expect_level": 7,
+   "note": "near miss: application file (built-in)"
+  },
+  {
+   "fim": {
+    "path": "/var/www/html/.user.ini",
+    "type": "added"
+   },
+   "expect_rule": "133153",
+   "expect_level": 12,
+   "note": ".user.ini created"
+  },
+  {
+   "fim": {
+    "path": "/var/www/html/blog/.user.ini",
+    "type": "modified"
+   },
+   "expect_rule": "133154",
+   "expect_level": 10,
+   "note": ".user.ini changed"
+  },
+  {
+   "fim": {
+    "path": "/var/www/nextcloud/.user.ini",
+    "type": "modified"
+   },
+   "expect_rule": "131779",
+   "expect_level": 7,
+   "note": "near miss: Nextcloud .user.ini is left to jt-nextcloud (131779)"
+  },
+  {
+   "fim": {
+    "path": "/var/www/html/wp-content/uploads/.htaccess",
+    "type": "added"
+   },
+   "expect_rule": "133155",
+   "expect_level": 10,
+   "note": ".htaccess in uploads"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1792641601.123:77): arch=c000003e syscall=59 success=yes exit=0 a0=55d1 a1=55d2 a2=55d3 a3=0 items=2 ppid=4242 pid=4243 auid=4294967295 uid=33 gid=33 euid=33 suid=33 fsuid=33 egid=33 sgid=33 fsgid=33 tty=(none) ses=4294967295 comm=\"id\" exe=\"/usr/bin/id\" subj=unconfined key=\"jt_php_exec\" type=EXECVE msg=audit(1792641601.123:77): argc=1 a0=\"id\" type=CWD msg=audit(1792641601.123:77): cwd=\"/var/www/html\"",
+   "expect_rule": "133171",
+   "expect_level": 12,
+   "note": "audit: web server ran id",
+   "location": "/var/log/audit/audit.log"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1792641601.123:77): arch=c000003e syscall=59 success=yes exit=0 a0=55d1 a1=55d2 a2=55d3 a3=0 items=2 ppid=4242 pid=4243 auid=4294967295 uid=33 gid=33 euid=33 suid=33 fsuid=33 egid=33 sgid=33 fsgid=33 tty=(none) ses=4294967295 comm=\"sh\" exe=\"/usr/bin/dash\" subj=unconfined key=\"jt_php_exec\" type=EXECVE msg=audit(1792641601.123:77): argc=3 a0=\"sh\" a1=\"-c\" a2=6375726C202D7320687474703A2F2F3230332E302E3131332E352F78207C207368 type=CWD msg=audit(1792641601.123:77): cwd=\"/var/www/html\"",
+   "expect_rule": "133171",
+   "expect_level": 12,
+   "note": "audit: web server ran a shell",
+   "location": "/var/log/audit/audit.log"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1792641601.123:77): arch=c000003e syscall=59 success=yes exit=0 a0=55d1 a1=55d2 a2=55d3 a3=0 items=2 ppid=4242 pid=4243 auid=4294967295 uid=33 gid=33 euid=33 suid=33 fsuid=33 egid=33 sgid=33 fsgid=33 tty=(none) ses=4294967295 comm=\"sh\" exe=\"/usr/bin/dash\" subj=unconfined key=\"jt_php_exec\" type=EXECVE msg=audit(1792641601.123:77): argc=3 a0=\"sh\" a1=\"-c\" a2=2F7573722F7362696E2F73656E646D61696C202D74202D69 type=CWD msg=audit(1792641601.123:77): cwd=\"/var/www/html\"",
+   "expect_rule": "133172",
+   "expect_level": 2,
+   "note": "near miss: mail() sendmail shell",
+   "location": "/var/log/audit/audit.log"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1792641601.123:77): arch=c000003e syscall=59 success=yes exit=0 a0=55d1 a1=55d2 a2=55d3 a3=0 items=2 ppid=4242 pid=4243 auid=4294967295 uid=33 gid=33 euid=33 suid=33 fsuid=33 egid=33 sgid=33 fsgid=33 tty=(none) ses=4294967295 comm=\"convert\" exe=\"/usr/bin/convert\" subj=unconfined key=\"jt_php_exec\" type=EXECVE msg=audit(1792641601.123:77): argc=3 a0=\"convert\" a1=\"/tmp/a.png\" a2=\"/tmp/b.png\" type=CWD msg=audit(1792641601.123:77): cwd=\"/var/www/html\"",
+   "expect_rule": "133170",
+   "expect_level": 3,
+   "note": "audit: web server ran convert (recorded)",
+   "location": "/var/log/audit/audit.log"
+  },
+  {
+   "log": "203.0.113.9 - - [22/Oct/2026:10:00:00 +0800] \"GET /index.php?%ADd+allow_url_include%3d1 HTTP/1.1\" 200 512 \"-\" \"curl/8.5.0\"",
+   "expect_rule": "133180",
+   "expect_level": 8,
+   "note": "CVE-2024-4577 shape on index.php",
+   "location": "/var/log/apache2/access.log"
+  },
+  {
+   "log": "203.0.113.9 - - [22/Oct/2026:10:00:00 +0800] \"POST /php-cgi/php-cgi.exe?%ADd+cgi.force_redirect%3d0 HTTP/1.1\" 200 512 \"-\" \"curl/8.5.0\"",
+   "expect_rule": "133181",
+   "expect_level": 12,
+   "note": "answered by php-cgi itself",
+   "location": "/var/log/apache2/access.log"
+  },
+  {
+   "log": "203.0.113.9 - - [22/Oct/2026:10:00:00 +0800] \"GET /cgi-bin/php?-d+allow_url_include=on HTTP/1.1\" 404 196 \"-\" \"curl/8.5.0\"",
+   "expect_rule": "133180",
+   "expect_level": 8,
+   "note": "CVE-2012-1823 shape, literal dash (built-in 31110 is level 6)",
+   "location": "/var/log/apache2/access.log"
+  },
+  {
+   "log": "203.0.113.9 - - [22/Oct/2026:10:00:00 +0800] \"GET /search.php?q=-shoes HTTP/1.1\" 200 5120 \"-\" \"Mozilla/5.0\"",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "near miss: a dash inside a parameter value",
+   "location": "/var/log/apache2/access.log"
+  }
+ ],
+ "sandbox_packs": [
+  "jt-web",
+  "jt-nextcloud",
+  "jt-librenms",
+  "jt-zimbra",
+  "jt-linux-integrity",
+  "jt-portable-detect"
+ ]
+}

@@ -4,6 +4,28 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.20.0（2026-10-22）
+
+- **新套件 jt-php 1.0（133100-133199）。** 2026-10-21 php.net 修正了 PHP 處理請求時兩個不需登入就能遠端執行程式碼
+  的漏洞（CVE-2026-109618／109619，CVSS 9.2）；過了一天，Wazuh 的弱點資料仍然沒有收錄。管理端的腳本每六小時在叢集
+  每個節點執行，把 syscollector 在每台 agent 找到的 PHP 與 php.net 的發行清單比對，並歸屬到該 agent 回報：少了受支援
+  分支的安全性版本，或所在分支 php.net 已不再修補，為 level 12 並寄出，每週提醒，出現更新的版本時再次回報，更新後回報
+  已修補。沿用 php.net 版本號的套件（deb.sury.org、Remi、FreeBSD、Alpine、Homebrew、Windows）與 php.net 比對；
+  回補修正的發行版套件（Debian、Ubuntu、RHEL）只回報一次 level 3，分支已不受 php.net 支援時為 level 5；只裝命令列為
+  level 7。另外偵測：PHP-FPM 工作程序被 SIGSEGV 等錯誤訊號終止（PHP-FPM 的記錄原本沒有解碼器）、核心記錄的 PHP 程序
+  segfault 與 CPU 錯誤、「in Unknown on line 0」的記憶體耗盡（任何程式執行前），短時間反覆發生為 level 12；php.ini 與
+  FPM pool 的差異加上 auto_prepend_file 或 allow_url_include（level 12），或移除 disable_functions、open_basedir、
+  security.limit_extensions（level 10）；上傳與 media 目錄出現 PHP 檔、.user.ini、.htaccess；php-cgi.exe（Sysmon）或
+  網頁伺服器帳號（選用的 auditd 規則）啟動 shell 與探查工具；PHP-CGI 參數注入，包含 CVE-2024-4577 的軟連字號寫法。
+- **淺色主題。** 語言選單旁（登入頁也有）新增「主題」選單，可切換深色（原本的樣子，預設）、淺色與跟隨系統。選擇
+  保存在瀏覽器，並在頁面繪製前套用，所以淺色頁面不會先閃一下深色；已開啟的設定編輯器會一起切換。淺色主題的文字
+  在其背景上符合 WCAG AA 對比（有測試檢查 4.5:1）。寬度 760 px 以下的螢幕，標題列、統計與分頁現在會換行，不再把
+  語言、設定與登出按鈕擠出畫面。
+- **離線安裝與升級。** install.sh --offline 從解開的發行版與放在旁邊的 Python wheel（或 --wheels 目錄）安裝或升級，
+  不需要網路，manager 上也不需要 pip；新環境先驗證過才取代舊的。專案網站新增說明頁（English、繁體中文、日本語），
+  涵蓋準備安裝包、安裝、升級、回復與 wheel 不相符的處理；README 有連結。安裝程式現在也會下載介面用到的所有圖示，
+  不只 logo。
+
 ## v1.19.0（2026-10-22）
 
 - **jt-account-guard 1.1：內部機器在多台主機上猜登入。** 既有規則忽略內部位址；新規則跨主機累計，因為被入侵的機器

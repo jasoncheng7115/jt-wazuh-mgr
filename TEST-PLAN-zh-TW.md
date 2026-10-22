@@ -15,7 +15,7 @@
 ## 執行方式
 
 ```bash
-python3 -m unittest discover -s tests     # 398 項，完全離線
+python3 -m unittest discover -s tests     # 433 項，完全離線
 python3 tools/preflight.py                # 21 項發版前機械檢查
 
 # 系統沒有 Flask 的主機
@@ -129,7 +129,7 @@ plan 走的是 ZAP 的 Automation Framework：spider、被動掃描，並輸出 
 ## 第四層——瀏覽器旅程，自動化
 
 ```bash
-tests/e2e/run.sh          # 23 條旅程、116 項檢查，需要 docker
+tests/e2e/run.sh          # 24 條旅程、126 項檢查，需要 docker
 ```
 
 `tests/e2e/mock_api.py` 讓**真正的應用程式**跑在 mock 過且**有狀態**的 Wazuh API 之上，
@@ -283,7 +283,7 @@ Windows 的情境要在 worker 上再驗一次，Windows agent 通常由 worker 
 直接講清楚，因為一份暗示自己涵蓋範圍比實際更大的測試計畫，
 比一份簡短的計畫更糟。
 
-- **瀏覽器自動化只涵蓋主要旅程。** 第四層以真實瀏覽器跑 23 條旅程；第四層之二的項目仍是人工檢查。
+- **瀏覽器自動化只涵蓋主要旅程。** 第四層以真實瀏覽器跑 24 條旅程；第四層之二的項目仍是人工檢查。
 - **破壞性路由的成功路徑不在 CI 中執行**，原因見第一層。
 - **沒有負載或並行測試。** 上千台代理程式時的行為、
   或兩位操作者同時編輯同一份設定的行為，都未經量測。
