@@ -4,6 +4,13 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.20.4（2026-10-23）
+
+- **certifi 2026.10.19。** 內附的 certifi 拿掉「emSign ECC Root CA - G3」：其下的中繼憑證金鑰外洩，可替任何網域簽發
+  憑證（2026 年 10 月）。requirements.txt 現在要求 certifi 2026.10.19 以上，所以新安裝與離線安裝包都會拿到新版。介面
+  連的是本機 Wazuh API，但只要開啟憑證檢查又沒指定 CA 檔，requests 就會用 certifi。作業系統的 ca-certificates 也請
+  一併更新：Ubuntu 20260816ubuntu0.x 與 Debian 13 的 20250419+deb13u1 都已移除同一張根憑證。
+
 ## v1.20.3（2026-10-22）
 
 - **淺色主題改得更柔和。** 頁面改為偏冷的灰、面板改為米白而不是純白，表格、統計方塊與程式碼區再深一階，長時間看比較

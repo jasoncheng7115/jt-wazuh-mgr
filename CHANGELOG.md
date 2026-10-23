@@ -4,6 +4,16 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.20.4 (2026-10-23)
+
+- **certifi 2026.10.19.** The bundled certifi drops "emSign ECC Root CA - G3", under which
+  a compromised intermediate CA could issue certificates for any domain (October 2026);
+  requirements.txt now asks for certifi 2026.10.19 or later, so new installs and offline
+  bundles get it. The interface talks to the local Wazuh API, but requests falls back to
+  certifi whenever certificate checking is on and no CA file is set. Update the operating
+  system's ca-certificates package as well: Ubuntu 20260816ubuntu0.x and Debian 13
+  20250419+deb13u1 remove the same root.
+
 ## v1.20.3 (2026-10-22)
 
 - **Light theme, softer.** The page is a muted grey and the panels off-white instead of

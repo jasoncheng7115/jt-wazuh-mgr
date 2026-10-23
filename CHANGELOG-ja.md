@@ -4,6 +4,14 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.20.4（2026-10-23）
+
+- **certifi 2026.10.19。** 同梱の certifi から「emSign ECC Root CA - G3」を削除しました。この配下の中間 CA の鍵が漏洩し、
+  任意のドメインの証明書を発行できる状態でした（2026 年 10 月）。requirements.txt は certifi 2026.10.19 以上を要求する
+  ので、新規インストールとオフラインパッケージにも新版が入ります。画面がつなぐのはローカルの Wazuh API ですが、証明書の
+  検証が有効で CA ファイルを指定していない場合、requests は certifi を使います。OS の ca-certificates も更新してください。
+  Ubuntu の 20260816ubuntu0.x と Debian 13 の 20250419+deb13u1 で同じルートが削除されています。
+
 ## v1.20.3（2026-10-22）
 
 - **ライトテーマをより柔らかく。** ページは落ち着いたグレー、パネルは純白ではなくオフホワイトにし、表・統計ボックス・
