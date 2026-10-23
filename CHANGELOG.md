@@ -4,6 +4,25 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.21.0 (2026-10-23)
+
+- **New pack jt-runtime-vuln 1.0 (133200-133299): vulnerabilities Wazuh grades too low
+  or not at all, and Node.js / Python versions.** Wazuh's vulnerability alerts grade a
+  finding only by CVSS severity: a CVE in CISA's Known Exploited Vulnerabilities
+  catalogue rated High is level 10 and never mailed, and a finding the feed has not
+  scored yet ("-") matches no rule and produces no alert at all; on one manager that was
+  2,265 CVEs on 43 agents, among them both PHP RCEs of 2026-10-21. Any KEV finding is now
+  level 12 and mailed (list jt-kev, kept daily from CISA by jt-kev-update.py), and an
+  unscored one level 7. A manager-side check, every six hours on every cluster node,
+  compares each agent's Node.js with nodejs.org's release index (security flag per
+  release) and Python with python.org's release cycle (security-only branches) a day after
+  the release, without waiting for the CVE feed, which a day after Node.js's 2026-10-21
+  security release held none of its ten CVEs: Node.js on a server behind a security
+  release or on an end-of-life line is level 12 and mailed, Python level 10, desktops
+  level 7; distribution packages are reported once. pip-installed certifi, pip, uv and
+  sigstore below the versions that drop the compromised emSign CA are level 10 and mailed.
+  Node.js segfaults are level 10, three in 10 minutes level 12.
+
 ## v1.20.4 (2026-10-23)
 
 - **certifi 2026.10.19.** The bundled certifi drops "emSign ECC Root CA - G3", under which

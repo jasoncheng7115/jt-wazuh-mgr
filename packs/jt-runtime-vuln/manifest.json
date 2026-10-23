@@ -1,0 +1,103 @@
+{
+ "id": "jt-runtime-vuln",
+ "name": "Runtime Vulnerabilities (Node.js, Python, KEV)",
+ "name_zh": "執行環境弱點（Node.js、Python、KEV）",
+ "version": "1.0",
+ "summary": "Closes three gaps in Wazuh's vulnerability alerts: any finding listed in CISA's Known Exploited Vulnerabilities catalogue becomes level 12 and mailed (a High one was level 10 and never mailed); a finding the feed has not scored yet becomes level 7 instead of producing no alert at all; and every agent's Node.js and Python is compared with nodejs.org's and python.org's own release data, so a missed security release or an end-of-life line is reported the day after release, without waiting for the CVE feed. Also Node.js and Python process crashes.",
+ "summary_zh": "補上 Wazuh 弱點告警的三個缺口：列在 CISA 已知遭利用弱點目錄（KEV）中的弱點一律升為 level 12 並寄出（原本 High 只有 level 10、不會寄出）；弱點資料尚未評分的弱點改發 level 7，原本完全不產生告警；並把每台 agent 的 Node.js、Python 與 nodejs.org、python.org 自己的發行資料比對，少了安全性版本或分支已停止支援，發布隔天就回報，不必等 CVE 資料。另外偵測 Node.js 與 Python 程序當掉。",
+ "rule_id_range": "133200-133299",
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.9"
+ ],
+ "notes": [
+  "Why: Wazuh 4.14's vulnerability alerts (23501-23506) grade a finding only by the CVSS severity in its feed. A CVE that CISA lists as exploited in the wild is level 10 when rated High and is not mailed, and a finding the feed has not scored yet (severity \"-\") matches none of the rules and stays at 23501, level 0: no alert at all. Measured on one manager in October 2026: 2,265 unscored CVEs on 43 agents, among them both PHP request-handling RCEs of 2026-10-21, and none of the ten CVEs Node.js fixed on 2026-10-21 in the feed a day later.",
+  "KEV (133200): jt-kev-update.py keeps etc/lists/jt-kev from CISA's catalogue (www.cisa.gov, falling back to CISA's kev-data repository on GitHub), at most once a day with If-Modified-Since; a catalogue that parses to fewer than half the last good entry count is refused. After a change it reloads this node's ruleset, which recompiles the list. Any active finding whose CVE is listed is level 12 with alert_by_email, so it reaches mail and the jt-alert-digest Zulip channel; a Critical one stays the built-in 23506 (level 13, mailed). Update failure: level 5 once (133230), level 10 mailed when the list is a week old (133231), recovery level 3.",
+  "Unscored (133201): an active finding whose severity is \"-\", empty or unknown is level 7, not mailed: visible in the dashboard and the digest's daily summary, and raised to 12 by 133200 if the CVE is known exploited. Only new detections produce alerts, so installing the pack does not replay existing findings.",
+  "Versions (133211-133226): jt-runtime-versions.py runs every six hours on every cluster node, reads the package inventory syscollector keeps (local wazuh-db socket, SELECT only) and compares Node.js with https://nodejs.org/dist/index.json (each release carries a security flag) and the Node.js release schedule, and Python with https://peps.python.org/api/release-cycle.json (bugfix, security, end-of-life per branch) and python.org's release list; on a branch in its security-only phase every newer release counts as a security release. Packages that carry the project's own versions (NodeSource, deadsnakes, Homebrew, FreeBSD ports, the Windows installers) are compared; Debian, Ubuntu, RHEL and Fedora archive packages keep their version and take backported fixes, so they are reported once at level 3, or 5 when the project no longer supports the line.",
+  "Levels: Node.js on a server behind a security release, or on an end-of-life line, is level 12 and mailed (133212/133213): it is usually the listening service. Python on a server is level 10, not mailed (133214/133215): more often a tool. On a macOS or Windows client machine either is level 7 (133216). Reminder weekly at level 8 until fixed, again at the full level when a newer release appears, level 3 when updated or removed. The events are the manager's own (location jt-runtime) and every description starts with the host's name; jt-alert-digest files them under that host.",
+  "Minimum versions (133227): some fixes come without a CVE a feed can match. After the emSign intermediate CA compromise of October 2026, python.org asked for certifi 2026.10.19, pip 26.2.2, uv 0.13.4 and sigstore 4.5.1: each carries its own copy of the CA roots, so updating the operating system's store does not cover them. Any of these installed with pip (inventory format pypi, with its path) below that version is level 10 and mailed on a server, level 7 on a desktop; Debian and Ubuntu's python3-certifi and python3-pip read the system store and are not counted. The table is in the script and grows with the pack.",
+  "Crashes: the kernel's segfault line for a Node.js process, or a process crashing inside libnode, is level 10 (133250), three in 10 minutes on one host level 12 and mailed (133252): Node.js does not segfault in normal use, and memory corruption such as the Brotli decoder write of CVE-2026-111497 shows this way. A Python process segfault is level 7 (133251): C extensions crash for ordinary reasons.",
+  "Limits: the inventory sees packages, not runtimes unpacked from a tarball, installed with nvm, pyenv or uv, inside virtual environments or containers (jt-container-vuln covers images), or bundled in an application. A distribution's backports cannot be judged from php.net-style release lists; Wazuh's own detection, now with the two rules above, is what covers them. PHP is the jt-php pack. No site list, host name or account is needed. No active response: these alerts describe software."
+ ],
+ "notes_zh": [
+  "為什麼需要：Wazuh 4.14 的弱點告警（23501-23506）只依弱點資料裡的 CVSS 嚴重度分級。CISA 已確認遭實際利用的 CVE，若評為 High 只有 level 10、不會寄出；弱點資料還沒評分的（嚴重度「-」）不符合任何一條規則，停在 23501 的 level 0，完全不產生告警。2026 年 10 月在某台 manager 上實測：43 台 agent 共 2,265 個未評分的 CVE，包括 2026-10-21 PHP 請求處理的兩個遠端執行漏洞；而 Node.js 在 2026-10-21 修正的十個 CVE，隔天弱點資料裡一個都沒有。",
+  "KEV（133200）：jt-kev-update.py 依 CISA 的目錄（www.cisa.gov，失敗時改用 CISA 在 GitHub 的 kev-data）維護 etc/lists/jt-kev，每天最多以 If-Modified-Since 下載一次；解析後的筆數不到上一份的一半就拒絕採用。清單變動後會重新載入本節點的規則集，CDB 清單因此重新編譯。任何 CVE 在清單中的未修補弱點一律為 level 12 並帶 alert_by_email，所以會寄出並送到 jt-alert-digest 的 Zulip 頻道；Critical 的維持內建 23506（level 13，會寄出）。更新失敗：第一次 level 5（133230），清單超過一週為 level 10 並寄出（133231），恢復為 level 3。",
+  "未評分（133201）：嚴重度為「-」、空白或 unknown 的未修補弱點為 level 7，不寄出：在 dashboard 與摘要信的每日彙整看得到；若 CVE 屬於 KEV，會由 133200 升為 12。只有新偵測到的弱點才產生告警，所以安裝本套件不會把既有的結果重放一次。",
+  "版本（133211-133226）：jt-runtime-versions.py 每六小時在叢集每個節點執行，讀取 syscollector 保存的套件清單（本機 wazuh-db socket，只用 SELECT），把 Node.js 與 https://nodejs.org/dist/index.json（每個版本都標示是否為安全性版本）及 Node.js 的發行時程比對，把 Python 與 https://peps.python.org/api/release-cycle.json（每個分支的 bugfix、security、end-of-life 狀態）及 python.org 的發行清單比對；只收安全修正階段的分支，任何較新的版本都視為安全性版本。沿用專案自身版本號的套件（NodeSource、deadsnakes、Homebrew、FreeBSD ports、Windows 安裝程式）直接比對；Debian、Ubuntu、RHEL、Fedora 的套件會固定版本並回補修正，只回報一次 level 3，專案已不支援該分支時為 level 5。",
+  "等級：伺服器上的 Node.js 少了安全性版本或位於已停止支援的分支，為 level 12 並寄出（133212／133213）：它通常就是對外服務本身。伺服器上的 Python 為 level 10、不寄出（133214／133215）：多半是工具。macOS 或 Windows 用戶端上的兩者皆為 level 7（133216）。修好前每週以 level 8 提醒，出現更新的版本時再以原等級告警，更新或移除後為 level 3。事件屬於 manager 自己（location jt-runtime），每則描述都以主機名稱開頭；jt-alert-digest 會把它們歸到該主機底下。",
+  "最低版本（133227）：有些修補沒有可供比對的 CVE。2026 年 10 月 emSign 中繼 CA 金鑰外洩後，python.org 要求 certifi 2026.10.19、pip 26.2.2、uv 0.13.4、sigstore 4.5.1：它們各自帶一份 CA 根憑證，更新作業系統的憑證庫涵蓋不到。以 pip 安裝（套件清單格式 pypi，附路徑）且低於該版本的，伺服器上為 level 10 並寄出，桌機上為 level 7；Debian、Ubuntu 的 python3-certifi、python3-pip 讀取系統憑證庫，不列入。這張表在腳本裡，會隨套件版本擴充。",
+  "當掉：核心記錄 Node.js 程序 segfault，或程序在 libnode 裡當掉，為 level 10（133250），同一台主機 10 分鐘內 3 次為 level 12 並寄出（133252）：Node.js 正常使用時不會 segfault，像 CVE-2026-111497 的 Brotli 解碼越界寫入這類記憶體破壞就會這樣出現。Python 程序 segfault 為 level 7（133251）：C 擴充模組因一般原因當掉的情況較常見。",
+  "限制：套件清單只看得到套件，看不到用 tarball 解開、nvm、pyenv、uv 安裝的、虛擬環境或容器裡的（映像請見 jt-container-vuln）、或包在應用程式裡的執行環境。發行版的回補無法用官方發行清單判斷，交給 Wazuh 自己的弱點偵測，加上上面兩條規則補強。PHP 由 jt-php 套件處理。不需要任何站台清單、主機名稱或帳號。不提供主動回應：這些告警描述的是軟體。"
+ ],
+ "files": [
+  {
+   "type": "rule",
+   "name": "zz-133200-jt_runtime_vuln_rules.xml",
+   "dest": "etc/rules/zz-133200-jt_runtime_vuln_rules.xml",
+   "sha256": "d773cf1261db223db53aafd769ec0418d617396b7c3930454bf5188ff38b65ed"
+  },
+  {
+   "type": "list",
+   "name": "jt-kev",
+   "dest": "etc/lists/jt-kev",
+   "declare": true,
+   "keep": true,
+   "sha256": "844f128c3639f62c33198dcefef707165015b8d4425a3618790def5195c28d44"
+  }
+ ],
+ "scripts": [
+  {
+   "name": "jt-runtime-versions.py",
+   "dest": "etc/jt-packs/bin/jt-runtime-versions.py",
+   "sha256": "642965fa89db478fb6f3d1598c9ab64e1d8b7300d9697786759aa86d567ad114",
+   "cron": "11 */6 * * *",
+   "args": "--wazuh-path {wazuh_path}",
+   "description": "Compares the Node.js and Python that syscollector found on each agent of this node with nodejs.org's and python.org's release data and reports outdated and unsupported versions to the manager"
+  },
+  {
+   "name": "jt-kev-update.py",
+   "dest": "etc/jt-packs/bin/jt-kev-update.py",
+   "sha256": "e47df112ee9f5e348519218be2e121e18a96d6840f0b4f19e55d698ad941d23b",
+   "cron": "27 */6 * * *",
+   "args": "--wazuh-path {wazuh_path}",
+   "description": "Keeps the CDB list jt-kev from CISA's Known Exploited Vulnerabilities catalogue (downloads at most once a day) and reloads this node's ruleset after a change"
+  }
+ ],
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack, fill the KEV list and reload the ruleset",
+   "title_zh": "安裝套件、填入 KEV 清單並重新載入規則集",
+   "body": "Install from this page. The KEV list ships as a placeholder; run the updater once instead of waiting for its schedule: it downloads the catalogue (about 1.8 MB), writes etc/lists/jt-kev and reloads this node's ruleset. Then use Reload Ruleset on the Rules tab so every cluster node loads the rules.",
+   "body_zh": "在本頁安裝。KEV 清單出廠是空的佔位內容；請手動執行一次更新程式，不必等排程：它會下載目錄（約 1.8 MB）、寫入 etc/lists/jt-kev 並重新載入本節點的規則集。接著到「規則」分頁按「重新載入規則集」，讓叢集每個節點都載入規則。",
+   "code": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-kev-update.py --wazuh-path /var/ossec\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-runtime-versions.py --wazuh-path /var/ossec --dry-run",
+   "verify": "grep -c ^CVE- /var/ossec/etc/lists/jt-kev prints about 1,750; --dry-run prints one event per agent, runtime and line.",
+   "verify_zh": "grep -c ^CVE- /var/ossec/etc/lists/jt-kev 會印出約 1,750；--dry-run 會為每台 agent、每種執行環境、每個分支各印出一筆事件。"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Cluster: run the version check on every worker, reload the KEV list there",
+   "title_zh": "叢集：在每個 worker 執行版本檢查，並在那裡重新載入 KEV 清單",
+   "body": "Each node keeps the inventory of its own agents, so copy jt-runtime-versions.py to each worker with the same cron line. The cluster copies etc/lists/jt-kev to the workers but does not reload them: a worker that already runs jt-ioc's --reload-if-stale job reloads by itself; otherwise add the second cron line, which reloads only when the list changed.",
+   "body_zh": "每個節點只保存自己 agent 的套件清單，所以要把 jt-runtime-versions.py 複製到每個 worker 並加上同樣的排程。叢集會把 etc/lists/jt-kev 複製到 worker，但不會讓 worker 重新載入：已經有 jt-ioc --reload-if-stale 排程的 worker 會自己重新載入；否則請加上第二行排程，它只在清單變動時才重新載入。",
+   "code": "scp /var/ossec/etc/jt-packs/bin/jt-runtime-versions.py /var/ossec/etc/jt-packs/bin/jt-kev-update.py <worker>:/var/ossec/etc/jt-packs/bin/\n# on the worker, /etc/cron.d/jt-jt-runtime-vuln\n11 */6 * * * root /usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-runtime-versions.py --wazuh-path /var/ossec\n*/5 * * * * root /usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-kev-update.py --wazuh-path /var/ossec --reload-if-changed",
+   "verify": "On the worker, jt-runtime-versions.py --list prints the Node.js and Python packages of its agents.",
+   "verify_zh": "在 worker 上執行 jt-runtime-versions.py --list，會列出它的 agent 的 Node.js 與 Python 套件。"
+  },
+  {
+   "platform": "network",
+   "required": true,
+   "title": "Outbound HTTPS from the manager nodes",
+   "title_zh": "manager 節點需要對外 HTTPS",
+   "body": "www.cisa.gov (or raw.githubusercontent.com as the fallback) for the KEV catalogue on the master; nodejs.org, raw.githubusercontent.com, peps.python.org and www.python.org for the release data on every node. Each URL can be replaced by a mirror (--url for the KEV updater, --node-index, --node-schedule, --python-cycle, --python-releases for the version check).",
+   "body_zh": "master 需要連到 www.cisa.gov（備援為 raw.githubusercontent.com）取得 KEV 目錄；每個節點需要連到 nodejs.org、raw.githubusercontent.com、peps.python.org 與 www.python.org 取得發行資料。每個網址都可以換成鏡像（KEV 更新程式用 --url，版本檢查用 --node-index、--node-schedule、--python-cycle、--python-releases）。"
+  }
+ ]
+}

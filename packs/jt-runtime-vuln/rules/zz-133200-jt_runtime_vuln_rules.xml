@@ -1,0 +1,290 @@
+<!--
+  jt-runtime-vuln - known exploited and unscored vulnerabilities, Node.js and
+  Python versions, runtime crashes
+  File:    zz-133200-jt_runtime_vuln_rules.xml
+  Range:   133200-133299
+  Licence: AGPL-3.0-or-later    Jason Tools Co., Ltd.
+
+    133200-133209  Wazuh vulnerability detection, two gaps in the built-in
+                   rules 23501-23506:
+                   - a CVE in CISA's Known Exploited Vulnerabilities catalogue
+                     is graded only by its CVSS severity: a High one is level
+                     10 and never mailed. 133200 makes any KEV finding level
+                     12, mailed (list jt-kev, kept by jt-kev-update.py).
+                   - a finding the feed has not scored yet (severity "-")
+                     matches none of 23502-23506 and stays at 23501, level 0:
+                     no alert at all. On one manager in October 2026 that was
+                     2,265 CVEs on 43 agents, among them the two PHP request
+                     handling RCEs of 2026-10-21. 133201 makes it level 7.
+    133210-133249  versions: jt-runtime-versions.py on the manager compares the
+                   Node.js and Python that syscollector found on every agent
+                   with nodejs.org's and python.org's release data (location
+                   jt-runtime). The alerts belong to the manager and name the
+                   host first: analysisd drops queue events that claim an
+                   agent's identity once agents are registered.
+    133250-133259  crashes: the kernel's segfault line for a Node.js or Python
+                   process.
+
+  PHP is the jt-php pack. Request-borne attacks are Wazuh's own web rules and
+  jt-web.
+-->
+
+<group name="jt_runtime_vuln,">
+
+  <!-- ================= Wazuh vulnerability detection ================= -->
+
+  <!-- Siblings of 23502-23506 under 23501, tried highest level first: a
+       Critical KEV finding stays 23506 (level 13, mailed); every other KEV
+       finding becomes this rule. -->
+  <rule id="133200" level="12">
+    <if_sid>23501</if_sid>
+    <field name="vulnerability.status">^Active$</field>
+    <list field="vulnerability.cve" lookup="match_key">etc/lists/jt-kev</list>
+    <description>[HIGH] Known exploited vulnerability (CISA KEV) $(vulnerability.cve) affects $(vulnerability.package.name) $(vulnerability.package.version)</description>
+    <options>alert_by_email</options>
+    <options>no_full_log</options>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_kev,</group>
+  </rule>
+
+  <rule id="133201" level="7">
+    <if_sid>23501</if_sid>
+    <field name="vulnerability.status">^Active$</field>
+    <field name="vulnerability.severity" type="pcre2">(?i)^(?:-|none|unknown|)$</field>
+    <description>$(vulnerability.cve) affects $(vulnerability.package.name) $(vulnerability.package.version) (no severity published yet)</description>
+    <options>no_full_log</options>
+    <group>jt_vuln_unscored,</group>
+  </rule>
+
+  <!-- ================= versions (jt-runtime-versions.py) ================= -->
+
+  <rule id="133210" level="0">
+    <decoded_as>json</decoded_as>
+    <location>^jt-runtime$</location>
+    <field name="jt_runtime.event">\.+</field>
+    <description>jt-runtime: version check event</description>
+  </rule>
+
+  <rule id="133211" level="2">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.status">^current$</field>
+    <description>jt-runtime: $(jt_runtime.agent_name): $(jt_runtime.label) $(jt_runtime.installed) is the latest release of its line ($(jt_runtime.packages))</description>
+  </rule>
+
+  <!-- Node.js on a server is usually the service itself, listening. -->
+  <rule id="133212" level="12">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.runtime">^node$</field>
+    <field name="jt_runtime.status">^behind_security$</field>
+    <field name="jt_runtime.change" type="pcre2">^(?:new|changed)$</field>
+    <field name="jt_runtime.host">^server$</field>
+    <description>[HIGH] jt-runtime: $(jt_runtime.agent_name): Node.js $(jt_runtime.installed) is missing security release $(jt_runtime.latest) ($(jt_runtime.security_releases) security releases behind; $(jt_runtime.packages), $(jt_runtime.packager))</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_runtime_outdated,vulnerability,</group>
+  </rule>
+
+  <rule id="133213" level="12">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.runtime">^node$</field>
+    <field name="jt_runtime.status">^eol$</field>
+    <field name="jt_runtime.change" type="pcre2">^(?:new|changed)$</field>
+    <field name="jt_runtime.host">^server$</field>
+    <description>[HIGH] jt-runtime: $(jt_runtime.agent_name): Node.js $(jt_runtime.branch).x ($(jt_runtime.installed)) is end of life and gets no security fixes ($(jt_runtime.packages), $(jt_runtime.packager))</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_runtime_outdated,vulnerability,</group>
+  </rule>
+
+  <!-- Python is more often a tool than the listening service: level 10, not
+       mailed. -->
+  <rule id="133214" level="10">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.runtime">^python$</field>
+    <field name="jt_runtime.status">^behind_security$</field>
+    <field name="jt_runtime.change" type="pcre2">^(?:new|changed)$</field>
+    <field name="jt_runtime.host">^server$</field>
+    <description>[WARN] jt-runtime: $(jt_runtime.agent_name): Python $(jt_runtime.installed) is missing security release $(jt_runtime.latest) ($(jt_runtime.packages), $(jt_runtime.packager))</description>
+    <group>jt_runtime_outdated,</group>
+  </rule>
+
+  <rule id="133215" level="10">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.runtime">^python$</field>
+    <field name="jt_runtime.status">^eol$</field>
+    <field name="jt_runtime.change" type="pcre2">^(?:new|changed)$</field>
+    <field name="jt_runtime.host">^server$</field>
+    <description>[WARN] jt-runtime: $(jt_runtime.agent_name): Python $(jt_runtime.branch) ($(jt_runtime.installed)) is end of life and gets no security fixes ($(jt_runtime.packages), $(jt_runtime.packager))</description>
+    <group>jt_runtime_outdated,</group>
+  </rule>
+
+  <!-- macOS and Windows client machines: a developer's or user's tool. -->
+  <rule id="133216" level="7">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.status" type="pcre2">^(?:behind_security|eol|below_minimum)$</field>
+    <field name="jt_runtime.change" type="pcre2">^(?:new|changed)$</field>
+    <field name="jt_runtime.host">^desktop$</field>
+    <description>jt-runtime: $(jt_runtime.agent_name): $(jt_runtime.label) $(jt_runtime.installed) on a desktop is $(jt_runtime.status) (latest $(jt_runtime.latest); $(jt_runtime.packages))</description>
+    <group>jt_runtime_outdated,</group>
+  </rule>
+
+  <!-- A package installed with pip below a version that fixes something no
+       CVE feed matches (MINIMUMS in the script: certifi, pip, uv and
+       sigstore after the emSign CA compromise of October 2026). -->
+  <rule id="133227" level="10">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.status">^below_minimum$</field>
+    <field name="jt_runtime.change" type="pcre2">^(?:new|changed)$</field>
+    <field name="jt_runtime.host">^server$</field>
+    <description>[WARN] jt-runtime: $(jt_runtime.agent_name): $(jt_runtime.label) $(jt_runtime.installed) is below $(jt_runtime.latest), which $(jt_runtime.reason) ($(jt_runtime.location))</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1557</id>
+    </mitre>
+    <group>jt_runtime_outdated,</group>
+  </rule>
+
+  <rule id="133217" level="8">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.change">^reminder$</field>
+    <description>jt-runtime: $(jt_runtime.agent_name): reminder, $(jt_runtime.label) $(jt_runtime.installed) is still $(jt_runtime.status) since $(jt_runtime.since) (latest $(jt_runtime.latest); $(jt_runtime.packages))</description>
+    <group>jt_runtime_outdated,</group>
+  </rule>
+
+  <rule id="133218" level="5">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.status">^behind$</field>
+    <field name="jt_runtime.change" type="pcre2">^(?:new|changed)$</field>
+    <description>jt-runtime: $(jt_runtime.agent_name): $(jt_runtime.label) $(jt_runtime.installed) is behind $(jt_runtime.latest) (no security release missed; $(jt_runtime.packages))</description>
+  </rule>
+
+  <rule id="133219" level="3">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.status">^distro$</field>
+    <field name="jt_runtime.change" type="pcre2">^(?:new|changed)$</field>
+    <description>jt-runtime: $(jt_runtime.agent_name): $(jt_runtime.label) $(jt_runtime.installed) from the distribution ($(jt_runtime.packager)); fixes come as distribution updates</description>
+  </rule>
+
+  <rule id="133220" level="5">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.status">^distro_eol$</field>
+    <field name="jt_runtime.change" type="pcre2">^(?:new|changed)$</field>
+    <description>jt-runtime: $(jt_runtime.agent_name): distribution $(jt_runtime.label) $(jt_runtime.installed) is on line $(jt_runtime.branch), which the project no longer supports; fixes depend on the distribution ($(jt_runtime.packager))</description>
+  </rule>
+
+  <rule id="133221" level="3">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.change">^fixed$</field>
+    <description>jt-runtime: $(jt_runtime.agent_name): $(jt_runtime.label) $(jt_runtime.branch) is no longer $(jt_runtime.previous_status) (now $(jt_runtime.status) $(jt_runtime.installed))</description>
+  </rule>
+
+  <rule id="133222" level="3">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^release$</field>
+    <description>jt-runtime: $(jt_runtime.label) $(jt_runtime.latest) released (line $(jt_runtime.branch), security: $(jt_runtime.security), previous $(jt_runtime.previous))</description>
+  </rule>
+
+  <rule id="133223" level="5">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^status$</field>
+    <field name="jt_runtime.state">^failing$</field>
+    <description>jt-runtime: Node.js/Python release data could not be read; the last copy is used for up to 48 hours ($(jt_runtime.detail))</description>
+  </rule>
+
+  <rule id="133224" level="10">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^status$</field>
+    <field name="jt_runtime.state">^stale$</field>
+    <description>[WARN] jt-runtime: no Node.js/Python release data for $(jt_runtime.hours) hours; versions are not being checked ($(jt_runtime.detail))</description>
+    <options>alert_by_email</options>
+  </rule>
+
+  <rule id="133225" level="10">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^status$</field>
+    <field name="jt_runtime.state">^wdb_error$</field>
+    <description>[WARN] jt-runtime: the package inventory could not be read from wazuh-db; versions are not being checked ($(jt_runtime.detail))</description>
+    <options>alert_by_email</options>
+  </rule>
+
+  <rule id="133226" level="3">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^status$</field>
+    <field name="jt_runtime.state">^recovered$</field>
+    <description>jt-runtime: Node.js/Python release data read again after $(jt_runtime.hours) hours</description>
+  </rule>
+
+  <!-- jt-kev-update.py -->
+  <rule id="133230" level="5">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^kev$</field>
+    <field name="jt_runtime.state">^failing$</field>
+    <description>jt-runtime: the CISA KEV catalogue could not be updated; the current list stays in use ($(jt_runtime.detail))</description>
+  </rule>
+
+  <rule id="133231" level="10">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^kev$</field>
+    <field name="jt_runtime.state">^stale$</field>
+    <description>[WARN] jt-runtime: the CISA KEV list has not been updated for $(jt_runtime.days) days; newly exploited CVEs are not being raised ($(jt_runtime.detail))</description>
+    <options>alert_by_email</options>
+  </rule>
+
+  <rule id="133232" level="3">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^kev$</field>
+    <field name="jt_runtime.state">^recovered$</field>
+    <description>jt-runtime: the CISA KEV catalogue was updated again after $(jt_runtime.hours) hours</description>
+  </rule>
+
+  <!-- ================= crashes ================= -->
+
+  <!-- Node.js does not segfault in normal use: a native addon bug, or memory
+       corruption such as the Brotli decoder write of CVE-2026-111497. -->
+  <rule id="133250" level="10">
+    <if_sid>1010</if_sid>
+    <regex type="pcre2">\b(?:node|nodejs|node\d{2})\[\d+\]: segfault at |segfault at .* in (?:libnode[\w.-]*\.so|node\[)</regex>
+    <description>[WARN] jt-runtime: a Node.js process segfaulted (kernel)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_runtime_crash,service_availability,</group>
+  </rule>
+
+  <!-- Python segfaults come from C extensions more often than from attacks. -->
+  <rule id="133251" level="7">
+    <if_sid>1010</if_sid>
+    <regex type="pcre2">\bpython[\d.]*\[\d+\]: segfault at |segfault at .* in libpython[\d.]*\.so</regex>
+    <description>jt-runtime: a Python process segfaulted (kernel)</description>
+    <group>jt_runtime_crash,service_availability,</group>
+  </rule>
+
+  <rule id="133252" level="12" frequency="3" timeframe="600">
+    <if_matched_sid>133250</if_matched_sid>
+    <description>[HIGH] jt-runtime: Node.js processes segfaulted 3 or more times in 10 minutes on this host</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_runtime_crash_burst,</group>
+  </rule>
+
+</group>

@@ -4,6 +4,19 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.21.0（2026-10-23）
+
+- **新套件 jt-runtime-vuln 1.0（133200-133299）：Wazuh 評得太低或根本不告警的弱點，以及 Node.js／Python 版本。**
+  Wazuh 的弱點告警只依 CVSS 嚴重度分級：列在 CISA 已知遭利用弱點目錄（KEV）中的 CVE 若評為 High 只有 level 10、
+  不會寄出；弱點資料還沒評分（「-」）的不符合任何規則，完全不產生告警。某台 manager 上這類有 43 台 agent、2,265 個
+  CVE，包括 2026-10-21 PHP 的兩個遠端執行漏洞。現在所有 KEV 弱點一律 level 12 並寄出（清單 jt-kev，由
+  jt-kev-update.py 每天從 CISA 更新），未評分的為 level 7。管理端檢查每六小時在叢集每個節點執行，把每台 agent 的
+  Node.js 與 nodejs.org 的發行索引（每個版本標示是否為安全性版本）、Python 與 python.org 的發行週期（只收安全修正的
+  分支）比對，發布隔天就回報，不必等 CVE 資料：Node.js 在 2026-10-21 的安全性更新修了十個 CVE，隔天弱點資料裡一個都
+  沒有。伺服器上的 Node.js 少了安全性版本或位於已停止支援的分支為 level 12 並寄出，Python 為 level 10，桌機為
+  level 7；發行版套件只回報一次。以 pip 安裝且低於移除外洩 emSign CA 版本的 certifi、pip、uv、sigstore 為 level 10
+  並寄出。Node.js segfault 為 level 10，10 分鐘內 3 次為 level 12。
+
 ## v1.20.4（2026-10-23）
 
 - **certifi 2026.10.19。** 內附的 certifi 拿掉「emSign ECC Root CA - G3」：其下的中繼憑證金鑰外洩，可替任何網域簽發
