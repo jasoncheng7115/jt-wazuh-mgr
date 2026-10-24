@@ -4,6 +4,20 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.22.1 (2026-10-25)
+
+- **jt-malware-hash 1.7: hash feeds that need no key.** abuse.ch stopped serving its
+  keyless MalwareBazaar and ThreatFox exports on 2026-10-22 (HTTP 410), and the updater
+  had failed every run since, unnoticed: the failure alert was level 5 and the stale
+  alert came only after 72 hours. Without an Auth-Key the pack now reads Neo23x0
+  signature-base (Detection Rule License 1.1), the CIRCL OSINT MISP feed (incrementally,
+  to_ids SHA256 only) and LOLDrivers, on by default, and merges them into the installed
+  list without removing anything, so a list built from MalwareBazaar keeps its hashes.
+  abuse.ch is used only with a key, at its per-key v2 addresses, and the key is sent
+  only to abuse.ch. A 410 is reported as a refusal. The list's age resets only when a
+  feed was actually read; a stale list (36 hours by default, was 72) and a refusal are
+  now mailed. 20 new tests.
+
 ## v1.22.0 (2026-10-24)
 
 - **Blocking at the edge, opt-in: jt-web 1.1 and jt-php 1.2.** Two new active-response

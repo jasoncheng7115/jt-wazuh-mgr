@@ -4,6 +4,16 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.22.1（2026-10-25）
+
+- **jt-malware-hash 1.7：キー不要のハッシュフィード。** abuse.ch は 2026-10-22 にキー不要の MalwareBazaar と ThreatFox の
+  エクスポートを停止し（HTTP 410）、更新プログラムはそれ以降毎回失敗していましたが、失敗アラートが level 5、停止アラート
+  が 72 時間後だったため気付かれませんでした。Auth-Key がない場合は Neo23x0 signature-base（Detection Rule License 1.1）、
+  CIRCL OSINT MISP feed（増分、to_ids の SHA256 のみ）、LOLDrivers を既定で読み込み、既存のリストに追加のみで統合するため、
+  MalwareBazaar から作ったリストのハッシュはそのまま残ります。abuse.ch はキーがある場合のみキー専用の v2 アドレスで使用し、
+  キーは abuse.ch にのみ送ります。410 は拒否として報告します。リストの時刻は実際にフィードを読んだときだけ更新され、リストの
+  停止（既定 36 時間、従来 72）と拒否はメール送信されるようになりました。テストを 20 件追加しました。
+
 ## v1.22.0（2026-10-24）
 
 - **入口でのブロック（オプトイン）：jt-web 1.1、jt-php 1.2。** アクティブレスポンス用のスクリプトを 2 本追加しました。

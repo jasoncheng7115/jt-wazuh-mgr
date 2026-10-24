@@ -4,6 +4,15 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.22.1（2026-10-25）
+
+- **jt-malware-hash 1.7：不需要 key 的雜湊來源。** abuse.ch 自 2026-10-22 起停止提供不需 key 的 MalwareBazaar 與 ThreatFox
+  匯出（HTTP 410），更新程式此後每次都失敗卻沒人發現：失敗告警只有 level 5，停更告警要 72 小時才出現。現在沒有
+  Auth-Key 時改讀 Neo23x0 signature-base（Detection Rule License 1.1）、CIRCL OSINT MISP feed（增量讀取，只取 to_ids
+  的 SHA256）與 LOLDrivers，預設啟用，並以只增不減的方式併入現有清單，所以由 MalwareBazaar 建立的清單保留原有雜湊。
+  abuse.ch 只在有 key 時使用（各 key 專屬的 v2 網址），key 也只送往 abuse.ch。410 視為拒絕。清單的時間只在確實讀到
+  來源時才更新；清單停更（預設 36 小時，原為 72）與被拒絕現在都會寄信。新增 20 項測試。
+
 ## v1.22.0（2026-10-24）
 
 - **在網站入口直接封鎖（選用）：jt-web 1.1、jt-php 1.2。** 新增兩支主動回應腳本。jt-nginx-deny（在網頁主機上，只用
