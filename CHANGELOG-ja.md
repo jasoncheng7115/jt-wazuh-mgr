@@ -4,6 +4,16 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.21.1（2026-10-24）
+
+- **jt-php 1.1：CVE-2026-115560。** 2026-10-23、php.net は 10/21 のリリースでは修正されていない 2 件目の session の
+  リモートコード実行（CVSS 9.2）を公表しました。session のアップロード進捗が有効（既定）なとき、アプリケーションが実行時に
+  session.serialize_handler を変更すると攻撃者のコードを実行させられます。回避策は session.upload_progress.enabled = 0
+  です。php エージェントグループが構成評価ポリシーを配布するようになりました。ディレクトリ構成ごとに 1 つ（Debian と
+  Ubuntu、RHEL、FreeBSD）で、各ホストについてこの機能が無効か、serialize handler が php_binary または php_serialize か
+  を報告し、失敗したチェックは組み込みの SCA アラートになります。セットアップ手順にコマンドを追加しました。使い捨ての
+  マネージャーで回避策の適用前後を確認済みです。
+
 ## v1.21.0（2026-10-23）
 
 - **新パック jt-runtime-vuln 1.0（133200-133299）：Wazuh の評価が低すぎる、または通知されない脆弱性と、Node.js／

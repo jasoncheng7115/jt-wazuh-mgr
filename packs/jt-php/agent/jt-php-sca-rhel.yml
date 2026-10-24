@@ -1,0 +1,65 @@
+# Security Configuration Assessment
+# jt-php: PHP session settings behind CVE-2026-115560
+# Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+#
+# On 2026-10-23 php.net disclosed CVE-2026-115560 (CVSS 9.2, remote code
+# execution) in the session upload progress feature, with no fixed release
+# yet; php.net's workaround is session.upload_progress.enabled = 0. The
+# releases of 2026-10-21 (8.5.12, 8.4.27, 8.3.36, 8.2.35) do not fix it.
+#
+# File content checks only (no commands), so the policy is delivered with the
+# php agent group without sca.remote_commands. Hosts without a PHP
+# configuration skip it. Check ids 133193 and 133194 follow the pack's range;
+# they are SCA check ids, not rule ids. A failed check raises the built-in
+# SCA rules.
+#
+# This file: RHEL, Fedora and Alma. The checks read every *.ini under the PHP configuration directories
+# (Debian/Ubuntu /etc/php/<version>/<sapi>/, RHEL /etc/php.ini and
+# /etc/php.d, FreeBSD /usr/local/etc/php*), one file per layout. They cannot
+# tell which SAPI a file belongs to: "disabled in some file" is what they
+# report. Put the setting in each SAPI's conf.d (fpm, apache2, cgi).
+
+policy:
+  id: "jt_php_session_rhel"
+  file: "jt-php-sca-rhel.yml"
+  name: "jt-php: PHP session upload progress (CVE-2026-115560), RHEL, Fedora and Alma"
+  description: "Checks that session upload progress is turned off, php.net's workaround for CVE-2026-115560 until a fixed release, and that session.serialize_handler is left at its default, php (/etc/php.ini and /etc/php.d)."
+  references:
+    - https://www.php.net/archive/2026.php
+
+requirements:
+  title: "PHP configuration (RHEL, Fedora and Alma)"
+  description: "The policy applies to hosts with /etc/php.ini and /etc/php.d."
+  condition: all
+  rules:
+    - 'f:/etc/php.ini'
+    - 'd:/etc/php.d'
+
+checks:
+  - id: 133193
+    title: "Ensure session upload progress is disabled (session.upload_progress.enabled = 0)."
+    description: "CVE-2026-115560 (CVSS 9.2): with session upload progress on, an application that changes session.serialize_handler at run time can be made to run attacker code. Upload progress is on by default."
+    rationale: "php.net's recommendation until a fixed release. The feature only reports upload progress to the application while a file is being uploaded; few applications use it."
+    remediation: "Add session.upload_progress.enabled = 0 to a file in /etc/php.d (for example /etc/php.d/99-cve-2026-115560.ini), then reload PHP-FPM and the web server. Remove it after updating PHP to a release that fixes CVE-2026-115560."
+    references:
+      - https://www.php.net/manual/en/session.upload-progress.php
+    compliance:
+      - mitre_techniques: ["T1190"]
+    condition: any
+    rules:
+      - 'f:/etc/php.ini -> r:^\s*session.upload_progress.enabled\s*=\s*0|^\s*session.upload_progress.enabled\s*=\s*off|^\s*session.upload_progress.enabled\s*=\s*false'
+      - 'd:/etc/php.d -> r:\.ini$ -> r:^\s*session.upload_progress.enabled\s*=\s*0|^\s*session.upload_progress.enabled\s*=\s*off|^\s*session.upload_progress.enabled\s*=\s*false'
+
+  - id: 133194
+    title: "Ensure session.serialize_handler is not set to php_binary or php_serialize."
+    description: "CVE-2026-115560 needs the configured handler to differ from the one an application switches to at run time; the known path is a php_binary or php_serialize configuration switched to php."
+    rationale: "The default handler, php, is not the configuration php.net describes as exploitable. Applications that need another handler can set it at run time."
+    remediation: "Remove session.serialize_handler = php_binary or php_serialize from the PHP configuration, or turn session upload progress off (check 133193)."
+    references:
+      - https://www.php.net/manual/en/session.configuration.php#ini.session.serialize-handler
+    compliance:
+      - mitre_techniques: ["T1190"]
+    condition: none
+    rules:
+      - 'f:/etc/php.ini -> r:^\s*session.serialize_handler\s*=\s*php_'
+      - 'd:/etc/php.d -> r:\.ini$ -> r:^\s*session.serialize_handler\s*=\s*php_'

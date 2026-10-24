@@ -4,6 +4,18 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.21.1 (2026-10-24)
+
+- **jt-php 1.1: CVE-2026-115560.** On 2026-10-23 php.net disclosed a second session RCE
+  (CVSS 9.2) that the releases of 2026-10-21 do not fix: with session upload progress on
+  (the default), an application that changes session.serialize_handler at run time can
+  be made to run attacker code. The workaround is session.upload_progress.enabled = 0.
+  The php agent group now delivers configuration assessment policies, one per layout
+  (Debian and Ubuntu, RHEL, FreeBSD), that report on every host whether the feature is
+  off and whether the serialize handler is php_binary or php_serialize; a failed check
+  raises the built-in SCA alerts. A new setup step gives the commands. Tested in a
+  throwaway manager before and after the workaround.
+
 ## v1.21.0 (2026-10-23)
 
 - **New pack jt-runtime-vuln 1.0 (133200-133299): vulnerabilities Wazuh grades too low

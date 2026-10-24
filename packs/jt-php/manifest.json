@@ -2,7 +2,7 @@
  "id": "jt-php",
  "name": "PHP Versions, Crashes and Web Shells",
  "name_zh": "PHP 版本、異常終止與 Web Shell",
- "version": "1.0.2",
+ "version": "1.1",
  "summary": "Finds every agent whose PHP misses a php.net security release or runs a branch php.net no longer fixes, without waiting for Wazuh's CVE feed (level 12, mailed). Adds the signs exploitation leaves on a PHP host: PHP-FPM workers and PHP processes killed by SIGSEGV and similar faults, memory exhausted before any script ran, repeated crashes; php.ini or pool changes that add auto_prepend_file or allow_url_include; PHP files, .user.ini or .htaccess appearing in upload directories; shells and discovery commands started by the web server's PHP; PHP-CGI argument injection.",
  "summary_zh": "不必等 Wazuh 的 CVE 資料，直接找出 PHP 少了 php.net 安全性版本、或所在分支已不再修補的每台 agent（level 12，會寄出）。另外偵測 PHP 主機被攻擊時留下的痕跡：PHP-FPM 工作程序與 PHP 程序被 SIGSEGV 等錯誤訊號終止、在任何程式執行前就記憶體耗盡、短時間內反覆當掉；php.ini 或 pool 設定被加上 auto_prepend_file、allow_url_include；上傳目錄出現 PHP 檔、.user.ini、.htaccess；網頁伺服器的 PHP 啟動 shell 與探查指令；PHP-CGI 參數注入。",
  "rule_id_range": "133100-133199",
@@ -24,6 +24,7 @@
   "Configuration: the agent group watches php.ini, conf.d and the FPM pool files in real time with diffs (Debian/Ubuntu /etc/php, RHEL /etc/php.ini, /etc/php.d, /etc/php-fpm.*, Remi /etc/opt/remi, FreeBSD /usr/local/etc/php*). A change is level 7 (133140), a deletion level 5. A diff that adds auto_prepend_file or auto_append_file with a value, or turns allow_url_include on (also as php_admin_value in a pool), is level 12 and mailed (133142): PHP then runs that file before every page, the usual way to keep access after the web shell is deleted. A diff that removes or rewrites disable_functions, open_basedir or security.limit_extensions is level 10 (133143). Diffs go into the alert: see the agent.conf comment if your pool files hold credentials.",
   "Web shells, on whatever paths the hosts' own FIM already watches (the group adds no web root, because a path listed in two groups keeps only one set of options): a PHP file (.php, .phtml, .phar, .php5, also double extensions such as .php.jpg) created or changed in an upload, media, image, avatar or attachment directory, outside vendor, node_modules, 3rdparty and similar library trees, is level 12 and mailed (133150/133151); Nextcloud and ownCloud user data directories are level 3. A .user.ini created anywhere outside /etc is level 12 (133153), changed level 10; Nextcloud's own is left to jt-nextcloud. An .htaccess in an upload directory is level 10 (133155). WordPress plugins that drop an empty index.php into new upload folders will raise 133150 once per folder.",
   "Commands: on Windows with Sysmon, a shell, script host or discovery tool (cmd, powershell, certutil, whoami, net, nltest...) started by php-cgi.exe, php-win.exe, httpd.exe or lsphp.exe is level 12 and mailed (133160); by php.exe, which is also the command line, level 6. On Linux, the optional auditd file jt-php.rules records every program the web server account starts outside a login session (level 3, 133170); a shell, downloader, interpreter or discovery command among them is level 12 and mailed (133171), except the sendmail shell that PHP's mail() starts (level 2). Linux has no process telemetry without auditd.",
+  "Configuration assessment (1.1): on 2026-10-23 php.net disclosed CVE-2026-115560 (CVSS 9.2, remote code execution through session upload progress when an application changes session.serialize_handler at run time) with no fixed release; its workaround is session.upload_progress.enabled = 0, and upload progress is on by default. The php group delivers SCA policies, one per configuration layout (Debian and Ubuntu /etc/php, RHEL /etc/php.ini and /etc/php.d, FreeBSD /usr/local/etc/php), that check every .ini for the setting (133191/133193/133195) and for a php_binary or php_serialize serialize handler (133192/133194/133196). File reads only, no sca.remote_commands. Results appear in the Wazuh dashboard's configuration assessment for each host, and a failed check raises the built-in SCA alerts. A policy cannot tell which SAPI a file belongs to: it reports whether some file turns the feature off. Once php.net releases a fix, the version check reports hosts that have not updated.",
   "Requests: a query string that starts with a dash, %2d or the soft hyphen %ad is PHP-CGI argument injection (CVE-2012-1823, and CVE-2024-4577 on Windows, in CISA KEV): level 8 on any URL (133180); answered 2xx by php-cgi or php.exe itself, which means the interpreter is reachable from the web, level 12 (133181). Other request attacks are the built-in web rules and jt-web.",
   "Limits: versions come from the package inventory, so PHP built from source, inside containers (see jt-container-vuln) or bundled in an application (XAMPP, a control panel) is not seen unless it is a registered program. The inventory is refreshed hourly by default, so an update shows as fixed within about seven hours. php.net's release list cannot judge distribution backports. Crash and memory rules show that something is wrong, not that an attack succeeded; the fix for the October 2026 issues is the update. No site list, host name or account is needed. No active response is offered: these alerts describe software, or a crash whose source address the log does not hold."
  ],
@@ -37,6 +38,7 @@
   "設定：agent 群組即時監控 php.ini、conf.d 與 FPM pool 設定檔並記錄差異（Debian／Ubuntu 的 /etc/php、RHEL 的 /etc/php.ini、/etc/php.d、/etc/php-fpm.*、Remi 的 /etc/opt/remi、FreeBSD 的 /usr/local/etc/php*）。變更為 level 7（133140），刪除為 level 5。差異中新增了有值的 auto_prepend_file 或 auto_append_file，或開啟 allow_url_include（包含 pool 裡的 php_admin_value），為 level 12 並寄出（133142）：PHP 會在每個頁面之前執行那個檔案，這是刪掉 web shell 之後仍保有存取的常見方式。差異中移除或改寫 disable_functions、open_basedir 或 security.limit_extensions 為 level 10（133143）。差異會進到告警：若 pool 設定檔含有帳密，請看 agent.conf 的說明。",
   "Web shell：作用在各主機自己的 FIM 已經監控的路徑上（群組不加任何網站根目錄，因為同一路徑列在兩個群組時只會保留一組選項）：上傳、media、圖片、頭像、附件目錄中，在 vendor、node_modules、3rdparty 等函式庫目錄之外，建立或修改 PHP 檔（.php、.phtml、.phar、.php5，以及 .php.jpg 這類雙副檔名）為 level 12 並寄出（133150／133151）；Nextcloud 與 ownCloud 的使用者資料目錄為 level 3。在 /etc 以外任何地方建立 .user.ini 為 level 12（133153），修改為 level 10；Nextcloud 自己的那份交給 jt-nextcloud。上傳目錄中的 .htaccess 為 level 10（133155）。會在新上傳資料夾放空白 index.php 的 WordPress 外掛，每個資料夾會觸發一次 133150。",
   "指令：Windows 有 Sysmon 時，php-cgi.exe、php-win.exe、httpd.exe 或 lsphp.exe 啟動 shell、腳本主機或探查工具（cmd、powershell、certutil、whoami、net、nltest 等）為 level 12 並寄出（133160）；由同時也是命令列的 php.exe 啟動則為 level 6。Linux 上，選用的 auditd 規則檔 jt-php.rules 會記錄網頁伺服器帳號在登入工作階段之外啟動的每個程式（level 3，133170）；其中的 shell、下載工具、直譯器或探查指令為 level 12 並寄出（133171），PHP 的 mail() 啟動的 sendmail shell 除外（level 2）。Linux 沒有 auditd 就沒有程序執行的記錄。",
+  "組態評估（1.1）：2026-10-23 php.net 公布 CVE-2026-115560（CVSS 9.2，應用程式在執行時改變 session.serialize_handler 時，可經由 session 上傳進度遠端執行程式碼），尚無修正版本；官方的暫時解法是 session.upload_progress.enabled = 0，而這個功能預設是開啟的。php 群組會派送 SCA 政策，每種設定目錄結構一份（Debian 與 Ubuntu 的 /etc/php、RHEL 的 /etc/php.ini 與 /etc/php.d、FreeBSD 的 /usr/local/etc/php），檢查每個 .ini 是否關閉該功能（133191／133193／133195），以及 serialize handler 是否設為 php_binary 或 php_serialize（133192／133194／133196）。只讀檔案，不需要 sca.remote_commands。結果顯示在 Wazuh dashboard 各主機的組態評估中，檢查失敗會觸發內建的 SCA 告警。政策無法分辨檔案屬於哪個 SAPI，只能回報是否有某個檔案關閉了該功能。php.net 推出修正版後，版本檢查會回報尚未更新的主機。",
   "請求：查詢字串以減號、%2d 或軟連字號 %ad 開頭，就是 PHP-CGI 參數注入（CVE-2012-1823，以及 Windows 上列於 CISA KEV 的 CVE-2024-4577）：任何網址都是 level 8（133180）；若由 php-cgi 或 php.exe 本身回應 2xx，表示直譯器可以從網路直接存取，為 level 12（133181）。其他請求攻擊由內建網頁規則與 jt-web 處理。",
   "限制：版本來自套件清單，所以從原始碼編譯、在容器裡（請見 jt-container-vuln）或包在應用程式裡（XAMPP、主機控制台）的 PHP，除非是已登記的程式，否則看不到。套件清單預設每小時更新，所以更新後約七小時內會顯示為已修補。php.net 的發行清單無法判斷發行版的回補。當掉與記憶體規則只能說明有異常，不能說明攻擊成功；2026 年 10 月的漏洞要靠更新修補。不需要任何站台清單、主機名稱或帳號。不提供主動回應：這些告警描述的是軟體，或是記錄中沒有來源位址的當掉事件。"
  ],
@@ -68,7 +70,10 @@
   "name": "php",
   "config": "agent.conf",
   "files": [
-   "jt-php.rules"
+   "jt-php.rules",
+   "jt-php-sca.yml",
+   "jt-php-sca-rhel.yml",
+   "jt-php-sca-freebsd.yml"
   ],
   "description": "Reads PHP-FPM's log and the web servers' error logs, watches php.ini, conf.d and FPM pools with diffs, and delivers the optional auditd rules file"
  },
@@ -118,6 +123,18 @@
    "code": "cp /var/ossec/etc/shared/jt-php.rules /etc/audit/rules.d/\naugenrules --load\nauditctl -l | grep jt_php_exec",
    "verify": "auditctl -l shows the two jt_php_exec lines; a page that calls exec('id') raises 133171.",
    "verify_zh": "auditctl -l 會顯示兩行 jt_php_exec；呼叫 exec('id') 的頁面會觸發 133171。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "1.1",
+   "title": "CVE-2026-115560: turn session upload progress off until PHP has a fix",
+   "title_zh": "CVE-2026-115560：在 PHP 推出修正前關閉 session 上傳進度",
+   "body": "php.net's workaround for CVE-2026-115560 (2026-10-23, no fixed release yet). Put the setting in every SAPI's conf.d and reload PHP-FPM and the web server gracefully; the php group's SCA policy then reports the host as passed. Remove the file after updating PHP to a release that fixes it.",
+   "body_zh": "php.net 針對 CVE-2026-115560（2026-10-23，尚無修正版本）的暫時解法。把設定放進每個 SAPI 的 conf.d，並以 graceful 方式重新載入 PHP-FPM 與網頁伺服器；php 群組的 SCA 政策就會把該主機回報為通過。PHP 更新到修正版後再刪除這個檔案。",
+   "code": "for d in /etc/php/*/*/conf.d; do printf 'session.upload_progress.enabled = 0\\n' > $d/99-cve-2026-115560.ini; done\nsystemctl reload 'php*-fpm' apache2 2>/dev/null",
+   "verify": "php -r 'var_dump(ini_get(\"session.upload_progress.enabled\"));' prints string(1) \"0\"; in the dashboard the host's jt_php_session check 133191 is passed.",
+   "verify_zh": "php -r 'var_dump(ini_get(\"session.upload_progress.enabled\"));' 會印出 string(1) \"0\"；dashboard 中該主機 jt_php_session 的檢查 133191 為通過。"
   },
   {
    "platform": "windows",

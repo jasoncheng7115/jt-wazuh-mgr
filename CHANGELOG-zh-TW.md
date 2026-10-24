@@ -4,6 +4,14 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.21.1（2026-10-24）
+
+- **jt-php 1.1：CVE-2026-115560。** 2026-10-23 php.net 公布第二個 session 遠端執行漏洞（CVSS 9.2），10/21 的版本沒有
+  修到：session 上傳進度開著（預設如此）時，應用程式在執行時改變 session.serialize_handler 就可能被執行攻擊者的程式碼。
+  暫時解法是 session.upload_progress.enabled = 0。php agent 群組現在會派送組態評估政策，每種目錄結構一份（Debian 與
+  Ubuntu、RHEL、FreeBSD），在每台主機回報這個功能是否已關閉，以及 serialize handler 是否為 php_binary 或
+  php_serialize；檢查失敗會觸發內建的 SCA 告警。部署說明新增一步，附上指令。已在拋棄式 manager 中於套用暫時解法前後實測。
+
 ## v1.21.0（2026-10-23）
 
 - **新套件 jt-runtime-vuln 1.0（133200-133299）：Wazuh 評得太低或根本不告警的弱點，以及 Node.js／Python 版本。**
