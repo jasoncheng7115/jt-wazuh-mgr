@@ -1,0 +1,587 @@
+#!/usr/bin/python3
+"""jt-nginx-deny: a Wazuh active response that blocks a client in nginx.
+
+jt-wazuh-mgr rule pack jt-web. License: AGPL-3.0-or-later.
+
+Why nginx and not the firewall: behind a CDN or another reverse proxy, the
+connection the firewall sees comes from the proxy, so firewall-drop would block
+the proxy (and every visitor with it) and never the attacker. nginx restores
+the client address with the realip module, and its access phase compares that
+restored address, so a deny written for it works whichever way the request
+arrived.
+
+What it maintains (both rendered from the same list, written together):
+  /etc/nginx/jt-ar-deny.rules  "deny <address>;" lines, included once at http
+                               level: every server and location that has no
+                               allow/deny of its own inherits them.
+  /etc/nginx/jt-ar-deny.map    "<address> 1;" lines for a geo block that sets
+                               $jt_ar_denied, for servers whose locations have
+                               their own allow/deny:  if ($jt_ar_denied) { return 403; }
+The one-time nginx snippet is jt-ar-deny-nginx.conf in the same agent group.
+The host is left alone until both files exist: on a web server without the
+snippet the response logs "not set up" and changes nothing.
+
+Protocol: Wazuh 4.x. The manager's message is one JSON line on stdin. For
+"add" the script answers with check_keys (the key is the address) and execd
+replies continue, or abort when that address already has a timer running.
+"delete" arrives when the timeout expires and removes the entry.
+
+Every change: lock, rewrite both files atomically, nginx -t, then reload. If
+nginx -t fails the previous files are put back and nothing is reloaded.
+Entries older than max_age are removed on every run (and by --expire from
+cron), so an agent restart that loses execd's timers cannot block for ever.
+
+Manual use (as root): --list, --expire, --check, --unblock ADDRESS,
+--block ADDRESS (validated exactly like an alert's address).
+
+Optional settings, /var/ossec/etc/jt-nginx-deny.conf, key=value per line:
+  map_file, rules_file, allow_file, nginx, reload (signal|systemctl),
+  ipv6_prefix (128, 64 or 48), max_entries, max_age (seconds, 0 = never),
+  log_file, lock_file
+"""
+
+import argparse
+import datetime
+import errno
+import fcntl
+import ipaddress
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+
+CONF_FILE = os.environ.get('JT_NGINX_DENY_CONF', '/var/ossec/etc/jt-nginx-deny.conf')
+DEFAULTS = {
+    'map_file': '/etc/nginx/jt-ar-deny.map',
+    'rules_file': '/etc/nginx/jt-ar-deny.rules',
+    'allow_file': '/etc/nginx/jt-ar-allow.txt',
+    'nginx': '/usr/sbin/nginx',
+    'reload': 'signal',
+    'ipv6_prefix': '128',
+    'max_entries': '10000',
+    'max_age': '604800',
+    'log_file': '/var/ossec/logs/active-responses.log',
+    'lock_file': '/var/ossec/var/run/jt-nginx-deny.lock',
+}
+NAME = 'jt-nginx-deny'
+
+
+# ---- shared: protocol and address checks (identical in jt-nginx-deny and jt-cloudflare-block) ----
+
+# Cloudflare's published proxy ranges (https://www.cloudflare.com/ips/). A
+# request that reaches the origin from one of these was relayed by Cloudflare:
+# blocking it blocks Cloudflare, not the visitor, and means the site's nginx
+# does not restore the client address.
+CLOUDFLARE_RANGES = (
+    '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+    '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+    '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+    '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+    '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32',
+    '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32',
+)
+CLOUDFLARE_NETS = tuple(ipaddress.ip_network(n) for n in CLOUDFLARE_RANGES)
+# Not global, but spelled out so the answer does not depend on the Python
+# version's idea of is_global: shared address space (carrier NAT), 6to4 and
+# Teredo relays, NAT64.
+EXTRA_REFUSED = tuple(ipaddress.ip_network(n) for n in (
+    '100.64.0.0/10', '192.0.0.0/24', '2002::/16', '2001::/32', '64:ff9b::/96', '64:ff9b:1::/48'))
+IPV6_PREFIXES = (128, 64, 48)
+MAX_MESSAGE = 1 << 20
+ADDRESS_CHARS = re.compile(r'^[0-9A-Fa-f:.]{2,45}$')
+# control characters, and what could make a log line read as JSON or markup
+SAFE_TEXT = re.compile(r'[^\x20-\x7e]|[{}"\\<>`]')
+
+
+class Refused(Exception):
+    """An address this response will not block. kind: invalid, scope, cloudflare, allowlist."""
+
+    def __init__(self, kind, reason):
+        super().__init__(reason)
+        self.kind, self.reason = kind, reason
+
+
+def clean(value, limit=64):
+    """Text from an alert, made safe to write into a log another decoder reads."""
+    return SAFE_TEXT.sub('?', str(value))[:limit]
+
+
+def shown(raw):
+    """An alert's address as it may appear in a refusal: address characters only."""
+    return re.sub(r'[^0-9A-Za-z:.%/-]', '?', str(raw))[:45]
+
+
+def program_name(argv0):
+    # execd starts us as active-response/bin/<name>; the built-in decoders and
+    # rules 650-657 expect that spelling whatever the path was.
+    return 'active-response/bin/' + os.path.basename(argv0 or NAME)
+
+
+def write_log(log_file, program, message):
+    line = '%s %s: %s\n' % (datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S'),
+                            program, message.replace('\n', ' ').replace('\r', ' '))
+    try:
+        with open(log_file, 'a', encoding='utf-8') as fh:
+            fh.write(line)
+    except OSError:
+        sys.stderr.write(line)
+
+
+def read_message(stream):
+    """The manager's JSON line: {"command": "add"|"delete", "parameters": {"alert": {...}}}."""
+    raw = stream.readline(MAX_MESSAGE)
+    if not raw.strip():
+        raise ValueError('no message on standard input')
+    try:
+        msg = json.loads(raw)
+    except ValueError:
+        raise ValueError('the message is not JSON')
+    if not isinstance(msg, dict):
+        raise ValueError('the message is not a JSON object')
+    command = msg.get('command')
+    if command not in ('add', 'delete'):
+        raise ValueError('not a valid command: %s' % clean(command, 20))
+    params = msg.get('parameters')
+    alert = params.get('alert') if isinstance(params, dict) else None
+    if not isinstance(alert, dict):
+        raise ValueError('the message carries no alert')
+    return msg
+
+
+def alert_fields(msg):
+    """(srcip, rule id, agent name) of the alert, the last two made safe for the log."""
+    alert = msg['parameters']['alert']
+    data = alert.get('data') if isinstance(alert.get('data'), dict) else {}
+    rule = alert.get('rule') if isinstance(alert.get('rule'), dict) else {}
+    agent = alert.get('agent') if isinstance(alert.get('agent'), dict) else {}
+    rule_id = str(rule.get('id') or '')
+    rule_id = rule_id if re.match(r'^\d{1,7}$', rule_id) else '-'
+    agent_name = re.sub(r'[^A-Za-z0-9_.-]', '', str(agent.get('name') or ''))[:64] or '-'
+    return data.get('srcip'), rule_id, agent_name
+
+
+def check_keys(program, keys, stdin, stdout):
+    """Ask execd whether this key already has a timer: 'continue', 'abort' or None."""
+    stdout.write(json.dumps({'version': 1, 'origin': {'name': program, 'module': 'active-response'},
+                             'command': 'check_keys', 'parameters': {'keys': keys}}) + '\n')
+    stdout.flush()
+    raw = stdin.readline(MAX_MESSAGE)
+    try:
+        answer = json.loads(raw).get('command')
+    except (ValueError, AttributeError):
+        return None
+    return answer if answer in ('continue', 'abort') else None
+
+
+def load_allowlist(path):
+    """Addresses and networks never blocked. A line that does not parse is an
+    error, not something to skip: a typo must not leave an administrator
+    blockable."""
+    nets = []
+    try:
+        with open(path, encoding='utf-8') as fh:
+            lines = fh.readlines()
+    except FileNotFoundError:
+        return nets
+    for n, line in enumerate(lines, 1):
+        item = line.split('#', 1)[0].strip()
+        if not item:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            raise ValueError('%s line %d is not an address or network: %s' % (path, n, clean(item, 50)))
+    return nets
+
+
+def parse_target(raw, ipv6_prefix=128):
+    """(target text, network) for an alert's srcip, with no policy applied.
+
+    Only a bare IPv4 or IPv6 address is accepted: no port, brackets, zone,
+    range or surrounding text. An IPv4-mapped IPv6 address (::ffff:a.b.c.d,
+    what some decoders produce) becomes the IPv4 address it carries, which is
+    what nginx and Cloudflare compare. Raises Refused('invalid').
+    """
+    text = raw if isinstance(raw, str) else ''
+    if not ADDRESS_CHARS.match(text):
+        raise Refused('invalid', 'not a plain IP address')
+    try:
+        addr = ipaddress.ip_address(text)
+    except ValueError:
+        raise Refused('invalid', 'not a plain IP address')
+    if addr.version == 6 and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    if addr.version == 6 and ipv6_prefix != 128:
+        net = ipaddress.ip_network('%s/%d' % (addr, ipv6_prefix), strict=False)
+    else:
+        net = ipaddress.ip_network(addr)
+    return (str(addr) if net.num_addresses == 1 else str(net)), net
+
+
+def block_target(raw, allow=(), ipv6_prefix=128):
+    """parse_target, then refuse what must never be blocked. Raises Refused.
+
+    Unblocking uses parse_target alone: an address added to the allowlist
+    after it was blocked must still come off the list.
+    """
+    target, net = parse_target(raw, ipv6_prefix)
+    addr = net.network_address
+    if (not addr.is_global or addr.is_multicast or addr.is_unspecified or addr.is_reserved
+            or any(net.overlaps(n) for n in EXTRA_REFUSED if n.version == net.version)):
+        raise Refused('scope', 'not a public address (private, loopback, link-local, carrier NAT, '
+                               'documentation or reserved)')
+    if any(net.overlaps(cf) for cf in CLOUDFLARE_NETS if cf.version == net.version):
+        raise Refused('cloudflare', 'a Cloudflare address: the site does not restore the client '
+                                    'address (real_ip), blocking it would block Cloudflare')
+    for item in allow:
+        if item.version == net.version and net.overlaps(item):
+            raise Refused('allowlist', 'in the allowlist (%s)' % item)
+    return target, net
+
+
+def ar_record(program, command, target, rule_id, agent_name, result):
+    """The JSON line the built-in decoder ar_log_json reads (rule 657 shows it).
+
+    Only validated values go in: the alert itself holds the attacker's URL and
+    user agent, and a line here is decoded again by the manager.
+    """
+    return json.dumps({'version': 1, 'origin': {'name': program, 'module': 'active-response'},
+                       'command': command,
+                       'parameters': {'program': program,
+                                      'alert': {'rule': {'id': rule_id}, 'agent': {'name': agent_name},
+                                                'data': {'srcip': target}}},
+                       'jt': {'result': result}}, sort_keys=True)
+
+# ---- end shared ----
+
+
+ENTRY = re.compile(r'^(?P<target>[0-9A-Fa-f:.]+(?:/\d{1,3})?)\s+1;\s*#\s*added=(?P<added>\d{1,12})'
+                   r'(?:\s+rule=(?P<rule>[\d-]{1,7}))?(?:\s+agent=(?P<agent>[A-Za-z0-9_.-]{1,64}))?\s*$')
+HEADER = ('# Managed by jt-nginx-deny (jt-wazuh-mgr, pack jt-web). Do not edit: the file is\n'
+          '# rewritten on every block and unblock. Permanent blocks belong in your own file.\n')
+
+
+class Failure(Exception):
+    pass
+
+
+def load_config(path=None):
+    cfg = dict(DEFAULTS)
+    path = path or CONF_FILE
+    try:
+        with open(path, encoding='utf-8') as fh:
+            for line in fh:
+                line = line.split('#', 1)[0].strip()
+                if not line:
+                    continue
+                key, sep, value = line.partition('=')
+                key, value = key.strip(), value.strip()
+                if not sep or key not in DEFAULTS:
+                    raise Failure('%s: unknown setting %s' % (path, clean(key, 40)))
+                cfg[key] = value
+    except FileNotFoundError:
+        pass
+    try:
+        cfg['ipv6_prefix'] = int(cfg['ipv6_prefix'])
+        cfg['max_entries'] = int(cfg['max_entries'])
+        cfg['max_age'] = int(cfg['max_age'])
+    except ValueError:
+        raise Failure('%s: ipv6_prefix, max_entries and max_age must be numbers' % path)
+    if cfg['ipv6_prefix'] not in IPV6_PREFIXES:
+        raise Failure('%s: ipv6_prefix must be 128, 64 or 48' % path)
+    if cfg['reload'] not in ('signal', 'systemctl'):
+        raise Failure('%s: reload must be signal or systemctl' % path)
+    for key in ('map_file', 'rules_file', 'allow_file', 'nginx', 'log_file', 'lock_file'):
+        if not os.path.isabs(cfg[key]):
+            raise Failure('%s: %s must be an absolute path' % (path, key))
+    return cfg
+
+
+def read_entries(path):
+    """{target: (added, rule, agent)} from the map file; refuses lines it did not write."""
+    entries = {}
+    with open(path, encoding='utf-8') as fh:
+        for n, line in enumerate(fh, 1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            m = ENTRY.match(stripped)
+            if not m:
+                raise Failure('%s line %d was not written by %s; nothing changed' % (path, n, NAME))
+            target = m.group('target')
+            try:
+                ipaddress.ip_network(target)
+            except ValueError:
+                raise Failure('%s line %d holds no valid address; nothing changed' % (path, n))
+            entries[target] = (int(m.group('added')), m.group('rule') or '-', m.group('agent') or '-')
+    return entries
+
+
+def _sort_key(target):
+    net = ipaddress.ip_network(target)
+    return (net.version, net.network_address, net.prefixlen)
+
+
+def render(entries):
+    """(map text, rules text) for the entries."""
+    map_lines, rule_lines = [HEADER], [HEADER]
+    for target in sorted(entries, key=_sort_key):
+        added, rule, agent = entries[target]
+        note = '# added=%d rule=%s agent=%s' % (added, rule, agent)
+        map_lines.append('%s 1; %s\n' % (target, note))
+        rule_lines.append('deny %s; %s\n' % (target, note))
+    return ''.join(map_lines), ''.join(rule_lines)
+
+
+def atomic_write(path, text):
+    directory = os.path.dirname(path)
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix='.jt-ar-deny-')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    try:
+        dfd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+    except OSError:
+        pass
+
+
+def run(cmd, timeout=120):
+    try:
+        r = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return 1, str(e)
+    return r.returncode, r.stdout.decode('utf-8', 'replace')
+
+
+def first_error(output):
+    lines = [l for l in output.splitlines() if l.strip()]
+    pick = [l for l in lines if '[emerg]' in l or '[crit]' in l or 'failed' in l] or lines or ['no output']
+    return pick[0].strip()[:300]
+
+
+class Lock(object):
+    def __init__(self, path, wait=120):
+        self.path, self.wait, self.fh = path, wait, None
+
+    def __enter__(self):
+        directory = os.path.dirname(self.path)
+        if not os.path.isdir(directory):
+            self.path = os.path.join('/run/lock' if os.path.isdir('/run/lock') else tempfile.gettempdir(),
+                                     os.path.basename(self.path))
+        self.fh = open(self.path, 'a')
+        deadline = time.monotonic() + self.wait
+        while True:
+            try:
+                fcntl.flock(self.fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return self
+            except OSError as e:
+                if e.errno not in (errno.EAGAIN, errno.EACCES) or time.monotonic() > deadline:
+                    self.fh.close()
+                    raise Failure('another %s run holds %s' % (NAME, self.path))
+                time.sleep(0.2)
+
+    def __exit__(self, *exc):
+        fcntl.flock(self.fh.fileno(), fcntl.LOCK_UN)
+        self.fh.close()
+
+
+class Deny(object):
+    """The deny list on one host. now() and run() are replaceable for tests."""
+
+    def __init__(self, cfg, program, now=time.time, runner=run):
+        self.cfg, self.program, self.now, self.runner = cfg, program, now, runner
+
+    def log(self, message):
+        write_log(self.cfg['log_file'], self.program, message)
+
+    def configured(self):
+        return os.path.isfile(self.cfg['map_file']) and os.path.isfile(self.cfg['rules_file'])
+
+    def _expired(self, entries):
+        if self.cfg['max_age'] <= 0:
+            return []
+        limit = self.now() - self.cfg['max_age']
+        return [t for t, (added, _r, _a) in entries.items() if added < limit]
+
+    def apply(self, add=None, remove=None):
+        """Change the list and make nginx use it. Returns the change made, as text.
+
+        add: (target, rule, agent); remove: target. Under the lock: read,
+        drop expired entries, change, write both files, nginx -t, reload.
+        """
+        with Lock(self.cfg['lock_file']):
+            with open(self.cfg['map_file'], encoding='utf-8') as fh:
+                old_map = fh.read()
+            with open(self.cfg['rules_file'], encoding='utf-8') as fh:
+                old_rules = fh.read()
+            entries = read_entries(self.cfg['map_file'])
+            expired = self._expired(entries)
+            for target in expired:
+                del entries[target]
+            outcome = 'unchanged'
+            if add:
+                target, rule, agent = add
+                if target in entries:
+                    outcome = 'already blocked'
+                elif len(entries) >= self.cfg['max_entries']:
+                    raise Failure('the deny list holds %d entries (max_entries); %s not blocked'
+                                  % (len(entries), target))
+                else:
+                    entries[target] = (int(self.now()), rule, agent)
+                    outcome = 'blocked'
+            if remove:
+                if entries.pop(remove, None):
+                    outcome = 'unblocked'
+                else:
+                    outcome = 'not in the list'
+            new_map, new_rules = render(entries)
+            if new_map == old_map and new_rules == old_rules:
+                return outcome, expired
+            atomic_write(self.cfg['map_file'], new_map)
+            atomic_write(self.cfg['rules_file'], new_rules)
+            code, out = self.runner([self.cfg['nginx'], '-t', '-q'])
+            if code != 0:
+                atomic_write(self.cfg['map_file'], old_map)
+                atomic_write(self.cfg['rules_file'], old_rules)
+                raise Failure('nginx -t failed, the previous list was put back and nginx was not '
+                              'reloaded: %s' % clean(first_error(out), 300))
+            if self.cfg['reload'] == 'systemctl':
+                code, out = self.runner(['systemctl', 'reload', 'nginx'])
+            else:
+                code, out = self.runner([self.cfg['nginx'], '-s', 'reload'])
+            if code != 0:
+                raise Failure('the list is written and valid but nginx did not reload: %s'
+                              % clean(first_error(out), 300))
+            return outcome, expired
+
+
+def handle_alert(deny, stdin, stdout):
+    """One run started by execd. Returns the exit status."""
+    try:
+        msg = read_message(stdin)
+    except ValueError as e:
+        deny.log('ERROR %s' % e)
+        return 1
+    command = msg['command']
+    srcip, rule_id, agent_name = alert_fields(msg)
+    if not deny.configured():
+        deny.log('not set up on this host (%s or %s missing); nothing blocked'
+                 % (deny.cfg['map_file'], deny.cfg['rules_file']))
+        return 0
+    try:
+        if command == 'add':
+            allow = load_allowlist(deny.cfg['allow_file'])
+            target, _net = block_target(srcip, allow, deny.cfg['ipv6_prefix'])
+        else:
+            target, _net = parse_target(srcip, deny.cfg['ipv6_prefix'])
+    except Refused as r:
+        deny.log('refused %s: %s (rule %s)' % (shown(srcip), r.reason, rule_id))
+        return 0
+    except ValueError as e:
+        deny.log('ERROR %s; nothing blocked' % e)
+        return 1
+    if command == 'add':
+        answer = check_keys(deny.program, [target], stdin, stdout)
+        if answer == 'abort':
+            deny.log('%s already blocked, timer running (rule %s)' % (target, rule_id))
+            return 0
+        if answer != 'continue':
+            deny.log('ERROR execd did not answer check_keys; %s not blocked' % target)
+            return 1
+    try:
+        if command == 'add':
+            outcome, expired = deny.apply(add=(target, rule_id, agent_name))
+        else:
+            outcome, expired = deny.apply(remove=target)
+    except (Failure, OSError) as e:
+        deny.log('ERROR %s %s: %s' % (command, target, clean(e, 400)))
+        return 1
+    if expired:
+        deny.log('removed %d entries older than max_age: %s' % (len(expired), ' '.join(sorted(expired))[:400]))
+    deny.log(ar_record(deny.program, command, target, rule_id, agent_name, outcome))
+    return 0
+
+
+def main(argv=None, stdin=sys.stdin, stdout=sys.stdout):
+    argv = sys.argv if argv is None else argv
+    program = program_name(argv[0])
+    parser = argparse.ArgumentParser(prog=NAME, description='Wazuh active response: deny a client in nginx.')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--list', action='store_true', help='print the blocked addresses')
+    group.add_argument('--expire', action='store_true', help='remove entries older than max_age')
+    group.add_argument('--check', action='store_true', help='check the settings, files and nginx -t')
+    group.add_argument('--block', metavar='ADDRESS')
+    group.add_argument('--unblock', metavar='ADDRESS')
+    args = parser.parse_args(argv[1:])
+    try:
+        cfg = load_config()
+    except Failure as e:
+        write_log(DEFAULTS['log_file'], program, 'ERROR %s' % e)
+        sys.stderr.write('%s\n' % e)
+        return 1
+    deny = Deny(cfg, program)
+    manual = args.list or args.expire or args.check or args.block or args.unblock
+    if not manual:
+        return handle_alert(deny, stdin, stdout)
+
+    if not deny.configured():
+        sys.stderr.write('not set up: %s and %s must exist\n' % (cfg['map_file'], cfg['rules_file']))
+        return 1
+    try:
+        if args.list:
+            for target, (added, rule, agent) in sorted(read_entries(cfg['map_file']).items(),
+                                                       key=lambda kv: _sort_key(kv[0])):
+                stamp = datetime.datetime.fromtimestamp(added).strftime('%Y-%m-%d %H:%M')
+                print('%-40s %s rule %s agent %s' % (target, stamp, rule, agent))
+            return 0
+        if args.check:
+            allow = load_allowlist(cfg['allow_file'])
+            read_entries(cfg['map_file'])
+            code, out = run([cfg['nginx'], '-t', '-q'])
+            print('settings ok; %d allowlist entries; nginx -t %s' % (len(allow), 'ok' if code == 0 else
+                                                                      'FAILED: ' + first_error(out)))
+            return 0 if code == 0 else 1
+        if args.expire:
+            outcome, expired = deny.apply()
+            if expired:
+                deny.log('removed %d entries older than max_age: %s'
+                         % (len(expired), ' '.join(sorted(expired))[:400]))
+            print('%d expired entries removed' % len(expired))
+            return 0
+        if args.block:
+            target, _net = block_target(args.block, load_allowlist(cfg['allow_file']), cfg['ipv6_prefix'])
+            outcome, _e = deny.apply(add=(target, '-', 'manual'))
+        else:
+            target, _net = parse_target(args.unblock, cfg['ipv6_prefix'])
+            outcome, _e = deny.apply(remove=target)
+        deny.log(ar_record(program, 'add' if args.block else 'delete', target, '-', 'manual', outcome))
+        print('%s: %s' % (target, outcome))
+        return 0
+    except Refused as r:
+        sys.stderr.write('refused: %s\n' % r.reason)
+        return 1
+    except (Failure, ValueError, OSError) as e:
+        sys.stderr.write('%s\n' % e)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

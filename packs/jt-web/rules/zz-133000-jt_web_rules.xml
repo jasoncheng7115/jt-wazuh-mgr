@@ -197,5 +197,32 @@
     </mitre>
     <group>jt_web_scanner,</group>
   </rule>
+</group>
+
+<!-- ================= the edge-blocking active responses ================= -->
+<group name="active_response,jt_web,">
+
+  <!-- jt-nginx-deny and jt-cloudflare-block log to active-responses.log, which
+       every agent reads by default; built-in 650 takes those lines (ar_log_json)
+       and 657 shows each block and unblock at level 3. These two add what goes
+       wrong: an address that should have been blocked was not (nginx -t failed,
+       nginx did not reload, Cloudflare refused or was unreachable, the
+       allowlist did not parse), or an unblock did not happen. -->
+  <rule id="133050" level="10">
+    <if_sid>650</if_sid>
+    <match type="pcre2">active-response/bin/jt-(?:nginx-deny|cloudflare-block): ERROR </match>
+    <description>[WARN] jt-web: an edge-blocking active response failed, so an address was not blocked or not unblocked</description>
+    <group>jt_web_ar,</group>
+  </rule>
+
+  <!-- A Cloudflare address as the source of an alert: the site that logged it
+       does not restore the client address (real_ip from CF-Connecting-IP),
+       so its rules, and any block, see Cloudflare instead of the visitor. -->
+  <rule id="133051" level="7">
+    <if_sid>650</if_sid>
+    <match type="pcre2">active-response/bin/jt-(?:nginx-deny|cloudflare-block): refused \S+: a Cloudflare address</match>
+    <description>jt-web: a web alert came from a Cloudflare address: that site does not restore the client address (real_ip), so it cannot be blocked</description>
+    <group>jt_web_ar,</group>
+  </rule>
 
 </group>

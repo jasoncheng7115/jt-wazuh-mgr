@@ -2,7 +2,7 @@
  "id": "jt-php",
  "name": "PHP Versions, Crashes and Web Shells",
  "name_zh": "PHP 版本、異常終止與 Web Shell",
- "version": "1.1",
+ "version": "1.2",
  "summary": "Finds every agent whose PHP misses a php.net security release or runs a branch php.net no longer fixes, without waiting for Wazuh's CVE feed (level 12, mailed). Adds the signs exploitation leaves on a PHP host: PHP-FPM workers and PHP processes killed by SIGSEGV and similar faults, memory exhausted before any script ran, repeated crashes; php.ini or pool changes that add auto_prepend_file or allow_url_include; PHP files, .user.ini or .htaccess appearing in upload directories; shells and discovery commands started by the web server's PHP; PHP-CGI argument injection.",
  "summary_zh": "不必等 Wazuh 的 CVE 資料，直接找出 PHP 少了 php.net 安全性版本、或所在分支已不再修補的每台 agent（level 12，會寄出）。另外偵測 PHP 主機被攻擊時留下的痕跡：PHP-FPM 工作程序與 PHP 程序被 SIGSEGV 等錯誤訊號終止、在任何程式執行前就記憶體耗盡、短時間內反覆當掉；php.ini 或 pool 設定被加上 auto_prepend_file、allow_url_include；上傳目錄出現 PHP 檔、.user.ini、.htaccess；網頁伺服器的 PHP 啟動 shell 與探查指令；PHP-CGI 參數注入。",
  "rule_id_range": "133100-133199",
@@ -26,7 +26,8 @@
   "Commands: on Windows with Sysmon, a shell, script host or discovery tool (cmd, powershell, certutil, whoami, net, nltest...) started by php-cgi.exe, php-win.exe, httpd.exe or lsphp.exe is level 12 and mailed (133160); by php.exe, which is also the command line, level 6. On Linux, the optional auditd file jt-php.rules records every program the web server account starts outside a login session (level 3, 133170); a shell, downloader, interpreter or discovery command among them is level 12 and mailed (133171), except the sendmail shell that PHP's mail() starts (level 2). Linux has no process telemetry without auditd.",
   "Configuration assessment (1.1): on 2026-10-23 php.net disclosed CVE-2026-115560 (CVSS 9.2, remote code execution through session upload progress when an application changes session.serialize_handler at run time) with no fixed release; its workaround is session.upload_progress.enabled = 0, and upload progress is on by default. The php group delivers SCA policies, one per configuration layout (Debian and Ubuntu /etc/php, RHEL /etc/php.ini and /etc/php.d, FreeBSD /usr/local/etc/php), that check every .ini for the setting (133191/133193/133195) and for a php_binary or php_serialize serialize handler (133192/133194/133196). File reads only, no sca.remote_commands. Results appear in the Wazuh dashboard's configuration assessment for each host, and a failed check raises the built-in SCA alerts. A policy cannot tell which SAPI a file belongs to: it reports whether some file turns the feature off. Once php.net releases a fix, the version check reports hosts that have not updated.",
   "Requests: a query string that starts with a dash, %2d or the soft hyphen %ad is PHP-CGI argument injection (CVE-2012-1823, and CVE-2024-4577 on Windows, in CISA KEV): level 8 on any URL (133180); answered 2xx by php-cgi or php.exe itself, which means the interpreter is reachable from the web, level 12 (133181). Other request attacks are the built-in web rules and jt-web.",
-  "Limits: versions come from the package inventory, so PHP built from source, inside containers (see jt-container-vuln) or bundled in an application (XAMPP, a control panel) is not seen unless it is a registered program. The inventory is refreshed hourly by default, so an update shows as fixed within about seven hours. php.net's release list cannot judge distribution backports. Crash and memory rules show that something is wrong, not that an attack succeeded; the fix for the October 2026 issues is the update. No site list, host name or account is needed. No active response is offered: these alerts describe software, or a crash whose source address the log does not hold."
+  "Limits: versions come from the package inventory, so PHP built from source, inside containers (see jt-container-vuln) or bundled in an application (XAMPP, a control panel) is not seen unless it is a registered program. The inventory is refreshed hourly by default, so an update shows as fixed within about seven hours. php.net's release list cannot judge distribution backports. Crash and memory rules show that something is wrong, not that an attack succeeded; the fix for the October 2026 issues is the update. No site list, host name or account is needed. No active response is offered: these alerts describe software, or a crash whose source address the log does not hold.",
+  "Active responses (1.2, opt-in): PHP-CGI argument injection (133180, and 133181 when php-cgi itself answered) can block the source in nginx or at Cloudflare. They use jt-web's scripts and commands (jt-nginx-deny, jt-cloudflare-block): install jt-web 1.1 or later and follow its active response steps; this pack ships no script of its own. The address checks, allowlists and timeout are jt-web's."
  ],
  "notes_zh": [
   "為什麼需要：2026-10-21 php.net 修正了 PHP 處理請求時兩個不需登入就能遠端執行程式碼的漏洞（CVE-2026-109618、CVE-2026-109619，CVSS 9.2，影響 PHP-FPM、mod_php、php-cgi、FrankenPHP、LiteSpeed），沒有替代的緩解方式。過了一天，Wazuh 的弱點資料仍然沒有收錄這兩個 CVE，所以沒有任何主機被標出來。而跟著 php.net 版本號發行的套件（deb.sury.org、Remi、FreeBSD ports、Alpine、Homebrew、Windows 版）正是弱點資料最晚比對得到的。本套件改成比對版本，不比對 CVE。",
@@ -40,7 +41,8 @@
   "指令：Windows 有 Sysmon 時，php-cgi.exe、php-win.exe、httpd.exe 或 lsphp.exe 啟動 shell、腳本主機或探查工具（cmd、powershell、certutil、whoami、net、nltest 等）為 level 12 並寄出（133160）；由同時也是命令列的 php.exe 啟動則為 level 6。Linux 上，選用的 auditd 規則檔 jt-php.rules 會記錄網頁伺服器帳號在登入工作階段之外啟動的每個程式（level 3，133170）；其中的 shell、下載工具、直譯器或探查指令為 level 12 並寄出（133171），PHP 的 mail() 啟動的 sendmail shell 除外（level 2）。Linux 沒有 auditd 就沒有程序執行的記錄。",
   "組態評估（1.1）：2026-10-23 php.net 公布 CVE-2026-115560（CVSS 9.2，應用程式在執行時改變 session.serialize_handler 時，可經由 session 上傳進度遠端執行程式碼），尚無修正版本；官方的暫時解法是 session.upload_progress.enabled = 0，而這個功能預設是開啟的。php 群組會派送 SCA 政策，每種設定目錄結構一份（Debian 與 Ubuntu 的 /etc/php、RHEL 的 /etc/php.ini 與 /etc/php.d、FreeBSD 的 /usr/local/etc/php），檢查每個 .ini 是否關閉該功能（133191／133193／133195），以及 serialize handler 是否設為 php_binary 或 php_serialize（133192／133194／133196）。只讀檔案，不需要 sca.remote_commands。結果顯示在 Wazuh dashboard 各主機的組態評估中，檢查失敗會觸發內建的 SCA 告警。政策無法分辨檔案屬於哪個 SAPI，只能回報是否有某個檔案關閉了該功能。php.net 推出修正版後，版本檢查會回報尚未更新的主機。",
   "請求：查詢字串以減號、%2d 或軟連字號 %ad 開頭，就是 PHP-CGI 參數注入（CVE-2012-1823，以及 Windows 上列於 CISA KEV 的 CVE-2024-4577）：任何網址都是 level 8（133180）；若由 php-cgi 或 php.exe 本身回應 2xx，表示直譯器可以從網路直接存取，為 level 12（133181）。其他請求攻擊由內建網頁規則與 jt-web 處理。",
-  "限制：版本來自套件清單，所以從原始碼編譯、在容器裡（請見 jt-container-vuln）或包在應用程式裡（XAMPP、主機控制台）的 PHP，除非是已登記的程式，否則看不到。套件清單預設每小時更新，所以更新後約七小時內會顯示為已修補。php.net 的發行清單無法判斷發行版的回補。當掉與記憶體規則只能說明有異常，不能說明攻擊成功；2026 年 10 月的漏洞要靠更新修補。不需要任何站台清單、主機名稱或帳號。不提供主動回應：這些告警描述的是軟體，或是記錄中沒有來源位址的當掉事件。"
+  "限制：版本來自套件清單，所以從原始碼編譯、在容器裡（請見 jt-container-vuln）或包在應用程式裡（XAMPP、主機控制台）的 PHP，除非是已登記的程式，否則看不到。套件清單預設每小時更新，所以更新後約七小時內會顯示為已修補。php.net 的發行清單無法判斷發行版的回補。當掉與記憶體規則只能說明有異常，不能說明攻擊成功；2026 年 10 月的漏洞要靠更新修補。不需要任何站台清單、主機名稱或帳號。不提供主動回應：這些告警描述的是軟體，或是記錄中沒有來源位址的當掉事件。",
+  "主動回應（1.2，需自行開啟）：PHP-CGI 參數注入（133180，以及由 php-cgi 本身回應的 133181）可以在 nginx 或 Cloudflare 封鎖來源。它們使用 jt-web 的腳本與指令（jt-nginx-deny、jt-cloudflare-block）：請安裝 jt-web 1.1 以上並照它的主動回應步驟設定；本套件沒有自己的腳本。位址檢查、允許清單與逾時都與 jt-web 相同。"
  ],
  "files": [
   {
@@ -143,6 +145,47 @@
    "title_zh": "Windows：Sysmon 程序建立事件",
    "body": "133160 and 133161 read Sysmon event 1. A Sysmon configuration that excludes processes started by php-cgi.exe or httpd.exe, or that includes only selected images, will not report them.",
    "body_zh": "133160 與 133161 讀取 Sysmon 事件 1。若 Sysmon 設定排除了 php-cgi.exe 或 httpd.exe 啟動的程序，或只納入指定的映像，就不會回報。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.2",
+   "title": "Active responses: set up jt-web's blocking first",
+   "title_zh": "主動回應：先設定 jt-web 的封鎖",
+   "body": "The two active responses of this pack run jt-web's scripts. Install jt-web 1.1 or later and do its active response steps: the commands on every manager node, the nginx deny list on each reverse proxy, and for Cloudflare the token and settings on every manager node. Then switch a response on here; it takes effect after the manager restarts.",
+   "body_zh": "本套件的兩個主動回應執行的是 jt-web 的腳本。請安裝 jt-web 1.1 以上並完成它的主動回應步驟：每個 manager 節點的指令、每台反向代理的 nginx 封鎖清單，以及使用 Cloudflare 時每個 manager 節點的 token 與設定。之後再於此處開啟回應；manager 重新啟動後生效。",
+   "verify": "grep -A3 '<name>jt-nginx-deny</name>' /var/ossec/etc/ossec.conf on every node; jt-nginx-deny --check on each proxy.",
+   "verify_zh": "在每個節點執行 grep -A3 '<name>jt-nginx-deny</name>' /var/ossec/etc/ossec.conf；在每台代理執行 jt-nginx-deny --check。"
+  }
+ ],
+ "active_response": [
+  {
+   "id": "nginx-deny-php-cgi",
+   "command": "jt-nginx-deny",
+   "rules_id": [
+    "133180",
+    "133181"
+   ],
+   "location": "local",
+   "timeout": 86400,
+   "title": "Deny, in nginx, an address that tried PHP-CGI argument injection",
+   "title_zh": "在 nginx 封鎖嘗試 PHP-CGI 參數注入的位址",
+   "body": "Runs jt-nginx-deny on the agent that logged the request. The client address, as nginx restored it with realip (so this works for sites behind Cloudflare or another proxy, where a firewall would only see the proxy), is added to the deny list nginx includes at http level; nginx -t checks the result before nginx reloads, and the previous list is put back if it fails. Every site of that nginx then answers the address with 403, until Wazuh removes the entry when the timeout ends (a day by default). Needs the jt-nginx-deny command on every manager node, and on each reverse proxy the script in /var/ossec/active-response/bin and the nginx snippet (see the setup steps); on the other agents of the web group the response logs \"not set up\" and changes nothing. It never blocks private, loopback, carrier NAT, documentation or Cloudflare addresses, nor anything in /etc/nginx/jt-ar-allow.txt, and the manager never sends it an address in <global><white_list>. Uses jt-web's jt-nginx-deny: install jt-web 1.1 or later and do its active response steps first. Risk: 133180 matches the query string alone, so a site whose own links start a query with a dash (rare, for example ?-sort=name) blocks its visitors; look at a week of 133180 alerts before enabling it. The address is the first field of the access log, which nginx writes, so a request cannot choose it, unless a site trusts X-Forwarded-For or CF-Connecting-IP from anyone (set_real_ip_from 0.0.0.0/0): then any request can name an address and have it blocked. set_real_ip_from must list only Cloudflare's and your own proxies' ranges.",
+   "body_zh": "在記錄這筆請求的 agent 上執行 jt-nginx-deny。nginx 經 realip 還原的用戶端位址（所以在 Cloudflare 或其他代理後面的網站也有效，防火牆在那裡只看得到代理）會加入 nginx 在 http 層引入的封鎖清單；重新載入前先以 nginx -t 檢查，失敗就放回原本的清單。之後該 nginx 上的每個網站都對這個位址回應 403，直到逾時（預設一天）由 Wazuh 移除。需要在每個 manager 節點定義 jt-nginx-deny 指令，並在每台反向代理放好 /var/ossec/active-response/bin 裡的腳本與 nginx 設定片段（見部署步驟）；web 群組裡其他 agent 只會記錄「not set up」，什麼都不改。它絕不封鎖私有、迴環、電信業者 NAT、文件用途或 Cloudflare 的位址，也不封鎖 /etc/nginx/jt-ar-allow.txt 裡的位址；<global><white_list> 裡的位址 manager 根本不會送出。使用 jt-web 的 jt-nginx-deny：請先安裝 jt-web 1.1 以上並完成它的主動回應步驟。風險：133180 只比對查詢字串，所以網站自己的連結若以破折號開始查詢字串（少見，例如 ?-sort=name），訪客就會被封鎖；開啟前請先看一週的 133180 告警。位址取自存取記錄的第一個欄位，由 nginx 寫入，請求本身無法指定；除非某個網站信任任何來源送的 X-Forwarded-For 或 CF-Connecting-IP（set_real_ip_from 0.0.0.0/0），那樣任何請求都能指定一個位址讓它被封鎖。set_real_ip_from 只能列 Cloudflare 與自家代理的位址範圍。"
+  },
+  {
+   "id": "cloudflare-block-php-cgi",
+   "command": "jt-cloudflare-block",
+   "rules_id": [
+    "133180",
+    "133181"
+   ],
+   "location": "server",
+   "timeout": 86400,
+   "title": "Block, at Cloudflare, an address that tried PHP-CGI argument injection",
+   "title_zh": "在 Cloudflare 封鎖嘗試 PHP-CGI 參數注入的位址",
+   "body": "Runs jt-cloudflare-block on the manager node that raised the alert: it creates a Cloudflare IP Access Rule (block, or a challenge if mode says so) for the address, for the whole account or for the zones listed in /var/ossec/etc/jt-cloudflare-block.conf, and deletes it when the timeout ends (a day by default). It only ever deletes rules it made itself (their note starts with \"jt-wazuh-mgr active response\"); a rule someone else made for the same address is left alone. Use it for sites proxied by Cloudflare, whose visitors never reach nginx directly; it can run together with the nginx responses. Needs the jt-cloudflare-block command and script on every manager node, an API token in /var/ossec/etc/jt-cloudflare.token (root, mode 600, never logged) and outbound HTTPS from the managers to api.cloudflare.com (see the setup steps). It refuses the same addresses as the nginx responses; the allowlist on the managers is /var/ossec/etc/jt-cloudflare-allow.txt. A failed call is rule 133050 (level 10), not a silent miss. Risk: an account-level rule blocks the address on every zone of the account, including sites the alert had nothing to do with. Uses jt-web's jt-cloudflare-block: install jt-web 1.1 or later and do its Cloudflare step first. Risk: 133180 matches the query string alone, so a site whose own links start a query with a dash (rare, for example ?-sort=name) blocks its visitors; look at a week of 133180 alerts before enabling it.",
+   "body_zh": "在產生告警的 manager 節點上執行 jt-cloudflare-block：為該位址建立一條 Cloudflare IP Access Rule（封鎖，或依 mode 設定改為挑戰），範圍是整個帳戶或 /var/ossec/etc/jt-cloudflare-block.conf 列出的 zone，逾時（預設一天）後再刪除。它只刪除自己建立的規則（備註以「jt-wazuh-mgr active response」開頭）；別人為同一位址建的規則不會動。用在經 Cloudflare 代理的網站，那些訪客從不直接連到 nginx；可以和 nginx 的回應同時啟用。需要在每個 manager 節點定義 jt-cloudflare-block 指令並放好腳本、/var/ossec/etc/jt-cloudflare.token 裡的 API token（root、權限 600、絕不寫進記錄），以及 manager 能以 HTTPS 連到 api.cloudflare.com（見部署步驟）。拒絕封鎖的位址與 nginx 的回應相同；manager 上的允許清單是 /var/ossec/etc/jt-cloudflare-allow.txt。呼叫失敗是規則 133050（level 10），不會無聲漏掉。風險：帳戶層級的規則會在帳戶內每個 zone 封鎖該位址，包括與這次告警無關的網站。使用 jt-web 的 jt-cloudflare-block：請先安裝 jt-web 1.1 以上並完成它的 Cloudflare 步驟。風險：133180 只比對查詢字串，所以網站自己的連結若以破折號開始查詢字串（少見，例如 ?-sort=name），訪客就會被封鎖；開啟前請先看一週的 133180 告警。"
   }
  ]
 }

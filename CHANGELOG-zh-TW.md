@@ -4,6 +4,17 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.22.0（2026-10-24）
+
+- **在網站入口直接封鎖（選用）：jt-web 1.1、jt-php 1.2。** 新增兩支主動回應腳本。jt-nginx-deny（在網頁主機上，只用
+  Python 標準函式庫）維護 http 層的 nginx deny 清單，不必改任何網站的設定；nginx 在 realip 之後才比對位址，所以經
+  Cloudflare 的網站封鎖的是訪客的真實位址。每次變更先跑 nginx -t，失敗就把清單還原到位元組相同。jt-cloudflare-block
+  （在 manager 上，API token 不放在網頁主機）建立帶有自己註記的 Cloudflare IP Access Rule，也只會刪除這些規則。兩者
+  都拒絕私有、保留、Cloudflare 位址與允許清單內的位址，允許清單解析失敗就完全停止封鎖。提供的回應：真的回了內容的
+  敏感檔、已知漏洞端點探測、掃描工具（jt-web）與 PHP-CGI 參數注入（jt-php），逾時一律 24 小時。新規則 133050（L10，
+  封鎖或解除失敗）與 133051（L7，告警來源是 Cloudflare 位址，代表該網站沒有還原用戶端位址）。沒有啟用回應就不會封鎖
+  任何位址。新增 66 項測試；已對 nginx 1.30.5 實際跑過一輪。
+
 ## v1.21.1（2026-10-24）
 
 - **jt-php 1.1：CVE-2026-115560。** 2026-10-23 php.net 公布第二個 session 遠端執行漏洞（CVSS 9.2），10/21 的版本沒有

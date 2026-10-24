@@ -1,0 +1,569 @@
+#!/usr/bin/python3
+"""jt-cloudflare-block: a Wazuh active response that blocks a client at Cloudflare.
+
+jt-wazuh-mgr rule pack jt-web. License: AGPL-3.0-or-later.
+
+A site proxied by Cloudflare is reached from Cloudflare's addresses, so no
+firewall in front of the origin can block a visitor. This response creates a
+Cloudflare IP Access Rule for the alert's source address, at account level
+(every zone of the account) or for the zones listed, and deletes it again when
+Wazuh sends "delete" at the end of the timeout. It only ever deletes rules it
+created itself: they carry a note that starts with "jt-wazuh-mgr active
+response". A rule someone else made for the same address is left as it is.
+
+It runs where the manager runs it: with location "server", on the manager node
+that raised the alert, so the API token stays on the managers. It needs
+outbound HTTPS to api.cloudflare.com and the system's Python (/usr/bin/python3;
+the Python bundled with Wazuh has no CA certificates).
+
+Protocol: Wazuh 4.x, as jt-nginx-deny: one JSON line on stdin, check_keys on
+"add" (the key is the address), "delete" when the timeout expires.
+
+Settings, /var/ossec/etc/jt-cloudflare-block.conf, key=value per line:
+  scope        account (default) or zone
+  account_id   32 hex digits, for scope=account
+  zone_ids     32 hex digits each, comma separated, for scope=zone
+  mode         block (default), managed_challenge, challenge or js_challenge
+  token_file   default /var/ossec/etc/jt-cloudflare.token: root only (0600),
+               holds an API token with "Account Firewall Access Rules: Edit"
+               (account scope) or "Zone Firewall Services: Edit" (zone scope)
+  allow_file   default /var/ossec/etc/jt-cloudflare-allow.txt: addresses and
+               networks never blocked, one per line
+  ipv6_prefix  128 (default), 64 or 48: block the IPv6 address, or its /64 or /48
+  timeout      seconds per API call (default 15)
+  proxy        https proxy URL, if the manager reaches the internet through one
+  log_file     default /var/ossec/logs/active-responses.log
+The token is never written to any log or message.
+
+Manual use (as root): --check, --list, --block ADDRESS, --unblock ADDRESS.
+"""
+
+import argparse
+import datetime
+import ipaddress
+import json
+import os
+import re
+import stat
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+CONF_FILE = os.environ.get('JT_CLOUDFLARE_CONF', '/var/ossec/etc/jt-cloudflare-block.conf')
+DEFAULTS = {
+    'scope': 'account',
+    'account_id': '',
+    'zone_ids': '',
+    'mode': 'block',
+    'token_file': '/var/ossec/etc/jt-cloudflare.token',
+    'allow_file': '/var/ossec/etc/jt-cloudflare-allow.txt',
+    'api': 'https://api.cloudflare.com/client/v4',
+    'ipv6_prefix': '128',
+    'timeout': '15',
+    'proxy': '',
+    'log_file': '/var/ossec/logs/active-responses.log',
+}
+NAME = 'jt-cloudflare-block'
+MARKER = 'jt-wazuh-mgr active response'
+MODES = ('block', 'managed_challenge', 'challenge', 'js_challenge')
+CF_ID = re.compile(r'^[0-9a-f]{32}$')
+TOKEN = re.compile(r'^[A-Za-z0-9_-]{20,200}$')
+
+
+# ---- shared: protocol and address checks (identical in jt-nginx-deny and jt-cloudflare-block) ----
+
+# Cloudflare's published proxy ranges (https://www.cloudflare.com/ips/). A
+# request that reaches the origin from one of these was relayed by Cloudflare:
+# blocking it blocks Cloudflare, not the visitor, and means the site's nginx
+# does not restore the client address.
+CLOUDFLARE_RANGES = (
+    '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+    '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+    '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+    '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+    '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32',
+    '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32',
+)
+CLOUDFLARE_NETS = tuple(ipaddress.ip_network(n) for n in CLOUDFLARE_RANGES)
+# Not global, but spelled out so the answer does not depend on the Python
+# version's idea of is_global: shared address space (carrier NAT), 6to4 and
+# Teredo relays, NAT64.
+EXTRA_REFUSED = tuple(ipaddress.ip_network(n) for n in (
+    '100.64.0.0/10', '192.0.0.0/24', '2002::/16', '2001::/32', '64:ff9b::/96', '64:ff9b:1::/48'))
+IPV6_PREFIXES = (128, 64, 48)
+MAX_MESSAGE = 1 << 20
+ADDRESS_CHARS = re.compile(r'^[0-9A-Fa-f:.]{2,45}$')
+# control characters, and what could make a log line read as JSON or markup
+SAFE_TEXT = re.compile(r'[^\x20-\x7e]|[{}"\\<>`]')
+
+
+class Refused(Exception):
+    """An address this response will not block. kind: invalid, scope, cloudflare, allowlist."""
+
+    def __init__(self, kind, reason):
+        super().__init__(reason)
+        self.kind, self.reason = kind, reason
+
+
+def clean(value, limit=64):
+    """Text from an alert, made safe to write into a log another decoder reads."""
+    return SAFE_TEXT.sub('?', str(value))[:limit]
+
+
+def shown(raw):
+    """An alert's address as it may appear in a refusal: address characters only."""
+    return re.sub(r'[^0-9A-Za-z:.%/-]', '?', str(raw))[:45]
+
+
+def program_name(argv0):
+    # execd starts us as active-response/bin/<name>; the built-in decoders and
+    # rules 650-657 expect that spelling whatever the path was.
+    return 'active-response/bin/' + os.path.basename(argv0 or NAME)
+
+
+def write_log(log_file, program, message):
+    line = '%s %s: %s\n' % (datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S'),
+                            program, message.replace('\n', ' ').replace('\r', ' '))
+    try:
+        with open(log_file, 'a', encoding='utf-8') as fh:
+            fh.write(line)
+    except OSError:
+        sys.stderr.write(line)
+
+
+def read_message(stream):
+    """The manager's JSON line: {"command": "add"|"delete", "parameters": {"alert": {...}}}."""
+    raw = stream.readline(MAX_MESSAGE)
+    if not raw.strip():
+        raise ValueError('no message on standard input')
+    try:
+        msg = json.loads(raw)
+    except ValueError:
+        raise ValueError('the message is not JSON')
+    if not isinstance(msg, dict):
+        raise ValueError('the message is not a JSON object')
+    command = msg.get('command')
+    if command not in ('add', 'delete'):
+        raise ValueError('not a valid command: %s' % clean(command, 20))
+    params = msg.get('parameters')
+    alert = params.get('alert') if isinstance(params, dict) else None
+    if not isinstance(alert, dict):
+        raise ValueError('the message carries no alert')
+    return msg
+
+
+def alert_fields(msg):
+    """(srcip, rule id, agent name) of the alert, the last two made safe for the log."""
+    alert = msg['parameters']['alert']
+    data = alert.get('data') if isinstance(alert.get('data'), dict) else {}
+    rule = alert.get('rule') if isinstance(alert.get('rule'), dict) else {}
+    agent = alert.get('agent') if isinstance(alert.get('agent'), dict) else {}
+    rule_id = str(rule.get('id') or '')
+    rule_id = rule_id if re.match(r'^\d{1,7}$', rule_id) else '-'
+    agent_name = re.sub(r'[^A-Za-z0-9_.-]', '', str(agent.get('name') or ''))[:64] or '-'
+    return data.get('srcip'), rule_id, agent_name
+
+
+def check_keys(program, keys, stdin, stdout):
+    """Ask execd whether this key already has a timer: 'continue', 'abort' or None."""
+    stdout.write(json.dumps({'version': 1, 'origin': {'name': program, 'module': 'active-response'},
+                             'command': 'check_keys', 'parameters': {'keys': keys}}) + '\n')
+    stdout.flush()
+    raw = stdin.readline(MAX_MESSAGE)
+    try:
+        answer = json.loads(raw).get('command')
+    except (ValueError, AttributeError):
+        return None
+    return answer if answer in ('continue', 'abort') else None
+
+
+def load_allowlist(path):
+    """Addresses and networks never blocked. A line that does not parse is an
+    error, not something to skip: a typo must not leave an administrator
+    blockable."""
+    nets = []
+    try:
+        with open(path, encoding='utf-8') as fh:
+            lines = fh.readlines()
+    except FileNotFoundError:
+        return nets
+    for n, line in enumerate(lines, 1):
+        item = line.split('#', 1)[0].strip()
+        if not item:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            raise ValueError('%s line %d is not an address or network: %s' % (path, n, clean(item, 50)))
+    return nets
+
+
+def parse_target(raw, ipv6_prefix=128):
+    """(target text, network) for an alert's srcip, with no policy applied.
+
+    Only a bare IPv4 or IPv6 address is accepted: no port, brackets, zone,
+    range or surrounding text. An IPv4-mapped IPv6 address (::ffff:a.b.c.d,
+    what some decoders produce) becomes the IPv4 address it carries, which is
+    what nginx and Cloudflare compare. Raises Refused('invalid').
+    """
+    text = raw if isinstance(raw, str) else ''
+    if not ADDRESS_CHARS.match(text):
+        raise Refused('invalid', 'not a plain IP address')
+    try:
+        addr = ipaddress.ip_address(text)
+    except ValueError:
+        raise Refused('invalid', 'not a plain IP address')
+    if addr.version == 6 and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    if addr.version == 6 and ipv6_prefix != 128:
+        net = ipaddress.ip_network('%s/%d' % (addr, ipv6_prefix), strict=False)
+    else:
+        net = ipaddress.ip_network(addr)
+    return (str(addr) if net.num_addresses == 1 else str(net)), net
+
+
+def block_target(raw, allow=(), ipv6_prefix=128):
+    """parse_target, then refuse what must never be blocked. Raises Refused.
+
+    Unblocking uses parse_target alone: an address added to the allowlist
+    after it was blocked must still come off the list.
+    """
+    target, net = parse_target(raw, ipv6_prefix)
+    addr = net.network_address
+    if (not addr.is_global or addr.is_multicast or addr.is_unspecified or addr.is_reserved
+            or any(net.overlaps(n) for n in EXTRA_REFUSED if n.version == net.version)):
+        raise Refused('scope', 'not a public address (private, loopback, link-local, carrier NAT, '
+                               'documentation or reserved)')
+    if any(net.overlaps(cf) for cf in CLOUDFLARE_NETS if cf.version == net.version):
+        raise Refused('cloudflare', 'a Cloudflare address: the site does not restore the client '
+                                    'address (real_ip), blocking it would block Cloudflare')
+    for item in allow:
+        if item.version == net.version and net.overlaps(item):
+            raise Refused('allowlist', 'in the allowlist (%s)' % item)
+    return target, net
+
+
+def ar_record(program, command, target, rule_id, agent_name, result):
+    """The JSON line the built-in decoder ar_log_json reads (rule 657 shows it).
+
+    Only validated values go in: the alert itself holds the attacker's URL and
+    user agent, and a line here is decoded again by the manager.
+    """
+    return json.dumps({'version': 1, 'origin': {'name': program, 'module': 'active-response'},
+                       'command': command,
+                       'parameters': {'program': program,
+                                      'alert': {'rule': {'id': rule_id}, 'agent': {'name': agent_name},
+                                                'data': {'srcip': target}}},
+                       'jt': {'result': result}}, sort_keys=True)
+
+# ---- end shared ----
+
+
+class Failure(Exception):
+    pass
+
+
+def load_config(path=None):
+    cfg = dict(DEFAULTS)
+    path = path or CONF_FILE
+    try:
+        with open(path, encoding='utf-8') as fh:
+            for line in fh:
+                line = line.split('#', 1)[0].strip()
+                if not line:
+                    continue
+                key, sep, value = line.partition('=')
+                key, value = key.strip(), value.strip()
+                if not sep or key not in DEFAULTS:
+                    raise Failure('%s: unknown setting %s' % (path, clean(key, 40)))
+                cfg[key] = value
+    except FileNotFoundError:
+        raise Failure('%s is missing: set scope and account_id or zone_ids' % path)
+    try:
+        cfg['ipv6_prefix'] = int(cfg['ipv6_prefix'])
+        cfg['timeout'] = int(cfg['timeout'])
+    except ValueError:
+        raise Failure('%s: ipv6_prefix and timeout must be numbers' % path)
+    if cfg['ipv6_prefix'] not in IPV6_PREFIXES:
+        raise Failure('%s: ipv6_prefix must be 128, 64 or 48' % path)
+    if not 1 <= cfg['timeout'] <= 120:
+        raise Failure('%s: timeout must be 1 to 120 seconds' % path)
+    if cfg['mode'] not in MODES:
+        raise Failure('%s: mode must be one of %s' % (path, ', '.join(MODES)))
+    if cfg['scope'] == 'account':
+        if not CF_ID.match(cfg['account_id']):
+            raise Failure('%s: account_id must be 32 hex digits' % path)
+        cfg['targets'] = [('accounts', cfg['account_id'])]
+    elif cfg['scope'] == 'zone':
+        zones = [z.strip() for z in cfg['zone_ids'].split(',') if z.strip()]
+        if not zones or not all(CF_ID.match(z) for z in zones):
+            raise Failure('%s: zone_ids must be 32 hex digits each, comma separated' % path)
+        cfg['targets'] = [('zones', z) for z in zones]
+    else:
+        raise Failure('%s: scope must be account or zone' % path)
+    if not re.match(r'^https://[A-Za-z0-9.-]+(?::\d+)?(?:/[A-Za-z0-9._/-]*)?$', cfg['api']):
+        raise Failure('%s: api must be an https URL' % path)
+    if cfg['proxy'] and not re.match(r'^https?://[A-Za-z0-9.-]+(?::\d+)?/?$', cfg['proxy']):
+        raise Failure('%s: proxy must be http(s)://host:port' % path)
+    for key in ('token_file', 'allow_file', 'log_file'):
+        if not os.path.isabs(cfg[key]):
+            raise Failure('%s: %s must be an absolute path' % (path, key))
+    return cfg
+
+
+def read_token(path):
+    """The API token. Refused unless only its owner can read the file."""
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    except OSError:
+        raise Failure('cannot read the token file %s' % path)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise Failure('the token file %s is not a regular file' % path)
+        if st.st_mode & 0o077:
+            raise Failure('the token file %s can be read by others: chmod 600 it' % path)
+        if st.st_uid not in (0, os.geteuid()):
+            raise Failure('the token file %s is not owned by root' % path)
+        data = os.read(fd, 4096).decode('ascii', 'replace').strip()
+    finally:
+        os.close(fd)
+    if not TOKEN.match(data):
+        raise Failure('the token file %s does not hold an API token' % path)
+    return data
+
+
+class ApiError(Failure):
+    pass
+
+
+class Cloudflare(object):
+    """The IP Access Rules API. opener is replaceable for tests."""
+
+    def __init__(self, cfg, token, opener=None):
+        self.cfg, self._token = cfg, token
+        if opener is None:
+            handlers = [urllib.request.ProxyHandler({'https': cfg['proxy']})] if cfg['proxy'] else []
+            opener = urllib.request.build_opener(*handlers)
+        self.opener = opener
+
+    def __repr__(self):
+        return '<Cloudflare %s>' % self.cfg['scope']
+
+    def call(self, method, path, query=None, body=None):
+        url = self.cfg['api'].rstrip('/') + path
+        if query:
+            url += '?' + urllib.parse.urlencode(query)
+        data = json.dumps(body).encode('utf-8') if body is not None else None
+        req = urllib.request.Request(url, data=data, method=method, headers={
+            'Authorization': 'Bearer ' + self._token,
+            'Content-Type': 'application/json',
+            'User-Agent': NAME})
+        status = None
+        try:
+            with self.opener.open(req, timeout=self.cfg['timeout']) as resp:
+                status = resp.status
+                payload = json.loads(resp.read(1 << 22).decode('utf-8'))
+        except urllib.error.HTTPError as e:
+            status = e.code
+            try:
+                payload = json.loads(e.read(1 << 16).decode('utf-8'))
+            except ValueError:
+                payload = {}
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            reason = getattr(e, 'reason', e)
+            raise Failure('Cloudflare API unreachable (%s)' % clean(type(reason).__name__ + ' ' + str(reason), 120))
+        if not isinstance(payload, dict) or not payload.get('success'):
+            errors = payload.get('errors') if isinstance(payload, dict) else None
+            detail = '; '.join('%s %s' % (clean(e.get('code'), 10), clean(e.get('message'), 120))
+                               for e in (errors or []) if isinstance(e, dict))[:300]
+            raise ApiError('Cloudflare API %s %s answered %s: %s'
+                           % (method, path.split('/firewall/')[0], status, detail or 'no detail'))
+        return payload.get('result')
+
+    @staticmethod
+    def rules_path(kind, ident):
+        return '/%s/%s/firewall/access_rules/rules' % (kind, ident)
+
+    @staticmethod
+    def configuration(net):
+        if net.num_addresses > 1:
+            return {'target': 'ip_range', 'value': str(net)}
+        return {'target': 'ip' if net.version == 4 else 'ip6', 'value': str(net.network_address)}
+
+    def find(self, kind, ident, net):
+        conf = self.configuration(net)
+        result = self.call('GET', self.rules_path(kind, ident),
+                           {'configuration.target': conf['target'], 'configuration.value': conf['value'],
+                            'per_page': 100})
+        found = []
+        for rule in result if isinstance(result, list) else []:
+            c = rule.get('configuration') if isinstance(rule, dict) else None
+            if not isinstance(c, dict) or c.get('target') != conf['target']:
+                continue
+            try:
+                same = ipaddress.ip_network(str(c.get('value')), strict=False) == net
+            except ValueError:
+                same = False
+            if same:
+                found.append(rule)
+        return found
+
+    def ours(self, kind, rule):
+        scope = (rule.get('scope') or {}).get('type') if isinstance(rule.get('scope'), dict) else None
+        own_scope = {'accounts': 'account', 'zones': 'zone'}[kind]
+        return (str(rule.get('notes') or '').startswith(MARKER) and scope in (None, own_scope)
+                and bool(CF_ID.match(str(rule.get('id') or ''))))
+
+    def block(self, net, note):
+        outcomes = []
+        for kind, ident in self.cfg['targets']:
+            outcomes.append(self._block_one(kind, ident, net, note))
+        return outcomes
+
+    def _block_one(self, kind, ident, net, note):
+        label = '%s %s' % (kind[:-1], ident[:8])
+        existing = self.find(kind, ident, net)
+        if any(self.ours(kind, r) for r in existing):
+            return '%s: already blocked' % label
+        if existing:
+            return '%s: left alone, a rule not made by this response exists (mode %s)' % (
+                label, clean(existing[0].get('mode'), 20))
+        body = {'mode': self.cfg['mode'], 'configuration': self.configuration(net), 'notes': note}
+        try:
+            self.call('POST', self.rules_path(kind, ident), body=body)
+        except ApiError:
+            # the other manager node may have created it a moment ago
+            if self.find(kind, ident, net):
+                return '%s: already blocked' % label
+            raise
+        return '%s: blocked (%s)' % (label, self.cfg['mode'])
+
+    def unblock(self, net):
+        outcomes = []
+        for kind, ident in self.cfg['targets']:
+            label = '%s %s' % (kind[:-1], ident[:8])
+            mine = [r for r in self.find(kind, ident, net) if self.ours(kind, r)]
+            for rule in mine:
+                self.call('DELETE', '%s/%s' % (self.rules_path(kind, ident), rule['id']))
+            outcomes.append('%s: %s' % (label, 'unblocked' if mine else 'no rule of this response'))
+        return outcomes
+
+    def listing(self):
+        rows = []
+        for kind, ident in self.cfg['targets']:
+            page = 1
+            while page <= 50:
+                result = self.call('GET', self.rules_path(kind, ident),
+                                   {'notes': MARKER, 'per_page': 100, 'page': page})
+                result = result if isinstance(result, list) else []
+                for rule in result:
+                    if isinstance(rule, dict) and self.ours(kind, rule):
+                        rows.append((kind, ident, rule))
+                if len(result) < 100:
+                    break
+                page += 1
+        return rows
+
+
+def note_for(rule_id, agent_name):
+    when = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+    return '%s: rule %s on %s, %s' % (MARKER, rule_id, agent_name, when)
+
+
+def handle_alert(cfg, program, stdin, stdout, api_factory=None):
+    log_file = cfg['log_file']
+    try:
+        msg = read_message(stdin)
+    except ValueError as e:
+        write_log(log_file, program, 'ERROR %s' % e)
+        return 1
+    command = msg['command']
+    srcip, rule_id, agent_name = alert_fields(msg)
+    try:
+        if command == 'add':
+            target, net = block_target(srcip, load_allowlist(cfg['allow_file']), cfg['ipv6_prefix'])
+        else:
+            target, net = parse_target(srcip, cfg['ipv6_prefix'])
+    except Refused as r:
+        write_log(log_file, program, 'refused %s: %s (rule %s)' % (shown(srcip), r.reason, rule_id))
+        return 0
+    except ValueError as e:
+        write_log(log_file, program, 'ERROR %s; nothing blocked' % e)
+        return 1
+    if command == 'add':
+        answer = check_keys(program, [target], stdin, stdout)
+        if answer == 'abort':
+            write_log(log_file, program, '%s already blocked, timer running (rule %s)' % (target, rule_id))
+            return 0
+        if answer != 'continue':
+            write_log(log_file, program, 'ERROR execd did not answer check_keys; %s not blocked' % target)
+            return 1
+    try:
+        api = (api_factory or (lambda c: Cloudflare(c, read_token(c['token_file']))))(cfg)
+        if command == 'add':
+            outcomes = api.block(net, note_for(rule_id, agent_name))
+        else:
+            outcomes = api.unblock(net)
+    except Failure as e:
+        write_log(log_file, program, 'ERROR %s %s: %s' % (command, target, clean(e, 400)))
+        return 1
+    write_log(log_file, program, ar_record(program, command, target, rule_id, agent_name,
+                                           '; '.join(outcomes)))
+    return 0
+
+
+def main(argv=None, stdin=sys.stdin, stdout=sys.stdout):
+    argv = sys.argv if argv is None else argv
+    program = program_name(argv[0])
+    parser = argparse.ArgumentParser(prog=NAME, description='Wazuh active response: block a client at Cloudflare.')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--check', action='store_true', help='check the settings, the token and API access')
+    group.add_argument('--list', action='store_true', help='print the rules this response created')
+    group.add_argument('--block', metavar='ADDRESS')
+    group.add_argument('--unblock', metavar='ADDRESS')
+    args = parser.parse_args(argv[1:])
+    try:
+        cfg = load_config()
+    except Failure as e:
+        write_log(DEFAULTS['log_file'], program, 'ERROR %s' % e)
+        sys.stderr.write('%s\n' % e)
+        return 1
+    if not (args.check or args.list or args.block or args.unblock):
+        return handle_alert(cfg, program, stdin, stdout)
+    try:
+        api = Cloudflare(cfg, read_token(cfg['token_file']))
+        if args.check:
+            allow = load_allowlist(cfg['allow_file'])
+            for kind, ident in cfg['targets']:
+                api.call('GET', api.rules_path(kind, ident), {'per_page': 1})
+            print('settings ok; %d allowlist entries; the token can read the access rules of %s'
+                  % (len(allow), ', '.join('%s %s' % (k[:-1], i) for k, i in cfg['targets'])))
+            return 0
+        if args.list:
+            for kind, ident, rule in api.listing():
+                conf = rule.get('configuration') or {}
+                print('%-40s %-18s %s %s  %s' % (clean(conf.get('value'), 45), clean(rule.get('mode'), 18),
+                                                 kind[:-1], ident[:8], clean(rule.get('notes'), 120)))
+            return 0
+        if args.block:
+            target, net = block_target(args.block, load_allowlist(cfg['allow_file']), cfg['ipv6_prefix'])
+            outcomes = api.block(net, note_for('-', 'manual'))
+        else:
+            target, net = parse_target(args.unblock, cfg['ipv6_prefix'])
+            outcomes = api.unblock(net)
+        write_log(cfg['log_file'], program, ar_record(program, 'add' if args.block else 'delete',
+                                                      target, '-', 'manual', '; '.join(outcomes)))
+        print('%s: %s' % (target, '; '.join(outcomes)))
+        return 0
+    except Refused as r:
+        sys.stderr.write('refused: %s\n' % r.reason)
+        return 1
+    except (Failure, ValueError, OSError) as e:
+        sys.stderr.write('%s\n' % e)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

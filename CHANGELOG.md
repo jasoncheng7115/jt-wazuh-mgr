@@ -4,6 +4,23 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.22.0 (2026-10-24)
+
+- **Blocking at the edge, opt-in: jt-web 1.1 and jt-php 1.2.** Two new active-response
+  scripts. jt-nginx-deny (on the web host, Python standard library only) keeps an
+  http-level nginx deny list, so no site's configuration has to change; nginx checks the
+  address after realip, so sites behind Cloudflare are blocked by the visitor's address.
+  Every change runs nginx -t first and puts the list back byte-identical if it fails.
+  jt-cloudflare-block (on the managers, so the API token never sits on the web host)
+  creates Cloudflare IP Access Rules carrying its own note and only ever removes those.
+  Both refuse private, reserved and Cloudflare addresses and anything in an allowlist,
+  and stop blocking altogether if the allowlist does not parse. Offered responses: served
+  sensitive files, probing for known vulnerable endpoints, scanners (jt-web) and PHP-CGI
+  argument injection (jt-php), all with a 24-hour timeout. New rules 133050 (L10, a block
+  or unblock failed) and 133051 (L7, an alert's source is a Cloudflare address, so that
+  site does not restore the client address). Nothing blocks until a response is switched
+  on. 66 new tests; checked end to end against nginx 1.30.5.
+
 ## v1.21.1 (2026-10-24)
 
 - **jt-php 1.1: CVE-2026-115560.** On 2026-10-23 php.net disclosed a second session RCE
