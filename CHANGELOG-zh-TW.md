@@ -4,6 +4,14 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.22.2（2026-10-25）
+
+- **jt-php 1.3、jt-librenms 1.2.2：什麼都沒記錄的檔案完整性設定。** 兩個 agent 群組分別用 restrict="\.ini$|\.conf$"
+  與 restrict="\.php$" 限定目錄。restrict 的比對方式與 sregex ignore 相同，只有 ^ $ | ! 是特殊字元，反斜線是字面字元，
+  所以從來沒有記錄到任何檔案（4.14.9 實測：/opt/librenms/html 與 /etc/php 都是 0 筆）。更糟的是，php 群組另外列出
+  /etc/php，讓該目錄脫離較大範圍的 /etc 監控，裝了套件反而比沒裝時更少監控 php.ini 與 FPM pool。現改為 ".ini$|.conf$"
+  與 ".php$"，並新增測試，任何 restrict 出現反斜線或括號都會被擋下。
+
 ## v1.22.1（2026-10-25）
 
 - **jt-malware-hash 1.7：不需要 key 的雜湊來源。** abuse.ch 自 2026-10-22 起停止提供不需 key 的 MalwareBazaar 與 ThreatFox

@@ -3271,6 +3271,21 @@ class TestShippedPacks(unittest.TestCase):
                     with self.subTest(file=n, pattern=pat):
                         self.assertNotRegex(pat, r'[\\()\[\]]')
 
+    def test_agent_restrict_patterns_are_plain_os_match(self):
+        """<directories restrict="..."> is OS_Match too (4.14.9, measured): a
+        backslash is a literal character, so restrict="\\.php$" recorded no file
+        at all, and a group listing /etc/php that way took /etc/php out of the
+        linux group's /etc watch (jt-php 1.0-1.2, jt-librenms 1.0-1.2.1)."""
+        for dirpath, _, names in os.walk(self.packs_dir):
+            for n in names:
+                if not n.endswith('.conf'):
+                    continue
+                with io.open(os.path.join(dirpath, n), encoding='utf-8') as fh:
+                    body = re.sub(r'<!--.*?-->', '', fh.read(), flags=re.S)
+                for pat in re.findall(r'<directories[^>]*\srestrict="([^"]*)"', body):
+                    with self.subTest(file=n, pattern=pat):
+                        self.assertNotRegex(pat, r'[\\()\[\]]')
+
     def test_process_creation_rules_also_hang_off_the_builtin_level_0_siblings(self):
         """0800-sysmon_id_1.xml attaches level 0 rules to every process creation
         through <if_group>sysmon_event1</if_group>, which makes them siblings of

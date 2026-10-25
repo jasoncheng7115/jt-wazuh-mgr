@@ -4,6 +4,15 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.22.2（2026-10-25）
+
+- **jt-php 1.3、jt-librenms 1.2.2：何も記録していなかったファイル整合性設定。** 2 つのエージェントグループは
+  restrict="\.ini$|\.conf$" と restrict="\.php$" でディレクトリを絞っていました。restrict は sregex の ignore と同じ方式で
+  照合され、特殊文字は ^ $ | ! だけなので、バックスラッシュは文字どおりに扱われ、ファイルは一度も記録されていませんでした
+  （4.14.9 で実測：/opt/librenms/html と /etc/php はどちらも 0 件）。さらに php グループが /etc/php を個別に列挙したことで、
+  このディレクトリがより広い /etc の監視から外れ、パックを入れたほうが php.ini と FPM プールの監視が少ない状態でした。
+  パターンを ".ini$|.conf$" と ".php$" に修正し、restrict にバックスラッシュや括弧があるとテストで検出するようにしました。
+
 ## v1.22.1（2026-10-25）
 
 - **jt-malware-hash 1.7：キー不要のハッシュフィード。** abuse.ch は 2026-10-22 にキー不要の MalwareBazaar と ThreatFox の

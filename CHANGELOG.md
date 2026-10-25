@@ -4,6 +4,17 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.22.2 (2026-10-25)
+
+- **jt-php 1.3, jt-librenms 1.2.2: file integrity that recorded nothing.** Both agent
+  groups limited a directory with restrict="\.ini$|\.conf$" and restrict="\.php$".
+  restrict is matched like an sregex ignore, where only ^ $ | ! are special, so the
+  backslash is a literal character and no file was ever recorded (measured on 4.14.9:
+  /opt/librenms/html and /etc/php held 0 entries). Worse, by listing /etc/php the php
+  group took that directory out of a broader /etc watch, so php.ini and the FPM pools
+  were less watched with the pack than without it. The patterns are now ".ini$|.conf$"
+  and ".php$", and a test rejects a backslash or bracket in any restrict.
+
 ## v1.22.1 (2026-10-25)
 
 - **jt-malware-hash 1.7: hash feeds that need no key.** abuse.ch stopped serving its
