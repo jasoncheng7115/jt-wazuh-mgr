@@ -2,7 +2,7 @@
 # jt-php: PHP session settings behind CVE-2026-115560
 # Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
 #
-# On 2026-10-23 php.net disclosed CVE-2026-115560 (CVSS 9.2, remote code
+# On 2026-10-23 php.net disclosed CVE-2026-115560 (remote code
 # execution) in the session upload progress feature, with no fixed release
 # yet; php.net's workaround is session.upload_progress.enabled = 0. The
 # releases of 2026-10-21 (8.5.12, 8.4.27, 8.3.36, 8.2.35) do not fix it.
@@ -38,7 +38,7 @@ requirements:
 checks:
   - id: 133193
     title: "Ensure session upload progress is disabled (session.upload_progress.enabled = 0)."
-    description: "CVE-2026-115560 (CVSS 9.2): with session upload progress on, an application that changes session.serialize_handler at run time can be made to run attacker code. Upload progress is on by default."
+    description: "CVE-2026-115560 (php.net had not published a score by 2026-10-25): with session upload progress on, an application that changes session.serialize_handler at run time can be made to run attacker code. Upload progress is on by default."
     rationale: "php.net's recommendation until a fixed release. The feature only reports upload progress to the application while a file is being uploaded; few applications use it."
     remediation: "Add session.upload_progress.enabled = 0 to a file in /etc/php.d (for example /etc/php.d/99-cve-2026-115560.ini), then reload PHP-FPM and the web server. Remove it after updating PHP to a release that fixes CVE-2026-115560."
     references:

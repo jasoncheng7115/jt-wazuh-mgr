@@ -4,6 +4,14 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.22.3（2026-10-25）
+
+- **jt-php 1.3.1：訂正。** 構成評価と v1.21.1 の説明で CVE-2026-115560 を CVSS 9.2 としていましたが、php.net はスコアを
+  公表していません。10/23 の告知によると、この問題は珍しい設定の組み合わせ（session.serialize_handler を php_binary または
+  php_serialize にし、session_start() の前に ini_set() で php に切り替え、アップロード進捗が有効）でのみ起き、完全な
+  アドバイザリは次のリリースとともに公開されます。スコアを削除しました。回避策は php.ini か FPM プールに書く必要があり、
+  ini_set() と .user.ini では遅すぎます。
+
 ## v1.22.2（2026-10-25）
 
 - **jt-php 1.3、jt-librenms 1.2.2：何も記録していなかったファイル整合性設定。** 2 つのエージェントグループは

@@ -4,6 +4,16 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.22.3 (2026-10-25)
+
+- **jt-php 1.3.1: correction.** The configuration assessment and the v1.21.1 notes gave
+  CVE-2026-115560 a CVSS score of 9.2. php.net has not published one: its notice of
+  2026-10-23 says the issue needs an unusual combination (session.serialize_handler set
+  to php_binary or php_serialize and switched to php with ini_set() before
+  session_start(), with upload progress on) and that the full advisory follows with the
+  next release. The score is removed; the workaround must be set in php.ini or the FPM
+  pool, since ini_set() and .user.ini come too late.
+
 ## v1.22.2 (2026-10-25)
 
 - **jt-php 1.3, jt-librenms 1.2.2: file integrity that recorded nothing.** Both agent

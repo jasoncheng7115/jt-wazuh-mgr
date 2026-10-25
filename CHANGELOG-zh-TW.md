@@ -4,6 +4,13 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.22.3（2026-10-25）
+
+- **jt-php 1.3.1：更正。** 組態評估與 v1.21.1 的說明把 CVE-2026-115560 標為 CVSS 9.2，但 php.net 並未公布評分：10/23 的公告
+  說這個問題需要少見的設定組合（session.serialize_handler 設成 php_binary 或 php_serialize，並在 session_start() 前以
+  ini_set() 改成 php，且上傳進度開著），完整公告隨下一版發布。已拿掉分數；暫時解法必須寫在 php.ini 或 FPM pool，
+  ini_set() 與 .user.ini 都太晚。
+
 ## v1.22.2（2026-10-25）
 
 - **jt-php 1.3、jt-librenms 1.2.2：什麼都沒記錄的檔案完整性設定。** 兩個 agent 群組分別用 restrict="\.ini$|\.conf$"
