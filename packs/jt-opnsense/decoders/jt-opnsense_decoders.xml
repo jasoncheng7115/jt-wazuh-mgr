@@ -369,6 +369,11 @@
   pkg audit (freebsd/pkg src/audit.c), the summary line:
     "%u problem(s) in %u package(s) found."            pkg 2.x
     "%u problem(s) in %u installed package(s) found."  pkg 1.x
+  followed, since 1.2.2, by what the agent's awk adds (agent/agent.conf):
+    " Vulnerable: <name-version>; <name-version>. CVEs: <unique CVE count>."
+  The extra groups are optional, so an agent still running the plain command
+  (summary only) decodes as before. Versions may carry a FreeBSD epoch
+  ("openssl-3.0.15,1"), which is why the list is separated by "; ".
   opnsense-version (opnsense/core src/sbin/opnsense-version), default output:
     "${product_name} ${product_version} (${product_arch})", e.g. "OPNsense 26.1.2 (amd64)"
 -->
@@ -376,8 +381,8 @@
   <parent>ossec</parent>
   <type>ossec</type>
   <prematch type="pcre2">^ossec: output: 'jt-opnsense-pkg-audit': \d+ problem\(s\) in \d+ </prematch>
-  <regex type="pcre2">: (\d+) problem\(s\) in (\d+) (?:installed )?package\(s\) found</regex>
-  <order>opnsense.problems, opnsense.packages</order>
+  <regex type="pcre2">: (\d+) problem\(s\) in (\d+) (?:installed )?package\(s\) found\.(?: Vulnerable: (.+?)\. CVEs: (\d+)\.)?</regex>
+  <order>opnsense.problems, opnsense.packages, opnsense.vulnerable, opnsense.cves</order>
 </decoder>
 
 <decoder name="jt-opnsense-version">

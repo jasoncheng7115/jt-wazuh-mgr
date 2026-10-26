@@ -4,6 +4,17 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.23.2 (2026-10-26)
+
+- **jt-opnsense 1.2.2: the daily pkg audit alert names the vulnerable packages.** Rule
+  131578 used to say only "N problems in M packages", so reading it meant logging in to
+  the firewall. The agent group's command now folds pkg's report into one line (the
+  logcollector runs commands through /bin/sh), and the alert reads "N problems in M
+  packages: openvpn-2.7.7; openssl35-3.5.9 (C CVEs)", still once a day per firewall. The
+  "OPNsense:" prefix is gone because pfSense hosts can use the same command and rule. An
+  agent still on the old command decodes as before. The sandbox tool can now check
+  substrings of the rendered description.
+
 ## v1.23.1 (2026-10-26)
 
 - **jt-runtime-vuln 1.1: OpenVPN versions.** OpenVPN shipped CVE fixes in nearly every

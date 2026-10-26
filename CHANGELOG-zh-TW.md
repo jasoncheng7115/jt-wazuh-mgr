@@ -4,6 +4,13 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.23.2（2026-10-26）
+
+- **jt-opnsense 1.2.2：每日 pkg audit 告警直接列出有弱點的套件。** 規則 131578 原本只寫「N 個問題、M 個套件」，要知道是
+  哪些套件得登入防火牆查。agent 群組的指令現在把 pkg 的報告整理成一行（logcollector 透過 /bin/sh 執行指令），告警內容變成
+  「N 個問題、M 個套件：openvpn-2.7.7; openssl35-3.5.9（C 個 CVE）」，仍是每台防火牆每天一則。拿掉了「OPNsense:」前綴，因為
+  pfSense 也可以使用同一個指令與規則。仍在舊指令的 agent 照舊解碼。沙箱工具現在可以檢查描述文字裡的子字串。
+
 ## v1.23.1（2026-10-26）
 
 - **jt-runtime-vuln 1.1：OpenVPN 版本。** OpenVPN 在 2026 年幾乎每個 2.6 與 2.7 版本都修了 CVE，其中包括憑證主旨夾帶 NUL 字元

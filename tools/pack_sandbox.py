@@ -17,6 +17,8 @@ Case file format, tests/pack_cases/<pack-id>.json:
       "expect_rule": "131201", "expect_level": 5, "repeat": 1, "note": "..."}],
      "sequences": [{"before": ["line", ...], "log": "...", ...}],
      "sandbox_packs": ["jt-zimbra", ...]}   (other packs installed first)
+expect_in_description (optional) lists substrings the rendered rule
+description must contain, to check decoded fields that reach the alert.
 expect_rule "none" means no rule above level 0 may match. repeat sends the
 line that many times in one logtest session (for frequency rules) and judges
 the last event; "before" lines (or a "log" holding several lines) run first
@@ -347,6 +349,12 @@ def test(pack):
             ok = got_level == 0
         else:
             ok = got_rule == want_rule and (want_level is None or got_level == want_level)
+        # expect_in_description: substrings the rendered description must contain,
+        # which is how a case checks decoded fields that reach the alert text.
+        missing = [t for t in case.get('expect_in_description', []) if t not in (desc or '')]
+        if missing:
+            ok = False
+            desc = 'missing in description: %s | %s' % (missing, desc)
         failed += not ok
         print('%s %2d  want %-7s L%-3s got %-7s L%-3s %s'
               % ('ok  ' if ok else 'FAIL', i, want_rule, want_level if want_level is not None else '-',

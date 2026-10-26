@@ -2,7 +2,7 @@
  "id": "jt-opnsense",
  "name": "OPNsense Hardening",
  "name_zh": "OPNsense 強化",
- "version": "1.2.1",
+ "version": "1.2.2",
  "summary": "The firewall's own security events: web interface logins, brute force and forged log lines, configuration changes and who made them (NAT, logging, accounts, API keys, cron, certificates), logging or detection switched off, firmware, power and crashes, VPN and IPsec authentication, CARP and gateway state, CrowdSec decisions, Suricata alerts graded by what they say, and a daily vulnerability and version check.",
  "summary_zh": "防火牆本身的資安事件：網頁介面登入、暴力破解與偽造的記錄行，設定變更與變更者（NAT、記錄、帳號、API 金鑰、排程、憑證），記錄或偵測被關閉，韌體、電源與程式當掉，VPN 與 IPsec 認證，CARP 與閘道狀態，CrowdSec 決策，依告警內容分級的 Suricata，以及每日的弱點與版本檢查。",
  "rule_id_range": "131500-131599",
@@ -22,7 +22,8 @@
   "Firewall log (filterlog) is not changed. A single block is built-in rule 87701, level 5 with no_log, so it is counted but never stored, and only 87702 (18 blocks from one source in 45 seconds, level 10) alerts. That is deliberate: an internet-facing firewall blocks hundreds of thousands of packets a day (measured: 930,000 filterlog lines a day on one firewall) and a single block says nothing. Tick filter (filterlog) in the plugin only if 87702 is wanted, and expect that load on the agent and the manager.",
   "What does not reach Wazuh through the plugin: it selects syslog programs, not facilities, so sshd (auth facility), API key failures (program api) and OPNsense's login protection (lockout_handler) cannot be selected. Key-based SSH logins leave no trace at all. The pack has rules for the API and login protection lines; they fire only if the firewall also sends syslog to the manager.",
   "Prerequisites: OPNsense with the os-wazuh-agent plugin (1.3 tested), which writes the selected programs to /var/ossec/logs/opnsense_syslog.log in BSD syslog format. OPNsense's own log files under /var/log use RFC 5424, which Wazuh does not decode, so the plugin's file is the only usable source. Keep OPNsense at 26.1.8 or later (four advisories with code execution or an authentication bypass were fixed in 26.1.6 to 26.1.8), and at 26.7.4 or later before relying on the web interface brute-force response.",
-  "Cross-pack login groups (patch release): jt_auth_success on 131501, 131537, 131533, 131536, 131534, 131535, 131507, 131528, 131529, 131585, 131589; jt_auth_failure on 131502, 131547, 131510, 131563, 131564; jt_auth_lockout on 131555. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. One copy per login: the web interface is tagged on the line with the address (131501, 131502 and their children), not on the authenticator line (131506, 131509); OpenVPN failures on the daemon line with the address (131563, 131564), not on the password script line (131566). OpenVPN successes (131567) decode the account as srcuser and are not tagged; certificate errors and IPsec failures name no account. 131503 and 131556 now count failures through pack-only groups (jt_opnsense_gui_failure on 131502, jt_opnsense_svc_failure on 131510) instead of if_matched_sid: same rules, same thresholds, but the failures also reach the cross-pack group lists, which skip any rule named by an if_matched_sid."
+  "Cross-pack login groups (patch release): jt_auth_success on 131501, 131537, 131533, 131536, 131534, 131535, 131507, 131528, 131529, 131585, 131589; jt_auth_failure on 131502, 131547, 131510, 131563, 131564; jt_auth_lockout on 131555. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. One copy per login: the web interface is tagged on the line with the address (131501, 131502 and their children), not on the authenticator line (131506, 131509); OpenVPN failures on the daemon line with the address (131563, 131564), not on the password script line (131566). OpenVPN successes (131567) decode the account as srcuser and are not tagged; certificate errors and IPsec failures name no account. 131503 and 131556 now count failures through pack-only groups (jt_opnsense_gui_failure on 131502, jt_opnsense_svc_failure on 131510) instead of if_matched_sid: same rules, same thresholds, but the failures also reach the cross-pack group lists, which skip any rule named by an if_matched_sid.",
+  "1.2.2: the daily pkg audit alert (131578) names the vulnerable packages and counts their CVEs. The agent group's command now pipes pkg-static audit -F through awk (logcollector runs commands with popen(), that is through /bin/sh), which folds the report into one line: \"<summary> Vulnerable: openvpn-2.7.7; openssl35-3.5.9. CVEs: 4.\". Before, only the summary reached a rule and every package line was a separate level 0 event, so the alert said how many but not which. Still one alert per firewall per day. The decoder accepts the old summary-only line too, so an agent that has not received the new group file keeps working. Packages are separated by \"; \" because FreeBSD versions can carry an epoch after a comma."
  ],
  "notes_zh": [
   "OPNsense 把稽核軌跡（網頁介面登入、登入失敗、設定變更、韌體操作）寫在 syslog 名稱「audit」底下。Wazuh 把這個名稱當成 Solaris BSM 解碼，並在規則 6100（level 0）丟掉，所以從來沒有告警過：實測兩台防火牆 30 天有 549 行稽核記錄、零筆告警。本套件的解碼器是那個解碼器的子解碼器，依 OPNsense 原始碼的格式字串撰寫；有真實記錄的情境，都用這兩台防火牆的真實記錄測過。",
@@ -40,7 +41,8 @@
   "防火牆記錄（filterlog）不做更動。單一封鎖是內建規則 87701，level 5 且 no_log，只計數、從不儲存，只有 87702（同一來源 45 秒內 18 次封鎖，level 10）會告警。這是刻意的：面向網際網路的防火牆每天封鎖數十萬個封包（實測一台每天 930,000 行 filterlog），單一封鎖沒有資訊。只有需要 87702 時才在外掛程式勾選 filter（filterlog），並預期 agent 與 manager 的負載。",
   "透過外掛程式送不到 Wazuh 的：外掛程式選的是 syslog 程式而不是 facility，所以 sshd（auth facility）、API 金鑰失敗（程式 api）與 OPNsense 的登入保護（lockout_handler）都無法勾選。以金鑰登入 SSH 完全不留痕跡。本套件仍有 API 與登入保護的規則，只有在防火牆另外把 syslog 送到 manager 時才會觸發。",
   "前提：OPNsense 安裝 os-wazuh-agent 外掛程式（測試版本 1.3），它會把勾選的程式以 BSD syslog 格式寫進 /var/ossec/logs/opnsense_syslog.log。OPNsense 自己在 /var/log 下的記錄檔是 RFC 5424 格式，Wazuh 無法解碼，所以外掛程式的檔案是唯一可用的來源。請讓 OPNsense 保持在 26.1.8 以上（26.1.6 到 26.1.8 修正了四個遠端執行程式碼或繞過認證的弱點），要依賴網頁介面暴力破解的主動回應之前，請先升到 26.7.4 以上。",
-  "跨套件登入群組（修補版）：jt_auth_success：131501, 131537, 131533, 131536, 131534, 131535, 131507, 131528, 131529, 131585, 131589；jt_auth_failure：131502, 131547, 131510, 131563, 131564；jt_auth_lockout：131555。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。每次登入只標一份：網頁介面標在有位址的那行（131501、131502 與其子規則），不標驗證器那行（131506、131509）；OpenVPN 失敗標在有位址的服務程式那行（131563、131564），不標密碼腳本那行（131566）。OpenVPN 成功（131567）的帳號解在 srcuser，不加標記；憑證錯誤與 IPsec 失敗沒有帳號。131503 與 131556 改以套件專屬群組計算失敗（131502 上的 jt_opnsense_gui_failure、131510 上的 jt_opnsense_svc_failure），不再用 if_matched_sid：同樣的規則與門檻，但失敗事件也能進入跨套件群組清單（被 if_matched_sid 指名的規則會被群組清單略過）。"
+  "跨套件登入群組（修補版）：jt_auth_success：131501, 131537, 131533, 131536, 131534, 131535, 131507, 131528, 131529, 131585, 131589；jt_auth_failure：131502, 131547, 131510, 131563, 131564；jt_auth_lockout：131555。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。每次登入只標一份：網頁介面標在有位址的那行（131501、131502 與其子規則），不標驗證器那行（131506、131509）；OpenVPN 失敗標在有位址的服務程式那行（131563、131564），不標密碼腳本那行（131566）。OpenVPN 成功（131567）的帳號解在 srcuser，不加標記；憑證錯誤與 IPsec 失敗沒有帳號。131503 與 131556 改以套件專屬群組計算失敗（131502 上的 jt_opnsense_gui_failure、131510 上的 jt_opnsense_svc_failure），不再用 if_matched_sid：同樣的規則與門檻，但失敗事件也能進入跨套件群組清單（被 if_matched_sid 指名的規則會被群組清單略過）。",
+  "1.2.2：每天的 pkg audit 告警（131578）會列出有弱點的套件名稱與 CVE 數量。agent 群組的指令改為把 pkg-static audit -F 的輸出交給 awk（logcollector 以 popen() 執行指令，也就是經過 /bin/sh），整理成一行：「<摘要> Vulnerable: openvpn-2.7.7; openssl35-3.5.9. CVEs: 4.」。原本只有摘要那一行會對到規則，每個套件那一行都是個別的 level 0 事件，所以告警只說有幾個、沒說是哪些。仍然是每台防火牆每天一則。解碼器也接受舊的只有摘要的格式，還沒收到新群組設定的 agent 照常運作。套件之間以「; 」分隔，因為 FreeBSD 的版本號可能帶有逗號後的 epoch。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -48,20 +50,21 @@
   "wazuh": ">=4.8"
  },
  "tested_with": [
-  "4.14.7"
+  "4.14.7",
+  "4.14.9"
  ],
  "files": [
   {
    "type": "decoder",
    "name": "jt-opnsense_decoders.xml",
    "dest": "etc/decoders/jt-opnsense_decoders.xml",
-   "sha256": "ce60809f0994d7b8d9cf1a343380a3139ba127db8a5854c9077677307508ccc8"
+   "sha256": "bcf349ba2ee19d50491a45b30da675f3c53871c8a3d95664ef3113fcccd1a0a3"
   },
   {
    "type": "rule",
    "name": "zz-131500-jt_opnsense_rules.xml",
    "dest": "etc/rules/zz-131500-jt_opnsense_rules.xml",
-   "sha256": "b95f0f3369ce53cbfc1ca503361fde514c9eb883cf1b8c1506e428fa068b0f1c"
+   "sha256": "4b9b1d84447eea0088e946d03e96141e90edd65d7048af829e48c97b4559287e"
   },
   {
    "type": "list",
