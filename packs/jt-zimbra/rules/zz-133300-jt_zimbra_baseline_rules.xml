@@ -1,0 +1,73 @@
+<!--
+  jt-zimbra: is the web-file baseline still the right one?
+  Rule ID block 133300-133399 (jt-zimbra's second block, since 3.5: 100800-100999 is full).
+
+  Events come from etc/jt-packs/bin/jt-zimbra-baseline-check.py, which runs on
+  every manager node, reads the Zimbra packages syscollector found on that
+  node's agents and the releases etc/lists/zimbra-webfiles covers. They are the
+  manager's own events (location jt-zimbra-baseline) and name the server in
+  jt_zimbra_baseline.agent_name; the built-in JSON decoder reads them.
+
+  Why it matters: 100802 (level 14) treats every jsp, jar, class or war file
+  under Zimbra's web directories that the baseline does not list as a likely
+  web shell. An upgrade renames the version-stamped jars, so until the list is
+  regenerated every legitimate permission or ownership change to them raises
+  100802, and a real web shell would be lost among those alerts.
+-->
+<group name="zimbra,jt_zimbra_baseline,">
+
+  <rule id="133300" level="0">
+    <decoded_as>json</decoded_as>
+    <location>^jt-zimbra-baseline$</location>
+    <field name="jt_zimbra_baseline.event">\.+</field>
+    <description>jt-zimbra: web-file baseline check event</description>
+  </rule>
+
+  <rule id="133301" level="10">
+    <if_sid>133300</if_sid>
+    <field name="jt_zimbra_baseline.event">^baseline$</field>
+    <field name="jt_zimbra_baseline.status">^stale$</field>
+    <description>[WARN] jt-zimbra: $(jt_zimbra_baseline.agent_name): Zimbra $(jt_zimbra_baseline.release) is not in the web-file baseline (it covers $(jt_zimbra_baseline.covered)); regenerate etc/lists/zimbra-webfiles, until then legitimate file changes raise 100802 and a web shell would be hidden among them</description>
+    <options>alert_by_email</options>
+    <group>jt_zimbra_baseline_stale,</group>
+  </rule>
+
+  <rule id="133302" level="3">
+    <if_sid>133300</if_sid>
+    <field name="jt_zimbra_baseline.event">^baseline$</field>
+    <field name="jt_zimbra_baseline.status">^covered$</field>
+    <field name="jt_zimbra_baseline.change">^fixed$</field>
+    <description>jt-zimbra: $(jt_zimbra_baseline.agent_name): the web-file baseline now covers Zimbra $(jt_zimbra_baseline.release)</description>
+  </rule>
+
+  <rule id="133303" level="2">
+    <if_sid>133300</if_sid>
+    <field name="jt_zimbra_baseline.event">^baseline$</field>
+    <field name="jt_zimbra_baseline.status">^covered$</field>
+    <description>jt-zimbra: $(jt_zimbra_baseline.agent_name): the web-file baseline covers Zimbra $(jt_zimbra_baseline.release)</description>
+  </rule>
+
+  <rule id="133304" level="10">
+    <if_sid>133300</if_sid>
+    <field name="jt_zimbra_baseline.event">^status$</field>
+    <field name="jt_zimbra_baseline.state">^list_error$</field>
+    <description>[WARN] jt-zimbra: the web-file baseline cannot be used ($(jt_zimbra_baseline.detail)); Zimbra servers: $(jt_zimbra_baseline.servers)</description>
+    <options>alert_by_email</options>
+    <group>jt_zimbra_baseline_stale,</group>
+  </rule>
+
+  <rule id="133305" level="3">
+    <if_sid>133300</if_sid>
+    <field name="jt_zimbra_baseline.event">^status$</field>
+    <field name="jt_zimbra_baseline.state">^list_ok$</field>
+    <description>jt-zimbra: the web-file baseline is readable again</description>
+  </rule>
+
+  <rule id="133306" level="10">
+    <if_sid>133300</if_sid>
+    <field name="jt_zimbra_baseline.event">^status$</field>
+    <field name="jt_zimbra_baseline.state">^wdb_error$</field>
+    <description>[WARN] jt-zimbra: the baseline check cannot read the package inventory ($(jt_zimbra_baseline.detail)), so an upgraded Zimbra server would go unnoticed</description>
+  </rule>
+
+</group>

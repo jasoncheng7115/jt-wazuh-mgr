@@ -75,7 +75,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.12"
+VERSION = "1.12.1"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -1011,16 +1011,25 @@ def _score(value):
         return None
 
 
+# Manager scripts that report on agents, by the field their events live under.
+REPORT_FIELDS = ("jt_php", "jt_runtime", "jt_zimbra_baseline")
+
+
 def reported_agent(alert):
     """The agent an alert is about. Usually the agent that sent it; a manager
-    script that reports on agents (jt-php's version check) writes events as the
-    manager, because analysisd drops queue events that claim an agent's
-    identity, and names the agent in its own fields instead."""
+    script that reports on agents (jt-php's and jt-runtime-vuln's version
+    checks, jt-zimbra's baseline check) writes events as the manager, because
+    analysisd drops queue events that claim an agent's identity, and names the
+    agent in its own fields instead."""
     agent = alert.get("agent") or {}
-    report = (alert.get("data") or {}).get("jt_php")
-    if isinstance(report, dict) and report.get("agent_name") and str(agent.get("id", "")) == "000":
-        return {"id": str(report.get("agent_id") or ""), "name": str(report["agent_name"]),
-                "ip": str(report.get("agent_ip") or "")}
+    if str(agent.get("id", "")) != "000":
+        return agent
+    data = alert.get("data") or {}
+    for field in REPORT_FIELDS:
+        report = data.get(field)
+        if isinstance(report, dict) and report.get("agent_name"):
+            return {"id": str(report.get("agent_id") or ""), "name": str(report["agent_name"]),
+                    "ip": str(report.get("agent_ip") or "")}
     return agent
 
 

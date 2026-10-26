@@ -244,6 +244,7 @@ def check_packs():
         warn('packs', 'no packs found')
         return
     seen_ids = {}
+    claimed = []      # (pack, (lo, hi)) rule ID blocks already declared
     for mf in manifests:
         pdir = os.path.dirname(mf)
         pack = os.path.basename(pdir)
@@ -258,11 +259,22 @@ def check_packs():
             if field not in m:
                 fail('packs', '%s: manifest has no %s' % (pack, field))
 
+        # "lo-hi", or a list of them once a pack outgrows its first block
         declared = m.get('rule_id_range', '')
-        lo = hi = None
-        rng = re.match(r'^(\d+)\s*-\s*(\d+)$', declared)
-        if rng:
-            lo, hi = int(rng.group(1)), int(rng.group(2))
+        blocks = []
+        for part in (declared if isinstance(declared, list) else [declared]):
+            rng = re.match(r'^(\d+)\s*-\s*(\d+)$', str(part).strip())
+            if rng:
+                blocks.append((int(rng.group(1)), int(rng.group(2))))
+            elif part:
+                fail('packs', '%s: rule_id_range entry %r is not "lo-hi"' % (pack, part))
+        for blo, bhi in blocks:
+            for other, (olo, ohi) in claimed:
+                if other != pack and blo <= ohi and olo <= bhi:
+                    fail('packs', '%s: rule ID block %d-%d overlaps %s (%d-%d)'
+                         % (pack, blo, bhi, other, olo, ohi))
+            claimed.append((pack, (blo, bhi)))
+        declared = ', '.join(declared) if isinstance(declared, list) else declared
 
         for entry in m.get('files', []):
             name, etype = entry.get('name', ''), entry.get('type', '')
@@ -298,7 +310,7 @@ def check_packs():
                         fail('packs', 'rule %s appears in both %s and %s'
                              % (rid, seen_ids[rid], pack))
                     seen_ids[rid] = pack
-                    if lo is not None and not (lo <= int(rid) <= hi):
+                    if blocks and not any(blo <= int(rid) <= bhi for blo, bhi in blocks):
                         fail('packs', '%s: rule %s is outside the declared range %s'
                              % (pack, rid, declared))
                 for desc in re.findall(r'<description>(.*?)</description>', body, re.S):

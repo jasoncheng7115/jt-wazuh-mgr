@@ -4,6 +4,26 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.23.0 (2026-10-26)
+
+- **jt-zimbra 3.5: a stale web-file baseline is now an alert.** jt-zimbra treats any
+  change to a jar or JSP that is not in the stock-file baseline as a likely web shell
+  (100802, level 14). Zimbra renames version-stamped jars on every upgrade, so a
+  baseline left at the previous release turns every routine permission change into a
+  level 14, and a real web shell would hide in that noise. On a site one server ran
+  10.1.21 for eight weeks against a 10.1.20 baseline. A manager-side check, every six
+  hours on each cluster node, compares each agent's Zimbra release (from its package
+  inventory) with the releases the baseline covers: not covered is level 10 and mailed
+  (133301), repeated weekly; covered again level 3. A new generator,
+  jt-zimbra-baseline.sh, builds the list from the package database instead of the
+  files on disk, leaves out packaged files that fail package verification, and writes a
+  release marker, so a web shell present while the list is made is not blessed.
+- **Packs can declare a second rule ID block.** rule_id_range may be a list of ranges;
+  jt-zimbra uses 100800-100999 and 133300-133399. preflight checks every rule is in a
+  declared block and no blocks overlap.
+- **jt-alert-digest 1.12.1** files jt-runtime-vuln and the new baseline reports under the
+  host they name.
+
 ## v1.22.3 (2026-10-25)
 
 - **jt-php 1.3.1: correction.** The configuration assessment and the v1.21.1 notes gave

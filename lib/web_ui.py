@@ -7132,6 +7132,20 @@ HTML_TEMPLATE = '''
             renderPacks();
         }
 
+        // rule_id_range is "lo-hi", or a list of them when a pack outgrew its first block.
+        function packRanges(r) {
+            const parts = Array.isArray(r) ? r : [r || ''];
+            const out = [];
+            parts.forEach(t => {
+                const m = /^\\s*(\\d+)\\s*-\\s*(\\d+)\\s*$/.exec(String(t));
+                if (m) out.push([+m[1], +m[2]]);
+            });
+            return out;
+        }
+        function packRangeText(r) {
+            return Array.isArray(r) ? r.join(', ') : String(r || '');
+        }
+
         // A pack matches the filter on its name (either language), id or summary,
         // or, for a number, on the rule ID range that contains it.
         function packMatchesFilter(p, query, state) {
@@ -7141,8 +7155,7 @@ HTML_TEMPLATE = '''
             if (state === 'not-installed' && (p.installed || vs === 'untracked')) return false;
             if (!query) return true;
             if (/^\\d{3,6}$/.test(query)) {
-                const m = /^(\\d+)-(\\d+)$/.exec(p.rule_id_range || '');
-                if (m && +query >= +m[1] && +query <= +m[2]) return true;
+                if (packRanges(p.rule_id_range).some(r => +query >= r[0] && +query <= r[1])) return true;
             }
             return [p.id, p.name, p.name_zh, p.summary, p.summary_zh].some(t => (t || '').toLowerCase().includes(query));
         }
@@ -7201,7 +7214,7 @@ HTML_TEMPLATE = '''
                     '<td><strong>' + escapeHtml(packLang(p.name, p.name_zh)) + '</strong><br>' +
                         '<span style="color:var(--text-muted);font-size:11px;font-family:monospace;">' + escapeHtml(p.id) + '</span></td>' +
                     '<td style="font-size:12px;color:var(--text-ccc);">' + escapeHtml(packLang(p.summary, p.summary_zh)) + '</td>' +
-                    '<td style="font-family:monospace;font-size:12px;">' + escapeHtml(p.rule_id_range) + '</td>' +
+                    '<td style="font-family:monospace;font-size:12px;">' + escapeHtml(packRangeText(p.rule_id_range)) + '</td>' +
                     '<td style="font-family:monospace;">' + have + '</td>' +
                     '<td style="font-family:monospace;">' + ship + '</td>' +
                     '<td>' + badge + '</td>' +
@@ -7314,7 +7327,7 @@ HTML_TEMPLATE = '''
                 '<div class="pack-summary-text">' + escapeHtml(packLang(m.summary, m.summary_zh)) + '</div>' +
                 '<div class="pack-meta">' +
                 'ID <code>' + escapeHtml(m.id || '') + '</code> &nbsp; version ' + escapeHtml(m.version || '') +
-                ' &nbsp; rules ' + d.rule_count + ' &nbsp; ID range ' + escapeHtml(m.rule_id_range || '') +
+                ' &nbsp; rules ' + d.rule_count + ' &nbsp; ID range ' + escapeHtml(packRangeText(m.rule_id_range)) +
                 (tested ? ' &nbsp; <span>Tested with Wazuh</span> ' + escapeHtml(tested) : '') +
                 '<br>' + escapeHtml(m.author || '') + ' &nbsp; ' + escapeHtml(m.license || '') + '</div></div>';
 

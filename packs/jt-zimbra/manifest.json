@@ -2,17 +2,21 @@
  "id": "jt-zimbra",
  "name": "Zimbra Detection Suite",
  "name_zh": "Zimbra 偵測套組",
- "version": "3.4",
+ "version": "3.5",
  "summary": "FIM, web, authentication, account-takeover, administrative-change, SOAP, MTA and host-noise rules for Zimbra mail servers, with the decoders they need.",
  "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、帳號接管、管理變更、SOAP、MTA 與主機雜訊規則，並附上所需的解碼器。",
- "rule_id_range": "100800-100999",
+ "rule_id_range": [
+  "100800-100999",
+  "133300-133399"
+ ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
  "requires": {
   "wazuh": ">=4.8"
  },
  "tested_with": [
-  "4.14.7"
+  "4.14.7",
+  "4.14.9"
  ],
  "notes": [
   "zimbra-webfiles is the stock-file baseline. The shipped copy was generated from Zimbra 10.1.20 (FOSS and NETWORK editions combined) and is a starting point, not a substitute for generating your own.",
@@ -60,7 +64,8 @@
   "Second factor: after a correct password Zimbra asks for a code, and audit.log has already logged the password step as a success; a wrong code appears only in mailbox.log (\"SoapEngine - handler exception: authentication failed for [x], invalid two-factor code\", or \"invalid TOTP code\" while setting it up). That is level 5 (100991), a failed login, and counts for brute force from one address (twelve in five minutes, 100842/100859). Two-factor exists in the Network Edition and the open-source zimbra-maldua-2fa extension. The same mailbox.log line for a wrong password was raised by the built-in 2501 at level 5 next to 100841 for every failed web or SOAP login; 3.3 decodes it and keeps it at level 0 (100990).",
   "Account takeover: 100816 (level 12, a change within 30 minutes of an account's first login from a new public address) now also follows a password change, two-factor turned off, backup codes or an application password created, and a new recovery address or delegated rights (100935, level 5 on its own: SetRecoveryAccountRequest, whoever reads the recovery mailbox can reset the password; GrantRightsRequest, send-as, send-on-behalf-of and calendar rights). The web client's own mailbox export (/home/<account>/?fmt=tgz, without /service) was never matched by 100920-100923; it is now, and a Briefcase multi-file download is not. Not detectable from the logs Zimbra writes at its default level: who a folder was shared with (FolderActionRequest names no grantee), bulk IMAP or POP downloads (FETCH and RETR are not logged), and whether a login used an application password.",
   "SMTP AUTH session tokens: on a default Zimbra install saslauthd logs, at debug level and into /var/log/zimbra.log, the whole answer Zimbra gives it for every SMTP AUTH, including a session token valid for two days (found in the measured site's central log store for every SMTP AUTH). The zimbra group now has the agent skip those lines, so the tokens no longer reach the manager or its archives; the setup step shows how to stop them being written at all.",
-  "The rule-ID range 100800-100999 is now full: 3.3 uses the last free IDs (100935, 100998, 100999 and the IDs of rules removed in 3.0 and earlier, 100990 and 100991, now different rules in 08-zimbra_soap_rules.xml). A site rule that referred to the removed ones would now refer to the new rules."
+  "The rule-ID range 100800-100999 is now full: 3.3 uses the last free IDs (100935, 100998, 100999 and the IDs of rules removed in 3.0 and earlier, 100990 and 100991, now different rules in 08-zimbra_soap_rules.xml). A site rule that referred to the removed ones would now refer to the new rules.",
+  "3.5: a stale web-file baseline is reported. 100802 (level 14) relies on etc/lists/zimbra-webfiles, and every Zimbra upgrade renames the version-stamped jars; one server ran 10.1.21 for eight weeks against a 10.1.20 list, so each permission change to its own jars raised 100802 and nothing said the list was out of date. jt-zimbra-baseline-check.py (manager, every six hours, every cluster node) compares each Zimbra server's release from the package inventory with the releases the list covers: 133301 (level 10, mailed, weekly reminder) when it is not covered, 133302 when it is again, 133304 (level 10, mailed) when the list cannot be read, 133306 when the inventory cannot. jt-zimbra-baseline.sh builds the list from the package database instead of the disk and writes the release markers. The pack now has a second rule ID block, 133300-133399, because 100800-100999 is full."
  ],
  "notes_zh": [
   "zimbra-webfiles 是原廠檔案基線。隨附的版本產生自 Zimbra 10.1.20（FOSS 與 NETWORK 版聯集），是起點而非自行產生的替代品。",
@@ -108,7 +113,8 @@
   "第二因素：密碼正確後 Zimbra 才會要驗證碼，而 audit.log 已經把密碼這一步記成成功；驗證碼錯誤只出現在 mailbox.log（「SoapEngine - handler exception: authentication failed for [x], invalid two-factor code」，設定時則是「invalid TOTP code」）。這是 level 5（100991），算一次登入失敗，也計入同一位址的暴力破解（五分鐘十二次，100842/100859）。兩步驟驗證存在於 Network Edition 與開源的 zimbra-maldua-2fa 擴充。同一種 mailbox.log 記錄在密碼錯誤時，過去每一次網頁或 SOAP 登入失敗都會被內建 2501 以 level 5 再報一次（與 100841 重複）；3.3 解碼它並停在 level 0（100990）。",
   "帳號接管：100816（level 12，帳號第一次從新公開位址登入後 30 分鐘內的變更）現在也涵蓋改密碼、關閉兩步驟驗證、產生備用碼或應用程式密碼，以及新的復原位址或委派權限（100935，單獨為 level 5：SetRecoveryAccountRequest，能讀復原信箱的人就能重設密碼；GrantRightsRequest，代為寄件、代表寄件與行事曆權限）。網頁版自己的整個信箱匯出（/home/<帳號>/?fmt=tgz，沒有 /service）過去從未被 100920-100923 比對到，現在會；公文包多檔下載則不算。以 Zimbra 預設記錄等級無法偵測的：資料夾分享給誰（FolderActionRequest 不寫被授權者）、IMAP 或 POP 的大量下載（FETCH 與 RETR 不記錄）、登入是否用了應用程式密碼。",
   "SMTP AUTH 工作階段權杖：預設安裝的 Zimbra，saslauthd 會以 debug 等級把每次 SMTP AUTH 時 Zimbra 的完整回應寫進 /var/log/zimbra.log，其中包括有效兩天的工作階段權杖（在實測站台的集中記錄庫中，每一次 SMTP AUTH 都有）。zimbra 群組現在讓 agent 略過這些行，權杖不再送到管理端或它的 archives；部署步驟說明如何讓它們根本不被寫出。",
-  "規則 ID 範圍 100800-100999 已用完：3.3 用掉了最後幾個空號（100935、100998、100999，以及 3.0 以前移除的 100990、100991，現在是 08-zimbra_soap_rules.xml 中的不同規則）。若站台規則曾引用被移除的那兩條，現在會指到新規則。"
+  "規則 ID 範圍 100800-100999 已用完：3.3 用掉了最後幾個空號（100935、100998、100999，以及 3.0 以前移除的 100990、100991，現在是 08-zimbra_soap_rules.xml 中的不同規則）。若站台規則曾引用被移除的那兩條，現在會指到新規則。",
+  "3.5：會回報過期的網站檔案基準清單。100802（level 14）依賴 etc/lists/zimbra-webfiles，而每次 Zimbra 升級都會改掉帶版本號的 jar 檔名；曾有一台伺服器以 10.1.21 搭配 10.1.20 的清單跑了八週，它自己的 jar 每次權限變動都觸發 100802，卻沒有任何東西指出清單已過期。jt-zimbra-baseline-check.py（管理端，每六小時，叢集每個節點）比對套件清單中每台 Zimbra 伺服器的版本與清單涵蓋的版本：不在清單內時觸發 133301（level 10，寄出，每週提醒），重新涵蓋時觸發 133302，清單讀不到時觸發 133304（level 10，寄出），套件清單讀不到時觸發 133306。jt-zimbra-baseline.sh 從套件資料庫而不是磁碟產生清單，並寫入版本標記。因 100800-100999 已用完，本套件新增第二段規則編號 133300-133399。"
  ],
  "files": [
   {
@@ -200,12 +206,21 @@
    "declare": true,
    "sha256": "ecc4d3e705b33fc95dc1d78850c2737de8334abac21b3c79152aabc5e422ec91",
    "keep": true
+  },
+  {
+   "type": "rule",
+   "name": "zz-133300-jt_zimbra_baseline_rules.xml",
+   "dest": "etc/rules/zz-133300-jt_zimbra_baseline_rules.xml",
+   "sha256": "781024a6dd1780e21e3ae8e141e373088a339087610fdd9a34f78910a1742a55"
   }
  ],
  "agent_group": {
   "name": "zimbra",
   "config": "agent.conf",
-  "description": "Log collection the pack needs on the monitored host"
+  "description": "Log collection the pack needs on the monitored host",
+  "files": [
+   "jt-zimbra-baseline.sh"
+  ]
  },
  "setup": [
   {
@@ -244,9 +259,12 @@
    "required": true,
    "title": "Regenerate the web-file baseline",
    "title_zh": "重新產生網站檔案基準清單",
-   "body": "etc/lists/zimbra-webfiles lists the files Zimbra itself ships. Regenerate it on the Zimbra server after every install and every upgrade, copy it to the manager and reload the ruleset; an upgrade renames version-stamped jars that the old list does not know.",
-   "body_zh": "etc/lists/zimbra-webfiles 列出 Zimbra 自帶的檔案。每次安裝與升級後都要在 Zimbra 伺服器上重新產生，複製到管理端並重新載入規則集；升級會改掉帶版本號的 jar 檔名，舊清單認不得。",
-   "code": "{ find /opt/zimbra/jetty_base/webapps -type f \\( -name '*.jsp' -o -name '*.jspx' -o -name '*.jar' -o -name '*.class' -o -name '*.war' -o -name '*.html' \\); find /opt/zimbra/lib/ext -type f; } | sort -u | sed 's/$/:legit/' > zimbra-webfiles"
+   "body": "etc/lists/zimbra-webfiles lists the files Zimbra itself ships; rule 100802 (level 14) treats any jsp, jar, class or war file under Zimbra's web directories that it does not list as a likely web shell. Regenerate it on every Zimbra server after every install and every upgrade (an upgrade renames the version-stamped jars), merge the outputs, copy the result to the manager (the master of a cluster) and reload the ruleset. 3.5: use jt-zimbra-baseline.sh, which the zimbra agent group delivers to /var/ossec/etc/shared/. It takes the list from the package database (dpkg -L or rpm -ql), not from the disk, so a web shell already present is not added; it leaves out packaged files whose content no longer matches the package and prints them, and it prints the files on disk that no package owns (third-party extensions in lib/ext, Zimbra's generated downloads page): review them, then run it again with --include-unpackaged to keep the ones you recognise. It also writes a marker key per Zimbra release (jt-zimbra-release/x.y.z), from which jt-zimbra-baseline-check.py on the manager knows what the list covers; that check raises 133301 (level 10, mailed) when a Zimbra server runs a release the list does not cover, weekly until the list is regenerated, and 133302 when it is.",
+   "body_zh": "etc/lists/zimbra-webfiles 列出 Zimbra 自帶的檔案；規則 100802（level 14）會把 Zimbra 網頁目錄下不在清單裡的 jsp、jar、class、war 檔當成疑似 web shell。每次安裝與升級後都要在每台 Zimbra 伺服器上重新產生（升級會改掉帶版本號的 jar 檔名），合併各台結果、複製到管理端（叢集的 master）並重新載入規則集。3.5：改用 jt-zimbra-baseline.sh，zimbra agent 群組會把它送到 /var/ossec/etc/shared/。它從套件資料庫（dpkg -L 或 rpm -ql）取清單，不是掃磁碟，所以產生當下已存在的 web shell 不會被收進去；內容與套件不符的套件檔案會被排除並列出；磁碟上不屬於任何套件的檔案（lib/ext 的第三方擴充、Zimbra 產生的下載頁）會列出來：確認後再加 --include-unpackaged 執行一次，把認得的收進清單。它也會為每個 Zimbra 版本寫一個標記鍵（jt-zimbra-release/x.y.z），管理端的 jt-zimbra-baseline-check.py 據此判斷清單涵蓋哪些版本：Zimbra 伺服器跑的版本不在清單內時觸發 133301（level 10，寄出），每週提醒直到重新產生，重新產生後觸發 133302。",
+   "code": "# on each Zimbra server, as root\nsh /var/ossec/etc/shared/jt-zimbra-baseline.sh -o /root/zimbra-webfiles\n# review the files it lists as owned by no package, then if they are yours:\nsh /var/ossec/etc/shared/jt-zimbra-baseline.sh -o /root/zimbra-webfiles --include-unpackaged\n# on the manager (the master of a cluster): merge the servers' lists, install, reload\nsort -u zimbra-webfiles.server1 zimbra-webfiles.server2 > /var/ossec/etc/lists/zimbra-webfiles\nchown wazuh:wazuh /var/ossec/etc/lists/zimbra-webfiles; chmod 660 /var/ossec/etc/lists/zimbra-webfiles",
+   "since": "3.5",
+   "verify": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-zimbra-baseline-check.py --wazuh-path /var/ossec --list prints the releases the list covers and each Zimbra server's release; after the ruleset reload the next run raises 133302 for a server that was stale.",
+   "verify_zh": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-zimbra-baseline-check.py --wazuh-path /var/ossec --list 會印出清單涵蓋的版本與每台 Zimbra 伺服器的版本；重新載入規則集後，原本過期的伺服器在下一次執行時會觸發 133302。"
   },
   {
    "platform": "manager",
@@ -343,6 +361,18 @@
    "code": "grep -lE '(if_sid|if_matched_sid)>[^<]*\\b1009(3[6-9]|4[0-2])\\b|rule id=\"1009(3[6-9]|4[0-2])\"[^>]*overwrite' /var/ossec/etc/rules/*.xml",
    "verify": "/var/ossec/bin/wazuh-analysisd -t prints no warning naming 100936-100942, and rule 132920 or 132970 appears after a test change to /etc/sudoers.d or /etc/pam.d.",
    "verify_zh": "/var/ossec/bin/wazuh-analysisd -t 沒有提到 100936-100942 的警告，且在測試改動 /etc/sudoers.d 或 /etc/pam.d 後出現規則 132920 或 132970。"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "since": "3.5",
+   "title": "3.5: run the baseline check on every cluster node",
+   "title_zh": "3.5：在叢集每個節點執行基準清單檢查",
+   "body": "Installing or updating the pack schedules jt-zimbra-baseline-check.py every six hours on this node. Each node keeps the package inventory of the agents connected to it and the script reads only its own agents, so copy it to every worker and add the same cron line there (the cluster copies the list, not the script). It reads wazuh-db with SELECT only, needs no network access and writes manager events (location jt-zimbra-baseline). The first run reports every Zimbra server once: 133301 when its release is not in the list, otherwise a level 2 record.",
+   "body_zh": "安裝或更新套件時會在本節點排程每六小時執行 jt-zimbra-baseline-check.py。每個節點只保存連到自己的 agent 的套件清單，腳本也只讀自己的 agent，所以要把它複製到每個 worker 並加上同樣的排程（叢集會同步清單，不會同步腳本）。它只以 SELECT 讀 wazuh-db、不需要連網，寫入的是管理端自己的事件（location jt-zimbra-baseline）。第一次執行會把每台 Zimbra 伺服器各回報一次：版本不在清單內時觸發 133301，否則記一筆 level 2。",
+   "code": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-zimbra-baseline-check.py --wazuh-path /var/ossec --list\nscp /var/ossec/etc/jt-packs/bin/jt-zimbra-baseline-check.py <worker>:/var/ossec/etc/jt-packs/bin/\nssh <worker> 'echo \"23 */6 * * * root /usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-zimbra-baseline-check.py --wazuh-path /var/ossec\" > /etc/cron.d/jt-jt-zimbra'",
+   "verify": "--list prints the releases the list covers and the Zimbra servers this node handles with their release.",
+   "verify_zh": "--list 會印出清單涵蓋的版本，以及本節點負責的 Zimbra 伺服器與其版本。"
   }
  ],
  "active_response": [
@@ -372,6 +402,16 @@
    "title_zh": "封鎖掃描 Zimbra 網頁路徑的外部位址",
    "body": "Drops traffic from the source address on the Zimbra server for 10 minutes after 20 or more 404 responses in two minutes from a public address (private ranges and addresses listed in zimbra-internal-networks end at 100984/100985 instead, often a proxy carrying many clients). The address comes from Zimbra's own nginx log, so it is the connecting client; behind a reverse proxy with a public address, list that proxy. Risk: a shared NAT address, and a misbehaving client of a real user, are blocked for the 10 minutes.",
    "body_zh": "公開位址在兩分鐘內出現 20 次以上 404 時，在 Zimbra 伺服器上封鎖該來源 10 分鐘（私有網段與列在 zimbra-internal-networks 的位址會停在 100984/100985，常是帶著許多用戶端的代理）。位址取自 Zimbra 自己的 nginx 記錄，也就是連線的用戶端；若前面有使用公開位址的反向代理，請把它列入清單。風險：共用的 NAT 位址，以及真實使用者行為異常的用戶端，會被封鎖 10 分鐘。"
+  }
+ ],
+ "scripts": [
+  {
+   "name": "jt-zimbra-baseline-check.py",
+   "dest": "etc/jt-packs/bin/jt-zimbra-baseline-check.py",
+   "sha256": "14a75012e150d7385ec57c1cc67df3ca047071f2355b7e931bcb22f81440eef5",
+   "cron": "23 */6 * * *",
+   "args": "--wazuh-path {wazuh_path}",
+   "description": "Compares the Zimbra release syscollector found on each agent of this node with the releases etc/lists/zimbra-webfiles covers and reports a stale baseline"
   }
  ]
 }

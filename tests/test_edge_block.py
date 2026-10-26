@@ -844,9 +844,11 @@ class ShippedActiveResponses(unittest.TestCase):
                     self.assertTrue(entry['rules_id'] and len(entry['rules_id']) <= 50)
                     for rid in entry['rules_id']:
                         self.assertRegex(rid, r'^\d{1,7}$')
-                    lo, hi = (int(x) for x in m['rule_id_range'].split('-'))
+                    declared = m['rule_id_range']
+                    blocks = [tuple(int(x) for x in r.split('-'))
+                              for r in (declared if isinstance(declared, list) else [declared])]
                     for rid in entry['rules_id']:
-                        if lo <= int(rid) <= hi:
+                        if any(lo <= int(rid) <= hi for lo, hi in blocks):
                             self.assertIn(rid, all_rules, 'rule %s is not in the pack' % rid)
                     self.assertTrue(60 <= int(entry['timeout']) <= 7 * 86400)
                     for field in ('title', 'title_zh', 'body', 'body_zh'):

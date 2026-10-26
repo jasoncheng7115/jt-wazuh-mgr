@@ -298,6 +298,18 @@ class DigestHost(unittest.TestCase):
         self.assertEqual(sorted(groups), [('133102', 'web1'), ('133102', 'web2'), ('5715', 'web1')])
         self.assertEqual(groups[('133102', 'web2')]['agent_id'], '006')
 
+    def test_digest_also_attributes_runtime_and_zimbra_baseline_reports(self):
+        spec = importlib.util.spec_from_file_location(
+            'jt_alert_digest_for_reports', os.path.join(ROOT, 'packs', 'jt-alert-digest', 'scripts', 'jt-alert-digest.py'))
+        dg = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(dg)
+        for field, rid in (('jt_runtime', '133210'), ('jt_zimbra_baseline', '133301')):
+            groups = {}
+            rule = {'id': rid, 'level': 10, 'description': 'mail9: report'}
+            dg.add_alert(groups, {'agent': {'id': '000', 'name': 'manager'}, 'rule': rule,
+                                  'data': {field: {'agent_name': 'mail9', 'agent_id': '009'}}}, rule, 10)
+            self.assertEqual(sorted(groups), [(rid, 'mail9')], field)
+
 
 class WindowsRules(unittest.TestCase):
     """wazuh-logtest cannot replay eventchannel events (4.14), so the two Sysmon

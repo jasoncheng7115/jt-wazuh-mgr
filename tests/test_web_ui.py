@@ -2358,6 +2358,23 @@ class TestFrontend(unittest.TestCase):
         result = subprocess.run(['node', '-e', script], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_pack_rule_ranges_accept_a_string_or_a_list(self):
+        """A manifest's rule_id_range is "lo-hi" or a list of them (jt-zimbra
+        3.5). The catalogue filters by rule number and prints the blocks."""
+        if not self.have_node:
+            self.skipTest(self.node_reason)
+        start = self.tpl.index('        function packRanges(r) {')
+        end = self.tpl.index('        // A pack matches the filter on its name')
+        script = self.tpl[start:end] + """
+const a = packRanges('100800-100999'), b = packRanges(['100800-100999', '133300-133399']);
+const ok = a.length === 1 && a[0][0] === 100800 && a[0][1] === 100999 &&
+    b.length === 2 && b[1][0] === 133300 && packRanges('').length === 0 && packRanges(undefined).length === 0 &&
+    packRangeText(['100800-100999', '133300-133399']) === '100800-100999, 133300-133399' &&
+    packRangeText('100800-100999') === '100800-100999' && packRangeText(undefined) === '';
+if (!ok) { console.log(JSON.stringify([a, b])); process.exit(1); }"""
+        result = subprocess.run(['node', '-e', script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_version_helpers_are_defined_once(self):
         for name in ('function parseVersion', 'function compareVersions'):
             self.assertEqual(self.tpl.count(name), 1,
@@ -3020,6 +3037,37 @@ class TestShippedPacks(unittest.TestCase):
                                          'rule %s duplicated in %s and %s'
                                          % (rid, seen.get(rid), m['id']))
                         seen[rid] = m['id']
+
+    def test_rule_ids_stay_inside_the_declared_blocks(self):
+        """rule_id_range is "lo-hi", or a list of them once a pack has outgrown
+        its first block (jt-zimbra 3.5: 100800-100999 was full). Every rule
+        must fall inside one of its pack's blocks, and no two packs may
+        declare overlapping blocks."""
+        claimed = []
+        for pdir, m in self.packs:
+            declared = m.get('rule_id_range')
+            parts = declared if isinstance(declared, list) else [declared]
+            blocks = []
+            with self.subTest(pack=m['id'], field='rule_id_range'):
+                self.assertTrue(parts and all(parts))
+                for part in parts:
+                    self.assertRegex(part, r'^\d+-\d+$')
+                    lo, hi = (int(x) for x in part.split('-'))
+                    self.assertLess(lo, hi)
+                    for other, (olo, ohi) in claimed:
+                        self.assertFalse(lo <= ohi and olo <= hi,
+                                         '%s %s overlaps %s' % (m['id'], part, other))
+                    blocks.append((lo, hi))
+            claimed += [(m['id'], b) for b in blocks]
+            for entry in m.get('files', []):
+                if entry['type'] != 'rule':
+                    continue
+                with io.open(os.path.join(pdir, 'rules', entry['name']), encoding='utf-8') as fh:
+                    ids = re.findall(r'<rule id="(\d+)"', fh.read())
+                for rid in ids:
+                    with self.subTest(pack=m['id'], rule=rid):
+                        self.assertTrue(any(lo <= int(rid) <= hi for lo, hi in blocks),
+                                        'rule %s is outside %s' % (rid, declared))
 
     def test_decoder_xml_parses(self):
         import xml.etree.ElementTree as ET
