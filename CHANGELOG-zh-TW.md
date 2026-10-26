@@ -4,6 +4,14 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.23.1（2026-10-26）
+
+- **jt-runtime-vuln 1.1：OpenVPN 版本。** OpenVPN 在 2026 年幾乎每個 2.6 與 2.7 版本都修了 CVE，其中包括憑證主旨夾帶 NUL 字元
+  的身分驗證繞過（CVE-2026-84790，2.7.8 修正），而防火牆發行版自己打包的版本常常落後。版本檢查現在會把 OpenVPN（FreeBSD、
+  OPNsense、pfSense 套件與 Windows 安裝）與 GitHub 上同分支的最新版、community.openvpn.net 的支援分支比對：伺服器或防火牆
+  落後於說明中列有 CVE 的版本為 level 12 並寄出（133233，附上之後修正的 CVE），已停止維護的分支為 level 12（133234），
+  桌機為 level 7，發行版套件只回報一次。防火牆會註明修正要等韌體更新。
+
 ## v1.23.0（2026-10-26）
 
 - **jt-zimbra 3.5：基準清單過期現在會發告警。** jt-zimbra 把不在原廠檔案基準清單中的 jar 或 JSP 的任何變動都視為可能的

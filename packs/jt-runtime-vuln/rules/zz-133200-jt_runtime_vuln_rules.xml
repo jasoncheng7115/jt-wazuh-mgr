@@ -1,6 +1,6 @@
 <!--
-  jt-runtime-vuln - known exploited and unscored vulnerabilities, Node.js and
-  Python versions, runtime crashes
+  jt-runtime-vuln - known exploited and unscored vulnerabilities, Node.js,
+  Python and OpenVPN versions, runtime crashes
   File:    zz-133200-jt_runtime_vuln_rules.xml
   Range:   133200-133299
   Licence: AGPL-3.0-or-later    Jason Tools Co., Ltd.
@@ -17,9 +17,9 @@
                      2,265 CVEs on 43 agents, among them the two PHP request
                      handling RCEs of 2026-10-21. 133201 makes it level 7.
     133210-133249  versions: jt-runtime-versions.py on the manager compares the
-                   Node.js and Python that syscollector found on every agent
-                   with nodejs.org's and python.org's release data (location
-                   jt-runtime). The alerts belong to the manager and name the
+                   Node.js, Python and OpenVPN that syscollector found on every
+                   agent with nodejs.org's, python.org's and OpenVPN's release
+                   data (location jt-runtime). The alerts belong to the manager and name the
                    host first: analysisd drops queue events that claim an
                    agent's identity once agents are registered.
     133250-133259  crashes: the kernel's segfault line for a Node.js or Python
@@ -98,6 +98,40 @@
     <field name="jt_runtime.change" type="pcre2">^(?:new|changed)$</field>
     <field name="jt_runtime.host">^server$</field>
     <description>[HIGH] jt-runtime: $(jt_runtime.agent_name): Node.js $(jt_runtime.branch).x ($(jt_runtime.installed)) is end of life and gets no security fixes ($(jt_runtime.packages), $(jt_runtime.packager))</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_runtime_outdated,vulnerability,</group>
+  </rule>
+
+  <!-- OpenVPN on a server or firewall is a listening VPN endpoint: every 2.6
+       and 2.7 release since 2026-04 fixed CVEs (remote denial of service,
+       authentication bypass through certificate subjects). On OPNsense and
+       pfSense the openvpn package comes with the firmware; note says so. -->
+  <rule id="133233" level="12">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.runtime">^openvpn$</field>
+    <field name="jt_runtime.status">^behind_security$</field>
+    <field name="jt_runtime.change" type="pcre2">^(?:new|changed)$</field>
+    <field name="jt_runtime.host">^server$</field>
+    <description>[HIGH] jt-runtime: $(jt_runtime.agent_name): OpenVPN $(jt_runtime.installed) is missing security release $(jt_runtime.latest) of line $(jt_runtime.branch) ($(jt_runtime.cve_count) CVEs fixed since: $(jt_runtime.cves)) $(jt_runtime.note)</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_runtime_outdated,vulnerability,</group>
+  </rule>
+
+  <rule id="133234" level="12">
+    <if_sid>133210</if_sid>
+    <field name="jt_runtime.event">^version$</field>
+    <field name="jt_runtime.runtime">^openvpn$</field>
+    <field name="jt_runtime.status">^eol$</field>
+    <field name="jt_runtime.change" type="pcre2">^(?:new|changed)$</field>
+    <field name="jt_runtime.host">^server$</field>
+    <description>[HIGH] jt-runtime: $(jt_runtime.agent_name): OpenVPN $(jt_runtime.branch) ($(jt_runtime.installed)) is end of life and gets no security fixes; move to a supported line $(jt_runtime.note)</description>
     <options>alert_by_email</options>
     <mitre>
       <id>T1190</id>
@@ -206,14 +240,14 @@
     <if_sid>133210</if_sid>
     <field name="jt_runtime.event">^status$</field>
     <field name="jt_runtime.state">^failing$</field>
-    <description>jt-runtime: Node.js/Python release data could not be read; the last copy is used for up to 48 hours ($(jt_runtime.detail))</description>
+    <description>jt-runtime: release data (Node.js, Python, OpenVPN) could not be read; the last copy is used for up to 48 hours ($(jt_runtime.detail))</description>
   </rule>
 
   <rule id="133224" level="10">
     <if_sid>133210</if_sid>
     <field name="jt_runtime.event">^status$</field>
     <field name="jt_runtime.state">^stale$</field>
-    <description>[WARN] jt-runtime: no Node.js/Python release data for $(jt_runtime.hours) hours; versions are not being checked ($(jt_runtime.detail))</description>
+    <description>[WARN] jt-runtime: release data (Node.js, Python, OpenVPN) not read for $(jt_runtime.hours) hours; versions are not being checked ($(jt_runtime.detail))</description>
     <options>alert_by_email</options>
   </rule>
 
@@ -229,7 +263,7 @@
     <if_sid>133210</if_sid>
     <field name="jt_runtime.event">^status$</field>
     <field name="jt_runtime.state">^recovered$</field>
-    <description>jt-runtime: Node.js/Python release data read again after $(jt_runtime.hours) hours</description>
+    <description>jt-runtime: release data (Node.js, Python, OpenVPN) read again after $(jt_runtime.hours) hours</description>
   </rule>
 
   <!-- jt-kev-update.py -->

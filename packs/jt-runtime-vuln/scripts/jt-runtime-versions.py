@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-# jt-runtime-versions - compare the Node.js and Python installed on every agent
-# with the projects' own release data.
+# jt-runtime-versions - compare the Node.js, Python and OpenVPN installed on
+# every agent with the projects' own release data.
 # Part of the jt-runtime-vuln rule pack (jt-wazuh-mgr).  AGPL-3.0-or-later, Jason Tools Co., Ltd.
-"""Report agents whose Node.js or Python is behind a security release of its
-branch, or on a branch its project no longer supports.
+"""Report agents whose Node.js, Python or OpenVPN is behind a security release
+of its branch, or on a branch its project no longer supports.
 
 Wazuh's vulnerability detection matches CVEs from its own feed. On
 2026-10-22 it had none of the ten CVEs Node.js fixed the day before, and
@@ -19,6 +19,18 @@ inventory syscollector already keeps on this manager node with
   Python   https://peps.python.org/api/release-cycle.json   status per branch
            (bugfix, security, end-of-life)
            https://www.python.org/api/v2/downloads/release/  published releases
+  OpenVPN  https://api.github.com/repos/OpenVPN/openvpn/releases   every
+           release with its notes; a release whose notes name a CVE is a
+           security release
+           https://community.openvpn.net/openvpn/wiki/SupportedVersions
+           support type per branch (full stable, old stable, unsupported)
+
+OpenVPN 3 (openvpn3 on Linux, OpenVPN Connect) is a different product with
+its own numbering and is not compared. On OPNsense and pfSense the openvpn
+package comes with the firewall's firmware, so the fix arrives with a firmware
+update; the alert says so. The OpenVPN data is optional: when it cannot be
+read the previous copy is used and a "failing" status event says why, while
+Node.js and Python are still checked.
 
 and writes one JSON event per finding into analysisd's queue (location
 jt-runtime) for the rules in zz-133200-jt_runtime_vuln_rules.xml. The events
@@ -45,7 +57,7 @@ import sys
 import time
 import urllib.request
 
-VERSION = '1.0'
+VERSION = '1.1'
 PROG = 'jt-runtime-versions'
 LOCATION = 'jt-runtime'
 REMIND_DAYS = 7
@@ -61,7 +73,13 @@ SOURCES = {
     'node_schedule': 'https://raw.githubusercontent.com/nodejs/Release/main/schedule.json',
     'python_cycle': 'https://peps.python.org/api/release-cycle.json',
     'python_releases': 'https://www.python.org/api/v2/downloads/release/?is_published=true',
+    'openvpn_releases': 'https://api.github.com/repos/OpenVPN/openvpn/releases?per_page=100',
+    'openvpn_support': 'https://community.openvpn.net/openvpn/wiki/SupportedVersions',
 }
+# Support types on OpenVPN's "Supported versions" page that still get releases
+OPENVPN_SUPPORTED = ('full stable support', 'old stable support')
+OPENVPN_TYPES = r'(Full stable support|Old stable support|git tree only|[Uu]nsupported|Under development)'
+CVE = re.compile(r'CVE-\d{4}-\d{4,}')
 
 UPSTREAM_VERSION = re.compile(r'^(?:\d+:)?(\d+)\.(\d+)\.(\d+)')
 # Distribution builds keep a version and backport fixes into it
@@ -94,6 +112,14 @@ RUNTIMES = {
         # python@3.12 (Homebrew), python312 (FreeBSD), "Python 3.12.10 (64-bit)" (Windows)
         'names': re.compile(r'^(?:python3\.\d+|python3|python@3\.\d+|python3\d{1,2}|Python 3\.\d+\.\d+ \((?:64|32)-bit\))$'),
         'like': ("name LIKE 'python3%'", "name LIKE 'python@3%'", "name LIKE 'Python 3%'"),
+    },
+    'openvpn': {
+        'label': 'OpenVPN',
+        # openvpn (deb, rpm, FreeBSD/OPNsense/pfSense pkg, Homebrew), openvpn-mbedtls (FreeBSD
+        # flavour), "OpenVPN 2.6.14-I001 amd64" (Windows installer). Not openvpn3 or
+        # "OpenVPN Connect": OpenVPN 3 is another product with its own versions.
+        'names': re.compile(r'^(?:openvpn|openvpn-mbedtls|OpenVPN \d+\.\d+\.\d+\S* \S+)$'),
+        'like': ("name LIKE 'openvpn%'",),
     },
 }
 
@@ -210,12 +236,71 @@ def python_releases(cycle, releases):
     return {'active': active, 'branches': hist}
 
 
-def fetch_releases(sources, today):
-    return {
+def openvpn_support(page):
+    """{'2.7': 'full stable support', '2.6': 'old stable support', '2.5': 'unsupported', ...}
+    from the "Supported versions" wiki page (HTML or text): one table row per
+    branch, starting "X.Y.0 - "."""
+    text = re.sub(r'<[^>]+>', ' ', page)
+    text = re.sub(r'&nbsp;|&#160;', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    starts = [(m.start(), '%s.%s' % m.groups()) for m in re.finditer(r'\b(\d+)\.(\d+)\.0 - ', text)]
+    out = {}
+    for i, (pos, br) in enumerate(starts):
+        end = starts[i + 1][0] if i + 1 < len(starts) else pos + 400
+        m = re.search(OPENVPN_TYPES, text[pos:end])
+        if m and br not in out:
+            out[br] = m.group(1).lower()
+    if not any(t in OPENVPN_SUPPORTED for t in out.values()):
+        raise ValueError('the OpenVPN supported-versions page listed no supported branch')
+    return out
+
+
+def openvpn_releases(releases, support):
+    """GitHub releases -> {'active': {branch: latest}, 'branches': {branch: {version: [tags]}},
+    'cves': {version: [CVE ids]}}. Tags are compared by version, not by date."""
+    hist, cves = {}, {}
+    for r in releases:
+        if r.get('draft') or r.get('prerelease'):
+            continue
+        m = re.match(r'^v?(\d+\.\d+\.\d+)$', (r.get('tag_name') or '').strip())
+        if not m:
+            continue                       # _rc, _beta, _alpha
+        v = m.group(1)
+        found = sorted(set(CVE.findall(r.get('body') or '')))
+        hist.setdefault(branch_of('openvpn', v), {})[v] = ['security'] if found else []
+        if found:
+            cves[v] = found
+    active = {}
+    for br, kind in support.items():
+        if kind in OPENVPN_SUPPORTED and br in hist:
+            active[br] = max(hist[br], key=vkey)
+    if not active:
+        raise ValueError('no supported OpenVPN branch has a release on GitHub')
+    return {'active': active, 'branches': hist, 'cves': cves, 'support': support}
+
+
+def fetch_text(url):
+    req = urllib.request.Request(url, headers={'User-Agent': '%s/%s (jt-wazuh-mgr)' % (PROG, VERSION)})
+    with urllib.request.urlopen(req, timeout=TIMEOUT, context=verifying_context()) as r:
+        return r.read().decode('utf-8', 'replace')
+
+
+def fetch_releases(sources, today, old=None):
+    """Node.js and Python must be read; OpenVPN falls back to the previous copy
+    (or is left out on a first run) and reports why in 'partial_error'."""
+    out = {
         'node': node_releases(fetch_json(sources['node_index']), fetch_json(sources['node_schedule']), today),
         'python': python_releases(fetch_json(sources['python_cycle']), fetch_json(sources['python_releases'])),
         'fetched': int(time.time()),
     }
+    try:
+        out['openvpn'] = openvpn_releases(fetch_json(sources['openvpn_releases']),
+                                          openvpn_support(fetch_text(sources['openvpn_support'])))
+    except Exception as exc:
+        out['partial_error'] = 'OpenVPN: %s: %s' % (type(exc).__name__, exc)
+        if (old or {}).get('openvpn'):
+            out['openvpn'] = old['openvpn']
+    return out
 
 
 def assess(installed, br, rel):
@@ -316,19 +401,26 @@ def inventory(wdb, node):
         if pkgs:
             out['%03d' % aid] = {'name': a.get('name') or '', 'ip': a.get('ip') or '',
                                  'status': a.get('connection_status') or '', 'kind': host_kind(a),
-                                 'packages': pkgs}
+                                 'platform': (a.get('os_platform') or '').lower(), 'packages': pkgs}
     return out
 
 
 def package_version(p):
     """The upstream version a package carries; Windows installers put it in the name."""
     name, version = p.get('name') or '', p.get('version') or ''
-    m = re.match(r'^Python (\d+\.\d+\.\d+) ', name)
+    m = re.match(r'^(?:Python|OpenVPN) (\d+\.\d+\.\d+)[ -]', name)
     if m:
         return m.group(1)
     if p.get('format') == 'rpm' and name == 'python3' and not vkey(version):
         return ''
     return version
+
+
+def firmware_note(runtime, agent):
+    """Where the fix comes from, when that is not the package itself."""
+    if runtime == 'openvpn' and agent.get('platform') in ('bsd', 'freebsd'):
+        return 'on OPNsense or pfSense the fix comes with the firewall firmware update'
+    return ''
 
 
 def findings(inv):
@@ -369,7 +461,8 @@ def findings(inv):
                 'runtime': rt, 'label': RUNTIMES[rt]['label'], 'branch': br, 'kind': kind,
                 'installed': installed, 'package_version': g['versions'][installed],
                 'packages': ','.join(sorted(g['packages']))[:300],
-                'packager': ','.join(sorted(g['packager']))}
+                'packager': ','.join(sorted(g['packager'])),
+                'note': firmware_note(rt, agent)}
     return found
 
 
@@ -409,6 +502,10 @@ def evaluate(found, releases, previous, now):
     for key, f in sorted(found.items()):
         before = previous.get(key) or {}
         rel = releases.get(f['runtime']) or {}
+        if f['kind'] != 'package' and not rel:
+            if before:
+                state[key] = before        # no release data for this runtime yet: keep, say nothing
+            continue
         if f['kind'] == 'package':
             status, latest, security = f['fixed_status'], f['minimum'], []
         elif f['kind'] == 'upstream':
@@ -435,6 +532,10 @@ def evaluate(found, releases, previous, now):
                       since=time.strftime('%Y-%m-%d', time.localtime(rec['since'] or now)))
             if change != 'new' and before.get('status') and before.get('status') != status:
                 ev['previous_status'] = before['status']
+            fixed = sorted({c for v in security for c in (rel.get('cves') or {}).get(v, [])})
+            if fixed:
+                ev['cve_count'] = len(fixed)
+                ev['cves'] = ','.join(fixed[:12]) + (',...' if len(fixed) > 12 else '')
             if change == 'changed' and before.get('status') in ('behind_security', 'eol', 'behind', 'below_minimum') \
                     and status in ('current', 'distro'):
                 ev['change'] = 'fixed'
@@ -531,9 +632,13 @@ def main(argv=None):
     state = load_state(state_path)
     old_rel = state.get('releases') or {}
     releases, error = old_rel, ''
-    if args.force_fetch or not old_rel or now - old_rel.get('fetched', 0) >= CACHE_HOURS * 3600:
+    if args.force_fetch or not old_rel or now - old_rel.get('fetched', 0) >= CACHE_HOURS * 3600 \
+            or any(rt not in old_rel for rt in RUNTIMES):
         try:
-            releases = fetch_releases({k: getattr(args, k) for k in SOURCES}, today)
+            releases = fetch_releases({k: getattr(args, k) for k in SOURCES}, today, old_rel)
+            error = releases.pop('partial_error', '')
+            if error:
+                log('release data: %s (the previous OpenVPN data is used)' % error)
         except Exception as exc:
             error = '%s: %s' % (type(exc).__name__, exc)
             log('release data: %s' % error)
@@ -559,7 +664,8 @@ def main(argv=None):
             return 2
     if not args.dry_run:
         save_state(state_path, state)
-    log('%d agents with Node.js or Python, %d findings, %d events' % (len(inv), len(finding_state), len(events)))
+    log('%d agents with Node.js, Python or OpenVPN, %d findings, %d events'
+        % (len(inv), len(finding_state), len(events)))
     return 0
 
 

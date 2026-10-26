@@ -4,6 +4,18 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.23.1 (2026-10-26)
+
+- **jt-runtime-vuln 1.1: OpenVPN versions.** OpenVPN shipped CVE fixes in nearly every
+  2.6 and 2.7 release of 2026, including an authentication bypass through a NUL byte in a
+  certificate subject (CVE-2026-84790, fixed in 2.7.8), and firewall distributions ship
+  their own builds that lag behind. The version check now compares OpenVPN (FreeBSD,
+  OPNsense and pfSense packages, Windows installs) with the latest release of its branch
+  on GitHub and the supported branches on community.openvpn.net: a server or firewall
+  behind a release whose notes name CVEs is level 12 and mailed (133233, with the CVEs
+  fixed since), an end-of-life branch level 12 (133234), desktops level 7, distribution
+  packages reported once. Firewalls get a note that the fix arrives with the firmware.
+
 ## v1.23.0 (2026-10-26)
 
 - **jt-zimbra 3.5: a stale web-file baseline is now an alert.** jt-zimbra treats any
