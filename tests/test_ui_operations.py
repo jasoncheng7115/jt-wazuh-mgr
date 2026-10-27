@@ -469,6 +469,50 @@ class TestPeerDeclaration(WebUITestCase):
             originals, failures = self._run(self._peers_fn(), [])
         self.assertEqual((originals, failures, calls), ({}, [], []))
 
+    def _cluster(self, enabled, control=None):
+        """This manager's own cluster setting, and what cluster_control -l says."""
+        real_cfg, real_ctl = web_ui.local_cluster_config, web_ui.cluster_control_nodes
+        web_ui.local_cluster_config = lambda _path: (enabled, 'node-01')
+
+        def fake_control(_path, timeout=30):
+            if control is None:
+                raise RuntimeError('cluster_control -l: connection refused')
+            return control
+        web_ui.cluster_control_nodes = fake_control
+        self.addCleanup(setattr, web_ui, 'local_cluster_config', real_cfg)
+        self.addCleanup(setattr, web_ui, 'cluster_control_nodes', real_ctl)
+
+    def test_an_unlistable_cluster_is_a_failure_not_a_standalone_manager(self):
+        """2026-10-27 install drill: without a working API session get_nodes()
+        falls back to a lone "manager", every worker was skipped, and all 29
+        packs reported success while 50 rules were ignored on each worker."""
+        self._install_api()
+        web_ui.WazuhAPISession.get_nodes = lambda _self: [{'name': 'manager', 'type': 'master'}]
+        self._cluster(enabled=True, control=None)
+        with self.app.test_request_context():
+            originals, failures = self._run(self._peers_fn(), ['etc/lists/x'])
+        self.assertTrue(failures, 'a cluster whose nodes could not be listed reported success')
+        self.assertIn('could not be listed', failures[0]['error'])
+
+    def test_the_cluster_daemon_names_the_workers_when_the_api_cannot(self):
+        calls = self._install_api()
+        web_ui.WazuhAPISession.get_nodes = lambda _self: [{'name': 'manager', 'type': 'master'}]
+        self._cluster(enabled=True, control=[{'name': 'node-01', 'type': 'master', 'ip': '10.0.0.1'},
+                                             {'name': 'node-02', 'type': 'worker', 'ip': '10.0.0.2'}])
+        with self.app.test_request_context():
+            originals, failures = self._run(self._peers_fn(), ['etc/lists/x'])
+        self.assertEqual(failures, [])
+        self.assertTrue(any('node-02' in c[1] for c in calls), 'the worker was never written to')
+        self.assertFalse(any('node-01' in c[1] for c in calls), 'the local master was written over the API')
+
+    def test_a_standalone_manager_still_installs_without_peers(self):
+        calls = self._install_api()
+        web_ui.WazuhAPISession.get_nodes = lambda _self: [{'name': 'manager', 'type': 'master'}]
+        self._cluster(enabled=False, control=None)
+        with self.app.test_request_context():
+            originals, failures = self._run(self._peers_fn(), ['etc/lists/x'])
+        self.assertEqual((originals, failures, calls), ({}, [], []))
+
     def _run(self, fn, paths, remove=False):
         """Call the helper inside a request context with a logged-in session."""
         from flask import session as flask_session
@@ -477,6 +521,53 @@ class TestPeerDeclaration(WebUITestCase):
             'token': 'fake-token', 'session_exp': 9999999999,
         }
         return fn(paths, remove=remove)
+
+
+class TestReloadLiveness(WebUITestCase):
+    """2026-10-27: a worker's analysisd segfaulted while reloading; the reload
+    had been accepted and nothing else said the node had stopped analysing."""
+
+    def _fake(self, analysisd_state):
+        def fake_request(_self, method, endpoint, data=None, params=None):
+            if endpoint == '/cluster/status':
+                return {'data': {'enabled': 'yes', 'running': 'yes'}, 'error': 0}
+            if endpoint == '/cluster/analysisd/reload':
+                return {'data': {'affected_items': [{'name': 'node01'}, {'name': 'node02'}],
+                                 'failed_items': []}, 'error': 0}
+            if endpoint.endswith('/status'):
+                node = endpoint.split('/')[2]
+                state = analysisd_state.get(node)
+                if state == 'error':
+                    raise RuntimeError('timed out')
+                return {'data': {'affected_items': [{'wazuh-analysisd': state}]}, 'error': 0}
+            return {'data': {}, 'error': 0}
+        real = web_ui.WazuhAPISession.request
+        web_ui.WazuhAPISession.request = fake_request
+        self.addCleanup(setattr, web_ui.WazuhAPISession, 'request', real)
+        real_wait = web_ui.RELOAD_SETTLE_SECONDS
+        web_ui.RELOAD_SETTLE_SECONDS = 0
+        self.addCleanup(setattr, web_ui, 'RELOAD_SETTLE_SECONDS', real_wait)
+
+    def _reload(self):
+        return self.client.post('/api/cluster/reload-ruleset').get_json()
+
+    def test_a_node_whose_analysisd_died_is_a_failure(self):
+        self._fake({'node01': 'running', 'node02': 'stopped'})
+        body = self._reload()
+        self.assertEqual(body['fail_count'], 1, body)
+        self.assertIn('node02', body['errors'][0])
+        self.assertIn('not analysing events', body['errors'][0])
+
+    def test_an_unreadable_status_is_a_warning_not_a_success_claim(self):
+        self._fake({'node01': 'running', 'node02': 'error'})
+        body = self._reload()
+        self.assertEqual(body['fail_count'], 0)
+        self.assertTrue(any('could not confirm' in w for w in body['warnings']), body)
+
+    def test_a_healthy_cluster_stays_quiet(self):
+        self._fake({'node01': 'running', 'node02': 'running'})
+        body = self._reload()
+        self.assertEqual((body['fail_count'], body['warnings']), (0, []))
 
 
 class TestReloadWarnings(WebUITestCase):
@@ -498,10 +589,15 @@ class TestReloadWarnings(WebUITestCase):
                 return {'data': {'affected_items': [{'node': 'node01'}]}, 'error': 0}
             if endpoint == '/cluster/status':
                 return {'data': {'enabled': 'yes', 'running': 'yes'}, 'error': 0}
+            if endpoint.endswith('/status'):
+                return {'data': {'affected_items': [{'wazuh-analysisd': 'running'}]}, 'error': 0}
             return {'error': 0, 'data': {
                 'affected_items': [{'name': 'node02', 'msg': msg}],
                 'failed_items': [], 'total_affected_items': 1}}
         web_ui.WazuhAPISession.request = fake_request
+        real_wait = web_ui.RELOAD_SETTLE_SECONDS
+        web_ui.RELOAD_SETTLE_SECONDS = 0
+        self.addCleanup(setattr, web_ui, 'RELOAD_SETTLE_SECONDS', real_wait)
 
     def test_a_warning_is_reported_rather_than_reading_as_success(self):
         self._reload_reply(self.WARNING)

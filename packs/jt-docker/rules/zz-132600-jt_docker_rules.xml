@@ -58,8 +58,53 @@
        script). Re-implemented on the exec command line; nothing copied.
        https://github.com/elastic/detection-rules  https://github.com/falcosecurity/rules -->
 
+  <!--
+    Parents for managers before Wazuh 4.14 (jt-docker 1.1). Wazuh 4.14 changed
+    the built-in docker rules from docker.status to docker.Action, because
+    Docker Engine stopped sending the deprecated "status" field in its events.
+    On 4.12 and 4.13 the built-in 87907 (exec), 87924 (kill/die), 87932 (pull)
+    and 87901 (create) therefore never match the events of a current Docker,
+    and nothing hung off them could either (2026-10-27 release gate: 59 of
+    jt-docker's cases stopped at 87900). These four read docker.Action. On
+    4.14 they are siblings of the built-in rule with the same condition and
+    the same level, and the built-in ruleset loads first, so they never
+    match there; on an older manager with an older Docker that still sends
+    "status", the built-in rule matches first as well.
+  -->
+  <rule id="132611" level="3">
+    <if_sid>87900</if_sid>
+    <field name="docker.Action">^exec_start: </field>
+    <description>Docker: command launched in container $(docker.Actor.Attributes.name). Action: "$(docker.Action)"</description>
+    <options>no_full_log</options>
+    <group>gdpr_IV_32.2,</group>
+  </rule>
+
+  <rule id="132612" level="7">
+    <if_sid>87900</if_sid>
+    <field name="docker.Action">^kill$|^die$</field>
+    <description>Docker: container $(docker.Actor.Attributes.name) received the action: $(docker.Action)</description>
+    <options>no_full_log</options>
+    <group>gdpr_IV_32.2,</group>
+  </rule>
+
+  <rule id="132613" level="3">
+    <if_sid>87900</if_sid>
+    <field name="docker.Action">^pull$</field>
+    <description>Docker: image $(docker.Actor.ID) pulled</description>
+    <options>no_full_log</options>
+    <group>gdpr_IV_32.2,</group>
+  </rule>
+
+  <rule id="132614" level="3">
+    <if_sid>87900</if_sid>
+    <field name="docker.Action">^create$</field>
+    <description>Docker: container $(docker.Actor.Attributes.name) created</description>
+    <options>no_full_log</options>
+    <group>gdpr_IV_32.2,</group>
+  </rule>
+
   <rule id="132607" level="12">
-    <if_sid>87907</if_sid>
+    <if_sid>87907,132611</if_sid>
     <field name="docker.Action" type="pcre2">\b(?:curl|wget|fetch)\b[^|]*\|\s*(?:sudo\s+)?(?:\S*/)?(?:ba|da|z|k|a)?sh\b|\bbase64\s+(?:-d|--decode|-di)\b[^|]*\|\s*(?:\S*/)?(?:ba|da|z|k|a)?sh\b|\b(?:curl|wget)\b[^;|]*\s(?:-o|-O|--output|--output-document)\s*['"]?/(?:tmp|var/tmp|dev/shm)/\S+.*\bchmod\s+(?:[0-7]*[1357][0-7]*|[ugoa]*\+[rw]*x)\b|\b(?:sh|bash)\s+-c\s+['"]?\$\((?:curl|wget)\b</field>
     <description>[HIGH] Docker: download-and-run or decode-and-run command started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
     <mitre>
@@ -71,7 +116,7 @@
   </rule>
 
   <rule id="132608" level="12">
-    <if_sid>87907</if_sid>
+    <if_sid>87907,132611</if_sid>
     <field name="docker.Action" type="pcre2">/dev/(?:tcp|udp)/[^/\s]+/\d+|\b(?:nc|ncat|netcat)(?:\.\w+)?\s(?:[^|;]*\s)?(?:-e|-c|--exec|--sh-exec)\s|\bsocat\b[^|;]*\b(?:exec|system):|\b(?:ba)?sh\s+-i\s*[0-9]?\x3e\x26|\bmkfifo\b.*\b(?:nc|ncat|netcat|telnet)\b|\bpython[23]?\s+-c\s.*\bsocket\b.*\b(?:subprocess|pty\.spawn|os\.dup2)\b|\bperl\s+-e\s.*\bSocket\b|\bphp\s+-r\s.*\bfsockopen\b|\bruby\s+-rsocket\b</field>
     <description>[HIGH] Docker: reverse shell pattern in a command started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
     <mitre>
@@ -82,7 +127,7 @@
   </rule>
 
   <rule id="132609" level="12">
-    <if_sid>87907</if_sid>
+    <if_sid>87907,132611</if_sid>
     <field name="docker.Action" type="pcre2">\bnsenter\b.*(?:\s-t\s*1\b|--target[= ]1\b|/proc/1/ns/)|\bchroot\s+/(?:host|hostfs|rootfs|mnt|media/host)\b|\bmount\s+(?:-\S+\s+)*(?:-t\s+\S+\s+)?/dev/(?:sd[a-z]|nvme\d|vd[a-z]|xvd[a-z]|hd[a-z]|mapper/|dm-\d)|\brelease_agent\b|\bnotify_on_release\b|/proc/sys/kernel/core_pattern|/sys/kernel/uevent_helper|/proc/sys/fs/binfmt_misc/register|/proc/1/root/|\bdebugfs\s+(?:-\S+\s+)*/dev/|\b(?:docker|containerd|crio|podman)\.sock\b|\bdocker\s+-H\s+(?:unix|tcp)://</field>
     <description>[HIGH] Docker: container escape technique in a command started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
     <mitre>
@@ -93,7 +138,7 @@
   </rule>
 
   <rule id="132610" level="12">
-    <if_sid>87907</if_sid>
+    <if_sid>87907,132611</if_sid>
     <field name="docker.Action" type="pcre2">(?i)\b(?:xmrig|xmr-stak|cpuminer|minerd|ccminer|nbminer|lolminer|srbminer\S*|cgminer|bfgminer|t-rex)\b|stratum\+(?:tcp|ssl|tls)://|--donate-level\b|\bnicehash\b</field>
     <description>[HIGH] Docker: cryptocurrency miner started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
     <mitre>
@@ -108,7 +153,7 @@
        Package Management Process in Container". pip and npm are left out:
        developers use them in containers routinely. -->
   <rule id="132605" level="7">
-    <if_sid>87907</if_sid>
+    <if_sid>87907,132611</if_sid>
     <field name="docker.Action" type="pcre2">\b(?:apt-get|apt|aptitude)\s+(?:-\S+\s+)*install\b|\bapk\s+(?:--?\S+\s+)*add\b|\b(?:yum|dnf|microdnf|tdnf)\s+(?:-\S+\s+)*install\b|\bzypper\s+(?:--?\S+\s+)*(?:in|install)\b|\bpacman\s+-S</field>
     <description>Docker: software installed by hand in running container $(docker.Actor.Attributes.name): $(docker.Action)</description>
     <mitre>
@@ -125,7 +170,7 @@
        searches. Elastic "Sensitive Keys Or Passwords Searched For Inside A
        Container"; MITRE T1552.007 (container API). -->
   <rule id="132604" level="6">
-    <if_sid>87907</if_sid>
+    <if_sid>87907,132611</if_sid>
     <field name="docker.Action" type="pcre2">^exec_start: (?:(?:/usr)?/bin/(?:ba|a|da)?sh\s+-c\s+)?(?:\S*/)?(?:env|printenv|set|export\s+-p)\s*$|/proc/(?:\d+|self|1)/environ\b|/run/secrets/|/var/run/secrets/|\.aws/credentials\b|\.docker/config\.json\b|\.kube/config\b|\.git-credentials\b|\.pgpass\b|\bid_(?:rsa|dsa|ecdsa|ed25519)\b|BEGIN [A-Z ]*PRIVATE KEY|/etc/shadow\b</field>
     <description>Docker: command reading environment variables or secrets started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
     <mitre>
@@ -140,7 +185,7 @@
        "Suspicious Network Tool Launched Inside A Container" (nc -z port
        checks are left to the healthcheck rule). -->
   <rule id="132606" level="6">
-    <if_sid>87907</if_sid>
+    <if_sid>87907,132611</if_sid>
     <field name="docker.Action" type="pcre2">^exec_start: (?:(?:/usr)?/bin/(?:ba|a|da)?sh\s+-c\s+)?(?:\S*/)?(?:nmap|masscan|zmap|zgrab2?|tcpdump|tshark|ngrep|mitmproxy|hping3|socat)\b|\b(?:nc|ncat|netcat)(?:\.\w+)?\s+(?:-\S+\s+)*-[a-zA-Z]*l</field>
     <description>Docker: network scanner, sniffer or listener started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
     <mitre>
@@ -157,7 +202,7 @@
        command can only be used through an open standard input, which is what
        "docker exec -it" gives a person. Falco "Terminal shell in container". -->
   <rule id="132603" level="5">
-    <if_sid>87907</if_sid>
+    <if_sid>87907,132611</if_sid>
     <field name="docker.Action" type="pcre2">^exec_start: (?:(?:/usr)?(?:/local)?/s?bin/)?(?:(?:busybox|toybox)\s+)?(?:ba|da|z|k|mk|a|c|tc|fi|y|r)?sh(?:\s+(?:-[ilsx]+|--login|--norc|--noprofile))*\s*$|^exec_start: (?:(?:/usr)?/s?bin/)?su(?:\s+(?:-|-l|--login))?(?:\s+[\w.-]+)?\s*$</field>
     <description>Docker: interactive shell started in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
     <mitre>
@@ -191,6 +236,16 @@
     <group>jt_docker_exec_repeat,</group>
   </rule>
 
+  <!-- The same for managers before 4.14, where the first run ends at 132611
+       (if_matched_sid takes one rule only). -->
+  <rule id="132615" level="2" timeframe="3600">
+    <if_matched_sid>132611</if_matched_sid>
+    <same_field>docker.Actor.ID</same_field>
+    <same_field>docker.Action</same_field>
+    <description>Docker: same command started again in container $(docker.Actor.Attributes.name) within an hour: $(docker.Action)</description>
+    <group>jt_docker_exec_repeat,</group>
+  </rule>
+
   <!-- Healthchecks. The daemon runs a container's HEALTHCHECK as an exec
        (moby daemon/health.go): a CMD-SHELL test becomes
        "exec_start: /bin/sh -c <test>", a CMD test the command itself. At one
@@ -208,7 +263,7 @@
        above are tried first, so a probe-shaped command that also pipes into
        a shell or contains a reverse shell still alerts. -->
   <rule id="132601" level="1">
-    <if_sid>87907</if_sid>
+    <if_sid>87907,132611</if_sid>
     <field name="docker.Action" type="pcre2">^exec_start: (?:(?:/usr)?/bin/(?:ba|a|da)?sh\s+(?:-o\s+pipefail\s+)?-c\s+)?['\"]?(?:(?:\S*/)?(?:curl|wget)\s(?:(?:(?!://)(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?))*?\s)?(?:https?://)?(?:localhost|127(?:\.\d{1,3}){3}|\[::1\]|0\.0\.0\.0)(?:[:/'\"\s](?:(?!://)(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?))*)?|(?:(?:\S*/)?(?:python3?|node|php|ruby|perl|bash|sh)\s+)?(?:\S*/)?[\w.-]*health[\w.-]*(?:\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*)?|(?:\S*/)?pg_isready(?:\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*)?|(?:\S*/)?(?:mysqladmin|mariadb-admin)\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*\bping\b(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*|(?:\S*/)?(?:redis|valkey|keydb)-cli\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*?\bping\b(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*|(?:\S*/)?rabbitmq-diagnostics\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*|(?:\S*/)?(?:nc|ncat)\s+-z\w*\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*)(?:(?:\s*\|\s*(?:jq|grep|egrep|fgrep|awk|cut|head|tail|wc|tr)\s(?:[^|;\x26`$\n]|\$\{?\w+(?::-[^}|;\x26`]*)?\}?)*)|(?:\s*(?:[12]?\x3e\s*/dev/null|2\x3e\x261)))*(?:\s*\|\|\s*exit\s+1)?['\"]?\s*$</field>
     <description>Docker: healthcheck-shaped command in container $(docker.Actor.Attributes.name): $(docker.Action)</description>
     <group>jt_docker_exec_healthcheck,</group>
@@ -289,7 +344,7 @@
        Apache httpd, SIGINT) go to level 3. SIGKILL and other exit codes
        (137 = killed or out of memory, 1, 139...) stay at level 7. -->
   <rule id="132625" level="3">
-    <if_sid>87924</if_sid>
+    <if_sid>87924,132612</if_sid>
     <field name="docker.Action">^die$</field>
     <field name="docker.Actor.Attributes.exitCode" type="pcre2">^(?:0|143)$</field>
     <description>Docker: container $(docker.Actor.Attributes.name) exited normally (exit code $(docker.Actor.Attributes.exitCode))</description>
@@ -297,7 +352,7 @@
   </rule>
 
   <rule id="132626" level="3">
-    <if_sid>87924</if_sid>
+    <if_sid>87924,132612</if_sid>
     <field name="docker.Action">^kill$</field>
     <field name="docker.Actor.Attributes.signal" type="pcre2">^(?:2|3|15|28|SIG(?:INT|QUIT|TERM|WINCH))$</field>
     <description>Docker: container $(docker.Actor.Attributes.name) sent its stop signal $(docker.Actor.Attributes.signal)</description>
@@ -319,7 +374,7 @@
   </rule>
 
   <rule id="132628" level="12">
-    <if_sid>87932</if_sid>
+    <if_sid>87932,132613</if_sid>
     <field name="docker.Actor.ID" type="pcre2">(?i)xmrig|xmr-stak|cpuminer|minerd|nbminer|lolminer|srbminer|cryptonight|monero-?miner|nicehash</field>
     <description>[HIGH] Docker: cryptocurrency miner image pulled: $(docker.Actor.ID)</description>
     <mitre>
@@ -332,7 +387,7 @@
   <!-- 87901 is "^create$" on any event type, so an image created by docker
        build, commit or import reads "Container sha256:... created". -->
   <rule id="132629" level="3">
-    <if_sid>87901</if_sid>
+    <if_sid>87901,132614</if_sid>
     <field name="docker.Type">^image$</field>
     <description>Docker: image $(docker.Actor.Attributes.name) created (build, commit or import)</description>
     <mitre>
@@ -489,9 +544,15 @@
 
   <!-- The diff (report_changes) of either adds a TCP listener. The field is
        changed_content (analysisd decoders/syscheck.c FIM_DIFF); added lines
-       start with ">". -->
+       start with ">". Hung directly off the built-in FIM rules (1.0.1), not
+       off 132660/132661: jt-linux-integrity's 132950 (level 10, every
+       systemd drop-in) is their sibling and is tried first, so a unit
+       override never reached 132661 and the level 12 never fired when both
+       packs were installed (2026-10-27 release gate). At level 12 this rule is
+       tried before both. -->
   <rule id="132662" level="12">
-    <if_sid>132660,132661</if_sid>
+    <if_sid>550,553,554</if_sid>
+    <field name="file" type="pcre2">^/etc/docker/daemon\.json$|^/etc/(?:default|sysconfig)/docker$|^/etc/containerd/config\.toml$|^/etc/systemd/system/(?:docker|containerd)\.(?:service|socket)(?:\.d/[^/]+)?$</field>
     <field name="changed_content" type="pcre2">(?m)^\x3e.*tcp://</field>
     <description>[HIGH] Docker: daemon configuration $(file) now makes the API listen on TCP</description>
     <mitre>

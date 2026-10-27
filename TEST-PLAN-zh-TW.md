@@ -278,6 +278,24 @@ Windows 的情境要在 worker 上再驗一次，Windows agent 通常由 worker 
 
 ---
 
+## 第六層之二——套件發版關卡（照客戶的方式安裝）
+
+`tools/pack_sandbox.py` 是把單一套件的檔案複製進拋棄式 manager。客戶實際上是在乾淨的 manager 上用工具的安裝功能、
+裝全部套件、在自己的 4.x 版本上，還會從舊版更新、用叢集，而 worker 要靠部署說明補齊。發版前這些都沒測過。
+`tools/pack_gate.py run` 在拋棄式 `wazuh/wazuh-manager` 容器裡做這四件事，任何一項失敗就以非零結束：
+
+| 情境 | 驗證內容 |
+|---|---|
+| fresh-4.12.0、fresh-4.13.1、fresh-4.14.x | 全部套件經 `POST /api/packs/<id>/install`（真的 API 工作階段）安裝；`wazuh-analysisd -t` 沒有 ERROR／WARNING；每個套件記錄為最新；agent 群組都已登記；回報的排程都存在；腳本能用 manager 的系統 python 編譯並啟動；MITRE ID 都在該版本的資料庫；所有 `tests/pack_cases/*.json` 在同一台裝了全部套件的 manager 上通過。 |
+| no-cron | 沒有 `/etc/cron.d` 的 manager（官方容器映像）上，安裝不得回報沒有寫入的排程。 |
+| upgrade | 上一個次版本的套件（用那一版的工具安裝）經 `POST /api/packs/<id>/update` 更新到工作目錄版本，再做同樣的檢查與重放。 |
+| cluster | master＋worker：工具經 API 在 worker 宣告清單；照部署說明逐步做 worker 的步驟；worker 載入所有清單沒有警告、有說明列出的腳本與排程，重放結果與 master 相同。 |
+
+帶測試用清單項目（`sandbox_lists`）的案例檔逐一重放，只載入自己的項目；一起載入時，某個套件的測試位址會讓其他套件的
+案例都變成威脅清單命中。worker 上的測試清單寫在 master、由叢集複製過去（worker 自己的 etc/lists 幾秒內就會被覆蓋）。
+本來就該交給相鄰套件的案例標 `"with_all_packs": {"expect_rule", "expect_level", "why"}`，關卡依它判讀，`pack_sandbox.py` 忽略。依賴舊版沒有的內建規則的案例標 `min_wazuh`，舊版結果不同的案例標 `on_older`。報告在 `temp/pack-gate/<日期>/`（`SUMMARY.md` 與每個情境一份 JSON；`--resume` 跳過已完成的情境）。
+在 10 核心的共用機器上完整跑一次約兩小時，同時最多四個容器。
+
 ## 尚未涵蓋的部分
 
 直接講清楚，因為一份暗示自己涵蓋範圍比實際更大的測試計畫，

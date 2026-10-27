@@ -2,7 +2,7 @@
  "id": "jt-portable-detect",
  "name": "Portable Executable Detection",
  "name_zh": "可攜式程式偵測",
- "version": "3.5",
+ "version": "3.5.1",
  "summary": "Detects portable/no-install executables being dropped and run on Windows, Linux and macOS.",
  "summary_zh": "偵測免安裝執行檔在 Windows、Linux、macOS 上的落地與執行。",
  "rule_id_range": "906100-906299",
@@ -27,7 +27,8 @@
   "Windows（3.5 起）：Microsoft Defender 攻擊面縮減（ASR）對未核准程式的判定（普及度、USB、郵件內容、腳本啟動下載內容、PsExec／WMI、複製的系統工具這幾條規則）：封鎖（事件 1121）為 level 8（906186），稽核（1122）為 level 3（906187）。Wazuh 4.14 沒有這兩個事件的規則。AppLocker 的腳本與安裝程式事件 8006／8007 也有了規則（906112 level 8、906113 level 5）。",
   "3.5 起群組只收需要的 AppLocker 事件（8003、8004、8006、8007）。之前整個通道都收，照本套件的部署說明開啟 AppLocker 稽核後，Wazuh 的 67011 會對每一次被允許的程式執行產生一筆 level 3 告警。906180（Sysmon 事件 29 的基礎規則）由 level 0 改為 1，讓 jt-malware-hash「已知惡意檔案寫入磁碟」的規則先被試。",
   "3.5 去除的雜訊，每一項都綁在作業系統或工具自己產生的形狀上：containerd 的暫時映像掛載 /tmp/containerd-mount<數字>（906239，群組的檔案監控也一併忽略；一台 Docker 主機一天 202 筆 level 10）、Windows Update 暫存 Defender 特徵碼增量包與 Windows Installer 快取 MSI（內建 92217 底下的 906136、906137；10 天約 60 筆 level 6）。Linux 上 906213 把動態載入器也當成直譯器：/lib64/ld-linux-x86-64.so.2 /tmp/tool 能執行沒有執行權限的檔案。",
-  "906130-906135 讀取定期盤點腳本產出的 NDJSON（使用者資料夾內執行檔的簽章狀態）。套件不附這支腳本；沒有站台自己的盤點腳本時，這幾條規則不會觸發。"
+  "906130-906135 讀取定期盤點腳本產出的 NDJSON（使用者資料夾內執行檔的簽章狀態）。套件不附這支腳本；沒有站台自己的盤點腳本時，這幾條規則不會觸發。",
+  "3.5.1：906235（瀏覽器自動化執行環境與自我更新 CLI 在自己版本目錄中執行，level 3）改從 audit 原始記錄讀 exe=\"...\"，不再用 audit.exe。4.14 之前的 auditd 解碼器會在第一個點把 audit.exe 截斷（/root/），這條規則從不成立，這些程式停在 906210（level 10）。exe 由核心寫入；含引號的參數會被 auditd 轉成十六進位，無法偽造這段文字。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -45,7 +46,7 @@
    "type": "rule",
    "name": "zz-906200-jt_portable_nix_rules.xml",
    "dest": "etc/rules/zz-906200-jt_portable_nix_rules.xml",
-   "sha256": "8ccc444b28d37e789198b764cdec50beaec73001a9c45e503404db11c4db2cc3"
+   "sha256": "dff01545375d0878332f139cbe06c37cd0504499cdc7c50ef9d6e6d466a24078"
   },
   {
    "type": "list",
@@ -85,7 +86,8 @@
   "Windows, since 3.5: Microsoft Defender attack surface reduction verdicts on unapproved programs (rules for prevalence, USB, email content, scripts launching downloads, PsExec/WMI and copied system tools): block (event 1121) is level 8 (906186), audit (1122) is level 3 (906187). Wazuh 4.14 has no rule for these events. AppLocker script and installer events 8006/8007 now have rules too (906112 level 8, 906113 level 5).",
   "Since 3.5 the group collects only the AppLocker events that matter (8003, 8004, 8006, 8007). Before, the whole channels were read and Wazuh's rule 67011 raised a level 3 alert for every program AppLocker allowed, once a site had followed this pack's own setup step. Rule 906180 (Sysmon event 29 base) is level 1 instead of 0, so the jt-malware-hash rule for a known-malware file written to disk is tried first.",
   "Noise removed in 3.5, each tied to a shape the operating system or tool generates: containerd's temporary image mounts /tmp/containerd-mount<digits> (906239, and ignored by the group's file monitoring; 202 level 10 alerts in one day on one Docker host), Windows Update staging Defender signature deltas and Windows Installer caching an MSI under rule 92217 (906136, 906137; about 60 level 6 alerts in ten days). On Linux the dynamic loader counts as an interpreter for 906213: /lib64/ld-linux-x86-64.so.2 /tmp/tool runs a file without its execute bit.",
-  "Rules 906130-906135 read the NDJSON of a periodic inventory script (signature status of executables in user folders). The pack does not ship that script; without one of your own these rules stay silent."
+  "Rules 906130-906135 read the NDJSON of a periodic inventory script (signature status of executables in user folders). The pack does not ship that script; without one of your own these rules stay silent.",
+  "3.5.1: 906235 (browser automation runtimes and self-updating CLIs in their own versioned directory, level 3) reads exe=\"...\" from the raw audit record instead of audit.exe. Before 4.14 the auditd decoder cut audit.exe at the first dot (/root/), so the rule never applied and those programs stayed at 906210 (level 10). The kernel writes exe; an argument containing a quote is hex-encoded by auditd, so it cannot fake the text."
  ],
  "agent_group": {
   "name": "portable-detect",
@@ -98,8 +100,11 @@
   "description": "File integrity monitoring of the places portable programs land, AppLocker collection on Windows, the auditd rules that turn execution into evidence, and the Sysmon filters the Windows rules need, and a watchdog that keeps Windows event channel subscriptions alive"
  },
  "tested_with": [
+  "4.12.0",
+  "4.13.1",
   "4.14.7",
-  "4.14.8"
+  "4.14.8",
+  "4.14.9"
  ],
  "setup": [
   {

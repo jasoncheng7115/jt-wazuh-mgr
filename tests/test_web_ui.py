@@ -1014,11 +1014,16 @@ class TestClusterRulesetReload(WebUITestCase):
             if endpoint == '/cluster/status':
                 return {'data': {'enabled': 'yes' if clustered else 'no',
                                  'running': 'yes' if clustered else 'no'}}
+            if method == 'GET' and endpoint.endswith('/status'):
+                return {'error': 0, 'data': {'affected_items': [{'wazuh-analysisd': 'running'}]}}
             return {'error': 0, 'data': {
                 'affected_items': [{'name': 'master-node', 'warnings': []},
                                    {'name': 'worker-1', 'warnings': ['rule 100170 ignored']}],
                 'failed_items': failed or []}}
         web_ui.WazuhAPISession.request = fake
+        real_wait = web_ui.RELOAD_SETTLE_SECONDS
+        web_ui.RELOAD_SETTLE_SECONDS = 0
+        self.addCleanup(setattr, web_ui, 'RELOAD_SETTLE_SECONDS', real_wait)
 
     def test_clustered_reload_hits_every_node(self):
         self._api(clustered=True)
@@ -1481,6 +1486,21 @@ class TestRulePacks(PackFixture):
         # the schedule landed in the fixture, not in the host's /etc/cron.d
         self.assertTrue(os.path.isfile(os.path.join(self._cron_dir, 'jt-jt-testscript')))
         self.assertFalse(os.path.exists('/etc/cron.d/jt-jt-testscript'))
+
+    def test_a_manager_without_cron_d_is_told_the_schedule_was_not_written(self):
+        """2026-10-27 release gate: the official wazuh-manager image has no
+        /etc/cron.d; the install said "scheduled" and the feed never updated."""
+        web_ui.PACK_CRON_DIR = os.path.join(self.tmp, 'no-cron.d')
+        self._fake_pack('jt-testscript', self._script_manifest(),
+                        {'rules/r.xml': self.RULE_XML, 'scripts/upd.py': self.SCRIPT_BODY})
+        resp = self.client.post('/api/packs/jt-testscript/install')
+        data = resp.get_json()
+        self.assertEqual(resp.status_code, 200, data)
+        self.assertFalse(data['scheduled'][0]['written'])
+        self.assertNotIn('scheduled upd.py', data['message'])
+        self.assertIn('could NOT schedule upd.py', data['message'])
+        self.assertIn('17 */6 * * *', data['message'], 'the line to add by hand is missing')
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, 'no-cron.d')))
 
     def test_the_schedule_names_the_system_python_not_the_running_one(self):
         # v1.16.0: run from Wazuh's framework python, the tool wrote that interpreter

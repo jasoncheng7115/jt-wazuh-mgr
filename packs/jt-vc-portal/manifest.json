@@ -2,7 +2,7 @@
  "id": "jt-vc-portal",
  "name": "jt-vc-portal Meeting Portal Audit",
  "name_zh": "jt-vc-portal 會議入口稽核",
- "version": "1.2",
+ "version": "1.2.1",
  "summary": "Sign-ins from public addresses, administrators and new addresses, sessions used from another address, brute force, spraying and stuffing, account and single sign-on changes, the security event export, settings exports, bulk downloads and deletions of recordings, the portal's emergency commands in its container and its signing key, from the jt-vc-portal audit log (JaaS / Jitsi meeting portal), docker events and file integrity.",
  "summary_zh": "jt-vc-portal（JaaS／Jitsi 會議入口）稽核記錄、docker 事件與檔案完整性中的：來自公開位址、管理員與新位址的登入、在其他位址使用的工作階段、暴力破解、密碼噴灑與撞庫、帳號與單一登入變更、安全事件外拋、設定匯出、大量下載與刪除錄影、在容器內執行的緊急指令，以及簽署金鑰。",
  "rule_id_range": "132100-132199",
@@ -24,7 +24,8 @@
   "Known gaps in what the portal records: a settings save names neither the export destination nor whether the audit log retention changed (it is saved with the meeting settings). Not recorded at all: CSRF and access-control failures (an administrator page opened by another account answers 404), a revoked session being used again, webhook signature failures, guests asking for rooms that do not exist (room names can be enumerated), watching a recording, and login-path.php, the emergency tool for the sign-in path. The pack sees that tool only as a docker event (132191).",
   "The portal's retention clean-up rewrites the audit file in place, and the agent cannot follow that. Measured on 4.14.7 with the portal's own method: when the file stays shorter than before until the agent's next file check (about a minute), the agent reads the whole file again and every remaining record arrives a second time as a new event; when a new record makes it longer first, the agent goes on from its old position and the records in between are never sent. Neither is announced. The clean-up only rewrites the file when a record is older than the retention period (365 days by default), so set the retention to its maximum, 3650 days, on a portal whose audit file Wazuh reads: Wazuh keeps the history anyway.",
   "Docker events (since 1.2), from Wazuh's docker-listener wodle on the portal's docker host, below built-in rule 87907 (a command started in a container, level 3). The transcript worker, which the portal's guide schedules every minute through docker exec, is level 0: measured 1,440 level 3 alerts a day on one host, all the same command. The emergency tools login-path.php reset or set and sso-cli.php disable are level 8; login-path.php writes no audit record, so this is its only trace. Any other command that names the data directory /var/jaas-data (password hashes, second-factor secrets, every stored secret) is level 6: 31 in 11 days on one host where developers inspect the data. Only the portal's own fixed paths inside its image are matched, never a container name; health checks and other generic docker noise are not this pack's business.",
-  "File integrity (since 1.2), from the agent group: any file added, changed or deleted in the JaaS private key directory (keys/) is level 10, because whoever has the key can sign meeting tokens with moderator rights for every room; settings.json is level 5, because every save on the settings pages changes it and is also in the audit log: its value is a change with no audit record next to it, an edit on the host or by login-path.php. users.json is not watched: it changes at every single sign-on. No report_changes: both files hold secrets. The rules recognise any directory whose name contains jt-vc-portal or jaas-auth. Tested in a sandbox with real file events, since logtest cannot replay them."
+  "File integrity (since 1.2), from the agent group: any file added, changed or deleted in the JaaS private key directory (keys/) is level 10, because whoever has the key can sign meeting tokens with moderator rights for every room; settings.json is level 5, because every save on the settings pages changes it and is also in the audit log: its value is a change with no audit record next to it, an edit on the host or by login-path.php. users.json is not watched: it changes at every single sign-on. No report_changes: both files hold secrets. The rules recognise any directory whose name contains jt-vc-portal or jaas-auth. Tested in a sandbox with real file events, since logtest cannot replay them.",
+  "1.2.1, note: the three docker rules (132190-132192: the transcript worker, emergency sign-in commands, the data directory) hang off the built-in 87907, which reads docker.Action only from Wazuh 4.14. On 4.12 and 4.13 with a current Docker Engine (no \"status\" field) they never match; use Wazuh 4.14 or later for them. The audit log rules are not affected."
  ],
  "notes_zh": [
   "jt-vc-portal（記錄中自稱 jaas-auth）每個動作寫一行 JSON 到資料目錄的 audit-log.jsonl：登入與失敗、帳號、設定、匯出、錄影、逐字稿與會議。Wazuh 會用通用的 json 解碼器解開這些行，但沒有任何規則看它們。本套件為入口寫出的每一種動作分級。它的 agent 群組會在每一行前面加上「jt-vc-portal: 」，由套件自己的解碼器讀取：這樣用戶端位址才會成為 srcip（主動回應需要），登入也才有首次出現的判斷鍵。不能改用 Wazuh json 解碼器的子解碼器：那會讓其他所有 JSON 來源失去欄位（已實測）。沒有加前綴而收進來的行，仍然會命中每一條規則，只是少了這兩項。1.2 起本套件另外讀取 Wazuh 關於入口的兩種來源：其容器的 docker 事件，以及其簽署金鑰與設定檔的檔案完整性。",
@@ -44,7 +45,8 @@
   "入口記錄上的已知缺口：儲存設定時不會記下外拋的目的地，也不會記下稽核記錄的保留天數是否改變（它和會議設定一起儲存）。完全不記錄的有：CSRF 與存取控制失敗（其他帳號開啟管理頁面時回 404）、已撤銷的工作階段再被使用、webhook 簽章失敗、來賓查詢不存在的會議室（會議室名稱可被列舉）、觀看錄影，以及登入路徑的緊急工具 login-path.php。本套件只能從 docker 事件看到這個工具（132191）。",
   "入口的保留期限清理會原地改寫稽核檔，而 agent 跟不上這種改寫。以入口自己的方式在 4.14.7 實測：若檔案在 agent 下次檢查檔案（約一分鐘）之前一直比原本短，agent 會把整個檔案重讀一次，剩下的每筆記錄都會以新事件再送一次；若在那之前有新記錄讓檔案變得比原本長，agent 會從舊的位置繼續讀，中間的記錄永遠不會送出。兩種情況都不會有任何訊息。清理只在有記錄超過保留期限（預設 365 天）時才改寫檔案，所以 Wazuh 讀取稽核檔的入口請把保留天數設為上限 3650 天：歷史本來就保存在 Wazuh。",
   "Docker 事件（1.2 起），來自入口所在 docker 主機上的 Wazuh docker-listener 模組，掛在內建規則 87907（容器中啟動了指令，level 3）之下。入口安裝說明以 docker exec 每分鐘執行一次的逐字稿背景工作為 level 0：實測單一主機每天 1,440 則 level 3 告警，全是同一個指令。緊急工具 login-path.php reset 或 set 與 sso-cli.php disable 為 level 8；login-path.php 不寫稽核記錄，這是它唯一的痕跡。其他提到資料目錄 /var/jaas-data（密碼雜湊、第二因素密鑰與所有儲存的密鑰）的指令為 level 6：在一台開發人員會檢視資料的主機上 11 天 31 次。只比對入口映像內固定的路徑，從不比對容器名稱；健康檢查等一般的 docker 雜訊不屬於本套件的範圍。",
-  "檔案完整性（1.2 起），來自 agent 群組：JaaS 私鑰目錄（keys/）中任何檔案的新增、修改或刪除為 level 10，因為持有金鑰的人可以為每個會議室簽發具主持人權限的會議權杖；settings.json 為 level 5，因為設定頁的每次儲存都會改變它，而且稽核記錄裡也有：它的價值在於旁邊沒有稽核記錄的變更，也就是在主機上直接編輯，或 login-path.php 造成的變更。不監看 users.json：每次單一登入都會改變它。不開 report_changes：兩個檔案都含有密鑰。規則會辨認名稱含 jt-vc-portal 或 jaas-auth 的任何目錄。已在沙箱中以真實的檔案事件測試，因為 logtest 無法重放這類事件。"
+  "檔案完整性（1.2 起），來自 agent 群組：JaaS 私鑰目錄（keys/）中任何檔案的新增、修改或刪除為 level 10，因為持有金鑰的人可以為每個會議室簽發具主持人權限的會議權杖；settings.json 為 level 5，因為設定頁的每次儲存都會改變它，而且稽核記錄裡也有：它的價值在於旁邊沒有稽核記錄的變更，也就是在主機上直接編輯，或 login-path.php 造成的變更。不監看 users.json：每次單一登入都會改變它。不開 report_changes：兩個檔案都含有密鑰。規則會辨認名稱含 jt-vc-portal 或 jaas-auth 的任何目錄。已在沙箱中以真實的檔案事件測試，因為 logtest 無法重放這類事件。",
+  "1.2.1，說明：三條 docker 規則（132190-132192：逐字稿工作、緊急登入指令、資料目錄）掛在內建 87907 底下，而 87907 從 Wazuh 4.14 起才讀 docker.Action。在 4.12、4.13 搭配新版 Docker Engine（不送 \"status\"）時，這三條永遠不成立；要使用它們請升到 Wazuh 4.14 以上。稽核記錄的規則不受影響。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -52,7 +54,8 @@
   "wazuh": ">=4.8"
  },
  "tested_with": [
-  "4.14.7"
+  "4.14.7",
+  "4.14.9"
  ],
  "files": [
   {

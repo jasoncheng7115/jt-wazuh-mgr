@@ -2,7 +2,7 @@
  "id": "jt-container-vuln",
  "name": "Container Image Vulnerability Scan",
  "name_zh": "容器映像弱點掃描",
- "version": "1.0",
+ "version": "1.0.1",
  "summary": "Daily Trivy scan of the images of every running Docker container (OS packages and Java, Python, Node, Go and other dependencies), one summary alert per image: known exploited (CISA KEV) level 12, critical level 10, both mailed; repeats only when something changes or weekly; a failed scan, an unreachable Docker or a stale database alerts too.",
  "summary_zh": "每天以 Trivy 掃描每個執行中 Docker 容器所用的映像（作業系統套件與 Java、Python、Node、Go 等相依套件），每個映像一則摘要告警：已知遭利用（CISA KEV）為 level 12、嚴重為 level 10，兩者都會寄出；只有內容改變或每週提醒時才重複；掃描失敗、Docker 連不上或資料庫過期也會告警。",
  "rule_id_range": "132800-132899",
@@ -12,7 +12,10 @@
   "wazuh": ">=4.8"
  },
  "tested_with": [
-  "4.14.7"
+  "4.12.0",
+  "4.13.1",
+  "4.14.7",
+  "4.14.9"
  ],
  "notes": [
   "Why: Wazuh 4.14's vulnerability detection reads the packages installed on the host. Software inside a container image, its distribution packages and its Java jars, Python, Node, Go and Ruby dependencies, is invisible to it, so an internet-facing service that runs from an image (an identity provider, a web portal) has no vulnerability coverage at all. This pack adds it without installing anything on the host: a scanner script, delivered through the agent group container-vuln and installed with the script next to it, runs once a day from a systemd timer, scans the image of every running container with Trivy and writes one JSON line per image and one per run to /var/log/jt-container-vuln.json, which the group collects.",
@@ -25,7 +28,8 @@
   "Scanner health: each run writes a status line. Docker not reachable (132821), the scanner image missing or not pinned (132822), the vulnerability database missing or older than 48 hours (132823), images that could not be scanned (132824, for example not enough free disk for the export) and the KEV catalogue missing or older than 7 days (132825) are level 10 and mailed when the problem starts and every three days; on the days between they are level 7 (132827). A failed database download with a copy under 48 hours old is level 3 (132826); recovery is level 3 (132828). The agent group watches the installed script and its configuration in real time, and the default agent configuration scans the systemd units under /etc every 12 hours: deleting the script or a unit, or disabling the timer, is level 10 (132840); changing them is level 7 (132841).",
   "Limits: a host that simply stops running the scan while its agent stays connected (the timer stopped but not disabled, the host taken out of the group) sends nothing, and no rule can alert on a line that never arrives; a disconnected agent is Wazuh's own rule 504. Only images of running containers are scanned: not stopped containers, images only in a registry, files that a container downloads at run time or keeps in a volume (a Keycloak provider jar in a mounted volume is not seen), Podman, containerd without Docker, or rootless Docker. Trivy reports what its database knows; a vendor fix backported under the same version number can still be listed.",
   "Costs, measured on a 10-core development host on 2026-10-18: the daily database is a 135 MB download (1.6 GB on disk); four images (265 MB to 1.1 GB) took 105 seconds including the database check, a 1.1 GB image about 40 seconds, at 130 to 200 MB of memory. The export needs free space of about the image size, checked before each image (MIN_FREE_MB, 1 GB, on top). The script runs at nice 19 with idle I/O; docker save itself runs inside dockerd and is not affected by that. The KEV catalogue is about 1.8 MB, fetched at most once a day with If-Modified-Since. A host with ten images writes about 30 KB a day; the file is rotated at 5 MB.",
-  "Prerequisites: Docker Engine with its CLI, python3 3.6 or later (Debian 12, Ubuntu 22.04 and 24.04 and UCS 5.2 have it), systemd (cron is used without it), and outbound HTTPS from each Docker host to the scanner image registry, the database registries and the KEV source, or a local mirror of them. Nothing depends on a site list, host name or account. No active response is offered: these alerts describe software, not an attacker."
+  "Prerequisites: Docker Engine with its CLI, python3 3.6 or later (Debian 12, Ubuntu 22.04 and 24.04 and UCS 5.2 have it), systemd (cron is used without it), and outbound HTTPS from each Docker host to the scanner image registry, the database registries and the KEV source, or a local mirror of them. Nothing depends on a site list, host name or account. No active response is offered: these alerts describe software, not an attacker.",
+  "1.0.1: 132842 (this pack's scanner installed or enabled) is level 5, was 3. jt-linux-integrity's 132955 (systemd unit enabled, level 5) is its sibling and was tried first, so enabling the scan timer read as a generic unit enablement when both packs were installed. At the same level this pack's file loads first."
  ],
  "notes_zh": [
   "為什麼需要：Wazuh 4.14 的弱點偵測讀的是主機上安裝的套件。容器映像裡的軟體 —— 它的發行版套件，以及 Java jar、Python、Node、Go、Ruby 相依套件 —— 它完全看不到，所以從映像執行的對外服務（身分驗證服務、網頁入口）沒有任何弱點涵蓋。本套件補上這一塊，而且不在主機上安裝任何東西：掃描腳本經由 agent 群組 container-vuln 送到主機，以同目錄的安裝腳本安裝後，每天由 systemd timer 執行一次，以 Trivy 掃描每個執行中容器的映像，每個映像寫一行、每次執行再寫一行 JSON 到 /var/log/jt-container-vuln.json，由該群組收集。",
@@ -38,14 +42,15 @@
   "掃描程式健康狀態：每次執行都寫一行狀態。Docker 連不上（132821）、掃描映像缺少或未以 digest 固定（132822）、弱點資料庫不存在或超過 48 小時（132823）、有映像無法掃描（132824，例如匯出所需的磁碟空間不足）、KEV 目錄不存在或超過 7 天（132825），在問題開始時與每三天一次為 level 10 並寄出；中間的日子為 level 7（132827）。資料庫下載失敗但現有副本未滿 48 小時為 level 3（132826）；恢復正常為 level 3（132828）。agent 群組即時監控已安裝的腳本與其設定，預設的 agent 設定每 12 小時掃描一次 /etc 下的 systemd unit：刪除腳本或 unit、停用 timer 為 level 10（132840）；修改它們為 level 7（132841）。",
   "限制：agent 仍連線、但主機就是不再執行掃描（timer 被停止但未停用、主機被移出群組）時不會送出任何東西，而沒有規則能對一行永遠不會來的記錄告警；agent 斷線則由 Wazuh 自己的規則 504 處理。只掃描執行中容器的映像：不含已停止的容器、只存在 registry 的映像、容器在執行時才下載或放在 volume 裡的檔案（掛載在 volume 的 Keycloak provider jar 看不到）、Podman、沒有 Docker 的 containerd，以及 rootless Docker。Trivy 回報的是它資料庫知道的內容；廠商以相同版本號回補的修正仍可能被列出。",
   "成本，2026-10-18 在一台 10 核心開發主機實測：每天的資料庫下載 135 MB（磁碟上 1.6 GB）；四個映像（265 MB 到 1.1 GB）含資料庫檢查共 105 秒，1.1 GB 的映像約 40 秒，記憶體 130 到 200 MB。匯出需要約等於映像大小的可用空間，每個映像掃描前都會檢查（另加 MIN_FREE_MB，預設 1 GB）。腳本以 nice 19 與 idle I/O 執行；docker save 本身在 dockerd 裡執行，不受此影響。KEV 目錄約 1.8 MB，每天最多以 If-Modified-Since 抓取一次。有十個映像的主機每天約寫 30 KB；檔案在 5 MB 時輪替。",
-  "前提：Docker Engine 與其 CLI、python3 3.6 以上（Debian 12、Ubuntu 22.04 與 24.04、UCS 5.2 都有）、systemd（沒有時改用 cron），以及每台 Docker 主機能以 HTTPS 連到掃描映像的 registry、資料庫的 registry 與 KEV 來源，或它們的本地鏡像。不依賴任何站台清單、主機名稱或帳號。不提供主動回應：這些告警描述的是軟體，不是攻擊者。"
+  "前提：Docker Engine 與其 CLI、python3 3.6 以上（Debian 12、Ubuntu 22.04 與 24.04、UCS 5.2 都有）、systemd（沒有時改用 cron），以及每台 Docker 主機能以 HTTPS 連到掃描映像的 registry、資料庫的 registry 與 KEV 來源，或它們的本地鏡像。不依賴任何站台清單、主機名稱或帳號。不提供主動回應：這些告警描述的是軟體，不是攻擊者。",
+  "1.0.1：132842（本套件的掃描程式已安裝或啟用）由 level 3 改為 5。jt-linux-integrity 的 132955（systemd 單元被啟用，level 5）是它的同層規則且先比對，兩個套件都裝時，啟用掃描計時器會被當成一般的單元啟用。同等級時本套件的規則檔先載入。"
  ],
  "files": [
   {
    "type": "rule",
    "name": "zz-132800-jt_container_vuln_rules.xml",
    "dest": "etc/rules/zz-132800-jt_container_vuln_rules.xml",
-   "sha256": "827254c6e5d5a219ff7284d0026eb083f3dc792940416b403034db2c46223730"
+   "sha256": "afb41047fa59e74b9b3b8947fb9fc7f2acc3ff00a21d82866875ad915180ccb6"
   }
  ],
  "agent_group": {

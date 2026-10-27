@@ -316,6 +316,40 @@ is usually the node processing Windows agents.
 
 ---
 
+## Layer 6b — the pack release gate: installed the way a customer installs
+
+`tools/pack_sandbox.py` copies one pack's files into a throwaway manager. A
+customer instead runs the tool's install route on a clean manager, with every
+pack, on whatever 4.x release they have, updates from an older release, and
+runs a cluster whose worker the setup guides must bring along. None of that
+was exercised before a release. `tools/pack_gate.py run` does it in throwaway
+`wazuh/wazuh-manager` containers and exits non-zero on any failure:
+
+| Scenario | What it proves |
+|---|---|
+| fresh-4.12.0, fresh-4.13.1, fresh-4.14.x | Every pack installs through `POST /api/packs/<id>/install` with a real API session; `wazuh-analysisd -t` prints no ERROR or WARNING; every pack is recorded as current; every agent group is registered; every schedule the install reported exists; every script compiles and starts with the manager's system python; every MITRE ID is in that version's database; every `tests/pack_cases/*.json` case passes against the one manager holding all packs. |
+| no-cron | On a manager without `/etc/cron.d` (the official container image) an install does not report a schedule it did not write. |
+| upgrade | The packs of the previous minor release, installed by that release's tool, update to the working tree through `POST /api/packs/<id>/update`, then the same checks and replay. |
+| cluster | A master and a worker: the tool declares lists on the worker over the API; each pack's documented worker steps are carried out as written; the worker loads every list without warnings, holds the scripts and schedules the guides name, and gives the master's replay results. |
+
+Cases that add test-only list entries (`sandbox_lists`) are replayed one pack
+at a time with only their own entries loaded; loaded together, one pack's
+test addresses become every other pack's threat-list hit. On the worker
+those entries are written on the master and copied by the cluster, as a
+worker's own etc/lists is overwritten within seconds. A case whose line a
+neighbouring pack is meant to take carries `"with_all_packs": {"expect_rule",
+"expect_level", "why"}`, which the gate uses and `pack_sandbox.py` ignores. A case that relies on a built-in rule an older manager lacks carries `min_wazuh`, and one whose result differs on an older manager carries `on_older`.
+The report is in
+`temp/pack-gate/<date>/` (`SUMMARY.md` and one JSON per scenario; `--resume`
+skips finished scenarios). A full run takes about two hours on a shared
+10-core machine and uses at most four containers.
+
+Run it before every release that changes a pack, the tool's pack routes, or
+the supported Wazuh versions:
+
+    python3 tools/pack_gate.py run
+    python3 tools/pack_gate.py run --versions 4.14.9 --only jt-zimbra,jt-linux-integrity --skip upgrade,cluster
+
 ## What is not covered
 
 Stated plainly, because a test plan that implies more coverage than exists is

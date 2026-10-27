@@ -12,6 +12,7 @@ import json
 import os
 import glob
 import secrets
+import time
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -229,6 +230,62 @@ def validate_node_name(name: str) -> bool:
     if name in ('.', '..') or '..' in name:
         return False
     return bool(VALID_NODE_NAME_PATTERN.match(name))
+
+
+# Seconds to wait after a ruleset reload before checking that analysisd is
+# still running on each node (tests set it to 0).
+RELOAD_SETTLE_SECONDS = 5
+
+
+class PeerDiscoveryError(RuntimeError):
+    """The cluster is on, but its other nodes could not be listed."""
+
+
+def local_cluster_config(wazuh_path: str):
+    """(enabled, node_name) from this manager's own ossec.conf <cluster> block.
+
+    Read from disk rather than asked of the API, because the API is what may be
+    failing. A missing <disabled> counts as disabled, as in Wazuh's defaults.
+    """
+    try:
+        with open(os.path.join(wazuh_path, 'etc', 'ossec.conf'), encoding='utf-8',
+                  errors='replace') as fh:
+            text = fh.read()
+    except OSError:
+        return False, ''
+    text = re.sub(r'<!--.*?-->', '', text, flags=re.S)
+    m = re.search(r'<cluster>(.*?)</cluster>', text, re.S)
+    if not m:
+        return False, ''
+    disabled = re.search(r'<disabled>\s*(\w+)\s*</disabled>', m.group(1))
+    name = re.search(r'<node_name>\s*([^<\s]+)\s*</node_name>', m.group(1))
+    enabled = bool(disabled) and disabled.group(1).lower() == 'no'
+    return enabled, (name.group(1) if name else '')
+
+
+def cluster_control_nodes(wazuh_path: str, timeout: int = 30):
+    """Cluster nodes as the local cluster daemon lists them (cluster_control -l).
+
+    Needs no API session, so it still answers when the API call that normally
+    lists the nodes fails. Raises RuntimeError when it cannot answer.
+    """
+    import subprocess
+    exe = os.path.join(wazuh_path, 'bin', 'cluster_control')
+    try:
+        out = subprocess.run([exe, '-l'], capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise RuntimeError('cluster_control -l: %s' % e)
+    if out.returncode != 0:
+        raise RuntimeError('cluster_control -l: %s' % ((out.stderr or out.stdout).strip()[:200]
+                                                       or 'exit %d' % out.returncode))
+    nodes = []
+    for line in out.stdout.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 4 and parts[1] in ('master', 'worker'):
+            nodes.append({'name': parts[0], 'type': parts[1], 'ip': parts[3]})
+    if not nodes:
+        raise RuntimeError('cluster_control -l listed no node')
+    return nodes
 
 
 def validate_agent_id(agent_id: str) -> bool:
@@ -15050,10 +15107,25 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         Workers are where agent events are processed.
         """
         import socket
+        cluster_on, local_name = local_cluster_config(_wazuh_path())
+        api_error = None
         try:
             nodes = get_api_session().get_nodes() or []
-        except Exception:
-            return []
+        except Exception as e:
+            nodes, api_error = [], str(e)
+        if cluster_on:
+            # The API's node list falls back to a lone "manager" when the call
+            # fails, which reads exactly like a single-node install: every
+            # worker would be skipped and the caller would report success.
+            # With the cluster switched on here, ask the cluster daemon too and
+            # refuse to guess when neither answers.
+            try:
+                nodes = cluster_control_nodes(_wazuh_path())
+            except RuntimeError as e:
+                if api_error or not any(n.get('type') == 'worker' for n in nodes):
+                    raise PeerDiscoveryError(
+                        'the cluster is enabled in ossec.conf, but its nodes could not '
+                        'be listed (API: %s; %s)' % (api_error or 'no worker listed', e))
         local_hostname = socket.gethostname()
         peers = []
         for n in nodes:
@@ -15066,6 +15138,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             if not name or not validate_node_name(name):
                 continue
             is_local = (n.get('type') == 'master' or
+                        (local_name and name == local_name) or
                         name == local_hostname or
                         name.replace('-server', '') == local_hostname or
                         local_hostname.replace('-server', '') == name.replace('-server', ''))
@@ -15152,6 +15225,30 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                                      f'for {rel} is still not in place')
         return current, None
 
+    def _peer_script_note(scheduled):
+        """Name the cluster nodes that still need a pack's scripts and schedules.
+
+        The cluster copies rules, decoders and lists, never etc/jt-packs/bin or
+        /etc/cron.d. A pack whose script reads alerts.json or a node's own
+        inventory (the alert digest, the PHP, runtime and Zimbra baseline
+        checks) does nothing for the agents a worker analyses until the script
+        and its schedule are copied there by hand -- and a result that only said
+        "scheduled" is how that step got missed. Returns (nodes, text);
+        nodes is None when the cluster could not be listed.
+        """
+        if not scheduled:
+            return [], ''
+        scripts = ', '.join(sorted({j['script'] for j in scheduled}))
+        try:
+            nodes = [p['name'] for p in _cluster_peer_nodes()]
+        except Exception:
+            return None, ('the cluster does not copy scripts or schedules: copy %s and '
+                          'its schedule to every other cluster node (setup guide)' % scripts)
+        if not nodes:
+            return [], ''
+        return nodes, ('the cluster does not copy scripts or schedules: %s still need %s '
+                       'and its schedule (setup guide)' % (', '.join(nodes), scripts))
+
     def _declare_lists_on_peers(list_paths, remove=False):
         """Apply the same declarations to every other cluster node.
 
@@ -15164,7 +15261,11 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         if not list_paths:
             return originals, failures
         api = get_api_session()
-        for peer in _cluster_peer_nodes():
+        try:
+            peers = _cluster_peer_nodes()
+        except PeerDiscoveryError as e:
+            return originals, [{'node': 'cluster', 'ip': '', 'error': str(e)}]
+        for peer in peers:
             node, ip = peer['name'], peer['ip']
             try:
                 original, err = _declare_on_one_peer(api, node, list_paths, remove)
@@ -15268,8 +15369,17 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             python = _pack_python()
             cron_lines.append('%s root %s %s %s >> %s 2>&1'
                               % (schedule, python, dest, args, logfile))
-            scheduled.append({'script': entry['name'], 'schedule': schedule, 'log': logfile})
+            scheduled.append({'script': entry['name'], 'schedule': schedule, 'log': logfile,
+                              'written': True,
+                              'crontab_line': '%s %s %s %s >> %s 2>&1'
+                                              % (schedule, python, dest, args, logfile)})
 
+        if cron_lines and not os.path.isdir(PACK_CRON_DIR):
+            # The official wazuh-manager container image has no /etc/cron.d.
+            # Reporting these as scheduled would leave a feed that silently
+            # never updates, so say what was not done and what to add instead.
+            for job in scheduled:
+                job['written'] = False
         if cron_lines and os.path.isdir(PACK_CRON_DIR):
             path = _cron_path(manifest.get('id', 'pack'))
             body = ('# Installed by jt-wazuh-mgr for pack %s. Removed when the pack is.\n'
@@ -15694,9 +15804,19 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 extra.append('the CDB list could NOT be declared on %s -- rules using '
                              'it are ignored there until its ossec.conf declares the '
                              'list inside <ruleset>' % ', '.join(undeclared_nodes))
-            if scheduled:
+            peer_script_nodes, peer_note = _peer_script_note(scheduled)
+            done_jobs = [j for j in scheduled if j.get('written', True)]
+            missed_jobs = [j for j in scheduled if not j.get('written', True)]
+            if done_jobs:
                 extra.append('scheduled %s' % ', '.join(
-                    '%s (%s)' % (j['script'], j['schedule']) for j in scheduled))
+                    '%s (%s)' % (j['script'], j['schedule']) for j in done_jobs))
+            if missed_jobs:
+                extra.append('could NOT schedule %s: %s does not exist on this manager, so '
+                             'add to root\'s crontab: %s' % (
+                                 ', '.join(j['script'] for j in missed_jobs), PACK_CRON_DIR,
+                                 ' | '.join(j['crontab_line'] for j in missed_jobs)))
+            if peer_note:
+                extra.append(peer_note)
             if agent_group and agent_group.get('created'):
                 extra.append("created agent group '%s' -- assign agents to it for "
                              'collection to start' % agent_group['name'])
@@ -15710,6 +15830,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             return jsonify({'success': True, 'pack': pack_id, 'files': len(written),
                             'declared_lists': list_paths, 'replaced': backed_up,
                             'scheduled': scheduled, 'agent_group': agent_group,
+                            'peer_script_nodes': peer_script_nodes,
                             'message': message})
         except Exception as e:
             logger.error(f"PACK INSTALL ERROR: {e}")
@@ -16084,7 +16205,17 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                         'configuration.' % plan['group']['name'])
         if plan['setup_new']:
             message += ' %d agent-side step(s) are new in this version.' % len(plan['setup_new'])
+        missed_jobs = [j for j in (scheduled or []) if not j.get('written', True)]
+        if missed_jobs:
+            message += (' Could NOT schedule %s: %s does not exist on this manager, so add to '
+                        "root's crontab: %s." % (', '.join(j['script'] for j in missed_jobs),
+                                               PACK_CRON_DIR,
+                                               ' | '.join(j['crontab_line'] for j in missed_jobs)))
+        peer_script_nodes, peer_note = _peer_script_note(scheduled)
+        if peer_note:
+            message += ' Note: ' + peer_note + '.'
         return jsonify({'success': True, 'pack': pack_id, 'from': plan['from'], 'to': plan['to'],
+                        'peer_script_nodes': peer_script_nodes,
                         'applied': applied, 'left': left, 'group_changed': group_changed,
                         'group': (plan['group'] or {}).get('name'),
                         'undeclared_nodes': undeclared_nodes, 'setup_new': plan['setup_new'],
@@ -16336,7 +16467,13 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             local = fh.read()
         nodes = [{'name': _local_node_name(api), 'ip': '', 'local': True,
                   'content': local, 'error': None, 'via': 'file'}]
-        for peer in _cluster_peer_nodes():
+        try:
+            peers = _cluster_peer_nodes()
+        except PeerDiscoveryError as e:
+            nodes.append({'name': 'cluster', 'ip': '', 'local': False, 'content': None,
+                          'error': str(e), 'via': None})
+            peers = []
+        for peer in peers:
             node = peer['name']
             ok, text = api.request_raw('GET', f'/cluster/{node}/configuration', params={'raw': 'true'})
             via = 'api'
@@ -16742,6 +16879,38 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 for name in (item.get('id') or ['unknown']):
                     nodes.append({'node': str(name), 'ok': False, 'warnings': []})
                     errors.append(f'{name}: {msg}')
+
+            # A reload can kill analysisd outright: on 2026-10-27 a 4.14.7 worker
+            # segfaulted while reloading a ruleset whose lists it had not
+            # declared, and the reload itself had already been accepted. Nothing
+            # else reports it; that node simply stops analysing events.
+            if nodes and any(n['ok'] for n in nodes):
+                if RELOAD_SETTLE_SECONDS:
+                    time.sleep(RELOAD_SETTLE_SECONDS)
+                for n in nodes:
+                    if not n['ok']:
+                        continue
+                    endpoint = (f"/cluster/{n['node']}/status" if scope == 'cluster'
+                                else '/manager/status')
+                    try:
+                        st = api.request('GET', endpoint)
+                        items = (st.get('data', {}) or {}).get('affected_items') or [{}]
+                        state = (items[0] or {}).get('wazuh-analysisd')
+                    except Exception as e:
+                        state, n_err = None, str(e)
+                    else:
+                        n_err = None
+                    if state is None:
+                        msg = (f"{n['node']}: could not confirm that analysisd is still "
+                               f"running after the reload ({n_err or 'no status'})")
+                        n['warnings'].append(msg)
+                        warnings.append(msg)
+                    elif str(state).lower() != 'running':
+                        n['ok'] = False
+                        errors.append(
+                            f"{n['node']}: analysisd is {state} after the reload, so this node "
+                            "is not analysing events. Start it on that node "
+                            "(/var/ossec/bin/wazuh-control start) and check ossec.log.")
 
             logger.info(
                 f"RULESET RELOAD ({scope}): user={get_current_user()} "

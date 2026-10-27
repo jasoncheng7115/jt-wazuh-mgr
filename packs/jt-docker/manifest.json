@@ -2,7 +2,7 @@
  "id": "jt-docker",
  "name": "Docker Engine Detection Suite",
  "name_zh": "Docker Engine 偵測套組",
- "version": "1.0",
+ "version": "1.1",
  "summary": "Docker exec without the healthcheck flood (healthchecks and repeated commands quiet, shells, secret dumps, download-and-run, reverse shells, escape techniques and miners visible), host network, daemon reloads and lost listeners, dockerd log in any time zone (unauthenticated TCP API, runc breakout attempts, old engine), daemon configuration file integrity, and an optional posture check for privileged containers, socket and host mounts, capabilities and host namespaces.",
  "summary_zh": "去除健康檢查洪流的 docker exec 偵測（健康檢查與重複指令安靜；shell、讀取機密、下載後執行、反向 shell、逃逸手法與挖礦程式會顯示）、主機網路、daemon 重新載入與監聽中斷、任何時區的 dockerd 記錄（未驗證的 TCP API、runc 擋下的逃逸、過舊的版本）、daemon 設定檔完整性，以及選用的狀態檢查：特權容器、socket 與主機掛載、capability 與主機命名空間。",
  "rule_id_range": "132600-132699",
@@ -12,7 +12,10 @@
   "wazuh": ">=4.8"
  },
  "tested_with": [
-  "4.14.7"
+  "4.12.0",
+  "4.13.1",
+  "4.14.7",
+  "4.14.9"
  ],
  "notes": [
   "Docker exec. Every docker exec is a level 3 alert in Wazuh (87907), and most of them are the daemon's own healthchecks: at one site 92% of 481,000 exec events in 11 days, one container every 3 seconds. Healthcheck-shaped commands drop to level 1 (132601): an HTTP probe of the container itself, a program named *health*, pg_isready, mysqladmin ping, redis-cli ping and similar, with nothing else in the command line. The same command repeated in the same container within an hour drops to level 2 (132602); the first one stays at level 3.",
@@ -23,7 +26,8 @@
   "File integrity of the daemon configuration through the agent group, in real time and with diffs: daemon.json, containerd's config.toml and /etc/default or /etc/sysconfig docker (132660, level 8), systemd units and overrides of docker and containerd (132661, level 8), any of them adding a tcp:// listener in the diff (132662, level 12), other files under /etc/docker and /etc/containerd (132663, level 5). Registry certificates and keys get no diff, and no file ending in .key or -key.pem on these agents does.",
   "On a host with auditd, Wazuh's built-in 80710 (\"Device enables promiscuous mode\", level 10) fires for every container start and stop, because it also matches old_prom=256 (leaving promiscuous mode) and Docker bridges every container's veth. Records of dockerd itself for a veth interface drop to level 2 (132650); everything else stays at level 10.",
   "Deliberately not covered: what a process inside a container does on its own (a web shell in an application) does not pass through the Docker API and is in none of these sources; that needs process telemetry on the host (auditd, Falco, Tetragon). Nothing here depends on a site list, host name or account. No active response is offered: none of these events carries an attacker address.",
-  "Prerequisites: the agent on the docker host in the docker group, Python 3 and the Python docker module on that host for the docker-listener wodle, the dockerd log collected through the host's syslog or journal, and for the posture check, the script installed and a local wodle command. A poller that runs docker exec all day keeps producing one level 3 alert per hour on a quiet manager and one every few minutes on a busy one (the correlation memory, not the one hour timeframe, is the limit there): give it a site rule."
+  "Prerequisites: the agent on the docker host in the docker group, Python 3 and the Python docker module on that host for the docker-listener wodle, the dockerd log collected through the host's syslog or journal, and for the posture check, the script installed and a local wodle command. A poller that runs docker exec all day keeps producing one level 3 alert per hour on a quiet manager and one every few minutes on a busy one (the correlation memory, not the one hour timeframe, is the limit there): give it a site rule.",
+  "1.1: works on managers before Wazuh 4.14. Wazuh 4.14 moved the built-in docker rules from docker.status to docker.Action because Docker Engine stopped sending \"status\"; on 4.12 and 4.13 the built-in exec, kill/die, pull and create rules (87907, 87924, 87932, 87901) never match a current Docker, and nothing hung off them could either. Four compatibility parents (132611-132614) read docker.Action and carry this pack's rules there; on 4.14 the built-in rule with the same condition and level loads first, so nothing changes. 132615 is the repeated-command rule for that path. Also: 132662 (the API made to listen on TCP, level 12) now hangs directly off the built-in file integrity rules, because jt-linux-integrity's 132950 (every systemd drop-in, level 10) was tried before 132661 and the level 12 never fired when both packs were installed. Found by the release gate (tools/pack_gate.py) on 4.12.0, 4.13.1 and 4.14.9."
  ],
  "notes_zh": [
   "docker exec：Wazuh 對每一次 docker exec 都發 level 3 告警（87907），而大多數其實是 daemon 自己執行的健康檢查：某站台 11 天 48.1 萬筆 exec 中有 92% 是健康檢查，其中一個容器每 3 秒一次。形狀屬於健康檢查的指令降為 level 1（132601）：對容器自己的 HTTP 探測、名稱含 health 的程式、pg_isready、mysqladmin ping、redis-cli ping 等，且指令列中沒有其他東西。同一容器在一小時內重複執行相同指令降為 level 2（132602），第一次仍是 level 3。",
@@ -34,7 +38,8 @@
   "透過 agent 群組即時監控 daemon 設定的檔案完整性並保留差異：daemon.json、containerd 的 config.toml 與 /etc/default 或 /etc/sysconfig 的 docker（132660，level 8）、docker 與 containerd 的 systemd unit 與覆寫檔（132661，level 8）、差異中新增 tcp:// 監聽（132662，level 12）、/etc/docker 與 /etc/containerd 下的其他檔案（132663，level 5）。registry 憑證與金鑰不保留差異，這些 agent 上結尾為 .key 或 -key.pem 的檔案也都不保留。",
   "在有 auditd 的主機上，Wazuh 內建的 80710（「Device enables promiscuous mode」，level 10）每次容器啟動或停止都會觸發：它也比中 old_prom=256（離開混雜模式），而 Docker 會把每個容器的 veth 接上 bridge。dockerd 自己對 veth 介面產生的記錄降為 level 2（132650），其他一律維持 level 10。",
   "刻意不涵蓋：容器內的程序自行做的事（例如應用程式裡的 web shell）不經過 Docker API，不在上述任何來源裡；那需要主機上的程序遙測（auditd、Falco、Tetragon）。套件不依賴任何站台清單、主機名稱或帳號。不提供主動回應：這些事件都不帶攻擊者位址。",
-  "前提：docker 主機上的 agent 加入 docker 群組；該主機有 Python 3 與 Python docker 模組供 docker-listener wodle 使用；dockerd 記錄經由主機的 syslog 或 journal 收集；狀態檢查則要安裝腳本並設定本機 wodle command。整天以 docker exec 輪詢的程式，在負載低的 manager 上每小時仍會產生一筆 level 3，在忙碌的 manager 上每幾分鐘一筆（那裡的上限是關聯記憶，而不是一小時的時間窗）：請為它寫站台規則。"
+  "前提：docker 主機上的 agent 加入 docker 群組；該主機有 Python 3 與 Python docker 模組供 docker-listener wodle 使用；dockerd 記錄經由主機的 syslog 或 journal 收集；狀態檢查則要安裝腳本並設定本機 wodle command。整天以 docker exec 輪詢的程式，在負載低的 manager 上每小時仍會產生一筆 level 3，在忙碌的 manager 上每幾分鐘一筆（那裡的上限是關聯記憶，而不是一小時的時間窗）：請為它寫站台規則。",
+  "1.1：支援 Wazuh 4.14 之前的 manager。Wazuh 4.14 因為 Docker Engine 不再送 \"status\"，把內建 docker 規則從 docker.status 改成 docker.Action；在 4.12、4.13 上，內建的 exec、kill/die、pull、create 規則（87907、87924、87932、87901）對新版 Docker 完全不成立，掛在它們底下的規則也全部失效。新增四條相容父規則（132611-132614）改讀 docker.Action，把本套件的規則接上；在 4.14 上，條件與等級相同的內建規則先載入，所以行為完全不變。132615 是這條路徑上的「同一指令重複執行」規則。另外：132662（API 改為對 TCP 監聽，level 12）改為直接掛在內建檔案完整性規則下，因為 jt-linux-integrity 的 132950（所有 systemd drop-in，level 10）會先於 132661 比對，兩個套件都裝時 level 12 從不觸發。由發版關卡（tools/pack_gate.py）在 4.12.0、4.13.1、4.14.9 上找到。"
  ],
  "files": [
   {
@@ -47,7 +52,7 @@
    "type": "rule",
    "name": "zz-132600-jt_docker_rules.xml",
    "dest": "etc/rules/zz-132600-jt_docker_rules.xml",
-   "sha256": "fea40f10a1110f35f6c66638fa3da5f5aba6a8d8b610eaf3ce8ef36b14d138e5"
+   "sha256": "ca1a8dfb5047d7bcd5fb347f732e989ca472884275edd6dbf1865649ecd27daf"
   }
  ],
  "agent_group": {

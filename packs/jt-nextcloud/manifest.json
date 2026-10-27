@@ -2,7 +2,7 @@
  "id": "jt-nextcloud",
  "name": "Nextcloud Detection Suite",
  "name_zh": "Nextcloud 偵測套組",
- "version": "1.2.1",
+ "version": "1.2.2",
  "summary": "Failed logins and brute force per address (also for Nextcloud 35, which logs client failures only in the audit log), second-factor failures, administrator logins, logins from public and new addresses, impersonation, administrator rights, security apps switched off, risky apps, occ commands that weaken protection, public links, ransomware-like renames, mass deletions, antivirus detections and changes of the configuration files, from the Nextcloud log, the audit log and file integrity monitoring, with the client address decoded as srcip.",
  "summary_zh": "從 Nextcloud 記錄、稽核記錄與檔案完整性監控偵測：依來源位址計算的登入失敗與暴力破解（含 Nextcloud 35，其用戶端登入失敗只寫在稽核記錄）、第二因素驗證失敗、管理者登入、來自公開位址與新位址的登入、以他人身分操作、管理者權限、關閉安全 App、高風險 App、削弱防護的 occ 指令、公開連結、類勒索軟體的大量更名、大量刪除、防毒偵測與設定檔變更，並把來源位址解成 srcip。",
  "rule_id_range": "131700-131799",
@@ -20,7 +20,8 @@
   "The agent group also takes the data directory out of file integrity monitoring: on one server user files were 98,358 of the 200,000 entries the database may hold, which left no room for the paths that matter. Nextcloud's code (apps, lib, core, 3rdparty) is outside the data directory and stays monitored.",
   "Also in 1.2: impersonation with the impersonate app (an account switching to another one) is level 8 and every request for it level 4; a login the suspicious_login app flags is level 8 (it writes this at info level, see the setup); the antivirus app (files_antivirus) finding an infected file that stays stored is level 10, removing one level 8; an end-of-life Nextcloud version (32 and older at the time of writing) is level 5 once a day.",
   "File integrity (1.2): the agent group watches Nextcloud's config directory and the web root entry points (index.php, remote.php, public.php, status.php, cron.php, console.php, occ, ocs/v1.php, ocs/v2.php, .htaccess, .user.ini) in real time, without content diffs, because config.php holds the database password. A new *.config.php is level 10: Nextcloud loads every one of them on every request, so it can switch off the brute-force protection or move the log without occ and without an audit line. config.php changed and an entry point changed are level 7 (occ config:system:set, maintenance mode and upgrades also change them). These entries are a few files and one small directory, so they do not crowd the file integrity database, and they leave a site's existing monitoring of /var/www as it is. New PHP files under apps/ are not watched by the group: upgrades add thousands, and the app directories alone held 85,659 entries on one server.",
-  "Cross-pack login groups (patch release): jt_auth_success on 131720, 131721, 131777, 131770, 131771, 131772, 131778, 131773, 131774, 131775, 131776; jt_auth_failure on 131710; jt_auth_lockout on 131722. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. The failed login line names no account in a decoded field, so 131710 only serves the address-based correlations. Not tagged: the second copy from the suspicious_login app (131739), impersonation (131729), a wrong second factor (131713)."
+  "Cross-pack login groups (patch release): jt_auth_success on 131720, 131721, 131777, 131770, 131771, 131772, 131778, 131773, 131774, 131775, 131776; jt_auth_failure on 131710; jt_auth_lockout on 131722. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. The failed login line names no account in a decoded field, so 131710 only serves the address-based correlations. Not tagged: the second copy from the suspicious_login app (131739), impersonation (131729), a wrong second factor (131713).",
+  "1.2.2: works on managers before Wazuh 4.14. 4.14 turns the JSON key \"user\" into dstuser; 4.12 and 4.13 keep it as a dynamic field, so every rule with <user> or <same_user/> never matched there: deleted files, renamed files, ransomware-style renames and many public links (12 cases). The decoder now reads the account from the line into the static user field as well, as it already did for srcip. Verified on 4.12.0 and 4.14.9 (174 of 174 cases each)."
  ],
  "notes_zh": [
   "本套件透過 agent 群組 nextcloud 讀取 Nextcloud 自己的記錄（nextcloud.log）與 admin_audit 稽核記錄；群組會在每一行前面加上前綴，交給本套件的解碼器處理。解碼器保留所有 JSON 欄位，並另外把 remoteAddr 解成 srcip，這是 Wazuh 內建 json 解碼器做不到的。替內建 json 解碼器加子解碼器也不可行：4.14.7 實測，只要它有一個子解碼器，manager 上其他所有 JSON 來源（Suricata、雲端整合）的欄位就全部消失。不經這個群組收進來的行，仍由內建規則 88200-88216 處理。",
@@ -36,7 +37,8 @@
   "agent 群組也會把資料目錄排除在檔案完整性監控之外：一台伺服器上使用者檔案占了資料庫上限 200,000 筆中的 98,358 筆，重要的路徑因此沒有空間。Nextcloud 的程式碼（apps、lib、core、3rdparty）不在資料目錄內，仍會被監控。",
   "1.2 另外新增：以 impersonate App 切換成另一個帳號為 level 8，每次提出切換要求為 level 4；suspicious_login App 判定可疑的登入為 level 8（它以 info 等級寫入，見部署說明）；防毒 App（files_antivirus）發現仍留存的受感染檔案為 level 10，移除受感染檔案為 level 8；已終止支援的 Nextcloud 版本（撰寫時為 32 與更舊的版本）每天一次 level 5。",
   "檔案完整性（1.2）：agent 群組即時監控 Nextcloud 的 config 目錄與網站根目錄的進入點（index.php、remote.php、public.php、status.php、cron.php、console.php、occ、ocs/v1.php、ocs/v2.php、.htaccess、.user.ini），不傳送內容差異，因為 config.php 內含資料庫密碼。新增 *.config.php 為 level 10：Nextcloud 每個請求都會載入它們，因此可以不經 occ、不留稽核記錄就關掉暴力破解防護或改掉記錄位置。config.php 變更與進入點變更為 level 7（occ config:system:set、維護模式與升級也會改動它們）。這些項目只有幾個檔案和一個小目錄，不會擠占檔案完整性資料庫，也不會改變站台原本對 /var/www 的監控。群組不監控 apps/ 底下新增的 PHP 檔：每次升級都會新增上千個，而一台伺服器上光是 App 目錄就有 85,659 筆。",
-  "跨套件登入群組（修補版）：jt_auth_success：131720, 131721, 131777, 131770, 131771, 131772, 131778, 131773, 131774, 131775, 131776；jt_auth_failure：131710；jt_auth_lockout：131722。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。登入失敗那行沒有解出帳號欄位，所以 131710 只用於以來源位址關聯的規則。未加標記：suspicious_login 應用程式的第二份（131739）、模擬身分（131729）、第二因素錯誤（131713）。"
+  "跨套件登入群組（修補版）：jt_auth_success：131720, 131721, 131777, 131770, 131771, 131772, 131778, 131773, 131774, 131775, 131776；jt_auth_failure：131710；jt_auth_lockout：131722。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。登入失敗那行沒有解出帳號欄位，所以 131710 只用於以來源位址關聯的規則。未加標記：suspicious_login 應用程式的第二份（131739）、模擬身分（131729）、第二因素錯誤（131713）。",
+  "1.2.2：支援 Wazuh 4.14 之前的 manager。4.14 會把 JSON 的 \"user\" 轉成 dstuser；4.12、4.13 則保留為動態欄位，所以所有使用 <user> 或 <same_user/> 的規則在舊版都不成立：刪除檔案、改名、勒索軟體式改名與大量公開連結（12 個案例）。解碼器現在也從記錄行把帳號讀進靜態的 user 欄位，做法與 srcip 相同。已在 4.12.0 與 4.14.9 驗證（各 174 個案例全過）。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -44,14 +46,16 @@
   "wazuh": ">=4.8"
  },
  "tested_with": [
-  "4.14.7"
+  "4.12.0",
+  "4.14.7",
+  "4.14.9"
  ],
  "files": [
   {
    "type": "decoder",
    "name": "jt-nextcloud_decoders.xml",
    "dest": "etc/decoders/jt-nextcloud_decoders.xml",
-   "sha256": "1b7e4d9392e184498f139133470f088e693c21415c3cb1637baaabfa3c481f39"
+   "sha256": "46df66df1d748b4f93713f4125c5017d9ca042324ed9f2f845cbf5dd1430b40b"
   },
   {
    "type": "rule",

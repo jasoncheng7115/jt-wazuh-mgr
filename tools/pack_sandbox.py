@@ -19,6 +19,13 @@ Case file format, tests/pack_cases/<pack-id>.json:
      "sandbox_packs": ["jt-zimbra", ...]}   (other packs installed first)
 expect_in_description (optional) lists substrings the rendered rule
 description must contain, to check decoded fields that reach the alert.
+with_all_packs (optional, {"expect_rule", "expect_level", "why"}) is the
+result when every pack is installed (tools/pack_gate.py); ignored here.
+min_wazuh (optional, "4.14") is the oldest manager a case applies to, for a
+case that names a built-in rule or field older rulesets lack; pack_gate.py
+skips it on older managers. on_older (optional, {"wazuh_below": "4.14",
+"expect_rule", "expect_level"}) is the result an older manager gives instead,
+for instance a compatibility twin of a rule; pack_gate.py judges by it there.
 expect_rule "none" means no rule above level 0 may match. repeat sends the
 line that many times in one logtest session (for frequency rules) and judges
 the last event; "before" lines (or a "log" holding several lines) run first

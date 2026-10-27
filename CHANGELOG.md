@@ -4,6 +4,42 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.24.0 (2026-10-28)
+
+Found by installing every pack on a clean three-node cluster the way a customer would,
+and by a new release gate that does the same in throwaway managers.
+
+- **Installing on a cluster no longer reports success it did not have.** When the API
+  call that lists the cluster nodes failed (an API user without cluster read rights,
+  or the API briefly unreachable), the tool fell back to a lone "manager", skipped every
+  worker and said the install succeeded; on the test cluster each worker then ignored
+  50 rules whose lists were never declared there. It now reads this manager's own
+  ossec.conf: with the cluster enabled it also asks the cluster daemon
+  (cluster_control -l), and stops with an error when neither names the nodes.
+  Enabling an active response had the same fault and the same fix.
+- **A ruleset reload checks that analysisd is still running on every node.** On a
+  4.14.7 worker, analysisd crashed during a hot reload (segfault) while the reload had
+  been accepted, and nothing said the node had stopped analysing events. Five seconds
+  after a reload the tool reads each node's daemon status and reports a node whose
+  analysisd is not running as failed.
+- **Schedules that were not written are no longer reported as scheduled.** The official
+  wazuh-manager container image has no /etc/cron.d: the install said "scheduled" and a
+  threat feed silently never updated. The result now says what was not scheduled and
+  the crontab line to add. On a cluster, install and update results name the nodes that
+  still need a pack's scripts and schedules, which the cluster does not copy.
+- **Pack release gate** (tools/pack_gate.py): every pack installed through the tool's
+  own routes on clean 4.12.0, 4.13.1 and 4.14 managers, an update from the previous
+  release, and a master and worker set up by following the guides, with every test case
+  replayed; see TEST-PLAN, layer 6b. What it found:
+  - jt-docker 1.1: with jt-linux-integrity installed, the level 12 alert for a Docker API
+    opened on TCP never fired (a higher-level sibling won); docker rules now also work
+    before 4.14, where the built-in rules read docker.status.
+  - jt-nextcloud 1.2.2: 12 detections (deletions, renames, ransomware-like extensions,
+    link counts) never matched before 4.14, whose JSON decoder leaves user unmapped.
+  - jt-portable-detect 3.5.1, jt-container-vuln 1.0.1: one rule each fixed for older
+    managers and for a neighbouring pack. jt-vc-portal 1.2.1 states that its docker
+    rules need 4.14.
+
 ## v1.23.2 (2026-10-26)
 
 - **jt-opnsense 1.2.2: the daily pkg audit alert names the vulnerable packages.** Rule

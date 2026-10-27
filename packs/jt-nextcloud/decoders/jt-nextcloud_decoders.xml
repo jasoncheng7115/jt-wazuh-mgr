@@ -59,3 +59,16 @@
   <regex type="pcre2">"remoteAddr":"(?:::[Ff]{4}:)?([0-9A-Fa-f.:]+)"</regex>
   <order>srcip</order>
 </decoder>
+
+<!--
+  The account once more, as the static user field (dstuser) (1.2.2). Wazuh
+  4.14 turns the JSON key "user" into dstuser by itself; 4.12 and 4.13 keep
+  it as a dynamic field, so every rule with <user> or <same_user/> (deleted
+  and renamed files, ransomware renames, many public links) never matched
+  there (2026-10-27 release gate). Read from the line, like srcip above.
+-->
+<decoder name="jt-nextcloud-fields">
+  <parent>jt-nextcloud</parent>
+  <regex type="pcre2">"user":"((?:[^"\\]|\\.)*)"</regex>
+  <order>user</order>
+</decoder>

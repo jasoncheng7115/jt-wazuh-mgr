@@ -518,9 +518,15 @@
     toward it; verify that on a live host after deploying (the 181 should
     stop), since the claim is about analysisd internals.
   -->
+  <!-- Matched on the raw SYSCALL record, not on audit.exe: before 4.14 the
+       auditd decoder cut audit.exe at the first dot (/root/), so this rule
+       never applied there and the event stayed at 906210 (2026-10-27 release
+       gate, 4.12.0 and 4.13.1). exe="..." is written by the kernel; an
+       argument containing a quote is hex-encoded by auditd, so it cannot fake
+       this text. -->
   <rule id="906235" level="3">
     <if_sid>906210</if_sid>
-    <field name="audit.exe" type="pcre2">^/(root|home/[^/]+)/(\.cache/(ms-playwright|puppeteer)/|\.local/share/claude/versions/)</field>
+    <regex type="pcre2">\sexe="/(?:root|home/[^/"]+)/(?:\.cache/(?:ms-playwright|puppeteer)/|\.local/share/claude/versions/)</regex>
     <description>Browser automation runtime or self-updating CLI running from its own versioned install directory - $(audit.exe)</description>
     <group>jt_portable_exec,</group>
   </rule>
