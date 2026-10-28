@@ -2,9 +2,9 @@
  "id": "jt-alert-digest",
  "name": "Readable Alert Digest",
  "name_zh": "可讀的告警摘要信",
- "version": "1.12.1",
- "summary": "Replaces wazuh-maild's raw notifications with one grouped, readable message per run, optionally posts the same digest to a Zulip channel, and reports its own failures in the console.",
- "summary_zh": "把 wazuh-maild 的原始通知換成分組整理過、讀得完的摘要信，可選擇同時發到 Zulip 頻道，並在主控台回報自己的故障。",
+ "version": "1.13.0",
+ "summary": "Replaces wazuh-maild's raw notifications with one grouped, readable message per run, optionally posts the same digest to Zulip, Microsoft Teams, Telegram, Slack, Discord, Mattermost, LINE or any webhook, and reports its own failures in the console.",
+ "summary_zh": "把 wazuh-maild 的原始通知換成分組整理過、讀得完的摘要信，可選擇同時發到 Zulip、Microsoft Teams、Telegram、Slack、Discord、Mattermost、LINE 或任何 webhook，並在主控台回報自己的故障。",
  "rule_id_range": "131100-131199",
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -32,7 +32,13 @@
   "Agent starts, stops and disconnections are recognised by the event text, not by rule ID. A site rule that takes over 503 (as one did on a live manager) hid every start, so 43 agents restarted on purpose were listed in the daily summary as stopped; a new agent's first start is 501. The Zulip daily summary is laid out like the alert cards: a green or red bar, a status table, alert counts by level and the most frequent rules as wrapped lines, and a long list of agents collapsed.",
   "A source address in a message names the agent it belongs to, as 192.0.2.10 (web1): the digest learns each agent's address from the alert lines it reads, including those below the mail level, and keeps the table in var/jt-alert-digest.agents. Agents registered without a fixed address (any) are not named.",
   "Written for Wazuh 4.8 to 4.14, which write logs/alerts/alerts.json; Wazuh 5.0 has no such file, and there the digest raises a configuration alert instead of staying silent. Runs on the manager's own python3 (3.8 or later), standard library only.",
-  "1.12.1: alerts from jt-runtime-vuln's version check and jt-zimbra's baseline check are filed under the host they name, as jt-php's have been since 1.12 (they are the manager's own events and carry the host in jt_runtime.agent_name and jt_zimbra_baseline.agent_name)."
+  "1.12.1: alerts from jt-runtime-vuln's version check and jt-zimbra's baseline check are filed under the host they name, as jt-php's have been since 1.12 (they are the manager's own events and carry the host in jt_runtime.agent_name and jt_zimbra_baseline.agent_name).",
+  "1.13: seven more optional channels, each configured only by its own settings in jt-alert-digest.conf: Microsoft Teams (a Workflows webhook, as Adaptive Cards: each group in a container tinted by level, values as a fact set, the log behind a Show log toggle), Telegram (a bot, HTML with the log in a collapsed quote), Slack (an incoming webhook, Block Kit), Discord (a channel webhook, one embed per group in the level's colour), Mattermost (an incoming webhook, markdown), LINE (Messaging API push, plain text) and a generic webhook (a documented JSON document, schema jt-alert-digest/1, for a SOAR, a ticket queue or a script). Each works as the Zulip channel does: its own position in the alert file, repeat hold, outbox and daily summary, so an outage or crash of one never loses or repeats the messages of mail or of another channel, and a split post that fails halfway resumes with the parts not yet posted.",
+  "1.13 status rules, ten IDs a channel, each a child of the mail rule for the same event: Teams 131131-131136, Telegram 131141-131146, Slack 131151-131156, Discord 131161-131166, Mattermost 131171-131176, webhook 131181-131186, LINE 131191-131196 (x1 cannot post, L10; x2 nothing posted for two hours, L12; x3 alerts skipped, L12; x4 posting again, L3; x5 crashed, L10; x6 refused credentials or configuration, L12). A message the platform rejects as malformed (Discord 50035, Slack invalid_blocks, Telegram \"can't parse entities\" after a plain-text retry) is dropped after three tries and reported as skipped, rather than blocking the channel for good; the mail digest still has those alerts.",
+  "Alert text is attacker-influenced, so each channel is escaped for what its platform acts on: Slack's &, < and > (no <!channel>, <@user> or <url|text> can be formed), Telegram's HTML and its @username and /command entities, Discord's markdown by backslash plus allowed_mentions with an empty parse list, the markdown subset and {{DATE()}} functions of Adaptive Cards, every @word in Mattermost; LINE plain text interprets nothing. Webhook addresses are credentials in themselves, so Teams, Slack, Discord and Mattermost addresses, bot tokens and keys are read only from files owned by root with mode 600 and never through a symbolic link (from 1.13 the same applies to smtp_password_file and zulip_api_key_file), and they never appear in logs, the state file, status events or error texts. Redirects are refused, so a token is never carried to another host; certificates are verified.",
+  "Per channel: <name>_level posts from that level up (ignoring rule.mail) instead of the mail level, for example a phone channel for level 14 only; <name>_daily = off drops that channel's daily summary; <name>_max_backlog (24 hours by default) bounds what is replayed after an outage; <name>_ca_file and <name>_tls_verify for a server with a private CA. zulip_level and zulip_daily work the same way.",
+  "LINE counts every push message against the channel's monthly quota, once per recipient, so a group of ten people is ten messages. The digest therefore sends each run as one request of up to five text messages, which LINE counts as one, and retries with the same X-Line-Retry-Key so a retry is never counted twice. Set line_level and keep the repeat hold on; --test line also counts.",
+  "Generic webhook: POST of JSON with schema, kind (digest, daily or test), node, level, total, groups (rule_id, level, title, agent name/id/ip, count, first, last, new, mitre, link, samples as label/value pairs, redacted as in the mail) and held repeats. Headers: X-JT-Event, X-JT-Delivery (the same on every retry, for de-duplication) and, with webhook_hmac_key_file, X-JT-Timestamp and X-JT-Signature = sha256= hex HMAC-SHA256(key, timestamp + \".\" + body). Nothing in it is escaped: the receiver must treat every string as untrusted text."
  ],
  "notes_zh": [
   "郵件管道通常本來就有、也本來就通。讓它沒有用的是格式：wazuh-maild 會把 full_log 原文加上每個解碼欄位再印一次，還把一小時內的告警串成一封。在正式機實測，一封信有 17 則通知、數千行，而其中唯一真正的偵測被壓在 14 則來自建置主機的告警底下。",
@@ -55,24 +61,30 @@
   "agent 的啟動、停止與斷線改依事件文字判斷，不再看規則 ID。站台若有規則接走 503（正式機上就有），所有啟動事件都看不到，結果 43 台刻意重啟的 agent 在每日摘要裡被列為已停止；新 agent 的第一次啟動則是 501。Zulip 的每日摘要改成和告警卡片相同的排版：綠色或紅色色塊、狀態表格、各等級告警數與最常見規則以會換行的文字列出，agent 清單太長時收合。",
   "訊息裡的來源位址會標出它屬於哪個 agent，例如 192.0.2.10 (web1)：摘要程式從讀到的告警（包括低於郵件等級的）學到每個 agent 的位址，表格存在 var/jt-alert-digest.agents。註冊時沒有固定位址（any）的 agent 不會被標出。",
   "適用於會寫 logs/alerts/alerts.json 的 Wazuh 4.8 至 4.14；Wazuh 5.0 沒有這個檔案，在那裡摘要信會發出設定錯誤的告警，而不是默不作聲。使用 manager 本身的 python3（3.8 以上），只用標準函式庫。",
-  "1.12.1：jt-runtime-vuln 的版本檢查與 jt-zimbra 的基準清單檢查所產生的告警，也和 jt-php（1.12 起）一樣歸在事件所指的主機底下（它們是管理端自己的事件，主機寫在 jt_runtime.agent_name 與 jt_zimbra_baseline.agent_name）。"
+  "1.12.1：jt-runtime-vuln 的版本檢查與 jt-zimbra 的基準清單檢查所產生的告警，也和 jt-php（1.12 起）一樣歸在事件所指的主機底下（它們是管理端自己的事件，主機寫在 jt_runtime.agent_name 與 jt_zimbra_baseline.agent_name）。",
+  "1.13：新增七個選用頻道，各自只由 jt-alert-digest.conf 裡自己的設定啟用：Microsoft Teams（Workflows webhook，以 Adaptive Card 呈現：每組放在依等級上色的容器、欄位用 fact set、記錄收在「Show log」按鈕後）、Telegram（bot，HTML，記錄放在可展開的引用）、Slack（incoming webhook，Block Kit）、Discord（頻道 webhook，每組一個依等級上色的 embed）、Mattermost（incoming webhook，markdown）、LINE（Messaging API push，純文字），以及通用 webhook（有文件的 JSON，schema jt-alert-digest/1，給 SOAR、工單系統或腳本）。每個頻道都和 Zulip 一樣：在告警檔中有自己的讀取位置、重複壓制、待送匣與每日摘要，所以任何一個頻道中斷或當掉，都不會讓郵件或其他頻道的訊息遺失或重複；分段發送中途失敗時，下一次只補發還沒發出的部分。",
+  "1.13 的狀態規則，每個頻道十個 ID，各自是同一事件郵件規則的子規則：Teams 131131-131136、Telegram 131141-131146、Slack 131151-131156、Discord 131161-131166、Mattermost 131171-131176、webhook 131181-131186、LINE 131191-131196（個位數 1 發不出去 L10；2 兩小時都沒送達 L12；3 有告警被跳過 L12；4 恢復 L3；5 當掉 L10；6 憑證或設定被拒 L12）。平台把訊息本身判為格式錯誤時（Discord 50035、Slack invalid_blocks、Telegram 改送純文字後仍「can't parse entities」），同一則訊息試三次後丟棄並以「跳過」回報，不讓頻道永遠卡住；這些告警在郵件摘要裡仍然有。",
+  "告警文字可能受攻擊者影響，所以每個頻道都依平台會解讀的語法處理：Slack 的 &、<、>（因此組不出 <!channel>、<@user> 或 <url|文字>）、Telegram 的 HTML 以及 @username 與 /指令、Discord 以反斜線跳脫 markdown 並設定 allowed_mentions 為空清單、Adaptive Card 的 markdown 子集與 {{DATE()}} 函式、Mattermost 的每個 @詞；LINE 純文字不做任何解讀。webhook 網址本身就是憑證，所以 Teams、Slack、Discord、Mattermost 的網址，以及 bot token 與金鑰，都只從屬於 root、權限 600 的檔案讀取，且不經過符號連結（1.13 起 smtp_password_file 與 zulip_api_key_file 也一樣），絕不出現在記錄、狀態檔、狀態事件或錯誤訊息中。不跟隨重新導向，token 不會被帶到其他主機；會驗證憑證。",
+  "各頻道可個別設定：<名稱>_level 從該等級起發送（不看 rule.mail），取代郵件等級，例如手機頻道只收 level 14；<名稱>_daily = off 不發該頻道的每日摘要；<名稱>_max_backlog（預設 24 小時）限制中斷後補發的範圍；<名稱>_ca_file 與 <名稱>_tls_verify 用於私有 CA 的伺服器。zulip_level、zulip_daily 用法相同。",
+  "LINE 的每一則 push 都會計入頻道的每月訊息額度，而且是依收件人計算：十個人的群組就是十則。因此摘要每次執行只送一個請求、最多五則文字訊息（LINE 算一則），重試時使用同一個 X-Line-Retry-Key，重試不會被重複計算。請設定 line_level 並保留重複壓制；--test line 也會計入額度。",
+  "通用 webhook：以 POST 送出 JSON，含 schema、kind（digest、daily 或 test）、node、level、total、groups（rule_id、level、title、agent 名稱/ID/IP、count、first、last、new、mitre、link、samples 為 label/value 配對，與郵件相同已遮蔽帳密）與 held 重複項目。標頭：X-JT-Event、X-JT-Delivery（同一份文件每次重試都相同，可用來去重），設定 webhook_hmac_key_file 時另有 X-JT-Timestamp 與 X-JT-Signature = sha256= 加上 HMAC-SHA256(金鑰, timestamp + \".\" + body) 的十六進位。內容完全不跳脫：接收端必須把每個字串都當成不可信的文字。"
  ],
  "files": [
   {
    "type": "rule",
    "name": "zz-131100-jt_alert_digest_rules.xml",
    "dest": "etc/rules/zz-131100-jt_alert_digest_rules.xml",
-   "sha256": "4de3071842dba741ffc7afcc18ac478837cca17fb351f2fcecb821d689cd9cdb"
+   "sha256": "3549e62cd6f4a8191983d4f4d45f73f872b252ae417673ad9cea28544e7813b5"
   }
  ],
  "scripts": [
   {
    "name": "jt-alert-digest.py",
    "dest": "etc/jt-packs/bin/jt-alert-digest.py",
-   "sha256": "c6060774438791be42be05f6931621ef31ac6aad3128a45686e3edc667a186b9",
+   "sha256": "a268c6239151fa5a9153773da8532a30677c8c805f1c2620623bc75791b3107c",
    "cron": "*/2 * * * *",
    "args": "--wazuh-path {wazuh_path}",
-   "description": "Groups new alerts and sends one readable message, using the mail settings already in ossec.conf, optionally also to Zulip; reports its own failures to the manager"
+   "description": "Groups new alerts and sends one readable message, using the mail settings already in ossec.conf, optionally also to Zulip, Teams, Telegram, Slack, Discord, Mattermost, LINE or a webhook; reports its own failures to the manager"
   }
  ],
  "setup": [
@@ -81,8 +93,8 @@
    "required": true,
    "title": "Install on every node that writes alerts, and reload the ruleset on each",
    "title_zh": "在每個會寫告警的節點各裝一份，並在每個節點重新載入規則",
-   "body": "Each cluster node writes only the alerts of the agents it processes, so in a cluster this must run on every node; Windows agents are usually on a worker. The installer schedules it on the node you install from; on each worker, copy the script and the cron file across, and the settings file below if you use one. The cluster copies the rule file to the workers but does not reload their analysisd: use Reload ruleset afterwards, or the worker's status events are not recognised (1.5 adds 131121-131126 for Zulip).",
-   "body_zh": "每個叢集節點只寫入它負責的 agent 的告警，所以叢集中每個節點都要執行；Windows agent 通常在 worker 上。安裝程式只會在你安裝的那個節點排程；每個 worker 請把腳本與排程檔複製過去，若有使用下方的設定檔也一併複製。叢集會把規則檔同步到 worker，但不會重新載入 worker 的 analysisd：之後請按「重新載入規則集」，否則 worker 的狀態事件不會被辨識（1.5 新增 Zulip 用的 131121-131126）。",
+   "body": "Each cluster node writes only the alerts of the agents it processes, so in a cluster this must run on every node; Windows agents are usually on a worker. The installer schedules it on the node you install from; on each worker, copy the script and the cron file across, and the settings file below if you use one. The cluster copies the rule file to the workers but does not reload their analysisd: use Reload ruleset afterwards, or the worker's status events are not recognised (1.5 adds 131121-131126 for Zulip, 1.13 adds 131131-131196 for the other channels).",
+   "body_zh": "每個叢集節點只寫入它負責的 agent 的告警，所以叢集中每個節點都要執行；Windows agent 通常在 worker 上。安裝程式只會在你安裝的那個節點排程；每個 worker 請把腳本與排程檔複製過去，若有使用下方的設定檔也一併複製。叢集會把規則檔同步到 worker，但不會重新載入 worker 的 analysisd：之後請按「重新載入規則集」，否則 worker 的狀態事件不會被辨識（1.5 新增 Zulip 用的 131121-131126，1.13 新增其他頻道用的 131131-131196）。",
    "code": "scp /var/ossec/etc/jt-packs/bin/jt-alert-digest.py <worker>:/var/ossec/etc/jt-packs/bin/\nscp /etc/cron.d/jt-jt-alert-digest <worker>:/etc/cron.d/"
   },
   {
@@ -163,6 +175,90 @@
    "code": "( umask 077; read -rs -p 'Zulip API key: ' K; echo; printf '%s\\n' \"$K\" > /var/ossec/etc/jt-packs/jt-alert-digest-zulip.key )\nchown root:root /var/ossec/etc/jt-packs/jt-alert-digest-zulip.key\nchmod 600 /var/ossec/etc/jt-packs/jt-alert-digest-zulip.key\ncat >> /var/ossec/etc/jt-packs/jt-alert-digest.conf <<'EOF'\nzulip_url = https://<zulip-host>\nzulip_email = <bot-email>\nzulip_api_key_file = /var/ossec/etc/jt-packs/jt-alert-digest-zulip.key\nzulip_stream = <channel>\nzulip_topic = <topic>\nEOF\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --test zulip",
    "verify": "--check ends its Zulip part with \"the bot is accepted\", and --test zulip posts one message to the topic.",
    "verify_zh": "--check 的 Zulip 部分最後顯示「the bot is accepted」，而且 --test zulip 在該話題發出一則訊息。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.13",
+   "title": "Optional: post the digest to a Microsoft Teams channel",
+   "title_zh": "選用：把摘要發到 Microsoft Teams 頻道",
+   "body": "In the Teams channel, open ... > Workflows and pick the template \"Post to a channel when a webhook request is received\" (Office 365 connectors were retired; Workflows takes the same Adaptive Card), choose the team and channel, and copy the address it shows. That address is the credential: anyone who has it can post to the channel. On every node that runs the digest, put the value alone on the first line of a file owned by root:root with mode 600 (the digest refuses it otherwise, and refuses a symbolic link), add the lines below to /var/ossec/etc/jt-packs/jt-alert-digest.conf, then run --check and --test teams, which posts one message and sends no mail. Mail and the other channels are not affected.",
+   "body_zh": "在 Teams 頻道點「...」>「工作流程」，選範本「收到 webhook 要求時張貼到頻道」（Office 365 連接器已停用，Workflows 收同樣的 Adaptive Card），選擇團隊與頻道，複製顯示的網址。這個網址就是憑證：拿到的人都能在這個頻道發文。在每個執行摘要的節點上，把這個值單獨放在檔案第一行，擁有者 root:root、權限 600（否則摘要會拒用，也拒用符號連結），把下方設定加進 /var/ossec/etc/jt-packs/jt-alert-digest.conf，再執行 --check 與 --test teams（發一則測試訊息，不寄信）。郵件與其他頻道不受影響。",
+   "code": "( umask 077; read -rs -p 'Teams workflow URL: ' V; echo; printf '%s\\n' \"$V\" > /var/ossec/etc/jt-packs/jt-alert-digest-teams.url )\nchown root:root /var/ossec/etc/jt-packs/jt-alert-digest-teams.url\nchmod 600 /var/ossec/etc/jt-packs/jt-alert-digest-teams.url\necho 'teams_url_file = /var/ossec/etc/jt-packs/jt-alert-digest-teams.url' >> /var/ossec/etc/jt-packs/jt-alert-digest.conf\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --test teams",
+   "verify": "--test teams posts one card (there is no read-only way to check a workflow address, so --check only validates the settings).",
+   "verify_zh": "--test teams 發出一張卡片（workflow 網址沒有唯讀的檢查方式，所以 --check 只驗證設定）。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.13",
+   "title": "Optional: post the digest to a Telegram group or channel",
+   "title_zh": "選用：把摘要發到 Telegram 群組或頻道",
+   "body": "Create a bot with @BotFather (/newbot) and note its token. Add the bot to the group (to a channel, as an administrator). The chat id of a group starts with -100: send any message in the group, then read chat.id from https://api.telegram.org/bot<token>/getUpdates; a public channel can be given as @channelname. telegram_thread_id (optional) posts to one topic of a forum group. On every node that runs the digest, put the value alone on the first line of a file owned by root:root with mode 600 (the digest refuses it otherwise, and refuses a symbolic link), add the lines below to /var/ossec/etc/jt-packs/jt-alert-digest.conf, then run --check and --test telegram, which posts one message and sends no mail. Mail and the other channels are not affected.",
+   "body_zh": "用 @BotFather（/newbot）建立 bot，記下 token。把 bot 加入群組（頻道則要設為管理員）。群組的 chat id 以 -100 開頭：在群組裡隨便發一則訊息，再從 https://api.telegram.org/bot<token>/getUpdates 讀出 chat.id；公開頻道可以直接寫 @頻道名稱。telegram_thread_id（選用）可發到論壇群組的某個話題。在每個執行摘要的節點上，把這個值單獨放在檔案第一行，擁有者 root:root、權限 600（否則摘要會拒用，也拒用符號連結），把下方設定加進 /var/ossec/etc/jt-packs/jt-alert-digest.conf，再執行 --check 與 --test telegram（發一則測試訊息，不寄信）。郵件與其他頻道不受影響。",
+   "code": "( umask 077; read -rs -p 'Telegram bot token: ' V; echo; printf '%s\\n' \"$V\" > /var/ossec/etc/jt-packs/jt-alert-digest-telegram.token )\nchown root:root /var/ossec/etc/jt-packs/jt-alert-digest-telegram.token\nchmod 600 /var/ossec/etc/jt-packs/jt-alert-digest-telegram.token\ncat >> /var/ossec/etc/jt-packs/jt-alert-digest.conf <<'EOF'\ntelegram_token_file = /var/ossec/etc/jt-packs/jt-alert-digest-telegram.token\ntelegram_chat_id = <-100...>\nEOF\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --test telegram",
+   "verify": "--check shows \"telegram auth: accepted as @<bot>\" and the chat's title; --test telegram posts one message.",
+   "verify_zh": "--check 顯示「telegram auth: accepted as @<bot>」與聊天室名稱；--test telegram 發出一則訊息。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.13",
+   "title": "Optional: post the digest to a Slack channel",
+   "title_zh": "選用：把摘要發到 Slack 頻道",
+   "body": "At api.slack.com/apps create an app (From scratch), open Incoming Webhooks, switch them on, choose Add New Webhook to Workspace, pick the channel and copy the address (https://hooks.slack.com/services/...). The address is the credential. On every node that runs the digest, put the value alone on the first line of a file owned by root:root with mode 600 (the digest refuses it otherwise, and refuses a symbolic link), add the lines below to /var/ossec/etc/jt-packs/jt-alert-digest.conf, then run --check and --test slack, which posts one message and sends no mail. Mail and the other channels are not affected.",
+   "body_zh": "在 api.slack.com/apps 建立 app（From scratch），進入 Incoming Webhooks 並開啟，按 Add New Webhook to Workspace、選擇頻道，複製網址（https://hooks.slack.com/services/...）。這個網址就是憑證。在每個執行摘要的節點上，把這個值單獨放在檔案第一行，擁有者 root:root、權限 600（否則摘要會拒用，也拒用符號連結），把下方設定加進 /var/ossec/etc/jt-packs/jt-alert-digest.conf，再執行 --check 與 --test slack（發一則測試訊息，不寄信）。郵件與其他頻道不受影響。",
+   "code": "( umask 077; read -rs -p 'Slack webhook URL: ' V; echo; printf '%s\\n' \"$V\" > /var/ossec/etc/jt-packs/jt-alert-digest-slack.url )\nchown root:root /var/ossec/etc/jt-packs/jt-alert-digest-slack.url\nchmod 600 /var/ossec/etc/jt-packs/jt-alert-digest-slack.url\necho 'slack_url_file = /var/ossec/etc/jt-packs/jt-alert-digest-slack.url' >> /var/ossec/etc/jt-packs/jt-alert-digest.conf\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --test slack",
+   "verify": "--check shows \"slack result: the webhook exists\" (it sends an empty message, which Slack refuses without posting); --test slack posts one message.",
+   "verify_zh": "--check 顯示「slack result: the webhook exists」（它送出一則空訊息，Slack 會拒收、不會貼出）；--test slack 發出一則訊息。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.13",
+   "title": "Optional: post the digest to a Discord channel",
+   "title_zh": "選用：把摘要發到 Discord 頻道",
+   "body": "In Server Settings > Integrations > Webhooks choose New Webhook, pick the channel and Copy Webhook URL. The address is the credential. Messages are sent with allowed_mentions empty, so no alert can notify anyone. On every node that runs the digest, put the value alone on the first line of a file owned by root:root with mode 600 (the digest refuses it otherwise, and refuses a symbolic link), add the lines below to /var/ossec/etc/jt-packs/jt-alert-digest.conf, then run --check and --test discord, which posts one message and sends no mail. Mail and the other channels are not affected.",
+   "body_zh": "在「伺服器設定」>「整合」>「Webhook」新增 Webhook、選擇頻道，按「複製 Webhook 網址」。這個網址就是憑證。訊息送出時 allowed_mentions 為空，任何告警都無法通知（mention）任何人。在每個執行摘要的節點上，把這個值單獨放在檔案第一行，擁有者 root:root、權限 600（否則摘要會拒用，也拒用符號連結），把下方設定加進 /var/ossec/etc/jt-packs/jt-alert-digest.conf，再執行 --check 與 --test discord（發一則測試訊息，不寄信）。郵件與其他頻道不受影響。",
+   "code": "( umask 077; read -rs -p 'Discord webhook URL: ' V; echo; printf '%s\\n' \"$V\" > /var/ossec/etc/jt-packs/jt-alert-digest-discord.url )\nchown root:root /var/ossec/etc/jt-packs/jt-alert-digest-discord.url\nchmod 600 /var/ossec/etc/jt-packs/jt-alert-digest-discord.url\necho 'discord_url_file = /var/ossec/etc/jt-packs/jt-alert-digest-discord.url' >> /var/ossec/etc/jt-packs/jt-alert-digest.conf\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --test discord",
+   "verify": "--check shows the webhook's name and channel id; --test discord posts one message.",
+   "verify_zh": "--check 顯示 webhook 名稱與頻道 ID；--test discord 發出一則訊息。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.13",
+   "title": "Optional: post the digest to a Mattermost channel",
+   "title_zh": "選用：把摘要發到 Mattermost 頻道",
+   "body": "In Mattermost choose Integrations > Incoming Webhooks > Add Incoming Webhook (a system admin may first have to enable incoming webhooks in the System Console) and pick the channel; copy the address (https://<server>/hooks/...). mattermost_channel (optional) overrides the channel when the webhook is not locked to one. The address is the credential. On every node that runs the digest, put the value alone on the first line of a file owned by root:root with mode 600 (the digest refuses it otherwise, and refuses a symbolic link), add the lines below to /var/ossec/etc/jt-packs/jt-alert-digest.conf, then run --check and --test mattermost, which posts one message and sends no mail. Mail and the other channels are not affected.",
+   "body_zh": "在 Mattermost 選「整合」>「Incoming Webhooks」>「新增」（系統管理員可能要先在 System Console 開啟 incoming webhooks），選擇頻道，複製網址（https://<伺服器>/hooks/...）。mattermost_channel（選用）可在 webhook 沒有鎖定頻道時改發到別的頻道。這個網址就是憑證。在每個執行摘要的節點上，把這個值單獨放在檔案第一行，擁有者 root:root、權限 600（否則摘要會拒用，也拒用符號連結），把下方設定加進 /var/ossec/etc/jt-packs/jt-alert-digest.conf，再執行 --check 與 --test mattermost（發一則測試訊息，不寄信）。郵件與其他頻道不受影響。",
+   "code": "( umask 077; read -rs -p 'Mattermost webhook URL: ' V; echo; printf '%s\\n' \"$V\" > /var/ossec/etc/jt-packs/jt-alert-digest-mattermost.url )\nchown root:root /var/ossec/etc/jt-packs/jt-alert-digest-mattermost.url\nchmod 600 /var/ossec/etc/jt-packs/jt-alert-digest-mattermost.url\necho 'mattermost_url_file = /var/ossec/etc/jt-packs/jt-alert-digest-mattermost.url' >> /var/ossec/etc/jt-packs/jt-alert-digest.conf\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --test mattermost",
+   "verify": "--test mattermost posts one message.",
+   "verify_zh": "--test mattermost 發出一則訊息。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.13",
+   "title": "Optional: send the digest as JSON to any webhook",
+   "title_zh": "選用：以 JSON 把摘要送到任何 webhook",
+   "body": "For a SOAR, a ticket queue or a script of your own. webhook_url is the receiver's https address (use webhook_url_file instead when the address itself carries a token). With webhook_hmac_key_file every request is signed: verify X-JT-Signature = \"sha256=\" + hex HMAC-SHA256(key, X-JT-Timestamp + \".\" + raw body) and reject old timestamps. webhook_bearer_file adds Authorization: Bearer. De-duplicate on X-JT-Delivery, which a retry repeats. The body is schema jt-alert-digest/1 (see the notes); treat every string in it as untrusted text. On every node that runs the digest, put the value alone on the first line of a file owned by root:root with mode 600 (the digest refuses it otherwise, and refuses a symbolic link), add the lines below to /var/ossec/etc/jt-packs/jt-alert-digest.conf, then run --check and --test webhook, which posts one message and sends no mail. Mail and the other channels are not affected.",
+   "body_zh": "給 SOAR、工單系統或自己的腳本。webhook_url 是接收端的 https 網址（網址本身帶 token 時改用 webhook_url_file）。設定 webhook_hmac_key_file 後每個請求都會簽章：驗證 X-JT-Signature = \"sha256=\" 加上 HMAC-SHA256(金鑰, X-JT-Timestamp + \".\" + 原始 body) 的十六進位，並拒絕過舊的時間戳記。webhook_bearer_file 會加上 Authorization: Bearer。以 X-JT-Delivery 去重（重試時相同）。內容格式是 schema jt-alert-digest/1（見說明）；其中每個字串都要當成不可信的文字。在每個執行摘要的節點上，把這個值單獨放在檔案第一行，擁有者 root:root、權限 600（否則摘要會拒用，也拒用符號連結），把下方設定加進 /var/ossec/etc/jt-packs/jt-alert-digest.conf，再執行 --check 與 --test webhook（發一則測試訊息，不寄信）。郵件與其他頻道不受影響。",
+   "code": "( umask 077; openssl rand -hex 32 > /var/ossec/etc/jt-packs/jt-alert-digest-webhook.key )\nchown root:root /var/ossec/etc/jt-packs/jt-alert-digest-webhook.key\nchmod 600 /var/ossec/etc/jt-packs/jt-alert-digest-webhook.key\ncat >> /var/ossec/etc/jt-packs/jt-alert-digest.conf <<'EOF'\nwebhook_url = https://<receiver>/<path>\nwebhook_hmac_key_file = /var/ossec/etc/jt-packs/jt-alert-digest-webhook.key\nEOF\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --test webhook",
+   "verify": "--test webhook sends one document with X-JT-Event: test, and the receiver's signature check accepts it.",
+   "verify_zh": "--test webhook 送出一份 X-JT-Event: test 的文件，而且接收端的簽章檢查接受它。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.13",
+   "title": "Optional: push the digest to LINE",
+   "title_zh": "選用：用 LINE 推播摘要",
+   "body": "In the LINE Developers console open the Messaging API channel of your LINE Official Account and issue a long-lived channel access token. line_to is a user id (U..., your own is on the channel's Basic settings page), a group id (C...) or a room id (R...). A group id is only given in a webhook event: point the channel's webhook URL at a receiver you control, invite the account to the group and read source.groupId from the join event. Every push counts against the monthly message quota, once per recipient: set line_level (for example 12) and keep the repeat hold on. On every node that runs the digest, put the value alone on the first line of a file owned by root:root with mode 600 (the digest refuses it otherwise, and refuses a symbolic link), add the lines below to /var/ossec/etc/jt-packs/jt-alert-digest.conf, then run --check and --test line, which posts one message and sends no mail. Mail and the other channels are not affected.",
+   "body_zh": "在 LINE Developers 主控台開啟 LINE 官方帳號的 Messaging API channel，發行長期的 channel access token。line_to 可以是使用者 ID（U...，自己的 ID 在 channel 的 Basic settings 頁面）、群組 ID（C...）或聊天室 ID（R...）。群組 ID 只會出現在 webhook 事件裡：把 channel 的 Webhook URL 暫時指到你能看到請求的接收端，把官方帳號邀進群組，從加入事件的 source.groupId 讀出。每一則推播都會計入每月訊息額度，而且依收件人計算：請設定 line_level（例如 12）並保留重複壓制。在每個執行摘要的節點上，把這個值單獨放在檔案第一行，擁有者 root:root、權限 600（否則摘要會拒用，也拒用符號連結），把下方設定加進 /var/ossec/etc/jt-packs/jt-alert-digest.conf，再執行 --check 與 --test line（發一則測試訊息，不寄信）。郵件與其他頻道不受影響。",
+   "code": "( umask 077; read -rs -p 'LINE channel access token: ' V; echo; printf '%s\\n' \"$V\" > /var/ossec/etc/jt-packs/jt-alert-digest-line.token )\nchown root:root /var/ossec/etc/jt-packs/jt-alert-digest-line.token\nchmod 600 /var/ossec/etc/jt-packs/jt-alert-digest-line.token\ncat >> /var/ossec/etc/jt-packs/jt-alert-digest.conf <<'EOF'\nline_token_file = /var/ossec/etc/jt-packs/jt-alert-digest-line.token\nline_to = <C... or U...>\nline_level = 12\nEOF\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --test line",
+   "verify": "--check shows \"line auth: accepted as <account>\" and the group's name; --test line pushes one message (counted against the quota).",
+   "verify_zh": "--check 顯示「line auth: accepted as <帳號>」與群組名稱；--test line 推播一則訊息（會計入額度）。"
   },
   {
    "platform": "manager",

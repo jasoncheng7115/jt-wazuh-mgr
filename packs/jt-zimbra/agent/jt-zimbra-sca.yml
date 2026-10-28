@@ -1,0 +1,135 @@
+# Security Configuration Assessment
+# jt-zimbra: web shell defences and attack surface of a Zimbra server
+# Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+#
+# Delivered with the zimbra agent group. Most checks run a command (c:), and a
+# policy that comes from the manager may only run commands on an agent whose
+# local_internal_options.conf sets sca.remote_commands=1. Without it those
+# checks are skipped and the report still looks complete: set it on the Zimbra
+# servers only (see the pack's setup guide). The agent's own CIS policies are
+# local and are not affected by that setting.
+#
+# Every command only reads (find, lsattr, ss, systemctl is-active, grep,
+# findmnt) and runs once per scan, every 12 hours by default.
+#
+# Check ids 133350-133359 follow the pack's second rule ID block; they are SCA
+# check ids, not rule ids. A failed check raises the built-in SCA alerts.
+#
+# Measured on Zimbra 10.1.20 and 10.1.21 (October 2026). A default install
+# fails 133351, 133352 (nothing sets the immutable flag), 133354 and 133355
+# (Zimbra listens on every interface; what matters is that the firewall keeps
+# these ports from the internet) and usually 133358.
+
+policy:
+  id: "jt_zimbra_hardening"
+  file: "jt-zimbra-sca.yml"
+  name: "jt-zimbra: Zimbra web shell defences and attack surface"
+  description: "Checks the settings that decide whether a web shell can be written to a Zimbra server, survive, and escalate, and whether the admin and mailbox ports listen beyond the proxy."
+  references:
+    - https://wiki.zimbra.com/wiki/Security_Center
+    - https://nvd.nist.gov/vuln/detail/CVE-2022-41352
+
+requirements:
+  title: "Zimbra is installed"
+  description: "The policy applies to hosts with /opt/zimbra."
+  condition: all
+  rules:
+    - 'd:/opt/zimbra'
+
+checks:
+  - id: 133350
+    title: "Ensure nothing under the Zimbra web applications is world-writable."
+    description: "A world-writable file or directory under jetty_base/webapps lets any local account, including a compromised service, place or change a JSP that mailboxd then runs."
+    rationale: "Zimbra itself never sets these permissions; one that appears was set by hand or by an attacker."
+    remediation: "find /opt/zimbra/jetty_base/webapps -perm -0002 -exec chmod o-w {} +"
+    compliance:
+      - mitre_techniques: ["T1505.003"]
+    condition: none
+    rules:
+      - 'c:find /opt/zimbra/jetty_base/webapps -perm -0002 -> r:\S'
+
+  - id: 133351
+    title: "Ensure the public web directory is immutable (chattr +i)."
+    description: "Web shells on Zimbra are written as JSP files into jetty_base/webapps/zimbra/public, usually by a process running as the zimbra user. With the immutable flag set, even that user cannot create a file there."
+    rationale: "Stops the file from landing at all, rather than detecting it afterwards."
+    remediation: "chattr +i /opt/zimbra/jetty_base/webapps/zimbra/public. Remove the flag (chattr -i) before every Zimbra upgrade or patch and set it again afterwards, or the installer fails."
+    compliance:
+      - mitre_techniques: ["T1505.003"]
+    condition: all
+    rules:
+      - 'c:lsattr -d /opt/zimbra/jetty_base/webapps/zimbra/public -> r:^\S*i\S*\s'
+
+  - id: 133352
+    title: "Ensure the server extensions directory is immutable (chattr +i)."
+    description: "Jars in /opt/zimbra/lib/ext are loaded by mailboxd at start and run inside the authentication path, where a malicious extension sees every password in clear text."
+    rationale: "A planted extension survives restarts and is far harder to notice than a web shell."
+    remediation: "chattr +i /opt/zimbra/lib/ext. Remove the flag before upgrades, patches or installing an extension, and set it again afterwards."
+    compliance:
+      - mitre_techniques: ["T1505", "T1556"]
+    condition: all
+    rules:
+      - 'c:lsattr -d /opt/zimbra/lib/ext -> r:^\S*i\S*\s'
+
+  - id: 133353
+    title: "Ensure auditd is running."
+    description: "Wazuh's who-data file monitoring needs auditd. Without it, file integrity monitoring silently falls back to realtime mode and no longer records which process wrote a file, the one fact that tells a web shell from an upgrade."
+    rationale: "jt-zimbra's who-data rules (for example 100803) can only fire with auditd running."
+    remediation: "Install the auditd package and run: systemctl enable --now auditd, then restart the Wazuh agent."
+    condition: all
+    rules:
+      - 'c:systemctl is-active auditd -> r:^active'
+
+  - id: 133354
+    title: "Ensure the admin console port 7071 does not listen on every interface."
+    description: "The admin console and its SOAP API on 7071 are the most valuable target on a Zimbra server. Zimbra listens on every interface by default."
+    rationale: "Reachable only from the management network, a stolen or guessed admin password cannot be used from outside."
+    remediation: "Keep 7071 off the internet at the firewall, and limit it to the management network on the host (for example a host firewall rule). If this check fails only because of the default binding, document the firewall rule that protects it."
+    condition: none
+    rules:
+      - 'c:ss -Hlnt src 0.0.0.0:7071 -> r:7071'
+      - 'c:ss -Hlnt src [::]:7071 -> r:7071'
+
+  - id: 133355
+    title: "Ensure the mailbox port 8443 does not listen on every interface."
+    description: "8443 is mailboxd itself, behind the proxy. Reaching it directly bypasses every rule the proxy enforces."
+    rationale: "Only the proxy should talk to mailboxd."
+    remediation: "Keep 8443 off the internet at the firewall and limit it to the proxy hosts. If this check fails only because of the default binding, document the firewall rule that protects it."
+    condition: none
+    rules:
+      - 'c:ss -Hlnt src 0.0.0.0:8443 -> r:8443'
+      - 'c:ss -Hlnt src [::]:8443 -> r:8443'
+
+  - id: 133356
+    title: "Ensure pax is installed (CVE-2022-41352)."
+    description: "Without pax, amavis unpacks .cpio and .tar attachments with cpio, which follows paths out of its directory: one e-mail could write a web shell into the web root, with no HTTP request at all."
+    rationale: "CVE-2022-41352 is in CISA's Known Exploited Vulnerabilities catalogue."
+    remediation: "apt install pax (Debian, Ubuntu) or dnf install spax (RHEL), then restart amavis: su - zimbra -c 'zmamavisdctl restart'."
+    references:
+      - https://nvd.nist.gov/vuln/detail/CVE-2022-41352
+    compliance:
+      - mitre_techniques: ["T1190"]
+    condition: any
+    rules:
+      - 'f:/bin/pax'
+      - 'f:/usr/bin/pax'
+      - 'f:/usr/bin/spax'
+
+  - id: 133357
+    title: "Ensure the zimbra account has no unrestricted sudo."
+    description: "Zimbra installs sudo rules that let the zimbra user run a fixed list of its own programs as root. A rule that grants ALL turns any web shell running as zimbra into root."
+    rationale: "The stock rules name specific programs and pass this check; only a rule ending in ALL fails it."
+    remediation: "Remove the rule granting ALL to zimbra or %zimbra from /etc/sudoers and /etc/sudoers.d."
+    compliance:
+      - mitre_techniques: ["T1548.003"]
+    condition: none
+    rules:
+      - 'c:grep -rh zimbra /etc/sudoers /etc/sudoers.d -> r:^%zimbra\s|^zimbra\s && r:\sALL$|:ALL$|=ALL$'
+
+  - id: 133358
+    title: "Ensure /tmp is mounted noexec."
+    description: "Attackers drop and run their tools from /tmp. With noexec a downloaded binary cannot be run from there."
+    rationale: "Zimbra keeps its own temporary files under /opt/zimbra/data/tmp."
+    remediation: "Mount /tmp as a separate tmpfs with noexec,nosuid,nodev (for example: systemctl enable tmp.mount, then add the options in a drop-in), and reboot or remount."
+    condition: all
+    rules:
+      - 'c:findmnt -no OPTIONS /tmp -> r:noexec'

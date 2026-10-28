@@ -238,11 +238,19 @@ def fresh(events):
         got = ['error', 0, str(e)[:200]]
     close(token)
     return got
-def judge(case, got):
-    case = dict(case, **(case.get("with_all_packs") or {}))    # pack_sandbox ignores it
+def _judge_one(case, got):
     want, wl = str(case['expect_rule']), case.get('expect_level')
     ok = got[1] == 0 if want == 'none' else (got[0] == want and (wl is None or got[1] == wl))
     return ok and all(t in (got[2] or '') for t in case.get('expect_in_description', []))
+def judge(case, got):
+    # with_all_packs is what a neighbouring pack makes of the line; with --only
+    # that neighbour may be missing, so either outcome is accepted then.
+    wap = case.get("with_all_packs")
+    if not wap:
+        return _judge_one(case, got)
+    if not subset:
+        return _judge_one(dict(case, **wap), got)
+    return _judge_one(dict(case, **wap), got) or _judge_one(case, got)
 def events_of(case):
     default = case.get('location') or 'stdin'
     ev = []
@@ -253,6 +261,7 @@ def events_of(case):
             ev.append((default, line))
     return ev
 only, cdir, threads = set(json.loads(sys.argv[1])), sys.argv[2], int(sys.argv[3])
+subset = len(sys.argv) > 4 and sys.argv[4] == '1'
 out_lock = threading.Lock()
 def emit(pack, i, got, how):
     with out_lock:
@@ -291,13 +300,28 @@ with ThreadPoolExecutor(max_workers=threads) as ex:
 '''
 
 
-def judge(case, got):
-    case = dict(case, **(case.get("with_all_packs") or {}))    # pack_sandbox ignores it
+# Set by cmd_run: True when --only narrowed the packs installed.
+ONLY_SUBSET = False
+
+
+def _judge_one(case, got):
     rule, level, desc = got
     want, wlevel = str(case['expect_rule']), case.get('expect_level')
     ok = level == 0 if want == 'none' else (rule == want and (wlevel is None or level == wlevel))
     missing = [t for t in case.get('expect_in_description', []) if t not in (desc or '')]
     return ok and not missing
+
+
+def judge(case, got):
+    """with_all_packs is what a neighbouring pack makes of the line. With every
+    pack installed only that counts; with --only the neighbour may be missing,
+    so the case's own expectation is accepted too."""
+    wap = case.get("with_all_packs")
+    if not wap:
+        return _judge_one(case, got)
+    if not ONLY_SUBSET:
+        return _judge_one(dict(case, **wap), got)
+    return _judge_one(dict(case, **wap), got) or _judge_one(case, got)
 
 
 def load_cases(only):
@@ -385,7 +409,8 @@ def with_case_lists(name, data, fn, writer=None):
 
 def run_replay_script(name, packs, tag):
     r = dexec(name, OSSEC + '/framework/python/bin/python3', '-c', REPLAY, json.dumps(sorted(packs)),
-              TOOL_DIR + '/tests/pack_cases', str(LOGTEST_THREADS), check=False, timeout=6 * 3600)
+              TOOL_DIR + '/tests/pack_cases', str(LOGTEST_THREADS), '1' if ONLY_SUBSET else '0',
+              check=False, timeout=6 * 3600)
     if RAW_DIR:
         with open(os.path.join(RAW_DIR, 'replay-%s.jsonl' % tag.replace(' ', '-')), 'a') as fh:
             fh.write(r.stdout)
@@ -1050,7 +1075,27 @@ def leftover_mounts():
 def cmd_run(a):
     versions = a.versions.split(',') if a.versions else DEFAULT_VERSIONS
     only = set(a.only.split(',')) if a.only else set()
+    # A case file's sandbox_packs are packs its cases expect to be installed
+    # alongside (jt-zimbra's FIM cases are judged with jt-linux-integrity in
+    # place). --only narrows the run; it must not drop those, or the gate
+    # reports the narrowing as failures.
+    pending = list(only)
+    while pending:
+        pack = pending.pop()
+        path = os.path.join(ROOT, 'tests', 'pack_cases', pack + '.json')
+        try:
+            with open(path, encoding='utf-8') as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        for extra in (data.get('sandbox_packs') or []) if isinstance(data, dict) else []:
+            if extra not in only:
+                print('gate: --only also installs %s (sandbox_packs of %s)' % (extra, pack), flush=True)
+                only.add(extra)
+                pending.append(extra)
     skip = set(a.skip.split(',')) if a.skip else set()
+    global ONLY_SUBSET
+    ONLY_SUBSET = bool(only)
     workdir = a.resume or os.path.join(ROOT, 'temp', 'pack-gate', datetime.datetime.now().strftime('%Y%m%d-%H%M'))
     os.makedirs(workdir, exist_ok=True)
     global RAW_DIR

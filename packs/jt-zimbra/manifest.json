@@ -2,7 +2,7 @@
  "id": "jt-zimbra",
  "name": "Zimbra Detection Suite",
  "name_zh": "Zimbra 偵測套組",
- "version": "3.5",
+ "version": "3.6",
  "summary": "FIM, web, authentication, account-takeover, administrative-change, SOAP, MTA and host-noise rules for Zimbra mail servers, with the decoders they need.",
  "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、帳號接管、管理變更、SOAP、MTA 與主機雜訊規則，並附上所需的解碼器。",
  "rule_id_range": [
@@ -65,7 +65,8 @@
   "Account takeover: 100816 (level 12, a change within 30 minutes of an account's first login from a new public address) now also follows a password change, two-factor turned off, backup codes or an application password created, and a new recovery address or delegated rights (100935, level 5 on its own: SetRecoveryAccountRequest, whoever reads the recovery mailbox can reset the password; GrantRightsRequest, send-as, send-on-behalf-of and calendar rights). The web client's own mailbox export (/home/<account>/?fmt=tgz, without /service) was never matched by 100920-100923; it is now, and a Briefcase multi-file download is not. Not detectable from the logs Zimbra writes at its default level: who a folder was shared with (FolderActionRequest names no grantee), bulk IMAP or POP downloads (FETCH and RETR are not logged), and whether a login used an application password.",
   "SMTP AUTH session tokens: on a default Zimbra install saslauthd logs, at debug level and into /var/log/zimbra.log, the whole answer Zimbra gives it for every SMTP AUTH, including a session token valid for two days (found in the measured site's central log store for every SMTP AUTH). The zimbra group now has the agent skip those lines, so the tokens no longer reach the manager or its archives; the setup step shows how to stop them being written at all.",
   "The rule-ID range 100800-100999 is now full: 3.3 uses the last free IDs (100935, 100998, 100999 and the IDs of rules removed in 3.0 and earlier, 100990 and 100991, now different rules in 08-zimbra_soap_rules.xml). A site rule that referred to the removed ones would now refer to the new rules.",
-  "3.5: a stale web-file baseline is reported. 100802 (level 14) relies on etc/lists/zimbra-webfiles, and every Zimbra upgrade renames the version-stamped jars; one server ran 10.1.21 for eight weeks against a 10.1.20 list, so each permission change to its own jars raised 100802 and nothing said the list was out of date. jt-zimbra-baseline-check.py (manager, every six hours, every cluster node) compares each Zimbra server's release from the package inventory with the releases the list covers: 133301 (level 10, mailed, weekly reminder) when it is not covered, 133302 when it is again, 133304 (level 10, mailed) when the list cannot be read, 133306 when the inventory cannot. jt-zimbra-baseline.sh builds the list from the package database instead of the disk and writes the release markers. The pack now has a second rule ID block, 133300-133399, because 100800-100999 is full."
+  "3.5: a stale web-file baseline is reported. 100802 (level 14) relies on etc/lists/zimbra-webfiles, and every Zimbra upgrade renames the version-stamped jars; one server ran 10.1.21 for eight weeks against a 10.1.20 list, so each permission change to its own jars raised 100802 and nothing said the list was out of date. jt-zimbra-baseline-check.py (manager, every six hours, every cluster node) compares each Zimbra server's release from the package inventory with the releases the list covers: 133301 (level 10, mailed, weekly reminder) when it is not covered, 133302 when it is again, 133304 (level 10, mailed) when the list cannot be read, 133306 when the inventory cannot. jt-zimbra-baseline.sh builds the list from the package database instead of the disk and writes the release markers. The pack now has a second rule ID block, 133300-133399, because 100800-100999 is full.",
+  "3.6: configuration assessment (jt-zimbra-sca.yml, check ids 133350-133358): nothing world-writable under the web applications; public and lib/ext immutable; auditd running (who-data); admin port 7071 and mailbox port 8443 not listening on every interface; pax installed (CVE-2022-41352); no unrestricted sudo for zimbra (Zimbra's own rules name specific programs and pass); /tmp mounted noexec. Most checks run a command and need sca.remote_commands=1 on the Zimbra servers; the agents' own CIS policies are not affected by that setting. A default Zimbra fails the immutable, 7071/8443 and usually the /tmp checks. Measured on Zimbra 10.1.20 and 10.1.21 agents: every check matched the host's real state."
  ],
  "notes_zh": [
   "zimbra-webfiles 是原廠檔案基線。隨附的版本產生自 Zimbra 10.1.20（FOSS 與 NETWORK 版聯集），是起點而非自行產生的替代品。",
@@ -114,7 +115,8 @@
   "帳號接管：100816（level 12，帳號第一次從新公開位址登入後 30 分鐘內的變更）現在也涵蓋改密碼、關閉兩步驟驗證、產生備用碼或應用程式密碼，以及新的復原位址或委派權限（100935，單獨為 level 5：SetRecoveryAccountRequest，能讀復原信箱的人就能重設密碼；GrantRightsRequest，代為寄件、代表寄件與行事曆權限）。網頁版自己的整個信箱匯出（/home/<帳號>/?fmt=tgz，沒有 /service）過去從未被 100920-100923 比對到，現在會；公文包多檔下載則不算。以 Zimbra 預設記錄等級無法偵測的：資料夾分享給誰（FolderActionRequest 不寫被授權者）、IMAP 或 POP 的大量下載（FETCH 與 RETR 不記錄）、登入是否用了應用程式密碼。",
   "SMTP AUTH 工作階段權杖：預設安裝的 Zimbra，saslauthd 會以 debug 等級把每次 SMTP AUTH 時 Zimbra 的完整回應寫進 /var/log/zimbra.log，其中包括有效兩天的工作階段權杖（在實測站台的集中記錄庫中，每一次 SMTP AUTH 都有）。zimbra 群組現在讓 agent 略過這些行，權杖不再送到管理端或它的 archives；部署步驟說明如何讓它們根本不被寫出。",
   "規則 ID 範圍 100800-100999 已用完：3.3 用掉了最後幾個空號（100935、100998、100999，以及 3.0 以前移除的 100990、100991，現在是 08-zimbra_soap_rules.xml 中的不同規則）。若站台規則曾引用被移除的那兩條，現在會指到新規則。",
-  "3.5：會回報過期的網站檔案基準清單。100802（level 14）依賴 etc/lists/zimbra-webfiles，而每次 Zimbra 升級都會改掉帶版本號的 jar 檔名；曾有一台伺服器以 10.1.21 搭配 10.1.20 的清單跑了八週，它自己的 jar 每次權限變動都觸發 100802，卻沒有任何東西指出清單已過期。jt-zimbra-baseline-check.py（管理端，每六小時，叢集每個節點）比對套件清單中每台 Zimbra 伺服器的版本與清單涵蓋的版本：不在清單內時觸發 133301（level 10，寄出，每週提醒），重新涵蓋時觸發 133302，清單讀不到時觸發 133304（level 10，寄出），套件清單讀不到時觸發 133306。jt-zimbra-baseline.sh 從套件資料庫而不是磁碟產生清單，並寫入版本標記。因 100800-100999 已用完，本套件新增第二段規則編號 133300-133399。"
+  "3.5：會回報過期的網站檔案基準清單。100802（level 14）依賴 etc/lists/zimbra-webfiles，而每次 Zimbra 升級都會改掉帶版本號的 jar 檔名；曾有一台伺服器以 10.1.21 搭配 10.1.20 的清單跑了八週，它自己的 jar 每次權限變動都觸發 100802，卻沒有任何東西指出清單已過期。jt-zimbra-baseline-check.py（管理端，每六小時，叢集每個節點）比對套件清單中每台 Zimbra 伺服器的版本與清單涵蓋的版本：不在清單內時觸發 133301（level 10，寄出，每週提醒），重新涵蓋時觸發 133302，清單讀不到時觸發 133304（level 10，寄出），套件清單讀不到時觸發 133306。jt-zimbra-baseline.sh 從套件資料庫而不是磁碟產生清單，並寫入版本標記。因 100800-100999 已用完，本套件新增第二段規則編號 133300-133399。",
+  "3.6：組態評估（jt-zimbra-sca.yml，檢查編號 133350-133358）：網頁應用程式目錄沒有全域可寫；public 與 lib/ext 設為不可變；auditd 執行中（寫入者資訊）；管理埠 7071 與信箱埠 8443 不監聽所有介面；已安裝 pax（CVE-2022-41352）；zimbra 沒有不受限的 sudo（Zimbra 原廠規則只列特定程式，會通過）；/tmp 以 noexec 掛載。多數檢查要執行指令，Zimbra 主機需設定 sca.remote_commands=1；agent 自己的 CIS 政策不受此設定影響。預設安裝的 Zimbra 會在不可變、7071/8443 與通常的 /tmp 檢查失敗。已在 Zimbra 10.1.20 與 10.1.21 的 agent 上實測，每一項都與主機實際狀態相符。"
  ],
  "files": [
   {
@@ -219,7 +221,8 @@
   "config": "agent.conf",
   "description": "Log collection the pack needs on the monitored host",
   "files": [
-   "jt-zimbra-baseline.sh"
+   "jt-zimbra-baseline.sh",
+   "jt-zimbra-sca.yml"
   ]
  },
  "setup": [
@@ -373,6 +376,18 @@
    "code": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-zimbra-baseline-check.py --wazuh-path /var/ossec --list\nscp /var/ossec/etc/jt-packs/bin/jt-zimbra-baseline-check.py <worker>:/var/ossec/etc/jt-packs/bin/\nssh <worker> 'echo \"23 */6 * * * root /usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-zimbra-baseline-check.py --wazuh-path /var/ossec\" > /etc/cron.d/jt-jt-zimbra'",
    "verify": "--list prints the releases the list covers and the Zimbra servers this node handles with their release.",
    "verify_zh": "--list 會印出清單涵蓋的版本，以及本節點負責的 Zimbra 伺服器與其版本。"
+  },
+  {
+   "platform": "linux",
+   "since": "3.6",
+   "required": false,
+   "title": "3.6: let the Zimbra servers run the configuration assessment's commands",
+   "title_zh": "3.6：讓 Zimbra 主機執行組態評估的指令",
+   "body": "jt-zimbra-sca.yml reaches the agents with the zimbra group, but most of its checks run a command, and an agent runs commands from a manager-delivered policy only with sca.remote_commands=1. Without it those checks are skipped and the report looks complete. Set it on the Zimbra servers only and restart their agents: it lets the manager run commands there as root through SCA policies, so leave other agents at the default. If the group's agent.conf is a site copy, add the <sca> block from the pack's agent.conf to it (and remove an older Zimbra SCA policy the site may list, so two policies do not report the same things).",
+   "body_zh": "jt-zimbra-sca.yml 會隨 zimbra 群組送到 agent，但多數檢查要執行指令，而 agent 只有在 sca.remote_commands=1 時才會執行 manager 派送的政策中的指令；沒設定時這些檢查會被跳過、報告卻看起來完整。只在 Zimbra 主機設定並重啟 agent：這等於允許 manager 透過 SCA 政策以 root 在那裡執行指令，所以其他 agent 維持預設。若群組的 agent.conf 是站台自己的版本，請把套件 agent.conf 裡的 <sca> 區塊加進去（並移除站台可能列著的舊 Zimbra SCA 政策，避免兩份政策重複回報）。",
+   "code": "echo 'sca.remote_commands=1' >> /var/ossec/etc/local_internal_options.conf && systemctl restart wazuh-agent",
+   "verify": "On the manager, the policy jt_zimbra_hardening for each Zimbra agent lists its checks as passed or failed, none as not applicable for a missing command.",
+   "verify_zh": "在 manager 上查看各 Zimbra agent 的 jt_zimbra_hardening 政策：每一項檢查都是通過或失敗，沒有因為不能執行指令而變成「不適用」。"
   }
  ],
  "active_response": [

@@ -3339,6 +3339,35 @@ class TestShippedPacks(unittest.TestCase):
                     with self.subTest(file=n, pattern=pat):
                         self.assertNotRegex(pat, r'[\\()\[\]]')
 
+    def test_sca_policies_parse_and_use_the_packs_own_check_ids(self):
+        """Every SCA policy a pack ships parses, its check ids are unique and lie
+        in one of the pack's rule ID blocks, and its text is English (the
+        policies are published, like rule descriptions)."""
+        import yaml
+        seen = {}
+        for pack in sorted(os.listdir(self.packs_dir)):
+            adir = os.path.join(self.packs_dir, pack, 'agent')
+            if not os.path.isdir(adir):
+                continue
+            with io.open(os.path.join(self.packs_dir, pack, 'manifest.json'), encoding='utf-8') as fh:
+                rng = json.load(fh).get('rule_id_range')
+            blocks = [tuple(int(x) for x in r.split('-')) for r in (rng if isinstance(rng, list) else [rng])]
+            for n in sorted(os.listdir(adir)):
+                if not (n.endswith('.yml') or n.endswith('.yaml')):
+                    continue
+                with self.subTest(pack=pack, policy=n):
+                    with io.open(os.path.join(adir, n), encoding='utf-8') as fh:
+                        text = fh.read()
+                    doc = yaml.safe_load(text)
+                    self.assertIn('policy', doc)
+                    self.assertNotRegex(text, r'[\u4e00-\u9fff]', 'non-English text in a published policy')
+                    for c in doc.get('checks') or []:
+                        cid = int(c['id'])
+                        self.assertTrue(any(lo <= cid <= hi for lo, hi in blocks),
+                                        '%s check %d outside %s' % (n, cid, rng))
+                        self.assertNotIn(cid, seen, 'check id %d also in %s' % (cid, seen.get(cid)))
+                        seen[cid] = '%s/%s' % (pack, n)
+
     def test_agent_restrict_patterns_are_plain_os_match(self):
         """<directories restrict="..."> is OS_Match too (4.14.9, measured): a
         backslash is a literal character, so restrict="\\.php$" recorded no file

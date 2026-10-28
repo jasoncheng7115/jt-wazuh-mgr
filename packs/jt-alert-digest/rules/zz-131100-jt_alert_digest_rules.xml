@@ -33,6 +33,15 @@
   （金鑰被拒、bot 不能在該頻道發言、頻道不存在）是設定問題，走 131126（L12）；
   5xx、逾時、429 是暫時性的，走 131121（L10）。
 
+  1.13 起另有 Microsoft Teams、Telegram、Slack、Discord、Mattermost、通用 webhook、
+  LINE 七個選用頻道，結構與 Zulip 相同：每個頻道十個 ID（131131-131136 Teams、
+  131141-131146 Telegram、131151-131156 Slack、131161-131166 Discord、
+  131171-131176 Mattermost、131181-131186 webhook、131191-131196 LINE），
+  個位數 1-6 依序對應 131111-131116 的子規則（同 level、以 channel 欄位完全比對）。
+  不認得的 channel 停在通用規則（131111 等），仍會告警，只是不標示頻道。
+  平台把訊息本身判為格式錯誤（例如 Discord 50035、Slack invalid_blocks）時，
+  同一則訊息試三次後丟棄並以 skipped（x3，L12）回報，不讓頻道永遠卡住。
+
   沒有 MITRE：這些幾乎都是營運故障（郵件伺服器拒收、DNS、設定），
   不是攻擊者行為；攻擊者若要讓通知安靜，最可能的做法是停掉排程，
   那由每日摘要信的「沒收到」來發現，而不是由任何一筆事件。
@@ -139,6 +148,307 @@
     <field name="jt_alert_digest.channel">^zulip$</field>
     <description>[HIGH] Alert digest on $(jt_alert_digest.node) cannot post to Zulip with its configuration or credentials: $(jt_alert_digest.problem)</description>
     <group>jt_alert_digest_failure,jt_alert_digest_zulip,</group>
+  </rule>
+
+  <!-- Microsoft Teams (1.13) -->
+  <rule id="131131" level="10">
+    <if_sid>131111</if_sid>
+    <field name="jt_alert_digest.channel">^teams$</field>
+    <description>[WARN] Alert digest on $(jt_alert_digest.node) cannot post to Microsoft Teams ($(jt_alert_digest.error_class)), $(jt_alert_digest.pending) alerts waiting: $(jt_alert_digest.error)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_teams,</group>
+  </rule>
+
+  <rule id="131132" level="12">
+    <if_sid>131112</if_sid>
+    <field name="jt_alert_digest.channel">^teams$</field>
+    <description>[HIGH] Posts to Microsoft Teams from $(jt_alert_digest.node) have reached nobody for $(jt_alert_digest.age_minutes) minutes, $(jt_alert_digest.pending) alerts waiting ($(jt_alert_digest.error_class))</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_teams,</group>
+  </rule>
+
+  <rule id="131133" level="12">
+    <if_sid>131113</if_sid>
+    <field name="jt_alert_digest.channel">^teams$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) skipped alerts that will never be posted to Microsoft Teams: $(jt_alert_digest.reason)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_teams,</group>
+  </rule>
+
+  <rule id="131134" level="3">
+    <if_sid>131114</if_sid>
+    <field name="jt_alert_digest.channel">^teams$</field>
+    <description>Alert digest on $(jt_alert_digest.node) is posting to Microsoft Teams again after $(jt_alert_digest.failed_minutes) minutes ($(jt_alert_digest.error_class)), $(jt_alert_digest.sent_late) alerts posted late</description>
+    <group>jt_alert_digest_teams,</group>
+  </rule>
+
+  <rule id="131135" level="10">
+    <if_sid>131115</if_sid>
+    <field name="jt_alert_digest.channel">^teams$</field>
+    <description>[WARN] The Microsoft Teams channel of the alert digest on $(jt_alert_digest.node) crashed: $(jt_alert_digest.exception)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_teams,</group>
+  </rule>
+
+  <rule id="131136" level="12">
+    <if_sid>131116</if_sid>
+    <field name="jt_alert_digest.channel">^teams$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) cannot post to Microsoft Teams with its configuration or credentials: $(jt_alert_digest.problem)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_teams,</group>
+  </rule>
+
+  <!-- Telegram (1.13) -->
+  <rule id="131141" level="10">
+    <if_sid>131111</if_sid>
+    <field name="jt_alert_digest.channel">^telegram$</field>
+    <description>[WARN] Alert digest on $(jt_alert_digest.node) cannot post to Telegram ($(jt_alert_digest.error_class)), $(jt_alert_digest.pending) alerts waiting: $(jt_alert_digest.error)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_telegram,</group>
+  </rule>
+
+  <rule id="131142" level="12">
+    <if_sid>131112</if_sid>
+    <field name="jt_alert_digest.channel">^telegram$</field>
+    <description>[HIGH] Posts to Telegram from $(jt_alert_digest.node) have reached nobody for $(jt_alert_digest.age_minutes) minutes, $(jt_alert_digest.pending) alerts waiting ($(jt_alert_digest.error_class))</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_telegram,</group>
+  </rule>
+
+  <rule id="131143" level="12">
+    <if_sid>131113</if_sid>
+    <field name="jt_alert_digest.channel">^telegram$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) skipped alerts that will never be posted to Telegram: $(jt_alert_digest.reason)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_telegram,</group>
+  </rule>
+
+  <rule id="131144" level="3">
+    <if_sid>131114</if_sid>
+    <field name="jt_alert_digest.channel">^telegram$</field>
+    <description>Alert digest on $(jt_alert_digest.node) is posting to Telegram again after $(jt_alert_digest.failed_minutes) minutes ($(jt_alert_digest.error_class)), $(jt_alert_digest.sent_late) alerts posted late</description>
+    <group>jt_alert_digest_telegram,</group>
+  </rule>
+
+  <rule id="131145" level="10">
+    <if_sid>131115</if_sid>
+    <field name="jt_alert_digest.channel">^telegram$</field>
+    <description>[WARN] The Telegram channel of the alert digest on $(jt_alert_digest.node) crashed: $(jt_alert_digest.exception)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_telegram,</group>
+  </rule>
+
+  <rule id="131146" level="12">
+    <if_sid>131116</if_sid>
+    <field name="jt_alert_digest.channel">^telegram$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) cannot post to Telegram with its configuration or credentials: $(jt_alert_digest.problem)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_telegram,</group>
+  </rule>
+
+  <!-- Slack (1.13) -->
+  <rule id="131151" level="10">
+    <if_sid>131111</if_sid>
+    <field name="jt_alert_digest.channel">^slack$</field>
+    <description>[WARN] Alert digest on $(jt_alert_digest.node) cannot post to Slack ($(jt_alert_digest.error_class)), $(jt_alert_digest.pending) alerts waiting: $(jt_alert_digest.error)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_slack,</group>
+  </rule>
+
+  <rule id="131152" level="12">
+    <if_sid>131112</if_sid>
+    <field name="jt_alert_digest.channel">^slack$</field>
+    <description>[HIGH] Posts to Slack from $(jt_alert_digest.node) have reached nobody for $(jt_alert_digest.age_minutes) minutes, $(jt_alert_digest.pending) alerts waiting ($(jt_alert_digest.error_class))</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_slack,</group>
+  </rule>
+
+  <rule id="131153" level="12">
+    <if_sid>131113</if_sid>
+    <field name="jt_alert_digest.channel">^slack$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) skipped alerts that will never be posted to Slack: $(jt_alert_digest.reason)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_slack,</group>
+  </rule>
+
+  <rule id="131154" level="3">
+    <if_sid>131114</if_sid>
+    <field name="jt_alert_digest.channel">^slack$</field>
+    <description>Alert digest on $(jt_alert_digest.node) is posting to Slack again after $(jt_alert_digest.failed_minutes) minutes ($(jt_alert_digest.error_class)), $(jt_alert_digest.sent_late) alerts posted late</description>
+    <group>jt_alert_digest_slack,</group>
+  </rule>
+
+  <rule id="131155" level="10">
+    <if_sid>131115</if_sid>
+    <field name="jt_alert_digest.channel">^slack$</field>
+    <description>[WARN] The Slack channel of the alert digest on $(jt_alert_digest.node) crashed: $(jt_alert_digest.exception)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_slack,</group>
+  </rule>
+
+  <rule id="131156" level="12">
+    <if_sid>131116</if_sid>
+    <field name="jt_alert_digest.channel">^slack$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) cannot post to Slack with its configuration or credentials: $(jt_alert_digest.problem)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_slack,</group>
+  </rule>
+
+  <!-- Discord (1.13) -->
+  <rule id="131161" level="10">
+    <if_sid>131111</if_sid>
+    <field name="jt_alert_digest.channel">^discord$</field>
+    <description>[WARN] Alert digest on $(jt_alert_digest.node) cannot post to Discord ($(jt_alert_digest.error_class)), $(jt_alert_digest.pending) alerts waiting: $(jt_alert_digest.error)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_discord,</group>
+  </rule>
+
+  <rule id="131162" level="12">
+    <if_sid>131112</if_sid>
+    <field name="jt_alert_digest.channel">^discord$</field>
+    <description>[HIGH] Posts to Discord from $(jt_alert_digest.node) have reached nobody for $(jt_alert_digest.age_minutes) minutes, $(jt_alert_digest.pending) alerts waiting ($(jt_alert_digest.error_class))</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_discord,</group>
+  </rule>
+
+  <rule id="131163" level="12">
+    <if_sid>131113</if_sid>
+    <field name="jt_alert_digest.channel">^discord$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) skipped alerts that will never be posted to Discord: $(jt_alert_digest.reason)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_discord,</group>
+  </rule>
+
+  <rule id="131164" level="3">
+    <if_sid>131114</if_sid>
+    <field name="jt_alert_digest.channel">^discord$</field>
+    <description>Alert digest on $(jt_alert_digest.node) is posting to Discord again after $(jt_alert_digest.failed_minutes) minutes ($(jt_alert_digest.error_class)), $(jt_alert_digest.sent_late) alerts posted late</description>
+    <group>jt_alert_digest_discord,</group>
+  </rule>
+
+  <rule id="131165" level="10">
+    <if_sid>131115</if_sid>
+    <field name="jt_alert_digest.channel">^discord$</field>
+    <description>[WARN] The Discord channel of the alert digest on $(jt_alert_digest.node) crashed: $(jt_alert_digest.exception)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_discord,</group>
+  </rule>
+
+  <rule id="131166" level="12">
+    <if_sid>131116</if_sid>
+    <field name="jt_alert_digest.channel">^discord$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) cannot post to Discord with its configuration or credentials: $(jt_alert_digest.problem)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_discord,</group>
+  </rule>
+
+  <!-- Mattermost (1.13) -->
+  <rule id="131171" level="10">
+    <if_sid>131111</if_sid>
+    <field name="jt_alert_digest.channel">^mattermost$</field>
+    <description>[WARN] Alert digest on $(jt_alert_digest.node) cannot post to Mattermost ($(jt_alert_digest.error_class)), $(jt_alert_digest.pending) alerts waiting: $(jt_alert_digest.error)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_mattermost,</group>
+  </rule>
+
+  <rule id="131172" level="12">
+    <if_sid>131112</if_sid>
+    <field name="jt_alert_digest.channel">^mattermost$</field>
+    <description>[HIGH] Posts to Mattermost from $(jt_alert_digest.node) have reached nobody for $(jt_alert_digest.age_minutes) minutes, $(jt_alert_digest.pending) alerts waiting ($(jt_alert_digest.error_class))</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_mattermost,</group>
+  </rule>
+
+  <rule id="131173" level="12">
+    <if_sid>131113</if_sid>
+    <field name="jt_alert_digest.channel">^mattermost$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) skipped alerts that will never be posted to Mattermost: $(jt_alert_digest.reason)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_mattermost,</group>
+  </rule>
+
+  <rule id="131174" level="3">
+    <if_sid>131114</if_sid>
+    <field name="jt_alert_digest.channel">^mattermost$</field>
+    <description>Alert digest on $(jt_alert_digest.node) is posting to Mattermost again after $(jt_alert_digest.failed_minutes) minutes ($(jt_alert_digest.error_class)), $(jt_alert_digest.sent_late) alerts posted late</description>
+    <group>jt_alert_digest_mattermost,</group>
+  </rule>
+
+  <rule id="131175" level="10">
+    <if_sid>131115</if_sid>
+    <field name="jt_alert_digest.channel">^mattermost$</field>
+    <description>[WARN] The Mattermost channel of the alert digest on $(jt_alert_digest.node) crashed: $(jt_alert_digest.exception)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_mattermost,</group>
+  </rule>
+
+  <rule id="131176" level="12">
+    <if_sid>131116</if_sid>
+    <field name="jt_alert_digest.channel">^mattermost$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) cannot post to Mattermost with its configuration or credentials: $(jt_alert_digest.problem)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_mattermost,</group>
+  </rule>
+
+  <!-- webhook (1.13) -->
+  <rule id="131181" level="10">
+    <if_sid>131111</if_sid>
+    <field name="jt_alert_digest.channel">^webhook$</field>
+    <description>[WARN] Alert digest on $(jt_alert_digest.node) cannot post to the webhook ($(jt_alert_digest.error_class)), $(jt_alert_digest.pending) alerts waiting: $(jt_alert_digest.error)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_webhook,</group>
+  </rule>
+
+  <rule id="131182" level="12">
+    <if_sid>131112</if_sid>
+    <field name="jt_alert_digest.channel">^webhook$</field>
+    <description>[HIGH] Posts to the webhook from $(jt_alert_digest.node) have reached nobody for $(jt_alert_digest.age_minutes) minutes, $(jt_alert_digest.pending) alerts waiting ($(jt_alert_digest.error_class))</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_webhook,</group>
+  </rule>
+
+  <rule id="131183" level="12">
+    <if_sid>131113</if_sid>
+    <field name="jt_alert_digest.channel">^webhook$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) skipped alerts that will never be posted to the webhook: $(jt_alert_digest.reason)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_webhook,</group>
+  </rule>
+
+  <rule id="131184" level="3">
+    <if_sid>131114</if_sid>
+    <field name="jt_alert_digest.channel">^webhook$</field>
+    <description>Alert digest on $(jt_alert_digest.node) is posting to the webhook again after $(jt_alert_digest.failed_minutes) minutes ($(jt_alert_digest.error_class)), $(jt_alert_digest.sent_late) alerts posted late</description>
+    <group>jt_alert_digest_webhook,</group>
+  </rule>
+
+  <rule id="131185" level="10">
+    <if_sid>131115</if_sid>
+    <field name="jt_alert_digest.channel">^webhook$</field>
+    <description>[WARN] The webhook channel of the alert digest on $(jt_alert_digest.node) crashed: $(jt_alert_digest.exception)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_webhook,</group>
+  </rule>
+
+  <rule id="131186" level="12">
+    <if_sid>131116</if_sid>
+    <field name="jt_alert_digest.channel">^webhook$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) cannot post to the webhook with its configuration or credentials: $(jt_alert_digest.problem)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_webhook,</group>
+  </rule>
+
+  <!-- LINE (1.13) -->
+  <rule id="131191" level="10">
+    <if_sid>131111</if_sid>
+    <field name="jt_alert_digest.channel">^line$</field>
+    <description>[WARN] Alert digest on $(jt_alert_digest.node) cannot post to LINE ($(jt_alert_digest.error_class)), $(jt_alert_digest.pending) alerts waiting: $(jt_alert_digest.error)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_line,</group>
+  </rule>
+
+  <rule id="131192" level="12">
+    <if_sid>131112</if_sid>
+    <field name="jt_alert_digest.channel">^line$</field>
+    <description>[HIGH] Posts to LINE from $(jt_alert_digest.node) have reached nobody for $(jt_alert_digest.age_minutes) minutes, $(jt_alert_digest.pending) alerts waiting ($(jt_alert_digest.error_class))</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_line,</group>
+  </rule>
+
+  <rule id="131193" level="12">
+    <if_sid>131113</if_sid>
+    <field name="jt_alert_digest.channel">^line$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) skipped alerts that will never be posted to LINE: $(jt_alert_digest.reason)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_line,</group>
+  </rule>
+
+  <rule id="131194" level="3">
+    <if_sid>131114</if_sid>
+    <field name="jt_alert_digest.channel">^line$</field>
+    <description>Alert digest on $(jt_alert_digest.node) is posting to LINE again after $(jt_alert_digest.failed_minutes) minutes ($(jt_alert_digest.error_class)), $(jt_alert_digest.sent_late) alerts posted late</description>
+    <group>jt_alert_digest_line,</group>
+  </rule>
+
+  <rule id="131195" level="10">
+    <if_sid>131115</if_sid>
+    <field name="jt_alert_digest.channel">^line$</field>
+    <description>[WARN] The LINE channel of the alert digest on $(jt_alert_digest.node) crashed: $(jt_alert_digest.exception)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_line,</group>
+  </rule>
+
+  <rule id="131196" level="12">
+    <if_sid>131116</if_sid>
+    <field name="jt_alert_digest.channel">^line$</field>
+    <description>[HIGH] Alert digest on $(jt_alert_digest.node) cannot post to LINE with its configuration or credentials: $(jt_alert_digest.problem)</description>
+    <group>jt_alert_digest_failure,jt_alert_digest_line,</group>
   </rule>
 
 </group>

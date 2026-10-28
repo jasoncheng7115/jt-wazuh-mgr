@@ -38,9 +38,10 @@ the manager's event queue as JSON, where rules 131110-131116 turn them into
 console alerts: when a failure starts or changes, then hourly, and at a
 higher level once alerts have reached nobody for two hours.
 
-Optionally the same digest is also posted to a Zulip channel (stream and
-topic from the settings file). Each channel keeps its own position in the
-alert file, so a Zulip outage cannot lose or repeat mail, and the reverse.
+Optionally the same digest is also posted to chat: Zulip, Microsoft Teams,
+Telegram, Slack, Discord, Mattermost, LINE, or as JSON to any webhook (all
+from the settings file). Each channel keeps its own position in the alert
+file, so an outage of one cannot lose or repeat another's messages.
 
 Once this is delivering, turn wazuh-maild off, or both will send: set
 <email_notification> to no and stop that daemon. Do not raise
@@ -54,6 +55,8 @@ import base64
 import copy
 import fcntl
 import gzip
+import hashlib
+import hmac
 import http.client
 import json
 import os
@@ -69,13 +72,14 @@ import traceback
 import unicodedata
 import urllib.error
 import urllib.request
+import uuid
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.12.1"
+VERSION = "1.13.0"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -288,21 +292,31 @@ def _time_of_day(value):
 
 
 def read_secret(path, setting="smtp_password_file"):
-    """A password or key, only from a file nobody but root can read.
+    """A password, key, token or webhook address, only from a file nobody but
+    root can read, and never through a symbolic link.
 
     The value itself never appears in a message: the problems name the file.
     """
     try:
-        info = os.stat(path)
+        info = os.lstat(path)
     except OSError as exc:
         return None, "%s %s cannot be read: %s" % (setting, path, exc.strerror or exc)
+    if stat.S_ISLNK(info.st_mode):
+        # whoever can change the link chooses what is read as the secret
+        return None, "%s %s is a symbolic link; name the file itself" % (setting, path)
     if not stat.S_ISREG(info.st_mode):
         return None, "%s %s is not a regular file" % (setting, path)
-    if info.st_uid not in (0, os.geteuid()) or info.st_mode & 0o077:
-        return None, ("%s %s must belong to root and be readable by "
-                      "root only (chmod 600)" % (setting, path))
     try:
-        with open(path, encoding="utf-8") as fh:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return None, "%s %s cannot be read" % (setting, path)
+    try:
+        with os.fdopen(fd, encoding="utf-8") as fh:
+            info = os.fstat(fh.fileno())     # the file actually opened, not the name checked
+            if not stat.S_ISREG(info.st_mode) or info.st_uid not in (0, os.geteuid()) \
+                    or info.st_mode & 0o077:
+                return None, ("%s %s must belong to root and be readable by "
+                              "root only (chmod 600)" % (setting, path))
             secret = fh.readline().rstrip("\r\n")
     except (OSError, UnicodeDecodeError):
         return None, "%s %s cannot be read" % (setting, path)
@@ -334,7 +348,7 @@ def build_options(site, config, args=None):
     fatal, warnings = [], []
     o = {}
     for key in sorted(site):
-        if key not in KNOWN_SETTINGS and key not in ZULIP_KEYS:
+        if key not in KNOWN_SETTINGS and key not in ZULIP_KEYS and key not in CHAT_KEYS:
             warnings.append("unknown setting %r ignored" % key)
 
     o["dashboard"] = (getattr(args, "dashboard", None) or site.get("dashboard") or "").strip() or None
@@ -463,6 +477,14 @@ def build_options(site, config, args=None):
         warnings.append("link must be off, auto or an http(s) URL template")
         o["link"] = None
     o["zulip"], o["zulip_fatal"] = build_zulip_options(site, warnings)
+    # Every configured chat or webhook channel, Zulip first as in 1.5-1.12.
+    o["channels"] = []
+    if o["zulip"]:
+        o["channels"].append(ZulipChannel(o["zulip"], o["zulip_fatal"]))
+    for name, cls in CHANNEL_CLASSES.items():
+        c, cfatal = build_chat_options(site, name, warnings)
+        if c:
+            o["channels"].append(cls(c, cfatal))
     return o, fatal, warnings
 
 
@@ -1986,13 +2008,16 @@ def subject(groups, total, held=None):
 # --------------------------------------------------------------------------
 
 class DeliveryError(Exception):
-    """kind: a short stable name; permanent: retrying cannot help (a refused key)."""
+    """kind: a short stable name; permanent: retrying cannot help (a refused key);
+    malformed: the server refused the message's content, so resending the same
+    message can never succeed (see channel_flush)."""
 
-    def __init__(self, kind, text, permanent=False):
+    def __init__(self, kind, text, permanent=False, malformed=False):
         Exception.__init__(self, text)
         self.kind = kind
         self.text = text
         self.permanent = permanent
+        self.malformed = malformed     # the server refused this message itself, not the sender
 
 
 def classify(exc):
@@ -2197,7 +2222,8 @@ def build_message(line, text, html, options, context, total=None):
 # --------------------------------------------------------------------------
 
 ZULIP_KEYS = ("zulip_url", "zulip_email", "zulip_api_key_file", "zulip_stream", "zulip_topic",
-              "zulip_summary_topic", "zulip_tls_verify", "zulip_ca_file", "zulip_max_backlog")
+              "zulip_summary_topic", "zulip_tls_verify", "zulip_ca_file", "zulip_max_backlog",
+              "zulip_level", "zulip_daily")
 ZULIP_LIMIT = 9000     # Zulip's default max_message_length is 10,000 characters
 ZULIP_PARTS = 4        # one run never posts more than this many messages
 ZULIP_TOPIC_MAX = 60   # Zulip's default max_topic_length
@@ -2266,6 +2292,20 @@ def build_zulip_options(site, warnings):
             z["max_backlog"] = max(3600, _duration(site["zulip_max_backlog"]))
         except ValueError:
             warnings.append("zulip_max_backlog = %s ignored, using 24 hours" % site["zulip_max_backlog"])
+    z["level"], z["daily"] = None, True
+    if site.get("zulip_level"):
+        try:
+            z["level"] = int(site["zulip_level"])
+            if not 0 <= z["level"] <= 16:
+                raise ValueError(z["level"])
+        except ValueError:
+            z["level"] = None
+            warnings.append("zulip_level = %s ignored" % site["zulip_level"])
+    if site.get("zulip_daily"):
+        try:
+            z["daily"] = _yes(site["zulip_daily"])
+        except ValueError:
+            warnings.append("zulip_daily = %s ignored, the daily summary is posted" % site["zulip_daily"])
     return z, fatal
 
 
@@ -2646,6 +2686,1659 @@ def render_zulip(groups, total, min_level, dashboard, context=None, notice=None,
 
 
 # --------------------------------------------------------------------------
+# More channels (1.13): Microsoft Teams, Telegram, Slack, Discord, Mattermost,
+# a generic JSON webhook and LINE
+# --------------------------------------------------------------------------
+#
+# Each works as the Zulip channel does: its own position in the alert file,
+# repeat hold, outbox, failure record and daily summary, kept under its name
+# in the state file, and its own status rules (131131-131196, ten IDs per
+# channel). A channel that fails or crashes never moves, loses or repeats the
+# work of mail or of another channel.
+#
+# Alert text is attacker-influenced (descriptions, agent names, logs), so each
+# channel has escaping written for what its platform interprets: a mention
+# that notifies a whole channel, a link whose text hides its target, markup
+# that makes one alert look like another. Credentials (webhook URLs, which are
+# credentials in themselves, and tokens) come only from root-only files and
+# never appear in logs, state, events or error texts.
+
+CHAT_COMMON = ("level", "max_backlog", "daily", "ca_file", "tls_verify")
+CHAT_SPECIFIC = OrderedDict((
+    ("teams", ("url_file",)),
+    ("telegram", ("token_file", "chat_id", "thread_id", "api")),
+    ("slack", ("url_file",)),
+    ("discord", ("url_file",)),
+    ("mattermost", ("url_file", "channel")),
+    ("webhook", ("url", "url_file", "hmac_key_file", "bearer_file")),
+    ("line", ("token_file", "to", "api")),
+))
+CHAT_KEYS = tuple("%s_%s" % (name, key) for name, keys in CHAT_SPECIFIC.items()
+                  for key in keys + CHAT_COMMON)
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+COLOUR = ((14, 0x991B1B), (12, 0xC2410C), (10, 0xCA8A04), (0, 0x2563EB))
+TEST_NOTE = ("If you can read this, alert digests from this node reach this channel. Nothing "
+             "was read from the alert file, nothing was changed and no mail was sent. Below, "
+             "an invented alert shows the layout.")
+WEBHOOK_SCHEMA = "jt-alert-digest/1"
+MALFORMED_TRIES = 3   # a message the server calls malformed is dropped after this many tries
+
+
+def utf16_len(text):
+    """Telegram and LINE count message length in UTF-16 code units."""
+    return len(text.encode("utf-16-le")) // 2
+
+
+def colour(level):
+    return next(value for floor, value in COLOUR if level >= floor)
+
+
+def checked_url(url, setting, fatal, query=True):
+    """url if it is https (plain http only to this host); otherwise None and a problem.
+
+    The URL itself is never quoted in the problem: for a webhook it is the
+    credential.
+    """
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+    except ValueError:
+        parts, host = None, ""
+    if not parts or not host or parts.fragment or "@" in parts.netloc or re.search(r"\s", url) \
+            or (parts.query and not query) or not (
+                parts.scheme == "https" or (parts.scheme == "http" and host in LOOPBACK)):
+        fatal.append("%s must be an https:// address" % setting)
+        return None
+    return url
+
+
+def secret_setting(site, setting, fatal, pattern, what, required=True):
+    """The first line of the root-only file named by setting, if it matches pattern."""
+    path = site.get(setting)
+    if not path:
+        if required:
+            fatal.append("%s is not set" % setting)
+        return None
+    value, problem = read_secret(path, setting)
+    if problem:
+        fatal.append(problem)
+        return None
+    value = value.strip()
+    if not re.match(pattern, value):
+        fatal.append("%s %s does not hold %s on its first line" % (setting, path, what))
+        return None
+    return value
+
+
+def secret_url(site, setting, fatal):
+    url = secret_setting(site, setting, fatal, r"^\S{10,4096}$", "an address")
+    if url is None:
+        return None
+    return checked_url(url, "the address in %s" % setting, fatal)
+
+
+def chat_common(site, name, fatal, warnings):
+    c = {"name": name, "level": None, "max_backlog": 24 * 3600, "daily": True,
+         "verify": True, "ca_file": None, "secrets": []}
+    raw = site.get(name + "_level")
+    if raw:
+        try:
+            value = int(raw)
+            if not 0 <= value <= 16:
+                raise ValueError(raw)
+            c["level"] = value
+        except ValueError:
+            warnings.append("%s_level = %s ignored" % (name, raw))
+    raw = site.get(name + "_max_backlog")
+    if raw:
+        try:
+            c["max_backlog"] = max(3600, _duration(raw))
+        except ValueError:
+            warnings.append("%s_max_backlog = %s ignored, using 24 hours" % (name, raw))
+    raw = site.get(name + "_daily")
+    if raw:
+        try:
+            c["daily"] = _yes(raw)
+        except ValueError:
+            warnings.append("%s_daily = %s ignored, the daily summary is posted" % (name, raw))
+    raw = site.get(name + "_tls_verify")
+    if raw:
+        try:
+            c["verify"] = _yes(raw)
+        except ValueError:
+            fatal.append("%s_tls_verify must be yes or no" % name)
+    c["ca_file"] = site.get(name + "_ca_file") or None
+    if c["ca_file"] and not os.access(c["ca_file"], os.R_OK):
+        fatal.append("%s_ca_file %s cannot be read" % (name, c["ca_file"]))
+    return c
+
+
+def build_chat_options(site, name, warnings):
+    """(options, fatal) for one channel; (None, []) when none of its settings exist.
+
+    Any of a channel's settings switches it on, so a half-written configuration
+    is reported (its config_error rule) instead of being silently ignored.
+    """
+    keys = ["%s_%s" % (name, key) for key in CHAT_SPECIFIC[name] + CHAT_COMMON]
+    if not any(key in site for key in keys):
+        return None, []
+    fatal = []
+    c = chat_common(site, name, fatal, warnings)
+    if name in ("teams", "slack", "discord", "mattermost"):
+        c["url"] = secret_url(site, name + "_url_file", fatal)
+        c["secrets"].append(c["url"])
+    if name == "mattermost":
+        c["channel"] = (site.get("mattermost_channel") or "").strip() or None
+        if c["channel"] and not re.match(r"^@?[a-z0-9][a-z0-9._-]{0,63}$", c["channel"]):
+            fatal.append("mattermost_channel must be a channel name (the last part of its URL)")
+    if name == "telegram":
+        c["token"] = secret_setting(site, "telegram_token_file", fatal,
+                                    r"^\d{3,20}:[A-Za-z0-9_-]{30,80}$", "a bot token")
+        c["secrets"].append(c["token"])
+        c["api"] = checked_url((site.get("telegram_api") or "https://api.telegram.org").strip()
+                               .rstrip("/"), "telegram_api", fatal, query=False)
+        chat = (site.get("telegram_chat_id") or "").strip()
+        c["chat_id"] = None
+        if re.match(r"^-?\d{1,20}$", chat):
+            c["chat_id"] = int(chat)
+        elif re.match(r"^@[A-Za-z][A-Za-z0-9_]{3,31}$", chat):
+            c["chat_id"] = chat
+        else:
+            fatal.append("telegram_chat_id must be a numeric chat id (a group's starts with -100) "
+                         "or a public @channelname")
+        c["thread_id"] = None
+        thread = (site.get("telegram_thread_id") or "").strip()
+        if thread:
+            if thread.isdigit():
+                c["thread_id"] = int(thread)
+            else:
+                fatal.append("telegram_thread_id must be the numeric id of a forum topic")
+    if name == "line":
+        c["token"] = secret_setting(site, "line_token_file", fatal,
+                                    r"^[A-Za-z0-9+/=._-]{20,1024}$", "a channel access token")
+        c["secrets"].append(c["token"])
+        c["api"] = checked_url((site.get("line_api") or "https://api.line.me").strip().rstrip("/"),
+                               "line_api", fatal, query=False)
+        c["to"] = (site.get("line_to") or "").strip()
+        if not re.match(r"^[UCR][0-9a-f]{32}$", c["to"]):
+            fatal.append("line_to must be a user, group or room id (U, C or R and 32 hex digits)")
+    if name == "webhook":
+        if site.get("webhook_url") and site.get("webhook_url_file"):
+            fatal.append("set webhook_url or webhook_url_file, not both")
+        if site.get("webhook_url_file"):
+            c["url"] = secret_url(site, "webhook_url_file", fatal)
+            c["secrets"].append(c["url"])
+        elif site.get("webhook_url"):
+            c["url"] = checked_url(site["webhook_url"].strip(), "webhook_url", fatal)
+        else:
+            c["url"] = None
+            fatal.append("webhook_url (or webhook_url_file) is not set")
+        c["hmac_key"] = secret_setting(site, "webhook_hmac_key_file", fatal, r"^.{16,4096}$",
+                                       "a key of at least 16 characters", required=False)
+        c["bearer"] = secret_setting(site, "webhook_bearer_file", fatal, r"^[\x21-\x7e]{8,4096}$",
+                                     "a token", required=False)
+        c["secrets"].extend([c["hmac_key"], c["bearer"]])
+    c["secrets"] = [s for s in c["secrets"] if s]
+    for secret in list(c["secrets"]):
+        if secret.startswith("http"):
+            # the token part of a webhook address, wherever an error might quote it
+            parts = urlsplit(secret)
+            c["secrets"].append(parts.path + (("?" + parts.query) if parts.query else ""))
+            c["secrets"].extend(piece for piece in re.split(r"[/?&=]", parts.path + "?" + parts.query)
+                                if len(piece) >= 12)
+    return c, fatal
+
+
+def channel_tls(verify, ca_file):
+    if verify:
+        context = verifying_context(ca_file)
+    else:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
+
+
+def http_send(c, url, body=None, headers=None, method="POST", timeout=20, explain=None):
+    """One request for a channel; returns (status, body). Raises DeliveryError.
+
+    A redirect is refused: it would carry the address's token or the
+    Authorization header to wherever it points. Only the host name of the
+    address is ever quoted, and every credential of the channel is removed
+    from any text this returns or raises. explain(status, raw) gives a
+    platform's own (code, message, malformed) for an error answer.
+    """
+    request = urllib.request.Request(url, data=body, method=method)
+    for key, value in (headers or {}).items():
+        request.add_header(key, value)
+    request.add_header("User-Agent", "jt-alert-digest/" + VERSION)
+    handlers = [_NoRedirect()]
+    if url.startswith("https:"):
+        handlers.append(urllib.request.HTTPSHandler(context=channel_tls(c.get("verify", True),
+                                                                         c.get("ca_file"))))
+    opener = urllib.request.build_opener(*handlers)
+    try:
+        host = urlsplit(url).hostname or "?"
+    except ValueError:
+        host = "?"
+
+    def clean(text):
+        text = str(text)
+        for secret in sorted(c.get("secrets") or [], key=len, reverse=True):
+            if secret and len(secret) >= 6:
+                text = text.replace(secret, REDACTED)
+        return trim(redact(text), 300)
+
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            return response.status, response.read(1 << 20)
+    except urllib.error.HTTPError as exc:
+        try:
+            raw = exc.read(1 << 16) if exc.fp else b""
+        except (OSError, http.client.HTTPException):
+            raw = b""
+        status = exc.code
+        code, message, malformed = "", "", False
+        if explain:
+            try:
+                code, message, malformed = explain(status, raw)
+            except Exception:       # an odd error body must not hide the status
+                code, message, malformed = "", "", False
+        code = re.sub(r"[^A-Za-z0-9_]", "", str(code or ""))[:40]
+        permanent = 300 <= status < 500 and status not in (408, 429)
+        raise DeliveryError("http-%d%s" % (status, ("-" + code) if code else ""),
+                            clean("%s: HTTP %d%s: %s" % (host, status, (" " + code) if code else "",
+                                                         message or exc.reason)),
+                            permanent=permanent, malformed=malformed and permanent)
+    except urllib.error.URLError as exc:
+        reason = exc.reason
+        kind = classify(reason) if isinstance(reason, BaseException) else "network"
+        raise DeliveryError(kind, clean("%s: %s" % (host, reason)))
+    except (OSError, http.client.HTTPException, ValueError) as exc:
+        raise DeliveryError(classify(exc), clean("%s: %s: %s" % (host, type(exc).__name__, exc)))
+
+
+def json_body(payload):
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def json_error(raw):
+    try:
+        data = json.loads(raw.decode("utf-8", "replace"))
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def code_split(label, value):
+    """(code, rest) for a value shown as code: in "path (modified)" only the path is code.
+    (None, value) for a value shown as text."""
+    if label not in CODE_LABELS and label != "Image":
+        return None, value
+    text = " ".join(str(value).split())
+    if label == "Image" and ": " in text:
+        name, rest = text.split(": ", 1)
+        return name, rest
+    found = re.match(r"^(\S+)(\s+\(.*\))?$", text)
+    if found:
+        return found.group(1), (found.group(2) or "").strip()
+    return text, ""
+
+
+def group_view(rule_id, agent, group, samples, link=None):
+    """One group as plain values, for every chat layout except Zulip's.
+
+    The same choices as the Zulip card: address and time first, the first
+    sample's fields as rows, further samples' fields after them, the raw logs
+    last; values are already redacted (interesting_fields) and trimmed.
+    """
+    rows, more, logs = [], [], []
+    detail = host_detail(group)
+    if detail:
+        rows.append(("Address", detail.replace(", ", " \u00b7 ")))
+    rows.append(("Time", re.sub(r"^\d{4}-", "", headline(group))))
+    if group.get("mitre"):
+        tactics = ", ".join(dedupe(group.get("tactics") or []))
+        rows.append(("MITRE", ", ".join(group["mitre"]) + ((" " + tactics) if tactics else "")))
+    for index, fields in enumerate(card_fields(group, samples)):
+        shown = [(label, value) for label, value in fields if label != "Log"]
+        logs.extend(value for label, value in fields if label == "Log")
+        if index == 0:
+            rows.extend(shown)
+        elif shown:
+            more.append(shown)
+    shown_count = 0 if listed_in_full(group) else min(samples, len(group.get("samples", [])))
+    notes = []
+    if group["count"] - shown_count > 0 and shown_count:
+        notes.append("%d more of the same" % (group["count"] - shown_count))
+    if group.get("earlier"):
+        notes.append("plus %d earlier since the last full post" % group["earlier"])
+    return {"rule": rule_id, "agent": agent, "level": group["level"], "count": group["count"],
+            "title": SEVERITY_MARKER.sub("", heading(group, rule_id)), "badge": badge(group),
+            "link": link if link and re.match(r"^https?://[^\s<>|\"]+$", link) else None,
+            "rows": rows, "more": more, "logs": logs, "notes": notes}
+
+
+def daily_info(state, options, context, warnings, others=()):
+    """What a daily summary says, before any layout."""
+    daily = state["daily"]
+    t = now()
+    return {"context": context, "options": options, "daily": daily, "t": t,
+            "stopped": sorted((n, s) for n, s in daily.get("stops", {}).items()
+                              if t - s >= STOP_GRACE),
+            "levels": sorted(((int(k), v) for k, v in daily.get("levels", {}).items()),
+                             reverse=True),
+            "top": sorted(daily.get("rules", {}).items(), key=lambda kv: -kv[1][0])[:5],
+            "failure": state.get("failure"), "others": list(others), "warnings": warnings}
+
+
+def daily_view(info):
+    """The daily summary as plain rows and sections, for every channel but Zulip."""
+    context, options, daily = info["context"], info["options"], info["daily"]
+    failure = info["failure"]
+    rows = [("L%d+ alerts" % options["level"], "{:,}".format(daily.get("qualifying", 0))),
+            ("Digests sent", "{:,}".format(daily.get("digests", 0))),
+            ("Alerts in them", "{:,}".format(daily.get("mailed", 0))),
+            ("Repeats held", "{:,}".format(daily.get("held", 0)))]
+    if daily.get("excluded"):
+        rows.append(("Excluded", "{:,}".format(daily["excluded"])))
+    if isinstance(failure, dict):
+        rows.append(("Delivery", "\u274c failing since %s (%s, %d attempts), %s alerts waiting"
+                     % (local_iso(failure.get("since"))[:16], failure.get("kind", "?"),
+                        failure.get("attempts", 0), failure.get("pending", "?"))))
+    else:
+        rows.append(("Delivery", "\u2705 working" + ((" (%d failed tries)" % daily["failures"])
+                                                     if daily.get("failures") else "")))
+    for name, other in info["others"]:
+        rows.append((name, ("\u274c failing since %s (%s)" % (local_iso(other.get("since"))[:16],
+                                                              other.get("kind", "?")))
+                     if isinstance(other, dict) else "\u2705 working"))
+    if daily.get("unparsed"):
+        rows.append(("Unreadable lines", "{:,}".format(daily["unparsed"])))
+    sections = []
+    if info["levels"]:
+        sections.append(("Alerts written by level", [" \u00b7 ".join(
+            "L%d %s" % (k, "{:,}".format(v)) for k, v in info["levels"])]))
+    if info["top"]:
+        sections.append(("Most frequent at L%d+" % options["level"], [
+            "%s L%d \u00b7 rule %s \u00d7%s \u00b7 %s" % (level_mark(level), level, rule_id,
+                                                          "{:,}".format(count), trim(title, 90))
+            for rule_id, (count, level, title) in info["top"]]))
+    if info["stopped"]:
+        sections.append(("Agents stopped and not back within %d minutes" % (STOP_GRACE // 60),
+                         ["%s \u00b7 %s" % (n, local_iso(st)[5:16]) for n, st in info["stopped"]]))
+    if daily.get("disconnects"):
+        sections.append(("Agents reported disconnected",
+                         ["%s \u00d7%d" % (n, c) for n, c in sorted(daily["disconnects"].items())]))
+    if info["warnings"]:
+        sections.append(("Settings ignored", ["; ".join(info["warnings"])]))
+    trouble = isinstance(failure, dict) or any(isinstance(o, dict) for _, o in info["others"])
+    return {"title": "Daily summary \u00b7 %s%s" % (context["node"], (" (%s)" % context["node_type"])
+                                                    if context.get("node_type") else ""),
+            "period": "%s \u2192 %s" % (local_iso(daily.get("since"))[:16], local_iso(info["t"])[:16]),
+            "rows": rows, "sections": sections, "trouble": trouble,
+            "foot": "jt-alert-digest %s on %s \u00b7 sent once a day; a day without one means the "
+                    "digest is not running" % (VERSION, context["node"]),
+            "dashboard": options.get("dashboard") if re.match(r"^https?://[^\s<>|\"]+$",
+                                                               options.get("dashboard") or "")
+            else None}
+
+
+def chat_layout(ch, groups, total, options, context, notice=None):
+    """Groups into at most ch.parts messages, as render_zulip does.
+
+    Full cards with the usual number of samples; if that needs more messages
+    than ch.parts, one sample each; then full cards while they fit and one
+    line per group after that. A group is never split between two messages.
+    """
+    context = context or {}
+    held = context.get("held") or []
+    items = ordered_groups(groups)
+    shown = items[:MAX_GROUPS]
+    pre = [ch.head(groups, total, options["level"], context)]
+    if notice:
+        pre.append(ch.notice(notice))
+    post = ch.tail(len(items), held, context, options.get("dashboard"))
+    views, parts = [], []
+    for samples in (samples_shown(len(items)), 1):
+        views = [group_view(r, a, g, samples, link_for(context, r, a, g)) for (r, a), g in shown]
+        parts = ch.pack(pre + [ch.group(v) for v in views] + post)
+        if len(parts) <= ch.parts:
+            return parts
+    full = [ch.group(v) for v in views]
+    for keep in range(len(views) - 1, -1, -1):
+        parts = ch.pack(pre + full[:keep] + ch.compact(views[keep:]) + post)
+        if len(parts) <= ch.parts:
+            break
+    return parts
+
+
+class Channel(object):
+    """A chat or webhook destination: settings, layout and the one request that posts.
+
+    A unit is a pair (full, compact) of element lists; pack() puts whole units
+    into messages, using the compact form of one that cannot fit a message on
+    its own. What an element is depends on the platform: a line of text, a
+    Slack block, a Discord embed, an Adaptive Card element.
+    """
+
+    name = label = ""
+    parts = 4          # messages a run posts before groups become one line each
+    gap = ()           # elements between two units in one message
+    compact_chunk = 10
+
+    def __init__(self, c, fatal):
+        self.c, self.fatal = c, fatal
+
+    def options(self, options):
+        o = dict(options)
+        if self.c.get("level") is not None:
+            o["level"], o["forced"] = self.c["level"], True
+        if not self.c.get("daily", True):
+            o["daily"] = None
+        return o
+
+    def server(self):
+        """Where failures say they were going: a host name, never a full address."""
+        url = self.c.get("url") or self.c.get("api") or ""
+        try:
+            return urlsplit(url).hostname or self.label
+        except ValueError:
+            return self.label
+
+    def where(self):
+        return "%s via %s" % (self.label, self.server())
+
+    def describe(self):
+        """--check's settings line, without credentials."""
+        bits = [self.where()]
+        if self.c.get("level") is not None:
+            bits.append("level %d" % self.c["level"])
+        if not self.c.get("daily", True):
+            bits.append("no daily summary")
+        if not self.c.get("verify", True):
+            bits.append("certificate NOT verified")
+        return ", ".join(bits)
+
+    # --- layout -----------------------------------------------------------
+
+    def render(self, groups, total, options, context, notice=None):
+        return [self.item(p) for p in chat_layout(self, groups, total, options, context, notice)]
+
+    def item(self, payload):
+        return {"payload": payload}
+
+    def preview(self, item):
+        return json.dumps(item.get("payload"), ensure_ascii=False, indent=1)
+
+    def fits(self, elements):
+        raise NotImplementedError
+
+    def assemble(self, elements, index, count):
+        raise NotImplementedError
+
+    def ellipsis(self):
+        raise NotImplementedError
+
+    def pack(self, units):
+        messages, current = [], []
+        for full, compact in units:
+            chosen = full if self.fits(list(full)) else compact
+            if not self.fits(list(chosen)):
+                kept = []
+                for element in chosen:
+                    if not self.fits(kept + [element, self.ellipsis()]):
+                        break
+                    kept.append(element)
+                chosen = kept + [self.ellipsis()]
+            joined = current + list(self.gap) + list(chosen) if current else list(chosen)
+            if current and not self.fits(joined):
+                messages.append(current)
+                current = list(chosen)
+            else:
+                current = joined
+        if current:
+            messages.append(current)
+        return [self.assemble(m, i, len(messages)) for i, m in enumerate(messages)]
+
+    def compact(self, views):
+        units = []
+        for start in range(0, len(views), self.compact_chunk):
+            lines = self.compact_lines(views[start:start + self.compact_chunk])
+            units.append((lines, lines))
+        return units
+
+    # --- plain texts every layout shows ------------------------------------
+
+    def summary(self, groups, total, level, context):
+        if context.get("test"):
+            return "jt-alert-digest %s test message from %s" % (VERSION, context.get("node", "?"))
+        if groups:
+            return "%s \u00b7 %s \u00b7 %s" % (
+                plural(total, "alert"), plural(len(groups), "rule"),
+                ("host " if len({k[1] for k in groups}) == 1 else "hosts ") + host_names(groups))
+        return opening(groups, total, level, context.get("held") or [])
+
+    def about(self, groups, context):
+        about = []
+        if context.get("node"):
+            about.append("from %s%s" % (context["node"], (" (%s)" % context["node_type"])
+                                        if context.get("node_type") else ""))
+        items = ordered_groups(groups)
+        if items and zone(items[0][1]["first"]):
+            about.append("times %s" % zone(items[0][1]["first"]))
+        return " \u00b7 ".join(about)
+
+    @staticmethod
+    def notice_text(notice):
+        return ("%d alerts from %s to %s were not posted here: they were more than %d hours old "
+                "when they could be read. The mail digest and the dashboard have them."
+                % (notice["n"], notice["first"] or "?", notice["last"] or "?", notice["hours"]))
+
+    @staticmethod
+    def held_lines(held):
+        lines = [held_line(entry) for entry in held[:MAX_GROUPS]]
+        if len(held) > MAX_GROUPS:
+            lines.append("%d more" % (len(held) - MAX_GROUPS))
+        return lines
+
+    def held_title(self, context):
+        return ("Still ongoing: repeats of groups already posted in full, counted rather than "
+                "repeated (hold %d minutes)" % (context.get("repeat", 3600) // 60))
+
+    def compact_text(self, v):
+        return "L%d \u00b7 %s \u00b7 rule %s%s \u00b7 %s" % (
+            v["level"], v["agent"], v["rule"], (" \u00d7%d" % v["count"]) if v["count"] > 1 else "",
+            trim(v["title"], 90))
+
+    # --- delivery ---------------------------------------------------------
+
+    def post(self, item):
+        raise NotImplementedError
+
+    def check(self):
+        print("  %s: %s" % (self.name, self.describe()))
+        if self.fatal:
+            for problem in self.fatal:
+                print("  PROBLEM: %s: %s" % (self.name, problem))
+            return 1
+        return self.probe()
+
+    def probe(self):
+        print("  %s: there is no read-only way to test this address; --test %s posts one "
+              "test message" % (self.name, self.name))
+        return 0
+
+    def test_items(self, context):
+        group = sample_group()
+        groups = OrderedDict([(("100001", "example-host"), group)])
+        return self.render(groups, 1, dict(level=12, dashboard=None),
+                           dict(context, test=True, link=None))
+
+
+class TextChannel(Channel):
+    """One formatted text per message: Telegram, Mattermost, LINE.
+
+    Elements are lines (a line may hold a newline inside a block); a message
+    is the lines joined by newlines, and groups are separated by a blank line.
+    """
+
+    limit = 4000
+    gap = ("",)
+
+    def size(self, text):
+        return utf16_len(text)
+
+    def fits(self, elements):
+        return self.size("\n".join(elements)) <= self.limit - 30
+
+    def ellipsis(self):
+        return self.i("(cut to fit one message)")
+
+    def assemble(self, elements, index, count):
+        text = "\n".join(elements)
+        return ("%s\n%s" % (self.i("(%d/%d)" % (index + 1, count)), text)) if count > 1 else text
+
+    def preview(self, item):
+        return item["payload"] if isinstance(item.get("payload"), str) else Channel.preview(self, item)
+
+    # markup, overridden per platform; t() makes text inert
+    def t(self, text):
+        return " ".join(str(text).split())
+
+    def b(self, text):
+        return self.t(text)
+
+    def i(self, text):
+        return self.t(text)
+
+    def code(self, text):
+        return self.t(text)
+
+    def link(self, text, url):
+        return self.t(text)
+
+    def logs(self, logs):
+        return ["Log: " + self.t(log) for log in logs]
+
+    def value(self, label, value):
+        code, rest = code_split(label, value)
+        if code is None:
+            return self.t(value)
+        return self.code(code) + ((" " + self.t(rest)) if rest else "")
+
+    def lab(self, label):
+        return self.b(label)
+
+    def row(self, label, value):
+        return "%s %s" % (self.lab(label), self.value(label, value))
+
+    def head(self, groups, total, level, context):
+        lines = ["\U0001F6A8 " + self.b(self.summary(groups, total, level, context))]
+        about = self.about(groups, context)
+        if about:
+            lines.append(self.i(about))
+        if context.get("test"):
+            lines.append(self.t(TEST_NOTE))
+        return (lines, lines)
+
+    def notice(self, notice):
+        lines = [self.b(self.notice_text(notice))]
+        return (lines, lines)
+
+    def group(self, v):
+        title = "%s %s%s%s" % (level_mark(v["level"]), self.b("L%d \u00b7 %s" % (v["level"], v["title"])),
+                               (" \u00d7%d" % v["count"]) if v["count"] > 1 else "",
+                               (" \u00b7 " + self.b(v["badge"])) if v["badge"] else "")
+        lines = [title, "%s %s" % (self.lab("Host"), self.t(v["agent"]))]
+        for label, value in v["rows"]:
+            lines.append(self.row(label, value))
+            if label == "Time":
+                rule = self.link(v["rule"], v["link"]) if v["link"] else self.t(v["rule"])
+                lines.append("%s %s" % (self.lab("Rule"), rule))
+        for fields in v["more"]:
+            lines.append(" \u00b7 ".join(self.row(label, value) for label, value in fields))
+        lines.extend(self.logs(v["logs"]))
+        if v["notes"]:
+            lines.append(self.i("(%s)" % "; ".join(v["notes"])))
+        return (lines, self.compact_lines([v]))
+
+    def compact_lines(self, views):
+        return ["%s %s" % (level_mark(v["level"]), self.t(self.compact_text(v))) for v in views]
+
+    def tail(self, count, held, context, dashboard):
+        units = []
+        if count > MAX_GROUPS:
+            line = [self.i("%d more groups not listed" % (count - MAX_GROUPS))]
+            units.append((line, line))
+        if held:
+            lines = [self.b(self.held_title(context))] + \
+                ["\u2022 " + self.t(line) for line in self.held_lines(held)]
+            short = lines[:11] + ([self.t("\u2022 %d more" % (len(lines) - 11))] if len(lines) > 11 else [])
+            units.append((lines, short))
+        if context.get("more"):
+            line = [self.i("More alerts are waiting; the next run continues from here.")]
+            units.append((line, line))
+        foot = []
+        if context.get("node"):
+            foot.append(self.i("sent by %s \u00b7 jt-alert-digest %s" % (context["node"], VERSION)))
+        if dashboard and re.match(r"^https?://[^\s<>|\"]+$", dashboard):
+            foot.append(self.link("dashboard", dashboard))
+        if foot:
+            units.append(([" \u00b7 ".join(foot)], [" \u00b7 ".join(foot)]))
+        return units
+
+    def daily(self, info):
+        v = daily_view(info)
+        head = [("\U0001F7E5" if v["trouble"] else "\U0001F7E9") * BAR_WIDTH,
+                "\U0001F4CA " + self.b(v["title"]), self.i(v["period"])]
+        units = [(head + [self.row(label, value) for label, value in v["rows"]],) * 2]
+        for title, lines in v["sections"]:
+            body = [self.b(title)] + ["\u2022 " + self.t(line) for line in lines[:20]]
+            if len(lines) > 20:
+                body.append(self.t("\u2022 %d more" % (len(lines) - 20)))
+            units.append((body, body))
+        foot = self.i(v["foot"])
+        if v["dashboard"]:
+            foot += " \u00b7 " + self.link("dashboard", v["dashboard"])
+        units.append(([foot], [foot]))
+        return [self.item(p) for p in self.pack(units)]
+
+
+# --- Telegram ---------------------------------------------------------------
+
+def tg(text):
+    """Text made inert in Telegram's HTML parse mode.
+
+    Only <, > and & are special in the markup itself. Telegram also turns
+    plain text into entities: an @username notifies that user and a /command
+    is tappable and sends itself to the group's bots, so both are broken with
+    a zero-width space. Code and quotes are not parsed further, but the
+    blockquote is, so the logs in it go through this as well.
+    """
+    text = " ".join(str(text).split())
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    text = re.sub(r"@(?=\w)", "@\u200b", text)
+    return re.sub(r"(^|[\s(\[])/(?=[A-Za-z])", "\\1/\u200b", text)
+
+
+def tg_plain(html_text):
+    """The same message without markup, for a server that refuses to parse it."""
+    text = re.sub(r"<[^>]+>", "", html_text)
+    return text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"').replace("&amp;", "&")
+
+
+class TelegramChannel(TextChannel):
+    name, label = "telegram", "Telegram"
+    limit = 4096
+
+    def t(self, text):
+        return tg(text)
+
+    def b(self, text):
+        return "<b>%s</b>" % tg(text)
+
+    def i(self, text):
+        return "<i>%s</i>" % tg(text)
+
+    def code(self, text):
+        text = " ".join(str(text).split())
+        return "<code>%s</code>" % text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def link(self, text, url):
+        return '<a href="%s">%s</a>' % (esc(url), tg(text))
+
+    def logs(self, logs):
+        if not logs:
+            return []
+        # collapsed until tapped (Bot API 7.4); wraps, unlike a code block
+        return ["<blockquote expandable>%s</blockquote>" % "\n".join(tg(log) for log in logs)]
+
+    def where(self):
+        return "Telegram chat %s%s" % (self.c.get("chat_id"), (", topic %s" % self.c["thread_id"])
+                                       if self.c.get("thread_id") else "")
+
+    def explain(self, status, raw):
+        data = json_error(raw)
+        text = str(data.get("description") or "")
+        moved = (data.get("parameters") or {}).get("migrate_to_chat_id")
+        if moved:
+            text += "; the group is now chat %s: set telegram_chat_id to that" % moved
+        malformed = bool(re.search(r"parse entities|message is too long|text must be non-empty",
+                                   text, re.I))
+        return "", text, malformed
+
+    def api(self, method, payload=None):
+        url = "%s/bot%s/%s" % (self.c["api"], self.c["token"], method)
+        body = json_body(payload) if payload is not None else None
+        status, raw = http_send(self.c, url, body, {"Content-Type": "application/json",
+                                                    "Accept": "application/json"},
+                                method="POST" if body is not None else "GET",
+                                explain=self.explain)
+        data = json_error(raw)
+        if not data.get("ok"):
+            raise DeliveryError("bad-response", "unexpected answer from %s" % self.server())
+        return data.get("result") or {}
+
+    def post(self, item):
+        payload = {"chat_id": self.c["chat_id"], "text": item["payload"], "parse_mode": "HTML",
+                   "link_preview_options": {"is_disabled": True}}
+        if self.c.get("thread_id"):
+            payload["message_thread_id"] = self.c["thread_id"]
+        try:
+            self.api("sendMessage", payload)
+        except DeliveryError as exc:
+            if not exc.malformed or "parse entities" not in exc.text:
+                raise
+            # A link or tag this server will not take: the text still gets through.
+            payload.pop("parse_mode")
+            payload["text"] = tg_plain(item["payload"])
+            self.api("sendMessage", payload)
+
+    def probe(self):
+        try:
+            me = self.api("getMe")
+        except DeliveryError as exc:
+            print("  PROBLEM: telegram: the bot token was refused: %s (%s)" % (exc.text, exc.kind))
+            return 1
+        print("  telegram auth: accepted as @%s" % me.get("username", "?"))
+        try:
+            chat = self.api("getChat", {"chat_id": self.c["chat_id"]})
+        except DeliveryError as exc:
+            print("  PROBLEM: telegram: chat %s cannot be reached: add the bot to the group or "
+                  "channel (a channel needs it as an administrator): %s" % (self.c["chat_id"], exc.text))
+            return 1
+        print("  telegram chat: %s (%s)" % (chat.get("title") or chat.get("username") or "?",
+                                            chat.get("type", "?")))
+        print("  telegram result: the bot can reach the chat; --test telegram posts one message")
+        return 0
+
+
+# --- Mattermost -------------------------------------------------------------
+
+def mm(text):
+    """Mattermost markdown made inert: md() plus every @word, since an incoming
+    webhook's @channel, @all, @here or @user notifies like a person's post."""
+    return re.sub(r"@(?=[\w.-])", "@\u200b", md(text))
+
+
+class MattermostChannel(TextChannel):
+    name, label = "mattermost", "Mattermost"
+    limit = 12000      # 16,383 characters by default since Mattermost 5.0
+
+    def t(self, text):
+        return mm(text)
+
+    def b(self, text):
+        return "**%s**" % mm(text)
+
+    def i(self, text):
+        return "*%s*" % mm(text)
+
+    def code(self, text):
+        text = " ".join(str(text).split())
+        return mm(text) if (not text or "`" in text) else "`%s`" % text
+
+    def link(self, text, url):
+        return "[%s](%s)" % (mm(text), md_link(url))
+
+    def logs(self, logs):
+        # a quote wraps on a phone; a code block would scroll sideways
+        return ["> " + mm(log) for log in logs]
+
+    def where(self):
+        return "Mattermost via %s%s" % (self.server(), (", channel %s" % self.c["channel"])
+                                        if self.c.get("channel") else "")
+
+    def explain(self, status, raw):
+        data = json_error(raw)
+        text = str(data.get("message") or raw[:200].decode("utf-8", "replace"))
+        return str(data.get("id") or "").replace(".", "_")[-40:], text, status == 400 and \
+            "webhook" not in text.lower()
+
+    def post(self, item):
+        payload = {"text": item["payload"]}
+        if self.c.get("channel"):
+            payload["channel"] = self.c["channel"]
+        http_send(self.c, self.c["url"], json_body(payload), {"Content-Type": "application/json"},
+                  explain=self.explain)
+
+
+# --- LINE -------------------------------------------------------------------
+
+class LineChannel(TextChannel):
+    """LINE Messaging API push messages: plain text, which LINE never interprets
+    (no markup, and a plain text message cannot mention anyone).
+
+    Every push counts against the channel's monthly message quota, once per
+    recipient, so a group of ten is ten messages. One run therefore sends one
+    request holding up to five text messages, which LINE counts as one.
+    """
+
+    name, label = "line", "LINE"
+    limit = 5000
+    parts = 5
+
+    def link(self, text, url):
+        return "%s %s" % (self.t(text), url)
+
+    def lab(self, label):
+        return self.t(label) + ":"
+
+    def group(self, v):
+        v = dict(v, link=None)       # a dashboard address per group is too long for a phone
+        return TextChannel.group(self, v)
+
+    def render(self, groups, total, options, context, notice=None):
+        texts = chat_layout(self, groups, total, options, context, notice)
+        return [self.item(texts[i:i + 5]) for i in range(0, len(texts), 5)]
+
+    def daily(self, info):
+        texts = [item["payload"] for item in TextChannel.daily(self, info)]
+        return [self.item(texts[i:i + 5]) for i in range(0, len(texts), 5)]
+
+    def item(self, payload):
+        # the same retry key on every attempt: LINE answers 409 to a repeat it already sent
+        return {"payload": payload, "retry_key": str(uuid.uuid4())}
+
+    def preview(self, item):
+        return "\n-----\n".join(item["payload"])
+
+    def where(self):
+        return "LINE %s %s" % ({"U": "user", "C": "group", "R": "room"}.get(self.c.get("to", "?")[:1], "?"),
+                               self.c.get("to"))
+
+    def explain(self, status, raw):
+        data = json_error(raw)
+        text = str(data.get("message") or "")
+        details = data.get("details") or []
+        if details and isinstance(details[0], dict):
+            text += " (%s: %s)" % (details[0].get("property", "?"), details[0].get("message", "?"))
+        return "", text, status == 400 and "request body" in text.lower()
+
+    def call(self, method, path, payload=None, headers=None):
+        all_headers = {"Authorization": "Bearer " + self.c["token"], "Accept": "application/json"}
+        all_headers.update(headers or {})
+        body = None
+        if payload is not None:
+            body = json_body(payload)
+            all_headers["Content-Type"] = "application/json"
+        return http_send(self.c, self.c["api"] + path, body, all_headers, method=method,
+                         explain=self.explain)
+
+    def post(self, item):
+        try:
+            self.call("POST", "/v2/bot/message/push",
+                      {"to": self.c["to"], "messages": [{"type": "text", "text": text}
+                                                        for text in item["payload"][:5]]},
+                      {"X-Line-Retry-Key": item.get("retry_key") or str(uuid.uuid4())})
+        except DeliveryError as exc:
+            if exc.kind.startswith("http-409"):
+                return      # accepted on an earlier try whose answer was lost
+            raise
+
+    def probe(self):
+        try:
+            _, raw = self.call("GET", "/v2/bot/info")
+        except DeliveryError as exc:
+            print("  PROBLEM: line: the channel access token was refused: %s (%s)" % (exc.text, exc.kind))
+            return 1
+        print("  line auth: accepted as %s" % (json_error(raw).get("displayName") or "?"))
+        path = {"C": "/v2/bot/group/%s/summary", "U": "/v2/bot/profile/%s"}.get(self.c["to"][:1])
+        if path:
+            try:
+                _, raw = self.call("GET", path % self.c["to"])
+            except DeliveryError as exc:
+                print("  PROBLEM: line: %s cannot be reached: invite the bot to the group, or have "
+                      "the user add it as a friend: %s" % (self.c["to"], exc.text))
+                return 1
+            data = json_error(raw)
+            print("  line target: %s" % (data.get("groupName") or data.get("displayName") or "?"))
+        print("  line result: the bot can reach the target; --test line sends one push message, "
+              "which counts against the monthly quota")
+        return 0
+
+
+# --- Slack ------------------------------------------------------------------
+
+def sl(text):
+    """Slack mrkdwn made inert.
+
+    &, < and > are the escapes Slack documents, and with them gone no <!channel>,
+    <@user> or <url|disguised text> can be formed. * ` ~ have no escape in
+    mrkdwn, so they become look-alikes. The webhook never sets link_names, so a
+    bare @channel stays text; it also gets a zero-width space, in case a
+    workspace or a forwarding bot resolves names after all.
+    """
+    text = " ".join(str(text).split())
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    text = text.replace("*", "\u2217").replace("`", "\u02cb").replace("~", "\u223c")
+    return text.replace("@", "@\u200b")
+
+
+def sl_code(text):
+    text = " ".join(str(text).split())
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("`", "\u02cb")
+    return "`%s`" % text if text else ""
+
+
+def sl_section(text):
+    return {"type": "section", "text": {"type": "mrkdwn", "text": trim_keep(text, 2900)}}
+
+
+def trim_keep(text, limit):
+    """Shorten without collapsing the line breaks a block needs."""
+    return text if len(text) <= limit else text[:limit - 3] + "..."
+
+
+class SlackChannel(Channel):
+    """An incoming webhook with Block Kit: a header per group, the short values
+    as two-column fields, long values and logs as sections, rule and notes in a
+    small context line."""
+
+    name, label = "slack", "Slack"
+
+    def fits(self, elements):
+        return len(elements) <= 48 and len(json.dumps(elements, ensure_ascii=False)) <= 24000
+
+    def ellipsis(self):
+        return {"type": "context", "elements": [{"type": "mrkdwn", "text": "_(cut to fit one message)_"}]}
+
+    def assemble(self, elements, index, count):
+        blocks = list(elements)
+        if count > 1:
+            blocks.insert(0, {"type": "context", "elements": [
+                {"type": "mrkdwn", "text": "(%d/%d)" % (index + 1, count)}]})
+        return {"text": self._fallback, "blocks": blocks, "unfurl_links": False, "unfurl_media": False}
+
+    def render(self, groups, total, options, context, notice=None):
+        self._fallback = sl(self.summary(groups, total, options["level"], context or {}))
+        return Channel.render(self, groups, total, options, context, notice)
+
+    def value(self, label, value):
+        code, rest = code_split(label, value)
+        if code is None:
+            return sl(value)
+        return sl_code(code) + ((" " + sl(rest)) if rest else "")
+
+    def head(self, groups, total, level, context):
+        blocks = [sl_section("\U0001F6A8 *%s*" % sl(self.summary(groups, total, level, context)))]
+        about = self.about(groups, context)
+        texts = ([sl(about)] if about else []) + ([sl(TEST_NOTE)] if context.get("test") else [])
+        if texts:
+            blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": "\n".join(texts)}]})
+        return (blocks, blocks)
+
+    def notice(self, notice):
+        blocks = [sl_section("*%s*" % sl(self.notice_text(notice)))]
+        return (blocks, blocks)
+
+    def link(self, text, url):
+        # Slack decodes &amp; in a link's address; < > | cannot occur (group_view checked)
+        return "<%s|%s>" % (url.replace("&", "&amp;"), sl(text))
+
+    def group(self, v):
+        # plain_text: nothing in it is interpreted, but @ is split as everywhere else
+        title = trim("%s L%d \u00b7 %s" % (level_mark(v["level"]), v["level"],
+                                           v["title"].replace("@", "@\u200b")), 150)
+        blocks = [{"type": "divider"},
+                  {"type": "header", "text": {"type": "plain_text", "text": title, "emoji": False}}]
+        fields, long_rows = [{"type": "mrkdwn", "text": "*Host*\n%s" % sl(v["agent"])}], []
+        for label, value in v["rows"]:
+            if fits_table(label, value) and len(fields) < 10:
+                fields.append({"type": "mrkdwn", "text": "*%s*\n%s" % (label, self.value(label, value))})
+            else:
+                long_rows.append("*%s* %s" % (label, self.value(label, value)))
+        blocks.append({"type": "section", "fields": fields})
+        for fields_more in v["more"]:
+            long_rows.append(" \u00b7 ".join("*%s* %s" % (label, self.value(label, value))
+                                             for label, value in fields_more))
+        if long_rows:
+            blocks.append(sl_section("\n".join(long_rows)))
+        if v["logs"]:
+            body = "\n".join(" ".join(log.split()).replace("&", "&amp;").replace("<", "&lt;")
+                             .replace(">", "&gt;").replace("`", "\u02cb") for log in v["logs"])
+            blocks.append(sl_section("```%s```" % trim_keep(body, 2890)))
+        context = ["rule " + (self.link(v["rule"], v["link"]) if v["link"] else sl(v["rule"]))]
+        if v["count"] > 1:
+            context.append("\u00d7%d" % v["count"])
+        if v["badge"]:
+            context.append("*%s*" % v["badge"])
+        context.extend(sl(note) for note in v["notes"])
+        blocks.append({"type": "context", "elements": [{"type": "mrkdwn",
+                                                         "text": trim(" \u00b7 ".join(context), 2900)}]})
+        return (blocks, [{"type": "divider"}] + self.compact_lines([v]))
+
+    def compact_lines(self, views):
+        return [sl_section("\n".join("%s %s" % (level_mark(v["level"]), sl(self.compact_text(v)))
+                                     for v in views))]
+
+    def tail(self, count, held, context, dashboard):
+        units = []
+        if count > MAX_GROUPS:
+            units.append(([sl_section("_%d more groups not listed_" % (count - MAX_GROUPS))],) * 2)
+        if held:
+            lines = ["*%s*" % sl(self.held_title(context))] + \
+                ["\u2022 " + sl(line) for line in self.held_lines(held)]
+            units.append(([{"type": "divider"}, sl_section("\n".join(lines))],) * 2)
+        if context.get("more"):
+            units.append(([sl_section("_More alerts are waiting; the next run continues from here._")],) * 2)
+        foot = []
+        if context.get("node"):
+            foot.append("sent by %s \u00b7 jt-alert-digest %s" % (sl(context["node"]), VERSION))
+        if dashboard and re.match(r"^https?://[^\s<>|\"]+$", dashboard):
+            foot.append(self.link("dashboard", dashboard))
+        if foot:
+            units.append(([{"type": "context", "elements": [{"type": "mrkdwn",
+                                                             "text": " \u00b7 ".join(foot)}]}],) * 2)
+        return units
+
+    def daily(self, info):
+        v = daily_view(info)
+        self._fallback = sl(v["title"])
+        head = [{"type": "header", "text": {"type": "plain_text", "emoji": False, "text": trim(
+                    "%s %s" % ("\U0001F7E5" if v["trouble"] else "\U0001F7E9", v["title"]), 150)}},
+                {"type": "context", "elements": [{"type": "mrkdwn", "text": sl(v["period"])}]}]
+        rows = [{"type": "mrkdwn", "text": "*%s*\n%s" % (sl(label), sl(value))} for label, value in v["rows"]]
+        for start in range(0, len(rows), 10):
+            head.append({"type": "section", "fields": rows[start:start + 10]})
+        units = [(head, head)]
+        for title, lines in v["sections"]:
+            body = ["*%s*" % sl(title)] + ["\u2022 " + sl(line) for line in lines[:20]]
+            if len(lines) > 20:
+                body.append("\u2022 %d more" % (len(lines) - 20))
+            units.append(([sl_section("\n".join(body))],) * 2)
+        foot = sl(v["foot"]) + ((" \u00b7 " + self.link("dashboard", v["dashboard"])) if v["dashboard"] else "")
+        units.append(([{"type": "context", "elements": [{"type": "mrkdwn", "text": foot}]}],) * 2)
+        return [self.item(p) for p in self.pack(units)]
+
+    def explain(self, status, raw):
+        code = raw[:80].decode("utf-8", "replace").strip()
+        if not re.match(r"^[a-z_]+$", code):
+            code = ""
+        return code, code, code in ("invalid_blocks", "invalid_blocks_format", "invalid_payload",
+                                    "invalid_attachments", "too_many_attachments", "no_text")
+
+    def post(self, item):
+        http_send(self.c, self.c["url"], json_body(item["payload"]),
+                  {"Content-Type": "application/json"}, explain=self.explain)
+
+    def probe(self):
+        # An empty message is refused as no_text by a valid webhook and posts nothing;
+        # a wrong or revoked one answers no_service, invalid_token or channel_not_found.
+        try:
+            http_send(self.c, self.c["url"], b"{}", {"Content-Type": "application/json"},
+                      explain=self.explain)
+        except DeliveryError as exc:
+            if exc.kind in ("http-400-no_text", "http-400-invalid_payload"):
+                print("  slack result: the webhook exists (an empty message was refused as "
+                      "expected); --test slack posts one message")
+                return 0
+            print("  PROBLEM: slack: %s (%s)" % (exc.text, exc.kind))
+            return 1
+        print("  warning: slack: the webhook took an empty message; is the address a Slack webhook?")
+        return 0
+
+
+# --- Discord ----------------------------------------------------------------
+
+def dc(text):
+    """Discord markdown made inert with backslash escapes, which Discord honours
+    for any punctuation; @ also gets a zero-width space. allowed_mentions with
+    an empty parse list is what guarantees nobody is notified."""
+    text = " ".join(str(text).split())
+    text = re.sub(r"([\\*_~`|<>#\[\]()\-:])", r"\\\1", text)
+    return text.replace("@", "@\u200b")
+
+
+def dc_plain(text):
+    """For embed titles and footers, where markdown may or may not be parsed:
+    look-alikes instead of backslashes, which would show if it is not."""
+    text = " ".join(str(text).split())
+    text = text.replace("*", "\u2217").replace("`", "\u02cb").replace("@", "@\u200b")
+    for pair in ("__", "~~", "||"):
+        text = text.replace(pair, pair[0] + "\u200b" + pair[1])
+    return text.replace("](", "]\u200b(").replace("<", "\u2039").replace(">", "\u203a")
+
+
+def dc_code(text, block=False):
+    text = str(text).replace("`", "\u02cb")
+    if block:
+        return "```\n%s\n```" % text
+    text = " ".join(text.split())
+    return "`%s`" % text if text else ""
+
+
+def embed_size(embed):
+    size = len(embed.get("title", "")) + len(embed.get("description", ""))
+    size += len((embed.get("footer") or {}).get("text", ""))
+    for field in embed.get("fields", []):
+        size += len(field.get("name", "")) + len(field.get("value", ""))
+    return size
+
+
+class DiscordChannel(Channel):
+    """A channel webhook with embeds: one embed per group in the level's colour,
+    short values as inline fields, the log as a code block field. Messages hold
+    at most ten embeds and 6,000 characters of them."""
+
+    name, label = "discord", "Discord"
+
+    def fits(self, elements):
+        embeds = [e for e in elements if "content" not in e]
+        content = "\n".join(e["content"] for e in elements if "content" in e)
+        return len(embeds) <= 10 and sum(embed_size(e) for e in embeds) <= 5800 and len(content) <= 1900
+
+    def ellipsis(self):
+        return {"description": "*(cut to fit one message)*"}
+
+    def assemble(self, elements, index, count):
+        content = "\n".join(e["content"] for e in elements if "content" in e)
+        if count > 1:
+            content = ("*(%d/%d)*\n" % (index + 1, count)) + content
+        payload = {"embeds": [e for e in elements if "content" not in e],
+                   "allowed_mentions": {"parse": []}}
+        if content.strip():
+            payload["content"] = content.strip()
+        return payload
+
+    def value(self, label, value):
+        code, rest = code_split(label, value)
+        if code is None:
+            return dc(value)
+        return dc_code(code) + ((" " + dc(rest)) if rest else "")
+
+    def head(self, groups, total, level, context):
+        lines = ["\U0001F6A8 **%s**" % dc(self.summary(groups, total, level, context))]
+        about = self.about(groups, context)
+        if about:
+            lines.append("*%s*" % dc(about))
+        if context.get("test"):
+            lines.append(dc(TEST_NOTE))
+        element = {"content": "\n".join(lines)}
+        return ([element], [element])
+
+    def notice(self, notice):
+        embed = {"description": "**%s**" % dc(self.notice_text(notice))}
+        return ([embed], [embed])
+
+    def group(self, v):
+        title = "%s L%d \u00b7 %s%s" % (level_mark(v["level"]), v["level"], v["title"],
+                                         (" \u00d7%d" % v["count"]) if v["count"] > 1 else "")
+        embed = {"title": trim(dc_plain(title), 250), "color": colour(v["level"])}
+        if v["link"]:
+            embed["url"] = v["link"]
+        fields = [{"name": "Host", "value": trim(dc(v["agent"]), 1000), "inline": True}]
+        for label, value in v["rows"]:
+            fields.append({"name": label, "value": trim_keep(self.value(label, value), 1000) or "-",
+                           "inline": fits_table(label, value)})
+        for extra in v["more"]:
+            fields.append({"name": "Also", "value": trim_keep(" \u00b7 ".join(
+                "**%s** %s" % (label, self.value(label, value)) for label, value in extra), 1000),
+                "inline": False})
+        if v["logs"]:
+            fields.append({"name": "Log" if len(v["logs"]) == 1 else "Logs (%d)" % len(v["logs"]),
+                           "value": dc_code(trim_keep("\n".join(" ".join(log.split()) for log in v["logs"]),
+                                                      980), block=True), "inline": False})
+        embed["fields"] = fields[:25]
+        footer = ["rule %s" % v["rule"]] + ([v["badge"]] if v["badge"] else []) + v["notes"]
+        embed["footer"] = {"text": trim(dc_plain(" \u00b7 ".join(footer)), 2000)}
+        return ([embed], self.compact_lines([v]))
+
+    def compact_lines(self, views):
+        return [{"description": trim_keep("\n".join("%s %s" % (level_mark(v["level"]), dc(self.compact_text(v)))
+                                                     for v in views), 4000)}]
+
+    def tail(self, count, held, context, dashboard):
+        lines = []
+        if count > MAX_GROUPS:
+            lines.append("*%d more groups not listed*" % (count - MAX_GROUPS))
+        if held:
+            lines.append("**%s**" % dc(self.held_title(context)))
+            lines.extend("\u2022 " + dc(line) for line in self.held_lines(held))
+        if context.get("more"):
+            lines.append("*More alerts are waiting; the next run continues from here.*")
+        foot = []
+        if context.get("node"):
+            foot.append("*sent by %s \u00b7 jt-alert-digest %s*" % (dc(context["node"]), VERSION))
+        if dashboard and re.match(r"^https?://[^\s<>|\"()]+$", dashboard):
+            foot.append("[dashboard](%s)" % dashboard)
+        if foot:
+            lines.append(" \u00b7 ".join(foot))
+        if not lines:
+            return []
+        embed = {"description": trim_keep("\n".join(lines), 4000)}
+        return [([embed], [embed])]
+
+    def daily(self, info):
+        v = daily_view(info)
+        embed = {"title": trim(dc_plain("\U0001F4CA " + v["title"]), 250),
+                 "color": 0xB91C1C if v["trouble"] else 0x15803D,
+                 "description": "*%s*" % dc(v["period"]),
+                 "fields": [{"name": dc_plain(label), "value": dc(value), "inline": True}
+                            for label, value in v["rows"]][:25]}
+        units = [([embed], [embed])]
+        for title, lines in v["sections"]:
+            body = ["\u2022 " + dc(line) for line in lines[:20]]
+            if len(lines) > 20:
+                body.append("\u2022 %d more" % (len(lines) - 20))
+            section = {"title": trim(dc_plain(title), 250), "description": trim_keep("\n".join(body), 4000)}
+            units.append(([section], [section]))
+        foot = "*%s*" % dc(v["foot"])
+        if v["dashboard"] and re.match(r"^https?://[^\s<>|\"()]+$", v["dashboard"]):
+            foot += " \u00b7 [dashboard](%s)" % v["dashboard"]
+        units.append(([{"description": foot}],) * 2)
+        return [self.item(p) for p in self.pack(units)]
+
+    def explain(self, status, raw):
+        data = json_error(raw)
+        code = data.get("code")
+        return (str(code) if code else ""), str(data.get("message") or ""), code == 50035
+
+    def post_url(self):
+        url = self.c["url"]
+        return url + ("&" if "?" in url else "?") + "wait=true"
+
+    def post(self, item):
+        http_send(self.c, self.post_url(), json_body(item["payload"]),
+                  {"Content-Type": "application/json"}, explain=self.explain)
+
+    def probe(self):
+        try:
+            _, raw = http_send(self.c, self.c["url"], None, {"Accept": "application/json"},
+                               method="GET", explain=self.explain)
+        except DeliveryError as exc:
+            print("  PROBLEM: discord: the webhook was refused: %s (%s)" % (exc.text, exc.kind))
+            return 1
+        data = json_error(raw)
+        print("  discord webhook: %s, channel id %s" % (data.get("name", "?"), data.get("channel_id", "?")))
+        print("  discord result: the webhook exists; --test discord posts one message")
+        return 0
+
+
+# --- Microsoft Teams --------------------------------------------------------
+
+def ms(text):
+    """Adaptive Card text made inert.
+
+    TextBlock and FactSet render a markdown subset (bold, italic, lists, links)
+    and {{DATE()}} functions; there is no escape, so the markers become
+    look-alikes or are split by a zero-width space. A mention needs an <at>
+    entity the card itself declares, which alert text cannot add.
+    """
+    text = " ".join(str(text).split())
+    text = text.replace("*", "\u2217").replace("`", "\u02cb").replace("@", "@\u200b")
+    for pair in ("__", "~~", "{{"):
+        text = text.replace(pair, pair[0] + "\u200b" + pair[1])
+    text = text.replace("](", "]\u200b(")
+    return re.sub(r"^([#>+-]|\d+\.)(?=\s)", "\u200b\\1", text)
+
+
+STYLE = ((14, "attention"), (12, "warning"), (10, "accent"), (0, "emphasis"))
+
+
+class TeamsChannel(Channel):
+    """A Teams channel through a Workflows webhook ("Post to a channel when a
+    webhook request is received"), as Adaptive Cards: each group in a container
+    tinted by level, the values as a fact set, the log behind a "Show log"
+    toggle, and a button to the group's alerts in the dashboard.
+
+    Office 365 connectors (outlook.office.com/webhook) were retired by
+    Microsoft; Workflows is the replacement and takes the same card.
+    """
+
+    name, label = "teams", "Microsoft Teams"
+    limit = 24000      # bytes of card; Teams refuses a message above about 28 KB
+
+    def fits(self, elements):
+        return len(json.dumps(elements, ensure_ascii=False).encode("utf-8")) <= self.limit
+
+    def ellipsis(self):
+        return {"type": "TextBlock", "text": "*(cut to fit one message)*", "isSubtle": True, "wrap": True}
+
+    def assemble(self, elements, index, count):
+        body = list(elements)
+        if count > 1:
+            body.insert(0, {"type": "TextBlock", "text": "(%d/%d)" % (index + 1, count),
+                            "isSubtle": True, "size": "Small"})
+        return {"type": "message", "attachments": [{
+            "contentType": "application/vnd.microsoft.card.adaptive", "contentUrl": None,
+            "content": {"$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                        "type": "AdaptiveCard", "version": "1.4", "msteams": {"width": "Full"},
+                        "body": body}}]}
+
+    def render(self, groups, total, options, context, notice=None):
+        self._ids = 0
+        return Channel.render(self, groups, total, options, context, notice)
+
+    def head(self, groups, total, level, context):
+        items = [{"type": "TextBlock", "text": "\U0001F6A8 **%s**" % ms(self.summary(groups, total, level, context)),
+                  "wrap": True, "size": "Medium"}]
+        about = self.about(groups, context)
+        if about:
+            items.append({"type": "TextBlock", "text": ms(about), "isSubtle": True, "wrap": True,
+                          "spacing": "None"})
+        if context.get("test"):
+            items.append({"type": "TextBlock", "text": ms(TEST_NOTE), "wrap": True})
+        return (items, items)
+
+    def notice(self, notice):
+        items = [{"type": "TextBlock", "text": "**%s**" % ms(self.notice_text(notice)), "wrap": True,
+                  "color": "Warning"}]
+        return (items, items)
+
+    def group(self, v):
+        style = next(name for floor, name in STYLE if v["level"] >= floor)
+        title = "%s **L%d \u00b7 %s**%s%s" % (level_mark(v["level"]), v["level"], ms(v["title"]),
+                                              (" \u00d7%d" % v["count"]) if v["count"] > 1 else "",
+                                              (" \u00b7 **%s**" % v["badge"]) if v["badge"] else "")
+        facts = [{"title": "Host", "value": ms(v["agent"])}]
+        for label, value in v["rows"]:
+            facts.append({"title": label, "value": ms(value)})
+            if label == "Time":
+                facts.append({"title": "Rule", "value": ms(v["rule"])})
+        items = [{"type": "TextBlock", "text": title, "wrap": True, "size": "Medium"},
+                 {"type": "FactSet", "facts": facts}]
+        for extra in v["more"]:
+            items.append({"type": "TextBlock", "wrap": True, "text": " \u00b7 ".join(
+                "**%s** %s" % (label, ms(value)) for label, value in extra)})
+        actions = []
+        if v["logs"]:
+            self._ids = getattr(self, "_ids", 0) + 1
+            target = "log-%d" % self._ids
+            items.append({"type": "TextBlock", "id": target, "isVisible": False, "wrap": True,
+                          "fontType": "Monospace", "size": "Small",
+                          "text": "\n\n".join(ms(log) for log in v["logs"])})
+            actions.append({"type": "Action.ToggleVisibility", "title": "Show log",
+                            "targetElements": [target]})
+        if v["link"]:
+            actions.append({"type": "Action.OpenUrl", "title": "Alerts in the dashboard", "url": v["link"]})
+        if actions:
+            items.append({"type": "ActionSet", "actions": actions})
+        if v["notes"]:
+            items.append({"type": "TextBlock", "text": ms("(%s)" % "; ".join(v["notes"])),
+                          "isSubtle": True, "size": "Small", "wrap": True})
+        container = {"type": "Container", "style": style, "separator": True, "spacing": "Medium",
+                     "items": items}
+        return ([container], self.compact_lines([v]))
+
+    def compact_lines(self, views):
+        return [{"type": "TextBlock", "wrap": True, "text": "\n\n".join(
+            "%s %s" % (level_mark(v["level"]), ms(self.compact_text(v))) for v in views)}]
+
+    def tail(self, count, held, context, dashboard):
+        units = []
+        if count > MAX_GROUPS:
+            units.append(([{"type": "TextBlock", "isSubtle": True, "wrap": True,
+                            "text": "%d more groups not listed" % (count - MAX_GROUPS)}],) * 2)
+        if held:
+            lines = ["**%s**" % ms(self.held_title(context))] + ["\u2022 " + ms(l) for l in self.held_lines(held)]
+            units.append(([{"type": "TextBlock", "wrap": True, "separator": True,
+                            "text": "\n\n".join(lines)}],) * 2)
+        if context.get("more"):
+            units.append(([{"type": "TextBlock", "wrap": True, "isSubtle": True,
+                            "text": "More alerts are waiting; the next run continues from here."}],) * 2)
+        foot = []
+        if context.get("node"):
+            foot.append({"type": "TextBlock", "isSubtle": True, "size": "Small", "wrap": True,
+                         "separator": True,
+                         "text": ms("sent by %s \u00b7 jt-alert-digest %s" % (context["node"], VERSION))})
+        if dashboard and re.match(r"^https?://[^\s<>|\"]+$", dashboard):
+            foot.append({"type": "ActionSet", "actions": [{"type": "Action.OpenUrl",
+                                                           "title": "Dashboard", "url": dashboard}]})
+        if foot:
+            units.append((foot, foot))
+        return units
+
+    def daily(self, info):
+        v = daily_view(info)
+        head = [{"type": "Container", "style": "attention" if v["trouble"] else "good", "items": [
+                    {"type": "TextBlock", "text": "\U0001F4CA **%s**" % ms(v["title"]), "wrap": True,
+                     "size": "Medium"},
+                    {"type": "TextBlock", "text": ms(v["period"]), "isSubtle": True, "spacing": "None"}]},
+                {"type": "FactSet", "facts": [{"title": ms(l), "value": ms(x)} for l, x in v["rows"]]}]
+        units = [(head, head)]
+        for title, lines in v["sections"]:
+            body = ["**%s**" % ms(title)] + ["\u2022 " + ms(line) for line in lines[:20]]
+            if len(lines) > 20:
+                body.append("\u2022 %d more" % (len(lines) - 20))
+            units.append(([{"type": "TextBlock", "wrap": True, "text": "\n\n".join(body)}],) * 2)
+        foot = [{"type": "TextBlock", "wrap": True, "isSubtle": True, "size": "Small", "text": ms(v["foot"])}]
+        if v["dashboard"]:
+            foot.append({"type": "ActionSet", "actions": [{"type": "Action.OpenUrl", "title": "Dashboard",
+                                                           "url": v["dashboard"]}]})
+        units.append((foot, foot))
+        return [self.item(p) for p in self.pack(units)]
+
+    def explain(self, status, raw):
+        data = json_error(raw)
+        error = data.get("error") if isinstance(data.get("error"), dict) else {}
+        return str(error.get("code") or ""), str(error.get("message") or ""), \
+            status == 400 and "TriggerInputSchemaMismatch" not in str(error.get("code"))
+
+    def post(self, item):
+        http_send(self.c, self.c["url"], json_body(item["payload"]),
+                  {"Content-Type": "application/json"}, explain=self.explain)
+
+
+# --- Generic webhook --------------------------------------------------------
+
+def webhook_group(rule_id, agent, group, link):
+    return {"rule_id": rule_id, "level": group["level"], "title": heading(group, rule_id),
+            "descriptions": [redact(d) for d in (group.get("descriptions") or [])[:10]],
+            "agent": {"name": agent, "id": group.get("agent_id") or None,
+                      "ip": group.get("agent_ip") or None},
+            "count": group["count"], "first": group.get("first"), "last": group.get("last"),
+            "new": group.get("new") or None, "earlier": group.get("earlier", 0),
+            "mitre": {"ids": list(group.get("mitre") or []),
+                      "tactics": dedupe(group.get("tactics") or [])},
+            "link": link,
+            "samples": [[{"label": label, "value": value} for label, value in fields]
+                        for fields in card_fields(group, MAX_SAMPLES)]}
+
+
+class WebhookChannel(Channel):
+    """POST of a documented JSON document, for any system: a SOAR, a ticket
+    queue, a pager, a script. Nothing in it is markup and nothing is escaped:
+    the receiver must treat every string as untrusted text. Values are redacted
+    as they are in the mail.
+
+    Headers: X-JT-Event (digest, daily or test), X-JT-Delivery (the same on
+    every retry of one document, for de-duplication), and with
+    webhook_hmac_key_file X-JT-Timestamp and X-JT-Signature =
+    "sha256=" + hex HMAC-SHA256(key, timestamp + "." + body); with
+    webhook_bearer_file, Authorization: Bearer <token>.
+    """
+
+    name, label = "webhook", "Webhook"
+    per_part = 50
+
+    def base(self, kind, context):
+        return {"schema": WEBHOOK_SCHEMA, "kind": kind, "version": VERSION,
+                "node": context.get("node"), "node_type": context.get("node_type") or None,
+                "sent_at": datetime.fromtimestamp(now(), timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+    def render(self, groups, total, options, context, notice=None):
+        context = context or {}
+        kind = "test" if context.get("test") else "digest"
+        items = ordered_groups(groups)
+        chunks = [items[i:i + self.per_part] for i in range(0, len(items), self.per_part)] or [[]]
+        out = []
+        for index, chunk in enumerate(chunks):
+            doc = self.base(kind, context)
+            doc.update({"level": options["level"], "total": total, "part": index + 1,
+                        "parts": len(chunks), "more_waiting": bool(context.get("more")),
+                        "dashboard": options.get("dashboard"),
+                        "groups": [webhook_group(r, a, g, link_for(context, r, a, g))
+                                   for (r, a), g in chunk]})
+            if index == len(chunks) - 1:
+                doc["held"] = [{"rule_id": e.get("rule"), "agent": e.get("agent"),
+                                "level": e.get("level"), "count": e.get("n", 0),
+                                "first": e.get("first"), "last": e.get("last"),
+                                "title": e.get("heading")} for e in context.get("held") or []]
+                if notice:
+                    doc["skipped"] = {"count": notice["n"], "first": notice["first"],
+                                      "last": notice["last"], "older_than_hours": notice["hours"]}
+            out.append(self.item(doc, kind))
+        return out
+
+    def daily(self, info):
+        daily, context = info["daily"], info["context"]
+        failure = info["failure"]
+
+        def state_of(f):
+            return {"ok": False, "since": local_iso(f.get("since")), "error_class": f.get("kind")} \
+                if isinstance(f, dict) else {"ok": True}
+        doc = self.base("daily", context)
+        doc["summary"] = {
+            "since": local_iso(daily.get("since")), "until": local_iso(info["t"]),
+            "level": info["options"]["level"],
+            "levels": {str(k): v for k, v in info["levels"]},
+            "qualifying": daily.get("qualifying", 0), "digests": daily.get("digests", 0),
+            "alerts_sent": daily.get("mailed", 0), "held": daily.get("held", 0),
+            "excluded": daily.get("excluded", 0), "unparsed": daily.get("unparsed", 0),
+            "delivery": dict(state_of(failure), failed_tries=daily.get("failures", 0)),
+            "other_channels": {name: state_of(other) for name, other in info["others"]},
+            "top_rules": [{"rule_id": r, "count": c, "level": l, "title": t}
+                          for r, (c, l, t) in info["top"]],
+            "stopped_agents": [{"agent": n, "stopped": local_iso(s)} for n, s in info["stopped"]],
+            "disconnects": dict(daily.get("disconnects") or {}),
+            "warnings": list(info["warnings"])}
+        return [self.item(doc, "daily")]
+
+    def item(self, payload, kind="digest"):
+        return {"payload": payload, "kind": kind, "delivery": str(uuid.uuid4())}
+
+    def where(self):
+        return "webhook to %s%s%s" % (self.server(), ", signed" if self.c.get("hmac_key") else "",
+                                      ", bearer token" if self.c.get("bearer") else "")
+
+    def explain(self, status, raw):
+        return "", raw[:200].decode("utf-8", "replace"), False
+
+    def post(self, item):
+        body = json_body(item["payload"])
+        headers = {"Content-Type": "application/json; charset=utf-8",
+                   "X-JT-Event": item.get("kind") or "digest",
+                   "X-JT-Delivery": item.get("delivery") or str(uuid.uuid4())}
+        if self.c.get("hmac_key"):
+            stamp = str(int(time.time()))
+            digest_ = hmac.new(self.c["hmac_key"].encode("utf-8"), stamp.encode("ascii") + b"." + body,
+                               hashlib.sha256).hexdigest()
+            headers.update({"X-JT-Timestamp": stamp, "X-JT-Signature": "sha256=" + digest_})
+        if self.c.get("bearer"):
+            headers["Authorization"] = "Bearer " + self.c["bearer"]
+        http_send(self.c, self.c["url"], body, headers, explain=self.explain)
+
+
+CHANNEL_CLASSES = OrderedDict((
+    ("teams", TeamsChannel), ("telegram", TelegramChannel), ("slack", SlackChannel),
+    ("discord", DiscordChannel), ("mattermost", MattermostChannel),
+    ("webhook", WebhookChannel), ("line", LineChannel),
+))
+
+
+class ZulipChannel(Channel):
+    """The 1.5 Zulip channel, in the same frame as the others: its own layout
+    (render_zulip, daily_zulip) and API calls are unchanged."""
+
+    name, label = "zulip", "Zulip"
+
+    def where(self):
+        return "Zulip channel %s, topic %s" % (self.c["stream"], self.c["topic"])
+
+    def server(self):
+        return self.c["url"]
+
+    def render(self, groups, total, options, context, notice=None):
+        text = None
+        if notice:
+            text = ("**%d alerts from %s to %s were not posted here**: they were more than %d hours "
+                    "old when they could be read. The mail digest and the dashboard have them."
+                    % (notice["n"], md(notice["first"] or "?"), md(notice["last"] or "?"),
+                       notice["hours"]))
+        return [{"topic": self.c["topic"], "content": part}
+                for part in render_zulip(groups, total, options["level"], options["dashboard"],
+                                         context, text)]
+
+    def daily(self, info):
+        content = daily_zulip(info["context"], info["options"], info["daily"], info["t"],
+                              info["levels"], info["top"], info["stopped"], info["failure"],
+                              info["others"], info["warnings"])
+        return [{"topic": self.c["summary_topic"], "content": part} for part in pack([content])]
+
+    def preview(self, item):
+        return item["content"]
+
+    def post(self, item):
+        zulip_post(self.c, item["topic"], item["content"])
+
+    def check(self):
+        return check_zulip(self.c, self.fatal)
+
+
+# --------------------------------------------------------------------------
 # Reporting into the manager's own event queue
 # --------------------------------------------------------------------------
 
@@ -2660,7 +4353,8 @@ def emit(event, **fields):
     reads a log file. Writing to the manager's own queue turns the event into
     an ordinary alert: the built-in json decoder decodes it and rules
     131110-131116 match its jt_alert_digest.event field (131121-131126 when
-    jt_alert_digest.channel is "zulip"; mail events carry no channel, as in 1.4).
+    jt_alert_digest.channel is "zulip", 131131-131196 for the other channels,
+    ten IDs each; mail events carry no channel, as in 1.4).
     """
     body = {"event": event, "node": _NODE}
     for key, value in fields.items():
@@ -2858,12 +4552,9 @@ def count_batch(state, batch, mailed, held):
 
 
 def render_daily(state, options, context, warnings, others=()):
-    daily = state["daily"]
-    t = now()
-    stopped = sorted((n, s) for n, s in daily.get("stops", {}).items() if t - s >= STOP_GRACE)
-    levels = sorted(((int(k), v) for k, v in daily.get("levels", {}).items()), reverse=True)
-    top = sorted(daily.get("rules", {}).items(), key=lambda kv: -kv[1][0])[:5]
-    failure = state.get("failure")
+    info = daily_info(state, options, context, warnings, others)
+    daily, t, stopped, levels, top, failure = (info[k] for k in ("daily", "t", "stopped", "levels",
+                                                                 "top", "failure"))
     lines = ["Daily summary from %s%s, %s to %s"
              % (context["node"], (" (%s)" % context["node_type"]) if context.get("node_type") else "",
                 local_iso(daily.get("since")), local_iso(t)), ""]
@@ -3109,8 +4800,8 @@ def run(args):
 
     if args.check:
         return check(wazuh, config, options, fatal, warnings)
-    if args.test == "zulip":
-        return send_test_zulip(options, context)
+    if args.test and args.test != "mail":
+        return send_test_channel(options, context, args.test)
     if args.test:
         return send_test(options, fatal, context)
     if args.dry_run:
@@ -3139,13 +4830,14 @@ def new_channel_state(position, options):
 def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
     """One run: each channel reads what is new to it, sends, and keeps its own place.
 
-    Mail keeps the top level of the state file, exactly as in 1.4; Zulip, when
-    configured, keeps its own position, holds and failure record under "zulip".
-    Neither channel's failure or crash moves, loses or repeats the other's work.
+    Mail keeps the top level of the state file, exactly as in 1.4; each chat or
+    webhook channel, when configured, keeps its own position, holds and failure
+    record under its name ("zulip", "teams", "telegram", ...). No channel's
+    failure or crash moves, loses or repeats another's work.
     """
     alerts_path = os.path.join(wazuh, "logs", "alerts", "alerts.json")
     state_path = os.path.join(wazuh, "var", "jt-alert-digest.state")
-    zulip = options.get("zulip")
+    channels = options.get("channels") or []
     try:
         stat_alerts(alerts_path)
         unreadable = None if os.access(alerts_path, os.R_OK) else "permission denied"
@@ -3163,8 +4855,8 @@ def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
             {"ino": None, "dev": None, "path": None, "offset": 0}
         state = fresh_state(start)
         state["daily"] = init_daily(options)
-        if zulip:
-            state["zulip"] = new_channel_state(dict(start), options)
+        for ch in channels:
+            state[ch.name] = new_channel_state(dict(start), options)
         note_config(state, fatal)
         save_state(state_path, state)
         log("first run: starting at the end of alerts.json, nothing mailed")
@@ -3181,8 +4873,8 @@ def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
             state["pos"] = {"ino": info.st_ino, "dev": info.st_dev, "offset": 0,
                             "path": find_by_inode(os.path.dirname(alerts_path),
                                                   info.st_ino, info.st_dev)}
-        if zulip:
-            state["zulip"] = new_channel_state(dict(state["pos"]), options)
+        for ch in channels:
+            state[ch.name] = new_channel_state(dict(state["pos"]), options)
         if not dry_run:
             # Saved before the loss is reported: a state that cannot be written
             # either ends here as one (deduplicated) crash, not a 131113 per run.
@@ -3193,7 +4885,7 @@ def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
             save_state(state_path, state)
 
     # Mail. A crash here is reported as in 1.4 (by main), but only after the
-    # Zulip channel has had its turn, and with the mail state as it was.
+    # other channels have had their turn, and with the mail state as it was.
     before = copy.deepcopy(state)
     mail_crash = None
     try:
@@ -3207,23 +4899,23 @@ def digest(wazuh, options, fatal, warnings, context, dry_run=False, html=False):
     else:
         persist()
 
-    if zulip and not unreadable:
+    for ch in ([] if unreadable else channels):
         before = copy.deepcopy(state)
         try:
-            zcode = zulip_round(alerts_path, state, zulip, options.get("zulip_fatal") or [],
-                                options, context, warnings, dry_run, persist)
+            ccode = channel_round(alerts_path, state, ch, options, context, warnings, dry_run,
+                                  persist, channels)
         except Exception:
             traceback.print_exc()
             state.clear()
             state.update(before)
             if not dry_run:
-                report_crash(wazuh, "zulip")
-            zcode = 3
+                report_crash(wazuh, ch.name)
+            ccode = 3
         else:
             persist()
             if not dry_run:
-                clear_crash(wazuh, "zulip")
-        code = max(code, zcode)
+                clear_crash(wazuh, ch.name)
+        code = max(code, ccode)
     if mail_crash:
         raise mail_crash[1].with_traceback(mail_crash[2])
     return code
@@ -3362,7 +5054,8 @@ def mail_round(alerts_path, state, options, fatal, warnings, context, lost, unre
                    message["Message-ID"]))
 
     if delivered and not fatal and daily_due(state, options):
-        others = [("Zulip", (state.get("zulip") or {}).get("failure"))] if options.get("zulip") else []
+        others = [(ch.label, (state.get(ch.name) or {}).get("failure"))
+                  for ch in options.get("channels") or []]
         line, text, body, shown, _ = render_daily(state, options, context, warnings, others)
         message = build_message(line, text, body, options, context)
         try:
@@ -3383,44 +5076,63 @@ def reset_daily(sub, shown):
     sub["daily"]["stops"] = stops
 
 
-def zulip_flush(sub, z, persist):
-    """Post the outbox in order, removing each message once Zulip has it.
+def channel_flush(sub, ch, persist):
+    """Post the outbox in order, removing each message once the platform has it.
 
     A batch is moved into the outbox together with the position, in one save,
     before anything is posted. A failure halfway through a multi-part post
     leaves exactly the unposted parts for the next run: nothing is lost and
     nothing already posted is posted again.
+
+    A message the server refuses as malformed (its content, not the sender)
+    would block the channel for good if retried forever; after MALFORMED_TRIES
+    attempts it is dropped and reported as skipped (the skipped rule of the
+    channel). Only the 1.13 channels mark refusals as malformed.
     """
     outbox = sub.get("outbox") or []
     sent = 0
     while outbox:
         item = outbox[0]
         try:
-            zulip_post(z, item["topic"], item["content"])
+            ch.post(item)
         except DeliveryError as exc:
+            if exc.malformed:
+                item["tries"] = item.get("tries", 0) + 1
+                if item["tries"] >= MALFORMED_TRIES:
+                    outbox.pop(0)
+                    note_lost(sub, ["%s refused a message as malformed %d times, so it was dropped "
+                                    "(%s); %d alerts were in it, and the mail digest has them"
+                                    % (ch.label, item["tries"], exc.text, item.get("alerts", 0))],
+                              ch.name)
+                    persist()
+                    continue
             note_failure(sub, exc.kind, exc.text, sum(i.get("alerts", 0) for i in outbox),
-                         item.get("oldest"), z["url"], channel="zulip", permanent=exc.permanent)
+                         item.get("oldest"), ch.server(), channel=ch.name, permanent=exc.permanent)
             persist()
             return False
         sent += item.get("alerts", 0)
         outbox.pop(0)
         persist()
     sub.pop("outbox", None)
-    note_success(sub, sent, channel="zulip")
+    note_success(sub, sent, channel=ch.name)
     return True
 
 
-def zulip_round(alerts_path, state, z, zfatal, options, context, warnings, dry_run, persist):
-    sub = state.get("zulip")
+def channel_round(alerts_path, state, ch, options, context, warnings, dry_run, persist,
+                  channels=()):
+    """One chat or webhook channel's run, under state[ch.name]; Zulip's since 1.5."""
+    name = ch.name
+    sub = state.get(name)
     if not isinstance(sub, dict) or not isinstance(sub.get("pos"), dict):
-        # Zulip newly configured: start at the end, as a first run does, so the
+        # Newly configured: start at the end, as a first run does, so the
         # channel does not open with the whole day's backlog.
         if dry_run:
-            print("\n----- Zulip: first run, would start at the end of alerts.json -----")
+            print("\n----- %s: first run, would start at the end of alerts.json -----" % ch.label)
             return 0
-        state["zulip"] = new_channel_state(end_position(alerts_path), options)
-        log("zulip: first run, starting at the end of alerts.json, nothing posted")
+        state[name] = new_channel_state(end_position(alerts_path), options)
+        log("%s: first run, starting at the end of alerts.json, nothing posted" % name)
         return 0
+    options = ch.options(options)
     for key, default in (("mailed", {}), ("held", {}), ("sent", []),
                          ("seen", {"start": now(), "pairs": {}, "rules": {}})):
         if not isinstance(sub.get(key), type(default)):
@@ -3429,23 +5141,23 @@ def zulip_round(alerts_path, state, z, zfatal, options, context, warnings, dry_r
         sub["daily"] = init_daily(options)
     prune(sub, options.get("repeat", 3600))
     if not dry_run:
-        note_config(sub, zfatal, channel="zulip")
-    if zfatal:
+        note_config(sub, ch.fatal, channel=name)
+    if ch.fatal:
         if dry_run:
-            print("\n----- Zulip: not posting: %s -----" % "; ".join(zfatal))
+            print("\n----- %s: not posting: %s -----" % (ch.label, "; ".join(ch.fatal)))
         return 2
     if sub.get("outbox"):
         if dry_run:
-            print("\n----- Zulip: %d messages wait in the outbox from an earlier run -----"
-                  % len(sub["outbox"]))
+            print("\n----- %s: %d messages wait in the outbox from an earlier run -----"
+                  % (ch.label, len(sub["outbox"])))
             return 0
-        if not zulip_flush(sub, z, persist):
+        if not channel_flush(sub, ch, persist):
             return 1
 
-    # Alerts older than zulip_max_backlog are counted, not posted: after a long
-    # outage the channel says how many it skipped instead of replaying a day.
-    r = prepare(alerts_path, sub, options, [], dry_run, channel="zulip",
-                cutoff=now() - z["max_backlog"])
+    # Alerts older than <channel>_max_backlog are counted, not posted: after a
+    # long outage the channel says how many it skipped instead of replaying a day.
+    max_backlog = ch.c["max_backlog"]
+    r = prepare(alerts_path, sub, options, [], dry_run, channel=name, cutoff=now() - max_backlog)
     batch = r.batch
     if batch.dropped:
         dropped = sub.get("dropped") or {"n": 0, "first": batch.dropped_first, "last": None}
@@ -3456,54 +5168,55 @@ def zulip_round(alerts_path, state, z, zfatal, options, context, warnings, dry_r
     notice = None
     dropped = sub.get("dropped")
     if dropped and (r.sendable or not batch.more):
-        hours = z["max_backlog"] // 3600
-        notice = ("**%d alerts from %s to %s were not posted here**: they were more than %d hours "
-                  "old when they could be read. The mail digest and the dashboard have them."
-                  % (dropped["n"], md(dropped["first"] or "?"), md(dropped["last"] or "?"), hours))
+        notice = {"n": dropped["n"], "first": dropped.get("first"), "last": dropped.get("last"),
+                  "hours": max_backlog // 3600}
     context = dict(context, held=r.held_list, more=batch.more)
     if dry_run:
-        print("\n----- Zulip: channel %s, topic %s -----" % (z["stream"], z["topic"]))
+        print("\n----- %s -----" % ch.where())
         if r.sendable or notice:
-            for part in render_zulip(r.full, r.total, options["level"], options["dashboard"],
-                                     context, notice):
-                print(part)
+            for item in ch.render(r.full, r.total, options, context, notice):
+                print(ch.preview(item))
                 print("-----")
         else:
             print("nothing would be posted")
         return 0
 
     if r.sendable or notice:
-        parts = render_zulip(r.full, r.total, options["level"], options["dashboard"],
-                             context, notice)
+        items = ch.render(r.full, r.total, options, context, notice)
         oldest = list(batch.oldest) if batch.oldest else [now(), local_iso(now())]
-        sub["outbox"] = [{"topic": z["topic"], "content": part, "alerts": r.total if i == 0 else 0,
-                          "oldest": oldest} for i, part in enumerate(parts)]
+        for index, item in enumerate(items):
+            item["alerts"] = r.total if index == 0 else 0
+            item["oldest"] = oldest
+        sub["outbox"] = items
         consume(sub, r, r.sendable)
         if notice:
             note_lost(sub, ["%d alerts from %s to %s were older than %d hours and were not posted "
-                            "to Zulip" % (dropped["n"], dropped["first"], dropped["last"],
-                                          z["max_backlog"] // 3600)], "zulip")
+                            "to %s" % (dropped["n"], dropped["first"], dropped["last"],
+                                       max_backlog // 3600, ch.label)], name)
             sub.pop("dropped", None)
         persist()
-        if not zulip_flush(sub, z, persist):
+        if not channel_flush(sub, ch, persist):
             return 1
-        log("zulip: posted %d alerts in %d groups as %d message%s"
-            % (r.total, len(r.full), len(parts), "" if len(parts) == 1 else "s"))
+        log("%s: posted %d alerts in %d groups as %d message%s"
+            % (name, r.total, len(r.full), len(items), "" if len(items) == 1 else "s"))
     else:
         consume(sub, r, False)
 
     if daily_due(sub, options):
-        others = [("Mail", state.get("failure"))]
-        line, text, _, shown, content = render_daily(sub, options, context, warnings, others)
-        sub["outbox"] = [{"topic": z["summary_topic"], "content": part, "alerts": 0}
-                         for part in pack([content])]
-        reset_daily(sub, shown)
+        others = [("Mail", state.get("failure"))] + [
+            (other.label, (state.get(other.name) or {}).get("failure"))
+            for other in channels if other.name != name]
+        info = daily_info(sub, options, context, warnings, others)
+        items = ch.daily(info)
+        for item in items:
+            item["alerts"] = 0
+        sub["outbox"] = items
+        reset_daily(sub, [n for n, _ in info["stopped"]])
         persist()
-        if not zulip_flush(sub, z, persist):
+        if not channel_flush(sub, ch, persist):
             return 1
-        log("zulip: daily summary posted")
+        log("%s: daily summary posted" % name)
     return 0
-
 
 
 # --------------------------------------------------------------------------
@@ -3511,13 +5224,13 @@ def zulip_round(alerts_path, state, z, zfatal, options, context, warnings, dry_r
 # --------------------------------------------------------------------------
 
 def check(wazuh, config, options, fatal, warnings):
-    """--check: the mail transport, then the Zulip channel when one is configured.
+    """--check: the mail transport, then every chat or webhook channel configured.
 
     Nothing is sent on either channel and nothing is written.
     """
     code = check_mail(wazuh, config, options, fatal, warnings)
-    if options.get("zulip"):
-        code = max(code, check_zulip(options["zulip"], options.get("zulip_fatal") or []))
+    for ch in options.get("channels") or []:
+        code = max(code, ch.check())
     return code
 
 
@@ -3693,8 +5406,32 @@ def send_test_zulip(options, context):
     return 0
 
 
+def send_test_channel(options, context, name):
+    """--test <channel>: one test message to that channel only, and no mail."""
+    if name == "zulip":
+        return send_test_zulip(options, context)
+    ch = next((c for c in options.get("channels") or [] if c.name == name), None)
+    if ch is None:
+        print("PROBLEM: %s is not configured (no %s_* settings in jt-alert-digest.conf)" % (name, name))
+        return 1
+    if ch.fatal:
+        for problem in ch.fatal:
+            print("PROBLEM: %s: %s" % (name, problem))
+        return 1
+    items = ch.test_items(context)
+    try:
+        for item in items:
+            ch.post(item)
+    except DeliveryError as exc:
+        print("not posted: %s (%s)" % (exc.text, exc.kind))
+        return 1
+    print("posted a test message (%d part%s) to %s" % (len(items), "" if len(items) == 1 else "s",
+                                                       ch.where()))
+    return 0
+
+
 def sample_group():
-    """An invented alert for --test zulip, so the layout can be seen before a real one."""
+    """An invented alert for --test <channel>, so the layout can be seen before a real one."""
     groups = {}
     alert = {"timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.000%z", time.localtime(now())), "agent": {"id": "001", "name": "example-host",
                                                             "ip": "192.0.2.10"},
@@ -3785,10 +5522,11 @@ def parse_args(argv=None):
     parser.add_argument("--html", action="store_true",
                         help="with --dry-run, print the HTML part")
     parser.add_argument("--check", action="store_true",
-                        help="show the settings, test the mail server up to RCPT TO and the "
-                             "Zulip login and channel, without sending anything")
-    parser.add_argument("--test", nargs="?", const="mail", choices=("mail", "zulip"),
-                        help="send one test message by mail (default) or to Zulip, nothing else")
+                        help="show the settings, test the mail server up to RCPT TO and each "
+                             "chat channel's credentials where that can be done without posting")
+    parser.add_argument("--test", nargs="?", const="mail",
+                        choices=("mail", "zulip") + tuple(CHANNEL_CLASSES),
+                        help="send one test message by mail (default) or to one channel, nothing else")
     parser.add_argument("--version", action="version", version="jt-alert-digest " + VERSION)
     return parser.parse_args(argv)
 

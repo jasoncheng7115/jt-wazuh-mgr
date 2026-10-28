@@ -4,6 +4,25 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.25.0（2026-10-28）
+
+- **jt-alert-digest 1.13：新增七個通知管道。** 除了郵件與 Zulip，摘要還能發到 Microsoft Teams（Workflows webhook，
+  Adaptive Card）、Telegram（bot）、Slack 與 Mattermost（incoming webhook）、Discord（頻道 webhook，每組一個依等級上色的
+  embed）、LINE（Messaging API push），以及通用 webhook（有文件的 JSON，可選 HMAC-SHA256 簽章，給 SOAR、工單系統或腳本）。
+  每個管道只由自己的設定啟用，各有自己的讀取位置、重複壓制與待送匣，一個管道中斷不會讓其他管道的訊息遺失或重複，並各自回報
+  故障（規則 131131-131196）。每個管道可用 `<名稱>_level` 設自己的門檻，例如手機頻道只收 level 14。告警文字可能受攻擊者影響，
+  所以每個管道都依平台會解讀的語法跳脫（組不出 @channel、提及或連結）；webhook 網址、token 與金鑰只從 root 擁有、權限 600 的
+  檔案讀取且不經符號連結，本版起郵件密碼與 Zulip 金鑰檔也一樣。LINE 的 push 依收件人計入每月額度，所以每次執行最多送一個請求。
+- 發版關卡：依賴相鄰套件的案例，在 `--only` 沒有安裝那個套件時兩種結果都接受，不再判為失敗。
+- **jt-zimbra 3.6：Zimbra 伺服器的組態評估。** 新的 SCA 政策隨 zimbra agent 群組派送，檢查決定 web shell 能不能落地、存活、
+  提權的設定：網頁應用程式目錄沒有全域可寫、public 與 lib/ext 設為不可變、auditd 執行中（沒有它，檔案完整性監控會靜靜地失去
+  「誰寫的」）、管理埠 7071 與信箱埠 8443 不監聽所有介面、已安裝 pax（CVE-2022-41352）、zimbra 帳號沒有不受限的 sudo、/tmp 以
+  noexec 掛載。它取代一份站台自製的政策，那份的 sudo 檢查把 Zimbra 原廠規則當成違規、web shell 檢查會在每次升級誤報。多數檢查
+  要執行指令，而 agent 只在 sca.remote_commands=1 時才執行 manager 派送的政策中的指令：沒設定時這些檢查被跳過、報告卻看起來
+  完整，舊政策就是這樣。部署說明要求只在 Zimbra 主機設定。已在 Zimbra 10.1.20 與 10.1.21 的 agent 上實測，九項全部與主機實際
+  狀態相符。
+- 新增測試涵蓋所有套件附帶的 SCA 政策：可以解析、檢查編號不重複且在套件的編號範圍內、內容為英文。
+
 ## v1.24.0（2026-10-28）
 
 這一版的問題來自兩件事：照客戶的方式在一套乾淨的三節點叢集上安裝全部套件，以及新的發版關卡在拋棄式 manager 上做同樣的事。

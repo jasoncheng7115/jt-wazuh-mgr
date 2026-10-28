@@ -4,6 +4,41 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.25.0 (2026-10-28)
+
+- **jt-alert-digest 1.13: seven more channels.** Besides mail and Zulip, the digest can
+  now post to Microsoft Teams (a Workflows webhook, as Adaptive Cards), Telegram (a bot),
+  Slack and Mattermost (incoming webhooks), Discord (a channel webhook, one embed per
+  group in the level's colour), LINE (Messaging API push) and a generic webhook (a
+  documented JSON document, optionally signed with HMAC-SHA256, for a SOAR, a ticket
+  queue or a script). Each channel is switched on only by its own settings, keeps its
+  own position in the alert file, repeat hold and outbox, so an outage of one never
+  loses or repeats another's messages, and reports its own failures (rules
+  131131-131196). Per channel, `<name>_level` sets its own threshold, for example a
+  phone channel for level 14 only. Alert text is attacker-influenced, so each channel
+  is escaped for what its platform acts on (no @channel, mentions or links can be
+  formed); webhook addresses, tokens and keys are read only from root-owned 600 files
+  and never through a symbolic link, which from this version also applies to the mail
+  password and Zulip key files. LINE counts every push against a monthly quota, per
+  recipient, so each run sends at most one request.
+- The release gate accepts either outcome for a case that depends on a neighbouring
+  pack when `--only` left that pack out, instead of failing it.
+- **jt-zimbra 3.6: a configuration assessment for Zimbra servers.** A new SCA policy
+  delivered with the zimbra agent group checks the settings that decide whether a web
+  shell can land, survive and escalate: nothing world-writable under the web
+  applications, the public directory and lib/ext immutable, auditd running (without it
+  file integrity monitoring silently loses who wrote a file), the admin port 7071 and
+  mailbox port 8443 not listening on every interface, pax installed (CVE-2022-41352),
+  no unrestricted sudo for the zimbra account, and /tmp mounted noexec. It replaces a
+  site-made policy whose sudo check flagged Zimbra's own rules and whose web-shell check
+  flagged every upgrade. Most checks run a command, which an agent does for a
+  manager-delivered policy only with sca.remote_commands=1: without it they are
+  skipped and the report still looks complete, as the old policy's did. The setup
+  guide says to set it on the Zimbra servers only. Verified on Zimbra 10.1.20 and
+  10.1.21 agents: all nine checks matched each host's real state.
+- A test now covers every SCA policy a pack ships: it parses, its check ids are unique
+  and inside the pack's ID blocks, and its text is English.
+
 ## v1.24.0 (2026-10-28)
 
 Found by installing every pack on a clean three-node cluster the way a customer would,
