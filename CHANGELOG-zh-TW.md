@@ -4,6 +4,16 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.25.1（2026-10-28）
+
+- **jt-alert-digest 1.13.1：以真實 Mattermost 伺服器與各平台公開的格式實測，修正新管道的兩個問題。** Mattermost 的 incoming
+  webhook 相容 Slack 語法：伺服器收到後會自己把告警文字中的 `<!channel>`、`<!here>`、`<!all>` 變成真正的提及，發生在摘要跳脫
+  之後，所以能在記錄行裡塞字的攻擊者可以通知整個頻道。現在不會有任何 `<` 送到 Mattermost。Slack 的標題可能比上限 150 多兩個
+  字元（縮短時省略號加在上限之外），Slack 會因此拒收整則訊息，標題長的告警永遠到不了 Slack。
+- 各管道目前的驗證方式：Mattermost 以真實伺服器端到端測試；Teams 卡片以 Microsoft 的 Adaptive Card schema 驗證；Slack、
+  Discord、Telegram、LINE 依各平台文件的限制逐項檢查。Teams、Slack、Discord、Telegram、LINE 尚未實際發到真正的服務：設定
+  之後請先執行一次 `--test <管道>`。
+
 ## v1.25.0（2026-10-28）
 
 - **jt-alert-digest 1.13：新增七個通知管道。** 除了郵件與 Zulip，摘要還能發到 Microsoft Teams（Workflows webhook，

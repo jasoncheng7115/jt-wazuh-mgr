@@ -4,6 +4,22 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.25.1 (2026-10-28)
+
+- **jt-alert-digest 1.13.1: two faults in the new channels, found by testing against a
+  real Mattermost server and the platforms' published formats.** Mattermost's incoming
+  webhooks are Slack-compatible: the server itself turned `<!channel>`, `<!here>` and
+  `<!all>` in alert text into live mentions, after the digest had escaped the text, so
+  an attacker who can put words into a log line could notify a whole channel. No `<`
+  now reaches Mattermost. Slack headers could be two characters over Slack's limit of
+  150 (the shortening added its ellipsis beyond the limit), and Slack refuses the
+  whole message for that, so alerts with long titles never reached Slack.
+- How each channel has been verified so far: Mattermost end to end on a real server;
+  Teams cards against Microsoft's Adaptive Card schema; Slack, Discord, Telegram and
+  LINE messages against each platform's documented limits. Teams, Slack, Discord,
+  Telegram and LINE have not been posted to the real services yet: after setting one
+  up, run `--test <channel>` once.
+
 ## v1.25.0 (2026-10-28)
 
 - **jt-alert-digest 1.13: seven more channels.** Besides mail and Zulip, the digest can

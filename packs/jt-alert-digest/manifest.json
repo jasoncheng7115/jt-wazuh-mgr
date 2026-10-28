@@ -2,7 +2,7 @@
  "id": "jt-alert-digest",
  "name": "Readable Alert Digest",
  "name_zh": "可讀的告警摘要信",
- "version": "1.13.0",
+ "version": "1.13.1",
  "summary": "Replaces wazuh-maild's raw notifications with one grouped, readable message per run, optionally posts the same digest to Zulip, Microsoft Teams, Telegram, Slack, Discord, Mattermost, LINE or any webhook, and reports its own failures in the console.",
  "summary_zh": "把 wazuh-maild 的原始通知換成分組整理過、讀得完的摘要信，可選擇同時發到 Zulip、Microsoft Teams、Telegram、Slack、Discord、Mattermost、LINE 或任何 webhook，並在主控台回報自己的故障。",
  "rule_id_range": "131100-131199",
@@ -38,7 +38,8 @@
   "Alert text is attacker-influenced, so each channel is escaped for what its platform acts on: Slack's &, < and > (no <!channel>, <@user> or <url|text> can be formed), Telegram's HTML and its @username and /command entities, Discord's markdown by backslash plus allowed_mentions with an empty parse list, the markdown subset and {{DATE()}} functions of Adaptive Cards, every @word in Mattermost; LINE plain text interprets nothing. Webhook addresses are credentials in themselves, so Teams, Slack, Discord and Mattermost addresses, bot tokens and keys are read only from files owned by root with mode 600 and never through a symbolic link (from 1.13 the same applies to smtp_password_file and zulip_api_key_file), and they never appear in logs, the state file, status events or error texts. Redirects are refused, so a token is never carried to another host; certificates are verified.",
   "Per channel: <name>_level posts from that level up (ignoring rule.mail) instead of the mail level, for example a phone channel for level 14 only; <name>_daily = off drops that channel's daily summary; <name>_max_backlog (24 hours by default) bounds what is replayed after an outage; <name>_ca_file and <name>_tls_verify for a server with a private CA. zulip_level and zulip_daily work the same way.",
   "LINE counts every push message against the channel's monthly quota, once per recipient, so a group of ten people is ten messages. The digest therefore sends each run as one request of up to five text messages, which LINE counts as one, and retries with the same X-Line-Retry-Key so a retry is never counted twice. Set line_level and keep the repeat hold on; --test line also counts.",
-  "Generic webhook: POST of JSON with schema, kind (digest, daily or test), node, level, total, groups (rule_id, level, title, agent name/id/ip, count, first, last, new, mitre, link, samples as label/value pairs, redacted as in the mail) and held repeats. Headers: X-JT-Event, X-JT-Delivery (the same on every retry, for de-duplication) and, with webhook_hmac_key_file, X-JT-Timestamp and X-JT-Signature = sha256= hex HMAC-SHA256(key, timestamp + \".\" + body). Nothing in it is escaped: the receiver must treat every string as untrusted text."
+  "Generic webhook: POST of JSON with schema, kind (digest, daily or test), node, level, total, groups (rule_id, level, title, agent name/id/ip, count, first, last, new, mitre, link, samples as label/value pairs, redacted as in the mail) and held repeats. Headers: X-JT-Event, X-JT-Delivery (the same on every retry, for de-duplication) and, with webhook_hmac_key_file, X-JT-Timestamp and X-JT-Signature = sha256= hex HMAC-SHA256(key, timestamp + \".\" + body). Nothing in it is escaped: the receiver must treat every string as untrusted text.",
+  "1.13.1, found by sending to a real Mattermost server: its incoming webhooks are Slack-compatible, so the server itself turned <!channel>, <!here> and <!all> in alert text into live @channel, @here and @all mentions (and <url|text> into a link) after the text had been escaped; no < now reaches Mattermost. Slack headers could be two characters over Slack's 150 (trim() added its ellipsis beyond the limit), which makes Slack refuse the whole message, so long-titled alerts never reached Slack. How each channel was verified: Mattermost end to end on a real server; Teams cards against Microsoft's Adaptive Card 1.4 schema; Slack, Discord, Telegram and LINE messages against each platform's documented limits; every channel against a stand-in server in the unit tests. Teams, Slack, Discord, Telegram and LINE have not yet been posted to the real service: run --test <channel> once after setting one up."
  ],
  "notes_zh": [
   "郵件管道通常本來就有、也本來就通。讓它沒有用的是格式：wazuh-maild 會把 full_log 原文加上每個解碼欄位再印一次，還把一小時內的告警串成一封。在正式機實測，一封信有 17 則通知、數千行，而其中唯一真正的偵測被壓在 14 則來自建置主機的告警底下。",
@@ -67,7 +68,8 @@
   "告警文字可能受攻擊者影響，所以每個頻道都依平台會解讀的語法處理：Slack 的 &、<、>（因此組不出 <!channel>、<@user> 或 <url|文字>）、Telegram 的 HTML 以及 @username 與 /指令、Discord 以反斜線跳脫 markdown 並設定 allowed_mentions 為空清單、Adaptive Card 的 markdown 子集與 {{DATE()}} 函式、Mattermost 的每個 @詞；LINE 純文字不做任何解讀。webhook 網址本身就是憑證，所以 Teams、Slack、Discord、Mattermost 的網址，以及 bot token 與金鑰，都只從屬於 root、權限 600 的檔案讀取，且不經過符號連結（1.13 起 smtp_password_file 與 zulip_api_key_file 也一樣），絕不出現在記錄、狀態檔、狀態事件或錯誤訊息中。不跟隨重新導向，token 不會被帶到其他主機；會驗證憑證。",
   "各頻道可個別設定：<名稱>_level 從該等級起發送（不看 rule.mail），取代郵件等級，例如手機頻道只收 level 14；<名稱>_daily = off 不發該頻道的每日摘要；<名稱>_max_backlog（預設 24 小時）限制中斷後補發的範圍；<名稱>_ca_file 與 <名稱>_tls_verify 用於私有 CA 的伺服器。zulip_level、zulip_daily 用法相同。",
   "LINE 的每一則 push 都會計入頻道的每月訊息額度，而且是依收件人計算：十個人的群組就是十則。因此摘要每次執行只送一個請求、最多五則文字訊息（LINE 算一則），重試時使用同一個 X-Line-Retry-Key，重試不會被重複計算。請設定 line_level 並保留重複壓制；--test line 也會計入額度。",
-  "通用 webhook：以 POST 送出 JSON，含 schema、kind（digest、daily 或 test）、node、level、total、groups（rule_id、level、title、agent 名稱/ID/IP、count、first、last、new、mitre、link、samples 為 label/value 配對，與郵件相同已遮蔽帳密）與 held 重複項目。標頭：X-JT-Event、X-JT-Delivery（同一份文件每次重試都相同，可用來去重），設定 webhook_hmac_key_file 時另有 X-JT-Timestamp 與 X-JT-Signature = sha256= 加上 HMAC-SHA256(金鑰, timestamp + \".\" + body) 的十六進位。內容完全不跳脫：接收端必須把每個字串都當成不可信的文字。"
+  "通用 webhook：以 POST 送出 JSON，含 schema、kind（digest、daily 或 test）、node、level、total、groups（rule_id、level、title、agent 名稱/ID/IP、count、first、last、new、mitre、link、samples 為 label/value 配對，與郵件相同已遮蔽帳密）與 held 重複項目。標頭：X-JT-Event、X-JT-Delivery（同一份文件每次重試都相同，可用來去重），設定 webhook_hmac_key_file 時另有 X-JT-Timestamp 與 X-JT-Signature = sha256= 加上 HMAC-SHA256(金鑰, timestamp + \".\" + body) 的十六進位。內容完全不跳脫：接收端必須把每個字串都當成不可信的文字。",
+  "1.13.1（以真實 Mattermost 伺服器實測發現）：Mattermost 的 incoming webhook 相容 Slack 語法，伺服器收到後會自己把告警文字裡的 <!channel>、<!here>、<!all> 變成真正的 @channel、@here、@all 提及（<url|文字> 變成連結），繞過了跳脫；現在不會有任何 < 送到 Mattermost。Slack 的標題可能比上限 150 多兩個字元（trim() 的省略號加在上限之外），Slack 會因此拒收整則訊息，標題長的告警永遠到不了 Slack。各管道的驗證方式：Mattermost 以真實伺服器端到端測試；Teams 卡片以 Microsoft 的 Adaptive Card 1.4 schema 驗證；Slack、Discord、Telegram、LINE 依各平台文件的限制逐項檢查；所有管道都有單元測試（模擬伺服器）。Teams、Slack、Discord、Telegram、LINE 尚未實際發到真正的服務：設定後請先執行一次 --test <管道>。"
  ],
  "files": [
   {
@@ -81,7 +83,7 @@
   {
    "name": "jt-alert-digest.py",
    "dest": "etc/jt-packs/bin/jt-alert-digest.py",
-   "sha256": "a268c6239151fa5a9153773da8532a30677c8c805f1c2620623bc75791b3107c",
+   "sha256": "ccb84582235a43ad74172601c6a68e29d27204705f09fbd608ea26bbc4f704e3",
    "cron": "*/2 * * * *",
    "args": "--wazuh-path {wazuh_path}",
    "description": "Groups new alerts and sends one readable message, using the mail settings already in ossec.conf, optionally also to Zulip, Teams, Telegram, Slack, Discord, Mattermost, LINE or a webhook; reports its own failures to the manager"

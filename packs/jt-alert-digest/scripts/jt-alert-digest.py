@@ -79,7 +79,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.13.0"
+VERSION = "1.13.1"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -1275,8 +1275,10 @@ def heading(group, rule_id="?"):
 
 
 def trim(value, limit=MAX_FIELD):
+    """At most limit characters, the ellipsis included: platform limits are
+    hard (Slack refuses a whole message for one 151-character header)."""
     value = " ".join(str(value).split())
-    return value if len(value) <= limit else value[:limit - 1] + "..."
+    return value if len(value) <= limit else value[:limit - 3] + "..."
 
 
 def trim_words(value, limit):
@@ -3519,7 +3521,8 @@ class TelegramChannel(TextChannel):
 
 def mm(text):
     """Mattermost markdown made inert: md() plus every @word, since an incoming
-    webhook's @channel, @all, @here or @user notifies like a person's post."""
+    webhook's @channel, @all, @here or @user notifies like a person's post.
+    (MattermostChannel.post also removes every <, see there.)"""
     return re.sub(r"@(?=[\w.-])", "@\u200b", md(text))
 
 
@@ -3558,7 +3561,12 @@ class MattermostChannel(TextChannel):
             "webhook" not in text.lower()
 
     def post(self, item):
-        payload = {"text": item["payload"]}
+        # Incoming webhooks are Slack-compatible: the server itself turns
+        # <!channel>, <!here> and <!all> into live @channel, @here and @all,
+        # and <url|text> into a link, after the text has left us, inside code
+        # spans and blocks too (measured on a real Mattermost server). Our own
+        # markup never uses <, so none reaches the server.
+        payload = {"text": item["payload"].replace("<", "\u2039")}
         if self.c.get("channel"):
             payload["channel"] = self.c["channel"]
         http_send(self.c, self.c["url"], json_body(payload), {"Content-Type": "application/json"},
@@ -3692,6 +3700,11 @@ def trim_keep(text, limit):
     return text if len(text) <= limit else text[:limit - 3] + "..."
 
 
+# Slack: a header holds at most 150 characters; the margin covers an emoji
+# counted as two.
+SLACK_HEADER = 140
+
+
 class SlackChannel(Channel):
     """An incoming webhook with Block Kit: a header per group, the short values
     as two-column fields, long values and logs as sections, rule and notes in a
@@ -3741,7 +3754,7 @@ class SlackChannel(Channel):
     def group(self, v):
         # plain_text: nothing in it is interpreted, but @ is split as everywhere else
         title = trim("%s L%d \u00b7 %s" % (level_mark(v["level"]), v["level"],
-                                           v["title"].replace("@", "@\u200b")), 150)
+                                           v["title"].replace("@", "@\u200b")), SLACK_HEADER)
         blocks = [{"type": "divider"},
                   {"type": "header", "text": {"type": "plain_text", "text": title, "emoji": False}}]
         fields, long_rows = [{"type": "mrkdwn", "text": "*Host*\n%s" % sl(v["agent"])}], []
@@ -3798,7 +3811,7 @@ class SlackChannel(Channel):
         v = daily_view(info)
         self._fallback = sl(v["title"])
         head = [{"type": "header", "text": {"type": "plain_text", "emoji": False, "text": trim(
-                    "%s %s" % ("\U0001F7E5" if v["trouble"] else "\U0001F7E9", v["title"]), 150)}},
+                    "%s %s" % ("\U0001F7E5" if v["trouble"] else "\U0001F7E9", v["title"]), SLACK_HEADER)}},
                 {"type": "context", "elements": [{"type": "mrkdwn", "text": sl(v["period"])}]}]
         rows = [{"type": "mrkdwn", "text": "*%s*\n%s" % (sl(label), sl(value))} for label, value in v["rows"]]
         for start in range(0, len(rows), 10):

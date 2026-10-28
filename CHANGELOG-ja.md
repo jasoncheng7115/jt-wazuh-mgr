@@ -4,6 +4,17 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.25.1（2026-10-28）
+
+- **jt-alert-digest 1.13.1：実際の Mattermost サーバーと各プラットフォームの公開仕様で検証し、新チャネルの 2 つの問題を修正。**
+  Mattermost の incoming webhook は Slack 互換で、ダイジェストがエスケープした後にサーバー自身がアラート本文の `<!channel>`、
+  `<!here>`、`<!all>` を本物のメンションに変換していました。ログ行に文字を入れられる攻撃者がチャンネル全体に通知できたことに
+  なります。現在は `<` を一切 Mattermost に送りません。Slack のヘッダーが上限 150 文字を 2 文字超えることがあり（短縮時の
+  省略記号が上限の外に付いていた）、Slack はそのメッセージ全体を拒否するため、タイトルの長いアラートが Slack に届きませんでした。
+- 各チャネルのこれまでの検証方法：Mattermost は実サーバーでエンドツーエンド、Teams のカードは Microsoft の Adaptive Card
+  スキーマ、Slack・Discord・Telegram・LINE は各プラットフォームの文書化された制限を項目ごとに確認。Teams・Slack・Discord・
+  Telegram・LINE は実サービスへの送信をまだ行っていません。設定後に一度 `--test <チャネル>` を実行してください。
+
 ## v1.25.0（2026-10-28）
 
 - **jt-alert-digest 1.13：通知チャネルを 7 つ追加。** メールと Zulip に加え、Microsoft Teams（Workflows webhook、

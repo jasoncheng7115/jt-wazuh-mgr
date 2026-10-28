@@ -325,6 +325,18 @@ class TestInjection(ChannelCase):
         self.assertEqual(self.hub.posts('/discord')[0]['json']['allowed_mentions'], {'parse': []})
         self.assertNotIn('/start', self.hub.posts(PREFIX['telegram'])[0]['json']['text'], 'a tappable bot command')
 
+    def test_mattermost_gets_no_slack_compatible_markup(self):
+        # A real Mattermost server turns <!channel>, <!here>, <!all> into live
+        # mentions and <url|text> into a link after the text has arrived, in
+        # code spans too, so the payload text itself must hold no < at all.
+        hostile = '<!channel> <!here> <!all> <http://evil.example|click here>'
+        t = self.tree(names=('mattermost',))
+        t.write(alert(1, desc=hostile, agent='<!channel>', full_log=hostile))
+        self.run_digest(t)
+        text = self.hub.posts(PREFIX['mattermost'])[0]['json']['text']
+        self.assertIn('!channel', text)          # still readable
+        self.assertNotIn('<', text)
+
     def test_escapers(self):
         mod = self.mod
         self.assertEqual(mod.tg('a <b> & @bob /cmd'), 'a &lt;b&gt; &amp; @\u200bbob /\u200bcmd')
@@ -491,6 +503,26 @@ class TestLayout(ChannelCase):
                 a['data'] = {'srcip': '203.0.113.%d' % g, 'dstuser': 'user%d' % g}
                 lines.append(json.dumps(a))
         t.write(*lines)
+
+    def test_trim_never_exceeds_its_limit(self):
+        for limit in (10, 90, 150, 250):
+            for n in range(limit - 3, limit + 5):
+                self.assertLessEqual(len(self.mod.trim('x' * n, limit)), limit)
+
+    def test_long_titles_stay_within_header_and_title_limits(self):
+        # Slack refuses the whole message for one header over 150 characters
+        # (invalid_blocks); a recorded 160-group digest had 152-character ones.
+        t = self.tree(names=('slack', 'discord', 'teams'))
+        t.write(*[alert(i, rule=str(120000 + i), agent='h%d' % i, desc='Long title %d ' % i + 'word ' * 60)
+                  for i in range(5)])
+        self.run_digest(t)
+        headers = [b['text']['text'] for r in self.hub.posts(PREFIX['slack'])
+                   for b in r['json']['blocks'] if b['type'] == 'header']
+        self.assertTrue(headers)
+        self.assertTrue(all(len(h) <= 150 for h in headers), max(map(len, headers)))
+        titles = [e['title'] for r in self.hub.posts(PREFIX['discord']) for e in r['json']['embeds'] if 'title' in e]
+        self.assertTrue(titles)
+        self.assertTrue(all(len(x) <= 256 for x in titles))
 
     def test_long_digests_are_split_within_each_platforms_limits(self):
         t = self.tree()
