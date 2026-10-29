@@ -185,8 +185,10 @@ INTERNAL = re.compile(
     r'|\b(?:edr1|edr2|dnsp1|revproxy1|jt-glogarch)\b'  # preflight:allow-example
     # A mailbox, except documentation domains (anything under example.),
     # docker-jitsi-meet's fixed internal XMPP domain meet.jitsi, and systemd's
-    # per-user units (user@0.service), none of which name anyone.
-    r'|\b[\w.+-]+@(?!(?:[\w-]+\.)*example\.)(?!(?:[\w-]+\.)*meet\.jitsi\b)(?!\d+\.service\b)'
+    # per-user units (user@0.service), none of which name anyone. The local
+    # part cannot end with a dot, so a field name such as ms-graph.@odata.type
+    # (in Wazuh's alerts template) is not a mailbox.
+    r'|\b[\w.+-]*[\w+-]@(?!(?:[\w-]+\.)*example\.)(?!(?:[\w-]+\.)*meet\.jitsi\b)(?!\d+\.service\b)'
     r'[\w-]+\.[a-z]{2,}\b'
 )
 # Addresses conventionally used as documentation placeholders, not real hosts.

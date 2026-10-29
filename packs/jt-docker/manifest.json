@@ -141,5 +141,19 @@
    "body_zh": "132602 只有在第一次執行仍留在 analysisd 關聯記憶中時，才會壓下重複的 docker exec，所以整天執行的工作仍會產生 level 3 告警。請依下面的範例寫一條站台規則，放在站台自己的規則檔（不放在本套件，更新時才會保留）：替換 CONTAINER_NAME 與 EXACT COMMAND，並使用你自己範圍內未用的 ID。條件要精確：87907 底下 level 0 的子規則會比其他所有子規則先比對，包括這裡的 level 12 規則。",
    "code": "<group name=\"local,docker,\">\n  <rule id=\"100690\" level=\"0\">\n    <if_sid>87907</if_sid>\n    <field name=\"docker.Actor.Attributes.name\">^CONTAINER_NAME$</field>\n    <field name=\"docker.Action\" type=\"pcre2\">^exec_start: EXACT COMMAND$</field>\n    <description>Site: scheduled docker exec</description>\n  </rule>\n</group>"
   }
- ]
+ ],
+ "dashboard": {
+  "fields": [
+   {
+    "field": "data.docker.Actor.Attributes.name",
+    "title": "Container",
+    "title_zh": "容器"
+   },
+   {
+    "field": "data.docker.Actor.Attributes.image",
+    "title": "Image",
+    "title_zh": "映像"
+   }
+  ]
+ }
 }

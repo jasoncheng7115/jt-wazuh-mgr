@@ -203,5 +203,20 @@
    "body": "Runs jt-cloudflare-block on the manager node that raised the alert: it creates a Cloudflare IP Access Rule (block, or a challenge if mode says so) for the address, for the whole account or for the zones listed in /var/ossec/etc/jt-cloudflare-block.conf, and deletes it when the timeout ends (a day by default). It only ever deletes rules it made itself (their note starts with \"jt-wazuh-mgr active response\"); a rule someone else made for the same address is left alone. Use it for sites proxied by Cloudflare, whose visitors never reach nginx directly; it can run together with the nginx responses. Needs the jt-cloudflare-block command and script on every manager node, an API token in /var/ossec/etc/jt-cloudflare.token (root, mode 600, never logged) and outbound HTTPS from the managers to api.cloudflare.com (see the setup steps). It refuses the same addresses as the nginx responses; the allowlist on the managers is /var/ossec/etc/jt-cloudflare-allow.txt. A failed call is rule 133050 (level 10), not a silent miss. Risk: an account-level rule blocks the address on every zone of the account, including sites the alert had nothing to do with. Uses jt-web's jt-cloudflare-block: install jt-web 1.1 or later and do its Cloudflare step first. Risk: 133180 matches the query string alone, so a site whose own links start a query with a dash (rare, for example ?-sort=name) blocks its visitors; look at a week of 133180 alerts before enabling it.",
    "body_zh": "在產生告警的 manager 節點上執行 jt-cloudflare-block：為該位址建立一條 Cloudflare IP Access Rule（封鎖，或依 mode 設定改為挑戰），範圍是整個帳戶或 /var/ossec/etc/jt-cloudflare-block.conf 列出的 zone，逾時（預設一天）後再刪除。它只刪除自己建立的規則（備註以「jt-wazuh-mgr active response」開頭）；別人為同一位址建的規則不會動。用在經 Cloudflare 代理的網站，那些訪客從不直接連到 nginx；可以和 nginx 的回應同時啟用。需要在每個 manager 節點定義 jt-cloudflare-block 指令並放好腳本、/var/ossec/etc/jt-cloudflare.token 裡的 API token（root、權限 600、絕不寫進記錄），以及 manager 能以 HTTPS 連到 api.cloudflare.com（見部署步驟）。拒絕封鎖的位址與 nginx 的回應相同；manager 上的允許清單是 /var/ossec/etc/jt-cloudflare-allow.txt。呼叫失敗是規則 133050（level 10），不會無聲漏掉。風險：帳戶層級的規則會在帳戶內每個 zone 封鎖該位址，包括與這次告警無關的網站。使用 jt-web 的 jt-cloudflare-block：請先安裝 jt-web 1.1 以上並完成它的 Cloudflare 步驟。風險：133180 只比對查詢字串，所以網站自己的連結若以破折號開始查詢字串（少見，例如 ?-sort=name），訪客就會被封鎖；開啟前請先看一週的 133180 告警。"
   }
- ]
+ ],
+ "dashboard": {
+  "fields": [
+   {
+    "field": "data.jt_php.branch",
+    "title": "PHP branch",
+    "title_zh": "PHP 分支"
+   },
+   {
+    "field": "data.jt_php.status",
+    "title": "Status",
+    "title_zh": "狀態"
+   }
+  ],
+  "srcip": true
+ }
 }

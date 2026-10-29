@@ -4,6 +4,15 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.27.0（2026-10-30）
+
+- **每個套件都附 Wazuh 看板。** 30 個套件都附有 `dashboards/<id>.ndjson`：告警數、各等級趨勢、最常觸發的規則、代理程式、
+  來源位址與帳號、套件專屬欄位與最新告警，只看該套件自己的規則編號（rule.id 是 keyword，一般的範圍寫法會連 10051 這種編號
+  也算進去；篩選條件精確對應數值範圍）。可在套件視窗匯入（使用 dashboard 使用者而不是 Wazuh API 帳號；開啟多租戶時寫入 global
+  tenant；密碼不會被儲存），或下載檔案後在 Dashboards Management → Saved objects 匯入。再次匯入會原地取代，「移除」會刪除。
+  已在 Wazuh 4.14.9 使用的 OpenSearch Dashboards 2.19.6 上驗證：30 個都能無錯誤匯入，空資料與以測試案例產生的 2.9 萬筆告警下
+  所有面板都沒有錯誤。`tools/build_pack_dashboards.py` 重新產生；檔案過期時測試會失敗。
+
 ## v1.26.0（2026-10-29）
 
 - **新套件 jt-sharetech 1.0：ShareTech（眾至）NU 系列防火牆**（CEF syslog：防火牆防護、IPS、WAF、門檻、應用程式控管、

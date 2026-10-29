@@ -1586,6 +1586,112 @@ class TestRulePacks(PackFixture):
         os.symlink(link, real)
         self.assertEqual(self.client.post('/api/packs/jt-testscript/schedule').status_code, 400)
 
+    NDJSON = ('{"type":"visualization","id":"jt-pack-jt-testscript-count","attributes":{}}\n'
+              '{"type":"dashboard","id":"jt-pack-jt-testscript-dashboard","attributes":{}}\n')
+
+    class FakeDashboard(object):
+        """Stands in for requests.Session against the Wazuh dashboard."""
+
+        def __init__(self, test, account_tenant=None, status=None, pattern=200, import_ok=True):
+            self.calls, self.headers, self.auth, self.verify = [], {}, None, None
+            self.account_tenant, self.status, self.pattern, self.import_ok = account_tenant, status, pattern, import_ok
+            test.dash = self
+
+        def _resp(self, code, body):
+            class R(object):
+                pass
+            r = R()
+            r.status_code = code
+            r.json = lambda: body
+            return r
+
+        def get(self, url, timeout=None):
+            self.calls.append(('GET', url, dict(self.headers)))
+            if self.status:
+                return self._resp(self.status, {})
+            if url.endswith('/api/v1/configuration/account'):
+                return self._resp(200, {'data': {'user_requested_tenant': self.account_tenant}})
+            if '/index-pattern/' in url:
+                return self._resp(self.pattern, {})
+            return self._resp(404, {})
+
+        def post(self, url, files=None, timeout=None):
+            self.calls.append(('POST', url, dict(self.headers)))
+            n = files['file'][1].decode().count('\n')
+            return self._resp(200, {'success': self.import_ok, 'successCount': n if self.import_ok else 0,
+                                    'errors': [] if self.import_ok else [{'type': 'dashboard', 'id': 'x',
+                                                                           'error': {'type': 'conflict'}}]})
+
+        def delete(self, url, timeout=None):
+            self.calls.append(('DELETE', url, dict(self.headers)))
+            return self._resp(404 if 'count' in url else 200, {})
+
+    def _dash_pack(self, **kw):
+        files = {'rules/r.xml': self.RULE_XML, 'scripts/upd.py': self.SCRIPT_BODY,
+                 'dashboards/jt-testscript.ndjson': self.NDJSON}
+        self._fake_pack('jt-testscript', self._script_manifest(), files)
+        self.assertEqual(self.client.post('/api/packs/jt-testscript/install').status_code, 200)
+        self.addCleanup(setattr, web_ui.http_requests, 'Session', web_ui.http_requests.Session)
+        test = self
+        web_ui.http_requests.Session = lambda: TestRulePacks.FakeDashboard(test, **kw)
+
+    def _dash_post(self, **body):
+        data = dict({'action': 'import', 'url': 'https://dash.example.com', 'username': 'admin',
+                     'password': 'S3cret-pass', 'verify_tls': True}, **body)
+        return self.client.post('/api/packs/jt-testscript/dashboard', json=data)
+
+    def test_pack_dashboard_imports_with_xsrf_and_records_the_objects(self):
+        self._dash_pack()
+        info = self.client.get('/api/packs/jt-testscript/dashboard').get_json()
+        self.assertEqual(info['objects'], 2)
+        resp = self._dash_post()
+        data = resp.get_json()
+        self.assertEqual(resp.status_code, 200, data)
+        self.assertEqual(data['link'], 'https://dash.example.com/app/dashboards#/view/jt-pack-jt-testscript-dashboard')
+        posts = [c for c in self.dash.calls if c[0] == 'POST']
+        self.assertTrue(posts[0][1].endswith('/api/saved_objects/_import?overwrite=true'))
+        self.assertEqual(posts[0][2].get('osd-xsrf'), 'true')
+        self.assertNotIn('securitytenant', posts[0][2], 'multitenancy is off: no tenant header')
+        state = json.load(io.open(os.path.join(self.tmp, 'etc/jt-packs/jt-testscript.json'), encoding='utf-8'))
+        self.assertEqual(len(state['dashboard']['objects']), 2)
+        self.assertNotIn('S3cret-pass', json.dumps(state), 'the password must never be stored')
+
+    def test_pack_dashboard_goes_to_the_global_tenant_when_multitenancy_is_on(self):
+        self._dash_pack(account_tenant='__user__')
+        self.assertEqual(self._dash_post().status_code, 200)
+        post = [c for c in self.dash.calls if c[0] == 'POST'][0]
+        self.assertEqual(post[2].get('securitytenant'), 'global')
+
+    def test_pack_dashboard_reports_refusals_and_missing_pattern(self):
+        self._dash_pack(status=401)
+        self.assertIn('refused', self._dash_post().get_json()['error'])
+        web_ui.http_requests.Session = lambda: TestRulePacks.FakeDashboard(self, pattern=404)
+        resp = self._dash_post()
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('wazuh-alerts-*', resp.get_json()['error'])
+        self.assertFalse([c for c in self.dash.calls if c[0] == 'POST'], 'nothing imported without the pattern')
+        web_ui.http_requests.Session = lambda: TestRulePacks.FakeDashboard(self, import_ok=False)
+        self.assertIn('Import failed', self._dash_post().get_json()['error'])
+
+    def test_pack_dashboard_validates_address_and_credentials(self):
+        self._dash_pack()
+        for body in ({'url': 'ftp://dash.example.com'}, {'url': 'https://user:pw@dash.example.com'},
+                     {'url': 'https://dash.example.com/app?x=1'}, {'password': ''}, {'action': 'drop'}):
+            with self.subTest(body=body):
+                self.assertEqual(self._dash_post(**body).status_code, 400)
+
+    def test_pack_dashboard_remove_deletes_every_object(self):
+        self._dash_pack()
+        self.assertEqual(self._dash_post().status_code, 200)
+        resp = self._dash_post(action='remove')
+        self.assertEqual(resp.status_code, 200, resp.get_json())
+        deletes = [c[1] for c in self.dash.calls if c[0] == 'DELETE']
+        self.assertTrue(any(u.endswith('/api/saved_objects/dashboard/jt-pack-jt-testscript-dashboard') for u in deletes))
+        self.assertTrue(any(u.endswith('/api/saved_objects/visualization/jt-pack-jt-testscript-count') for u in deletes),
+                        'an object already gone (404) is fine')
+        state = json.load(io.open(os.path.join(self.tmp, 'etc/jt-packs/jt-testscript.json'), encoding='utf-8'))
+        self.assertNotIn('dashboard', state)
+
     def test_rewriting_the_schedule_needs_the_pack_installed(self):
         self._fake_pack('jt-testscript', self._script_manifest(),
                         {'rules/r.xml': self.RULE_XML, 'scripts/upd.py': self.SCRIPT_BODY})

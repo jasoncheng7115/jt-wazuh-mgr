@@ -4,6 +4,21 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.27.0 (2026-10-30)
+
+- **A Wazuh dashboard for every pack.** Each of the 30 packs ships
+  `dashboards/<id>.ndjson`: alert counts, levels over time, top rules, agents, source
+  addresses and accounts, pack-specific fields, and the latest alerts, filtered to the
+  pack's own rule IDs (rule.id is a keyword, so a plain range would also take ids such
+  as 10051; the filter matches the numeric range exactly). Import it from the pack
+  dialog (a dashboard user, not the Wazuh API account; the global tenant when
+  multitenancy is on; the password is not stored), or download the file and import it
+  under Dashboards Management, Saved objects. Importing again replaces the objects in
+  place; Remove deletes them. Checked on OpenSearch Dashboards 2.19.6, the version
+  Wazuh 4.14.9 ships: all 30 import without errors and render without panel errors,
+  empty and with 29,000 alerts built from the pack test cases.
+  `tools/build_pack_dashboards.py` regenerates them; a test fails when one is stale.
+
 ## v1.26.0 (2026-10-29)
 
 - **New pack jt-sharetech 1.0: ShareTech NU series firewalls** (CEF syslog: firewall

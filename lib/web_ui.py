@@ -140,6 +140,13 @@ SESSION_COOKIE_TLS = '__Host-jtwm_session'
 # certificate it serves (the file names differ between Wazuh versions).
 DASHBOARD_CONF = '/etc/wazuh-dashboard/opensearch_dashboards.yml'
 
+# The Wazuh root CA, which signs the dashboard's certificate: on the dashboard
+# host itself, or the copy every manager has for filebeat.
+DASHBOARD_CA_FILES = ('/etc/wazuh-dashboard/certs/root-ca.pem', '/etc/filebeat/certs/root-ca.pem')
+# The index pattern the Wazuh app creates (wazuh-dashboard-plugins saved-objects.js);
+# every pack dashboard references it by this id.
+WAZUH_ALERTS_PATTERN = 'wazuh-alerts-*'
+
 # The rule-pack catalogue shipped with the tool. Module level so the test suite
 # can point it at a scratch catalogue holding two versions of one pack.
 PACKS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'packs')
@@ -7533,6 +7540,21 @@ HTML_TEMPLATE = '''
                     '<svg class="icon"><use href="#icon-refresh"/></svg><span>Rewrite schedule</span></button></div>' +
                     '<div id="packScheduleResult" style="margin-top:8px;"></div>';
             }
+            if (d.dashboard) {
+                const dsh = d.dashboard;
+                const done = d.state && d.state.dashboard;
+                html += '<h4 class="pack-h">Dashboard</h4>' +
+                    '<div class="alert alert-info">This pack ships a Wazuh dashboard: alert counts, levels over time, top rules, agents, source addresses and accounts, and the latest alerts. ' +
+                    'Import it here, or download the file and import it in the Wazuh dashboard under Dashboards Management, Saved objects, Import.</div>' +
+                    (done ? '<p class="pack-lead">Imported ' + escapeHtml(String(done.imported || '').replace('T', ' ')) + ' into ' + escapeHtml(done.url || '') +
+                        ' (version ' + escapeHtml(done.version || '') + ').</p>' : '') +
+                    '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+                    '<button class="btn btn-sm btn-primary" onclick="showPackDashboard(\\'' + escapeHtml(packId) + '\\', \\'import\\')"><svg class="icon"><use href="#icon-upload"/></svg><span>Import into Wazuh dashboard</span></button>' +
+                    '<a class="btn btn-sm" href="/api/packs/' + encodeURIComponent(packId) + '/file?download=1&path=' + encodeURIComponent(dsh.file) + '"><svg class="icon"><use href="#icon-download"/></svg><span>Download</span></a>' +
+                    (done && done.link ? '<a class="btn btn-sm" target="_blank" rel="noopener" href="' + escapeHtml(done.link) + '"><svg class="icon"><use href="#icon-eye"/></svg><span>Open dashboard</span></a>' : '') +
+                    (done ? '<button class="btn btn-sm btn-danger" onclick="showPackDashboard(\\'' + escapeHtml(packId) + '\\', \\'remove\\')"><svg class="icon"><use href="#icon-trash"/></svg><span>Remove from dashboard</span></button>' : '') +
+                    '</div>';
+            }
             body.innerHTML = html + '</div>';
             if ((m.active_response || []).length) loadPackAr(packId);
             const footer = document.getElementById('modalFooter');
@@ -7560,6 +7582,51 @@ HTML_TEMPLATE = '''
             showToast(data.message || 'Schedule rewritten.', 'success');
             if (out) out.innerHTML = '<pre style="background:var(--sunken);padding:10px;border-radius:4px;font-size:12px;overflow:auto;"><code>' +
                 (data.scheduled || []).map(j => escapeHtml(j.crontab_line || '')).join('\\n') + '</code></pre>';
+        }
+
+        // Importing needs a dashboard (indexer) user, not the Wazuh API account the
+        // tool is logged in with. The password is sent with this one request only.
+        async function showPackDashboard(packId, action) {
+            const info = await api('/packs/' + encodeURIComponent(packId) + '/dashboard');
+            if (!info || info.error) { showToast((info && info.error) || 'Failed to load the dashboard', 'error'); return; }
+            const url = (info.imported && info.imported.url) || info.default_url || '';
+            const field = 'width:100%;background:var(--surface);border:1px solid var(--border-1a3a6e);color:var(--text);padding:6px 10px;border-radius:4px;';
+            const body =
+                '<p class="pack-lead">' + (action === 'remove'
+                    ? 'Deletes this pack\\'s dashboard objects from the Wazuh dashboard.'
+                    : 'Imports ' + escapeHtml(String(info.objects || 0)) + ' saved objects. Importing again replaces them in place.') + '</p>' +
+                '<div style="margin:8px 0;"><label>Dashboard address</label><input type="text" id="dashUrl" value="' + escapeHtml(url) + '" style="' + field + '"></div>' +
+                '<div style="margin:8px 0;"><label>User name</label><input type="text" id="dashUser" value="admin" autocomplete="username" style="' + field + '"></div>' +
+                '<div style="margin:8px 0;"><label>Password</label><input type="password" id="dashPass" autocomplete="current-password" style="' + field + '"></div>' +
+                '<div style="margin:8px 0;"><label><input type="checkbox" id="dashVerify" checked> Verify the certificate with the Wazuh root CA</label></div>' +
+                '<p style="color:var(--text-muted);font-size:12px;">A dashboard user such as admin: the Wazuh API account does not work there. The password is used for this request only and is not stored.</p>' +
+                '<div id="dashResult"></div>';
+            showModal(action === 'remove' ? 'Remove dashboard' : 'Import dashboard', body,
+                '<button class="btn ' + (action === 'remove' ? 'btn-danger' : 'btn-primary') + '" onclick="submitPackDashboard(\\'' + escapeHtml(packId) + '\\', \\'' + action + '\\')">' +
+                (action === 'remove' ? 'Remove' : 'Import') + '</button>' +
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', false);
+        }
+
+        async function submitPackDashboard(packId, action) {
+            const out = document.getElementById('dashResult');
+            const payload = {
+                action: action,
+                url: (document.getElementById('dashUrl') || {}).value || '',
+                username: (document.getElementById('dashUser') || {}).value || '',
+                password: (document.getElementById('dashPass') || {}).value || '',
+                verify_tls: !!(document.getElementById('dashVerify') || {}).checked,
+            };
+            if (out) out.innerHTML = '<div class="loading"><div class="spinner"></div>Working...</div>';
+            const data = await api('/packs/' + encodeURIComponent(packId) + '/dashboard', 'POST', payload);
+            const pass = document.getElementById('dashPass');
+            if (pass) pass.value = '';
+            if (!data || data.error) {
+                if (out) out.innerHTML = '<div class="alert alert-error">' + escapeHtml((data && data.error) || 'Request failed') + '</div>';
+                return;
+            }
+            showToast(data.message || 'Done', 'success');
+            if (out) out.innerHTML = '<div class="alert alert-success">' + escapeHtml(data.message || '') +
+                (data.link ? ' <a target="_blank" rel="noopener" href="' + escapeHtml(data.link) + '">Open dashboard</a>' : '') + '</div>';
         }
 
         // ---------- Active response a pack offers ----------
@@ -8774,6 +8841,28 @@ _I18N_SCRIPT = r"""
       'Optional': '選用',
       'Copied': '已複製',
       'View file': '檢視檔案',
+      'A dashboard user such as admin: the Wazuh API account does not work there. The password is used for this request only and is not stored.': '請使用 dashboard 的使用者（例如 admin）：Wazuh API 帳號在那裡無法使用。密碼只用於這次請求，不會被儲存。',
+      'Dashboard': '看板',
+      'Dashboard address': 'Dashboard 位址',
+      'Import into Wazuh dashboard': '匯入 Wazuh Dashboard',
+      'Open dashboard': '開啟看板',
+      'Remove from dashboard': '從 Dashboard 移除',
+      'User name': '使用者名稱',
+      'Verify the certificate with the Wazuh root CA': '以 Wazuh 根 CA 驗證憑證',
+      'This pack ships a Wazuh dashboard: alert counts, levels over time, top rules, agents, source addresses and accounts, and the latest alerts. Import it here, or download the file and import it in the Wazuh dashboard under Dashboards Management, Saved objects, Import.': '本套件附有 Wazuh 看板：告警數、各等級趨勢、最常觸發的規則、代理程式、來源位址與帳號，以及最新告警。可在這裡匯入，或下載檔案後在 Wazuh Dashboard 的 Dashboards Management → Saved objects → Import 匯入。',
+      'Deletes this pack\'s dashboard objects from the Wazuh dashboard.': '從 Wazuh Dashboard 刪除本套件的看板物件。',
+      'Remove dashboard': '移除看板',
+      'Import dashboard': '匯入看板',
+      'Working...': '處理中…',
+      'Request failed': '請求失敗',
+      'Failed to load the dashboard': '無法載入看板資訊',
+      'Dashboard imported.': '看板已匯入。',
+      'Dashboard removed.': '看板已移除。',
+      'This pack has no dashboard': '此套件沒有看板',
+      'The dashboard refused the user name or password': 'Dashboard 拒絕了這組使用者名稱或密碼',
+      'Enter the user name and password of a dashboard user': '請輸入 dashboard 使用者的名稱與密碼',
+      'The dashboard address must look like https://host[:port]': 'Dashboard 位址的格式應為 https://主機[:埠]',
+      'The index pattern wazuh-alerts-* does not exist yet: open the Wazuh app in the dashboard once (it creates it), then import again': '索引樣式 wazuh-alerts-* 還不存在：先在 Dashboard 開啟一次 Wazuh 應用程式（它會建立），再重新匯入',
       'Child decoders': '子解碼器',
       'Schedule': '排程',
       'Rewrite schedule': '重寫排程',
@@ -9584,6 +9673,28 @@ _I18N_SCRIPT = r"""
       'Optional': '任意',
       'Copied': 'コピーしました',
       'View file': 'ファイルを表示',
+      'A dashboard user such as admin: the Wazuh API account does not work there. The password is used for this request only and is not stored.': 'admin などのダッシュボードのユーザーを使います（Wazuh API のアカウントは使えません）。パスワードはこのリクエストにのみ使い、保存しません。',
+      'Dashboard': 'ダッシュボード',
+      'Dashboard address': 'ダッシュボードのアドレス',
+      'Import into Wazuh dashboard': 'Wazuh ダッシュボードにインポート',
+      'Open dashboard': 'ダッシュボードを開く',
+      'Remove from dashboard': 'ダッシュボードから削除',
+      'User name': 'ユーザー名',
+      'Verify the certificate with the Wazuh root CA': 'Wazuh ルート CA で証明書を検証する',
+      'This pack ships a Wazuh dashboard: alert counts, levels over time, top rules, agents, source addresses and accounts, and the latest alerts. Import it here, or download the file and import it in the Wazuh dashboard under Dashboards Management, Saved objects, Import.': 'このパックには Wazuh ダッシュボードが付属します：アラート数、レベル別の推移、上位のルール、エージェント、送信元アドレスとアカウント、最新のアラート。ここでインポートするか、ファイルをダウンロードして Wazuh ダッシュボードの Dashboards Management → Saved objects → Import でインポートします。',
+      'Deletes this pack\'s dashboard objects from the Wazuh dashboard.': 'このパックのダッシュボードのオブジェクトを Wazuh ダッシュボードから削除します。',
+      'Remove dashboard': 'ダッシュボードを削除',
+      'Import dashboard': 'ダッシュボードをインポート',
+      'Working...': '処理中…',
+      'Request failed': 'リクエストに失敗しました',
+      'Failed to load the dashboard': 'ダッシュボードの情報を読み込めませんでした',
+      'Dashboard imported.': 'ダッシュボードをインポートしました。',
+      'Dashboard removed.': 'ダッシュボードを削除しました。',
+      'This pack has no dashboard': 'このパックにはダッシュボードがありません',
+      'The dashboard refused the user name or password': 'ダッシュボードがユーザー名またはパスワードを拒否しました',
+      'Enter the user name and password of a dashboard user': 'ダッシュボードのユーザー名とパスワードを入力してください',
+      'The dashboard address must look like https://host[:port]': 'ダッシュボードのアドレスは https://ホスト[:ポート] の形式にしてください',
+      'The index pattern wazuh-alerts-* does not exist yet: open the Wazuh app in the dashboard once (it creates it), then import again': 'インデックスパターン wazuh-alerts-* がまだありません。ダッシュボードで Wazuh アプリを一度開いて（作成されます）から、もう一度インポートしてください',
       'Child decoders': '子デコーダー',
       'Schedule': 'スケジュール',
       'Rewrite schedule': 'スケジュールを書き直す',
@@ -10126,6 +10237,12 @@ _I18N_SCRIPT = r"""
       // pack detail meta line: " · version 1.2 · rules 12 · ID range 100-199" (nbsp separators)
       [/^version (\S+)\s+rules (\d+)\s+ID range (.+)$/, function (m) { return '版本 ' + m[1] + '   規則 ' + m[2] + ' 條   ID 範圍 ' + m[3]; }],
       [/^Rule ID conflict: (.+)\. Install anyway and overwrite\?$/, function (m) { return '規則 ID 衝突：' + m[1] + '。仍要安裝並覆寫嗎？'; }],
+      [/^Imported (.+) into (.+) \(version (.+)\)\.$/, function (m) { return '於 ' + m[1] + ' 匯入到 ' + m[2] + '（版本 ' + m[3] + '）。'; }],
+      [/^Imports (\d+) saved objects\. Importing again replaces them in place\.$/, function (m) { return '將匯入 ' + m[1] + ' 個儲存物件。再次匯入會原地取代，不會重複。'; }],
+      [/^Could not reach the dashboard: (.+)$/, function (m) { return '無法連到 Dashboard：' + m[1]; }],
+      [/^Import failed \(HTTP (\d+)\)(.*)$/, function (m) { return '匯入失敗（HTTP ' + m[1] + '）' + m[2]; }],
+      [/^Could not delete: (.+)$/, function (m) { return '無法刪除：' + m[1]; }],
+      [/^The dashboard certificate could not be verified with the Wazuh root CA \((.+)\)\. Use the host name the certificate names\.$/, function (m) { return '無法以 Wazuh 根 CA（' + m[1] + '）驗證 Dashboard 的憑證。請使用憑證上的主機名稱。'; }],
       [/^Update the pack first: installed (\S+), catalogue (\S+)$/, function (m) { return '請先更新套件：已安裝 ' + m[1] + '，目錄清單為 ' + m[2]; }],
       [/^These files were edited after installation: (.+)\. Remove them anyway\?$/, function (m) { return '這些檔案在安裝後被修改過：' + m[1] + '。仍要移除嗎？'; }],
       [/^(.*) Apply it to this manager only\?$/, function (m) { return m[1] + ' 要只套用到這台 Manager 嗎？'; }],
@@ -10292,6 +10409,12 @@ _I18N_SCRIPT = r"""
       [/^New in (.+)$/, function (m) { return m[1] + ' で追加'; }],
       [/^version (\S+)\s+rules (\d+)\s+ID range (.+)$/, function (m) { return 'バージョン ' + m[1] + '   ルール ' + m[2] + ' 件   ID 範囲 ' + m[3]; }],
       [/^Rule ID conflict: (.+)\. Install anyway and overwrite\?$/, function (m) { return 'ルール ID が競合しています：' + m[1] + '。それでも上書きしてインストールしますか？'; }],
+      [/^Imported (.+) into (.+) \(version (.+)\)\.$/, function (m) { return m[1] + ' に ' + m[2] + ' へインポート済み（バージョン ' + m[3] + '）。'; }],
+      [/^Imports (\d+) saved objects\. Importing again replaces them in place\.$/, function (m) { return m[1] + ' 個の保存オブジェクトをインポートします。再インポートするとその場で置き換わります。'; }],
+      [/^Could not reach the dashboard: (.+)$/, function (m) { return 'ダッシュボードに接続できません：' + m[1]; }],
+      [/^Import failed \(HTTP (\d+)\)(.*)$/, function (m) { return 'インポートに失敗しました（HTTP ' + m[1] + '）' + m[2]; }],
+      [/^Could not delete: (.+)$/, function (m) { return '削除できません：' + m[1]; }],
+      [/^The dashboard certificate could not be verified with the Wazuh root CA \((.+)\)\. Use the host name the certificate names\.$/, function (m) { return 'Wazuh ルート CA（' + m[1] + '）でダッシュボードの証明書を検証できません。証明書に記載のホスト名を使ってください。'; }],
       [/^Update the pack first: installed (\S+), catalogue (\S+)$/, function (m) { return '先にパックを更新してください：インストール済み ' + m[1] + '、カタログ ' + m[2]; }],
       [/^These files were edited after installation: (.+)\. Remove them anyway\?$/, function (m) { return '次のファイルはインストール後に編集されています：' + m[1] + '。それでも削除しますか？'; }],
       [/^(.*) Apply it to this manager only\?$/, function (m) { return m[1] + ' このマネージャーだけに適用しますか？'; }],
@@ -15159,6 +15282,13 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     def _pack_state_path(pack_id):
         return os.path.join(_pack_state_dir(), pack_id + '.json')
 
+    def _write_pack_state(pack_id, state):
+        with open(_pack_state_path(pack_id), 'w', encoding='utf-8') as fh:
+            json.dump(state, fh, ensure_ascii=False, indent=2)
+
+    def _now_iso():
+        return datetime.now().astimezone().isoformat(timespec='seconds')
+
     def _installed_state(pack_id):
         try:
             with open(_pack_state_path(pack_id), encoding='utf-8') as fh:
@@ -15247,7 +15377,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     # What the deployment guide may show from a pack. Agent-side files are the
     # point; rules and lists are listed for completeness. Nothing outside these
     # directories, and nothing large.
-    PACK_VIEWABLE_DIRS = ('agent', 'rules', 'lists', 'decoders', 'scripts')
+    PACK_VIEWABLE_DIRS = ('agent', 'rules', 'lists', 'decoders', 'scripts', 'dashboards')
     PACK_VIEW_MAX = 512 * 1024
 
     def _validate_dest(dest):
@@ -15890,6 +16020,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 'state': state,
                 'presence': _pack_presence(manifest),
                 'setup': manifest.get('setup') or [],
+                'dashboard': _pack_dashboard_info(pack_id),
                 'agent_files': sorted(
                     f for f in (os.listdir(os.path.join(pdir, 'agent'))
                                 if os.path.isdir(os.path.join(pdir, 'agent')) else [])
@@ -15930,6 +16061,174 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             return Response(content, mimetype='text/plain', headers={
                 'Content-Disposition': 'attachment; filename="%s"' % parts[1]})
         return jsonify({'path': rel, 'name': parts[1], 'content': content})
+
+    def _pack_dashboard_file(pack_id):
+        pdir = _pack_dir(pack_id)
+        path = os.path.join(pdir, 'dashboards', pack_id + '.ndjson') if pdir else None
+        return path if path and os.path.isfile(path) else None
+
+    def _pack_dashboard_objects(path):
+        """(type, id) of every saved object in a pack's dashboard file."""
+        objects = []
+        with open(path, encoding='utf-8') as fh:
+            for line in fh:
+                line = line.strip()
+                if line:
+                    obj = json.loads(line)
+                    if obj.get('type') and obj.get('id'):
+                        objects.append((obj['type'], obj['id']))
+        return objects
+
+    def _pack_dashboard_info(pack_id):
+        path = _pack_dashboard_file(pack_id)
+        if not path:
+            return None
+        try:
+            count = len(_pack_dashboard_objects(path))
+        except (OSError, ValueError):
+            count = 0
+        return {'file': 'dashboards/' + os.path.basename(path), 'objects': count,
+                'dashboard_id': 'jt-pack-%s-dashboard' % pack_id}
+
+    def _dashboard_default_url():
+        """The Wazuh dashboard on the host the browser reached this tool on.
+
+        Its certificate names that host, which 127.0.0.1 would not match; the
+        port is server.port from opensearch_dashboards.yml when it is here.
+        """
+        import yaml
+        port, multitenancy = 443, False
+        try:
+            with open(DASHBOARD_CONF, encoding='utf-8') as fh:
+                conf = yaml.safe_load(fh) or {}
+            port = int(conf.get('server.port') or 443)
+            multitenancy = bool(conf.get('opensearch_security.multitenancy.enabled'))
+        except (OSError, ValueError, TypeError, yaml.YAMLError):
+            pass
+        host = (request.host or 'localhost').rsplit(':', 1)[0] if request else 'localhost'
+        if not host.startswith('[') and host.count(':') > 1:
+            host = '[%s]' % host
+        return 'https://%s%s' % (host, '' if port == 443 else ':%d' % port), multitenancy
+
+    def _dashboard_ca():
+        return next((p for p in DASHBOARD_CA_FILES if os.path.isfile(p)), None)
+
+    class DashboardError(Exception):
+        pass
+
+    def _dashboard_session(url, username, password, verify_tls):
+        """A requests session for the Wazuh dashboard's saved objects API.
+
+        Basic auth as an indexer user (the Wazuh API account does not work
+        there), osd-xsrf on every request, and the global tenant when
+        multitenancy is on: without it a basic-auth call writes to the user's
+        private tenant and nobody else sees the dashboard.
+        """
+        from urllib.parse import urlsplit
+        parts = urlsplit(url or '')
+        if parts.scheme not in ('https', 'http') or not parts.hostname or parts.username \
+                or parts.password or parts.query or parts.fragment or parts.path not in ('', '/'):
+            raise DashboardError('The dashboard address must look like https://host[:port]')
+        if not username or not password:
+            raise DashboardError('Enter the user name and password of a dashboard user')
+        base = '%s://%s' % (parts.scheme, parts.netloc)
+        sess = http_requests.Session()
+        sess.auth = (username, password)
+        sess.headers.update({'osd-xsrf': 'true'})
+        sess.verify = (_dashboard_ca() or True) if verify_tls else False
+        try:
+            r = sess.get(base + '/api/v1/configuration/account', timeout=20)
+        except http_requests.exceptions.SSLError:
+            raise DashboardError('The dashboard certificate could not be verified with the Wazuh root CA '
+                                 '(%s). Use the host name the certificate names.'
+                                 % (_dashboard_ca() or 'not found on this host'))
+        except http_requests.exceptions.RequestException as e:
+            raise DashboardError('Could not reach the dashboard: %s' % e.__class__.__name__)
+        if r.status_code == 401:
+            raise DashboardError('The dashboard refused the user name or password')
+        if r.status_code == 200:
+            try:
+                if (r.json().get('data') or {}).get('user_requested_tenant') is not None:
+                    sess.headers.update({'securitytenant': 'global'})
+            except ValueError:
+                pass
+        return sess, base
+
+    @app.route('/api/packs/<pack_id>/dashboard', methods=['GET', 'POST'])
+    @login_required
+    @require_capability('rule_packs')
+    def pack_dashboard(pack_id):
+        """GET: the pack's dashboard and where it was imported. POST: import or remove it.
+
+        POST body: action ("import" or "remove"), url, username, password,
+        verify_tls (default true). The credentials are used for this request
+        only and never stored.
+        """
+        if not _read_manifest(pack_id):
+            return jsonify({'error': 'Unknown pack'}), 404
+        path = _pack_dashboard_file(pack_id)
+        if not path:
+            return jsonify({'error': 'This pack has no dashboard'}), 404
+        state = _installed_state(pack_id)
+        if request.method == 'GET':
+            url, multitenancy = _dashboard_default_url()
+            return jsonify({**(_pack_dashboard_info(pack_id) or {}), 'default_url': url,
+                            'multitenancy': multitenancy, 'ca': _dashboard_ca(),
+                            'imported': (state or {}).get('dashboard')})
+        body = request.get_json(silent=True) or {}
+        action = body.get('action')
+        if action not in ('import', 'remove'):
+            return jsonify({'error': 'action must be import or remove'}), 400
+        try:
+            objects = _pack_dashboard_objects(path)
+            sess, base = _dashboard_session(body.get('url'), body.get('username'), body.get('password'),
+                                            body.get('verify_tls', True) is not False)
+            previous = [tuple(x) for x in ((state or {}).get('dashboard') or {}).get('objects') or []]
+            if action == 'remove':
+                failed = []
+                for otype, oid in list(dict.fromkeys(objects + previous)):
+                    r = sess.delete('%s/api/saved_objects/%s/%s' % (base, otype, oid), timeout=20)
+                    if r.status_code not in (200, 404):
+                        failed.append(oid)
+                if failed:
+                    raise DashboardError('Could not delete: ' + ', '.join(failed[:5]))
+                if state and state.get('dashboard'):
+                    state.pop('dashboard', None)
+                    _write_pack_state(pack_id, state)
+                return jsonify({'message': 'Dashboard removed.'})
+            r = sess.get('%s/api/saved_objects/index-pattern/%s' % (base, WAZUH_ALERTS_PATTERN), timeout=20)
+            if r.status_code == 404:
+                raise DashboardError('The index pattern wazuh-alerts-* does not exist yet: open the Wazuh app '
+                                     'in the dashboard once (it creates it), then import again')
+            with open(path, 'rb') as fh:
+                content = fh.read()
+            r = sess.post(base + '/api/saved_objects/_import?overwrite=true',
+                          files={'file': (os.path.basename(path), content, 'application/ndjson')}, timeout=60)
+            try:
+                result = r.json()
+            except ValueError:
+                result = {}
+            if r.status_code != 200 or not result.get('success') or result.get('successCount') != len(objects):
+                errs = '; '.join('%s %s: %s' % (e.get('type'), e.get('id'), (e.get('error') or {}).get('type'))
+                                 for e in (result.get('errors') or [])[:3])
+                raise DashboardError('Import failed (HTTP %d)%s' % (r.status_code, ': ' + errs if errs else ''))
+            stale = [o for o in previous if o not in objects]
+            for otype, oid in stale:
+                sess.delete('%s/api/saved_objects/%s/%s' % (base, otype, oid), timeout=20)
+            link = '%s/app/dashboards#/view/jt-pack-%s-dashboard' % (base, pack_id)
+            if state is not None:
+                state['dashboard'] = {'url': base, 'link': link, 'imported': _now_iso(),
+                                      'version': (_read_manifest(pack_id) or {}).get('version'),
+                                      'objects': [list(o) for o in objects]}
+                _write_pack_state(pack_id, state)
+            return jsonify({'message': 'Dashboard imported.', 'link': link, 'objects': len(objects),
+                            'removed_stale': len(stale)})
+        except DashboardError as e:
+            return jsonify({'error': str(e)}), 400
+        except (OSError, ValueError) as e:
+            return jsonify({'error': 'Dashboard file unreadable: %s' % e}), 500
+        except http_requests.exceptions.RequestException as e:
+            return jsonify({'error': 'Could not reach the dashboard: %s' % e.__class__.__name__}), 502
 
     @app.route('/api/packs/<pack_id>/install', methods=['POST'])
     @login_required
