@@ -31,7 +31,9 @@
   "The decoder adds srcip, srcport, dstip, dstport and protocol, and three fields that are the same for every record type: zenarmor.index (conn, dns, tls, http, sip, alert), zenarmor.domain (the matched name for alert records, the query for dns records, the destination name otherwise) and zenarmor.category (since 1.6 also for an unblocked dns record, from domain_categories). Other packs and CDB lists can use them. Note that srcip is always the internal client: a level-based active response configured on the manager would now see it, so exclude the zenarmor group from such a response.",
   "Parked Domains is recorded at level 0 and never alerts. The classifier appears to key on the apex having no A record, which also describes any CDN-fronted application backend, so its false-positive rate is very high. Real DGA activity is covered by 130833 instead.",
   "Not covered: the syslog stream carries reporting records only, so Zenarmor engine errors, cloud and licence messages, policy changes and TLS-inspection failures are not in it. Allowed use of remote-access tools, DNS over HTTPS and VPN or proxy applications is not alerted per record (measured: thousands of AnyDesk records a week from one host); a first-seen alert would need first-time-seen tracking, which Wazuh cannot attach to a decoder that hands its fields to the JSON decoder. Generic web-filtering blocks (Ads, Social and other non-security categories) reach rule 130800 at level 0 by design. The pack ships no active response: every source address here is an internal client, and Zenarmor already blocks what it can.",
-  "Verified on Wazuh 4.14.7: the <prematch>zenarmor</prematch> decoder from the vendor guide does not match; this pack uses <program_name>zenarmor</program_name>. Short tokens are anchored with \\b (otherwise Tor matches Torrent)."
+  "Verified on Wazuh 4.14.7: the <prematch>zenarmor</prematch> decoder from the vendor guide does not match; this pack uses <program_name>zenarmor</program_name>. Short tokens are anchored with \\b (otherwise Tor matches Torrent).",
+  "What each stream type is for: without Alerts every blocked threat stays at level 2, because only the alert record carries Zenarmor's decision; without DNS no lookup pattern is detected and resolvers are not recognised; TLS and Web feed the unblocked threat sites (130851 to 130853) and the tool names (130841, 130866, 130868).",
+  "Stream volume, measured on one site over 7 days: 10.3 million records (conn 7.5 million, dns 1.7 million, http 0.58 million, tls 0.52 million, alert 15,000); conn records with an empty security_tags were 73% of it. Records that no rule needs end at level 0 and cost the manager little. A relay filter that keeps only blocked and tagged records, as before 1.6, still covers every blocked threat but hides unblocked threats and the tool names."
  ],
  "notes_zh": [
   "OPNsense 必須把 Zenarmor 的報表資料以 syslog 轉送到 Wazuh 管理端，程式名稱為 zenarmor（zenarmorngfw 也能解碼），而且串流除了 Connections、DNS 與 TLS 之外必須包含 Alerts。每次阻擋只有 alert 記錄會帶 Zenarmor 的判定結果與比對到的名稱。依原廠文件，Free 與 Home 版沒有串流功能。",
@@ -50,7 +52,9 @@
   "解碼器新增 srcip、srcport、dstip、dstport、protocol，以及三個對所有記錄類型意義一致的欄位：zenarmor.index（conn、dns、tls、http、sip、alert）、zenarmor.domain（alert 記錄是比對到的名稱，dns 記錄是查詢名稱，其他是目的主機名稱）與 zenarmor.category（1.6 起未被阻擋的 dns 記錄也有，取自 domain_categories）。其他套件與 CDB 清單可以直接使用。注意 srcip 一律是內部用戶端：管理端若設定了依等級觸發的主動回應，現在會看到它，請把 zenarmor 群組排除在該回應之外。",
   "Parked Domains 為 level 0、不告警。分類器似乎以 apex 沒有 A 記錄判定，而 CDN 前置的應用程式後端正好符合，誤判率極高。真正的 DGA 行為改由 130833 涵蓋。",
   "未涵蓋：syslog 串流只有報表記錄，Zenarmor 引擎錯誤、雲端與授權訊息、政策變更與 TLS 檢查失敗都不在其中。被允許的遠端控制工具、DNS over HTTPS 與 VPN 或代理程式的使用不逐筆告警（實測一台主機每週數千筆 AnyDesk 記錄）；「首次出現」告警需要 first-time-seen 追蹤，而 Wazuh 無法把它掛在交給 JSON 解碼器處理欄位的解碼器上。一般網頁過濾的阻擋（Ads、Social 等非資安分類）依設計停在 130800（level 0）。本套件不附主動回應：這裡的來源位址全是內部用戶端，而 Zenarmor 已經擋下它能擋的。",
-  "Wazuh 4.14.7 實測：官方指南的 <prematch>zenarmor</prematch> 解碼器不會匹配，本套件改用 <program_name>zenarmor</program_name>。短詞一律加 \\b 邊界（否則 Tor 會誤中 Torrent）。"
+  "Wazuh 4.14.7 實測：官方指南的 <prematch>zenarmor</prematch> 解碼器不會匹配，本套件改用 <program_name>zenarmor</program_name>。短詞一律加 \\b 邊界（否則 Tor 會誤中 Torrent）。",
+  "各串流類型的用途：沒有 Alerts，所有被阻擋的威脅都停在 level 2，因為只有 alert 記錄帶 Zenarmor 的判定；沒有 DNS，任何查詢模式都偵測不到，也認不出解析器；TLS 與 Web 供未被阻擋的威脅網站（130851 到 130853）與工具名稱（130841、130866、130868）使用。",
+  "串流量（某站台 7 天實測）：1,030 萬筆（conn 750 萬、dns 170 萬、http 58 萬、tls 52 萬、alert 1.5 萬）；security_tags 為空的 conn 記錄佔 73%。沒有規則用到的記錄停在 level 0，對管理端負擔很小。像 1.6 之前那樣只保留被阻擋與帶標籤記錄的過濾，仍涵蓋所有被阻擋的威脅，但看不到未被阻擋的威脅與工具名稱。"
  ],
  "files": [
   {
@@ -86,19 +90,32 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers. The rules must be on the node that receives the firewall's syslog. Installing declares the two CDB lists in ossec.conf; on a cluster, declare them on the workers as well.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。規則必須存在於接收防火牆 syslog 的那個節點。安裝時會在 ossec.conf 宣告兩份 CDB 清單；叢集環境請在 worker 也宣告。"
+   "title": "Install the pack and reload every node",
+   "title_zh": "安裝套件並重新載入所有節點",
+   "body": "1. Install the pack from this page. It declares its 2 CDB lists in ossec.conf on every cluster node; if the result names a node it could not reach, add the <list> lines to that node's <ruleset> by hand.\n2. Click Reload Ruleset on the Rules tab: it reloads every cluster node.",
+   "body_zh": "1. 在本頁安裝套件。安裝時會在每個叢集節點的 ossec.conf 宣告2 份 CDB 清單；若結果列出無法連線的節點，請手動把 <list> 加進該節點的 <ruleset>。\n2. 到「規則」分頁按「重新載入規則集」：會重新載入叢集的每個節點。",
+   "verify": "The reload result shows every node as reloaded, with no warning.",
+   "verify_zh": "重新載入的結果顯示每個節點都已重新載入，且沒有警告。"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Accept syslog from the firewall",
+   "title_zh": "接受防火牆送來的 syslog",
+   "body": "1. On the node the firewall will send to, add the syslog <remote> block below to ossec.conf, with the firewall's (or the relay's) address in <allowed-ips>.\n2. Use the port and protocol you will set in Zenarmor.\n3. Restart that manager; agents reconnect by themselves.",
+   "body_zh": "1. 在防火牆要送往的節點上，把下列 syslog <remote> 區塊加進 ossec.conf，<allowed-ips> 填防火牆（或轉送程式）的位址。\n2. 連接埠與協定要與 Zenarmor 中的設定相同。\n3. 重新啟動該管理端；agent 會自動重新連線。",
+   "code": "<remote>\n  <connection>syslog</connection>\n  <port>514</port>\n  <protocol>udp</protocol>\n  <allowed-ips>192.0.2.1/32</allowed-ips>\n</remote>",
+   "verify": "ss -lnup (UDP) or ss -lntp (TCP) on that node shows wazuh-remoted listening on the port.",
+   "verify_zh": "在該節點執行 ss -lnup（UDP）或 ss -lntp（TCP），應看到 wazuh-remoted 在該連接埠監聽。"
   },
   {
    "platform": "network",
    "required": true,
    "since": "1.5",
-   "title": "Stream Zenarmor's reporting data to the manager by syslog",
-   "title_zh": "把 Zenarmor 報表資料以 syslog 串流到管理端",
-   "body": "In OPNsense open Zenarmor, Configuration, Data Management (called Reporting & Data or Settings, Reporting & Data, Streaming Data in some versions), and enable streaming to a remote syslog server: the Wazuh manager's address, the port of its syslog listener, UDP or TCP. Streaming is not available in the Free and Home editions. Select Connections, DNS, TLS, Web and Alerts. Alerts is required: without it every blocked threat stays at level 2. DNS is required: the dns records are what lookups are counted and resolvers recognised from; without them no lookup pattern is detected. TLS and Web are required for unblocked threat sites (130851 to 130853) and for the tool names (130841, 130866, 130868). Records are about 2 KB, so over UDP they travel as IP fragments; a firewall in between must pass fragments, or use TCP. If a relay filters the stream, see the next step. Nothing on the firewall restarts.",
-   "body_zh": "在 OPNsense 開啟 Zenarmor → Configuration → Data Management（部分版本稱 Reporting & Data，或 Settings → Reporting & Data → Streaming Data），啟用串流到遠端 syslog 伺服器：填入 Wazuh 管理端位址、其 syslog 監聽埠、UDP 或 TCP。Free 與 Home 版沒有串流功能。勾選 Connections、DNS、TLS、Web 與 Alerts。Alerts 為必要：沒有它，所有被阻擋的威脅都會停在 level 2。DNS 為必要：查詢是依 dns 記錄計數、解析器也是依它認出；沒有它，任何查詢模式都偵測不到。TLS 與 Web 是未被阻擋的威脅網站（130851 到 130853）與工具名稱（130841、130866、130868）所必需。每筆記錄約 2 KB，走 UDP 時會被切成 IP 分段；中間若有防火牆必須放行分段，否則請改用 TCP。若中間有轉送程式過濾串流，請見下一步。防火牆上不需要重啟任何服務。",
+   "title": "Stream Zenarmor reports to the manager",
+   "title_zh": "把 Zenarmor 報表串流到管理端",
+   "body": "1. In OPNsense open Zenarmor > Configuration > Data Management (Settings > Reporting & Data > Streaming Data in some versions) and enable streaming to a remote syslog server: the manager's address, port and protocol from the previous step.\n2. Select Connections, DNS, TLS, Web and Alerts. Alerts and DNS are required; TLS and Web are needed for unblocked threats and tool names.\n3. Over UDP the records (about 2 KB) travel as IP fragments: a firewall in between must pass fragments, or use TCP.\nStreaming is not available in the Free and Home editions. Nothing on the firewall restarts.",
+   "body_zh": "1. 在 OPNsense 開啟 Zenarmor > Configuration > Data Management（部分版本為 Settings > Reporting & Data > Streaming Data），啟用串流到遠端 syslog 伺服器：填入上一步的管理端位址、連接埠與協定。\n2. 勾選 Connections、DNS、TLS、Web 與 Alerts。Alerts 與 DNS 為必要；未被阻擋的威脅與工具名稱需要 TLS 與 Web。\n3. 走 UDP 時每筆約 2 KB 的記錄會被切成 IP 分段：中間的防火牆必須放行分段，否則請改用 TCP。\nFree 與 Home 版沒有串流功能。防火牆上不需要重啟任何服務。",
    "verify": "Browse from a test client to a site your policy blocks as Phishing or Malware. Within a minute or two the manager shows 130804 or 130802 with the blocked name; the conn and tls records of the same block are recorded as 130815 or 130829 and do not alert.",
    "verify_zh": "從測試用戶端瀏覽一個政策會以 Phishing 或 Malware 阻擋的網站。一兩分鐘內管理端應出現 130804 或 130802，並帶有被阻擋的名稱；同一次阻擋的 conn 與 tls 記錄記為 130815 或 130829、不告警。"
   },
@@ -106,21 +123,12 @@
    "platform": "network",
    "required": false,
    "since": "1.6",
-   "title": "If a relay filters the stream: what to keep",
-   "title_zh": "若中間有轉送程式過濾串流：要保留哪些記錄",
-   "body": "The full stream is large: measured on one site over 7 days, 10.3 million records (conn 7.5 million, dns 1.7 million, http 0.58 million, tls 0.52 million, alert 15,000). Every record that no rule needs ends at level 0 and is cheap for the manager, but a relay (Vector, syslog-ng, Logstash) may drop some. Keep: every alert record; every record with is_blocked 1 or a non-empty security_tags; tls and http records whose category is a security category (Malware/Virus, Phishing, Potentially Dangerous and the like); dns records whose domain_categories holds one. For the tool names (out-of-band testing, mining pools, tunnelling services, the stager) keep all dns, tls and http records: those names carry no category. conn records with empty security_tags (73% of the volume here) are used by no rule. A filter that keeps only blocked and tagged records, as before 1.6, still works for every blocked threat but hides unblocked ones and the tool names.",
-   "body_zh": "完整串流的量很大：某站台 7 天實測 1,030 萬筆（conn 750 萬、dns 170 萬、http 58 萬、tls 52 萬、alert 1.5 萬）。沒有規則用到的記錄都停在 level 0，對管理端負擔很小，但轉送程式（Vector、syslog-ng、Logstash）可能會過濾。請保留：所有 alert 記錄；所有 is_blocked 為 1 或 security_tags 非空的記錄；category 為資安分類（Malware/Virus、Phishing、Potentially Dangerous 等）的 tls 與 http 記錄；domain_categories 含資安分類的 dns 記錄。工具名稱（頻外測試、礦池、通道服務、stager）沒有分類，需要保留所有 dns、tls 與 http 記錄。security_tags 為空的 conn 記錄（此處佔 73% 的量）沒有任何規則使用。像 1.6 之前那樣只保留被阻擋與帶標籤的記錄仍可涵蓋所有被阻擋的威脅，但會看不到未被阻擋的威脅與工具名稱。",
+   "title": "If a relay filters the stream, keep these",
+   "title_zh": "中間有轉送程式過濾時，保留這些記錄",
+   "body": "If a relay (Vector, syslog-ng, Logstash) filters the stream, keep:\n1. every alert record, and every record with is_blocked 1 or a non-empty security_tags;\n2. tls and http records whose category is a security category (Malware/Virus, Phishing, Potentially Dangerous and the like), and dns records whose domain_categories holds one;\n3. all dns, tls and http records, if you want the tool names (out-of-band testing, mining pools, tunnels, the stager): they carry no category.\nconn records with an empty security_tags are used by no rule and may be dropped.",
+   "body_zh": "若有轉送程式（Vector、syslog-ng、Logstash）過濾串流，請保留：\n1. 所有 alert 記錄，以及所有 is_blocked 為 1 或 security_tags 非空的記錄；\n2. category 為資安分類（Malware/Virus、Phishing、Potentially Dangerous 等）的 tls 與 http 記錄，以及 domain_categories 含資安分類的 dns 記錄；\n3. 若要偵測工具名稱（頻外測試、礦池、通道服務、stager），保留所有 dns、tls 與 http 記錄：這些名稱沒有分類。\nsecurity_tags 為空的 conn 記錄沒有任何規則使用，可以丟掉。",
    "verify": "From a test client resolve a name Zenarmor categorises as Malware/Virus but your policy allows (or any name ending in oast.fun). The dns record reaches the manager as 130821 or one of its children (level 2), or 130841 (level 10).",
    "verify_zh": "從測試用戶端解析一個 Zenarmor 歸類為 Malware/Virus 但政策允許的名稱（或任何以 oast.fun 結尾的名稱）。該 dns 記錄應以 130821 或其子規則（level 2），或 130841（level 10）出現在管理端。"
-  },
-  {
-   "platform": "manager",
-   "required": true,
-   "title": "Accept syslog from the firewall",
-   "title_zh": "接受防火牆送來的 syslog",
-   "body": "The manager needs a remote block for syslog that allows the firewall's address (or the relay's). Changing ossec.conf needs a manager restart; agents reconnect by themselves.",
-   "body_zh": "管理端需要一個允許防火牆（或轉送程式）位址的 syslog remote 區塊。修改 ossec.conf 需要重啟管理端；agent 會自動重新連線。",
-   "code": "<remote>\n  <connection>syslog</connection>\n  <port>514</port>\n  <protocol>udp</protocol>\n  <allowed-ips>192.0.2.1/32</allowed-ips>\n</remote>"
   },
   {
    "platform": "manager",
@@ -128,8 +136,8 @@
    "since": "1.5",
    "title": "Optional: list forwarding DNS servers",
    "title_zh": "選用：列出轉送型 DNS 伺服器",
-   "body": "Recursive resolvers and mail filters are recognised automatically from their own DNS records. A forwarder that relays clients' A lookups and never sends an iterative or a PTR, NS or SOA query itself cannot be told apart from a client; if one trips the beaconing or many-domains rules (130832, 130833) with lookups made for its clients, list its address, one per line, then reload the ruleset. A network prefix ending in a dot (192.0.2.) also works. Its own non-DNS connections are not affected.",
-   "body_zh": "遞迴解析器與郵件過濾器會從它們自己的 DNS 記錄自動認出。轉送型伺服器若只轉送用戶端的 A 查詢、自己從不送出迭代查詢或 PTR、NS、SOA 查詢，就無法與用戶端區分；若它以替用戶端做的查詢觸發 beacon 或多網域規則（130832、130833），請把它的位址列入，每個一行，加入後重新載入規則集。也可以寫以點號結尾的網段前綴（192.0.2.）。它自己的非 DNS 連線不受影響。",
+   "body": "Only for a forwarding DNS server whose lookups for its clients trip the beaconing or many-domains rules (130832, 130833); resolvers that send their own iterative or PTR, NS, SOA queries are recognised without it. Add its address as <address>:<label>, one per line (a prefix ending in a dot, 192.0.2., also works), then reload the ruleset. Its own non-DNS connections are not affected.",
+   "body_zh": "只有轉送型 DNS 伺服器替用戶端做的查詢觸發 beacon 或多網域規則（130832、130833）時才需要；會自己送出迭代查詢或 PTR、NS、SOA 查詢的解析器不必列入就能認出。以 <位址>:<標籤> 的格式加入它的位址，每個一行（也可以寫以點號結尾的網段前綴，192.0.2.），然後重新載入規則集。它自己的非 DNS 連線不受影響。",
    "code": "echo '192.0.2.53:forwarder' >> /var/ossec/etc/lists/jt-zenarmor-resolvers",
    "verify": "The next blocked lookups from a listed address are recorded as 130818 or 130849 instead of 130836 or 130839.",
    "verify_zh": "列入的位址之後被阻擋的查詢會記為 130818 或 130849，而不是 130836 或 130839。"
@@ -138,10 +146,10 @@
    "platform": "manager",
    "required": false,
    "since": "1.5",
-   "title": "Allowlist names that Zenarmor files under Proxy or VPN, and fixed tunnel names",
-   "title_zh": "把 Zenarmor 歸類為 Proxy 或 VPN 的名稱，以及固定的通道名稱加入允許清單",
-   "body": "For a corporate VPN endpoint or a similar service in an evasion category, or a fixed tunnel name the site uses on purpose (myapp.ngrok.app): one name per line, exactly as it appears in the alert, then reload the ruleset. The list applies only to the evasion rules 130805 and 130806 and the tunnelling-service rule 130868; malware and phishing alerts are never silenced by it.",
-   "body_zh": "適用於公司 VPN 端點這類被歸到規避分類的服務，或站台刻意使用的固定通道名稱（myapp.ngrok.app）：每個名稱一行，寫法與告警中完全相同，加入後重新載入規則集。此清單只作用於規避類規則 130805、130806 與通道服務規則 130868，永遠不會讓惡意程式或釣魚告警靜音。",
+   "title": "Optional: allowlist VPN, proxy and tunnel names",
+   "title_zh": "選用：把 VPN、代理與通道名稱加入允許清單",
+   "body": "For a corporate VPN endpoint or a similar service that Zenarmor files under Proxy or VPN, or a fixed tunnel name the site uses on purpose (myapp.ngrok.app). Add the name as <name>:<label>, one per line, exactly as it appears in the alert, then reload the ruleset. The list silences only 130805, 130806 and 130868, never malware or phishing alerts.",
+   "body_zh": "適用於公司 VPN 端點這類被 Zenarmor 歸到 Proxy 或 VPN 的服務，或站台刻意使用的固定通道名稱（myapp.ngrok.app）。以 <名稱>:<標籤> 的格式加入，每個一行，寫法與告警中完全相同，然後重新載入規則集。此清單只會讓 130805、130806 與 130868 靜音，永遠不會讓惡意程式或釣魚告警靜音。",
    "code": "echo 'vpn.example.com:corporate-vpn' >> /var/ossec/etc/lists/jt-zenarmor-domain-allow"
   }
  ]

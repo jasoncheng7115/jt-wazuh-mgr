@@ -4,6 +4,39 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.26.0 (2026-10-29)
+
+- **New pack jt-sharetech 1.0: ShareTech NU series firewalls** (CEF syslog: firewall
+  protection, IPS, WAF, thresholds, application control, administrator logins,
+  configuration changes, SSL VPN). Built from a site's 2025 rules and real NU-8700C
+  records, and fixes what kept them quiet: the WAF category rules compared a field that
+  does not exist; every firewall-protection record was taken by Wazuh's built-in
+  firewalld rule (the program name FirewallDefense starts with "Firewalld"); IPS
+  EventLevel is 20 on every record, so every IPS event was level 10; WAF records carry
+  the client in cs3, not src=. Levels now follow the direction of the traffic, and a
+  login name typed as "x outcome=Success" is reported as log injection instead of
+  turning a failure into a success. It keeps the original file names, decoder name and
+  rule IDs, so installing replaces the old files in place.
+- **jt-linux-integrity 1.0.1:** lynis audit reports in syslog ("Logging failed login
+  attempts", "authentication errors") no longer raise 2501 as failed logins.
+- **Every pack's deployment guide rewritten** to short, ordered steps with a check for
+  each required one; background moved to the notes. Several were wrong and are fixed
+  (for example, group assignments without -q were cancelled by agent_groups'
+  confirmation prompt when pasted). Packs that need the Internet now have a step for a
+  manager or hosts without it, and the offline install page has a table of what each
+  pack needs.
+- **Site options that survive pack updates:** /var/ossec/etc/jt-packs/<pack>.cron.local
+  ("<script>: <options>", NAME=value) is applied whenever the tool writes a pack's
+  schedule; the file the tool rewrites on every update no longer has to be edited.
+  A Rewrite schedule button in the pack dialog applies it at once.
+- **CDB lists tab showed no lists** on a manager with a large list: it asked the API for
+  every list's content, the request timed out, and the failure was shown as "no lists".
+  It now reads the names only, and API failures on the lists and decoders tabs are
+  reported. Decoders show their parent and open a detail view with their definition.
+- Light theme: the yellow buttons are brighter with darker text. About 40 interface
+  strings that stayed English in Chinese and Japanese are translated, and a browser
+  journey checks every pack dialog in both languages.
+
 ## v1.25.1 (2026-10-28)
 
 - **jt-alert-digest 1.13.1: two faults in the new channels, found by testing against a

@@ -16,10 +16,11 @@
   "Quarantine releases: from the spam quarantine level 3 (end users release their own spam), from the attachment quarantine level 5, from the virus quarantine level 10. The syslog line does not say who released it; the pmgproxy access log line for POST .../quarantine/content just before it names the account. PMG 8.0 to 8.1.6 write the line without the recipient (added in pmg-api 8.1.7); version 1.1 of this pack missed those, 1.2 reads both.",
   "Failures that stop or weaken filtering are level 10: virus scanning failed, an accepted mail that cannot be handed back to Postfix, Postfix unable to reach the filter on 127.0.0.1:10023/10024, a burst of filter process errors, and pmg-smtp-filter, Postfix, clamd, pmgpolicy or PostgreSQL failing under systemd; other PMG services failing are level 7. When clamd is down, clamdscan still prints a summary and PMG may log nothing about the scan, so the service rule is the one that catches it.",
   "Housekeeping: cluster synchronisation errors and an aborted LDAP profile sync are level 7 (the sync runs every 2 minutes and is silent while it reports 0 errors; a broken peer alerts at most every 30 minutes). A failed ClamAV signature update, a download refused by the mirror or a cool-down after one is level 7, at most hourly; the built-in rule 52509 keeps those at level 0. An outdated ClamAV engine (freshclam names the local and the recommended version) is level 5, once a day: the engine parses every attachment. A failed task is level 5; a failed package update check, ClamAV or SpamAssassin update or configuration backup task is level 7 (no security updates or no backups); a failed ACME certificate renewal level 7. A root shell opened from the web interface or a service stopped from it is level 5.",
-  "Postfix: an answer in 127.255.255.0/24 from a DNS blocklist (Spamhaus refusing a query sent through a public resolver, or too many queries) is level 10, because a postscreen setup without an answer filter then scores every client as listed; repeated postscreen lookup timeouts are level 7. A Postfix daemon killed by a signal, exiting with an error or throttled is level 7 (built-in rules leave these at level 0). A client sending bare newlines, the technique behind SMTP smuggling, is level 5, but only if Postfix logs it: PMG's default smtpd_forbid_bare_newline = normalize logs nothing (see the setup step). A refused internet sender whose address has no matching DNS name drops from built-in 3303 (level 5) to level 2; other 450 replies, and the same reply to a private address, stay at 3303. These rules and the TLS certificate rule apply to any Postfix server, not only PMG.",
+  "Postfix: an answer in 127.255.255.0/24 from a DNS blocklist (Spamhaus refusing a query sent through a public resolver, or too many queries) is level 10, because a postscreen setup without an answer filter then scores every client as listed; repeated postscreen lookup timeouts are level 7. A Postfix daemon killed by a signal, exiting with an error or throttled is level 7 (built-in rules leave these at level 0). A client sending bare newlines, the technique behind SMTP smuggling, is level 5, but only if Postfix logs it: PMG's default smtpd_forbid_bare_newline = normalize logs nothing (see the setup step). A refused internet sender whose address has no matching DNS name drops from built-in 3303 (level 5) to level 2; other 450 replies, and the same reply to a private address, stay at 3303. These rules and the TLS certificate rule apply to any Postfix server, not only PMG. Independently, keep Postfix updated: with before-queue filtering (PMG's default), Postfix 3.10.14 and 3.11.7 closed a smuggling path through smtpd_proxy_filter.",
   "REST API changes from the pmgproxy access log: users, realms and two-factor settings level 8 (a second factor removed, disabled or unlocked 10), mail filter rules 8 (rule database reset to factory defaults 10), trusted networks and transports 8, SMTP welcomelist 7, other gateway settings 6, cluster membership 8, configuration restore 8, deleting queued mail 6, certificates 6, node reboot 6. A configuration backup downloaded is level 8 (backups made before pmg-api 9.1.3 hold the key that signs login tickets). An APT changelog request whose package name starts with a dash is level 10: the PSA-2026-00001-1 option injection (fixed in pmg-api 9.0.3), whatever the answer. The agent group keeps only POST, PUT and DELETE requests, backup downloads and changelog requests. The web interface calls /api2/extjs/, which logs status 200 even for a refused change, so these alerts mean the change was requested; the acting user is in the full log line.",
   "Deliberately not alerted: rejections by postscreen, DNS blocklists, SPF or greylisting, and quarantined or marked inbound spam. They are the gateway doing its job; the built-in Postfix rules (3303, 3306 and their burst rules 3353, 3356) still apply to them, except the refused senders without a DNS name described above. Not built: rules for Postfix connection and rate limits and for a ClamAV hit on files outside a mail spool (a webshell or rootkit on the gateway itself), since they concern every Postfix or ClamAV host and belong in a pack for those. No active response is offered against mail senders: postscreen and the blocklists reject them before SMTP, spam sources change addresses, and a wrong firewall block stops all mail from that sender.",
-  "Cross-pack login groups (patch release): jt_auth_success on 132401, 132491, 132493, 132403, 132492; jt_auth_failure on 132404, 132408, 132497; jt_auth_lockout on 132495. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. The success line of pmgdaemon carries no address; the web access copy (132473) is not tagged. A wrong second factor (132409) is not a failed password and is not tagged. 132405, 132496 and 132490 now count failures through the pack-only group jt_pmg_login_failure (on 132404 only) instead of if_matched_sid 132404: same rules, same thresholds, but the failures also reach the cross-pack group lists, which skip any rule named by an if_matched_sid."
+  "Cross-pack login groups (patch release): jt_auth_success on 132401, 132491, 132493, 132403, 132492; jt_auth_failure on 132404, 132408, 132497; jt_auth_lockout on 132495. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. The success line of pmgdaemon carries no address; the web access copy (132473) is not tagged. A wrong second factor (132409) is not a failed password and is not tagged. 132405, 132496 and 132490 now count failures through the pack-only group jt_pmg_login_failure (on 132404 only) instead of if_matched_sid 132404: same rules, same thresholds, but the failures also reach the cross-pack group lists, which skip any rule named by an if_matched_sid.",
+  "Deployment details. The agent group collects only /var/log/pmgproxy/pmgproxy.log; everything else comes from the syslog files the agent already reads. An agent that reads /var/log/syslog together with mail.log, mail.info or messages receives every mail line two or three times (measured on one gateway: three copies of each Postfix and ClamAV line), and that also multiplies the counts the volume rules use. Limiting pmgproxy (port 8006, web interface and API) with ALLOW_FROM, DENY_FROM and POLICY in /etc/default/pmgproxy (admin guide, section 10.2.2) is a better first defence against the login attacks this pack reports than any block after the fact, and keeps API bugs such as the PSA advisories out of reach from the internet."
  ],
  "notes_zh": [
   "Wazuh 沒有 Proxmox Mail Gateway 的解碼器：內建的 Proxmox 解碼器只認 pvedaemon、pveproxy、pvestatd，不認 pmgdaemon、pmgproxy 或 pmg-smtp-filter。在 PMG 9 閘道上，網頁登入失敗只命中通用規則 2501，PMG 關於郵件、隔離區、叢集與自身服務的記錄完全不命中任何規則。以一台閘道 6,748 行真實記錄（PMG、ClamAV、postscreen、Postfix，九到三十天）重放，不填任何清單，1.2 版每天只產生一則告警（每日套件更新失敗，level 7），另有該閘道 API 帳號的一則首次登入告警，以及唯一一個密件副本目標的一則首次複製告警；這個帳號其餘 491 次登入都停在 level 2。閘道上兩個內建告警來源降為 level 2：每小時一次的 ClamAV 更新檢查（52507，level 3，每天 24 則），以及被拒收、沒有 DNS 名稱的網際網路寄件主機（3303，level 5，30 天 449 則）。規則依 pmg-api 9.1.4 原始碼撰寫，也能讀 PMG 8 起預設的 RFC 3339 時間格式。",
@@ -31,10 +32,11 @@
   "隔離區放行：從垃圾信隔離區放行為 level 3（使用者會自行放行），從附件隔離區為 level 5，從病毒隔離區為 level 10。syslog 那行沒寫是誰放行的；緊接在前、pmgproxy 存取記錄裡的 POST .../quarantine/content 那行有帳號。PMG 8.0 到 8.1.6 這行沒有收件者（pmg-api 8.1.7 才加上）；本套件 1.1 版讀不到這種寫法，1.2 版兩種都讀。",
   "會讓過濾停擺或打折的故障為 level 10：病毒掃描失敗、已接收的郵件無法交回 Postfix、Postfix 連不上 127.0.0.1:10023/10024 的過濾程式、過濾程序短時間內大量出錯，以及 pmg-smtp-filter、Postfix、clamd、pmgpolicy、PostgreSQL 在 systemd 下失敗；其他 PMG 服務失敗為 level 7。clamd 停止時 clamdscan 仍會印出摘要，PMG 可能完全不記錄掃描失敗，所以抓到它的是服務規則。",
   "例行維護：叢集同步錯誤與 LDAP 設定檔同步中止為 level 7（同步每 2 分鐘一次，回報 0 errors 時不出聲；壞掉的節點最多每 30 分鐘告警一次）。ClamAV 病毒碼更新失敗、被鏡像站拒絕或因此進入冷卻期為 level 7，每小時最多一次；內建規則 52509 把這些留在 level 0。ClamAV 引擎過舊（freshclam 會列出本機與建議的版本）為 level 5，每天一次：每個附件都由這個引擎解析。任務失敗為 level 5；套件更新檢查、ClamAV 或 SpamAssassin 更新、設定備份任務失敗為 level 7（收不到安全更新或沒有備份）；ACME 憑證自動更新失敗為 level 7。從網頁介面開啟 root shell 或停止服務為 level 5。",
-  "Postfix：DNS 黑名單回應落在 127.255.255.0/24（Spamhaus 拒絕經由公共 DNS 送來的查詢或查詢過多）為 level 10，因為沒有設定回應過濾的 postscreen 會因此把每個用戶端都當成已列入；postscreen 查詢一再逾時為 level 7。Postfix 服務程序被訊號終止、以錯誤結束或被節流為 level 7（內建規則把這些留在 level 0）。用戶端送出單獨的換行字元（SMTP smuggling 所用的手法）為 level 5，但前提是 Postfix 有記錄：PMG 預設的 smtpd_forbid_bare_newline = normalize 什麼都不記（見部署步驟）。被拒收、位址沒有對應 DNS 名稱的網際網路寄件主機，從內建 3303（level 5）降為 level 2；其他 450 回應，以及對私有位址的同一種回應，仍為 3303。這些規則與 TLS 憑證規則適用於任何 Postfix 伺服器，不只 PMG。",
+  "Postfix：DNS 黑名單回應落在 127.255.255.0/24（Spamhaus 拒絕經由公共 DNS 送來的查詢或查詢過多）為 level 10，因為沒有設定回應過濾的 postscreen 會因此把每個用戶端都當成已列入；postscreen 查詢一再逾時為 level 7。Postfix 服務程序被訊號終止、以錯誤結束或被節流為 level 7（內建規則把這些留在 level 0）。用戶端送出單獨的換行字元（SMTP smuggling 所用的手法）為 level 5，但前提是 Postfix 有記錄：PMG 預設的 smtpd_forbid_bare_newline = normalize 什麼都不記（見部署步驟）。被拒收、位址沒有對應 DNS 名稱的網際網路寄件主機，從內建 3303（level 5）降為 level 2；其他 450 回應，以及對私有位址的同一種回應，仍為 3303。這些規則與 TLS 憑證規則適用於任何 Postfix 伺服器，不只 PMG。另外請保持 Postfix 更新：使用佇列前過濾（PMG 預設）時，Postfix 3.10.14 與 3.11.7 修正了一條經由 smtpd_proxy_filter 的 smuggling 途徑。",
   "REST API 變更取自 pmgproxy 存取記錄：使用者、realm 與雙因素設定為 level 8（移除、停用或解鎖第二因素為 10），郵件過濾規則為 8（規則資料庫重設回出廠值為 10），信任網段與 transport 為 8，SMTP 白名單為 7，其他閘道設定為 6，叢集成員變更為 8，設定還原為 8，刪除佇列中的郵件為 6，憑證為 6，節點重新開機為 6。下載設定備份為 level 8（pmg-api 9.1.3 之前的備份含有簽發登入票證的金鑰）。套件名稱以減號開頭的 APT changelog 請求為 level 10：這是 PSA-2026-00001-1 的選項注入（pmg-api 9.0.3 修正），不論回應為何都告警。agent 群組只保留 POST、PUT、DELETE 請求、備份下載與 changelog 請求。網頁介面呼叫的是 /api2/extjs/，即使變更被拒絕也記錄狀態 200，所以這些告警代表「有人要求變更」；執行者在完整記錄行中。",
   "刻意不告警：postscreen、DNS 黑名單、SPF、灰名單的拒收，以及被隔離或標記的外來垃圾信。那是閘道在正常工作；內建的 Postfix 規則（3303、3306 及其大量發生規則 3353、3356）照樣適用，只有上面提到的「沒有 DNS 名稱的寄件主機」例外。沒有做：Postfix 連線數與速率限制的規則，以及 ClamAV 在郵件佇列以外的檔案找到 webshell 或 rootkit（閘道本身遭入侵）的規則，因為它們涉及所有 Postfix 或 ClamAV 主機，應放在那類主機的套件。不提供針對寄件者的主動回應：postscreen 與黑名單在 SMTP 之前就拒收了，垃圾信來源會換位址，而誤封的防火牆規則會擋掉該寄件者所有的郵件。",
-  "跨套件登入群組（修補版）：jt_auth_success：132401, 132491, 132493, 132403, 132492；jt_auth_failure：132404, 132408, 132497；jt_auth_lockout：132495。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。pmgdaemon 的成功登入那行沒有位址；網頁存取那份（132473）不加標記。第二因素錯誤（132409）不是密碼錯誤，不加標記。132405、132496 與 132490 改以只在 132404 上的套件專屬群組 jt_pmg_login_failure 計算失敗，不再用 if_matched_sid 132404：同樣的規則與門檻，但失敗事件也能進入跨套件群組清單（被 if_matched_sid 指名的規則會被群組清單略過）。"
+  "跨套件登入群組（修補版）：jt_auth_success：132401, 132491, 132493, 132403, 132492；jt_auth_failure：132404, 132408, 132497；jt_auth_lockout：132495。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。pmgdaemon 的成功登入那行沒有位址；網頁存取那份（132473）不加標記。第二因素錯誤（132409）不是密碼錯誤，不加標記。132405、132496 與 132490 改以只在 132404 上的套件專屬群組 jt_pmg_login_failure 計算失敗，不再用 if_matched_sid 132404：同樣的規則與門檻，但失敗事件也能進入跨套件群組清單（被 if_matched_sid 指名的規則會被群組清單略過）。",
+  "部署細節。agent 群組只收集 /var/log/pmgproxy/pmgproxy.log；其餘內容來自 agent 本來就在讀的 syslog 檔。同時讀 /var/log/syslog 與 mail.log、mail.info 或 messages 的 agent，每行郵件記錄會收到兩三次（一台閘道實測：每行 Postfix 與 ClamAV 記錄三份），計量類規則用的次數也會跟著加倍。以 /etc/default/pmgproxy 的 ALLOW_FROM、DENY_FROM 與 POLICY 限制 pmgproxy（8006 埠，網頁介面與 API；管理手冊 10.2.2 節），是對付本套件回報的登入攻擊更好的第一道防線，勝過事後封鎖，也讓 PSA 公告這類 API 漏洞無法從網際網路觸及。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -84,18 +86,20 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+   "title": "Install the pack and reload every node",
+   "title_zh": "安裝套件並重新載入所有節點",
+   "body": "1. Install the pack from this page.\n2. On the Rules tab, click Reload Ruleset. A cluster copies rule files to the workers but does not reload them.",
+   "body_zh": "1. 在本頁安裝套件。\n2. 到「規則」分頁按「重新載入規則集」。叢集會把規則檔複製到 worker，但不會重新載入。",
+   "verify": "On the Rules tab, a hierarchy search for jt_pmg lists the rules of zz-132400-jt_pmg_rules.xml.",
+   "verify_zh": "在「規則」分頁的階層模式搜尋 jt_pmg，會列出 zz-132400-jt_pmg_rules.xml 的規則。"
   },
   {
    "platform": "linux",
    "required": true,
    "title": "Assign the PMG nodes to the pmg group",
    "title_zh": "把 PMG 節點加入 pmg 群組",
-   "body": "The group collects /var/log/pmgproxy/pmgproxy.log, the REST API access log, keeping requests that change something, answered login requests (the only record of a login's client address), configuration backup downloads and APT changelog requests (since 1.2). Everything else (logins, mail filter, quarantine, cluster sync, Postfix, ClamAV) comes from syslog, which the agent already reads from /var/log/syslog or /var/log/mail.log in its own ossec.conf. Read each copy once: an agent that reads /var/log/syslog together with mail.log, mail.info or messages receives every mail line two or three times, and every alert with it (measured on one gateway: three copies of each Postfix and ClamAV line); it also triples the counts the volume rules use. On a node that logs only to journald, add a journald localfile to the agent's own configuration instead.",
-   "body_zh": "群組會收集 REST API 存取記錄 /var/log/pmgproxy/pmgproxy.log，保留會改變東西的請求、已回應的登入請求（登入的用戶端位址只記在這裡）、設定備份下載與 APT changelog 請求（1.2 起）。其餘內容（登入、郵件過濾、隔離區、叢集同步、Postfix、ClamAV）來自 syslog，agent 本來就在自己的 ossec.conf 讀 /var/log/syslog 或 /var/log/mail.log。每份內容只讀一次：同時讀 /var/log/syslog 與 mail.log、mail.info 或 messages 的 agent，每行郵件記錄會收到兩三次，告警也跟著重複（一台閘道實測：每行 Postfix 與 ClamAV 記錄三份），計量類規則用的次數也會變成三倍。若節點只寫 journald，請改在該 agent 自己的設定加上 journald 的 localfile。",
+   "body": "1. On the manager, run the two commands with the node's agent ID in place of <agent_id>. Repeat for every PMG node.\n2. Logins, mail filter, Postfix and ClamAV come from syslog, which the agent already reads. Read each copy once: do not read /var/log/syslog together with mail.log, mail.info or messages, or every mail alert arrives two or three times.\n3. A node that logs only to journald: add a journald localfile to the agent's own ossec.conf.",
+   "body_zh": "1. 在 manager 上執行這兩行指令，把 <agent_id> 換成該節點的 agent ID。每個 PMG 節點都要做。\n2. 登入、郵件過濾、Postfix 與 ClamAV 來自 syslog，agent 本來就會讀。每份內容只讀一次：不要同時讀 /var/log/syslog 與 mail.log、mail.info 或 messages，否則每則郵件告警會出現兩三次。\n3. 只寫 journald 的節點：在該 agent 自己的 ossec.conf 加上 journald 的 localfile。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g pmg\n/var/ossec/bin/agent_control -R -u <agent_id>",
    "verify": "Change and save any setting under Configuration > Mail Proxy. Expect rule 132466 (level 6) on the manager.",
@@ -104,10 +108,10 @@
   {
    "platform": "manager",
    "required": false,
-   "title": "Optional: silence the first-login alert of automation accounts",
-   "title_zh": "選用：讓自動化帳號連第一次登入也不告警",
-   "body": "Not needed for quiet operation: an account that logs in every few minutes is already level 2 after its first login. List an account here only if even that one alert is unwanted, one line per account, the full user ID with its realm as PMG writes it, then reload the ruleset. A login after failures still alerts for listed accounts.",
-   "body_zh": "安靜運作不需要這一步：每幾分鐘登入一次的帳號，第一次登入之後本來就是 level 2。只有連那一則告警都不想要時才列入，每個帳號一行，寫 PMG 記錄裡含 realm 的完整使用者 ID，加入後重新載入規則集。列入的帳號在失敗之後登入仍會告警。",
+   "title": "Optional: silence automation accounts' first login",
+   "title_zh": "選用：讓自動化帳號第一次登入也不告警",
+   "body": "Not needed: an account that logs in every few minutes is level 2 after its first login. Only to silence that one alert: add one line per account, the full user ID with its realm as PMG writes it, then reload the ruleset. A login after failures still alerts.",
+   "body_zh": "通常不需要：每幾分鐘登入一次的帳號，第一次之後本來就是 level 2。只有要連那一則告警也不要時才做：每個帳號一行，寫 PMG 記錄裡含 realm 的完整使用者 ID，加入後重新載入規則集。失敗之後的登入仍會告警。",
    "code": "echo 'monitoring@pmg:service' >> /var/ossec/etc/lists/jt-pmg-service-accounts"
   },
   {
@@ -115,8 +119,8 @@
    "required": false,
    "title": "Name your outgoing-only PMG rules",
    "title_zh": "列出你自己的外寄專用 PMG 規則",
-   "body": "The list holds PMG's default names. If you renamed or translated them, or have rules of your own that act only on outgoing mail, add each name exactly as shown in Mail Filter > Rules, followed by :virus or :spam, then reload the ruleset. A name that contains a colon must be written in double quotes.",
-   "body_zh": "清單內含 PMG 的預設名稱。若你改過或翻譯過這些名稱，或有自己的外寄專用規則，請照「Mail Filter > Rules」顯示的名稱逐一加入，後接 :virus 或 :spam，再重新載入規則集。名稱含冒號時要用雙引號括起來。",
+   "body": "Only if you renamed or translated 'Virus Alert' or 'Block outgoing Spam', or have rules of your own for outgoing mail only. Add each name exactly as Mail Filter > Rules shows it, followed by :virus or :spam, then reload the ruleset. Write a name that contains a colon in double quotes.",
+   "body_zh": "只有在你改過或翻譯過「Virus Alert」或「Block outgoing Spam」，或有自己的外寄專用規則時才需要。照「Mail Filter > Rules」顯示的名稱逐一加入，後接 :virus 或 :spam，再重新載入規則集。名稱含冒號時要用雙引號括起來。",
    "code": "echo 'Outgoing virus (custom):virus' >> /var/ossec/etc/lists/jt-pmg-outbound-rules"
   },
   {
@@ -124,17 +128,17 @@
    "required": false,
    "title": "Activate the outgoing spam rule in PMG",
    "title_zh": "在 PMG 啟用外寄垃圾信規則",
-   "body": "PMG ships 'Virus Alert' active and 'Block outgoing Spam' inactive. Without an active outgoing spam rule PMG relays outgoing spam and rule 132424 never fires. Activating it is a change on the gateway: outgoing mail that scores as spam (level 3 and up by default) is blocked and the administrator is notified, so check the score threshold against your own outgoing mail first.",
-   "body_zh": "PMG 出廠時「Virus Alert」為啟用、「Block outgoing Spam」為停用。沒有啟用的外寄垃圾信規則，PMG 會照常轉送外寄垃圾信，規則 132424 永遠不會觸發。啟用它是閘道端的變更：分數達垃圾信標準（預設 level 3 以上）的外寄郵件會被阻擋並通知管理者，請先用自己的外寄郵件確認門檻。"
+   "body": "In Mail Filter > Rules, activate 'Block outgoing Spam' (inactive by default). Without it PMG relays outgoing spam and rule 132424 never fires. It blocks outgoing mail that scores as spam (level 3 and up by default) and notifies the administrator, so check the threshold against your own outgoing mail first.",
+   "body_zh": "在「Mail Filter > Rules」啟用「Block outgoing Spam」（預設停用）。沒有它，PMG 會照常轉送外寄垃圾信，規則 132424 永遠不會觸發。啟用後，分數達垃圾信標準（預設 level 3 以上）的外寄郵件會被阻擋並通知管理者，請先用自己的外寄郵件確認門檻。"
   },
   {
    "platform": "linux",
    "required": false,
    "since": "1.2",
-   "title": "Recommended: allow the web interface only from management networks",
-   "title_zh": "建議：只允許管理網段連到網頁介面",
-   "body": "pmgproxy (port 8006, the web interface and the API) has its own host access list (admin guide, section 10.2.2): /etc/default/pmgproxy with ALLOW_FROM, DENY_FROM and POLICY. Limiting it to the networks administrators use is a better first step against the login attacks this pack reports than any block after the fact, and it keeps the PSA-type API bugs out of reach from the internet. End users who open the spam quarantine through the web interface must be in an allowed network too. Restarting pmgproxy ends open web sessions; mail is not affected. Test from an allowed address before you close the current session.",
-   "body_zh": "pmgproxy（8006 埠，網頁介面與 API）有自己的主機存取清單（管理手冊 10.2.2 節）：/etc/default/pmgproxy 的 ALLOW_FROM、DENY_FROM 與 POLICY。只允許管理者使用的網段，是對付本套件回報的登入攻擊更好的第一步，勝過事後封鎖，也讓 PSA 這類 API 漏洞無法從網際網路觸及。透過網頁介面開啟垃圾信隔離區的一般使用者也必須在允許的網段內。重新啟動 pmgproxy 會中斷開著的網頁工作階段，郵件不受影響。關閉目前的工作階段之前，先從允許的位址測試一次。",
+   "title": "Recommended: limit the web interface to management networks",
+   "title_zh": "建議：網頁介面只開放給管理網段",
+   "body": "1. Append the lines to /etc/default/pmgproxy, with your management networks in ALLOW_FROM. End users who open the spam quarantine on the web must be in an allowed network too.\n2. Restart pmgproxy. Open web sessions end; mail is not affected.\n3. Test from an allowed address before you close the current session.",
+   "body_zh": "1. 把這幾行加到 /etc/default/pmgproxy，在 ALLOW_FROM 填入你的管理網段。透過網頁開啟垃圾信隔離區的一般使用者也必須在允許的網段內。\n2. 重新啟動 pmgproxy。開著的網頁工作階段會中斷，郵件不受影響。\n3. 關閉目前的工作階段之前，先從允許的位址測試一次。",
    "code": "cat >> /etc/default/pmgproxy <<'EOF'\nALLOW_FROM=\"192.0.2.0/24,127.0.0.1\"\nDENY_FROM=\"all\"\nPOLICY=\"allow\"\nEOF\nsystemctl restart pmgproxy",
    "verify": "From an address outside ALLOW_FROM, https://<gateway>:8006 must be refused; from an allowed one it still opens.",
    "verify_zh": "從 ALLOW_FROM 以外的位址連 https://<閘道>:8006 應被拒絕；從允許的位址仍可開啟。"
@@ -143,10 +147,10 @@
    "platform": "linux",
    "required": false,
    "since": "1.2",
-   "title": "Optional: let Postfix log bare newlines (SMTP smuggling evidence)",
-   "title_zh": "選用：讓 Postfix 記錄單獨換行（SMTP smuggling 跡證）",
-   "body": "PMG sets smtpd_forbid_bare_newline = normalize, which protects against smuggling but logs nothing, so rule 132487 stays silent. Setting it to note keeps the same behaviour and appends notes=bare_lf to the disconnect line of each client that sent one. PMG generates main.cf from templates, so the change is a template override that you must compare with the shipped template after PMG upgrades. Postfix is reloaded; mail flow continues. Independently, keep Postfix updated: with before-queue filtering (PMG's default), Postfix 3.10.14 and 3.11.7 closed a smuggling path through smtpd_proxy_filter.",
-   "body_zh": "PMG 設定 smtpd_forbid_bare_newline = normalize，能防範 smuggling 但什麼都不記錄，所以規則 132487 不會觸發。改成 note 行為不變，並會在送出單獨換行的用戶端斷線記錄後面加上 notes=bare_lf。PMG 由範本產生 main.cf，所以這是一份範本覆寫，PMG 升級後要和新的範本比對。Postfix 會重新載入，郵件不中斷。另外請保持 Postfix 更新：使用佇列前過濾（PMG 預設）時，Postfix 3.10.14 與 3.11.7 修正了一條經由 smtpd_proxy_filter 的 smuggling 途徑。",
+   "title": "Optional: make Postfix log bare newlines",
+   "title_zh": "選用：讓 Postfix 記錄單獨換行",
+   "body": "Rule 132487 (SMTP smuggling) needs smtpd_forbid_bare_newline = note; PMG's default normalize protects the same way but logs nothing. PMG builds main.cf from templates, so the commands make a template override. Compare it with the shipped template after every PMG upgrade. Postfix reloads; mail keeps flowing.",
+   "body_zh": "規則 132487（SMTP smuggling）需要 smtpd_forbid_bare_newline = note；PMG 預設的 normalize 防護效果相同但什麼都不記錄。PMG 由範本產生 main.cf，所以這些指令會建立一份範本覆寫。每次 PMG 升級後，要和新的範本比對。Postfix 會重新載入，郵件不中斷。",
    "code": "mkdir -p /etc/pmg/templates\ncp /var/lib/pmg/templates/main.cf.in /etc/pmg/templates/main.cf.in\nsed -i 's/^smtpd_forbid_bare_newline = normalize/smtpd_forbid_bare_newline = note/' /etc/pmg/templates/main.cf.in\npmgconfig sync --restart 1\npostconf smtpd_forbid_bare_newline",
    "verify": "postconf prints smtpd_forbid_bare_newline = note.",
    "verify_zh": "postconf 顯示 smtpd_forbid_bare_newline = note。"
@@ -155,10 +159,10 @@
    "platform": "manager",
    "required": false,
    "since": "1.2",
-   "title": "Optional: raise the outgoing volume threshold for a busy gateway",
-   "title_zh": "選用：為量大的閘道調高外寄量門檻",
-   "body": "Rule 132484 alerts at 250 outgoing transactions within 10 minutes on one gateway. If your gateway relays more than that at normal peaks (look at the hourly outgoing count in PMG's statistics), redefine the rule with a higher frequency in a rule file of your own that loads after the pack; your file is not touched by pack updates. Keep the level, the ignore and the if_matched_sid as they are.",
-   "body_zh": "規則 132484 在一台閘道 10 分鐘內外寄 250 次時告警。若你的閘道平常尖峰就超過這個量（看 PMG 統計中每小時的外寄數），請在自己的規則檔（排在本套件之後載入）以較高的 frequency 重新定義這條規則；套件更新不會動到你的檔案。level、ignore 與 if_matched_sid 保持不變。",
+   "title": "Optional: raise the outgoing volume threshold",
+   "title_zh": "選用：調高外寄量門檻",
+   "body": "Rule 132484 alerts at 250 outgoing mails in 10 minutes on one gateway. Only if normal peaks are higher (PMG's hourly outgoing statistics):\n1. Create the file below with your threshold in place of 600 (frequency). Keep level, ignore and if_matched_sid. The zzz- name makes it load after the pack.\n2. Run wazuh-analysisd -t, then reload the ruleset.\nPack updates leave your file alone.",
+   "body_zh": "規則 132484 在一台閘道 10 分鐘內外寄 250 封時告警。只有平常尖峰就更高時（看 PMG 統計中每小時的外寄數）才需要：\n1. 建立下面的檔案，把 600（frequency）換成你的門檻。level、ignore 與 if_matched_sid 保持不變。檔名以 zzz- 開頭，才會在本套件之後載入。\n2. 執行 wazuh-analysisd -t，再重新載入規則集。\n套件更新不會動到你的檔案。",
    "code": "cat > /var/ossec/etc/rules/zzz-132484-site.xml <<'EOF'\n<group name=\"pmg,jt_pmg,\">\n  <rule id=\"132484\" level=\"10\" frequency=\"600\" timeframe=\"600\" ignore=\"3600\" overwrite=\"yes\">\n    <if_matched_sid>132483</if_matched_sid>\n    <description>[WARN] PMG: unusually many outgoing mails within 10 minutes: a hijacked account or an infected internal host may be sending spam</description>\n    <mitre>\n      <id>T1586.002</id>\n      <id>T1078</id>\n    </mitre>\n    <group>spam,</group>\n  </rule>\n</group>\nEOF\n/var/ossec/bin/wazuh-analysisd -t",
    "verify": "analysisd -t reports no error; after Reload Ruleset the rule detail of 132484 shows the new frequency.",
    "verify_zh": "analysisd -t 沒有錯誤；重新載入規則集後，132484 的規則內容顯示新的 frequency。"

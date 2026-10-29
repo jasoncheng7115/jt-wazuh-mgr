@@ -2,7 +2,7 @@
  "id": "jt-linux-integrity",
  "name": "Linux Host Integrity",
  "name_zh": "Linux 主機完整性",
- "version": "1.0",
+ "version": "1.0.1",
  "summary": "File integrity rules for Linux persistence and privilege: account databases (a new UID 0 account, privileged group members, shadow made readable), sudo (NOPASSWD: ALL), every cron and at location, systemd units, timers, generators and user units, PAM stacks and modules, ld.so.preload and authorized_keys, including deletions, with levels set by which program wrote the file and temporary or identical rewrites kept quiet.",
  "summary_zh": "針對 Linux 持久化與提權的檔案完整性規則：帳號資料庫（新的 UID 0 帳號、特權群組成員、shadow 變成可讀）、sudo（NOPASSWD: ALL）、所有 cron 與 at 位置、systemd 單元、timer、generator 與使用者單元、PAM 設定與模組、ld.so.preload 與 authorized_keys，包括刪除；等級依寫入檔案的程式而定，暫存檔與內容相同的改寫保持安靜。",
  "rule_id_range": "132900-132999",
@@ -24,7 +24,8 @@
   "Agent-side facts measured on 4.14.7 that shape the group: a path listed twice keeps only the last entry the agent reads, so the group lists files, never /etc or /root/.ssh (a site group that monitors them keeps its options); a file entry inside a monitored directory keeps its own options. A file that does not exist when the agent starts (/etc/ld.so.preload, doas.conf, a new user's authorized_keys) is not watched in real time: its creation is seen when the parent directory is monitored in real time (the site's own /etc monitoring does that) or at the next scheduled scan. Wildcards (/home/*) are expanded again at every scan. Diffs need the diff program on the agent.",
   "With jt-zimbra: up to 3.3, jt-zimbra carried generic rules for sudo, PAM, cron, systemd units and authorized_keys (100936-100942) that applied to every Linux agent. When both packs are installed and jt-zimbra is 3.3 or older, those paths end at jt-zimbra's rules (levels 13 and 14, as before) and only the paths jt-zimbra never covered get this pack's levels; nothing alerts twice. jt-zimbra 3.4 removes those rules, and this pack then decides every one of these files. The pack also works alone. /etc/pve is left to jt-proxmox, and a hash on a malware list still ends at the hash rules (level 14), which are tried first.",
   "Deliberately not covered: log lines (useradd, groupadd, usermod, crontab -e already have built-in rules 5901-5905 and 2832-2833), sshd_config, profile.d, rc.local, udev rules and motd scripts (a later version), and vendor unit directories (/usr/lib/systemd): every package upgrade rewrites them, so the group does not monitor them, although the rules handle them (132960, 132962) for a site that adds them on hosts with whodata. adduser, deluser and pam-auth-update are Perl scripts: a direct write by them is attributed to /usr/bin/perl and looks like any other program. No active response is offered: none of these events carries an attacker address.",
-  "Prerequisites: Wazuh 4.8 or later (tested on 4.14.7), the Linux agents in the linux-integrity group for real time and diffs, auditd on the hosts for whodata (the writer), and the diff program on the agents (part of every standard Linux install)."
+  "Prerequisites: Wazuh 4.8 or later (tested on 4.14.7), the Linux agents in the linux-integrity group for real time and diffs, auditd on the hosts for whodata (the writer), and the diff program on the agents (part of every standard Linux install).",
+  "1.0.1: lynis (a security audit tool) writes its report to syslog when run from cron, and report lines such as \"Logging failed login attempts [ ENABLED ]\" or \"Install fail2ban ... authentication errors\" were read by the built-in rule 2501 as failed logins (level 5, every run). Rule 132990 excludes 2501 matches from the program lynis; a real authentication failure from any other program is unchanged."
  ],
  "notes_zh": [
   "監控範圍：帳號資料庫（/etc/passwd、group、shadow、gshadow）、sudo（sudoers、sudoers.d、sudo.conf、doas.conf）、所有 cron 與 at 的位置（/etc/crontab、anacrontab、cron.d、hourly、daily、weekly、monthly、yearly、cron.allow 與 deny、Debian／Red Hat／SUSE 的使用者 crontab 目錄、at 工作）、管理者與使用者目錄中的 systemd 單元、drop-in、timer、generator 與啟用連結、PAM（pam.d、pam.conf、模組目錄、/etc/security）、/etc/ld.so.preload 與 ld.so.conf，以及 SSH authorized_keys，包括刪除。規則以路徑比對，所以任何檔案完整性監控看得到該檔的 Linux agent 都適用；linux-integrity 群組再加上即時監控、寫入者（whodata）與差異內容。",
@@ -36,14 +37,15 @@
   "形塑群組設定、在 4.14.7 上實測的 agent 行為：同一路徑列兩次時只保留 agent 最後讀到的那一筆，所以群組只列檔案，從不列 /etc 或 /root/.ssh（站台群組若監控它們，選項不受影響）；監控目錄內的檔案若另有設定，保有自己的選項。agent 啟動時不存在的檔案（/etc/ld.so.preload、doas.conf、新使用者的 authorized_keys）不會被即時監控：只有在其上層目錄被即時監控時（站台自己對 /etc 的監控即是）才會立刻看到建立，否則要等下一次排程掃描。萬用字元路徑（/home/*）在每次掃描時重新展開。差異內容需要 agent 上有 diff 程式。",
   "與 jt-zimbra：3.3 以前的 jt-zimbra 帶有套用到每一台 Linux agent 的通用 sudo、PAM、cron、systemd 單元與 authorized_keys 規則（100936-100942）。兩個套件都安裝且 jt-zimbra 為 3.3 或更早時，這些路徑仍由 jt-zimbra 的規則處理（level 13 與 14，與以往相同），只有 jt-zimbra 從未涵蓋的路徑套用本套件的等級；不會有重複告警。jt-zimbra 3.4 移除了那些規則，之後這些檔案全部由本套件判斷。本套件也可以單獨使用。/etc/pve 交給 jt-proxmox；雜湊在惡意清單上的檔案仍由先比對的雜湊規則處理（level 14）。",
   "刻意不涵蓋：記錄行（useradd、groupadd、usermod、crontab -e 已有內建規則 5901-5905 與 2832-2833）、sshd_config、profile.d、rc.local、udev 規則與 motd 腳本（之後的版本），以及廠商單元目錄（/usr/lib/systemd）：每次套件升級都會改寫，所以群組不監控，但規則仍處理它們（132960、132962），供在有 whodata 的主機上自行加入的站台使用。adduser、deluser 與 pam-auth-update 是 Perl 腳本：它們直接寫入時寫入者是 /usr/bin/perl，看起來和其他程式一樣。不提供主動回應：這些事件都不帶攻擊者位址。",
-  "前提：Wazuh 4.8 以上（於 4.14.7 測試），Linux agent 加入 linux-integrity 群組以取得即時監控與差異內容，主機上安裝 auditd 以取得 whodata（寫入者），以及 agent 上有 diff 程式（一般 Linux 安裝都有）。"
+  "前提：Wazuh 4.8 以上（於 4.14.7 測試），Linux agent 加入 linux-integrity 群組以取得即時監控與差異內容，主機上安裝 auditd 以取得 whodata（寫入者），以及 agent 上有 diff 程式（一般 Linux 安裝都有）。",
+  "1.0.1：lynis（安全稽核工具）由 cron 執行時會把報告寫進 syslog，像「Logging failed login attempts [ ENABLED ]」或「Install fail2ban ... authentication errors」這類報告行，原本被內建規則 2501 當成登入失敗（level 5，每次執行都會出現）。規則 132990 排除程式名稱為 lynis 的 2501 命中；其他程式的真正驗證失敗不受影響。"
  ],
  "files": [
   {
    "type": "rule",
    "name": "zz-132900-jt_linux_integrity_rules.xml",
    "dest": "etc/rules/zz-132900-jt_linux_integrity_rules.xml",
-   "sha256": "4834f1b6fa7611423fb91ce8f7fda8a3ada19629fcdb731ea3ec1293e50d6eac"
+   "sha256": "f7e99ddf041e345062e722d353a7e090c37e6c70c009aaf3221880614d3839c5"
   }
  ],
  "agent_group": {
@@ -56,20 +58,20 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers. The pack is one rule file on the built-in file integrity rules 550, 553 and 554 and needs no list. From then on it applies to every Linux agent whose file integrity monitoring sees these files (by default /etc, scanned every 12 hours).",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔，不會重載 worker。套件是一個掛在內建檔案完整性規則 550、553、554 上的規則檔，不需要任何清單。之後它適用於每一台檔案完整性監控看得到這些檔案的 Linux agent（預設監控 /etc，每 12 小時掃描一次）。",
+   "title": "Install the pack and reload the ruleset",
+   "title_zh": "安裝套件並重新載入規則集",
+   "body": "1. Install the pack from this page.\n2. On the Rules tab, press Reload Ruleset. It reloads every cluster node; the cluster copies rule files to the workers but does not reload them.\nThe rules then apply to every Linux agent that monitors /etc (the default, scanned every 12 hours); the group in the next step adds real time and diffs.",
+   "body_zh": "1. 在本頁安裝套件。\n2. 到「規則」分頁按「重新載入規則集」，所有叢集節點都會重新載入；叢集會把規則檔複製到 worker，但不會替它們重新載入。\n之後規則就適用於每一台監控 /etc 的 Linux agent（預設如此，每 12 小時掃描一次）；下一步的群組再加上即時監控與差異內容。",
    "verify": "/var/ossec/bin/wazuh-analysisd -t prints no error or warning.",
    "verify_zh": "/var/ossec/bin/wazuh-analysisd -t 沒有任何錯誤或警告。"
   },
   {
    "platform": "linux",
    "required": true,
-   "title": "Assign the Linux hosts to the linux-integrity group and restart their agents",
-   "title_zh": "把 Linux 主機加入 linux-integrity 群組並重啟 agent",
-   "body": "The group adds real-time monitoring, whodata and diffs for exactly the files the rules read (a few hundred small files per host). It lists files, never /etc or /root/.ssh, so a group you already use for those keeps its settings. File integrity settings apply only after the agent restarts: synced in the agent list only means the file arrived. A host can be in this group and in a product group (zimbra, docker...) at the same time.",
-   "body_zh": "群組只對規則會讀的那些檔案加上即時監控、whodata 與差異內容（每台主機幾百個小檔）。它只列檔案，從不列 /etc 或 /root/.ssh，所以你已經用來監控這些位置的群組設定不受影響。檔案完整性設定要在 agent 重啟後才生效：agent 清單顯示 synced 只代表檔案已送達。主機可以同時屬於這個群組與產品群組（zimbra、docker 等）。",
+   "title": "Add the Linux hosts to the linux-integrity group",
+   "title_zh": "把 Linux 主機加入 linux-integrity 群組",
+   "body": "1. Add the Linux hosts to the linux-integrity group and restart their agents (commands below; <agent_id> is the host's agent ID).\n2. Check after the restart: \"synced\" in the agent list only means the file arrived, and file integrity settings apply only after a restart.\nThe group lists single files, never /etc or /root/.ssh, so a host can stay in its other groups (zimbra, docker...) at the same time.",
+   "body_zh": "1. 把 Linux 主機加入 linux-integrity 群組並重啟它們的 agent（指令如下；<agent_id> 是該主機的 agent ID）。\n2. 重啟後再確認：agent 清單顯示 synced 只代表檔案已送達，檔案完整性設定要重啟後才生效。\n群組只列個別檔案，從不列 /etc 或 /root/.ssh，所以主機可以同時留在其他群組（zimbra、docker 等）。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g linux-integrity -q\n/var/ossec/bin/agent_control -R -u <agent_id>",
    "verify": "On the agent, after the restart: grep 'Monitoring path' /var/ossec/logs/ossec.log | grep -E 'sudoers.d|cron.d' shows report_changes; then add a comment line to a file in /etc/cron.d and look for rule 132930 or 132931.",
@@ -78,10 +80,10 @@
   {
    "platform": "linux",
    "required": false,
-   "title": "Install auditd so the alerts name the program that wrote the file",
-   "title_zh": "安裝 auditd，讓告警寫出是哪個程式寫入檔案",
-   "body": "whodata needs the audit userspace. Without it the agent falls back to real time and logs \"Who-data engine could not start\": every change then is \"writer not recorded\" at the middle level, and the package-manager and account-tool levels cannot apply. The agent adds its own audit watches for the monitored paths; nothing else changes. Install, enable, then restart the agent.",
-   "body_zh": "whodata 需要 audit 使用者空間程式。沒有時 agent 會退回即時監控並記錄「Who-data engine could not start」：所有變更都只能以「寫入者不明」的中間等級回報，套件管理程式與帳號工具的較低等級無法套用。agent 會自行為監控路徑加上 audit 監看，其他設定不變。安裝並啟用後重啟 agent。",
+   "title": "Install auditd so alerts name the writer",
+   "title_zh": "安裝 auditd，讓告警寫出寫入者",
+   "body": "Install and enable auditd, then restart the agent (commands below). Without it the agent logs \"Who-data engine could not start\" and every change is reported as \"writer not recorded\" at a middle level.",
+   "body_zh": "安裝並啟用 auditd，然後重啟 agent（指令如下）。沒有它時 agent 會記錄「Who-data engine could not start」，所有變更都只能以「寫入者不明」的中間等級回報。",
    "code": "apt install auditd        # or: dnf install audit\nsystemctl enable --now auditd\n/var/ossec/bin/wazuh-control restart",
    "verify": "grep -i who-data /var/ossec/logs/ossec.log | tail shows no 'could not start'; a later alert for these files shows syscheck.audit.process.name.",
    "verify_zh": "grep -i who-data /var/ossec/logs/ossec.log | tail 沒有「could not start」；之後這些檔案的告警會帶 syscheck.audit.process.name。"
@@ -91,27 +93,37 @@
    "required": false,
    "title": "If jt-zimbra is installed, update it to 3.4",
    "title_zh": "若已安裝 jt-zimbra，更新到 3.4",
-   "body": "jt-zimbra 3.3 and older carry generic rules for sudo, PAM, cron, systemd units and authorized_keys (100936-100942) that apply to every Linux agent and are tried before this pack's rules for those paths (they load first and their levels are 13 and 14). Nothing alerts twice, but those paths keep jt-zimbra's levels and none of this pack's distinctions (package manager, the file's own tool, identical rewrites, transient names). jt-zimbra 3.4 removes them. Before updating, check your own rule files for rules that are children of 100936-100942 (if_sid): they stop loading with a warning, and most of what they quieted (dpkg-new and atomic-write temporaries, .wants links, snap units) is already quiet here.",
-   "body_zh": "jt-zimbra 3.3 及更早版本帶有套用到每一台 Linux agent 的通用 sudo、PAM、cron、systemd 單元與 authorized_keys 規則（100936-100942），在這些路徑上比本套件的規則先比對（它們較早載入且等級為 13 與 14）。不會有重複告警，但這些路徑仍是 jt-zimbra 的等級，也沒有本套件的區分（套件管理程式、該檔自己的工具、相同內容改寫、暫存檔名）。jt-zimbra 3.4 移除了它們。更新前請檢查自己的規則檔中是否有 100936-100942 的子規則（if_sid）：它們會帶著警告不再載入，而它們壓低的大多數情況（dpkg-new 與原子寫入的暫存檔、.wants 連結、snap 單元）在本套件裡已經是安靜的。",
+   "body": "jt-zimbra 3.3 and older take over these paths with their own generic rules (100936-100942).\n1. Run the command below: it lists your own rule files with children of those rules. Remove those child rules; after the update they stop loading with a warning.\n2. Update jt-zimbra to 3.4 or later.",
+   "body_zh": "jt-zimbra 3.3 及更早版本會以自己的通用規則（100936-100942）接走這些路徑。\n1. 執行下方指令，找出含有這些規則之子規則的自訂規則檔，並移除那些子規則；更新後它們會帶著警告不再載入。\n2. 把 jt-zimbra 更新到 3.4 以上。",
    "code": "grep -lE 'if_sid>[^<]*\\b1009(3[6-9]|4[0-2])\\b' /var/ossec/etc/rules/*.xml"
   },
   {
    "platform": "linux",
    "required": false,
-   "title": "Optional: no diffs on hosts whose cron lines or units hold passwords",
-   "title_zh": "選用：cron 指令或單元含密碼的主機不保留差異",
-   "body": "report_changes copies the changed lines of cron files and systemd units into the alert, where everyone who can read alerts sees them. If a host keeps a password in a cron command line or in a unit's Environment= line, give it a copy of this group with report_changes=\"no\" on the cron and systemd entries (or move the secret to a file the unit reads with EnvironmentFile=, which is not monitored). The diff-based rules for sudo, passwd, group and PAM keep working.",
-   "body_zh": "report_changes 會把 cron 檔與 systemd 單元變動的行複製進告警，所有能讀告警的人都看得到。若某台主機把密碼放在 cron 指令或單元的 Environment= 行，請為它另建一份本群組設定，把 cron 與 systemd 的項目改成 report_changes=\"no\"（或把機密移到單元以 EnvironmentFile= 讀取的檔案，該檔不在監控範圍）。sudo、passwd、group 與 PAM 依差異判斷的規則不受影響。",
+   "title": "Optional: no diffs where cron or units hold passwords",
+   "title_zh": "選用：cron 或單元含密碼的主機不保留差異",
+   "body": "Changed lines of cron files and systemd units are copied into the alert. If a host keeps a password in a cron command or a unit's Environment= line, give it its own copy of this group with report_changes=\"no\" on the cron and systemd entries, or move the secret into a file the unit reads with EnvironmentFile=.",
+   "body_zh": "cron 檔與 systemd 單元變動的行會被複製進告警。若某台主機把密碼放在 cron 指令或單元的 Environment= 行，請為它另建一份本群組設定，把 cron 與 systemd 的項目改成 report_changes=\"no\"，或把機密移到單元以 EnvironmentFile= 讀取的檔案。",
    "file": "agent/agent.conf"
   },
   {
    "platform": "linux",
    "required": false,
-   "title": "Optional: monitor the packaged unit directories on hosts with whodata",
-   "title_zh": "選用：在有 whodata 的主機上監控套件提供的單元目錄",
-   "body": "A unit planted in /usr/lib/systemd/system survives as well as one in /etc. The group leaves those directories out because every package upgrade rewrites units there and, without whodata, each rewrite is level 5. On a host with auditd, adding them is cheap: package writes end at level 3, anything else at 12 (132960, 132962).",
-   "body_zh": "放在 /usr/lib/systemd/system 的單元和放在 /etc 的一樣能常駐。群組沒有監控這些目錄，因為每次套件升級都會改寫那裡的單元，沒有 whodata 時每次改寫都是 level 5。在有 auditd 的主機上加入它們的代價很低：套件寫入為 level 3，其他程式為 12（132960、132962）。",
+   "title": "Optional: monitor packaged unit directories (whodata hosts)",
+   "title_zh": "選用：監控套件提供的單元目錄（有 whodata 的主機）",
+   "body": "Only on hosts with auditd: add the line below to the <syscheck> section of the host's ossec.conf (or of a group of such hosts) and restart the agent. Package writes then stay at level 3 and any other writer is level 12 (132962). Without whodata every package upgrade would raise level 5 alerts there.",
+   "body_zh": "只在有 auditd 的主機上：把下方這一行加到該主機 ossec.conf（或這類主機的群組設定）的 <syscheck> 區段並重啟 agent。之後套件寫入維持 level 3，其他程式寫入為 level 12（132962）。沒有 whodata 時，每次套件升級都會在那裡產生 level 5 告警。",
    "code": "<directories check_all=\"yes\" realtime=\"yes\" whodata=\"yes\">/usr/lib/systemd/system,/usr/lib/systemd/user,/usr/lib/systemd/system-generators</directories>"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "1.0",
+   "title": "Without Internet access",
+   "title_zh": "無法連外時",
+   "body": "Nothing in this pack downloads anything on the manager. The only outside package is auditd on the hosts (auditd step): install it from the site's local package mirror, or fetch the packages on a connected machine and install the copied files (commands below).\nWithout auditd the rules still work, but every change is reported as \"writer not recorded\".",
+   "body_zh": "這個套件在 manager 上不會下載任何東西。唯一要從外部取得的是主機上的 auditd（auditd 那一步）：從站台的本機套件鏡像安裝，或在可連外的電腦下載套件、複製過來後安裝（指令如下）。\n沒有 auditd 時規則照常運作，只是所有變更都以「寫入者不明」回報。",
+   "code": "# Debian/Ubuntu, on the offline host: print the URLs of the packages it needs\napt-get install --print-uris -qq auditd | cut -d\"'\" -f2\n# download those URLs on a connected machine, copy the .deb files over, then\napt install ./*.deb\n\n# Red Hat family, on a connected host of the same release\ndnf download --resolve audit\n# copy the .rpm files over, then on the offline host\ndnf install ./*.rpm"
   }
  ]
 }

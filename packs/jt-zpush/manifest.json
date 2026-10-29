@@ -24,7 +24,8 @@
   "PREREQUISITES: LOGLEVEL at least LOGLEVEL_INFO (the default), because the request summary is an informational line. The pack reads the file log (LOGBACKEND filelog, the default) or Z-Push's syslog backend, and also the copy rsyslog makes of the file with imfile. Read z-push.log, not z-push-error.log, which repeats its warnings and errors. Behind a reverse proxy, set USE_CUSTOM_REMOTE_IP_HEADER in Z-Push, or every address in the log is the proxy's.",
   "Deliberately not done: the LOGAUTHFAIL line of ActiveSync and the fatal exception of a rejected request are recorded but not counted, because the request summary already counts that request; no active response is offered for the single-account rule, whose address is often a phone's carrier NAT address, nor for the many-address rule, where blocking the last address achieves nothing; the line announcing a new device has no address (the request summary that follows it has); a successful request is not graded by its address alone, since that would alert on every request of a phone on mobile data; browser user agents are not graded (spraying kits use them, but so may legitimate apps, and nothing measured them); there is no user agent allow list, because a tool alerts once per account ever; and no rule on the logged Z-Push version, because CVE-2025-8264 (fixed in 2.7.6) needs the IMAP backend with IMAP_FROM_SQL_QUERY, which the log does not show. Not done in 1.3: new public addresses per account (a phone changes address about once a day; the fts key can hold the device or the address, not both, and the Zimbra pack counts addresses from the mail server's log); bursts of GAL searches, attachment fetches (ItemOperations, GetAttachment) or document fetches, of which ten days of real data hold none, so there is no measured normal to set a threshold from; data-centre or VPN sources, which no generic list identifies (jt-ioc covers threat feeds); and policy key mismatches, a cancelled wipe or z-push-admin actions, which Z-Push logs only at DEBUG or not at all.",
   "Attack tooling in the Z-Push log: the first time this manager sees an account used by a scripting or attack tool (Z-Push logs the user agent before every exception and for every GET, which is how EASSniper tests passwords) is level 6, later requests of the same pair level 2, so a monitoring script or an administrator testing with curl alerts once. A document library search (PEAS probes file shares this way; phones do not) is level 8 with backends that log it (not the Zimbra backend, which accepts the search and returns nothing). A login or account name shaped like an injection (a quote followed by SQL syntax, LDAP filter syntax, \"../\", \"${\", a backtick, an HTML tag; CVE-2025-8264 was an SQL injection through the login) is level 8 when the request ends in an error and level 12 when it succeeds; a rejected one stays a counted failed login, so that a junk account name cannot hide password guessing from the brute-force rules. Z-Push does not filter login names, and the decoders read the address and the HTTP result from the end of the line: up to 1.1 an account name could contain from='<any address>' and have that address decoded, and blocked by the active response.",
-  "Tested with 191 cases in a Wazuh 4.14.7 sandbox: the routine stream, a mail server restart and the user agents are real lines from Z-Push 2.7.6 with the Zimbra backend (revision 75); rejected logins, refusals, wipes, new devices and the attack tooling are built from the Z-Push 2.7.6, Zimbra backend, PEAS and EASSniper source, since none occurred in the nine days of logs available. wazuh-logtest does not apply ignore=, so the at-most-every-N-minutes limits were not observable there; first-seen pairs were (logtest keeps them per session). The agent group's filters and line joining were checked with the sandbox's own log collector. 1.3 adds 44 cases: account takeover, bulk download, sending, the webservice and the device-less first-seen rules are built from the Z-Push 2.7.6 source (index.php, exportchangesdiff.php, sendmail.php, the webservice classes), the largest real export count (2,386) is a near miss, and a sandbox-only probe confirmed that a rule of another pack searching jt_auth_success or jt_auth_failure counts each Z-Push attempt once. The agent group's new keep patterns were checked with the sandbox's own log collector."
+  "Tested with 191 cases in a Wazuh 4.14.7 sandbox: the routine stream, a mail server restart and the user agents are real lines from Z-Push 2.7.6 with the Zimbra backend (revision 75); rejected logins, refusals, wipes, new devices and the attack tooling are built from the Z-Push 2.7.6, Zimbra backend, PEAS and EASSniper source, since none occurred in the nine days of logs available. wazuh-logtest does not apply ignore=, so the at-most-every-N-minutes limits were not observable there; first-seen pairs were (logtest keeps them per session). The agent group's filters and line joining were checked with the sandbox's own log collector. 1.3 adds 44 cases: account takeover, bulk download, sending, the webservice and the device-less first-seen rules are built from the Z-Push 2.7.6 source (index.php, exportchangesdiff.php, sendmail.php, the webservice classes), the largest real export count (2,386) is a near miss, and a sandbox-only probe confirmed that a rule of another pack searching jt_auth_success or jt_auth_failure counts each Z-Push attempt once. The agent group's new keep patterns were checked with the sandbox's own log collector.",
+  "grommunio-sync, the maintained fork of Z-Push, writes the same log format and request summary (its lib/log/filelog.php and index.php), to /var/log/grommunio-sync/grommunio-sync.log by default. When the login and the mailbox differ it writes [mailbox#login] where Z-Push writes [login#mailbox], so the decoded account is the mailbox. Checked against the grommunio-sync source, not against a running installation."
  ],
  "notes_zh": [
   "Wazuh 4.14.7 沒有 Z-Push 的解碼器。兩台正式的 Z-Push 主機（合計每天約 28,000 行記錄）沒有任何一行被解碼；這兩台因網頁流量產生的告警只有內建的 POST 洪水規則 31533（level 10），其中一台每天 50 到 140 筆，全部都是手機的正常同步。",
@@ -44,7 +45,8 @@
   "前提條件：LOGLEVEL 至少為 LOGLEVEL_INFO（預設值），因為請求摘要是資訊等級的一行。套件可讀檔案記錄（LOGBACKEND filelog，預設）或 Z-Push 的 syslog 後端，也可讀 rsyslog 以 imfile 複製的檔案內容。請讀 z-push.log，不要讀 z-push-error.log，後者重複了前者的警告與錯誤。若在反向代理之後，請在 Z-Push 設定 USE_CUSTOM_REMOTE_IP_HEADER，否則記錄裡的位址全都是代理的。",
   "刻意不做：ActiveSync 的 LOGAUTHFAIL 行與被拒請求的致命例外只記錄不計數，因為請求摘要已經計過該請求；單一帳號規則不提供主動回應，它的位址常是手機的電信 NAT 位址，大量位址的規則也不提供，因為封鎖最後一個位址沒有用；宣告新裝置的那一行沒有位址（緊接著的請求摘要有）；成功的請求不單以位址分級，否則行動網路上的手機每個請求都會告警；瀏覽器的 user agent 不分級（噴灑工具會用，但合法的程式也可能用，而且沒有實測資料）；沒有 user agent 允許清單，因為工具對每個帳號一輩子只告警一次；也沒有依記錄裡的 Z-Push 版本告警，因為 CVE-2025-8264（2.7.6 修正）需要 IMAP 後端加上 IMAP_FROM_SQL_QUERY，而記錄看不出來。1.3 沒有做的：每個帳號的新公開位址（手機大約每天換一次位址；fts 的鍵只能放裝置或位址其中之一，而 Zimbra 套件已從郵件伺服器的記錄計算位址）；大量的通訊錄（GAL）搜尋、附件下載（ItemOperations、GetAttachment）或文件下載，十天的真實資料裡一次也沒有，沒有實測的正常值可以訂門檻；資料中心或 VPN 來源，沒有通用的清單可以辨識（威脅情資由 jt-ioc 處理）；以及原則金鑰不符、取消抹除或 z-push-admin 的操作，Z-Push 只在 DEBUG 記錄，或根本不記錄。",
   "在 Z-Push 記錄裡的攻擊工具：這台 manager 第一次看到某帳號被腳本或攻擊工具使用時為 level 6（Z-Push 在每個例外之前與每個 GET 請求都會記錄 user agent，EASSniper 就是用 GET 試密碼），同一組合之後的請求為 level 2，所以監控腳本或用 curl 測試的管理者只會告警一次。搜尋文件庫（PEAS 用這個方式探測檔案分享，手機不會這樣做）為 level 8，只限會記錄它的後端（Zimbra 後端接受這種搜尋、回傳空結果，不會記錄）。登入名稱或帳號名稱長得像注入攻擊（引號後接 SQL 語法、LDAP 過濾語法、「../」、「${」、反引號、HTML 標籤；CVE-2025-8264 就是透過登入名稱的 SQL 注入），請求以錯誤結束時為 level 8，成功時為 level 12；被拒的仍算一次登入失敗，這樣就不能用奇怪的帳號名稱把猜密碼藏起來、躲過暴力破解規則。Z-Push 不過濾登入名稱，解碼器從行尾讀取位址與 HTTP 結果：到 1.1 為止，帳號名稱可以夾帶 from='<任意位址>'，讓那個位址被解碼出來，並被主動回應封鎖。",
-  "以 Wazuh 4.14.7 沙箱跑 191 個案例測試：例行記錄、一次郵件伺服器重啟與 user agent 是 Z-Push 2.7.6（Zimbra 後端 revision 75）的真實記錄；登入被拒、各種拒絕、遠端抹除、新裝置與攻擊工具，是依 Z-Push 2.7.6、Zimbra 後端、PEAS 與 EASSniper 的原始碼建構的，因為現有九天的記錄裡一次都沒有發生。wazuh-logtest 不套用 ignore=，所以「最多每 N 分鐘一次」的限制在那裡觀察不到；首次出現的組合則可以（logtest 依工作階段保存）。agent 群組的過濾與合併行，是用沙箱本身的記錄收集程式驗證的。1.3 新增 44 個案例：帳號接管、大量下載、寄信、webservice 與沒有裝置的首次出現規則，依 Z-Push 2.7.6 原始碼（index.php、exportchangesdiff.php、sendmail.php、webservice 類別）建構；實際資料裡最大的數字（2,386）作為不該觸發的案例；並以只放在沙箱的探測規則確認，其他套件搜尋 jt_auth_success 或 jt_auth_failure 時，每次 Z-Push 嘗試只算一次。agent 群組新增的保留樣式，是用沙箱本身的記錄收集程式驗證的。"
+  "以 Wazuh 4.14.7 沙箱跑 191 個案例測試：例行記錄、一次郵件伺服器重啟與 user agent 是 Z-Push 2.7.6（Zimbra 後端 revision 75）的真實記錄；登入被拒、各種拒絕、遠端抹除、新裝置與攻擊工具，是依 Z-Push 2.7.6、Zimbra 後端、PEAS 與 EASSniper 的原始碼建構的，因為現有九天的記錄裡一次都沒有發生。wazuh-logtest 不套用 ignore=，所以「最多每 N 分鐘一次」的限制在那裡觀察不到；首次出現的組合則可以（logtest 依工作階段保存）。agent 群組的過濾與合併行，是用沙箱本身的記錄收集程式驗證的。1.3 新增 44 個案例：帳號接管、大量下載、寄信、webservice 與沒有裝置的首次出現規則，依 Z-Push 2.7.6 原始碼（index.php、exportchangesdiff.php、sendmail.php、webservice 類別）建構；實際資料裡最大的數字（2,386）作為不該觸發的案例；並以只放在沙箱的探測規則確認，其他套件搜尋 jt_auth_success 或 jt_auth_failure 時，每次 Z-Push 嘗試只算一次。agent 群組新增的保留樣式，是用沙箱本身的記錄收集程式驗證的。",
+  "grommunio-sync 是持續維護的 Z-Push 分支，記錄格式與請求摘要相同（見它的 lib/log/filelog.php 與 index.php），預設寫到 /var/log/grommunio-sync/grommunio-sync.log。登入帳號與信箱不同時，它寫成 [信箱#登入帳號]，Z-Push 則是 [登入帳號#信箱]，所以解碼出來的帳號是信箱。這是依 grommunio-sync 的原始碼確認的，沒有在實際運作的安裝上測過。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -86,18 +88,20 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+   "title": "Install the pack and reload every node",
+   "title_zh": "安裝套件並重新載入所有節點",
+   "body": "1. Install the pack from this page.\n2. On the Rules tab, click Reload Ruleset. A cluster copies rule files to the workers but does not reload them.",
+   "body_zh": "1. 在本頁安裝套件。\n2. 到「規則」分頁按「重新載入規則集」。叢集會把規則檔複製到 worker，但不會重新載入。",
+   "verify": "On the Rules tab, a hierarchy search for jt_zpush lists the rules of zz-132200-jt_zpush_rules.xml.",
+   "verify_zh": "在「規則」分頁的階層模式搜尋 jt_zpush，會列出 zz-132200-jt_zpush_rules.xml 的規則。"
   },
   {
    "platform": "linux",
    "required": true,
-   "title": "Make the Z-Push log reach the manager, once",
-   "title_zh": "讓 Z-Push 記錄送到 manager，而且只送一份",
-   "body": "Z-Push writes its own files (default /var/log/z-push/, LOGFILEDIR in config.php) and nothing reaches Wazuh until something reads them. Usually: assign the host to the zpush group, which reads z-push.log and autodiscover.log, joins the request summary that Z-Push splits in two, and drops about 90 per cent of the informational lines on the host (from 1.2 it keeps the user agent Z-Push logs before an exception, a few lines a day, except that of the check_http monitoring probe). If LOGFILEDIR is elsewhere, change the two locations in the group file. If rsyslog already copies these files into /var/log/syslog with imfile (look for the Z-Push timestamp format there), the rules read that copy as it is: do not assign the group as well, or every line arrives twice and the frequency rules count each failure twice. Assigning the group restarts nothing on the Z-Push host except the Wazuh agent. Once the log arrives, expect one first-seen alert (132260 or 132261, level 3 or 5) for every account and device already in use; after that only new pairs alert.",
-   "body_zh": "Z-Push 寫的是自己的檔案（預設 /var/log/z-push/，即 config.php 的 LOGFILEDIR），沒有東西去讀就不會送到 Wazuh。一般做法：把主機加入 zpush 群組，它會讀 z-push.log 與 autodiscover.log、把 Z-Push 拆成兩行的請求摘要合併回來，並在主機上就丟掉約九成的資訊行（1.2 起保留 Z-Push 在例外之前記錄的 user agent，每天只有幾行，check_http 監控探測的除外）。若 LOGFILEDIR 在別處，請修改群組檔裡的兩個位置。若 rsyslog 已經用 imfile 把這些檔案複製進 /var/log/syslog（在那裡可看到 Z-Push 的時間格式），規則會直接讀那份：此時不要再加入群組，否則每一行都會送兩次，頻率規則也會把每次失敗算兩次。加入群組時，Z-Push 主機上只有 Wazuh agent 會重啟。記錄開始送達後，每個已在使用中的帳號與裝置都會產生一筆首次出現的告警（132260 或 132261，level 3 或 5）；之後只有新的組合才會告警。",
+   "title": "Send the Z-Push log to the manager once",
+   "title_zh": "把 Z-Push 記錄送到 manager（只送一份）",
+   "body": "1. On the Z-Push host, run the grep. A non-zero count means rsyslog already copies the log into /var/log/syslog: stop here, the rules read that copy. Adding the group as well sends every line twice.\n2. Otherwise, on the manager, run the two commands with the host's agent ID in place of <agent_id>. Only the Wazuh agent restarts.\n3. LOGFILEDIR (config.php) is not /var/log/z-push: change the two locations in the group file.\nOnce the log arrives, every account and device already in use alerts once (132260 or 132261).",
+   "body_zh": "1. 在 Z-Push 主機執行 grep。數字不是 0，表示 rsyslog 已把記錄複製進 /var/log/syslog：到此為止，規則會讀那份。再加入群組會讓每一行送兩次。\n2. 否則在 manager 上執行另外兩行指令，把 <agent_id> 換成該主機的 agent ID。只有 Wazuh agent 會重啟。\n3. LOGFILEDIR（config.php）不是 /var/log/z-push：修改群組檔裡的兩個位置。\n記錄開始送達後，每個已在使用中的帳號與裝置會各告警一次（132260 或 132261）。",
    "file": "agent/agent.conf",
    "code": "grep -c ' \\[ INFO\\] ' /var/log/syslog    # on the Z-Push host: non-zero means rsyslog already copies the log\n/var/ossec/bin/agent_groups -a -i <agent_id> -g zpush\n/var/ossec/bin/agent_control -R -u <agent_id>",
    "verify": "From any client: curl -sk -u nosuchuser:wrong -X POST 'https://<zpush-host>/Microsoft-Server-ActiveSync?Cmd=Sync&User=nosuchuser&DeviceId=WAZUHTEST0001&DeviceType=test' — expect rule 132210 (level 5) naming nosuchuser and your address.",
@@ -107,19 +111,19 @@
    "platform": "linux",
    "required": false,
    "since": "1.3",
-   "title": "1.3: what the new account-security rules read",
-   "title_zh": "1.3：新的帳號安全規則讀取哪些記錄",
-   "body": "Nothing to change on the Z-Push host. The zpush group now also keeps, on the host, two kinds of informational lines it used to drop: the count of items a device is about to download when it is 5,000 or more in one folder (rules 132290 to 132293; none in ten days on two hosts) and the device management lines of the Z-Push webservice (132246 to 132248). Updating the pack updates the group file; each agent in the group then reloads it, which restarts only the Wazuh agent. Where rsyslog copies the Z-Push log into /var/log/syslog, every line arrives already. The bulk-download rules need a diff backend (Zimbra, IMAP, Maildir, CalDAV, CardDAV); Kopano and grommunio do not log the count. The sending rules need LOGLEVEL_INFO, the default.",
-   "body_zh": "Z-Push 主機上不需要任何變更。zpush 群組現在會在主機上多保留兩種以前丟掉的資訊行：裝置即將下載的項目數在單一資料夾達 5,000 個以上的那一行（規則 132290 到 132293；兩台主機十天內一行也沒有），以及 Z-Push webservice 管理裝置的記錄（132246 到 132248）。更新套件會一併更新群組檔；群組內的每個 agent 會重新載入它，只有 Wazuh agent 會重啟。若 rsyslog 已把 Z-Push 記錄複製進 /var/log/syslog，所有行本來就會送達。大量下載的規則需要 diff 後端（Zimbra、IMAP、Maildir、CalDAV、CardDAV）；Kopano 與 grommunio 不會記錄這個數字。寄信的規則需要 LOGLEVEL_INFO，也就是預設值。",
+   "title": "After updating to 1.3: nothing to change",
+   "title_zh": "更新到 1.3 後：不需要變更",
+   "body": "The updated group file reaches the agents by itself; only the Wazuh agent restarts. It now keeps the bulk-download count lines (rules 132290-132293) and the webservice device lines (132246-132248). The bulk-download rules need a diff backend (Zimbra, IMAP, Maildir, CalDAV, CardDAV); the sending rules need LOGLEVEL_INFO, the default.",
+   "body_zh": "更新後的群組檔會自動送到 agent；只有 Wazuh agent 會重啟。群組現在會保留大量下載的項目數記錄（規則 132290-132293）與 webservice 的裝置管理記錄（132246-132248）。大量下載的規則需要 diff 後端（Zimbra、IMAP、Maildir、CalDAV、CardDAV）；寄信的規則需要 LOGLEVEL_INFO，也就是預設值。",
    "file": "agent/agent.conf"
   },
   {
    "platform": "linux",
    "required": false,
-   "title": "Log the address of failed autodiscover logins (Zimbra backend)",
-   "title_zh": "記錄 autodiscover 登入失敗的位址（Zimbra 後端）",
-   "body": "With the Zimbra backend a failed autodiscover login leaves no address in the log unless LOGAUTHFAIL is on in the autodiscover configuration (autodiscover/config.php under the Z-Push directory). Set it there only: in the main config.php it adds a second line for every failed ActiveSync login, which the pack records but does not need. PHP reads the file on every request, nothing restarts.",
-   "body_zh": "使用 Zimbra 後端時，除非在 autodiscover 的設定（Z-Push 目錄下的 autodiscover/config.php）開啟 LOGAUTHFAIL，否則 autodiscover 登入失敗不會在記錄留下位址。只在那裡開啟：在主設定 config.php 開啟的話，每次 ActiveSync 登入失敗都會多一行，套件會記錄但用不到。PHP 每個請求都會重讀設定檔，不需要重啟任何服務。",
+   "title": "Zimbra backend: log failed autodiscover addresses",
+   "title_zh": "Zimbra 後端：記錄 autodiscover 失敗的位址",
+   "body": "Add the line to <z-push>/autodiscover/config.php, where <z-push> is the Z-Push directory. Set it there only: in the main config.php it adds a second, unneeded line for every failed ActiveSync login. Nothing needs a restart.",
+   "body_zh": "把這一行加到 <z-push>/autodiscover/config.php（<z-push> 是 Z-Push 目錄）。只加在那裡：加在主設定 config.php 的話，每次 ActiveSync 登入失敗都會多一行用不到的記錄。不需要重啟任何服務。",
    "code": "define('LOGAUTHFAIL', true);    # in <z-push>/autodiscover/config.php"
   },
   {
@@ -127,17 +131,17 @@
    "required": false,
    "title": "List addresses that must never be blocked",
    "title_zh": "列出絕不可封鎖的位址",
-   "body": "Spraying from an address in etc/lists/jt-zpush-trusted-addresses raises 132216 or 132219 instead of 132215 or 132218, at the same level, and no active response is attached to those. The list ships with the private and carrier-grade NAT ranges, so that a reverse proxy or a NAT gateway that hides the client addresses is never blocked. Add your own egress addresses and proxies; keys are an address or a prefix ending in a dot. The list is yours: updates and removal of the pack leave it alone.",
-   "body_zh": "來自 etc/lists/jt-zpush-trusted-addresses 所列位址的噴灑，觸發的是 132216 或 132219 而不是 132215 或 132218，等級相同，且這兩條沒有掛主動回應。清單預設包含私有網段與電信級 NAT 網段，讓隱藏了用戶端位址的反向代理或 NAT 閘道永遠不會被封鎖。請加入自己的對外位址與代理；鍵值是位址或以點結尾的前綴。這份清單屬於站台：更新或移除套件都不會動它。",
+   "body": "Add your egress addresses and proxies to etc/lists/jt-zpush-trusted-addresses, one per line: an address, or a prefix ending in a dot. Then reload the ruleset. Spraying from a listed address raises 132216 or 132219 (same level, no active response) instead of 132215 or 132218. Private and carrier-grade NAT ranges are listed already; updates and removal of the pack leave the list alone.",
+   "body_zh": "把自己的對外位址與代理加入 etc/lists/jt-zpush-trusted-addresses，每行一個：位址，或以點結尾的前綴。然後重新載入規則集。來自所列位址的噴灑觸發 132216 或 132219（等級相同、沒有主動回應），而不是 132215 或 132218。私有網段與電信級 NAT 網段已經列入；更新或移除套件都不會動這份清單。",
    "code": "echo '198.51.100.7:office-egress' >> /var/ossec/etc/lists/jt-zpush-trusted-addresses"
   },
   {
    "platform": "linux",
    "required": false,
-   "title": "Behind a reverse proxy, log the client address",
-   "title_zh": "在反向代理之後，記錄用戶端的位址",
-   "body": "If the phones reach Z-Push through a reverse proxy, Z-Push logs the proxy's address for every request unless USE_CUSTOM_REMOTE_IP_HEADER names the header the proxy sets. Only set it when the proxy overwrites that header, or a client can choose its own logged address. A firewall block on the Z-Push host then has no effect (the connection comes from the proxy): block on the proxy instead.",
-   "body_zh": "若手機經由反向代理連到 Z-Push，除非 USE_CUSTOM_REMOTE_IP_HEADER 指定了代理設定的標頭，否則 Z-Push 每個請求記錄的都是代理的位址。只有在代理會覆寫該標頭時才設定，否則用戶端可以自己決定被記錄的位址。此時在 Z-Push 主機上的防火牆封鎖沒有效果（連線來自代理）：請改在代理上封鎖。",
+   "title": "Behind a reverse proxy: log the client address",
+   "title_zh": "在反向代理之後：記錄用戶端位址",
+   "body": "In <z-push>/config.php, set USE_CUSTOM_REMOTE_IP_HEADER to the header the proxy sets. Only do this when the proxy overwrites that header, or a client can choose its logged address. Block on the proxy, not on the Z-Push host: the connections come from the proxy.",
+   "body_zh": "在 <z-push>/config.php 把 USE_CUSTOM_REMOTE_IP_HEADER 設為代理伺服器設定的標頭。只有在代理會覆寫該標頭時才設定，否則用戶端可以自己決定被記錄的位址。封鎖請做在代理上，不要做在 Z-Push 主機：連線來自代理。",
    "code": "define('USE_CUSTOM_REMOTE_IP_HEADER', 'HTTP_X_FORWARDED_FOR');    # in <z-push>/config.php"
   },
   {
@@ -146,8 +150,8 @@
    "since": "1.2",
    "title": "Optional: collect the web server access log",
    "title_zh": "選用：收集網頁伺服器的存取記錄",
-   "body": "Rules 132280 to 132282 read the access log of the web server in front of Z-Push: the user agent of every request is only there (Z-Push logs it only before an exception). If another group already collects that file, or rsyslog copies it into /var/log/syslog, nothing is needed. Otherwise add a localfile for it to the zpush group or to the host. The built-in web-accesslog decoder reads the Apache and nginx combined format; with another format the rules do not apply. Only the Wazuh agent restarts.",
-   "body_zh": "規則 132280 到 132282 讀的是 Z-Push 前面那台網頁伺服器的存取記錄：每個請求的 user agent 只有那裡有（Z-Push 只在例外之前記錄）。若別的群組已經收這個檔案，或 rsyslog 已把它複製進 /var/log/syslog，就不必做任何事。否則請在 zpush 群組或該主機加一個 localfile。內建的 web-accesslog 解碼器讀的是 Apache 與 nginx 的 combined 格式；其他格式時這幾條規則不會套用。只有 Wazuh agent 會重啟。",
+   "body": "Skip this if another group or rsyslog already sends the access log of the web server in front of Z-Push. Otherwise add the localfile to the zpush group or the host's ossec.conf. It must be the Apache or nginx combined format. Only the Wazuh agent restarts.",
+   "body_zh": "若別的群組或 rsyslog 已經送出 Z-Push 前面那台網頁伺服器的存取記錄，就略過這一步。否則把 localfile 加到 zpush 群組或該主機的 ossec.conf。記錄必須是 Apache 或 nginx 的 combined 格式。只有 Wazuh agent 會重啟。",
    "code": "<localfile>\n  <location>/var/log/apache2/access.log</location>    <!-- nginx: /var/log/nginx/access.log -->\n  <log_format>apache</log_format>\n</localfile>",
    "verify": "From any client: curl -sk -A python-requests/2.31 -X POST 'https://<zpush-host>/Microsoft-Server-ActiveSync?Cmd=Sync&User=nosuchuser&DeviceId=WAZUHTEST0002&DeviceType=test' - expect rule 132281 (level 8) with your address.",
    "verify_zh": "從任一台用戶端執行：curl -sk -A python-requests/2.31 -X POST 'https://<zpush-host>/Microsoft-Server-ActiveSync?Cmd=Sync&User=nosuchuser&DeviceId=WAZUHTEST0002&DeviceType=test' —— 應出現規則 132281（level 8），內容含你的位址。"
@@ -156,10 +160,10 @@
    "platform": "linux",
    "required": false,
    "since": "1.2",
-   "title": "grommunio-sync instead of Z-Push",
-   "title_zh": "使用 grommunio-sync 而不是 Z-Push",
-   "body": "grommunio-sync, the maintained fork of Z-Push, writes the same log format and the same request summary (its lib/log/filelog.php and index.php), to /var/log/grommunio-sync/grommunio-sync.log by default (LOGFILE in its configuration). Change the first location in the group file to that path; if the host has no Z-Push autodiscover.log, remove the second entry. One difference: when the login and the mailbox differ, grommunio-sync writes [mailbox#login], Z-Push [login#mailbox], so the decoded account is the mailbox there. Checked against the grommunio-sync source, not against a running installation.",
-   "body_zh": "grommunio-sync 是持續維護的 Z-Push 分支，記錄格式與請求摘要相同（見它的 lib/log/filelog.php 與 index.php），預設寫到 /var/log/grommunio-sync/grommunio-sync.log（設定裡的 LOGFILE）。請把群組檔的第一個位置改成這個路徑；主機上若沒有 Z-Push 的 autodiscover.log，請刪掉第二段。唯一的差別：登入帳號與信箱不同時，grommunio-sync 寫成 [信箱#登入帳號]，Z-Push 則是 [登入帳號#信箱]，所以在 grommunio-sync 上解碼出來的帳號是信箱。這是依 grommunio-sync 的原始碼確認的，沒有在實際運作的安裝上測過。",
+   "title": "Use grommunio-sync instead of Z-Push",
+   "title_zh": "改用 grommunio-sync 而不是 Z-Push",
+   "body": "1. In the group file, change the first location to the line below (LOGFILE in grommunio-sync's configuration).\n2. If the host has no Z-Push autodiscover.log, remove the second entry.\nThe decoded account is the mailbox, not the login.",
+   "body_zh": "1. 在群組檔把第一個位置改成下面這一行（grommunio-sync 設定裡的 LOGFILE）。\n2. 主機上若沒有 Z-Push 的 autodiscover.log，刪掉第二段。\n解碼出來的帳號是信箱，不是登入帳號。",
    "file": "agent/agent.conf",
    "code": "<location>/var/log/grommunio-sync/grommunio-sync.log</location>"
   }

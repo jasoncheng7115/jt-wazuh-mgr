@@ -74,10 +74,30 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack, fill the KEV list and reload the ruleset",
-   "title_zh": "安裝套件、填入 KEV 清單並重新載入規則集",
-   "body": "Install from this page. The KEV list ships as a placeholder; run the updater once instead of waiting for its schedule: it downloads the catalogue (about 1.8 MB), writes etc/lists/jt-kev and reloads this node's ruleset. Then use Reload Ruleset on the Rules tab so every cluster node loads the rules.",
-   "body_zh": "在本頁安裝。KEV 清單出廠是空的佔位內容；請手動執行一次更新程式，不必等排程：它會下載目錄（約 1.8 MB）、寫入 etc/lists/jt-kev 並重新載入本節點的規則集。接著到「規則」分頁按「重新載入規則集」，讓叢集每個節點都載入規則。",
+   "title": "Install the pack and reload the ruleset",
+   "title_zh": "安裝套件並重新載入規則集",
+   "body": "Install from this page, then press Reload Ruleset on the Rules tab so that every cluster node loads the rules. Installing schedules both scripts on this node: the KEV list update and the version check, every six hours.",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」，讓叢集每個節點都載入規則。安裝時會在本節點排程兩支腳本：KEV 清單更新與版本檢查，每六小時一次。",
+   "verify": "On the Rules tab, a search for 133200 finds the rule.",
+   "verify_zh": "在「規則」分頁搜尋 133200 會找到這條規則。"
+  },
+  {
+   "platform": "network",
+   "required": true,
+   "title": "Allow outbound HTTPS from every manager node",
+   "title_zh": "允許每個 manager 節點對外 HTTPS",
+   "body": "The master needs www.cisa.gov (fallback raw.githubusercontent.com) for the KEV catalogue. Every node needs nodejs.org, raw.githubusercontent.com, peps.python.org, www.python.org, api.github.com and community.openvpn.net for the release data. Without Internet access, use the optional last step instead.",
+   "body_zh": "master 需要連到 www.cisa.gov（備援為 raw.githubusercontent.com）取得 KEV 目錄。每個節點需要連到 nodejs.org、raw.githubusercontent.com、peps.python.org、www.python.org、api.github.com 與 community.openvpn.net 取得發行資料。無法連外時，改用最後一個選用步驟。",
+   "verify": "curl -sI https://www.cisa.gov/ | head -1 on the master and curl -sI https://nodejs.org/dist/index.json | head -1 on every node print an HTTP status line.",
+   "verify_zh": "在 master 執行 curl -sI https://www.cisa.gov/ | head -1、在每個節點執行 curl -sI https://nodejs.org/dist/index.json | head -1，都會印出一行 HTTP 狀態。"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Fill the KEV list and test the version check",
+   "title_zh": "填入 KEV 清單並測試版本檢查",
+   "body": "The KEV list ships empty. On the master, run the updater once instead of waiting for its schedule: it downloads the catalogue (about 1.8 MB), writes etc/lists/jt-kev and reloads this node's ruleset. The second command prints what the version check would report, without sending anything.",
+   "body_zh": "KEV 清單出廠是空的。請在 master 手動執行一次更新程式，不必等排程：它會下載目錄（約 1.8 MB）、寫入 etc/lists/jt-kev 並重新載入本節點的規則集。第二個指令會印出版本檢查將回報的內容，但不會送出。",
    "code": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-kev-update.py --wazuh-path /var/ossec\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-runtime-versions.py --wazuh-path /var/ossec --dry-run",
    "verify": "grep -c ^CVE- /var/ossec/etc/lists/jt-kev prints about 1,750; --dry-run prints one event per agent, runtime and line.",
    "verify_zh": "grep -c ^CVE- /var/ossec/etc/lists/jt-kev 會印出約 1,750；--dry-run 會為每台 agent、每種執行環境、每個分支各印出一筆事件。"
@@ -85,21 +105,25 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Cluster: run the version check on every worker, reload the KEV list there",
-   "title_zh": "叢集：在每個 worker 執行版本檢查，並在那裡重新載入 KEV 清單",
-   "body": "Each node keeps the inventory of its own agents, so copy jt-runtime-versions.py to each worker with the same cron line. The cluster copies etc/lists/jt-kev to the workers but does not reload them: a worker that already runs jt-ioc's --reload-if-stale job reloads by itself; otherwise add the second cron line, which reloads only when the list changed.",
-   "body_zh": "每個節點只保存自己 agent 的套件清單，所以要把 jt-runtime-versions.py 複製到每個 worker 並加上同樣的排程。叢集會把 etc/lists/jt-kev 複製到 worker，但不會讓 worker 重新載入：已經有 jt-ioc --reload-if-stale 排程的 worker 會自己重新載入；否則請加上第二行排程，它只在清單變動時才重新載入。",
+   "title": "Cluster: run the version check on every worker",
+   "title_zh": "叢集：在每個 worker 執行版本檢查",
+   "body": "Each node checks only the agents connected to it, and the cluster copies etc/lists/jt-kev to the workers without reloading them. Copy the scripts to every worker and create the cron file there, as below. The second cron line reloads the worker's ruleset when the KEV list changed; leave it out on a worker that already runs jt-ioc's --reload-if-stale job.",
+   "body_zh": "每個節點只檢查連到自己的 agent，而叢集會把 etc/lists/jt-kev 複製到 worker，但不會讓它們重新載入。請把腳本複製到每個 worker 並在那裡建立排程檔，如下所示。第二行排程會在 KEV 清單變動時重新載入 worker 的規則集；已經有 jt-ioc --reload-if-stale 排程的 worker 不需要這一行。",
    "code": "scp /var/ossec/etc/jt-packs/bin/jt-runtime-versions.py /var/ossec/etc/jt-packs/bin/jt-kev-update.py <worker>:/var/ossec/etc/jt-packs/bin/\n# on the worker, /etc/cron.d/jt-jt-runtime-vuln\n11 */6 * * * root /usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-runtime-versions.py --wazuh-path /var/ossec\n*/5 * * * * root /usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-kev-update.py --wazuh-path /var/ossec --reload-if-changed",
    "verify": "On the worker, jt-runtime-versions.py --list prints the Node.js and Python packages of its agents.",
    "verify_zh": "在 worker 上執行 jt-runtime-versions.py --list，會列出它的 agent 的 Node.js 與 Python 套件。"
   },
   {
-   "platform": "network",
-   "required": true,
-   "title": "Outbound HTTPS from the manager nodes",
-   "title_zh": "manager 節點需要對外 HTTPS",
-   "body": "www.cisa.gov (or raw.githubusercontent.com as the fallback) for the KEV catalogue on the master; nodejs.org, raw.githubusercontent.com, peps.python.org, www.python.org, api.github.com and community.openvpn.net for the release data on every node. Each URL can be replaced by a mirror (--url for the KEV updater, --node-index, --node-schedule, --python-cycle, --python-releases, --openvpn-releases, --openvpn-support for the version check).",
-   "body_zh": "master 需要連到 www.cisa.gov（備援為 raw.githubusercontent.com）取得 KEV 目錄；每個節點需要連到 nodejs.org、raw.githubusercontent.com、peps.python.org、www.python.org、api.github.com 與 community.openvpn.net 取得發行資料。每個網址都可以換成鏡像（KEV 更新程式用 --url，版本檢查用 --node-index、--node-schedule、--python-cycle、--python-releases、--openvpn-releases、--openvpn-support）。"
+   "platform": "manager",
+   "required": false,
+   "since": "1.1",
+   "title": "Manager without Internet access",
+   "title_zh": "管理端無法連外時",
+   "body": "Both scripts can read local files (file:// URLs) instead of downloading.\n1. On a connected machine, download the files as below and copy them to /var/ossec/etc/jt-packs/offline/ on every manager node (kev.json is needed on the master only).\n2. Add the options to the schedule with the cron.local lines below (see the last paragraph).\n3. Refresh the copy at least weekly and after Node.js, Python or OpenVPN security releases. The scripts treat the copy as current, so an old copy raises no alert.\nWithout this, the KEV update raises 133230 and after 7 days 133231 (level 10, mailed); the version check raises 133223 and after 48 hours 133224 (level 10, mailed) and stops checking versions.\nSite options go in /var/ossec/etc/jt-packs/jt-runtime-vuln.cron.local (root-owned, not writable by others): a line \"<script>: <options>\" adds options to that script's schedule, a line NAME=value sets an environment variable. The tool applies the file whenever it writes the schedule (install, update, or this pack's Rewrite schedule button), so updates keep it. Workers run a schedule you copied by hand: add the same there.",
+   "body_zh": "兩支腳本都可以改讀本機檔案（file:// 網址），不必下載。\n1. 在可連外的機器上依下面的指令下載檔案，複製到每個 manager 節點的 /var/ossec/etc/jt-packs/offline/（kev.json 只有 master 需要）。\n2. 用下方的 cron.local 兩行把選項加進排程（見最後一段）。\n3. 至少每週更新一次副本，Node.js、Python 或 OpenVPN 發布安全性版本後也要更新。腳本把副本視為最新資料，所以副本過舊不會產生告警。\n不這樣做時，KEV 更新會觸發 133230，7 天後觸發 133231（level 10，寄出）；版本檢查會觸發 133223，48 小時後觸發 133224（level 10，寄出）並停止檢查版本。\n站台自訂選項放在 /var/ossec/etc/jt-packs/jt-runtime-vuln.cron.local（root 擁有、其他人不可寫）：「<腳本>: <選項>」一行替該腳本的排程加上選項，「NAME=value」一行設定環境變數。工具每次寫入排程時（安裝、更新，或本套件的「重寫排程」按鈕）都會套用，更新不會洗掉。worker 的排程是手動複製的，請在那裡加上同樣的內容。",
+   "code": "# on a connected machine\nmkdir jt-offline && cd jt-offline\ncurl -fsSLo kev.json https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json\ncurl -fsSLo node-index.json https://nodejs.org/dist/index.json\ncurl -fsSLo node-schedule.json https://raw.githubusercontent.com/nodejs/Release/main/schedule.json\ncurl -fsSLo python-cycle.json https://peps.python.org/api/release-cycle.json\ncurl -fsSLo python-releases.json 'https://www.python.org/api/v2/downloads/release/?is_published=true'\ncurl -fsSLo openvpn-releases.json 'https://api.github.com/repos/OpenVPN/openvpn/releases?per_page=100'\ncurl -fsSLo openvpn-support.html https://community.openvpn.net/openvpn/wiki/SupportedVersions\n# copy the files to /var/ossec/etc/jt-packs/offline/ on each manager node, then on the master:\ncat >> /var/ossec/etc/jt-packs/jt-runtime-vuln.cron.local <<'EOF'\njt-kev-update.py: --url file:///var/ossec/etc/jt-packs/offline/kev.json\njt-runtime-versions.py: --node-index file:///var/ossec/etc/jt-packs/offline/node-index.json --node-schedule file:///var/ossec/etc/jt-packs/offline/node-schedule.json --python-cycle file:///var/ossec/etc/jt-packs/offline/python-cycle.json --python-releases file:///var/ossec/etc/jt-packs/offline/python-releases.json --openvpn-releases file:///var/ossec/etc/jt-packs/offline/openvpn-releases.json --openvpn-support file:///var/ossec/etc/jt-packs/offline/openvpn-support.html\nEOF\n# then Rules packs → jt-runtime-vuln → Rewrite schedule",
+   "verify": "Run the jt-runtime-versions.py line from the cron file by hand with --force-fetch --dry-run added: it prints events and no \"release data:\" error. jt-kev-update.py with the --url option and --check prints the number of entries.",
+   "verify_zh": "手動執行排程檔中 jt-runtime-versions.py 那一行並加上 --force-fetch --dry-run：會印出事件，沒有「release data:」錯誤。jt-kev-update.py 加上 --url 選項與 --check 執行，會印出筆數。"
   }
  ]
 }

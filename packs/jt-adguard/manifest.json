@@ -88,18 +88,30 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers. Expect one burst of first-time alerts (levels 6 and 12) for the clients already active, then a few a day.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。安裝後會先出現一波目前已在活動之用戶端的首次告警（level 6 與 12），之後每天幾筆。"
+   "title": "Install the pack and reload every node",
+   "title_zh": "安裝套件並重新載入所有節點",
+   "body": "1. Install the pack from this page.\n2. Click Reload Ruleset on the Rules tab: it reloads every cluster node.",
+   "body_zh": "1. 在本頁安裝套件。\n2. 到「規則」分頁按「重新載入規則集」：會重新載入叢集的每個節點。",
+   "verify": "The reload result shows every node as reloaded, with no warning.",
+   "verify_zh": "重新載入的結果顯示每個節點都已重新載入，且沒有警告。"
   },
   {
    "platform": "network",
    "required": true,
-   "title": "Forward blocked queries by syslog, with the list name",
-   "title_zh": "以 syslog 轉送被擋下的查詢，並附上清單名稱",
-   "body": "Run a log shipper (for example Vector or Fluent Bit) on the AdGuard host that reads querylog.json and sends one JSON object per syslog message with the program name adguard to the manager's syslog port. Fields: IP, QH, QT, Elapsed, Upstream, action (Blocked or Allowed), filterlist_id, filterlist_name and filtertext, taken from Result.Rules[0] with the name looked up from the filters section of AdGuardHome.yaml by ID. Sending only blocked queries is enough (about 5 per cent of all queries at the measured site), and ads and tracker lists may be left out. Allowed queries are optional (next step). Allow the AdGuard host in the manager's syslog <remote> block. Nothing on AdGuard itself changes.",
-   "body_zh": "在 AdGuard 主機上執行記錄轉送程式（例如 Vector 或 Fluent Bit），讀取 querylog.json，每則 syslog 訊息送一個 JSON 物件到 manager 的 syslog 連接埠，program name 為 adguard。欄位：IP、QH、QT、Elapsed、Upstream、action（Blocked 或 Allowed）、filterlist_id、filterlist_name、filtertext，取自 Result.Rules[0]，清單名稱依 ID 從 AdGuardHome.yaml 的 filters 區段查出。只送被擋下的查詢就夠了（實測站台約佔全部查詢的 5%），廣告與追蹤清單也可以不送。放行的查詢為選用（見下一步）。並在 manager syslog 的 <remote> 允許 AdGuard 主機。AdGuard 本身不需任何變更。",
+   "title": "Put AdGuard in front of the clients",
+   "title_zh": "讓 AdGuard 直接面對用戶端",
+   "body": "Clients must query AdGuard directly: hand out its address by DHCP. If clients query another resolver that forwards to AdGuard, every event carries that resolver's address and no lookup can be traced to a host.",
+   "body_zh": "用戶端必須直接查詢 AdGuard：由 DHCP 發放它的位址。若用戶端先查另一台解析器再轉給 AdGuard，每筆事件都只有那台解析器的位址，無法追到發出查詢的主機。",
+   "verify": "In AdGuard Home's Query log, the Client column shows each host's own address, not one resolver's.",
+   "verify_zh": "AdGuard Home 的查詢記錄中，Client 欄顯示各主機自己的位址，而不是同一台解析器的位址。"
+  },
+  {
+   "platform": "network",
+   "required": true,
+   "title": "Forward blocked queries by syslog",
+   "title_zh": "以 syslog 轉送被擋下的查詢",
+   "body": "1. On the AdGuard host, run a log shipper (Vector, Fluent Bit) that reads querylog.json and sends each blocked query as one JSON object per syslog message, program name adguard, to the manager's syslog port (example below).\n2. Fields: IP, QH, QT, Elapsed, Upstream, action (Blocked or Allowed), filterlist_id, filterlist_name and filtertext, from Result.Rules[0]. querylog.json has only the list ID: look the name up by ID in the filters section of AdGuardHome.yaml.\n3. On the manager, allow the AdGuard host in the syslog <remote> block.\nAds and tracker lists may be left out. Nothing changes on AdGuard itself.",
+   "body_zh": "1. 在 AdGuard 主機上執行記錄轉送程式（Vector、Fluent Bit），讀取 querylog.json，把每筆被擋下的查詢以一則 syslog 訊息一個 JSON 物件、program name 為 adguard，送到 manager 的 syslog 連接埠（範例如下）。\n2. 欄位：IP、QH、QT、Elapsed、Upstream、action（Blocked 或 Allowed）、filterlist_id、filterlist_name、filtertext，取自 Result.Rules[0]。querylog.json 只有清單 ID：清單名稱請依 ID 到 AdGuardHome.yaml 的 filters 區段查出。\n3. 在 manager 的 syslog <remote> 區塊允許 AdGuard 主機。\n廣告與追蹤清單可以不送。AdGuard 本身不需任何變更。",
    "code": "<134>2026-10-11T02:43:17+00:00 dns1 adguard: {\"Elapsed\":215966,\"IP\":\"10.0.0.171\",\"QH\":\"dns.google\",\"QT\":\"A\",\"Upstream\":null,\"action\":\"Blocked\",\"filterlist_id\":1720886277,\"filterlist_name\":\"HaGeZi's Encrypted DNS/VPN/TOR/Proxy Bypass\",\"filtertext\":\"||dns.google^\"}",
    "verify": "On the manager: tcpdump -n -A -i any udp port <syslog port> and host <AdGuard host> shows lines like the example; a lookup of dns.google from a client raises 130905.",
    "verify_zh": "在 manager 上執行 tcpdump -n -A -i any udp port <syslog 連接埠> and host <AdGuard 主機>，應看到與範例相同的行；從用戶端查詢 dns.google 會觸發 130905。"
@@ -110,8 +122,8 @@
    "since": "1.4",
    "title": "Optional: forward allowed queries too",
    "title_zh": "選用：也轉送放行的查詢",
-   "body": "Sending allowed queries as well lights up the allowed-query rules: OAST callbacks, mining pools, reverse tunnels, Tor, DNS tunnelling (NULL queries, long or base64 labels), zone transfer and ANY queries, the Telegram Bot API, IP lookup services and public clients. Use the same message shape with action Allowed; the filterlist fields may be left out. An allowed query that no rule claims ends at level 0 (130916), so it is neither alerted nor kept in the correlation memory: the cost is syslog traffic and decoding, about 4.4 events a second at the measured site (380,000 a day). If the manager archives every event (logall), the archives grow by the same amount. Nothing changes on AdGuard itself.",
-   "body_zh": "也送出放行的查詢，就能啟用放行查詢的規則：OAST 回呼、挖礦礦池、反向通道服務、Tor、DNS 通道（NULL 查詢、過長或 base64 的標籤）、區域轉送與 ANY 查詢、Telegram Bot API、IP 查詢服務與公網用戶端。訊息格式相同，action 為 Allowed，清單欄位可省略。沒有任何規則接走的放行查詢會停在 level 0（130916），不告警也不佔用關聯記憶：成本只有 syslog 流量與解碼，實測站台約每秒 4.4 筆（每天 38 萬筆）。若 manager 記錄全部事件（logall），archives 會增加同樣的量。AdGuard 本身不需任何變更。",
+   "body": "Have the shipper send allowed queries as well, in the same shape with action Allowed; the filterlist fields may be left out. This turns on the allowed-query rules (OAST callbacks, mining pools, tunnels, Tor, DNS tunnelling, zone transfers, IP lookup services; see the notes). An allowed query no rule claims ends at level 0 (130916): the cost is syslog traffic and decoding, plus the same volume in the archives if logall is on.",
+   "body_zh": "讓轉送程式也送出放行的查詢，格式相同、action 為 Allowed，清單欄位可省略。這會啟用放行查詢的規則（OAST 回呼、挖礦礦池、通道服務、Tor、DNS 通道、區域轉送、IP 查詢服務；見說明）。沒有規則接走的放行查詢停在 level 0（130916）：成本是 syslog 流量與解碼，若開了 logall，archives 也會增加同樣的量。",
    "code": "<134>2026-10-11T02:43:17+00:00 dns1 adguard: {\"Elapsed\":215966,\"IP\":\"10.0.0.171\",\"QH\":\"api.ipify.org\",\"QT\":\"A\",\"Upstream\":\"udp://192.0.2.53:53\",\"action\":\"Allowed\"}",
    "verify": "Look up api.ipify.org once from a client: 130968 (level 3) appears; later lookups from that client and ordinary lookups raise nothing.",
    "verify_zh": "從一台用戶端查詢一次 api.ipify.org：出現 130968（level 3）；同一台之後的查詢與一般查詢都不會有告警。"
@@ -122,16 +134,8 @@
    "since": "1.4",
    "title": "Optional: subscribe to more Security lists",
    "title_zh": "選用：訂閱更多安全類清單",
-   "body": "In AdGuard Home under Filters, DNS blocklists, Add blocklist, Choose from the list, Security: HaGeZi's DynDNS Blocklist, HaGeZi's DNS Rebind Protection and HaGeZi's The World's Most Abused TLDs are graded by this pack (130951, 130953, 130955), and so are lists of newly registered domains added by URL with NRD or Newly Registered in their name (130957). Keep the names AdGuard proposes: the rules grade by list name. These lists block real traffic: Most Abused TLDs blocks whole TLDs, and DNS Rebind Protection blocks public names that resolve to private addresses (if the site's public DNS points to internal addresses, add an allow rule for them first).",
-   "body_zh": "在 AdGuard Home 的「過濾器 > DNS 封鎖清單 > 新增封鎖清單 > 從清單選擇」的 Security 群組中，HaGeZi's DynDNS Blocklist、HaGeZi's DNS Rebind Protection 與 HaGeZi's The World's Most Abused TLDs 會由本套件分級（130951、130953、130955）；以網址加入、名稱含 NRD 或 Newly Registered 的新註冊網域清單也會分級（130957）。請保留 AdGuard 預設的清單名稱：規則依清單名稱分級。這些清單會擋下真實流量：Most Abused TLDs 會擋掉整個頂級網域，DNS Rebind Protection 會擋掉解析到私有位址的公開名稱（若站台的公開 DNS 指向內部位址，請先為它們加上放行規則）。"
-  },
-  {
-   "platform": "network",
-   "required": true,
-   "title": "Put AdGuard in front of the clients",
-   "title_zh": "讓 AdGuard 直接面對用戶端",
-   "body": "Clients must query AdGuard directly (DHCP hands out its address). If they query another resolver that forwards to AdGuard, every event carries that resolver's address and a lookup can no longer be traced to a host.",
-   "body_zh": "用戶端必須直接查詢 AdGuard（由 DHCP 發放它的位址）。若用戶端先查另一台解析器再轉給 AdGuard，每筆事件都只會是那台解析器的位址，無法追到發出查詢的主機。"
+   "body": "1. In AdGuard Home: Filters > DNS blocklists > Add blocklist > Choose from the list > Security. Add any of HaGeZi's DynDNS Blocklist, HaGeZi's DNS Rebind Protection and HaGeZi's The World's Most Abused TLDs.\n2. Lists of newly registered domains can be added by URL; keep NRD or Newly Registered in their name.\nKeep the names AdGuard proposes: the rules grade by list name (130951, 130953, 130955, 130957). These lists block real traffic: Most Abused TLDs blocks whole TLDs, and if your public DNS points to internal addresses, allow those names before adding DNS Rebind Protection.",
+   "body_zh": "1. 在 AdGuard Home：過濾器 > DNS 封鎖清單 > 新增封鎖清單 > 從清單選擇 > Security，加入 HaGeZi's DynDNS Blocklist、HaGeZi's DNS Rebind Protection、HaGeZi's The World's Most Abused TLDs 中需要的清單。\n2. 新註冊網域清單可以用網址加入；名稱請保留 NRD 或 Newly Registered。\n請保留 AdGuard 預設的清單名稱：規則依清單名稱分級（130951、130953、130955、130957）。這些清單會擋下真實流量：Most Abused TLDs 會擋掉整個頂級網域；若站台的公開 DNS 指向內部位址，加入 DNS Rebind Protection 前請先放行那些名稱。"
   },
   {
    "platform": "linux",
@@ -139,9 +143,9 @@
    "title": "Assign the AdGuard host to the adguard group",
    "title_zh": "把 AdGuard 主機加入 adguard 群組",
    "file": "agent/agent.conf",
-   "body": "The group watches AdGuardHome.yaml and, since 1.4, the AdGuardHome program file in /opt/AdGuardHome, the official install location; for a snap or Docker install add the configuration path in the group file. Only these two files are watched, not the query log next to them. The agent applies a new group configuration when it restarts; AdGuard Home is not touched.",
-   "body_zh": "群組會監控 /opt/AdGuardHome（官方安裝程式的位置）中的 AdGuardHome.yaml，1.4 起也監控 AdGuardHome 程式檔；snap 或 Docker 安裝請在群組檔加上設定檔的路徑。只監控這兩個檔案，不含旁邊的查詢記錄。agent 重新啟動後才會套用新的群組設定；AdGuard Home 不受影響。",
-   "code": "/var/ossec/bin/agent_groups -a -i <agent id> -g adguard\n/var/ossec/bin/agent_control -R -u <agent id>",
+   "body": "1. Assign the AdGuard host to the adguard group and restart its agent (commands below).\n2. The group watches /opt/AdGuardHome, the official install location. For a snap install (/var/snap/adguard-home/current) or Docker (the directory mounted at /opt/adguardhome/conf), add that path to the group's agent.conf.\nDo not add report_changes: the configuration file holds the web users' password hashes.",
+   "body_zh": "1. 把 AdGuard 主機加入 adguard 群組並重新啟動它的 agent（指令如下）。\n2. 群組監控官方安裝位置 /opt/AdGuardHome。snap 安裝（/var/snap/adguard-home/current）或 Docker（掛載到 /opt/adguardhome/conf 的目錄）請把該路徑加進群組的 agent.conf。\n不要加 report_changes：設定檔裡有網頁使用者的密碼雜湊。",
+   "code": "/var/ossec/bin/agent_groups -a -i <agent id> -g adguard -q\n/var/ossec/bin/agent_control -R -u <agent id>",
    "verify": "Change any setting in the AdGuard web interface: 130940 appears within seconds.",
    "verify_zh": "在 AdGuard 網頁介面改任一設定：數秒內出現 130940。"
   },
@@ -150,10 +154,10 @@
    "required": false,
    "since": "1.4",
    "file": "agent/agent.conf",
-   "title": "Restart the agents of the adguard group to watch the program file",
-   "title_zh": "重新啟動 adguard 群組的 agent 以監控程式檔",
-   "body": "The 1.4 group file also watches the AdGuardHome program file in /opt/AdGuardHome (130974, 130975). The agents receive the new group file by themselves but apply file integrity settings only when they restart. AdGuard Home is not touched.",
-   "body_zh": "1.4 的群組檔也監控 /opt/AdGuardHome 中的 AdGuardHome 程式檔（130974、130975）。agent 會自動收到新的群組檔，但檔案完整性設定要重新啟動後才會套用。AdGuard Home 不受影響。",
+   "title": "After updating from 1.3: restart the group's agents",
+   "title_zh": "從 1.3 更新後：重新啟動群組的 agent",
+   "body": "Restart each agent of the adguard group once, so it starts watching the AdGuardHome program file (130974, 130975). Agents receive the new group file by themselves but apply file integrity settings only when they restart. AdGuard Home is not touched.",
+   "body_zh": "把 adguard 群組的每台 agent 重新啟動一次，讓它開始監控 AdGuardHome 程式檔（130974、130975）。agent 會自動收到新的群組檔，但檔案完整性設定要重新啟動後才會套用。AdGuard Home 不受影響。",
    "code": "/var/ossec/bin/agent_control -R -u <agent id>",
    "verify": "After the restart and its first scan, the agent's file integrity inventory lists /opt/AdGuardHome/AdGuardHome (dashboard: File Integrity Monitoring, or GET /syscheck/<agent id>?file=/opt/AdGuardHome/AdGuardHome). The next update from the web interface raises 130972 and then 130975 (level 3).",
    "verify_zh": "重新啟動並完成第一次掃描後，該 agent 的檔案完整性清單會列出 /opt/AdGuardHome/AdGuardHome（儀表板的 File Integrity Monitoring，或 GET /syscheck/<agent id>?file=/opt/AdGuardHome/AdGuardHome）。之後從網頁介面更新會先出現 130972，再出現 130975（level 3）。"
@@ -161,10 +165,10 @@
   {
    "platform": "linux",
    "required": false,
-   "title": "Make sure the AdGuard Home service log reaches Wazuh",
+   "title": "Make sure the AdGuard service log reaches Wazuh",
    "title_zh": "確認 AdGuard Home 服務記錄有送進 Wazuh",
-   "body": "Logins and authentication settings come from AdGuard Home's own log, not the query log. Run as a systemd service, it logs to journald, which the Wazuh agent on that host reads by default: nothing to do. If log.file in AdGuardHome.yaml points to a file, add a localfile with log_format syslog for that file to the agent. If it is syslog, forward that program (AdGuardHome) to the manager.",
-   "body_zh": "登入與驗證設定來自 AdGuard Home 自己的記錄，不是查詢記錄。以 systemd 服務執行時它寫入 journald，該主機上的 Wazuh agent 預設就會讀取，不需動作。若 AdGuardHome.yaml 的 log.file 指向檔案，請在 agent 加一個 log_format 為 syslog 的 localfile 讀取該檔。若設為 syslog，請把該程式（AdGuardHome）的訊息轉送到 manager。",
+   "body": "Logins, the version and authentication settings come from AdGuard Home's own log, not the query log.\n1. Run as a systemd service it logs to journald, which the agent reads by default: nothing to do.\n2. If log.file in AdGuardHome.yaml names a file, add the localfile below to that agent, with your path.\n3. If it is syslog, forward the program AdGuardHome to the manager.",
+   "body_zh": "登入、版本與驗證設定來自 AdGuard Home 自己的記錄，不是查詢記錄。\n1. 以 systemd 服務執行時它寫入 journald，agent 預設就會讀取：不需動作。\n2. 若 AdGuardHome.yaml 的 log.file 指向檔案，請在該 agent 加入下列 localfile，路徑改成實際的檔案。\n3. 若設為 syslog，請把 AdGuardHome 程式的訊息轉送到 manager。",
    "code": "<localfile>\n  <log_format>syslog</log_format>\n  <location>/var/log/AdGuardHome.log</location>\n</localfile>",
    "verify": "Log in to the AdGuard web interface with a wrong password once: 130931 appears. Then log in correctly: 130942 appears the first time, later logins from the same address stay at level 2.",
    "verify_zh": "在 AdGuard 網頁介面用錯誤密碼登入一次：出現 130931。接著正確登入：第一次出現 130942，之後從同一位址登入維持 level 2。"
@@ -175,8 +179,8 @@
    "since": "1.4",
    "title": "Run AdGuard Home v0.107.79 or later",
    "title_zh": "執行 AdGuard Home v0.107.79 或更新版本",
-   "body": "130945 (level 10) fires when AdGuard Home starts a version before v0.107.73: CVE-2026-32136 lets anyone who reaches the web interface use the whole API without logging in. 130946 (level 5) fires for v0.107.73 to v0.107.78, which miss later fixes. The version comes from the start line of the service log, so it needs that log in Wazuh (previous step). Update from the web interface (the update notice at the top) or rerun the official install script; either restarts AdGuard Home, a few seconds without DNS. An update from the web interface also changes the program file: 130975 (level 3) instead of 130974.",
-   "body_zh": "AdGuard Home 啟動的版本早於 v0.107.73 時觸發 130945（level 10）：CVE-2026-32136 讓任何連得到網頁介面的人不必登入就能使用整個 API。v0.107.73 到 v0.107.78 觸發 130946（level 5），缺少之後的修正。版本取自服務記錄的啟動訊息，因此需要那份記錄進入 Wazuh（上一步）。從網頁介面（頂端的更新通知）更新，或重新執行官方安裝程式；兩者都會重新啟動 AdGuard Home，期間會有幾秒沒有 DNS。從網頁介面更新也會改動程式檔：此時為 130975（level 3），而不是 130974。",
+   "body": "Update from the web interface (the update notice at the top) or rerun the official install script. Either restarts AdGuard Home: a few seconds without DNS. The version alerts (130945 before v0.107.73, level 10; 130946 for v0.107.73 to v0.107.78, level 5) read the start line of the service log, so they need the previous step.",
+   "body_zh": "從網頁介面（頂端的更新通知）更新，或重新執行官方安裝程式。兩者都會重新啟動 AdGuard Home：會有幾秒沒有 DNS。版本告警（早於 v0.107.73 為 130945，level 10；v0.107.73 到 v0.107.78 為 130946，level 5）讀的是服務記錄的啟動訊息，所以需要上一步。",
    "verify": "After the update the start line raises only 130936 (level 3).",
    "verify_zh": "更新後啟動訊息只會觸發 130936（level 3）。"
   },
@@ -184,18 +188,18 @@
    "platform": "linux",
    "required": false,
    "since": "1.3",
-   "title": "Behind a reverse proxy, let AdGuard log the client address",
-   "title_zh": "位於反向代理後方時，讓 AdGuard 記下用戶端位址",
-   "body": "AdGuard Home logs the proxy's address for web logins unless the proxy is listed in dns.trusted_proxies in AdGuardHome.yaml (default: 127.0.0.0/8 and ::1, so a proxy on the same host already works); then it logs the client address from the forwarding headers. Without it every login appears to come from the proxy, so the public-source rule (130941) and first-time tracking see one address. The change takes effect when AdGuard Home restarts, a few seconds without DNS.",
-   "body_zh": "除非反向代理列在 AdGuardHome.yaml 的 dns.trusted_proxies（預設 127.0.0.0/8 與 ::1，所以同一台主機上的代理本來就可以），AdGuard Home 記錄網頁登入時寫的是代理的位址；列入後才會從轉送標頭記下用戶端位址。沒有設定時所有登入都像是來自代理，公網來源規則（130941）與首次出現判斷只會看到一個位址。修改在 AdGuard Home 重新啟動後生效，期間會有幾秒沒有 DNS。"
+   "title": "Behind a reverse proxy, log the client address",
+   "title_zh": "位於反向代理後方時，記下用戶端位址",
+   "body": "If the web interface sits behind a reverse proxy on another host, add the proxy's address to dns.trusted_proxies in AdGuardHome.yaml (the default 127.0.0.0/8 and ::1 already covers a proxy on the same host), then restart AdGuard Home: a few seconds without DNS. Otherwise every login appears to come from the proxy, and the public-source rule (130941) and first-time tracking see only that address.",
+   "body_zh": "若網頁介面位於另一台主機上的反向代理後方，請把代理的位址加入 AdGuardHome.yaml 的 dns.trusted_proxies（預設的 127.0.0.0/8 與 ::1 已涵蓋同一台主機上的代理），然後重新啟動 AdGuard Home：會有幾秒沒有 DNS。否則所有登入都像是來自代理，公網來源規則（130941）與首次出現判斷只看得到那個位址。"
   },
   {
    "platform": "manager",
    "required": false,
    "title": "Keep the web interface protected",
    "title_zh": "確保網頁介面受到保護",
-   "body": "AdGuard Home disables authentication when no users are configured (130934) and disables its login rate limiter when auth_attempts or block_auth_min is 0 (130935). Keep at least one user and the defaults (5 attempts, 15 minutes): the lockout rule 130932 depends on them.",
-   "body_zh": "AdGuard Home 在沒有設定任何使用者時會關閉驗證（130934），auth_attempts 或 block_auth_min 為 0 時會關閉登入速率限制（130935）。請至少保留一個使用者並維持預設值（5 次、15 分鐘）：鎖定規則 130932 依賴這兩項設定。"
+   "body": "In AdGuardHome.yaml keep at least one user, and keep auth_attempts and block_auth_min above 0 (defaults 5 and 15). With no users, authentication is off (130934); with either at 0, the login rate limiter is off (130935) and the lockout rule 130932 cannot fire.",
+   "body_zh": "AdGuardHome.yaml 中至少保留一個使用者，auth_attempts 與 block_auth_min 要大於 0（預設 5 與 15）。沒有使用者時驗證是關閉的（130934）；任一項為 0 時登入速率限制是關閉的（130935），鎖定規則 130932 也無法觸發。"
   }
  ],
  "active_response": [

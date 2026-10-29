@@ -91,48 +91,50 @@
  ],
  "setup": [
   {
-   "platform": "manager",
+   "platform": "network",
    "required": true,
-   "title": "Install the pack and run the updater once",
-   "title_zh": "安裝套件並先執行一次更新程式",
-   "body": "Install or update from this page. Both lists ship as a placeholder and the rules match nothing until the updater has filled them; run it once by hand rather than waiting up to six hours. It reloads the ruleset on this node when it finishes. The first run after updating from 1.4 skips the size guard once: the 1.5 lists are smaller by design (darklist.de, Tor relays, old bans and research scanners are gone).",
-   "body_zh": "在本頁安裝或更新。兩份清單出貨時都是佔位內容，更新程式填入前規則不會比對到任何東西；請手動先跑一次，不必等最多六小時。完成時它會重新載入本節點的規則集。從 1.4 更新後的第一次執行會略過一次大小檢查：1.5 的清單本來就比較小（darklist.de、Tor 中繼節點、舊的封鎖與研究掃描器都移除了）。",
-   "code": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py --wazuh-path /var/ossec",
-   "verify": "ls -l /var/ossec/etc/lists/jason_tools_threat_ip*  — both .cdb files must be newer than their text files, and the text files must not hold the placeholder.",
-   "verify_zh": "ls -l /var/ossec/etc/lists/jason_tools_threat_ip* —— 兩個 .cdb 都必須比各自的文字檔新，文字檔也不能還是佔位內容。"
+   "title": "Allow the manager to reach the feeds",
+   "title_zh": "讓 manager 連得到情資來源",
+   "body": "Allow the master outbound HTTPS to lists.blocklist.de, cinsscore.com, blocklist.net.ua, rules.emergingthreats.net, www.spamhaus.org, torstatus.rueckgr.at, check.torproject.org and raw.githubusercontent.com. The optional feeds add threatfox.abuse.ch, feodotracker.abuse.ch, feeds.dshield.org and www.matthewroberts.io. A DNS filter that blocks Tor domains also blocks the Tor fallback. No Internet access at all: see the last step.",
+   "body_zh": "讓 master 能以 HTTPS 連到 lists.blocklist.de、cinsscore.com、blocklist.net.ua、rules.emergingthreats.net、www.spamhaus.org、torstatus.rueckgr.at、check.torproject.org 與 raw.githubusercontent.com。選用來源另外需要 threatfox.abuse.ch、feodotracker.abuse.ch、feeds.dshield.org 與 www.matthewroberts.io。封鎖 Tor 網域的 DNS 過濾也會擋掉 Tor 的備援來源。完全無法連外時，見最後一個步驟。",
+   "code": "grep ERROR /var/ossec/logs/update-threat-ip-list.log | tail",
+   "since": "1.5",
+   "verify": "After a run, the grep prints nothing. A feed it cannot reach shows as \"ERROR feed: <feed>\" and raises 906092; its previous copy is used.",
+   "verify_zh": "更新程式執行後，這個 grep 沒有輸出。連不到的來源會顯示「ERROR feed: <來源>」並觸發 906092，改用它的舊副本。"
   },
   {
    "platform": "manager",
    "required": true,
-   "title": "On every cluster worker: reload when the list arrives",
-   "title_zh": "每台叢集 worker：清單送到後重新載入",
-   "body": "The cluster copies the lists to the workers but does not reload them, so a worker keeps matching the old compiled lists. Copy the updater to each worker and schedule it in --reload-if-stale mode, which downloads nothing, reloads only when a list changed since its last reload, and reports a list the master stopped refreshing (906091).",
-   "body_zh": "叢集會把清單複製到 worker，但不會替它重載，worker 會繼續用舊的編譯版本比對。請把更新程式複製到每台 worker，並以 --reload-if-stale 模式排程：它不下載任何東西，只在清單自上次重載後有變動時才重新載入，並回報 master 已不再更新的清單（906091）。",
+   "title": "Install the pack and fill the lists",
+   "title_zh": "安裝套件並填入清單",
+   "body": "1. Install or update from this page.\n2. Run the updater once now instead of waiting up to six hours: until it runs, both lists hold a placeholder and match nothing. It reloads this node's ruleset when done.",
+   "body_zh": "1. 在本頁安裝或更新。\n2. 立刻手動執行一次更新程式，不必等最多六小時：執行之前兩份清單都是佔位內容，什麼都比對不到。完成時它會重新載入本節點的規則集。",
+   "code": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py --wazuh-path /var/ossec",
+   "verify": "The run prints \"wrote <n> keys to /var/ossec/etc/lists/jason_tools_threat_ip\" and \"ruleset reload: ok\".",
+   "verify_zh": "執行結果印出「wrote <n> keys to /var/ossec/etc/lists/jason_tools_threat_ip」與「ruleset reload: ok」。"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Cluster workers: reload when the lists arrive",
+   "title_zh": "叢集 worker：清單送達時重新載入",
+   "body": "Skip this on a single manager. The cluster copies the lists to the workers but never reloads them. On each worker, copy the updater and add the cron job below. In --reload-if-stale mode it downloads nothing, reloads when a list changed and raises 906091 if the master stops refreshing it.",
+   "body_zh": "單一 manager 可略過。叢集會把清單複製到 worker，但從不替它們重載。請在每台 worker 複製更新程式並加入下方的排程。--reload-if-stale 模式不下載任何東西，清單有變動就重新載入，master 停止更新清單時觸發 906091。",
    "code": "scp /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py <worker>:/var/ossec/etc/jt-packs/bin/\necho '*/5 * * * * root /usr/bin/python3 /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py --wazuh-path /var/ossec --reload-if-stale >> /var/ossec/logs/jt-ioc-reload.log 2>&1' > /etc/cron.d/jt-wazuh-mgr-ioc-reload   # on the worker",
-   "verify": "On the worker, a few minutes after the master's update: ls -l /var/ossec/etc/lists/jason_tools_threat_ip*  — the .cdb files are newer than the text.",
-   "verify_zh": "在 worker 上，master 更新幾分鐘後：ls -l /var/ossec/etc/lists/jason_tools_threat_ip* —— .cdb 比文字檔新。",
+   "verify": "On the worker, a few minutes after the master's update, /var/ossec/logs/jt-ioc-reload.log shows \"ruleset reload: ok\".",
+   "verify_zh": "在 worker 上，master 更新幾分鐘後，/var/ossec/logs/jt-ioc-reload.log 出現「ruleset reload: ok」。",
    "since": "1.3"
   },
   {
    "platform": "manager",
    "required": true,
-   "title": "Cluster: the high-confidence list on every node, and the new updater on the workers",
-   "title_zh": "叢集：每個節點都要有高可信度清單，worker 也要換新版更新程式",
-   "body": "1.5 adds jason_tools_threat_ip_high. The cluster copies etc/lists but not ossec.conf; updating from this page declares the list on every node it can reach (and refuses otherwise, unless you choose this node only). A node where it is not declared ignores the high-confidence rules (warning 7616 in the reload result) and alerts at the first tier only; Windows agents are usually analysed on a worker. For a node the update could not reach, add the line inside <ruleset> by hand and restart that node once. Copy the 1.5 updater to each worker as well: its reload job runs the worker's own copy, and only 1.5 reports a list the master stopped refreshing.",
-   "body_zh": "1.5 新增 jason_tools_threat_ip_high。叢集會複製 etc/lists，但不會複製 ossec.conf；在本頁更新時會在每個連得到的節點宣告這份清單（連不到時會拒絕，除非選擇只更新本節點）。沒有宣告的節點會忽略高可信度規則（重載結果出現警告 7616），只以第一級告警；Windows agent 通常由 worker 分析。更新時連不到的節點，請手動在 <ruleset> 內加上這行並重新啟動該節點一次。也請把 1.5 的更新程式複製到每台 worker：重載排程執行的是 worker 自己那份，而且只有 1.5 會回報 master 已不再更新的清單。",
+   "title": "Cluster: declare the high-confidence list everywhere",
+   "title_zh": "叢集：每個節點都宣告高可信度清單",
+   "body": "Skip this on a single manager. 1.5 adds jason_tools_threat_ip_high, and the cluster does not copy ossec.conf.\n1. Updating from this page declares it on every node it can reach. On any other node, add the line below inside <ruleset> and restart that node once.\n2. Copy the 1.5 updater to each worker: the reload job runs the worker's own copy.",
+   "body_zh": "單一 manager 可略過。1.5 新增 jason_tools_threat_ip_high，而叢集不會複製 ossec.conf。\n1. 在本頁更新時，會在每個連得到的節點宣告這份清單。其他節點請在 <ruleset> 內加上下方這行，並重新啟動該節點一次。\n2. 把 1.5 的更新程式複製到每台 worker：重載排程執行的是 worker 自己那份。",
    "code": "<list>etc/lists/jason_tools_threat_ip_high</list>\n\nscp /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py <worker>:/var/ossec/etc/jt-packs/bin/",
    "verify": "On each node: /var/ossec/bin/wazuh-analysisd -t prints no warning 7616, and /var/ossec/etc/lists/jason_tools_threat_ip_high.cdb exists.",
    "verify_zh": "在每個節點上：/var/ossec/bin/wazuh-analysisd -t 沒有警告 7616，且 /var/ossec/etc/lists/jason_tools_threat_ip_high.cdb 存在。",
-   "since": "1.5"
-  },
-  {
-   "platform": "network",
-   "required": true,
-   "title": "Let the manager reach the feeds",
-   "title_zh": "讓 manager 連得到情資來源",
-   "body": "The master downloads from lists.blocklist.de, cinsscore.com, blocklist.net.ua (a 30 MB CSV twice a day), rules.emergingthreats.net, www.spamhaus.org, torstatus.rueckgr.at (check.torproject.org as fallback) and raw.githubusercontent.com (research scanner ranges); with the optional feeds also threatfox.abuse.ch, feodotracker.abuse.ch, feeds.dshield.org, www.matthewroberts.io. A DNS filter that blocks Tor domains also blocks the Tor fallback. A feed that cannot be reached raises 906092 and its previous copy is used.",
-   "body_zh": "master 會從 lists.blocklist.de、cinsscore.com、blocklist.net.ua（30 MB 的 CSV，一天兩次）、rules.emergingthreats.net、www.spamhaus.org、torstatus.rueckgr.at（備援 check.torproject.org）與 raw.githubusercontent.com（研究掃描器網段）下載；啟用選用來源時還有 threatfox.abuse.ch、feodotracker.abuse.ch、feeds.dshield.org、www.matthewroberts.io。封鎖 Tor 網域的 DNS 過濾也會擋掉 Tor 的備援來源。連不到的來源會觸發 906092，並沿用它的舊副本。",
-   "code": "grep -E 'FAILED|ERROR' /var/ossec/logs/jt-ioc*.log /var/log/syslog 2>/dev/null | tail",
    "since": "1.5"
   },
   {
@@ -140,17 +142,17 @@
    "required": false,
    "title": "Exclude your own addresses",
    "title_zh": "排除自己的位址",
-   "body": "If a feed lists an address you use — a partner, a monitoring service, your own egress — add it to the exclusions file. It takes effect at the next update.",
-   "body_zh": "若來源列入了你會用到的位址（合作夥伴、監控服務、自己的對外位址），把它加進排除檔，下次更新生效。",
+   "body": "If a feed lists an address you rely on (a partner, a monitoring service, your own egress), add it to the exclusions file, one IP or CIDR per line. It takes effect at the next update.",
+   "body_zh": "若來源列入了你會用到的位址（合作夥伴、監控服務、自己的對外位址），把它加進排除檔，一行一個 IP 或 CIDR，下次更新生效。",
    "code": "echo '198.51.100.20' >> /var/ossec/etc/jt-packs/ioc-cache/exclusions.txt"
   },
   {
    "platform": "manager",
    "required": false,
-   "title": "Optional feeds and settings: etc/jt-packs/jt-ioc.conf",
-   "title_zh": "選用來源與設定：etc/jt-packs/jt-ioc.conf",
-   "body": "One \"key = value\" per line, on the master; the installer never writes it. threatfox = yes and feodo = yes add abuse.ch's confirmed command-and-control addresses as high-confidence entries: abuse.ch requires an Auth-Key (auth_key, free at https://auth.abuse.ch/) and a paid subscription for organisations with profit motives. dshield = yes (CC BY-NC-SA, non-commercial) and matthewroberts = yes add votes. Any default feed can be switched off (cins = no). Also: net_ua_max_days (30), high_min_votes (2), threatfox_min_confidence (75), stale_hours (48), research_scanners = no, mapped_v6_keys = no, <feed>_url. chmod 600 the file when it holds a key.",
-   "body_zh": "在 master 上，一行一個「key = value」；安裝程式永遠不會寫它。threatfox = yes 與 feodo = yes 會把 abuse.ch 已確認的命令與控制位址加入為高可信度：abuse.ch 要求 Auth-Key（auth_key，在 https://auth.abuse.ch/ 免費申請），營利組織需要付費訂閱。dshield = yes（CC BY-NC-SA，非商業）與 matthewroberts = yes 會增加票數。任何預設來源都可以關閉（cins = no）。其他：net_ua_max_days（30）、high_min_votes（2）、threatfox_min_confidence（75）、stale_hours（48）、research_scanners = no、mapped_v6_keys = no、<來源>_url。檔案內有金鑰時請 chmod 600。",
+   "title": "Optional feeds and settings",
+   "title_zh": "選用來源與設定",
+   "body": "Write \"key = value\" lines to /var/ossec/etc/jt-packs/jt-ioc.conf on the master (the installer never writes it), then run the updater with --force.\n1. threatfox = yes and feodo = yes add abuse.ch's confirmed C2 addresses as high-confidence. They need auth_key (free at https://auth.abuse.ch/; organisations with profit motives need a paid subscription).\n2. dshield = yes (non-commercial licence) and matthewroberts = yes add votes. <feed> = no turns a default feed off: blocklist_de, cins, net_ua, et_compromised, spamhaus_drop, tor_exit.\n3. Other keys: net_ua_max_days (30), high_min_votes (2), threatfox_min_confidence (75), stale_hours (48), research_scanners = no, mapped_v6_keys = no, <feed>_url.\nchmod 600 the file when it holds a key.",
+   "body_zh": "在 master 的 /var/ossec/etc/jt-packs/jt-ioc.conf 寫入「key = value」（安裝程式永遠不會寫這個檔案），再以 --force 執行更新程式。\n1. threatfox = yes 與 feodo = yes 會把 abuse.ch 已確認的命令與控制位址加入為高可信度。需要 auth_key（在 https://auth.abuse.ch/ 免費申請；營利組織需要付費訂閱）。\n2. dshield = yes（非商業授權）與 matthewroberts = yes 會增加票數。<來源> = no 可關閉預設來源：blocklist_de、cins、net_ua、et_compromised、spamhaus_drop、tor_exit。\n3. 其他設定：net_ua_max_days（30）、high_min_votes（2）、threatfox_min_confidence（75）、stale_hours（48）、research_scanners = no、mapped_v6_keys = no、<來源>_url。\n檔案內有金鑰時請 chmod 600。",
    "code": "cat >> /var/ossec/etc/jt-packs/jt-ioc.conf <<'EOF'\nthreatfox = yes\nfeodo = yes\nauth_key = <your abuse.ch Auth-Key>\nEOF\nchmod 600 /var/ossec/etc/jt-packs/jt-ioc.conf\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py --wazuh-path /var/ossec --force",
    "since": "1.5"
   },
@@ -159,10 +161,22 @@
    "required": false,
    "title": "Suricata: write flow records to eve.json",
    "title_zh": "Suricata：在 eve.json 寫出 flow 記錄",
-   "body": "906054-906057 read flow records, which Suricata writes only when the eve-log output lists the flow type; HTTP and TLS records (906058/906059) are written by the common default configuration. The agent must read eve.json as JSON. Flow records are one per connection: expect a much larger event volume, nearly all of it ending at level 0.",
-   "body_zh": "906054-906057 讀取 flow 記錄，Suricata 只有在 eve-log 輸出列出 flow 類型時才會寫；HTTP 與 TLS 記錄（906058／906059）在常見的預設設定就會寫出。agent 必須以 JSON 格式讀取 eve.json。flow 記錄每條連線一筆：事件量會大很多，幾乎全部停在 level 0。",
+   "body": "Rules 906054-906057 need flow records: add flow to the eve-log types in suricata.yaml and restart Suricata (HTTP and TLS records, for 906058/906059, are on in the usual default). The agent must read eve.json as JSON. Expect many more events, nearly all ending at level 0.",
+   "body_zh": "規則 906054-906057 需要 flow 記錄：在 suricata.yaml 的 eve-log types 加上 flow，再重啟 Suricata（906058／906059 用的 HTTP 與 TLS 記錄在常見的預設設定就有）。agent 必須以 JSON 格式讀取 eve.json。事件量會大很多，幾乎全部停在 level 0。",
    "code": "outputs:\n  - eve-log:\n      types:\n        - flow\n        - http\n        - tls",
    "since": "1.5"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.5.1",
+   "title": "Manager without Internet access",
+   "title_zh": "管理端無法連外時",
+   "body": "1. On any Linux machine with Internet access and python3, copy update-threat-ip-list.py (from /var/ossec/etc/jt-packs/bin/ on the master) and the master's jt-ioc.conf if it has one, and run it with a scratch --wazuh-path (first lines below).\n2. Pack the downloads and copy the archive to the master.\n3. On the master, unpack it into /var/ossec/etc/jt-packs/ and run the updater with --skip-download: it builds both lists from those files, applies the master's exclusions and reloads.\n4. Stop the scheduled downloads with the cron.local line below (see the last paragraph). Otherwise every run waits on retries and raises 906092 per feed, or 906090 when no copy is usable.\n5. On every node set stale_hours above your import interval; 906091 then tells you an import is overdue.\nLost: the lists are only as fresh as the last import.\nKeep site options in /var/ossec/etc/jt-packs/jt-ioc.cron.local (root-owned, not writable by others): lines \"<script>: <options>\" add options to that script's schedule, lines NAME=value set environment variables. The tool applies the file whenever it writes the schedule (install, update, or Rules packs → this pack → Rewrite schedule), so updates keep it. On workers, whose schedule you copied by hand, add the same options to their cron line.",
+   "body_zh": "1. 在任何一台能上網、有 python3 的 Linux 機器上，放一份 update-threat-ip-list.py（取自 master 的 /var/ossec/etc/jt-packs/bin/），master 有 jt-ioc.conf 時也一起複製，以暫用的 --wazuh-path 執行（下方前幾行）。\n2. 把下載的檔案打包，複製到 master。\n3. 在 master 上解開到 /var/ossec/etc/jt-packs/，再以 --skip-download 執行更新程式：它用這些檔案建立兩份清單、套用 master 的排除清單並重新載入。\n4. 用下方的 cron.local 那一行停掉排程下載（見最後一段）。不改的話每次執行都會等待重試，每個來源觸發一次 906092，完全沒有可用副本時觸發 906090。\n5. 在每個節點把 stale_hours 設得比匯入間隔長；之後匯入逾期時 906091 會提醒你。\n失去的部分：清單只和最後一次匯入一樣新。\n站台自訂選項放在 /var/ossec/etc/jt-packs/jt-ioc.cron.local（root 擁有、其他人不可寫）：「<腳本>: <選項>」一行替該腳本的排程加上選項，「NAME=value」一行設定環境變數。工具每次寫入排程時（安裝、更新，或本套件的「重寫排程」按鈕）都會套用，更新不會洗掉。worker 的排程是手動複製的，請在那裡加上同樣的內容。",
+   "code": "mkdir -p ~/jt-ioc/etc/lists ~/jt-ioc/etc/jt-packs                        # on the connected machine\ncp jt-ioc.conf ~/jt-ioc/etc/jt-packs/                                    # only if the master has one\npython3 update-threat-ip-list.py --wazuh-path ~/jt-ioc --no-reload\ntar -C ~/jt-ioc/etc/jt-packs -czf jt-ioc-feeds.tgz --exclude=exclusions.txt --exclude=feed-state.json ioc-cache\ntar -C /var/ossec/etc/jt-packs -xzf jt-ioc-feeds.tgz                     # on the master\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/update-threat-ip-list.py --wazuh-path /var/ossec --skip-download\necho 'update-threat-ip-list.py: --reload-if-stale' >> /var/ossec/etc/jt-packs/jt-ioc.cron.local   # master, then Rewrite schedule\necho 'stale_hours = 192' >> /var/ossec/etc/jt-packs/jt-ioc.conf          # every node; weekly imports",
+   "verify": "The run on the master prints \"wrote <n> keys to /var/ossec/etc/lists/jason_tools_threat_ip\" and \"ruleset reload: ok\", with no ERROR line.",
+   "verify_zh": "master 上的執行印出「wrote <n> keys to /var/ossec/etc/lists/jason_tools_threat_ip」與「ruleset reload: ok」，沒有 ERROR。"
   }
  ]
 }

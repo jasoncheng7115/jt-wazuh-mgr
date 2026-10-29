@@ -400,6 +400,39 @@ The wheels in /root/jt-wazuh-mgr-X.Y.Z/wheels do not cover requirements.txt for 
         </div>
       </section>
 
+      <section id="packs">
+        <h2><span class="dot"></span>インターネットなしでのルールパック</h2>
+
+        <div class="qa">
+          <p>パックのインストール、更新、削除にインターネットは不要です。パックはツールに同梱されており、<b>「ルールパック」</b>タブからインストールします。接続が必要になりうるのは、一部のパックがインストール後に行う処理です。そうしたパックのデプロイ手順には<b>「マネージャーがインターネットに接続できない場合」</b>（または監視対象ホスト向けの同等の手順）があり、具体的なコマンドが書かれています。</p>
+          <div class="tbl"><table>
+            <tr><th>パック</th><th>接続が必要なもの</th><th>オフラインでの方法</th></tr>
+            <tr><td><code>jt-ioc</code>、<code>jt-malware-hash</code></td><td>脅威フィード（マスターがダウンロード）</td><td>接続できるマシンで更新プログラムを実行し、キャッシュをマスターにコピーして <code>--skip-download</code> で実行。スケジュールは <code>--reload-if-stale</code> でダウンロードを止めます。</td></tr>
+            <tr><td><code>jt-php</code></td><td>php.net のリリース情報</td><td>別の場所でリリースファイルをダウンロードし、<code>etc/jt-packs/offline/php/</code> にコピーして <code>--source file://…</code> で読み込みます。</td></tr>
+            <tr><td><code>jt-runtime-vuln</code></td><td>CISA KEV、Node.js・Python・OpenVPN のリリース情報</td><td>同様に、各ソースに <code>file://</code> オプションがあります。</td></tr>
+            <tr><td><code>jt-alert-digest</code></td><td>Teams、Slack、Discord、Telegram、LINE</td><td>メール（社内 SMTP リレー）、Zulip、Mattermost、汎用 webhook は社内ネットワークで動作します。クラウドのチャネルは <code>https_proxy</code> 経由、または設定しません。</td></tr>
+            <tr><td><code>jt-web</code></td><td>オプションの Cloudflare ブロックのみ</td><td><code>proxy=</code> を設定するか、有効にしません。nginx のブロックはオフラインで動作します。</td></tr>
+            <tr><td><code>jt-container-vuln</code></td><td>各 Docker ホストの Trivy イメージとデータベース</td><td>社内レジストリにコピーし、スキャナーをそこに向けます。</td></tr>
+            <tr><td><code>jt-docker</code>、<code>jt-vc-portal</code></td><td>Docker ホストの Python docker ライブラリ</td><td>社内パッケージミラー、または接続できるマシンで <code>pip download</code>。</td></tr>
+            <tr><td><code>jt-portable-detect</code>、<code>jt-linux-integrity</code></td><td>ホストの Sysmon（Windows）と auditd（Linux）</td><td>Sysmon64.exe をコピー。auditd は社内ミラーから。</td></tr>
+            <tr><td><code>jt-ucs</code>、<code>jt-synology</code>、<code>jt-jitsi</code></td><td>監視対象サーバーのパッケージまたはイメージ 1 つ</td><td>社内リポジトリ、パッケージの手動インストール、または社内レジストリ。</td></tr>
+            <tr><td>その他</td><td>不要</td><td></td></tr>
+          </table></div>
+        </div>
+
+        <div class="qa">
+          <h3>パックの更新で消えないオプション</h3>
+          <p>ツールはパックのインストールや更新のたびに <code>/etc/cron.d/jt-&lt;パック&gt;</code> を書き直すため、そのファイルは編集しないでください。サイトのオプションは <code>/var/ossec/etc/jt-packs/&lt;パック&gt;.cron.local</code>（root 所有、他者は書き込み不可）に置きます。<code>&lt;スクリプト&gt;: &lt;オプション&gt;</code> の行はそのスクリプトにオプションを追加し、<code>NAME=value</code> の行は環境変数を設定します。ツールはスケジュールを書くたびにこれを適用します。すぐに適用するには、ルールパックタブでそのパックを開き<b>「スケジュールを書き直す」</b>を押します。ワーカーのスケジュールは手作業でコピーしたものなので、そちらにも同じオプションを追加してください。</p>
+          <pre><code># /var/ossec/etc/jt-packs/jt-ioc.cron.local
+update-threat-ip-list.py: --reload-if-stale
+
+# /var/ossec/etc/jt-packs/jt-alert-digest.cron.local
+https_proxy=http://proxy.example.com:3128
+no_proxy=localhost,127.0.0.1</code></pre>
+          <p>オフラインのコピーは自分では古くなりません。セキュリティリリースのたびに更新し、パックに <code>stale_hours</code> がある場合は設定してください。取り込みが遅れるとアラートになります。</p>
+        </div>
+      </section>
+
       <section id="notes">
         <h2><span class="dot"></span>オフライン環境でのその他の注意</h2>
 
@@ -407,9 +440,7 @@ The wheels in /root/jt-wazuh-mgr-X.Y.Z/wheels do not cover requirements.txt for 
           <h3>インターネットなしで動くもの、動かないもの</h3>
           <ul>
             <li><b>Wazuh とやり取りする機能はすべて</b>動きます。このツールが使うのは Manager 自身の API とファイルだけです。</li>
-            <li><b>ルールパック</b>はリリースに同梱のカタログからインストールされます。一部のパックには、データ（脅威インテリジェンスの
-                リスト、脆弱性データベース）を取得する定期実行スクリプトが含まれており、その部分には外部への接続か社内ミラーが必要です。
-                インストール前に各パックの導入手順を確認してください。</li>
+            <li><b>ルールパック</b>はリリースに同梱のカタログからインストールされます。インストール後に一部のパックが行う処理には接続が必要な場合があります。<a href="#packs">インターネットなしでのルールパック</a>を参照してください。</li>
             <li><b>設定エディターのシンタックスハイライト</b>は<i>ブラウザー</i>が cdnjs から読み込みます。読み込めなくてもエディターは
                 使え、色が付かないだけです。</li>
           </ul>

@@ -16,7 +16,8 @@
   "Recording: start and stop are level 3, a live stream level 5, a failed recording level 5, a Jibri that reports itself unhealthy or cannot write its recordings level 7. Without a finalize script Jibri logs SEVERE \"Failed to run finalize script\" after every recording (measured: 33 times in ten days on one host, once per recording); that case is recognised and recorded below the alert level. Jicofo's own report of a failed recording is level 5, for sites whose Jibri hosts have no agent. A live stream to a destination outside Jibri's RTMP allow-list is level 8 and a stream URL that is not rtmp or rtmps level 6 (a crafted request aimed at Jibri's ffmpeg); the allow-list is empty by default, see the setup guide. A participant kicked from a meeting is level 3, three kicked within five minutes level 7: usually a moderator clearing out intruders.",
   "Prosody itself: a Prosody older than 13.0.5 or 0.12.6 starting is level 7, from the version in its start banner (CVE-2026-43504 to 43507: memory exhaustion by unauthenticated connections and relaying through mod_proxy65; the advisory also asks for libexpat 2.7.2, which the banner does not show; a distribution package that backports the fix keeps its old number). A module that fails to load is level 5, and level 8 when it is one that enforces something (token checks on joins, the lobby, the recording and dial-out filters, rate limits, bans, room passwords), because Prosody then runs without it. The unauthenticated telnet console and the SOCKS5 proxy being enabled are level 5 each, once per start. A connection over Prosody's per-address limit (13.0.5 and later, when max_connections_per_ip is set) is level 5, ten in two minutes level 10.",
   "Deliberately not covered: guesses at a room password and lobby knocks (Prosody 13 and the Jitsi modules do not log them at info level), prosodyctl and the admin shell that replaced mod_admin_telnet (they write nothing to the log), the meeting portal's own audit log, a burst of joins to one room on an open instance (a large meeting at the top of the hour looks the same), and the TURN server (coturn serves other products too and belongs in a pack of its own).",
-  "The JWT is a credential, and it ends up in logs: Prosody's token_verification module writes the whole token into the line behind rule 132515, and the Jitsi client puts it in the URL of the page and of /http-bind and /xmpp-websocket. docker-jitsi-meet's web container redacts it in its access log; a web server in front of it does not unless told to (setup guide). Treat the alerts as sensitive. A token in the URL of /http-bind or /xmpp-websocket in that access log is level 5, at most once a day per manager node (rule 132582; the alert itself carries the token)."
+  "The JWT is a credential, and it ends up in logs: Prosody's token_verification module writes the whole token into the line behind rule 132515, and the Jitsi client puts it in the URL of the page and of /http-bind and /xmpp-websocket. docker-jitsi-meet's web container redacts it in its access log; a web server in front of it does not unless told to (setup guide). Treat the alerts as sensitive. A token in the URL of /http-bind or /xmpp-websocket in that access log is level 5, at most once a day per manager node (rule 132582; the alert itself carries the token).",
+  "Deployment details. The agent group reads only lines written after the agent starts. Its json-file entry covers every container on the host, and finds nothing once the containers use the journald logging driver (docker logs keeps working). With the Debian packages, Prosody must log to syslog: its own log file starts with a timestamp that the Wazuh pre-decoder takes together with the next word, which breaks the line."
  ],
  "notes_zh": [
   "Wazuh 對 Jitsi Meet 沒有任何解碼器或規則。本套件解碼 Prosody（XMPP 伺服器）、Jicofo、videobridge 與 Jibri（錄影程式），涵蓋 manager 會收到的三種形式：帶程式名稱的 syslog 或 journald 行、各元件自己的記錄檔，以及 docker-jitsi-meet 預設寫出的 docker json-file 記錄。三種形式共用同一組規則。",
@@ -28,7 +29,8 @@
   "錄影：開始與結束為 level 3，直播為 level 5，錄影失敗為 level 5，Jibri 回報自己不健康或無法寫入錄影檔為 level 7。沒有設定 finalize 腳本時，Jibri 每次錄影結束都會記一行 SEVERE「Failed to run finalize script」（實測：一台主機十天 33 次，每次錄影一次）；這種情況會被辨識出來，記錄在告警等級之下。Jicofo 自己回報的錄影失敗為 level 5，供 Jibri 主機沒有 agent 的環境使用。直播到 Jibri RTMP 允許清單以外的目的地為 level 8，直播網址不是 rtmp 或 rtmps 為 level 6（針對 Jibri 的 ffmpeg 特製的請求）；允許清單預設允許全部，請見部署說明。與會者被踢出會議為 level 3，五分鐘內有三人被踢出為 level 7：通常是主持人在清除闖入者。",
   "Prosody 本身：從啟動訊息中的版本判斷，啟動的 Prosody 早於 13.0.5 或 0.12.6 時為 level 7（CVE-2026-43504 至 43507：未驗證連線造成的記憶體耗盡，以及經由 mod_proxy65 轉送流量；公告也要求 libexpat 2.7.2，但啟動訊息不會顯示；以回補方式修正的發行版套件會保留舊版號）。模組載入失敗為 level 5；若是負責把關的模組（加入時的 token 檢查、大廳、錄影與撥出過濾、速率限制、封鎖、會議室密碼）則為 level 8，因為 Prosody 會在沒有它的情況下照常執行。啟用了不需驗證的 telnet 主控台或 SOCKS5 代理各為 level 5，每次啟動一次。超過 Prosody 每位址連線上限（13.0.5 起，需設定 max_connections_per_ip）的連線為 level 5，兩分鐘內十次為 level 10。",
   "刻意不涵蓋：猜測會議室密碼與大廳敲門（Prosody 13 與 Jitsi 模組在 info 等級不記錄）、prosodyctl 與取代 mod_admin_telnet 的 admin shell（不寫任何記錄）、會議入口網站自己的稽核記錄、開放式站台上同一會議室的大量加入（整點開始的大型會議看起來一模一樣），以及 TURN 伺服器（coturn 也服務其他產品，應該自成一個套件）。",
-  "JWT 是憑證，而且會出現在記錄裡：Prosody 的 token_verification 模組會把整個 token 寫進規則 132515 對應的記錄行，Jitsi 用戶端也會把它放在頁面、/http-bind 與 /xmpp-websocket 的網址中。docker-jitsi-meet 的 web 容器會在存取記錄中遮蔽它；前面另外架的網頁伺服器則不會，除非另外設定（見部署說明）。請把這些告警當成敏感資料。存取記錄中 /http-bind 或 /xmpp-websocket 網址帶有 token 時為 level 5，每個 manager 節點每天最多一次（規則 132582；告警本身也帶有該 token）。"
+  "JWT 是憑證，而且會出現在記錄裡：Prosody 的 token_verification 模組會把整個 token 寫進規則 132515 對應的記錄行，Jitsi 用戶端也會把它放在頁面、/http-bind 與 /xmpp-websocket 的網址中。docker-jitsi-meet 的 web 容器會在存取記錄中遮蔽它；前面另外架的網頁伺服器則不會，除非另外設定（見部署說明）。請把這些告警當成敏感資料。存取記錄中 /http-bind 或 /xmpp-websocket 網址帶有 token 時為 level 5，每個 manager 節點每天最多一次（規則 132582；告警本身也帶有該 token）。",
+  "部署細節。agent 群組只讀取 agent 啟動後寫入的新行。它的 json-file 項目涵蓋主機上所有容器，容器改用 journald 記錄驅動程式後就讀不到東西（docker logs 仍可使用）。使用 Debian 套件時，Prosody 必須寫入 syslog：它自己的記錄檔開頭的時間戳記會被 Wazuh 的預解碼器連同下一個字一起取走，使整行無法解析。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -62,18 +64,20 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+   "title": "Install the pack and reload every node",
+   "title_zh": "安裝套件並重新載入所有節點",
+   "body": "1. Install the pack from this page.\n2. On the Rules tab, click Reload Ruleset. A cluster copies rule files to the workers but does not reload them.",
+   "body_zh": "1. 在本頁安裝套件。\n2. 到「規則」分頁按「重新載入規則集」。叢集會把規則檔複製到 worker，但不會重新載入。",
+   "verify": "On the Rules tab, a hierarchy search for jt_jitsi lists the rules of zz-132500-jt_jitsi_rules.xml.",
+   "verify_zh": "在「規則」分頁的階層模式搜尋 jt_jitsi，會列出 zz-132500-jt_jitsi_rules.xml 的規則。"
   },
   {
    "platform": "linux",
    "required": true,
-   "title": "Put a Wazuh agent on the Jitsi server and on every Jibri host, in the jitsi group",
-   "title_zh": "在 Jitsi 伺服器與每台 Jibri 主機安裝 Wazuh agent，並加入 jitsi 群組",
-   "body": "The group reads the docker json-file logs of the containers (docker-jitsi-meet's default logging driver, no change on the Jitsi side) and the host's nginx access log. Only lines written after the agent starts are read. A Jibri on a separate host needs the agent too: its recording and XMPP messages exist only there. The wildcard covers every container on the host, so on a host that also runs unrelated containers prefer the journald step below.",
-   "body_zh": "群組會讀取各容器的 docker json-file 記錄（docker-jitsi-meet 預設的記錄驅動程式，Jitsi 端不需要任何變更）以及主機上 nginx 的存取記錄。只讀取 agent 啟動後寫入的新行。獨立主機上的 Jibri 也需要 agent：錄影與 XMPP 訊息只存在那台主機上。萬用字元涵蓋主機上所有容器，若主機上還跑著其他無關的容器，建議改用下一步的 journald 方式。",
+   "title": "Add Jitsi and Jibri hosts to the jitsi group",
+   "title_zh": "把 Jitsi 與 Jibri 主機加入 jitsi 群組",
+   "body": "1. Install a Wazuh agent on the Jitsi server and on every separate Jibri host (recording messages exist only there).\n2. On the manager, run the two commands for each host, with its agent ID in place of <agent_id>.\nThe group reads every container's docker json-file log and /var/log/nginx/access.log; nothing changes on Jitsi. A host that also runs unrelated containers: prefer the journald step below.",
+   "body_zh": "1. 在 Jitsi 伺服器與每台獨立的 Jibri 主機安裝 Wazuh agent（錄影訊息只存在 Jibri 主機上）。\n2. 在 manager 上為每台主機執行這兩行指令，把 <agent_id> 換成它的 agent ID。\n群組會讀取每個容器的 docker json-file 記錄與 /var/log/nginx/access.log；Jitsi 端不需要任何變更。主機上還跑著其他無關的容器時，建議改用下面的 journald 步驟。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g jitsi\n/var/ossec/bin/agent_control -R -u <agent_id>",
    "verify": "Start and stop a recording. Expect rules 132560 and 132563 (level 3) from the Jibri host.",
@@ -81,34 +85,34 @@
   },
   {
    "platform": "linux",
+   "required": true,
+   "title": "Redact tokens in the front web server's log",
+   "title_zh": "在前端網頁伺服器記錄中遮蔽 token",
+   "body": "Without this, every participant's JWT (it is in the URL) is logged and sent to the manager.\n1. In nginx's http block, add the two maps and the jitsi_log format.\n2. In the Jitsi server block, use access_log with jitsi_log.\n3. Run nginx -t and reload nginx (no interruption).",
+   "body_zh": "不做這一步，每位與會者的 JWT（放在網址中）都會被記錄並送到 manager。\n1. 在 nginx 的 http 區塊加上兩個 map 與 jitsi_log 記錄格式。\n2. 在 Jitsi 的 server 區塊以 jitsi_log 設定 access_log。\n3. 執行 nginx -t 並重新載入 nginx（不會中斷服務）。",
+   "code": "map $request_uri $loggable_uri {\n    ~^(?P<path>[^?]*)\\?.*(?:jwt|token)= \"${path}?[params_redacted]\";\n    default $request_uri;\n}\nmap $http_referer $loggable_referer {\n    ~^(?P<url>[^?]*)\\?.*(?:jwt|token)= \"${url}?[params_redacted]\";\n    default $http_referer;\n}\nlog_format jitsi_log '$remote_addr - $remote_user [$time_local] '\n    '\"$request_method $loggable_uri $server_protocol\" '\n    '$status $body_bytes_sent \"$loggable_referer\" \"$http_user_agent\"';\n# in the Jitsi server block:\naccess_log /var/log/nginx/access.log jitsi_log;\n\nnginx -t && systemctl reload nginx",
+   "verify": "grep -c 'jwt=ey\\|token=ey' /var/log/nginx/access.log stays at the count it had before the reload. Rule 132582 stops firing.",
+   "verify_zh": "重新載入後，grep -c 'jwt=ey\\|token=ey' /var/log/nginx/access.log 的數字不再增加，規則 132582 也不再出現。"
+  },
+  {
+   "platform": "linux",
    "required": false,
-   "title": "Or: send the containers to journald with a tag",
-   "title_zh": "或者：讓容器以標籤寫入 journald",
-   "body": "With the journald logging driver each line carries a program name (the tag), so the lines are decoded as jt-jitsi and reach the agent through /var/log/syslog, which rsyslog fills from journald and the agent already reads. Add the logging section to docker-compose.override.yml for each service and run docker compose up -d. This recreates the containers: running meetings drop and recordings stop, so do it in a quiet hour. docker logs keeps working. Afterwards the containers write no json-file log and the json-file entry of the group finds nothing. On a host without rsyslog, add a journald localfile to the agent instead.",
-   "body_zh": "使用 journald 記錄驅動程式時，每一行都帶有程式名稱（標籤），因此會以 jt-jitsi 解碼，並透過 /var/log/syslog 送到 agent（rsyslog 會從 journald 寫入該檔，agent 本來就有在讀）。在 docker-compose.override.yml 為每個服務加上 logging 區段，然後執行 docker compose up -d。這會重建容器：進行中的會議會斷線、錄影會停止，請在離峰時段進行。docker logs 仍可使用。之後容器不再寫 json-file 記錄，群組中的 json-file 項目就不會讀到東西。若主機沒有 rsyslog，請改在 agent 加上 journald 的 localfile。",
+   "title": "Or: send the containers to journald",
+   "title_zh": "或者：讓容器寫入 journald",
+   "body": "1. For each service, add the logging section to docker-compose.override.yml (on a Jibri host: the jibri service, tag jitsi-jibri).\n2. Run docker compose up -d in a quiet hour: it recreates the containers, so meetings drop and recordings stop.\nThe lines then reach the agent through /var/log/syslog (filled by rsyslog). A host without rsyslog: add a journald localfile to the agent instead.",
+   "body_zh": "1. 在 docker-compose.override.yml 為每個服務加上 logging 區段（Jibri 主機：jibri 服務，標籤 jitsi-jibri）。\n2. 在離峰時段執行 docker compose up -d：這會重建容器，進行中的會議會斷線、錄影會停止。\n之後記錄會經由 /var/log/syslog（由 rsyslog 寫入）送到 agent。主機沒有 rsyslog 時，改在 agent 加上 journald 的 localfile。",
    "code": "services:\n  prosody:\n    logging:\n      driver: journald\n      options:\n        tag: jitsi-prosody\n  jicofo:\n    logging:\n      driver: journald\n      options:\n        tag: jitsi-jicofo\n  jvb:\n    logging:\n      driver: journald\n      options:\n        tag: jitsi-jvb\n  web:\n    logging:\n      driver: journald\n      options:\n        tag: jitsi-web\n# on a Jibri host: the jibri service, tag jitsi-jibri\n\ndocker compose up -d",
    "verify": "journalctl -t jitsi-prosody -n 5 shows Prosody lines, and grep jitsi- /var/log/syslog shows them too.",
    "verify_zh": "journalctl -t jitsi-prosody -n 5 可看到 Prosody 的記錄，grep jitsi- /var/log/syslog 也看得到。"
   },
   {
    "platform": "linux",
-   "required": true,
-   "title": "Redact the token in the access log of the web server in front of Jitsi",
-   "title_zh": "在 Jitsi 前端網頁伺服器的存取記錄中遮蔽 token",
-   "body": "The Jitsi client puts the JWT in the URL (?jwt= on the page, ?token= on /http-bind and /xmpp-websocket), so a web server in front of the docker web container logs every participant's token, and the agent ships those lines to the manager. Use the same redaction as docker-jitsi-meet's own nginx: define the two maps and a log format in the http block and use it on the Jitsi server block, then reload nginx (no interruption). This is a change on the monitored host.",
-   "body_zh": "Jitsi 用戶端會把 JWT 放在網址中（頁面的 ?jwt=、/http-bind 與 /xmpp-websocket 的 ?token=），所以 docker web 容器前面的網頁伺服器會記錄每位與會者的 token，而 agent 會把這些記錄行送到 manager。請採用與 docker-jitsi-meet 自己的 nginx 相同的遮蔽方式：在 http 區塊定義兩個 map 與一個記錄格式，並在 Jitsi 的 server 區塊使用它，然後重新載入 nginx（不會中斷服務）。這是受監控主機上的變更。",
-   "code": "map $request_uri $loggable_uri {\n    ~^(?P<path>[^?]*)\\?.*(?:jwt|token)= \"${path}?[params_redacted]\";\n    default $request_uri;\n}\nmap $http_referer $loggable_referer {\n    ~^(?P<url>[^?]*)\\?.*(?:jwt|token)= \"${url}?[params_redacted]\";\n    default $http_referer;\n}\nlog_format jitsi_log '$remote_addr - $remote_user [$time_local] '\n    '\"$request_method $loggable_uri $server_protocol\" '\n    '$status $body_bytes_sent \"$loggable_referer\" \"$http_user_agent\"';\n# in the Jitsi server block:\naccess_log /var/log/nginx/access.log jitsi_log;\n\nnginx -t && systemctl reload nginx",
-   "verify": "grep -c 'jwt=ey\\|token=ey' /var/log/nginx/access.log stays at the count it had before the reload. Rule 132582 stops firing.",
-   "verify_zh": "重新載入後，grep -c 'jwt=ey\\|token=ey' /var/log/nginx/access.log 的數字不再增加。 規則 132582 也不再出現。"
-  },
-  {
-   "platform": "linux",
    "required": false,
    "since": "1.2",
-   "title": "Check the Prosody version and its libexpat",
-   "title_zh": "確認 Prosody 版本與它使用的 libexpat",
-   "body": "Rule 132506 fires when Prosody starts with a version older than 13.0.5 or 0.12.6 (Prosody security advisory 2026-04-29: memory exhaustion by unauthenticated connections, unauthenticated relay through mod_proxy65). Full protection also needs LuaExpat linked against libexpat 2.7.2 or later, which only prosodyctl about shows. On docker-jitsi-meet, pull and recreate the prosody image (a short interruption of running meetings). Where Prosody's client or server port (5222, 5269) is reachable directly, the advisory also recommends limiting connections per address in the host firewall. A distribution package that backports the fix keeps its old version number: if its changelog lists the CVEs, the alert can be ignored for that host.",
-   "body_zh": "Prosody 以早於 13.0.5 或 0.12.6 的版本啟動時，規則 132506 會觸發（Prosody 2026-04-29 安全公告：未驗證連線造成的記憶體耗盡、經由 mod_proxy65 未驗證轉送）。完整防護還需要 LuaExpat 連結 libexpat 2.7.2 以上，這只有 prosodyctl about 看得到。docker-jitsi-meet 請拉取並重建 prosody 映像（進行中的會議會短暫中斷）。若 Prosody 的用戶端或伺服器連接埠（5222、5269）可被直接連線，公告也建議在主機防火牆限制每個位址的連線數。以回補方式修正的發行版套件會保留舊版號：若其變更記錄列有這些 CVE，該主機的這則告警可以忽略。",
+   "title": "Check the Prosody and libexpat versions",
+   "title_zh": "確認 Prosody 與 libexpat 版本",
+   "body": "1. Run prosodyctl about as below. You need Prosody 13.0.5 or 0.12.6 or later and libexpat 2.7.2 or later.\n2. docker-jitsi-meet: pull and recreate the prosody image (a short interruption of meetings).\n3. Ports 5222 or 5269 reachable directly: limit connections per address in the host firewall.\nA distribution package with the fix backported keeps its old version: if its changelog lists the CVEs, ignore rule 132506 for that host.",
+   "body_zh": "1. 照下面的指令執行 prosodyctl about。需要 Prosody 13.0.5 或 0.12.6 以上，以及 libexpat 2.7.2 以上。\n2. docker-jitsi-meet：拉取並重建 prosody 映像（會議會短暫中斷）。\n3. 5222 或 5269 埠可被直接連線時：在主機防火牆限制每個位址的連線數。\n以回補方式修正的發行版套件會保留舊版號：若其變更記錄列有這些 CVE，該主機的規則 132506 可以忽略。",
    "code": "docker exec <prosody container> prosodyctl about | grep -i -E 'prosody|expat'\n# Debian packages:\nprosodyctl about | grep -i -E 'prosody|expat'\n# directly exposed XMPP ports only:\nufw limit 5222\nufw limit 5269",
    "verify": "Prosody 13.0.5 or later and libexpat 2.7.2 or later in the output; no rule 132506 after the next Prosody start.",
    "verify_zh": "輸出中 Prosody 為 13.0.5 以上、libexpat 為 2.7.2 以上；下次 Prosody 啟動後沒有規則 132506。"
@@ -119,8 +123,8 @@
    "since": "1.2",
    "title": "Restrict where Jibri may live stream",
    "title_zh": "限制 Jibri 可以直播到哪裡",
-   "body": "Jibri's rtmp-allow-list allows every destination by default, so any moderator can send a meeting to any RTMP server. List the services the site uses; Jibri then refuses others and rule 132576 reports the attempt. On docker-jitsi-meet put the snippet in custom-jibri.conf in the Jibri config volume (copied in at start) and restart the jibri container: a recording in progress on that Jibri stops. On a Debian install add it to /etc/jitsi/jibri/jibri.conf and restart jibri. Patterns are Java regular expressions matched against the whole URL.",
-   "body_zh": "Jibri 的 rtmp-allow-list 預設允許所有目的地，因此任何主持人都能把會議送到任何 RTMP 伺服器。請列出本站使用的服務；之後 Jibri 會拒絕其他目的地，規則 132576 會回報這類嘗試。docker-jitsi-meet 請把下列片段放進 Jibri 設定磁碟區的 custom-jibri.conf（啟動時會複製進去），再重新啟動 jibri 容器：該 Jibri 上進行中的錄影會停止。Debian 安裝請加進 /etc/jitsi/jibri/jibri.conf 後重新啟動 jibri。樣式是比對完整網址的 Java 正規表示式。",
+   "body": "1. List the RTMP services the site uses, as Java regular expressions matched against the whole URL.\n2. docker-jitsi-meet: put the snippet in ${CONFIG}/jibri/custom-jibri.conf and restart the jibri container. Debian: add it to /etc/jitsi/jibri/jibri.conf and restart jibri.\nA recording in progress on that Jibri stops. Other destinations are then refused and reported (132576).",
+   "body_zh": "1. 列出本站使用的 RTMP 服務，寫成比對完整網址的 Java 正規表示式。\n2. docker-jitsi-meet：把片段放進 ${CONFIG}/jibri/custom-jibri.conf，再重新啟動 jibri 容器。Debian：加進 /etc/jitsi/jibri/jibri.conf 後重新啟動 jibri。\n該 Jibri 上進行中的錄影會停止。之後其他目的地會被拒絕並回報（132576）。",
    "code": "jibri {\n  streaming {\n    rtmp-allow-list = [\n      \"rtmps?://[ab]\\\\.rtmp\\\\.youtube\\\\.com/.*\"\n    ]\n  }\n}\n\n# docker-jitsi-meet: ${CONFIG}/jibri/custom-jibri.conf, then\ndocker compose restart jibri",
    "verify": "A stream to an unlisted RTMP server is refused and rule 132576 fires on the Jibri host.",
    "verify_zh": "直播到未列出的 RTMP 伺服器會被拒絕，Jibri 主機出現規則 132576。"
@@ -129,9 +133,9 @@
    "platform": "linux",
    "required": false,
    "title": "Debian packages instead of docker",
-   "title_zh": "使用 Debian 套件而非 docker 的安裝",
-   "body": "Add the Jicofo, videobridge and Jibri log files to the agent, and let Prosody log to syslog: its own log file starts with a timestamp that the Wazuh pre-decoder takes together with the next word, which breaks the line. Restart Prosody after the change (a short interruption of running meetings).",
-   "body_zh": "把 Jicofo、videobridge 與 Jibri 的記錄檔加到 agent，並讓 Prosody 寫入 syslog：它自己的記錄檔開頭的時間戳記會被 Wazuh 的預解碼器連同下一個字一起取走，使整行無法解析。修改後需重新啟動 Prosody（進行中的會議會短暫中斷）。",
+   "title_zh": "使用 Debian 套件而非 docker 安裝時",
+   "body": "1. Add the three localfile blocks to the agent's ossec.conf.\n2. In /etc/prosody/prosody.cfg.lua, add the syslog line inside log = { ... }. Prosody's own log file cannot be decoded.\n3. Restart Prosody (a short interruption of meetings) and the agent.",
+   "body_zh": "1. 把三段 localfile 加到 agent 的 ossec.conf。\n2. 在 /etc/prosody/prosody.cfg.lua 的 log = { ... } 裡加上寫入 syslog 的那一行。Prosody 自己的記錄檔無法解碼。\n3. 重新啟動 Prosody（會議會短暫中斷）與 agent。",
    "code": "<localfile>\n  <log_format>syslog</log_format>\n  <location>/var/log/jitsi/jicofo.log</location>\n</localfile>\n<localfile>\n  <log_format>syslog</log_format>\n  <location>/var/log/jitsi/jvb.log</location>\n</localfile>\n<localfile>\n  <log_format>syslog</log_format>\n  <location>/var/log/jitsi/jibri/log.0.txt</location>\n</localfile>\n\n-- /etc/prosody/prosody.cfg.lua, in log = { ... }:\n{ levels = { min = \"info\" }, to = \"syslog\" };"
   }
  ],

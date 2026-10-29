@@ -19,7 +19,8 @@
   "What was checked: the sign-in, failed sign-in, two-factor, NTLMv1 and Hyper Backup success lines come from a real DSM 7 NAS. Every other line follows DSM's message catalogues in the 7.2.2-72806 and 7.4.1-90080 firmware, word for word; all 1,810 templates of the 7.4.1 System catalogue were replayed against the rules in a test manager, and each template fires only the rule written for it. No System-category line has been captured from a real NAS yet, so the patterns allow for an optional acting account and a missing final period. Shared folder snapshots deleted by retention are expected to say \"by [SYSTEM]\"; if a NAS shows retention deletions at level 8, that wording differs.",
   "Deliberately not done: logins carry no built-in authentication_success group, because that attaches built-in correlation rules (40101 for system account names, which include guest, and 40112) next to the allowlist. Version 1.2 removed the Security Advisor, antivirus and two-factor reset rules of 1.1: their wording is in neither firmware's catalogue, so they could never fire. Not decoded: NFS mounts (the catalogue does not show which field holds the address), Active Backup for Business (its strings are not in the firmware), DSM 6 Local Backup failures. DSM does not log its version when it updates, so the pack cannot tell a patched build from a vulnerable one. The NAS runs no agent, so a response can only act elsewhere (see the active response).",
   "PREREQUISITE: the manager must accept syslog from the NAS (a <remote> block with connection syslog and the NAS in allowed-ips), and the Log Center package must be installed on the NAS: DSM's built-in Log Center cannot send logs. Send in BSD format, with at least the Connection and System categories. In a cluster, the node that receives the syslog analyses it: declare the two lists in that node's ossec.conf too, because the cluster copies list files but not ossec.conf.",
-  "Cross-pack login groups (patch release): jt_auth_success on 132010, 132011, 132012, 132033, 132018, 132017, 132019, 132034, 132035, 132016, 132036; jt_auth_failure on 132020; jt_auth_lockout on 132027, 132028, 132029. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. Shared folder access (132013) and the password step of a two-factor sign-in (132014) are not logins and are not tagged; external shared folder access still reaches 132017, 132019 and 132036. Second-factor and NTLMv1 refusals (132022, 132023) are not wrong passwords."
+  "Cross-pack login groups (patch release): jt_auth_success on 132010, 132011, 132012, 132033, 132018, 132017, 132019, 132034, 132035, 132016, 132036; jt_auth_failure on 132020; jt_auth_lockout on 132027, 132028, 132029. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. Shared folder access (132013) and the password step of a two-factor sign-in (132014) are not logins and are not tagged; external shared folder access still reaches 132017, 132019 and 132036. Second-factor and NTLMv1 refusals (132022, 132023) are not wrong passwords.",
+  "Log Center settings: Wazuh's syslog listener does not accept TLS, so SSL stays off. IETF (RFC 5424) messages also decode, but Wazuh 4.x does not parse their header, so the alerts carry no host or program name; and over TCP Wazuh needs one message per line, so a sender that frames IETF messages by length is never received. The System category carries the storage, account, snapshot, Task Scheduler and security setting changes. Auto Block and Account Protection are Synology's advice after the StealthWorker and eCh0raix brute-force campaigns, which ended in ransomware."
  ],
  "notes_zh": [
   "Wazuh 4.14.7 沒有內建 Synology 解碼器：DSM 的登入記錄送到管理端後沒有解碼、不命中任何規則，含有 failure 字樣時只命中通用的 1002。本套件解碼 DSM 的 Connection、System、Hyper Backup 類別與檔案傳輸記錄，格式為記錄中心預設送出的 BSD（RFC 3164），也接受 DSM 6 的寫法與 IETF（RFC 5424）格式。1.2 版起，比對的文字依據 DSM 自己的訊息目錄，取自 DSM 7.2.2-72806 與 7.4.1-90080 韌體。",
@@ -34,7 +35,8 @@
   "驗證過的：登入、登入失敗、兩步驟驗證、NTLMv1 與 Hyper Backup 成功的記錄來自真實的 DSM 7 NAS。其餘記錄逐字依據 DSM 7.2.2-72806 與 7.4.1-90080 韌體裡的訊息目錄；7.4.1 System 目錄的全部 1,810 個樣板都在測試用管理端重播過，每個樣板只觸發為它而寫的規則。目前還沒從真實的 NAS 收到過 System 類別的記錄，所以比對時允許前面帶執行帳號、也允許結尾沒有句點。保留原則刪除共用資料夾快照時，預期寫的是「by [SYSTEM]」；若某台 NAS 的保留原則刪除出現 level 8，代表寫法不同。",
   "刻意不做的：登入不帶內建的 authentication_success 群組，因為那會把內建的關聯規則（針對系統帳號名稱的 40101，名單包含 guest，以及 40112）掛到允許清單規則的旁邊。1.2 版移除了 1.1 版的資安顧問、防毒與兩步驟驗證重設規則：兩個版本韌體的訊息目錄裡都沒有那些寫法，它們永遠不會觸發。不解碼的：NFS 掛載（目錄看不出哪個欄位是位址）、Active Backup for Business（韌體裡沒有它的字串）、DSM 6 的本機備份失敗。DSM 更新時不記錄版本，所以本套件無法分辨已修補與有漏洞的版本。NAS 上沒有 agent，主動回應只能在別處執行（見主動回應）。",
   "前提條件：管理端必須接受 NAS 送來的 syslog（<remote> 區段設 connection 為 syslog，並把 NAS 加入 allowed-ips），而且 NAS 上必須安裝「記錄中心」套件：DSM 內建的記錄中心無法傳送記錄。以 BSD 格式送出，至少包含 Connection 與 System 類別。叢集環境由接收 syslog 的那個節點負責分析：請在該節點的 ossec.conf 也宣告這兩份清單，因為叢集只同步清單檔、不同步 ossec.conf。",
-  "跨套件登入群組（修補版）：jt_auth_success：132010, 132011, 132012, 132033, 132018, 132017, 132019, 132034, 132035, 132016, 132036；jt_auth_failure：132020；jt_auth_lockout：132027, 132028, 132029。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。開啟共用資料夾（132013）與雙因素登入的密碼步驟（132014）不是登入，不加標記；但來自外部的共用資料夾存取仍會走到 132017、132019、132036。第二因素與 NTLMv1 被拒（132022、132023）不是密碼錯誤。"
+  "跨套件登入群組（修補版）：jt_auth_success：132010, 132011, 132012, 132033, 132018, 132017, 132019, 132034, 132035, 132016, 132036；jt_auth_failure：132020；jt_auth_lockout：132027, 132028, 132029。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。開啟共用資料夾（132013）與雙因素登入的密碼步驟（132014）不是登入，不加標記；但來自外部的共用資料夾存取仍會走到 132017、132019、132036。第二因素與 NTLMv1 被拒（132022、132023）不是密碼錯誤。",
+  "記錄中心的設定：Wazuh 的 syslog 接收端不支援 TLS，所以不勾選 SSL。IETF（RFC 5424）也能解碼，但 Wazuh 4.x 不解析它的標頭，告警會缺少主機與程式名稱；而且走 TCP 時 Wazuh 要求一行一則訊息，以長度分隔 IETF 訊息的送出端完全收不到。System 類別包含儲存、帳號、快照、工作排程器與安全性設定的變更。自動封鎖與帳號保護是 Synology 在 StealthWorker 與 eCh0raix 暴力破解（後續演變成勒索軟體）事件之後的建議。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -78,39 +80,43 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+   "title": "Install the pack and reload the ruleset",
+   "title_zh": "安裝套件並重新載入規則集",
+   "body": "1. Install from this page. The tool also declares the lists etc/lists/jt-synology-service-accounts and etc/lists/jt-synology-admin-accounts in ossec.conf on every cluster node. If a node could not be reached and you continued on this node only, add those two <list> lines to its <ruleset> by hand.\n2. On the Rules tab, click Reload Ruleset. The cluster copies rule files but does not reload the workers.",
+   "body_zh": "1. 在本頁安裝。工具也會在每個叢集節點的 ossec.conf 宣告清單 etc/lists/jt-synology-service-accounts 與 etc/lists/jt-synology-admin-accounts。若有節點連不上、你選擇只裝在本節點，請自行在該節點的 <ruleset> 加上這兩行 <list>。\n2. 到「規則」分頁按「重新載入規則集」。叢集只同步規則檔，不會重載 worker。",
+   "verify": "On the node that will receive the NAS syslog, grep jt-synology /var/ossec/etc/ossec.conf prints both <list> lines.",
+   "verify_zh": "在要接收 NAS syslog 的節點執行 grep jt-synology /var/ossec/etc/ossec.conf，應印出這兩行 <list>。"
   },
   {
    "platform": "manager",
    "required": true,
-   "title": "Accept syslog from the NAS on the manager",
-   "title_zh": "讓管理端接受 NAS 送來的 syslog",
-   "body": "Add a <remote> block with connection syslog to ossec.conf on the node the NAS will send to, with the NAS address in allowed-ips (one block per port and protocol: a syslog block with <protocol>tcp,udp</protocol> listens on TCP only, with just a warning in ossec.log; a node that already listens for syslog only needs the address added). Open the port in the manager's host firewall. remoted reads <remote> only when it starts, so restart the manager: agents reconnect within a minute. In a cluster, also declare etc/lists/jt-synology-service-accounts and etc/lists/jt-synology-admin-accounts in that node's <ruleset>, because the cluster copies list files but not ossec.conf.",
-   "body_zh": "在 NAS 要送往的那個節點的 ossec.conf 加上 connection 為 syslog 的 <remote> 區段，並把 NAS 位址加入 allowed-ips（每個連接埠與協定一個區段：syslog 區段寫 <protocol>tcp,udp</protocol> 時只會聽 TCP，ossec.log 裡只有一則警告；已經在收 syslog 的節點只要加上位址）。在管理端主機的防火牆開放該連接埠。remoted 只在啟動時讀取 <remote>，所以要重新啟動管理端：agent 會在一分鐘內重新連線。叢集環境還要在該節點的 <ruleset> 宣告 etc/lists/jt-synology-service-accounts 與 etc/lists/jt-synology-admin-accounts，因為叢集只同步清單檔、不同步 ossec.conf。",
+   "title": "Let the manager accept syslog from the NAS",
+   "title_zh": "讓管理端接受 NAS 的 syslog",
+   "body": "On the node the NAS will send to:\n1. Add the <remote> block below to /var/ossec/etc/ossec.conf, with the NAS address in allowed-ips (192.0.2.20 in the example). If the node already listens for syslog on that port, just add the address there.\n2. Use one block per protocol: a syslog block with <protocol>tcp,udp</protocol> listens on TCP only.\n3. Open the port in the manager host's firewall.\n4. Restart the manager: remoted reads <remote> only when it starts. Agents reconnect within a minute.",
+   "body_zh": "在 NAS 要送往的節點上：\n1. 把下面的 <remote> 區段加到 /var/ossec/etc/ossec.conf，NAS 位址填入 allowed-ips（範例為 192.0.2.20）。若該節點已在這個連接埠接收 syslog，只要在那裡加上位址。\n2. 每種協定一個區段：syslog 區段寫 <protocol>tcp,udp</protocol> 時只會聽 TCP。\n3. 在管理端主機的防火牆開放該連接埠。\n4. 重新啟動管理端：remoted 只在啟動時讀取 <remote>。agent 會在一分鐘內重新連線。",
    "code": "<remote>\n  <connection>syslog</connection>\n  <port>514</port>\n  <protocol>udp</protocol>\n  <allowed-ips>192.0.2.20</allowed-ips>\n</remote>\n\n/var/ossec/bin/wazuh-control restart",
-   "verify": "tcpdump -i any -nn -A 'udp port 514 and host 192.0.2.20' shows lines such as <14>Oct 11 11:12:30 nas1 Connection: User [...] once the NAS sends.",
+   "verify": "Once the NAS sends, tcpdump -i any -nn -A 'udp port 514 and host 192.0.2.20' shows lines such as <14>Oct 11 11:12:30 nas1 Connection: User [...].",
    "verify_zh": "NAS 開始送出後，tcpdump -i any -nn -A 'udp port 514 and host 192.0.2.20' 應看到 <14>Oct 11 11:12:30 nas1 Connection: User [...] 這類記錄。"
   },
   {
    "platform": "network",
    "required": true,
-   "title": "Send the DSM logs to the manager from Log Center",
-   "title_zh": "在 DSM 記錄中心把記錄送到管理端",
-   "body": "Install the Log Center package from Package Center first: DSM's built-in Log Center shows logs but cannot send them. Then open Log Center, Log Sending, and tick Send logs to a syslog server. Server: the manager node's address. Port and transfer protocol: those of the <remote> block (UDP, or TCP if the block says tcp). Log format: BSD (RFC 3164). Log types: at least Connection and System (the System category carries storage, account, snapshot, Task Scheduler and security setting changes), and the file transfer logs only if they are turned on. Leave SSL off: Wazuh's syslog listener does not accept TLS. IETF (RFC 5424) also decodes, but Wazuh 4.x does not parse its header, so those alerts carry no host or program name, and over TCP Wazuh needs one message per line: a sender that frames IETF messages by length instead is never received. Apply, then Send test log. The change takes effect at once and does not interrupt any service on the NAS.",
-   "body_zh": "先從「套件中心」安裝「記錄中心」套件：DSM 內建的記錄中心只能檢視記錄，無法傳送。接著開啟「記錄中心」→「記錄傳送」，勾選「傳送記錄到 syslog 伺服器」。伺服器：管理端節點的位址。連接埠與傳輸協定：與 <remote> 區段相同（UDP；區段若設 tcp 則選 TCP）。記錄格式：BSD（RFC 3164）。記錄類型：至少選 Connection 與 System（System 類別包含儲存、帳號、快照、工作排程器與安全性設定的變更），檔案傳輸記錄只在有開啟時才選。不要勾選 SSL：Wazuh 的 syslog 接收端不支援 TLS。IETF（RFC 5424）也能解碼，但 Wazuh 4.x 不解析它的標頭，告警會缺少主機與程式名稱；而且走 TCP 時 Wazuh 要求一行一則訊息，以長度分隔 IETF 訊息的送出端完全收不到。套用後按「傳送測試記錄」。設定立即生效，不會中斷 NAS 上的任何服務。",
-   "verify": "Sign in to DSM in a browser from a workstation. The first time, expect rule 132033 (level 3, a new account and address pair) on the manager; later sign-ins are recorded as 132010 at level 2. Send test log should raise 132096. To check that the System category arrives, create a scheduled task in Control Panel, Task Scheduler and delete it again: expect 132097 (level 6), then 132099 (level 3).",
-   "verify_zh": "從一台工作站用瀏覽器登入 DSM。第一次登入時管理端應出現規則 132033（level 3，新的帳號與位址組合）；之後的登入記錄為 132010（level 2）。「傳送測試記錄」應觸發 132096。要確認 System 類別有送到，請在「控制台」→「工作排程器」建立一個排程工作再刪除：應先出現 132097（level 6），再出現 132099（level 3）。"
+   "title": "Send the DSM logs from Log Center",
+   "title_zh": "從 DSM 記錄中心傳送記錄到管理端",
+   "body": "1. In Package Center, install the Log Center package (DSM's built-in log viewer cannot send logs). A NAS without Internet access: download the package on another computer from Synology's Download Center and use Manual Install.\n2. Log Center → Log Sending: tick Send logs to a syslog server.\n3. Server: the manager node's address. Port and transfer protocol: as in the <remote> block. Log format: BSD (RFC 3164). Leave SSL off.\n4. Log types: at least Connection and System; the file transfer logs only if they are turned on.\n5. Apply, then click Send test log.",
+   "body_zh": "1. 在「套件中心」安裝「記錄中心」套件（DSM 內建的記錄檢視無法傳送記錄）。NAS 無法連外時：在另一台電腦從 Synology 下載中心下載套件，用「手動安裝」。\n2. 「記錄中心」→「記錄傳送」：勾選「傳送記錄到 syslog 伺服器」。\n3. 伺服器：管理端節點的位址。連接埠與傳輸協定：與 <remote> 區段相同。記錄格式：BSD（RFC 3164）。不要勾選 SSL。\n4. 記錄類型：至少選 Connection 與 System；檔案傳輸記錄只在有開啟時才選。\n5. 套用後按「傳送測試記錄」。",
+   "verify": "Send test log raises 132096. Signing in to DSM from a workstation for the first time raises 132033 (level 3); later sign-ins are 132010 (level 2, no alert). To check the System category, create and delete a scheduled task in Control Panel → Task Scheduler: 132097 (level 6), then 132099 (level 3).",
+   "verify_zh": "「傳送測試記錄」應觸發 132096。第一次從工作站登入 DSM 會出現 132033（level 3）；之後的登入為 132010（level 2，不告警）。要確認 System 類別有送到，請在「控制台」→「工作排程器」建立再刪除一個排程工作：先出現 132097（level 6），再出現 132099（level 3）。"
   },
   {
    "platform": "network",
    "required": false,
-   "title": "Turn on Auto Block and Account Protection in DSM",
-   "title_zh": "在 DSM 啟用自動封鎖與帳號保護",
-   "body": "Synology's advice after the StealthWorker and eCh0raix brute force campaigns that ended in ransomware. Control Panel, Security, Protection: enable Auto Block (for example 10 attempts within 5 minutes); DSM then blocks the address itself and logs it, which raises 132027 or 132028. Control Panel, Security, Account: enable Account Protection, which blocks an account for untrusted clients after repeated failures and raises 132029. Put the management networks in the Auto Block allow list first, or an administrator who mistypes a password locks himself out of the NAS.",
-   "body_zh": "這是 Synology 在 StealthWorker 與 eCh0raix 暴力破解（後續演變成勒索軟體）事件之後的建議。「控制台」→「安全性」→「保護」：啟用「自動封鎖」（例如 5 分鐘內嘗試 10 次）；DSM 會自己封鎖該位址並記錄下來，觸發 132027 或 132028。「控制台」→「安全性」→「帳號」：啟用「帳號保護」，對不受信任的用戶端在多次失敗後封鎖該帳號，觸發 132029。請先把管理網段加入自動封鎖的允許清單，否則打錯密碼的管理員會把自己擋在 NAS 外面。"
+   "title": "Turn on Auto Block and Account Protection",
+   "title_zh": "啟用自動封鎖與帳號保護",
+   "body": "1. First add the management networks to the Auto Block allow list, or an administrator who mistypes a password locks himself out of the NAS.\n2. Control Panel → Security → Protection: enable Auto Block (for example 10 attempts within 5 minutes).\n3. Control Panel → Security → Account: enable Account Protection.",
+   "body_zh": "1. 先把管理網段加入自動封鎖的允許清單，否則打錯密碼的管理員會把自己擋在 NAS 外面。\n2. 「控制台」→「安全性」→「保護」：啟用「自動封鎖」（例如 5 分鐘內嘗試 10 次）。\n3. 「控制台」→「安全性」→「帳號」：啟用「帳號保護」。",
+   "verify": "When DSM blocks an address, the manager shows 132027 (internal address) or 132028 (external); a blocked account shows 132029.",
+   "verify_zh": "DSM 封鎖位址時，manager 端出現 132027（內部位址）或 132028（外部位址）；帳號被封鎖時出現 132029。"
   },
   {
    "platform": "network",
@@ -118,10 +124,10 @@
    "since": "1.2",
    "title": "Turn off Telnet on the NAS",
    "title_zh": "關閉 NAS 的 Telnet",
-   "body": "Synology-SA-26:03 (critical): DSM's telnetd allows unauthenticated remote code execution (CVE-2026-32746), and Telnet sends passwords in clear text. Synology's mitigation is to disable the Telnet service: Control Panel, Terminal (Terminal and SNMP), untick Enable Telnet service, then Apply; use SSH where a shell is needed. Fixed in DSM 7.3.2-86009-3, 7.2.2-72806-8 and 7.2.1-69057-11. Takes effect at once; only open Telnet sessions are cut. Starting Telnet again raises 132089 (level 8).",
-   "body_zh": "Synology-SA-26:03（重大）：DSM 的 telnetd 有不需認證的遠端程式碼執行漏洞（CVE-2026-32746），而且 Telnet 以明文傳送密碼。Synology 的緩解方式是停用 Telnet 服務：「控制台」→「終端機」（終端機與 SNMP），取消勾選「啟動 Telnet 服務」後套用；需要 shell 時改用 SSH。已在 DSM 7.3.2-86009-3、7.2.2-72806-8 與 7.2.1-69057-11 修正。立即生效，只會中斷已開啟的 Telnet 連線。之後若再啟動 Telnet，會觸發 132089（level 8）。",
-   "verify": "The System log shows \"Telnet service was stopped.\"; no 132089 afterwards.",
-   "verify_zh": "系統記錄出現「Telnet service was stopped.」；之後不再出現 132089。"
+   "body": "1. Control Panel → Terminal & SNMP: untick Enable Telnet service, then Apply. Use SSH where a shell is needed.\n2. Update DSM: the flaw (CVE-2026-32746, Synology-SA-26:03) is fixed in 7.3.2-86009-3, 7.2.2-72806-8 and 7.2.1-69057-11.\nIt takes effect at once; only open Telnet sessions are cut.",
+   "body_zh": "1. 「控制台」→「終端機與 SNMP」：取消勾選「啟動 Telnet 服務」後套用。需要 shell 時改用 SSH。\n2. 更新 DSM：此漏洞（CVE-2026-32746，Synology-SA-26:03）已在 7.3.2-86009-3、7.2.2-72806-8 與 7.2.1-69057-11 修正。\n立即生效，只會中斷已開啟的 Telnet 連線。",
+   "verify": "The System log shows \"Telnet service was stopped.\"; starting Telnet again would raise 132089 (level 8).",
+   "verify_zh": "系統記錄出現「Telnet service was stopped.」；之後若再啟動 Telnet，會觸發 132089（level 8）。"
   },
   {
    "platform": "network",
@@ -129,35 +135,37 @@
    "since": "1.2",
    "title": "Make snapshots immutable",
    "title_zh": "讓快照不可變更",
-   "body": "Synology's ransomware guidance: Snapshot Replication, Snapshots, select the shared folder, Settings, enable Immutable snapshots and set the protection period (Btrfs volume, DSM 7.2 or later). An immutable snapshot cannot be deleted by any account, including an administrator whose password was stolen, until the period ends. A deletion attempt is then logged as \"Failed to delete a shared folder snapshot ...\" and raises 132054 (level 8), five within ten minutes 132055 (level 12). Immutable snapshots use space until they expire: size the protection period to the free space.",
-   "body_zh": "Synology 的勒索軟體防護建議：「Snapshot Replication」→「快照」→ 選擇共用資料夾 →「設定」，啟用「不可變更的快照」並設定保護期間（需 Btrfs 磁碟區、DSM 7.2 以上）。保護期間內任何帳號都無法刪除該快照，包括密碼被盜的管理員。之後的刪除嘗試會記錄為「Failed to delete a shared folder snapshot ...」，觸發 132054（level 8），十分鐘內五次觸發 132055（level 12）。不可變更的快照在到期前會持續佔用空間：保護期間請依可用空間設定。"
+   "body": "Needs a Btrfs volume and DSM 7.2 or later.\n1. Snapshot Replication → Snapshots → select the shared folder → Settings.\n2. Enable Immutable snapshots and set the protection period. Immutable snapshots use space until they expire, so size the period to the free space.\nUntil the period ends, no account can delete them, not even an administrator whose password was stolen.",
+   "body_zh": "需 Btrfs 磁碟區、DSM 7.2 以上。\n1. 「Snapshot Replication」→「快照」→ 選擇共用資料夾 →「設定」。\n2. 啟用「不可變更的快照」並設定保護期間。不可變更的快照到期前會持續佔用空間，保護期間請依可用空間設定。\n保護期間內任何帳號都無法刪除這些快照，包括密碼被盜的管理員。",
+   "verify": "Try to delete a protected snapshot: DSM refuses with \"Failed to delete a shared folder snapshot ...\" and the manager shows 132054 (level 8).",
+   "verify_zh": "嘗試刪除一個受保護的快照：DSM 會以「Failed to delete a shared folder snapshot ...」拒絕，manager 端出現 132054（level 8）。"
   },
   {
    "platform": "network",
    "required": false,
-   "title": "Turn on the file transfer logs for deletes and renames",
-   "title_zh": "開啟檔案傳輸記錄（刪除與重新命名）",
-   "body": "Control Panel, File Services, SMB: tick Enable transfer logs, then in Log Settings choose delete, rename and move (the same for AFP, FTP or WebDAV if they are used). Leave read and write off: every file operation is one syslog message, and on a busy share reads and writes are thousands a minute. Only bulk deletes and renames alert (132052, 132053).",
-   "body_zh": "「控制台」→「檔案服務」→「SMB」：勾選「啟用傳輸記錄」，在「記錄設定」選擇刪除、重新命名與移動（有使用 AFP、FTP、WebDAV 的話也一樣）。讀取與寫入請保持關閉：每一個檔案操作就是一則 syslog，繁忙的共用資料夾每分鐘的讀寫會有數千筆。只有大量刪除與重新命名會告警（132052、132053）。"
+   "title": "Log file deletes and renames",
+   "title_zh": "記錄檔案的刪除與重新命名",
+   "body": "1. Control Panel → File Services → SMB: tick Enable transfer logs.\n2. In Log Settings choose delete, rename and move. Leave read and write off: every file operation is one syslog message.\n3. Do the same for AFP, FTP or WebDAV if they are used.\nOnly bulk deletes and renames alert (132052, 132053).",
+   "body_zh": "1. 「控制台」→「檔案服務」→「SMB」：勾選「啟用傳輸記錄」。\n2. 在「記錄設定」選擇刪除、重新命名與移動。讀取與寫入請保持關閉：每一個檔案操作就是一則 syslog。\n3. 有使用 AFP、FTP、WebDAV 的話也一樣設定。\n只有大量刪除與重新命名會告警（132052、132053）。"
   },
   {
    "platform": "manager",
    "required": false,
    "since": "1.1",
-   "title": "List the accounts that sign in for monitoring or storage",
-   "title_zh": "列出用於監控或儲存而頻繁登入的帳號",
-   "body": "Optional: the defaults already keep a polling account quiet (one first-seen alert per address). One line per account, the name exactly as DSM writes it between the brackets, then reload the ruleset. Their logins from private addresses drop to level 0; logins from outside, failures and SSH logins still alert.",
-   "body_zh": "選用：預設行為已經讓輪詢帳號保持安靜（每個位址只有一則第一次出現的告警）。每個帳號一行，名稱與 DSM 記錄中方括號裡的寫法完全相同，加入後重新載入規則集。這些帳號從私有位址的登入降為 level 0；從外部的登入、失敗與 SSH 登入仍會告警。",
+   "title": "Optional: list polling and storage accounts",
+   "title_zh": "選用：列出輪詢與儲存用帳號",
+   "body": "Not needed: the defaults already keep a polling account quiet (one first-seen alert per address). To silence such an account from private addresses completely:\n1. Add one line per account, the name exactly as DSM writes it between the brackets, followed by :service (example below).\n2. Reload the ruleset.\nLogins from outside, failures and SSH logins still alert.",
+   "body_zh": "不是必要：預設行為已讓輪詢帳號保持安靜（每個位址只有一則第一次出現的告警）。若要讓這類帳號從私有位址登入時完全不告警：\n1. 每個帳號一行，名稱與 DSM 記錄中方括號裡的寫法完全相同，後面接 :service（範例如下）。\n2. 重新載入規則集。\n從外部的登入、失敗與 SSH 登入仍會告警。",
    "code": "echo 'storage-client:service' >> /var/ossec/etc/lists/jt-synology-service-accounts"
   },
   {
    "platform": "manager",
    "required": false,
    "since": "1.1",
-   "title": "List the administrator accounts",
-   "title_zh": "列出管理員帳號",
-   "body": "Optional: listed accounts are treated like the built-in administrator names (admin, administrator, root): level 3 from a private address, level 8 from outside, instead of level 2 and 5. Add the accounts in the administrators group, then reload the ruleset.",
-   "body_zh": "選用：名單上的帳號比照內建管理員名稱（admin、administrator、root）處理：從私有位址為 level 3、從外部為 level 8，而不是 level 2 與 5。請加入 administrators 群組中的帳號，再重新載入規則集。",
+   "title": "Optional: list the administrator accounts",
+   "title_zh": "選用：列出管理員帳號",
+   "body": "Listed accounts are treated like admin, administrator and root: level 3 from a private address and level 8 from outside, instead of 2 and 5.\n1. Add one line per member of the administrators group, followed by :admin (example below).\n2. Reload the ruleset.",
+   "body_zh": "名單上的帳號比照 admin、administrator、root 處理：從私有位址為 level 3、從外部為 level 8，而不是 level 2 與 5。\n1. administrators 群組的每個成員一行，後面接 :admin（範例如下）。\n2. 重新載入規則集。",
    "code": "echo 'nas-admin:admin' >> /var/ossec/etc/lists/jt-synology-admin-accounts"
   }
  ],

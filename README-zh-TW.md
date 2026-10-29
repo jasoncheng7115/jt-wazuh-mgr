@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.25.1
+# jt-wazuh-mgr v1.26.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@
 
 > **建議**：以 Web UI 作為主要操作介面，這是本工具功能最完整的核心。
 
-![Version](https://img.shields.io/badge/version-1.25.1-blue)
+![Version](https://img.shields.io/badge/version-1.26.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -118,7 +118,7 @@ grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py && systemctl is-active jt-waz
 - **主動回應（選用）：** 套件可以提供回應（例如封鎖暴力破解的來源）。安裝時一項都不啟用；每一項都寫明封鎖什麼、在哪裡封鎖與風險。啟用會把加了標記的區塊寫進叢集每個節點的 `ossec.conf`、逐一驗證，任一節點不接受就全部還原；停用會把檔案完整還原。頁面也會顯示各節點的 `white_list`，以及哪些 manager 還需要重新啟動
 - **裝上去就安靜：** 沒有任何套件需要先填站台清單才不洗版。登入成功只在有意義時告警（內建管理帳號、公開位址、多次失敗後的成功、帳號第一次從某位址出現）；允許清單只是選用的微調
 - **跨服務的帳號安全：** 各套件以同一種方式標記每一次登入嘗試，所以同一個位址同時對 SSO、郵件伺服器與 Nextcloud 噴灑密碼、或緊接著登入成功，會是一則告警而不是三則互不相干的告警；郵件帳號另有接管鏈（新位址登入後設定轉寄、改密碼或關閉兩步驟驗證）、SMTP／ActiveSync 密碼噴灑與信箱被大量拉取的偵測
-- 內建 29 個套件：Wazuh 評得太低或根本不告警的弱點（CISA KEV 弱點升為 level 12、未評分的弱點不再沉默）以及 Node.js／Python 版本與 nodejs.org、python.org 比對、跨服務帳號安全、網頁探測與外洩（敏感檔案與漏洞端點，以及是否真的被取走）、PHP（不必等 CVE 資料，直接找出少了 php.net 安全性版本或分支已停止支援的主機；工作程序當掉、設定後門、上傳目錄的 web shell、由 PHP 啟動的指令）、Linux 主機完整性（帳號檔、sudo、所有排程位置、systemd、PAM、preload、SSH 金鑰）、執行中 Docker 容器映像的弱點（Trivy，每日掃描，含 CISA KEV）、可攜式程式偵測（Windows/Linux/macOS）、IP 威脅情資、惡意程式雜湊比對、可讀的告警摘要信、Zimbra、Z-Push、Proxmox VE 與 Ceph、Proxmox Backup Server、Proxmox Mail Gateway、OPNsense、Zenarmor、AdGuard Home、fail2ban、Keycloak、Univention Corporate Server／Samba AD、Nextcloud、LibreNMS、Synology DSM、Odoo、Jitsi Meet、Docker、jt-ipam 與 jt-vc-portal。每個套件都依廠商文件、產品原始碼中的實際記錄格式、資安公告（含 CISA KEV）與 MITRE ATT&CK 檢查過，並在拋棄式 Wazuh manager 容器裡逐案測試
+- 內建 30 個套件：Wazuh 評得太低或根本不告警的弱點（CISA KEV 弱點升為 level 12、未評分的弱點不再沉默）以及 Node.js／Python 版本與 nodejs.org、python.org 比對、跨服務帳號安全、網頁探測與外洩（敏感檔案與漏洞端點，以及是否真的被取走）、PHP（不必等 CVE 資料，直接找出少了 php.net 安全性版本或分支已停止支援的主機；工作程序當掉、設定後門、上傳目錄的 web shell、由 PHP 啟動的指令）、Linux 主機完整性（帳號檔、sudo、所有排程位置、systemd、PAM、preload、SSH 金鑰）、執行中 Docker 容器映像的弱點（Trivy，每日掃描，含 CISA KEV）、可攜式程式偵測（Windows/Linux/macOS）、IP 威脅情資、惡意程式雜湊比對、可讀的告警摘要信、Zimbra、Z-Push、Proxmox VE 與 Ceph、Proxmox Backup Server、Proxmox Mail Gateway、OPNsense、ShareTech（眾至）防火牆、Zenarmor、AdGuard Home、fail2ban、Keycloak、Univention Corporate Server／Samba AD、Nextcloud、LibreNMS、Synology DSM、Odoo、Jitsi Meet、Docker、jt-ipam 與 jt-vc-portal。每個套件都依廠商文件、產品原始碼中的實際記錄格式、資安公告（含 CISA KEV）與 MITRE ATT&CK 檢查過，並在拋棄式 Wazuh manager 容器裡逐案測試
 
 ### 安全性
 - 所有參數皆做輸入驗證；防範指令注入與路徑穿越

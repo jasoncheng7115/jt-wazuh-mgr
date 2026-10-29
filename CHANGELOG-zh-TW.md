@@ -4,6 +4,23 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.26.0（2026-10-29）
+
+- **新套件 jt-sharetech 1.0：ShareTech（眾至）NU 系列防火牆**（CEF syslog：防火牆防護、IPS、WAF、門檻、應用程式控管、
+  管理者登入、設定變更、SSL VPN）。以站台 2025 年的規則與真實 NU-8700C 記錄為基礎，並修正讓它們安靜失效的問題：WAF 類別規則比對
+  不存在的欄位；所有防火牆防護記錄都被 Wazuh 內建的 firewalld 規則接走（程式名稱 FirewallDefense 開頭剛好是「Firewalld」）；
+  每筆 IPS 的 EventLevel 都是 20，所以所有 IPS 都是 level 10；WAF 的客戶端位址在 cs3 而不是 src=。等級改依流量方向決定；
+  登入時把帳號輸入成「x outcome=Success」會被當成記錄注入回報，不會讓失敗變成功。沿用原檔名、解碼器名稱與規則編號，安裝時原位取代舊檔。
+- **jt-linux-integrity 1.0.1：** syslog 中的 lynis 稽核報告（「Logging failed login attempts」「authentication errors」）
+  不再被 2501 當成登入失敗。
+- **所有套件的部署說明重寫**為依序、簡短的步驟，必要步驟都附檢查方式；背景說明移到說明欄。修正了數處錯誤（例如群組指派沒有 -q，
+  貼上時會被 agent_groups 的確認提示取消）。需要連外的套件新增「管理端（或主機）無法連外時」的步驟，離線安裝頁也新增各套件需求一覽表。
+- **不會被套件更新洗掉的站台選項：** /var/ossec/etc/jt-packs/<套件>.cron.local（「<腳本>: <選項>」、NAME=value）會在工具每次寫入排程時套用，
+  不必再改那個每次更新都會被重寫的檔案。套件視窗的「重寫排程」按鈕可立即套用。
+- **CDB 清單分頁在有大型清單的 manager 上顯示沒有清單**：它向 API 要了每份清單的內容，請求逾時，失敗又被顯示成「沒有清單」。
+  現在只讀檔名，清單與解碼器分頁的 API 失敗也會顯示出來。解碼器會顯示父項，並可開啟包含定義的詳細資訊。
+- 淺色主題的黃色按鈕改為較亮的底色與更深的文字。約 40 個在中文與日文介面仍是英文的字串已翻譯，並新增瀏覽器旅程檢查兩種語言的所有套件視窗。
+
 ## v1.25.1（2026-10-28）
 
 - **jt-alert-digest 1.13.1：以真實 Mattermost 伺服器與各平台公開的格式實測，修正新管道的兩個問題。** Mattermost 的 incoming

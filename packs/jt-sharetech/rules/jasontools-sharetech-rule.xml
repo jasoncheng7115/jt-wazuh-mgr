@@ -1,0 +1,560 @@
+<!--
+  jt-sharetech: rules for ShareTech NU series firewall CEF syslog
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  Kept under the file name and rule IDs (100500-100599) of the original site
+  rules (2025), so installing the pack replaces them in place. An ID keeps its
+  number only where its meaning stayed; rules whose meaning changed were
+  given new IDs and the old ones retired (see the manifest notes).
+
+  Levels follow Wazuh's rule classification: 3 authorised event, 5 user error
+  (failed login), 6 low-relevance attack (what an Internet-facing firewall
+  sees all day), 7-8 attack worth a look, 10 repeated errors or an internal
+  host doing something it should not, 12 high-importance event (possible
+  compromise, success after a brute force). Traffic records are level 0.
+
+  Direction matters more than the signature: the same block is background
+  noise from the Internet and a lead when the source is an internal host.
+  "Internal" means RFC 1918 here.
+-->
+
+<group name="sharetech,firewall,">
+
+  <!-- ============ base ============ -->
+
+  <rule id="100500" level="0">
+    <decoded_as>sharetech-cef</decoded_as>
+    <description>ShareTech: CEF event</description>
+  </rule>
+
+  <rule id="100501" level="0">
+    <decoded_as>sharetech-cef-traffic</decoded_as>
+    <description>ShareTech: traffic record</description>
+    <group>traffic,netflow,</group>
+  </rule>
+
+  <!-- The program name FirewallDefense starts with "Firewalld": the built-in
+       firewalld rule 40900 (^firewalld, case-insensitive, level 0, loaded
+       earlier) takes those records first. This hands them back. -->
+  <rule id="100509" level="0">
+    <if_sid>40900</if_sid>
+    <decoded_as>sharetech-cef</decoded_as>
+    <description>ShareTech: CEF event taken by the built-in firewalld rule</description>
+  </rule>
+
+  <rule id="100506" level="3">
+    <if_sid>100500</if_sid>
+    <field name="event_name" type="pcre2">^(?!(FIREWALL_PROTECT|IPS|WAF_RECORD|ADVANCE_PROTECT|APPLICATION_CONTROLL|VPN|SYSTEM_EVENT_\w+)$)</field>
+    <description>ShareTech: $(event_name) event (no specific rule yet)</description>
+  </rule>
+
+  <!-- ============ event families (children follow, after the injection check) ============ -->
+
+  <rule id="100510" level="6">
+    <if_sid>100500,100509</if_sid>
+    <field name="event_name">^FIREWALL_PROTECT$</field>
+    <description>ShareTech: firewall protection $(attack_type) blocked $(srcip) to $(dstip):$(dstport)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>attack,intrusion_attempt,jt_sharetech_protect,</group>
+  </rule>
+
+  <rule id="100520" level="6">
+    <if_sid>100500</if_sid>
+    <field name="event_name">^IPS$</field>
+    <description>ShareTech IPS: $(signature_category) $(signature) from $(srcip) to $(dstip):$(dstport) [$(action)]</description>
+    <group>ids,intrusion_attempt,jt_sharetech_ips,</group>
+  </rule>
+
+  <rule id="100530" level="6">
+    <if_sid>100500</if_sid>
+    <field name="event_name">^WAF_RECORD$</field>
+    <description>ShareTech WAF: $(attack_category) [$(waf_rule_id)] $(waf_rule_description) from $(srcip) to $(destination_server) [$(waf_action)]</description>
+    <group>web,attack,jt_sharetech_waf,</group>
+  </rule>
+
+  <rule id="100540" level="6">
+    <if_sid>100500</if_sid>
+    <field name="event_name">^ADVANCE_PROTECT$</field>
+    <description>ShareTech: $(anomaly_reason) limit exceeded by $(srcip): $(actual_value) over $(threshold_limit) in $(time_period) s [$(action)]</description>
+    <mitre>
+      <id>T1499</id>
+    </mitre>
+    <group>anomaly,jt_sharetech_anomaly,</group>
+  </rule>
+
+  <rule id="100550" level="0">
+    <if_sid>100500</if_sid>
+    <field name="event_name">^APPLICATION_CONTROLL$</field>
+    <description>ShareTech: application control record</description>
+    <group>application_control,</group>
+  </rule>
+
+  <rule id="100560" level="0">
+    <if_sid>100500</if_sid>
+    <field name="event_name">^SYSTEM_EVENT_</field>
+    <description>ShareTech: system event</description>
+    <group>system_event,</group>
+  </rule>
+
+  <rule id="100570" level="0">
+    <if_sid>100560</if_sid>
+    <field name="event_name">^SYSTEM_EVENT_LOGIN$</field>
+    <description>ShareTech: administrator login record</description>
+    <group>authentication,</group>
+  </rule>
+
+  <rule id="100565" level="0">
+    <if_sid>100560</if_sid>
+    <field name="event_name" type="pcre2">^SYSTEM_EVENT_(?!LOGIN$)</field>
+    <description>ShareTech: configuration change record</description>
+    <group>configuration_change,</group>
+  </rule>
+
+  <rule id="100575" level="0">
+    <if_sid>100500</if_sid>
+    <field name="event_name">^VPN$</field>
+    <description>ShareTech: VPN record</description>
+    <group>vpn,</group>
+  </rule>
+
+  <!-- ============ possible log injection: tried before any other child of each family ============ -->
+
+  <rule id="100505" level="10">
+    <if_sid>100510,100520,100530,100540,100565,100570,100575</if_sid>
+    <field name="duplicate_key">\S</field>
+    <description>ShareTech: $(event_name) record carries the key $(duplicate_key)= twice (possible log injection through a typed value such as the login name); its fields are not trusted</description>
+    <mitre>
+      <id>T1562</id>
+    </mitre>
+    <group>jt_sharetech_injection,</group>
+  </rule>
+
+  <!-- ============ firewall protection ============ -->
+
+  <rule id="100512" level="10">
+    <if_sid>100510</if_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <description>ShareTech: internal host $(srcip) blocked by firewall protection $(attack_type) toward $(dstip):$(dstport) (an internal source contacting a blocked or reputation-listed address can mean an infected host)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>attack,jt_sharetech_protect,</group>
+  </rule>
+
+  <!-- ============ IPS (EventLevel is 20 on every record measured, scans and policy notices included, so the level comes from the signature set) ============ -->
+
+  <rule id="100526" level="0">
+    <if_sid>100520</if_sid>
+    <field name="signature" type="pcre2">(?i)_40[0-9]_(Forbidden|Not_Found|Unauthorized)</field>
+    <description>ShareTech IPS: $(signature) is a server's error response, not an attack (excluded)</description>
+    <group>ids,</group>
+  </rule>
+
+  <rule id="100528" level="12">
+    <if_sid>100520</if_sid>
+    <field name="signature_category" type="pcre2">(?i)^(MALWARE|TROJAN|CNC|BOTCC|ATTACK_RESPONSE|MOBILE_MALWARE|WORM|EXPLOIT_KIT|COINMINING|PHISHING)$</field>
+    <description>ShareTech IPS: $(signature_category) $(signature) between $(srcip) and $(dstip):$(dstport) [$(action)] (signatures of this set match an infected or compromised host)</description>
+    <mitre>
+      <id>T1071</id>
+    </mitre>
+    <group>ids,malware,jt_sharetech_ips,</group>
+  </rule>
+
+  <rule id="100527" level="10">
+    <if_sid>100520</if_sid>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <field name="signature_category" type="pcre2">(?i)^(EXPLOIT|SHELLCODE|SQL|WEB_SERVER|WEB_SPECIFIC_APPS|DOS|SCAN|NETBIOS|RPC|SNMP|TELNET|FTP|SMTP|IMAP|POP3|VOIP|ACTIVEX|WEB_CLIENT|CURRENT_EVENTS)$</field>
+    <description>ShareTech IPS: internal host $(srcip) matched $(signature_category) $(signature) toward $(dstip):$(dstport) [$(action)]</description>
+    <mitre>
+      <id>T1210</id>
+    </mitre>
+    <group>ids,intrusion_attempt,jt_sharetech_ips,</group>
+  </rule>
+
+  <rule id="100524" level="8">
+    <if_sid>100520</if_sid>
+    <field name="cve_id">^CVE-</field>
+    <description>ShareTech IPS: exploit attempt for $(cve_id) ($(signature)) from $(srcip) to $(dstip):$(dstport) [$(action)]</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>ids,intrusion_attempt,exploit,jt_sharetech_ips,</group>
+  </rule>
+
+  <rule id="100525" level="3">
+    <if_sid>100520</if_sid>
+    <field name="signature_category" type="pcre2">(?i)^(POLICY|INFO|HUNTING|GAMES|P2P|CHAT|INAPPROPRIATE|USER_AGENTS|TOR)$</field>
+    <description>ShareTech IPS notice: $(signature_category) $(signature) from $(srcip) to $(dstip):$(dstport)</description>
+    <group>ids,policy_violation,</group>
+  </rule>
+
+  <!-- ============ WAF (waf_action Log means the request was recorded and passed to the server) ============ -->
+
+  <rule id="100531" level="7">
+    <if_sid>100530</if_sid>
+    <field name="attack_category" type="pcre2">(?i)SQL Injection</field>
+    <description>ShareTech WAF: SQL injection [$(waf_rule_id)] $(waf_rule_description) from $(srcip) to $(destination_server) [$(waf_action)]</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>web,sql_injection,attack,jt_sharetech_waf,</group>
+  </rule>
+
+  <rule id="100532" level="7">
+    <if_sid>100530</if_sid>
+    <field name="attack_category" type="pcre2">(?i)XSS|Cross.Site.Scripting</field>
+    <description>ShareTech WAF: cross-site scripting [$(waf_rule_id)] $(waf_rule_description) from $(srcip) to $(destination_server) [$(waf_action)]</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>web,xss,attack,jt_sharetech_waf,</group>
+  </rule>
+
+  <rule id="100533" level="8">
+    <if_sid>100530</if_sid>
+    <field name="attack_category" type="pcre2">(?i)Command Injection</field>
+    <description>ShareTech WAF: command injection [$(waf_rule_id)] $(waf_rule_description) from $(srcip) to $(destination_server) [$(waf_action)]</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059</id>
+    </mitre>
+    <group>web,command_injection,attack,jt_sharetech_waf,jt_sharetech_rce,</group>
+  </rule>
+
+  <rule id="100534" level="8">
+    <if_sid>100530</if_sid>
+    <field name="attack_category" type="pcre2">(?i)Remote Command Execution|Remote Code Execution</field>
+    <description>ShareTech WAF: remote command execution [$(waf_rule_id)] $(waf_rule_description) from $(srcip) to $(destination_server) [$(waf_action)]</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059</id>
+    </mitre>
+    <group>web,command_execution,attack,jt_sharetech_waf,jt_sharetech_rce,</group>
+  </rule>
+
+  <rule id="100535" level="7">
+    <if_sid>100530</if_sid>
+    <field name="attack_category" type="pcre2">(?i)(Local|Remote) File Inclusion</field>
+    <description>ShareTech WAF: file inclusion or restricted file [$(waf_rule_id)] $(waf_rule_description) from $(srcip) to $(destination_server) [$(waf_action)]</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1083</id>
+    </mitre>
+    <group>web,file_inclusion,attack,jt_sharetech_waf,</group>
+  </rule>
+
+  <rule id="100536" level="7">
+    <if_sid>100530</if_sid>
+    <field name="attack_category" type="pcre2">(?i)(Path|Directory) Traversal</field>
+    <description>ShareTech WAF: path traversal [$(waf_rule_id)] $(waf_rule_description) from $(srcip) to $(destination_server) [$(waf_action)]</description>
+    <mitre>
+      <id>T1083</id>
+    </mitre>
+    <group>web,path_traversal,attack,jt_sharetech_waf,</group>
+  </rule>
+
+  <rule id="100537" level="4">
+    <if_sid>100530</if_sid>
+    <field name="attack_category" type="pcre2">(?i)Numeric IP Address</field>
+    <description>ShareTech WAF: request to a numeric IP address instead of a host name from $(srcip) to $(destination_server) (typical of scanners)</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>web,policy_violation,jt_sharetech_waf,</group>
+  </rule>
+
+  <rule id="100538" level="7">
+    <if_sid>100530</if_sid>
+    <field name="attack_category" type="pcre2">(?i)CSRF|Cross.Site.Request</field>
+    <description>ShareTech WAF: cross-site request forgery [$(waf_rule_id)] $(waf_rule_description) from $(srcip) to $(destination_server) [$(waf_action)]</description>
+    <group>web,csrf,attack,jt_sharetech_waf,</group>
+  </rule>
+
+  <rule id="100539" level="8">
+    <if_sid>100530</if_sid>
+    <field name="attack_category" type="pcre2">(?i)File Upload|Upload Attack</field>
+    <description>ShareTech WAF: malicious file upload [$(waf_rule_id)] $(waf_rule_description) from $(srcip) to $(destination_server) [$(waf_action)]</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>web,file_upload,attack,jt_sharetech_waf,jt_sharetech_rce,</group>
+  </rule>
+
+  <rule id="100546" level="10">
+    <if_sid>100533</if_sid>
+    <field name="waf_action" type="pcre2">(?i)^(log|pass|allow|detect|monitor|notify)$</field>
+    <description>ShareTech WAF: $(attack_category) from $(srcip) was only logged and reached $(destination_server): [$(waf_rule_id)] $(waf_rule_description) (the WAF is in detection mode for this rule)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059</id>
+    </mitre>
+    <group>web,attack,jt_sharetech_waf,jt_sharetech_rce,</group>
+  </rule>
+
+  <rule id="100547" level="10">
+    <if_sid>100534</if_sid>
+    <field name="waf_action" type="pcre2">(?i)^(log|pass|allow|detect|monitor|notify)$</field>
+    <description>ShareTech WAF: $(attack_category) from $(srcip) was only logged and reached $(destination_server): [$(waf_rule_id)] $(waf_rule_description) (the WAF is in detection mode for this rule)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059</id>
+    </mitre>
+    <group>web,attack,jt_sharetech_waf,jt_sharetech_rce,</group>
+  </rule>
+
+  <rule id="100548" level="10">
+    <if_sid>100539</if_sid>
+    <field name="waf_action" type="pcre2">(?i)^(log|pass|allow|detect|monitor|notify)$</field>
+    <description>ShareTech WAF: $(attack_category) from $(srcip) was only logged and reached $(destination_server): [$(waf_rule_id)] $(waf_rule_description) (the WAF is in detection mode for this rule)</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059</id>
+    </mitre>
+    <group>web,attack,jt_sharetech_waf,jt_sharetech_rce,</group>
+  </rule>
+
+  <!-- ============ advanced protection ============ -->
+
+  <rule id="100541" level="6">
+    <if_sid>100540</if_sid>
+    <field name="anomaly_reason">^Session$</field>
+    <description>ShareTech: session limit exceeded by $(srcip): $(actual_value) sessions over $(threshold_limit) in $(time_period) s [$(action)]</description>
+    <mitre>
+      <id>T1499</id>
+    </mitre>
+    <group>anomaly,resource_exhaustion,jt_sharetech_anomaly,</group>
+  </rule>
+
+  <!-- ============ application control ============ -->
+
+  <rule id="100551" level="3">
+    <if_sid>100550</if_sid>
+    <action type="pcre2">(?i)^(drop|deny|block|reject)$</action>
+    <description>ShareTech: application control dropped $(application_group) $(application_name) from $(srcip) to $(dstip):$(dstport)</description>
+    <group>application_control,policy_violation,</group>
+  </rule>
+
+  <!-- ============ administrator login ============ -->
+
+  <rule id="100571" level="3">
+    <if_sid>100570</if_sid>
+    <status>^Success$</status>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <description>ShareTech: administrator $(dstuser) logged in from $(srcip)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jt_auth_success,pci_dss_10.2.5,</group>
+  </rule>
+
+  <rule id="100580" level="8">
+    <if_sid>100570</if_sid>
+    <status>^Success$</status>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <description>ShareTech: administrator $(dstuser) logged in from public address $(srcip) (the management interface is reachable from outside)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1133</id>
+    </mitre>
+    <group>jt_auth_success,pci_dss_10.2.5,</group>
+  </rule>
+
+  <rule id="100572" level="5">
+    <if_sid>100570</if_sid>
+    <status>^Fail</status>
+    <description>ShareTech: administrator login failed for $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>authentication_failed,jt_auth_failure,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+  </rule>
+
+  <rule id="100573" level="10" frequency="5" timeframe="300">
+    <if_matched_sid>100572</if_matched_sid>
+    <same_source_ip />
+    <description>ShareTech: 5 failed administrator logins from $(srcip) in 5 minutes (last account: $(dstuser))</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>authentication_failures,brute_force,pci_dss_10.2.4,</group>
+  </rule>
+
+  <rule id="100581" level="12" timeframe="600">
+    <if_sid>100571,100580</if_sid>
+    <if_matched_sid>100573</if_matched_sid>
+    <same_source_ip />
+    <description>ShareTech: administrator $(dstuser) logged in from $(srcip) right after a run of failed logins from it</description>
+    <mitre>
+      <id>T1110.001</id>
+      <id>T1078</id>
+    </mitre>
+    <group>authentication_success,brute_force,</group>
+  </rule>
+
+  <!-- ============ configuration changes ============ -->
+
+  <rule id="100561" level="5">
+    <if_sid>100565</if_sid>
+    <field name="event_name">^SYSTEM_EVENT_IPADDRESS$</field>
+    <description>ShareTech: $(dstuser) from $(srcip): $(action) address object $(object_name) ($(config_path))</description>
+    <group>configuration_change,jt_sharetech_config,</group>
+  </rule>
+
+  <rule id="100562" level="7">
+    <if_sid>100565</if_sid>
+    <field name="event_name">^SYSTEM_EVENT_POLICY$</field>
+    <description>ShareTech: $(dstuser) from $(srcip): $(action) security policy $(object_name) ($(config_path))</description>
+    <mitre>
+      <id>T1562.004</id>
+    </mitre>
+    <group>configuration_change,policy_changed,jt_sharetech_config,</group>
+  </rule>
+
+  <rule id="100563" level="9">
+    <if_sid>100565</if_sid>
+    <field name="event_name">^SYSTEM_EVENT_ADMIN$</field>
+    <description>ShareTech: $(dstuser) from $(srcip): $(action) administrator account $(object_name) ($(config_path))</description>
+    <mitre>
+      <id>T1098</id>
+    </mitre>
+    <group>configuration_change,account_changed,jt_sharetech_config,</group>
+  </rule>
+
+  <rule id="100566" level="5">
+    <if_sid>100565</if_sid>
+    <field name="event_name" type="pcre2">^SYSTEM_EVENT_(?!(IPADDRESS|POLICY|ADMIN)$)</field>
+    <description>ShareTech: $(dstuser) from $(srcip): $(action) $(config_function) $(object_name) ($(event_name), $(config_path))</description>
+    <group>configuration_change,jt_sharetech_config,</group>
+  </rule>
+
+  <rule id="100567" level="10">
+    <if_sid>100565</if_sid>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <description>ShareTech: configuration changed from public address $(srcip) by $(dstuser): $(action) $(config_path) $(object_name)</description>
+    <mitre>
+      <id>T1133</id>
+      <id>T1562.004</id>
+    </mitre>
+    <group>configuration_change,jt_sharetech_config,</group>
+  </rule>
+
+  <rule id="100592" level="6" frequency="5" timeframe="300">
+    <if_matched_group>jt_sharetech_config</if_matched_group>
+    <same_user />
+    <description>ShareTech: $(dstuser) made 5 configuration changes in 5 minutes</description>
+    <group>configuration_change,multiple_changes,</group>
+  </rule>
+
+  <!-- ============ VPN ============ -->
+
+  <rule id="100576" level="3">
+    <if_sid>100575</if_sid>
+    <field name="vpn_event" type="pcre2">(?i)^login$</field>
+    <description>ShareTech: $(vpn_type) VPN login by $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1133</id>
+    </mitre>
+    <group>vpn,jt_auth_success,pci_dss_10.2.5,</group>
+  </rule>
+
+  <rule id="100577" level="5">
+    <if_sid>100575</if_sid>
+    <field name="vpn_event" type="pcre2">(?i)^(refuse|reject|fail)</field>
+    <description>ShareTech: $(vpn_type) VPN login refused for $(dstuser) from $(srcip)</description>
+    <mitre>
+      <id>T1110</id>
+    </mitre>
+    <group>vpn,authentication_failed,jt_auth_failure,pci_dss_10.2.4,pci_dss_10.2.5,</group>
+  </rule>
+
+  <rule id="100578" level="10" frequency="5" timeframe="300">
+    <if_matched_sid>100577</if_matched_sid>
+    <same_source_ip />
+    <description>ShareTech: 5 refused VPN logins from $(srcip) in 5 minutes (last account: $(dstuser))</description>
+    <mitre>
+      <id>T1110.001</id>
+    </mitre>
+    <group>vpn,authentication_failures,brute_force,pci_dss_10.2.4,</group>
+  </rule>
+
+  <rule id="100584" level="10" frequency="8" timeframe="600">
+    <if_matched_sid>100577</if_matched_sid>
+    <same_user />
+    <different_srcip />
+    <description>ShareTech: VPN account $(dstuser) refused 8 times in 10 minutes from changing addresses (distributed password guessing)</description>
+    <mitre>
+      <id>T1110.003</id>
+    </mitre>
+    <group>vpn,authentication_failures,brute_force,</group>
+  </rule>
+
+  <rule id="100582" level="12" timeframe="600">
+    <if_sid>100576</if_sid>
+    <if_matched_sid>100578</if_matched_sid>
+    <same_source_ip />
+    <description>ShareTech: VPN login by $(dstuser) from $(srcip) right after a run of refused logins from it</description>
+    <mitre>
+      <id>T1110.001</id>
+      <id>T1133</id>
+    </mitre>
+    <group>vpn,authentication_success,brute_force,</group>
+  </rule>
+
+  <!-- ============ repetition from one source ============ -->
+
+  <rule id="100590" level="10" frequency="20" timeframe="60">
+    <if_matched_sid>100510</if_matched_sid>
+    <same_source_ip />
+    <description>ShareTech: firewall protection blocked $(srcip) 20 times in a minute (last: $(attack_type) to $(dstip):$(dstport))</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>attack,multiple_attacks,</group>
+  </rule>
+
+  <rule id="100591" level="10" frequency="10" timeframe="60">
+    <if_matched_group>jt_sharetech_ips</if_matched_group>
+    <same_source_ip />
+    <description>ShareTech IPS: 10 events from $(srcip) in a minute (last: $(signature) to $(dstip):$(dstport))</description>
+    <mitre>
+      <id>T1595</id>
+    </mitre>
+    <group>ids,recon,scanning,</group>
+  </rule>
+
+  <rule id="100594" level="12" frequency="5" timeframe="120">
+    <if_matched_group>jt_sharetech_rce</if_matched_group>
+    <same_source_ip />
+    <description>ShareTech WAF: 5 command execution or upload attempts from $(srcip) in 2 minutes (last: [$(waf_rule_id)] $(waf_rule_description) to $(destination_server), $(waf_action))</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1059</id>
+    </mitre>
+    <group>web,command_execution,multiple_attacks,</group>
+  </rule>
+
+  <rule id="100595" level="10" frequency="10" timeframe="300">
+    <if_matched_group>jt_sharetech_waf</if_matched_group>
+    <same_source_ip />
+    <description>ShareTech WAF: 10 events from $(srcip) in 5 minutes (last: $(attack_category) to $(destination_server))</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>web,attack,scanning,</group>
+  </rule>
+
+</group>

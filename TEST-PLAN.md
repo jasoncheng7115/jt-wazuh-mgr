@@ -136,7 +136,7 @@ release-time change.
 ## Layer 4 — browser journeys, automated
 
 ```bash
-tests/e2e/run.sh          # 24 journeys, 126 checks, needs docker
+tests/e2e/run.sh          # 25 journeys, 133 checks, needs docker
 ```
 
 `tests/e2e/mock_api.py` serves the real application against a mocked, stateful
@@ -154,7 +154,8 @@ detail disclosing its scheduled job, logs, statistics, users with no credential
 on screen, inventory search, translation to zh-TW leaving names and addresses
 alone, the language menu (it must open rather than switch, list every language
 under its own name and close on Escape), a pack's setup guide with its
-agent-side files readable in place, security headers on a real response, and a
+agent-side files readable in place, every pack dialog in zh-TW and ja with no
+untranslated interface sentence left (the pack's own data excluded), security headers on a real response, and a
 final check that nothing
 failed quietly — uncaught errors and failed requests both, with an allowance for
 the one documented failure (reading a worker log needs the optional SSH setup)
@@ -356,7 +357,7 @@ Stated plainly, because a test plan that implies more coverage than exists is
 worse than a short one.
 
 - **Browser automation covers the main journeys only.** Layer 4 drives a real
-  browser through 24 journeys; everything in Layer 4b is still checked by hand.
+  browser through 25 journeys; everything in Layer 4b is still checked by hand.
 - **The success paths of destructive routes are not exercised in CI**, for the
   reason given in Layer 1.
 - **No load or concurrency testing.** Behaviour with thousands of agents, or with

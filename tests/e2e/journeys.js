@@ -612,6 +612,107 @@ async function run() {
     check('switching back restores dark', await theme() === 'dark' && await bg() === 'rgb(26, 26, 46)', await bg());
   });
 
+  await journey('J25 the pack dialogs carry no untranslated interface sentence', async () => {
+    // The pack dialogs are built from HTML strings split around <code>, so a
+    // sentence becomes several text nodes and each needs its own dictionary
+    // key. One that is missing shows through as English in the middle of a
+    // translated dialog; the "Agent group" section did for months. Opens every
+    // dialog of every pack and reports any text node with two English words
+    // and no Chinese or Japanese that is not pack-supplied data: every string
+    // the pack's own API responses carry (names, notes, file names, steps,
+    // rule IDs) is taken out first, so a manifest without a _zh field, which
+    // is shown as written, does not count.
+    const sweep = async () => page.evaluate(async () => {
+      const SKIP = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, CODE: 1, PRE: 1, svg: 1, SVG: 1 };
+      const ASIAN = /[぀-ヿ㐀-鿿＀-￯]/;
+      const TWO_WORDS = /[A-Za-z]{2,}[,.;:]?\s+[A-Za-z]{2,}/;
+      const norm = s => String(s).replace(/\s+/g, ' ').trim();
+      const strings = (v, out) => {
+        if (typeof v === 'string') { if (v.trim().length >= 4) out.push(norm(v)); }
+        else if (Array.isArray(v)) v.forEach(x => strings(x, out));
+        else if (v && typeof v === 'object') Object.values(v).forEach(x => strings(x, out));
+        return out;
+      };
+      const settle = () => new Promise(r => setTimeout(r, 30));
+      const leftovers = [];
+      const collect = (where, data) => {
+        const own = strings(data, []).sort((a, b) => b.length - a.length);
+        const root = document.getElementById('modal');
+        const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+        let n;
+        while ((n = w.nextNode())) {
+          let skip = false;
+          for (let p = n.parentNode; p && p !== root; p = p.parentNode) {
+            if (SKIP[p.tagName] || (p.hasAttribute && p.hasAttribute('data-noi18n'))) { skip = true; break; }
+          }
+          let t = norm(n.nodeValue);
+          if (skip || ASIAN.test(t) || !TWO_WORDS.test(t)) continue;
+          for (const s of own) if (t.includes(s)) t = t.split(s).join(' | ');
+          if (TWO_WORDS.test(t)) leftovers.push(where + ': ' + norm(n.nodeValue).slice(0, 90));
+        }
+      };
+      const list = (await api('/packs')).packs || [];
+      for (const p of list) {
+        const d = await api('/packs/' + encodeURIComponent(p.id));
+        const hasAr = ((d.manifest || {}).active_response || []).length > 0;
+        const ar = hasAr ? await api('/packs/' + encodeURIComponent(p.id) + '/active-response') : {};
+        const data = [p, d, ar];
+        await showPackDetail(p.id);
+        if (hasAr) await loadPackAr(p.id);
+        await settle();
+        collect(p.id + ' detail', data);
+        if (hasAr && d.installed) {
+          for (const r of ar.responses || []) {
+            enablePackAr(p.id, r.id);
+            await settle();
+            collect(p.id + ' enable ' + r.id, data);
+          }
+        }
+        if ((d.setup || []).length) {
+          await showPackSetup(p.id);
+          await settle();
+          collect(p.id + ' setup guide', data);
+        }
+        if (d.installed) {
+          const plan = await api('/packs/' + encodeURIComponent(p.id) + '/update');
+          await updatePack(p.id);
+          await settle();
+          collect(p.id + ' update plan', data.concat([plan]));
+        }
+        closeModal();
+      }
+      return { packs: list.length, leftovers };
+    });
+    const groupSentence = async () => {
+      await page.evaluate(async () => { await showPackDetail('jt-container-vuln'); await new Promise(r => setTimeout(r, 30)); });
+      const t = await page.$eval('#modalBody', e => e.innerText);
+      await closeModal();
+      return t;
+    };
+    const setLang = async lang => {
+      await page.evaluate(l => localStorage.setItem('jtwz_lang', l), lang);
+      await page.reload({ waitUntil: 'networkidle2' });
+      await wait(1500);
+      await tab('packs', 1500);
+    };
+
+    // The detector has to see English when there is English to see; without
+    // this an empty result would also come from a detector that matches nothing.
+    await setLang('en');
+    const english = await sweep();
+    check('the sweep finds English sentences on an English page',
+      english.leftovers.some(l => /Creates the agent group/.test(l)), english.leftovers.length + ' found');
+    for (const [lang, expected] of [['zh-TW', '這個 agent 群組'], ['ja', 'エージェントグループ']]) {
+      await setLang(lang);
+      const res = await sweep();
+      check(`${lang}: every pack dialog was opened`, res.packs >= 20, res.packs + ' packs');
+      check(`${lang}: the pack dialogs carry no untranslated interface sentence`,
+        res.leftovers.length === 0, res.leftovers.length + ' -- ' + res.leftovers.slice(0, 6).join(' / '));
+      check(`${lang}: the agent group section is translated`, (await groupSentence()).includes(expected));
+    }
+    await setLang('en');
+  });
+
   await journey('J16 security headers are present on a real response', async () => {
     const resp = await page.goto(BASE + '/login', { waitUntil: 'networkidle2' });
     const h = resp.headers();

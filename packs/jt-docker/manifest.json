@@ -67,29 +67,31 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule and decoder files but does not reload the workers. The pack works on built-in Docker rules (87900-87958, 86000-86006) and needs no list.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則與解碼器檔案，不會重載 worker。套件掛在內建的 Docker 規則（87900-87958、86000-86006）上，不需要任何清單。"
+   "title": "Install the pack and reload the ruleset",
+   "title_zh": "安裝套件並重新載入規則集",
+   "body": "Install from this page, then press Reload Ruleset on the Rules tab so that every cluster node loads the rules and decoders. The pack needs no list.",
+   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」，讓叢集每個節點都載入規則與解碼器。本套件不需要任何清單。",
+   "verify": "On the Rules tab, a search for 132601 finds the rule.",
+   "verify_zh": "在「規則」分頁搜尋 132601 會找到這條規則。"
   },
   {
    "platform": "linux",
    "required": true,
-   "title": "Install the Python docker module on each docker host",
-   "title_zh": "在每台 docker 主機安裝 Python docker 模組",
-   "body": "The docker-listener wodle in the group is a Python 3 script that needs the docker module, which the agent package does not install. Versions as Wazuh documents them for 4.14. Python 3.11 and later (Debian 12, Ubuntu 24.04) refuse a system-wide pip install unless --break-system-packages is given (PEP 668); a distribution package (python3-docker) also works. Without the module the wodle writes \"'docker' module needs to be installed\" to the agent's ossec.log and stops after five attempts; nothing reaches the manager. The wodle runs as root and uses /var/run/docker.sock; rootless Docker is not supported.",
-   "body_zh": "群組裡的 docker-listener wodle 是 Python 3 腳本，需要 docker 模組，agent 套件不會安裝它。版本依 Wazuh 4.14 文件。Python 3.11 以後（Debian 12、Ubuntu 24.04）除非加上 --break-system-packages，否則拒絕在系統層 pip 安裝（PEP 668）；也可以用發行版套件（python3-docker）。沒有這個模組時，wodle 會在 agent 的 ossec.log 寫入「'docker' module needs to be installed」，嘗試五次後停止，manager 收不到任何事件。wodle 以 root 執行並使用 /var/run/docker.sock；不支援 rootless Docker。",
+   "title": "Install the Python docker module on each Docker host",
+   "title_zh": "在每台 Docker 主機安裝 Python docker 模組",
+   "body": "The group's docker-listener wodle needs the Python docker module, which the agent package does not install. Install the versions below (the set Wazuh documents for 4.14), or the distribution package python3-docker. On Python 3.11 and later pip needs --break-system-packages. Without the module nothing reaches the manager; rootless Docker is not supported.",
+   "body_zh": "群組裡的 docker-listener wodle 需要 Python docker 模組，agent 套件不會安裝它。請安裝下面列出的版本（Wazuh 4.14 文件列的組合），或發行版套件 python3-docker。Python 3.11 以後 pip 需要加 --break-system-packages。沒有這個模組時 manager 收不到任何事件；不支援 rootless Docker。",
    "code": "python3 --version\npip3 install docker==7.1.0 urllib3==1.26.20 requests==2.32.2\n# Python 3.11 or later:\npip3 install docker==7.1.0 urllib3==1.26.20 requests==2.32.2 --break-system-packages\n# or: apt install python3-docker",
-   "verify": "python3 -c 'import docker; print(docker.__version__)' prints a version.",
-   "verify_zh": "python3 -c 'import docker; print(docker.__version__)' 會印出版本。"
+   "verify": "python3 -c 'import docker; print(docker.__version__)' prints a version, and after the next step the agent's ossec.log has no \"'docker' module needs to be installed\" line.",
+   "verify_zh": "python3 -c 'import docker; print(docker.__version__)' 會印出版本；完成下一步後，agent 的 ossec.log 不會出現「'docker' module needs to be installed」。"
   },
   {
    "platform": "linux",
    "required": true,
-   "title": "Assign the docker hosts to the docker group",
-   "title_zh": "把 docker 主機加入 docker 群組",
-   "body": "The group starts the docker-listener wodle and monitors /etc/docker, the systemd overrides of docker and containerd, /etc/containerd and /etc/default or /etc/sysconfig docker in real time with diffs. If the agent's own ossec.conf already has a docker-listener block, remove it so only one runs. Registry certificates and keys get no diff, and on these agents no file ending in .key or -key.pem does (a global FIM option). The agent applies a new group configuration after a restart.",
-   "body_zh": "群組會啟動 docker-listener wodle，並即時監控 /etc/docker、docker 與 containerd 的 systemd 覆寫檔、/etc/containerd，以及 /etc/default 或 /etc/sysconfig 的 docker，保留差異。若 agent 自己的 ossec.conf 已有 docker-listener 區塊，請移除，只保留一個。registry 憑證與金鑰不保留差異；在這些 agent 上所有結尾為 .key 或 -key.pem 的檔案都不保留差異（這是全域的 FIM 選項）。agent 重新啟動後才會套用新的群組設定。",
+   "title": "Add the Docker hosts to the docker group",
+   "title_zh": "把 Docker 主機加入 docker 群組",
+   "body": "If the agent's own ossec.conf has a docker-listener block, remove it first so that only one runs. Then, on the manager, run the commands below for each Docker host (<AGENT_ID> is its agent ID). The restart starts the docker-listener wodle and the real-time monitoring of the daemon configuration.",
+   "body_zh": "若 agent 自己的 ossec.conf 已有 docker-listener 區塊，請先移除，只保留一個。接著在 manager 上為每台 Docker 主機執行下面的指令（<AGENT_ID> 是它的 agent ID）。重新啟動後會啟動 docker-listener wodle，並即時監控 daemon 設定。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_groups -a -i <AGENT_ID> -g docker -q\n/var/ossec/bin/agent_control -R -u <AGENT_ID>",
    "verify": "On the docker host: docker exec <container> sh then exit. Expect rule 87908 (level 5). A container's own healthcheck produces rule 132601 (level 1, archives only).",
@@ -98,10 +100,22 @@
   {
    "platform": "linux",
    "required": false,
+   "since": "1.1",
+   "title": "Docker hosts without Internet access",
+   "title_zh": "Docker 主機無法連外時",
+   "body": "The manager needs nothing for this pack; only the Python docker module of the previous steps comes from the Internet. Install python3-docker from your local package mirror, or bring the wheels:\n1. On a connected machine with the same Python version and CPU architecture as the host, download them as below.\n2. Copy the directory to the host and install from it with --no-index.\nFor the posture check's test, use an image already on the host instead of alpine.",
+   "body_zh": "本套件在 manager 端不需要任何下載；只有前面步驟的 Python docker 模組要從網路取得。請從你的本地套件鏡像安裝 python3-docker，或自行帶入 wheel 檔：\n1. 在可連外、且 Python 版本與 CPU 架構和主機相同的機器上，依下面的指令下載。\n2. 把目錄複製到主機，以 --no-index 從該目錄安裝。\n狀態檢查的測試請改用主機上已有的映像，不要用 alpine。",
+   "code": "# on a connected machine with the same Python version and CPU architecture as the host\npip3 download -d docker-wheels docker==7.1.0 urllib3==1.26.20 requests==2.32.2\n# copy docker-wheels/ to the host, then as root (add --break-system-packages on Python 3.11 or later)\npip3 install --no-index --find-links docker-wheels docker==7.1.0 urllib3==1.26.20 requests==2.32.2",
+   "verify": "python3 -c 'import docker; print(docker.__version__)' prints 7.1.0.",
+   "verify_zh": "python3 -c 'import docker; print(docker.__version__)' 會印出 7.1.0。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
    "title": "Make sure the dockerd log reaches the manager",
    "title_zh": "確認 dockerd 記錄有送到 manager",
-   "body": "Rules 132640-132645 read the dockerd and containerd log. A default agent reads it through /var/log/syslog or /var/log/messages, or the journal. A host with neither (journald only, no rsyslog, and an agent configuration without a journald block) sends nothing: add the block below to the agent's ossec.conf, or to the group if every docker host is like that. Do not add it where syslog is already read, or every line arrives twice. A daemon started with log-format json is not decoded by this pack.",
-   "body_zh": "規則 132640-132645 讀取 dockerd 與 containerd 的記錄。預設的 agent 會透過 /var/log/syslog、/var/log/messages 或 journal 讀到。兩者都沒有的主機（只有 journald、沒有 rsyslog，且 agent 設定沒有 journald 區塊）不會送出任何東西：把下面的區塊加進該 agent 的 ossec.conf；若每台 docker 主機都是這樣，也可以加進群組。已經讀取 syslog 的主機不要加，否則每一行會送兩次。以 log-format json 啟動的 daemon，本套件不解碼。",
+   "body": "Rules 132640-132645 read the dockerd and containerd log, which an agent normally gets from /var/log/syslog, /var/log/messages or the journal. Only on a host with journald and no rsyslog, whose agent has no journald block, add the block below to its ossec.conf (or to the group if every Docker host is like that). Where syslog is already read, every line would arrive twice. A daemon started with log-format json is not decoded.",
+   "body_zh": "規則 132640-132645 讀取 dockerd 與 containerd 的記錄，agent 通常從 /var/log/syslog、/var/log/messages 或 journal 取得。只有在主機只有 journald、沒有 rsyslog，且 agent 沒有 journald 區塊時，才把下面的區塊加進它的 ossec.conf（若每台 Docker 主機都是這樣，也可以加進群組）。已經讀取 syslog 的主機加了會讓每一行送兩次。以 log-format json 啟動的 daemon 不會被解碼。",
    "code": "<localfile>\n  <log_format>journald</log_format>\n  <location>journald</location>\n  <filter field=\"_SYSTEMD_UNIT\">^docker.service$|^containerd.service$</filter>\n</localfile>",
    "verify": "systemctl restart docker (a short outage of every container unless live-restore is on), then look for rule 132645 or 86001 from that host. Without a restart: grep dockerd /var/log/syslog on the host.",
    "verify_zh": "systemctl restart docker（除非啟用 live-restore，否則所有容器會短暫中斷），之後應看到該主機的 132645 或 86001。不重啟的話：在主機上 grep dockerd /var/log/syslog。"
@@ -109,10 +123,10 @@
   {
    "platform": "linux",
    "required": false,
-   "title": "Optional: the posture check for privileged containers and host mounts",
-   "title_zh": "選用：檢查特權容器與主機掛載的狀態檢查",
-   "body": "Docker events do not say whether a container is privileged, which host paths it mounts or which capabilities it has. The script reads docker info and docker inspect (read-only) and prints one line per running container for rules 132680-132690; each setting alerts once per agent and container. The group delivers the script to /var/ossec/etc/shared. Copy it to a root-owned place and run it from the agent's own ossec.conf: a wodle command in the group's agent.conf only runs with wazuh_command.remote_commands=1 on the agent, which lets anyone who controls the manager's group files run commands as root there.",
-   "body_zh": "Docker 事件不會說明容器是否為特權模式、掛載了哪些主機路徑或有哪些 capability。這個腳本唯讀地讀取 docker info 與 docker inspect，每個執行中的容器印一行，交給規則 132680-132690；每項設定在每個 agent、每個容器只告警一次。群組會把腳本送到 /var/ossec/etc/shared。請複製到 root 擁有的位置，並由 agent 自己的 ossec.conf 執行：放在群組 agent.conf 的 wodle command 只有在 agent 設了 wazuh_command.remote_commands=1 時才會執行，而那等於讓能控制 manager 群組檔案的人在該主機以 root 執行指令。",
+   "title": "Add the posture check for privileged containers",
+   "title_zh": "加入特權容器與主機掛載的狀態檢查",
+   "body": "Docker events do not show privileged mode, host mounts or capabilities; this read-only script reports them for rules 132680-132690, once per container and setting. The group delivers it to /var/ossec/etc/shared: install it and add the wodle to the agent's own ossec.conf, as below. Do not put the wodle in the group's agent.conf: that needs wazuh_command.remote_commands=1, which lets anyone who controls the manager's group files run commands as root on the host.",
+   "body_zh": "Docker 事件看不出特權模式、主機掛載與 capability；這個唯讀腳本會把它們回報給規則 132680-132690，每個容器的每項設定只告警一次。群組會把它送到 /var/ossec/etc/shared：依下面的指令安裝，並把 wodle 加進 agent 自己的 ossec.conf。不要把 wodle 放在群組的 agent.conf：那需要 wazuh_command.remote_commands=1，等於讓能控制 manager 群組檔案的人在該主機以 root 執行指令。",
    "file": "agent/jt-docker-posture.sh",
    "code": "install -m 0750 -o root -g root /var/ossec/etc/shared/jt-docker-posture.sh /usr/local/sbin/\n# add inside <ossec_config> of /var/ossec/etc/ossec.conf:\n<wodle name=\"command\">\n  <disabled>no</disabled>\n  <tag>jt-docker-posture</tag>\n  <command>/bin/sh /usr/local/sbin/jt-docker-posture.sh</command>\n  <interval>1h</interval>\n  <run_on_start>yes</run_on_start>\n  <timeout>120</timeout>\n  <ignore_output>no</ignore_output>\n</wodle>\nsystemctl restart wazuh-agent",
    "verify": "/bin/sh /usr/local/sbin/jt-docker-posture.sh prints a daemon line and one container line per running container. After the agent restart, a privileged test container (docker run -d --rm --privileged --name jt-posture-test alpine sleep 7200) gives rule 132684 at the next run; remove it with docker rm -f jt-posture-test.",
@@ -121,10 +135,10 @@
   {
    "platform": "manager",
    "required": false,
-   "title": "Optional: quiet a site's own pollers",
-   "title_zh": "選用：讓站台自己的輪詢程式安靜",
-   "body": "A host-side job that runs the same docker exec all day is quieted by 132602 only while the first run is still in analysisd's correlation memory: one level 3 alert per hour on a quiet manager, one every few minutes on a busy one. Give such a job a site rule: a child of 87907 that matches its exact command and container name, at level 0, in a site file (not in this pack, so updates keep it). Keep it exact: a broad pattern at level 0 is tried before every other child of 87907, including the level 12 rules here.",
-   "body_zh": "主機端整天執行同一個 docker exec 的工作，只有在第一次執行仍留在 analysisd 關聯記憶中時才會被 132602 壓下：負載低的 manager 上每小時一筆 level 3，忙碌的 manager 上每幾分鐘一筆。請為這類工作寫站台規則：87907 的子規則，比對它的完整指令與容器名稱，level 0，放在站台自己的檔案（不放在本套件，更新時才會保留）。條件要精確：level 0 的寬鬆樣式會比 87907 底下所有其他子規則先比對，包括這裡的 level 12 規則。",
+   "title": "Quiet a site's own docker exec pollers",
+   "title_zh": "讓站台自己的 docker exec 輪詢安靜下來",
+   "body": "132602 quiets a repeated docker exec only while its first run is still in analysisd's correlation memory, so a job that runs all day still raises level 3 alerts. Give it a site rule as below, in a site rule file (not in this pack, so updates keep it): replace CONTAINER_NAME and EXACT COMMAND, and use a free ID of your own range. Keep it exact: a level 0 child of 87907 is tried before all the others, the level 12 rules included.",
+   "body_zh": "132602 只有在第一次執行仍留在 analysisd 關聯記憶中時，才會壓下重複的 docker exec，所以整天執行的工作仍會產生 level 3 告警。請依下面的範例寫一條站台規則，放在站台自己的規則檔（不放在本套件，更新時才會保留）：替換 CONTAINER_NAME 與 EXACT COMMAND，並使用你自己範圍內未用的 ID。條件要精確：87907 底下 level 0 的子規則會比其他所有子規則先比對，包括這裡的 level 12 規則。",
    "code": "<group name=\"local,docker,\">\n  <rule id=\"100690\" level=\"0\">\n    <if_sid>87907</if_sid>\n    <field name=\"docker.Actor.Attributes.name\">^CONTAINER_NAME$</field>\n    <field name=\"docker.Action\" type=\"pcre2\">^exec_start: EXACT COMMAND$</field>\n    <description>Site: scheduled docker exec</description>\n  </rule>\n</group>"
   }
  ]

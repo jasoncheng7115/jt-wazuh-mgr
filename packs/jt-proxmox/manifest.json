@@ -70,18 +70,20 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+   "title": "Install the pack and reload the ruleset",
+   "title_zh": "安裝套件並重新載入規則集",
+   "body": "1. Install the pack from this page.\n2. On the Rules tab, press Reload Ruleset. It reloads every cluster node; the cluster copies rule files to the workers but does not reload them.",
+   "body_zh": "1. 在本頁安裝套件。\n2. 到「規則」分頁按「重新載入規則集」，所有叢集節點都會重新載入；叢集會把規則檔複製到 worker，但不會替它們重新載入。",
+   "verify": "/var/ossec/bin/wazuh-analysisd -t on the manager prints no error or warning.",
+   "verify_zh": "在 manager 上執行 /var/ossec/bin/wazuh-analysisd -t，沒有任何錯誤或警告。"
   },
   {
    "platform": "linux",
    "required": true,
-   "title": "Assign the Proxmox nodes to the proxmox group",
+   "title": "Add the Proxmox nodes to the proxmox group",
    "title_zh": "把 Proxmox 節點加入 proxmox 群組",
-   "body": "The group collects the REST API access log and the Ceph cluster log, keeping only requests that change something, failed logins, logins from public addresses and Ceph warnings; it watches /var/lib/vz/snippets and stops file integrity events for the HA state files under /etc/pve. The access log is sent under the program name jt-pveproxy (out_format in the group configuration); keep that line, or the API rules and the active response see nothing. Task, HA and corosync messages come from /var/log/syslog, which the agent reads already; on a node that logs only to journald, add a journald localfile to the agent's own configuration.",
-   "body_zh": "群組會收集 REST API 存取記錄與 Ceph 叢集記錄，只保留會改變東西的請求、登入失敗、從公開位址的登入與 Ceph 警告；並監看 /var/lib/vz/snippets，停止 /etc/pve 底下 HA 狀態檔的檔案完整性事件。存取記錄以程式名稱 jt-pveproxy 送出（群組設定裡的 out_format），請保留這一行，否則 API 規則與主動回應都收不到。任務、HA、corosync 訊息來自 /var/log/syslog，agent 本來就有在讀；若節點只寫 journald，請在該 agent 自己的設定加上 journald 的 localfile。",
+   "body": "1. Add each Proxmox VE node to the proxmox group and restart its agent (commands below; <agent_id> is the node's agent ID).\n2. Keep the out_format line in the group configuration: without it the REST API rules and the active response receive nothing.\n3. On a node that logs only to journald (no /var/log/syslog), add a journald localfile to that agent's own ossec.conf, or the task, HA and corosync rules see nothing.",
+   "body_zh": "1. 把每台 Proxmox VE 節點加入 proxmox 群組並重啟它的 agent（指令如下；<agent_id> 是該節點的 agent ID）。\n2. 保留群組設定裡的 out_format 那一行：少了它，REST API 規則與主動回應都收不到記錄。\n3. 若節點只寫 journald（沒有 /var/log/syslog），請在該 agent 自己的 ossec.conf 加上 journald 的 localfile，否則任務、HA 與 corosync 規則都看不到。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g proxmox\n/var/ossec/bin/agent_control -R -u <agent_id>",
    "verify": "Open a node shell from the web interface. Expect rule 131215 (level 5) on the manager.",
@@ -90,20 +92,20 @@
   {
    "platform": "manager",
    "required": false,
-   "title": "Optional: list the accounts that log in for monitoring",
-   "title_zh": "選用：列出用來監控而登入的帳號",
-   "body": "Not needed: routine logins are already recorded below the alert level. Listing an account drops its logins to level 0 instead of 2. One line per account, the user name without its realm, then reload the ruleset. Their failures still alert.",
-   "body_zh": "不是必要的：例行登入本來就記在告警等級以下。列入的帳號登入降為 level 0（原本是 2）。每行一個帳號，寫不含 realm 的使用者名稱，然後重新載入規則集。這些帳號的登入失敗照樣告警。",
-   "code": "echo 'monitoring:service' >> /var/ossec/etc/lists/jt-pve-service-accounts"
+   "title": "Optional: list monitoring accounts",
+   "title_zh": "選用：列出監控用帳號",
+   "body": "Not needed: routine logins already stay below the alert level. A listed account's logins drop from level 2 to level 0; its failed logins still alert.\nAdd one line per account, the user name without its realm (<user> below), then reload the ruleset.",
+   "body_zh": "不是必要的：例行登入本來就在告警等級以下。列入的帳號登入由 level 2 降為 level 0，登入失敗照樣告警。\n每個帳號一行，寫不含 realm 的使用者名稱（下方的 <user>），然後重新載入規則集。",
+   "code": "echo '<user>:service' >> /var/ossec/etc/lists/jt-pve-service-accounts"
   },
   {
    "platform": "linux",
    "required": false,
    "since": "1.2",
-   "title": "Updating from 1.1: bring the proxmox group configuration up to date",
-   "title_zh": "從 1.1 更新：更新 proxmox 群組設定",
-   "body": "1.2 changes the group's agent.conf in three places: successful logins are dropped only when they come from a private address (the rules for logins from public addresses need the others), /var/lib/vz/snippets is watched, and the HA state files under /etc/pve are no longer scanned. If the update reports the group file as modified by the site, merge these by hand. The file integrity part needs an agent restart; nothing else on the node changes.",
-   "body_zh": "1.2 改了群組 agent.conf 的三處：成功登入只在來自私有位址時才丟掉（公開位址的登入規則需要其他的）、監看 /var/lib/vz/snippets、不再掃描 /etc/pve 底下的 HA 狀態檔。若更新結果顯示群組檔案已被站台修改，請手動合併。檔案完整性的部分要重啟 agent；節點上其他東西都不會變。",
+   "title": "Updating from 1.1: update the group configuration",
+   "title_zh": "從 1.1 更新：更新群組設定",
+   "body": "1. If the update reports the proxmox group file as modified by the site, merge the pack's agent.conf (below) into it by hand: 1.2 keeps successful logins from public addresses, watches /var/lib/vz/snippets and skips the HA state files under /etc/pve.\n2. Restart the agents of the Proxmox nodes (command below).",
+   "body_zh": "1. 若更新結果顯示 proxmox 群組檔案已被站台修改，請把套件的 agent.conf（下方）手動合併進去：1.2 會保留來自公開位址的成功登入、監看 /var/lib/vz/snippets，並略過 /etc/pve 底下的 HA 狀態檔。\n2. 重啟 Proxmox 節點的 agent（指令如下）。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_control -R -u <agent_id>",
    "verify": "Create a file in /var/lib/vz/snippets on a node. Expect rule 131293 (level 6).",
@@ -113,10 +115,10 @@
    "platform": "manager",
    "required": false,
    "since": "1.2",
-   "title": "Expect fewer alerts from /etc/pve and Ceph",
+   "title": "Expect fewer /etc/pve and Ceph alerts",
    "title_zh": "/etc/pve 與 Ceph 的告警會變少",
-   "body": "File integrity events from /etc/pve that carry no content change (pmxcfs renumbering inodes, touching times, its status and temporary files) and the guest configuration changes that every backup makes are now recorded below the alert level, and so are Ceph's ten-minute repeats of an ongoing warning. A dashboard filtered on rule 550 for /etc/pve, or on 131251, will show far less. Nothing needs to be done.",
-   "body_zh": "沒有內容變更的 /etc/pve 檔案完整性事件（pmxcfs 重新編號 inode、更新時間、它的狀態檔與暫存檔），以及每次備份造成的 guest 設定變更，現在都記錄在告警等級之下；Ceph 對持續中警告每十分鐘的重複也一樣。以規則 550 篩選 /etc/pve、或以 131251 篩選的儀表板會少很多。不需要做任何事。"
+   "body": "Nothing to do. Since 1.2, /etc/pve changes without new content, the lock line each backup writes into guest configurations and Ceph's ten-minute repeats of an ongoing warning stay below the alert level. Dashboards filtered on rule 550 for /etc/pve, or on rule 131251, will show much less.",
+   "body_zh": "不需要做任何事。1.2 起，沒有內容變更的 /etc/pve 事件、每次備份寫進 guest 設定的鎖定行，以及 Ceph 對持續中警告每十分鐘的重複，都留在告警等級之下。以規則 550 篩選 /etc/pve、或以規則 131251 篩選的儀表板會少很多。"
   }
  ],
  "active_response": [

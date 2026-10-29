@@ -72,18 +72,20 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+   "title": "Install the pack and reload the ruleset",
+   "title_zh": "安裝套件並重新載入規則集",
+   "body": "1. Install the pack from this page.\n2. On the Rules tab, press Reload Ruleset. It reloads every cluster node; the cluster copies rule files to the workers but does not reload them.",
+   "body_zh": "1. 在本頁安裝套件。\n2. 到「規則」分頁按「重新載入規則集」，所有叢集節點都會重新載入；叢集會把規則檔複製到 worker，但不會替它們重新載入。",
+   "verify": "/var/ossec/bin/wazuh-analysisd -t on the manager prints no error or warning.",
+   "verify_zh": "在 manager 上執行 /var/ossec/bin/wazuh-analysisd -t，沒有任何錯誤或警告。"
   },
   {
    "platform": "linux",
    "required": true,
-   "title": "Log successful events in Keycloak",
+   "title": "Make Keycloak log successful events",
    "title_zh": "讓 Keycloak 記錄成功事件",
-   "body": "Keycloak logs failed events at WARN and successful ones (logins, logouts, admin changes) at DEBUG, which the default INFO level drops. Add the variable to the Keycloak container (or pass the option to kc.sh start). Older releases spell it with single underscores: KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL. Takes effect on the next restart of Keycloak: a short sign-in outage.",
-   "body_zh": "Keycloak 以 WARN 記錄失敗事件，成功事件（登入、登出、管理變更）則以 DEBUG 記錄，會被預設的 INFO 等級丟掉。在 Keycloak 容器加上這個環境變數（或在 kc.sh start 加上選項）。較舊的版本寫成單底線：KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL。下次重新啟動 Keycloak 後生效：登入服務會短暫中斷。",
+   "body": "1. Add the variable below to the Keycloak container, or the option to kc.sh start. Older releases spell the variable with single underscores: KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL.\n2. Restart Keycloak (sign-in is down for a moment).\nWithout this, logins and admin changes are logged at DEBUG and only failures reach Wazuh.",
+   "body_zh": "1. 在 Keycloak 容器加上下方的環境變數，或在 kc.sh start 加上選項。較舊的版本變數寫成單底線：KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL。\n2. 重新啟動 Keycloak（登入服務會短暫中斷）。\n沒有這一步，登入與管理變更以 DEBUG 記錄，送到 Wazuh 的只有失敗事件。",
    "code": "# docker compose, service keycloak, environment:\nKC_SPI_EVENTS_LISTENER__JBOSS_LOGGING__SUCCESS_LEVEL: info\n\n# or on the command line\nkc.sh start --spi-events-listener--jboss-logging--success-level=info",
    "verify": "Sign in once, then look for a line with type=\"LOGIN\" in the Keycloak log.",
    "verify_zh": "登入一次，Keycloak 記錄中應出現含 type=\"LOGIN\" 的行。"
@@ -91,10 +93,10 @@
   {
    "platform": "linux",
    "required": true,
-   "title": "Send the container log to the journal with the tag keycloak",
-   "title_zh": "把容器記錄送進 journal，tag 設為 keycloak",
-   "body": "Docker keeps container output in its own json-file log, which the agent does not read. With the journald logging driver each line reaches the journal under the program name given by the tag, and the agent's journald input (default on systemd hosts since Wazuh 4.x) forwards it. docker logs keeps working. Applying it recreates the container: a short sign-in outage. If the host's rsyslog also copies the journal to /var/log/syslog and the agent reads both, every line arrives twice: keep one. Keycloak installed on the host under systemd needs nothing here; its lines carry the program name kc.sh or java.",
-   "body_zh": "Docker 把容器輸出存在自己的 json-file 記錄，agent 不會讀。改用 journald 記錄驅動程式後，每一行都以 tag 指定的程式名稱寫入 journal，再由 agent 的 journald 輸入（Wazuh 4.x 起在 systemd 主機上為預設）轉送。docker logs 仍可使用。套用時會重建容器：登入服務會短暫中斷。若主機的 rsyslog 也把 journal 複製到 /var/log/syslog，而 agent 兩者都讀，每行會收到兩次：只保留一個。直接以 systemd 安裝在主機上的 Keycloak 不需這一步，其記錄的程式名稱為 kc.sh 或 java。",
+   "title": "Send the Keycloak log to the journal",
+   "title_zh": "把 Keycloak 記錄送進 journal",
+   "body": "1. Give the Keycloak service the journald logging driver with tag keycloak (below) and recreate the container (sign-in is down for a moment). docker logs keeps working.\n2. Check that the agent's ossec.conf has the journald localfile shown in the code.\n3. If rsyslog also copies the journal into a file the agent reads, every line arrives twice: read only one of them.\nKeycloak installed on the host under systemd already writes to the journal; it needs only step 2.",
+   "body_zh": "1. 替 Keycloak 服務設定 journald 記錄驅動程式、tag 為 keycloak（如下），並重建容器（登入服務會短暫中斷）。docker logs 仍可使用。\n2. 確認 agent 的 ossec.conf 有程式碼中那段 journald localfile。\n3. 若 rsyslog 也把 journal 複製到 agent 會讀的檔案，每行會收到兩次：只讀其中一個。\n直接以 systemd 安裝在主機上的 Keycloak 本來就寫進 journal，只需做第 2 步。",
    "code": "# docker-compose.yml, service keycloak:\n    logging:\n      driver: journald\n      options:\n        tag: keycloak\n\ndocker compose up -d keycloak\n# the agent must have this in ossec.conf:\n#   <localfile><log_format>journald</log_format><location>journald</location></localfile>",
    "verify": "journalctl -t keycloak -n 5 shows Keycloak lines; a failed login then raises rule 131341 or 131342 (level 5) on the manager.",
    "verify_zh": "journalctl -t keycloak -n 5 可看到 Keycloak 的記錄；之後一次登入失敗，manager 端應出現規則 131341 或 131342（level 5）。"
@@ -102,40 +104,42 @@
   {
    "platform": "linux",
    "required": false,
-   "title": "Make Keycloak record the client address behind a reverse proxy",
-   "title_zh": "位於反向代理之後時，讓 Keycloak 記下用戶端位址",
-   "body": "Keycloak puts the client address in each event only when it trusts the proxy's forwarding header. Without it every event carries the proxy's address, the brute-force rule counts all users as one source, and an active response would block the proxy. Set the header your proxy sends, and let the proxy overwrite (not append to) any header the client sends.",
-   "body_zh": "Keycloak 只有在信任代理送來的轉送標頭時，才會在事件中記下用戶端位址。否則每個事件都是代理的位址，暴力破解規則會把所有使用者算成同一個來源，主動回應則會封鎖代理本身。設定代理實際送出的標頭，並讓代理覆寫（而不是附加）用戶端自帶的標頭。",
-   "code": "KC_PROXY_HEADERS: xforwarded    # X-Forwarded-For; use forwarded for the Forwarded header"
+   "title": "Behind a reverse proxy: log the client address",
+   "title_zh": "位於反向代理之後：記下用戶端位址",
+   "body": "Set KC_PROXY_HEADERS to the header your proxy sends (xforwarded or forwarded), and make the proxy overwrite, not append to, that header. Otherwise every event carries the proxy's address: the brute-force rules count all users as one source and an active response would block the proxy.",
+   "body_zh": "把 KC_PROXY_HEADERS 設為代理實際送出的標頭（xforwarded 或 forwarded），並讓代理覆寫（而不是附加）這個標頭。否則每個事件都是代理的位址：暴力破解規則會把所有使用者算成同一個來源，主動回應則會封鎖代理本身。",
+   "code": "KC_PROXY_HEADERS: xforwarded    # X-Forwarded-For; use forwarded for the Forwarded header",
+   "verify": "After a failed login, the alert (131341 or 131342) shows the client's address in srcip, not the proxy's.",
+   "verify_zh": "一次登入失敗後，告警（131341 或 131342）的 srcip 是用戶端位址，而不是代理的位址。"
   },
   {
    "platform": "linux",
    "required": false,
    "since": "1.2",
-   "title": "Optional: turn on brute-force detection and refresh token revocation in each realm",
-   "title_zh": "選用：在各 realm 開啟暴力破解偵測與 refresh token 撤銷",
-   "body": "Both are off by default. Without brute-force detection Keycloak never locks an account, so the lockout rules (131318, 131319, 131343, 131365) stay silent; the per-address brute-force rule 131360 and the success-after-failures rules work without it. Keycloak's defaults when it is on: 30 failures, waits growing from 1 to 15 minutes, failures forgotten after 12 hours. The downside, which 131365 watches for: anyone who knows a user name can lock that account. Without Revoke Refresh Token a refresh token can be used again and again, so a stolen one is never noticed (131359). With it on, a client that refreshes twice in parallel gets an error, so test the applications first. Both are realm settings (admin console, Realm settings: Security defenses and Tokens); no restart.",
-   "body_zh": "兩者預設都關閉。沒有暴力破解偵測時 Keycloak 從不鎖定帳號，鎖定相關規則（131318、131319、131343、131365）不會觸發；依位址的暴力破解規則 131360 與失敗後登入成功的規則不需要它。開啟後 Keycloak 的預設值：失敗 30 次、等待時間從 1 分鐘逐步增加到 15 分鐘、12 小時後清除失敗次數。缺點（也就是 131365 在看的）：任何知道使用者名稱的人都能鎖住該帳號。沒有 Revoke Refresh Token 時，refresh token 可以一再重複使用，被竊也無從察覺（131359）。開啟後，同時重新整理兩次的 client 會收到錯誤，請先測試應用程式。兩者都是 realm 設定（管理主控台 Realm settings 的 Security defenses 與 Tokens）；不需重新啟動。",
+   "title": "Optional: turn on brute-force detection and token revocation",
+   "title_zh": "選用：開啟暴力破解偵測與 token 撤銷",
+   "body": "Both are realm settings, off by default, and need no restart (admin console or the kcadm commands below; <realm> is the realm name).\n1. Brute-force detection (Realm settings, Security defenses): without it Keycloak never locks an account and the lockout rules 131318, 131319, 131343 and 131365 stay silent. Anyone who knows a user name can then lock that account.\n2. Revoke Refresh Token (Realm settings, Tokens): needed to detect a stolen refresh token (131359). Test your applications first: a client that refreshes twice in parallel gets an error.",
+   "body_zh": "兩者都是 realm 設定，預設關閉，不需重新啟動（在管理主控台設定，或用下方的 kcadm 指令；<realm> 是 realm 名稱）。\n1. 暴力破解偵測（Realm settings 的 Security defenses）：沒有它 Keycloak 從不鎖定帳號，鎖定規則 131318、131319、131343、131365 不會觸發。開啟後，任何知道使用者名稱的人都能鎖住該帳號。\n2. Revoke Refresh Token（Realm settings 的 Tokens）：偵測 refresh token 被竊（131359）需要它。請先測試應用程式：同時重新整理兩次的 client 會收到錯誤。",
    "code": "kcadm.sh update realms/<realm> -s bruteForceProtected=true\nkcadm.sh update realms/<realm> -s revokeRefreshToken=true -s refreshTokenMaxReuse=0",
-   "verify": "kcadm.sh get realms/<realm> --fields bruteForceProtected,revokeRefreshToken",
-   "verify_zh": "kcadm.sh get realms/<realm> --fields bruteForceProtected,revokeRefreshToken"
+   "verify": "kcadm.sh get realms/<realm> --fields bruteForceProtected,revokeRefreshToken prints true for both.",
+   "verify_zh": "kcadm.sh get realms/<realm> --fields bruteForceProtected,revokeRefreshToken 兩者都顯示 true。"
   },
   {
    "platform": "manager",
    "required": false,
-   "title": "Optional: list accounts that sign in for a machine from changing addresses",
-   "title_zh": "選用：列出從不固定位址登入的機器帳號",
-   "body": "Not needed for a quiet pack: a login from a private address alerts only the first time per user and address. List an account here only when it signs in from ever new or public addresses (a cloud monitor). One user name per line, then reload the ruleset. Its first-time and public-address logins stay at level 2; failures and admin console logins still alert.",
-   "body_zh": "不需要它套件也很安靜：從私有位址登入，每個使用者與位址只在第一次告警。只有帳號會從不斷變動或公開的位址登入（例如雲端監控）時才列在這裡。每個使用者名稱一行，加入後重新載入規則集。這些帳號第一次登入與從公開位址登入都維持在 level 2；失敗與管理主控台登入仍會告警。",
-   "code": "echo 'monitoring-probe:service' >> /var/ossec/etc/lists/jt-keycloak-service-accounts"
+   "title": "Optional: list machine accounts with changing addresses",
+   "title_zh": "選用：列出位址不固定的機器帳號",
+   "body": "Not needed: a login from a private address alerts only the first time per user and address. List an account only if it signs in from ever-changing or public addresses (a cloud monitor); its first-time and public-address logins then stay at level 2.\nAdd one user name per line (<user> below), then reload the ruleset.",
+   "body_zh": "不是必要的：從私有位址登入，每個使用者與位址只在第一次告警。只有帳號會從不斷變動或公開的位址登入（例如雲端監控）時才列入；之後它第一次登入與從公開位址登入都維持 level 2。\n每個使用者名稱一行（下方的 <user>），然後重新載入規則集。",
+   "code": "echo '<user>:service' >> /var/ossec/etc/lists/jt-keycloak-service-accounts"
   },
   {
    "platform": "linux",
    "required": false,
    "title": "Alternative: read the Keycloak log file",
    "title_zh": "替代方式：讀取 Keycloak 記錄檔",
-   "body": "For Keycloak on the host with file logging (log=file). Do not combine it with the journal for the same server, or every line arrives twice. The decoded fields are the same, except the log level. Stack trace lines are dropped on the agent.",
-   "body_zh": "適用於在主機上執行並啟用檔案記錄（log=file）的 Keycloak。同一台伺服器不要同時讀 journal，否則每行會收到兩次。解出的欄位相同，只少了記錄等級。stack trace 的各行在 agent 端就丟掉。",
+   "body": "For Keycloak on the host with file logging (log=file): add the localfile below to the agent's ossec.conf and restart the agent. Do not also read the journal for the same server, or every line arrives twice.",
+   "body_zh": "適用於在主機上執行並啟用檔案記錄（log=file）的 Keycloak：把下方的 localfile 加進 agent 的 ossec.conf 並重啟 agent。同一台伺服器不要同時讀 journal，否則每行會收到兩次。",
    "code": "<localfile>\n  <location>/opt/keycloak/data/log/keycloak.log</location>\n  <log_format>syslog</log_format>\n  <ignore type=\"PCRE2\">^\\s+at |^\\s+\\.\\.\\. \\d+ more|^(?:Caused by|Suppressed): </ignore>\n</localfile>"
   },
   {
@@ -143,8 +147,8 @@
    "required": false,
    "title": "Alternative: read the docker json-file log (limited)",
    "title_zh": "替代方式：讀取 docker json-file 記錄（功能有限）",
-   "body": "Only if the logging driver cannot be changed. Wazuh decodes the file as JSON and rules 131330-131339 match the Keycloak line in its log field: failed logins, lockouts, logins, admin console logins, privileged admin changes, uncaught errors and start. Nothing else is decoded, so there is no source address: no per-address brute-force rule, no active response, and the alert shows the line instead of fields. The wildcard reads the log of every container on the host. Docker does not rotate this file unless max-size is set. The detections added in 1.2 (one-time codes, tokens and codes, redirect URIs, enumeration, lockouts of several accounts, vulnerable version) are not available on this path.",
-   "body_zh": "只在無法更改記錄驅動程式時使用。Wazuh 把檔案當作 JSON 解碼，規則 131330-131339 比對 log 欄位中的 Keycloak 記錄行：登入失敗、鎖定、登入、管理主控台登入、高權限管理變更、未處理錯誤與啟動。其他都不解碼，因此沒有來源位址：沒有依位址的暴力破解規則、不能用主動回應，告警中只有原始記錄行而沒有欄位。萬用字元會讀到主機上每個容器的記錄。除非設定 max-size，Docker 不會輪替這個檔案。1.2 版新增的偵測（一次性密碼、token 與授權碼、redirect URI、帳號列舉、多個帳號被鎖定、有弱點的版本）在這個方式下都沒有。",
+   "body": "Only if the logging driver cannot be changed: add the localfile below to the agent's ossec.conf.\nOnly rules 131330-131339 work: there is no source address, so no per-address brute-force rule and no active response, and none of the 1.2 detections. The wildcard reads every container on the host. Set max-size for the containers, because Docker does not rotate this file otherwise.",
+   "body_zh": "只在無法更改記錄驅動程式時使用：把下方的 localfile 加進 agent 的 ossec.conf。\n只有規則 131330-131339 有作用：沒有來源位址，所以沒有依位址的暴力破解規則、不能用主動回應，1.2 版新增的偵測也都沒有。萬用字元會讀到主機上每個容器的記錄。請替容器設定 max-size，否則 Docker 不會輪替這個檔案。",
    "code": "<localfile>\n  <location>/var/lib/docker/containers/*/*-json.log</location>\n  <log_format>json</log_format>\n</localfile>"
   }
  ],

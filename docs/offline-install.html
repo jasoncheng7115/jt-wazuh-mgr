@@ -402,6 +402,39 @@ The wheels in /root/jt-wazuh-mgr-X.Y.Z/wheels do not cover requirements.txt for 
         </div>
       </section>
 
+      <section id="packs">
+        <h2><span class="dot"></span>Rule packs without internet</h2>
+
+        <div class="qa">
+          <p>Installing, updating and removing packs needs no internet: they ship inside the tool and are installed from the <b>Rule packs</b> tab. What may need a connection is what some packs do afterwards. Each such pack has a step <b>"Manager without Internet access"</b> (or one for its hosts) in its deployment guide, with the exact commands.</p>
+          <div class="tbl"><table>
+            <tr><th>Pack</th><th>What needs a connection</th><th>Offline</th></tr>
+            <tr><td><code>jt-ioc</code>, <code>jt-malware-hash</code></td><td>Threat feeds, downloaded by the master</td><td>Run the updater on a connected machine, copy its cache to the master, run it with <code>--skip-download</code>; stop the scheduled download with <code>--reload-if-stale</code>.</td></tr>
+            <tr><td><code>jt-php</code></td><td>php.net release data</td><td>Download the release files elsewhere, copy them to <code>etc/jt-packs/offline/php/</code>, read them with <code>--source file://…</code>.</td></tr>
+            <tr><td><code>jt-runtime-vuln</code></td><td>CISA KEV list; Node.js, Python and OpenVPN release data</td><td>The same with <code>file://</code> options for each source.</td></tr>
+            <tr><td><code>jt-alert-digest</code></td><td>Teams, Slack, Discord, Telegram, LINE</td><td>Mail (internal SMTP relay), Zulip, Mattermost and the generic webhook work on your own network; the cloud channels through <code>https_proxy</code>, or leave them unset.</td></tr>
+            <tr><td><code>jt-web</code></td><td>Only the optional Cloudflare block</td><td>A <code>proxy=</code> setting, or do not switch it on; the nginx block works offline.</td></tr>
+            <tr><td><code>jt-container-vuln</code></td><td>The Trivy image and its databases, on each Docker host</td><td>Copy them to a local registry and point the scanner at it.</td></tr>
+            <tr><td><code>jt-docker</code>, <code>jt-vc-portal</code></td><td>The Python docker library, on the Docker host</td><td>A local package mirror, or <code>pip download</code> on a connected machine.</td></tr>
+            <tr><td><code>jt-portable-detect</code>, <code>jt-linux-integrity</code></td><td>Sysmon (Windows) and auditd (Linux), on the hosts</td><td>Copy Sysmon64.exe over; auditd from a local mirror.</td></tr>
+            <tr><td><code>jt-ucs</code>, <code>jt-synology</code>, <code>jt-jitsi</code></td><td>One package or image on the monitored server</td><td>The local repository, a manual package install, or a local registry.</td></tr>
+            <tr><td>All others</td><td>Nothing</td><td></td></tr>
+          </table></div>
+        </div>
+
+        <div class="qa">
+          <h3>Options that survive pack updates</h3>
+          <p>The tool rewrites <code>/etc/cron.d/jt-&lt;pack&gt;</code> whenever it installs or updates a pack, so do not edit that file. Put site options in <code>/var/ossec/etc/jt-packs/&lt;pack&gt;.cron.local</code> instead (owned by root, not writable by others): a line <code>&lt;script&gt;: &lt;options&gt;</code> adds options to that script, a line <code>NAME=value</code> sets an environment variable. The tool applies it every time it writes the schedule; to apply it now, open the pack on the Rule packs tab and press <b>Rewrite schedule</b>. Workers run a schedule you copied by hand: add the same options there.</p>
+          <pre><code># /var/ossec/etc/jt-packs/jt-ioc.cron.local
+update-threat-ip-list.py: --reload-if-stale
+
+# /var/ossec/etc/jt-packs/jt-alert-digest.cron.local
+https_proxy=http://proxy.example.com:3128
+no_proxy=localhost,127.0.0.1</code></pre>
+          <p>An offline copy never ages by itself: refresh it after each security release, and set <code>stale_hours</code> where the pack offers it, so an overdue import raises an alert.</p>
+        </div>
+      </section>
+
       <section id="notes">
         <h2><span class="dot"></span>What else to know offline</h2>
 
@@ -409,9 +442,7 @@ The wheels in /root/jt-wazuh-mgr-X.Y.Z/wheels do not cover requirements.txt for 
           <h3>What works without internet, and what does not</h3>
           <ul>
             <li><b>Everything that talks to Wazuh</b> works: the tool only uses the manager's own API and files.</li>
-            <li><b>Rule packs</b> install from the catalogue that ships in the release. A few packs include scheduled scripts that
-                fetch data (threat-intelligence lists, vulnerability databases); those parts need outbound access or a local mirror
-                &mdash; read each pack's setup notes before installing it.</li>
+            <li><b>Rule packs</b> install from the catalogue that ships in the release. What some of them do afterwards may need a connection: see <a href="#packs">Rule packs without internet</a>.</li>
             <li>The <b>configuration editor's syntax highlighting</b> is loaded by your <i>browser</i> from cdnjs. Without it the editor
                 still works, just without colours.</li>
           </ul>

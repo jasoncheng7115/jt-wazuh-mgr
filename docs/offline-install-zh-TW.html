@@ -393,6 +393,39 @@ The wheels in /root/jt-wazuh-mgr-X.Y.Z/wheels do not cover requirements.txt for 
         </div>
       </section>
 
+      <section id="packs">
+        <h2><span class="dot"></span>規則套件在離線環境</h2>
+
+        <div class="qa">
+          <p>安裝、更新與移除規則套件都不需要網路：套件就附在工具裡，從<b>「規則套件」</b>分頁安裝。可能需要連線的是部分套件裝好之後要做的事。這些套件的部署說明都有一步<b>「管理端無法連外時」</b>（或針對被監控主機的對應步驟），裡面有確切的指令。</p>
+          <div class="tbl"><table>
+            <tr><th>套件</th><th>需要連線的部分</th><th>離線做法</th></tr>
+            <tr><td><code>jt-ioc</code>、<code>jt-malware-hash</code></td><td>威脅情資來源，由 master 下載</td><td>在可連外的電腦執行更新程式，把快取複製到 master，以 <code>--skip-download</code> 執行；排程改用 <code>--reload-if-stale</code> 停掉下載。</td></tr>
+            <tr><td><code>jt-php</code></td><td>php.net 的發行資料</td><td>在別處下載發行資料檔，複製到 <code>etc/jt-packs/offline/php/</code>，以 <code>--source file://…</code> 讀取。</td></tr>
+            <tr><td><code>jt-runtime-vuln</code></td><td>CISA KEV 清單；Node.js、Python、OpenVPN 發行資料</td><td>同上，每個來源各有 <code>file://</code> 選項。</td></tr>
+            <tr><td><code>jt-alert-digest</code></td><td>Teams、Slack、Discord、Telegram、LINE</td><td>郵件（內部 SMTP 轉送）、Zulip、Mattermost 與通用 webhook 在內網即可；雲端管道經 <code>https_proxy</code>，或不要設定。</td></tr>
+            <tr><td><code>jt-web</code></td><td>只有選用的 Cloudflare 封鎖</td><td>設定 <code>proxy=</code>，或不要啟用；nginx 封鎖離線可用。</td></tr>
+            <tr><td><code>jt-container-vuln</code></td><td>Trivy 映像與弱點資料庫，在每台 Docker 主機上</td><td>複製到內部 registry，讓掃描程式指向它。</td></tr>
+            <tr><td><code>jt-docker</code>、<code>jt-vc-portal</code></td><td>Docker 主機上的 Python docker 函式庫</td><td>內部套件鏡像，或在可連外的電腦 <code>pip download</code>。</td></tr>
+            <tr><td><code>jt-portable-detect</code>、<code>jt-linux-integrity</code></td><td>主機上的 Sysmon（Windows）與 auditd（Linux）</td><td>複製 Sysmon64.exe 過去；auditd 從內部鏡像安裝。</td></tr>
+            <tr><td><code>jt-ucs</code>、<code>jt-synology</code>、<code>jt-jitsi</code></td><td>被監控伺服器上的一個套件或映像</td><td>內部套件庫、手動安裝套件，或內部 registry。</td></tr>
+            <tr><td>其他套件</td><td>不需要</td><td></td></tr>
+          </table></div>
+        </div>
+
+        <div class="qa">
+          <h3>不會被套件更新洗掉的選項</h3>
+          <p>工具每次安裝或更新套件都會重寫 <code>/etc/cron.d/jt-&lt;套件&gt;</code>，所以不要改那個檔。站台的選項改放在 <code>/var/ossec/etc/jt-packs/&lt;套件&gt;.cron.local</code>（root 擁有、其他人不可寫）：<code>&lt;腳本&gt;: &lt;選項&gt;</code> 一行替該腳本加上選項，<code>NAME=value</code> 一行設定環境變數。工具每次寫入排程時都會套用；要立刻生效，在「規則套件」分頁開啟該套件、按<b>「重寫排程」</b>。worker 的排程是手動複製的，請在那裡加上同樣的選項。</p>
+          <pre><code># /var/ossec/etc/jt-packs/jt-ioc.cron.local
+update-threat-ip-list.py: --reload-if-stale
+
+# /var/ossec/etc/jt-packs/jt-alert-digest.cron.local
+https_proxy=http://proxy.example.com:3128
+no_proxy=localhost,127.0.0.1</code></pre>
+          <p>離線副本不會自己變舊：每次安全性版本發布後請更新它；套件有 <code>stale_hours</code> 設定的，請設定它，匯入逾期時才會告警。</p>
+        </div>
+      </section>
+
       <section id="notes">
         <h2><span class="dot"></span>離線環境的其他注意事項</h2>
 
@@ -400,8 +433,7 @@ The wheels in /root/jt-wazuh-mgr-X.Y.Z/wheels do not cover requirements.txt for 
           <h3>沒有網路時，哪些能用、哪些不能</h3>
           <ul>
             <li><b>所有與 Wazuh 互動的功能</b>都能用：這個工具只使用 manager 自己的 API 與檔案。</li>
-            <li><b>規則套件</b>從版本內附的目錄清單安裝。少數套件含有會下載資料的排程腳本（威脅情資清單、弱點資料庫），
-                那部分需要對外連線或內部鏡像 —— 安裝前請先看各套件的部署說明。</li>
+            <li><b>規則套件</b>從版本內附的目錄清單安裝。部分套件裝好之後要做的事可能需要連線，見<a href="#packs">規則套件在離線環境</a>。</li>
             <li><b>設定編輯器的語法上色</b>是由你的<i>瀏覽器</i>從 cdnjs 載入的。取不到時編輯器照常可用，只是沒有顏色。</li>
           </ul>
         </div>

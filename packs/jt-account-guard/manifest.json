@@ -21,7 +21,8 @@
   "What it can see. A failed login is counted as an earlier event only when the rule it ended on is not the target of another rule's if_matched_sid (Wazuh then keeps the event in that rule's own list and skips the group lists). Packs that count their failures with a pack-only group are fully visible: Keycloak, Samba AD and the UCS management console, OPNsense (web interface, services, OpenVPN), Proxmox VE, PMG, jt-ipam, Zimbra and Z-Push. Nextcloud, PBS, Synology, LibreNMS, Odoo and AdGuard still count with if_matched_sid on a failure rule that has several parent paths (where a group would count each event several times); their failures are seen when they happen, not afterwards. A rule with several parent paths is also stored once per path: one jt-ipam audit failure counts twice.",
   "Why it is quiet by default, with no list to fill. Only public source addresses are used for the address-based rules: inside the network one address is often a reverse proxy, a NAT gateway, a vulnerability scanner or a server that checks passwords for others, and the per-pack rules already count internal addresses. Two copies of one login written by two products (Z-Push and Zimbra, a front end and its directory) share the account name and are not counted as spraying. A successful login alone is never an alert here. Measured on this project's site over eight days of alerts from both cluster nodes (10,938 failed logins: 7,394 from private addresses, 3,544 without an address, none from a public one; 12 successful logins from public addresses): the rules would have raised nothing. Counted the same way, private sources would have raised 5,163 alerts, almost all from one internal host trying SSH on many servers.",
   "What it deliberately does not do. Accounts are joined by exact name, so alice, alice@example.com and EXAMPLE\\alice are three accounts; mapping them would need site data. Internal sources are left to the per-pack rules. A phone with an old password keeps failing from one address; 132703 needs failures from other addresses on another service as well. A login followed by an administrator login or a credential change elsewhere (lateral account takeover) is not attempted: the packs mark administrator logins and credential changes with groups of their own, not with one shared group. No active response: a sprayed address is better blocked by each service's own lockout or by fail2ban, and two of the rules key on successful logins, which must never block the owner.",
-  "1.1: internal addresses trying logins on many hosts (132710-132720). The rules above ignore internal sources; these count them across hosts, because a compromised machine guessing passwords on its neighbours stays under every per-host brute-force rule (on one network a misconfigured tool made 8,856 failed SSH logins on 7 servers in a week, at most 6 per server in two minutes, and nothing above level 5 was raised). Ten failures on other hosts within 10 minutes is level 11, thirty level 12, a successful login from that address afterwards level 13. SSH, PAM and pack-tagged failures are counted, and Windows logon failures through the authentication_failed group so that the built-in 60204 and 40111 keep working; on a cluster each manager counts the agents connected to it. Addresses that relay other people's logins go in etc/lists/jt-account-guard-internal-ignore (ships with a documentation address only)."
+  "1.1: internal addresses trying logins on many hosts (132710-132720). The rules above ignore internal sources; these count them across hosts, because a compromised machine guessing passwords on its neighbours stays under every per-host brute-force rule (on one network a misconfigured tool made 8,856 failed SSH logins on 7 servers in a week, at most 6 per server in two minutes, and nothing above level 5 was raised). Ten failures on other hosts within 10 minutes is level 11, thirty level 12, a successful login from that address afterwards level 13. SSH, PAM and pack-tagged failures are counted, and Windows logon failures through the authentication_failed group so that the built-in 60204 and 40111 keep working; on a cluster each manager counts the agents connected to it. Addresses that relay other people's logins go in etc/lists/jt-account-guard-internal-ignore (ships with a documentation address only).",
+  "List keys. etc/lists/jt-account-guard-internal-ignore is looked up with not_address_match_key, which finds an address or an octet-boundary prefix (198.51.100. for a /24, 198.51. for a /16); a key written as a CIDR (198.51.100.0/24) is never found."
  ],
  "notes_zh": [
   "偵測內容。其他 jt- 套件各自只看一個產品，本套件把所有套件的登入事件串起來。132701（等級 10）：同一個公開位址 10 分鐘內在一個以上的服務或主機登入失敗至少三次，而且帳號名稱與最後一次不同（把密碼噴灑分散到多個服務，讓每個服務都數不到門檻）。132702（等級 12）：同樣情形達六次。132704（等級 13）：132701 或 132702 在 30 分鐘內報過的位址，在任何服務登入成功。132703（等級 10）：同一個帳號名稱 15 分鐘內在一個以上的服務失敗五次，來源位址與最後一次不同（分散式猜密碼）。132705（等級 12）：某個服務鎖定了帳號，同一個帳號隨後從另一個公開位址在別的服務登入成功。132706（等級 12）：某個服務剛鎖定的位址，在別的服務登入成功。",
@@ -30,7 +31,8 @@
   "看得到什麼。登入失敗只有在它最後落在的規則不是其他規則 if_matched_sid 的目標時，才會被當成「之前的事件」計算（否則 Wazuh 只把事件放進那條規則自己的清單，跳過群組清單）。以套件專屬群組計算失敗的套件完全看得到：Keycloak、Samba AD 與 UCS 管理主控台、OPNsense（網頁介面、服務、OpenVPN）、Proxmox VE、PMG、jt-ipam、Zimbra 與 Z-Push。Nextcloud、PBS、Synology、LibreNMS、Odoo 與 AdGuard 的失敗規則有多條父規則路徑（改用群組會讓每筆事件被算好幾次），仍以 if_matched_sid 計算；它們的失敗在發生當下看得到，之後就看不到。有多條父規則路徑的規則也會依路徑各存一份：一筆 jt-ipam 稽核失敗會算兩次。",
   "為什麼預設安靜、也不需要填清單。以位址為準的規則只看公開來源位址：內部網路裡一個位址常常是反向代理、NAT 閘道、弱點掃描器或替別人驗證密碼的伺服器，而各套件已經會依內部位址計算失敗。兩個產品對同一次登入各記一份（Z-Push 與 Zimbra、前端與它的目錄服務）時帳號相同，不會被算成噴灑。單純的登入成功在這裡從不告警。以本專案站台兩個叢集節點八天的告警量測（10,938 筆登入失敗：7,394 筆來自私有位址、3,544 筆沒有位址、沒有任何一筆來自公開位址；12 筆來自公開位址的成功登入）：這些規則一筆都不會產生。若同樣計算私有來源，會產生 5,163 筆，幾乎全部來自一台在許多伺服器嘗試 SSH 的內部主機。",
   "刻意不做的事。帳號以完全相同的名稱比對，所以 alice、alice@example.com 與 EXAMPLE\\alice 是三個帳號；要對應它們需要站台資料。內部來源交給各套件的規則。用舊密碼的手機會一直從同一個位址失敗；132703 還需要其他位址在另一個服務的失敗。登入後在別處進行管理員登入或變更憑證（橫向帳號接管）沒有實作：各套件用各自的群組標示管理員登入與憑證變更，沒有共用的群組。沒有主動回應：被噴灑的位址交給各服務自己的鎖定或 fail2ban 封鎖比較好，而且其中兩條規則以成功登入為準，絕不能因此封鎖帳號本人。",
-  "1.1：內部位址在多台主機上試登入（132710-132720）。上面的規則刻意忽略內部來源；這些規則跨主機累計，因為被入侵的機器對鄰近主機猜密碼時，每一台都不會超過單機的暴力破解門檻（在某個網路上，一個設定錯誤的工具一週對 7 台伺服器失敗 8,856 次，每台兩分鐘內最多 6 次，從未出現高於 level 5 的告警）。10 分鐘內在其他主機失敗 10 次是 level 11、30 次 level 12，之後從該位址成功登入是 level 13。計入 SSH、PAM 與各套件標記的失敗；Windows 登入失敗經 authentication_failed 群組計數，讓內建 60204 與 40111 仍然有效；叢集上每台 manager 各自計算連到它的 agent。替別人轉送登入的位址列在 etc/lists/jt-account-guard-internal-ignore（出廠只有一個文件用位址）。"
+  "1.1：內部位址在多台主機上試登入（132710-132720）。上面的規則刻意忽略內部來源；這些規則跨主機累計，因為被入侵的機器對鄰近主機猜密碼時，每一台都不會超過單機的暴力破解門檻（在某個網路上，一個設定錯誤的工具一週對 7 台伺服器失敗 8,856 次，每台兩分鐘內最多 6 次，從未出現高於 level 5 的告警）。10 分鐘內在其他主機失敗 10 次是 level 11、30 次 level 12，之後從該位址成功登入是 level 13。計入 SSH、PAM 與各套件標記的失敗；Windows 登入失敗經 authentication_failed 群組計數，讓內建 60204 與 40111 仍然有效；叢集上每台 manager 各自計算連到它的 agent。替別人轉送登入的位址列在 etc/lists/jt-account-guard-internal-ignore（出廠只有一個文件用位址）。",
+  "清單鍵值。etc/lists/jt-account-guard-internal-ignore 以 not_address_match_key 查詢，只認得完整位址或以八位元組為界的前綴（/24 寫成 198.51.100.、/16 寫成 198.51.）；寫成 CIDR（198.51.100.0/24）的鍵永遠找不到。"
  ],
  "files": [
   {
@@ -52,37 +54,42 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers. The pack has no decoder, list or agent group.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔，不會重載 worker。本套件沒有解碼器、清單或 agent 群組。"
+   "title": "Install and reload the ruleset on every node",
+   "title_zh": "安裝並在所有節點重新載入規則集",
+   "body": "1. Install from this page.\n2. On the Rules tab press Reload ruleset. The cluster copies rule files to the workers but does not reload them.",
+   "body_zh": "1. 在本頁安裝。\n2. 到「規則」分頁按「重新載入規則集」。叢集會把規則檔複製到 worker，但不會替它們重載。",
+   "verify": "On every node, /var/ossec/bin/wazuh-analysisd -t prints no WARNING line.",
+   "verify_zh": "在每個節點上，/var/ossec/bin/wazuh-analysisd -t 不印出任何 WARNING。"
   },
   {
    "platform": "manager",
    "required": true,
-   "title": "Install or update the packs whose logins it joins",
-   "title_zh": "安裝或更新它要串接的套件",
-   "body": "The rules hang under the login rules of the other jt- packs, through the groups jt_auth_success, jt_auth_failure and jt_auth_lockout. Update the installed packs to the release that carries them (for example jt-keycloak 1.2.1, jt-ucs 1.2.1, jt-opnsense 1.2.1, jt-nextcloud 1.2.1, jt-zimbra 3.3, jt-zpush 1.3) and reload the ruleset afterwards. A pack installed or updated after this one is picked up at the next reload: rules are attached when the ruleset loads, in file name order.",
-   "body_zh": "規則透過 jt_auth_success、jt_auth_failure、jt_auth_lockout 三個群組掛在其他 jt- 套件的登入規則底下。把已安裝的套件更新到帶有這些群組的版本（例如 jt-keycloak 1.2.1、jt-ucs 1.2.1、jt-opnsense 1.2.1、jt-nextcloud 1.2.1、jt-zimbra 3.3、jt-zpush 1.3），之後重新載入規則集。在本套件之後安裝或更新的套件，下次重新載入時就會納入：規則在載入規則集時依檔名順序掛上。",
+   "title": "Update the packs whose logins it joins",
+   "title_zh": "更新它要串接的套件",
+   "body": "Install or update the other jt- packs to a release that tags its logins with jt_auth_success, jt_auth_failure and jt_auth_lockout (for example jt-keycloak 1.2.1, jt-ucs 1.2.1, jt-opnsense 1.2.1, jt-nextcloud 1.2.1, jt-zimbra 3.3, jt-zpush 1.3). Reload the ruleset after every pack install or update: the rules attach when the ruleset loads.",
+   "body_zh": "把其他 jt- 套件安裝或更新到登入規則帶有 jt_auth_success、jt_auth_failure、jt_auth_lockout 群組的版本（例如 jt-keycloak 1.2.1、jt-ucs 1.2.1、jt-opnsense 1.2.1、jt-nextcloud 1.2.1、jt-zimbra 3.3、jt-zpush 1.3）。每次安裝或更新套件後都要重新載入規則集：規則是在載入規則集時掛上的。",
    "verify": "In the Rules tab, the hierarchy for 132701 shows it under the failed-login rules of the installed packs (for example 131341 of jt-keycloak).",
    "verify_zh": "在「規則」分頁的階層檢視中，132701 會出現在已安裝套件的登入失敗規則底下（例如 jt-keycloak 的 131341）。"
   },
   {
    "platform": "manager",
    "required": false,
-   "title": "Make the client address reach the packs",
-   "title_zh": "讓用戶端位址傳到各套件",
-   "body": "The address rules are only as good as srcip. Behind a reverse proxy, configure each product to log the forwarded client address (Nextcloud trusted_proxies, Keycloak proxy headers, Zimbra zimbraMailTrustedIP, Odoo proxy_mode); otherwise every login of that product carries the proxy's internal address and is left out. Never trust a forwarded header from addresses other than your own proxy: a client could then choose the address it is logged under.",
-   "body_zh": "以位址為準的規則只會和 srcip 一樣可靠。在反向代理後面，請讓每個產品記錄轉送過來的用戶端位址（Nextcloud 的 trusted_proxies、Keycloak 的 proxy 標頭設定、Zimbra 的 zimbraMailTrustedIP、Odoo 的 proxy_mode）；否則該產品的每一次登入都帶著代理的內部位址而被略過。不要信任來自自家代理以外位址的轉送標頭：那樣用戶端就能自己決定被記錄成哪個位址。"
+   "title": "Log the real client address in each product",
+   "title_zh": "讓各產品記錄真正的用戶端位址",
+   "body": "Behind a reverse proxy, set each product to log the forwarded client address (Nextcloud trusted_proxies, Keycloak proxy headers, Zimbra zimbraMailTrustedIP, Odoo proxy_mode). Otherwise its logins carry the proxy's internal address and are left out. Trust forwarded headers only from your own proxy, or a client can choose the address it is logged under.",
+   "body_zh": "在反向代理後面，請讓每個產品記錄轉送過來的用戶端位址（Nextcloud 的 trusted_proxies、Keycloak 的 proxy 標頭設定、Zimbra 的 zimbraMailTrustedIP、Odoo 的 proxy_mode）。否則該產品的登入都帶著代理的內部位址而被略過。只信任來自自家代理的轉送標頭，否則用戶端可以自己決定被記錄成哪個位址。"
   },
   {
    "platform": "manager",
    "required": false,
    "since": "1.1",
-   "title": "List the internal addresses that relay other people's logins",
+   "title": "List internal addresses that relay others' logins",
    "title_zh": "列出替別人轉送登入的內部位址",
-   "body": "A reverse proxy, a NAT gateway or a server that checks passwords against the directory shows up as the source of other people's failed logins and would look like one machine guessing on many hosts. Put such addresses in etc/lists/jt-account-guard-internal-ignore, one per line as address: or network: (for example 10.0.5.3: or 10.0.5.0/24:), declare the list on every node and reload the ruleset. Before enabling the blocking response, also add the manager, gateways, DNS servers, jump hosts and administrators' machines to <white_list> in ossec.conf: active responses never block those.",
-   "body_zh": "反向代理、NAT 閘道，或把密碼送到目錄服務檢查的伺服器，會成為別人登入失敗的來源，看起來像一台機器在多台主機上猜密碼。把這類位址列在 etc/lists/jt-account-guard-internal-ignore，一行一個，寫成 位址: 或 網段:（例如 10.0.5.3: 或 10.0.5.0/24:），在每個節點宣告清單並重新載入規則集。啟用封鎖之前，也把 manager、閘道、DNS、跳板機與管理者的電腦加進 ossec.conf 的 <white_list>：主動回應不會封鎖這些位址。"
+   "body": "1. Add each reverse proxy, NAT gateway or server that checks passwords for others to etc/lists/jt-account-guard-internal-ignore, one per line: an address as 192.0.2.10: or a whole /24 as 198.51.100.: (a key written as a CIDR never matches).\n2. Reload the ruleset. On a node the install could not reach, first add the <list> line inside <ruleset> of ossec.conf.\n3. Before enabling a blocking response, add the manager, gateways, DNS servers, jump hosts and administrators' machines to <white_list> in ossec.conf.",
+   "body_zh": "1. 把每台反向代理、NAT 閘道，或替別人檢查密碼的伺服器加進 etc/lists/jt-account-guard-internal-ignore，一行一個：單一位址寫成 192.0.2.10:，整個 /24 寫成 198.51.100.:（寫成 CIDR 的鍵永遠比對不到）。\n2. 重新載入規則集。安裝時連不到的節點，先在 ossec.conf 的 <ruleset> 內加上 <list> 這一行。\n3. 啟用封鎖之前，把 manager、閘道、DNS、跳板機與管理者的電腦加進 ossec.conf 的 <white_list>。",
+   "verify": "After the reload, wazuh-analysisd -t prints no warning 7616 (a list that is not declared).",
+   "verify_zh": "重新載入後，wazuh-analysisd -t 不出現警告 7616（清單未宣告）。",
+   "code": "echo '192.0.2.10:' >> /var/ossec/etc/lists/jt-account-guard-internal-ignore\n<list>etc/lists/jt-account-guard-internal-ignore</list>"
   }
  ],
  "active_response": [

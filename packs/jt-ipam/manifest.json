@@ -66,20 +66,22 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+   "title": "Install the pack and reload the ruleset",
+   "title_zh": "安裝套件並重新載入規則集",
+   "body": "1. Install from this page.\n2. On the Rules tab, click Reload Ruleset. The cluster copies rule files but does not reload the workers.",
+   "body_zh": "1. 在本頁安裝。\n2. 到「規則」分頁按「重新載入規則集」。叢集只同步規則檔，不會重載 worker。",
+   "verify": "The reload reports success with no warning for any node.",
+   "verify_zh": "重新載入回報成功，任何節點都沒有警告。"
   },
   {
    "platform": "linux",
    "required": true,
-   "title": "Check that the agent on the jt-ipam host reads the journal",
-   "title_zh": "確認 jt-ipam 主機上的 agent 有讀 journal",
-   "body": "jt-ipam writes its service messages to the systemd journal (jt-ipam-backend, jt-ipam-sync, jt-ipam-backup). Agents installed on Ubuntu 24.04 or Debian 12 read journald by default; older installations read /var/log/syslog, where rsyslog copies the same lines. If the agent's ossec.conf has either, nothing changes. If it has neither, add the journald block below to that agent's own ossec.conf and restart the agent. Do not add it where /var/log/syslog is already read, or every line arrives twice.",
-   "body_zh": "jt-ipam 把服務訊息寫入 systemd journal（jt-ipam-backend、jt-ipam-sync、jt-ipam-backup）。Ubuntu 24.04、Debian 12 上安裝的 agent 預設就讀 journald；較舊的安裝讀 /var/log/syslog，rsyslog 會把同樣的內容複製過去。agent 的 ossec.conf 有其中之一就不必改。兩者都沒有時，把下面的 journald 區塊加進該 agent 自己的 ossec.conf 並重啟 agent。已經在讀 /var/log/syslog 的主機不要再加，否則每一行都會收到兩次。",
+   "title": "Make sure the agent reads the journal",
+   "title_zh": "確認 agent 有讀 journal",
+   "body": "jt-ipam writes its service messages to the systemd journal. On the jt-ipam host, run grep -n 'journald\\|/var/log/syslog' /var/ossec/etc/ossec.conf:\n1. Either one is there: nothing to do.\n2. Neither: add the journald block below inside <ossec_config>, then restart the agent.\nDo not add journald where /var/log/syslog is already read, or every line arrives twice.",
+   "body_zh": "jt-ipam 把服務訊息寫入 systemd journal。在 jt-ipam 主機上執行 grep -n 'journald\\|/var/log/syslog' /var/ossec/etc/ossec.conf：\n1. 有其中之一：不必做任何事。\n2. 兩者都沒有：把下面的 journald 區塊加到 <ossec_config> 內，再重新啟動 agent。\n已經在讀 /var/log/syslog 的主機不要再加 journald，否則每一行都會收到兩次。",
    "code": "<localfile>\n  <log_format>journald</log_format>\n  <location>journald</location>\n</localfile>",
-   "verify": "Fail a login to jt-ipam on purpose. Expect rule 131602 (level 3) with your address on the manager.",
+   "verify": "Fail a login to jt-ipam on purpose. Rule 131602 (level 3) appears on the manager with your address.",
    "verify_zh": "故意在 jt-ipam 登入失敗一次，manager 端應出現規則 131602（level 3），帶你的位址。"
   },
   {
@@ -87,35 +89,35 @@
    "required": false,
    "title": "Relay the audit trail into a file",
    "title_zh": "把稽核軌跡轉寫成檔案",
-   "body": "jt-ipam sends its audit trail to one destination only, as GELF over UDP or TCP. Point it at a local rsyslog listener that writes each message as a syslog line (program jt-ipam-audit) to /var/log/jt-ipam-audit.log and, if a collector such as Graylog received the trail before, passes every message on to it unchanged (the commented omfwd line). Run the commands below as root on the jt-ipam host: rsyslog restarts once, for a few seconds, while the journal keeps buffering; jt-ipam does not restart. Then in jt-ipam, Administration, Audit forwarding: host 127.0.0.1, port 5515, protocol UDP, format GELF. The syslog and CEF formats are not used here because they leave out the record's details (account name, reason, remote host). Without this step the pack still works from the journal, without account names, roles, permissions, tokens, secrets or sessions.",
-   "body_zh": "jt-ipam 只能把稽核軌跡送到一個目的地，格式為 GELF（UDP 或 TCP）。請把它指向本機的 rsyslog 監聽埠，由 rsyslog 把每則訊息以 syslog 格式（程式名稱 jt-ipam-audit）寫進 /var/log/jt-ipam-audit.log；若原本有 Graylog 之類的收集端在收，也原封不動轉給它（取消 omfwd 那行的註解）。以 root 在 jt-ipam 主機上執行下列指令：rsyslog 會重啟一次，約數秒，期間 journal 會繼續暫存；jt-ipam 不會重啟。接著在 jt-ipam 的「管理 → 稽核轉送」設定：主機 127.0.0.1、埠 5515、協定 UDP、格式 GELF。不用 syslog 與 CEF 格式，因為它們不含記錄的細節（帳號名稱、原因、遠端主機）。不做這一步，套件仍可從 journal 運作，但沒有帳號名稱、角色、權限、token、機密與工作階段。",
+   "body": "Without this, the pack works from the journal only: no account names, roles, permissions, tokens, secrets or sessions.\n1. jt-ipam sends its audit trail to one destination only. If a GELF collector received it before, uncomment the omfwd line in the commands below and fill in <collector> and <gelf udp port>, so it keeps receiving everything.\n2. Run the commands as root on the jt-ipam host. rsyslog restarts for a few seconds; jt-ipam does not restart.\n3. In jt-ipam, Administration → Audit forwarding: host 127.0.0.1, port 5515, protocol UDP, format GELF (not syslog or CEF: they leave out account names and remote hosts).",
+   "body_zh": "不做這一步，套件只能從 journal 運作：沒有帳號名稱、角色、權限、token、機密與工作階段。\n1. jt-ipam 只能把稽核軌跡送到一個目的地。若原本有 GELF 收集端在收，請在下列指令中取消 omfwd 那行的註解，填入 <collector> 與 <gelf udp port>，讓它繼續收到所有內容。\n2. 以 root 在 jt-ipam 主機上執行這些指令。rsyslog 會重啟約數秒；jt-ipam 不會重啟。\n3. 在 jt-ipam 的「管理 → 稽核轉送」設定：主機 127.0.0.1、埠 5515、協定 UDP、格式 GELF（不要用 syslog 或 CEF：它們不含帳號名稱與遠端主機）。",
    "code": "cat > /etc/rsyslog.d/30-jt-ipam-audit.conf <<'EOF'\n# jt-ipam audit trail: GELF over UDP from 127.0.0.1, written as syslog lines\nmodule(load=\"imudp\")    # delete this line if imudp is already loaded\ntemplate(name=\"jtipam_line\" type=\"string\"\n         string=\"%timegenerated% %$myhostname% jt-ipam-audit: %rawmsg%\\n\")\ntemplate(name=\"jtipam_gelf\" type=\"string\" string=\"%rawmsg%\")\nruleset(name=\"jtipam_audit\") {\n  action(type=\"omfile\" file=\"/var/log/jt-ipam-audit.log\" template=\"jtipam_line\" fileCreateMode=\"0640\")\n  # Keep feeding a GELF collector that received the trail before (optional):\n  # action(type=\"omfwd\" target=\"<collector>\" port=\"<gelf udp port>\" protocol=\"udp\" template=\"jtipam_gelf\")\n  stop\n}\ninput(type=\"imudp\" address=\"127.0.0.1\" port=\"5515\" ruleset=\"jtipam_audit\")\nEOF\ncat > /etc/logrotate.d/jt-ipam-audit <<'EOF'\n/var/log/jt-ipam-audit.log {\n  daily\n  rotate 14\n  compress\n  delaycompress\n  missingok\n  notifempty\n  postrotate\n    systemctl kill -s HUP rsyslog.service\n  endscript\n}\nEOF\nrsyslogd -N1 && systemctl restart rsyslog",
-   "verify": "Use Test on the Audit forwarding card, then run tail -1 /var/log/jt-ipam-audit.log: a line ending in a JSON object that starts with {\"version\": \"1.1\".",
-   "verify_zh": "在「稽核轉送」卡片按「測試」，再執行 tail -1 /var/log/jt-ipam-audit.log：應看到一行，結尾是以 {\"version\": \"1.1\" 開頭的 JSON。"
+   "verify": "Click Test on the Audit forwarding card, then run tail -1 /var/log/jt-ipam-audit.log: the line ends in a JSON object that starts with {\"version\": \"1.1\".",
+   "verify_zh": "在「稽核轉送」卡片按「測試」，再執行 tail -1 /var/log/jt-ipam-audit.log：該行結尾是以 {\"version\": \"1.1\" 開頭的 JSON。"
   },
   {
    "platform": "linux",
    "required": false,
-   "title": "Assign the jt-ipam host to the jt-ipam group",
+   "title": "Add the jt-ipam host to the jt-ipam group",
    "title_zh": "把 jt-ipam 主機加入 jt-ipam 群組",
-   "body": "The group makes the agent read /var/log/jt-ipam-audit.log and, from 1.2, PostgreSQL's log (next step). Do this after the relay above exists, then restart the agent so it opens the files.",
-   "body_zh": "群組會讓 agent 讀取 /var/log/jt-ipam-audit.log，1.2 起也讀 PostgreSQL 的記錄（見下一步）。請在上一步的轉寫設定好之後再做，並重啟 agent，讓它開啟這些檔案。",
+   "body": "Do this after the relay above, so that the log file exists when the agent starts.\n1. Add the agent to the group and restart it (commands below; <agent_id> is the agent's ID in Wazuh).\nThe group reads /var/log/jt-ipam-audit.log and PostgreSQL's log (next step).",
+   "body_zh": "請在上一步的轉寫設定好之後再做，讓 agent 啟動時記錄檔已存在。\n1. 把 agent 加入群組並重新啟動（指令如下；<agent_id> 是該 agent 在 Wazuh 的 ID）。\n群組會讀取 /var/log/jt-ipam-audit.log 與 PostgreSQL 的記錄（見下一步）。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g jt-ipam\n/var/ossec/bin/agent_control -R -u <agent_id>",
-   "verify": "Log in to jt-ipam as admin (or fail a login on purpose). Expect rule 131678 (level 3), or 131633 (level 5), with the account name. An ordinary login from a private address is recorded at level 2 and does not alert.",
-   "verify_zh": "以 admin 登入 jt-ipam（或故意登入失敗一次），manager 端應出現規則 131678（level 3）或 131633（level 5），帶帳號名稱。一般帳號從私有位址登入只記錄為 level 2，不會告警。"
+   "verify": "Log in to jt-ipam as admin, or fail a login on purpose: rule 131678 (level 3) or 131633 (level 5) appears with the account name. An ordinary login from a private address is recorded at level 2 and does not alert.",
+   "verify_zh": "以 admin 登入 jt-ipam，或故意登入失敗一次：應出現規則 131678（level 3）或 131633（level 5），帶帳號名稱。一般帳號從私有位址登入只記錄為 level 2，不會告警。"
   },
   {
    "platform": "linux",
    "required": false,
    "since": "1.2",
-   "title": "Check PostgreSQL's log format for the audit-table rules",
-   "title_zh": "確認 PostgreSQL 的記錄格式，讓稽核資料表規則可用",
-   "body": "From 1.2 the jt-ipam group also reads /var/log/postgresql/postgresql-*-main.log on the jt-ipam host and sends only its ERROR, FATAL and PANIC lines; the routine LOG lines and the SQL statement lines stay on the host. This is how a refused change to jt-ipam's append-only audit table becomes a level 12 alert. The rules expect the Debian and Ubuntu default log_line_prefix ('%m [%p] %q%u@%d ', the default since PostgreSQL 10 on these systems) and English messages (lc_messages C or en_US.UTF-8). Check both with the first command; when they match, nothing changes on the host. Agents already in the group open the new file after a restart of the agent (second command). If jt-ipam's database runs on another server, put that server's agent in the group instead.",
-   "body_zh": "1.2 起 jt-ipam 群組也會讀取 jt-ipam 主機上的 /var/log/postgresql/postgresql-*-main.log，只送出 ERROR、FATAL、PANIC 這幾種行；例行的 LOG 行與 SQL 敘述行都留在主機上。稽核資料表只能新增，資料庫一旦拒絕對它的修改，就會因此成為 level 12 告警。規則預期 Debian／Ubuntu 預設的 log_line_prefix（'%m [%p] %q%u@%d '，這些系統自 PostgreSQL 10 起的預設值）與英文訊息（lc_messages 為 C 或 en_US.UTF-8）。用第一個指令確認兩者；相符的話主機不必改任何設定。已在群組中的 agent 重啟後（第二個指令）才會開啟這個新檔案。若 jt-ipam 的資料庫在另一台伺服器上，請改把那台伺服器的 agent 加入群組。",
+   "title": "Check PostgreSQL's log format",
+   "title_zh": "確認 PostgreSQL 的記錄格式",
+   "body": "The group sends only the ERROR, FATAL and PANIC lines of /var/log/postgresql/postgresql-*-main.log; that is how a refused change to the audit table becomes a level 12 alert.\n1. Run the first command. log_line_prefix must be '%m [%p] %q%u@%d ' (the Debian and Ubuntu default) and lc_messages C or en_US.UTF-8. If they are, nothing changes on the host.\n2. An agent that was already in the group: restart it (second command) so that it opens the file.\nIf the database runs on another server, put that server's agent in the group instead.",
+   "body_zh": "群組只送出 /var/log/postgresql/postgresql-*-main.log 的 ERROR、FATAL、PANIC 行；資料庫拒絕對稽核資料表的修改時，就是這樣成為 level 12 告警。\n1. 執行第一個指令。log_line_prefix 必須是 '%m [%p] %q%u@%d '（Debian／Ubuntu 預設值），lc_messages 為 C 或 en_US.UTF-8。相符的話主機不必改任何設定。\n2. 先前已在群組中的 agent：重新啟動（第二個指令），讓它開啟這個檔案。\n若資料庫在另一台伺服器上，請改把那台伺服器的 agent 加入群組。",
    "file": "agent/agent.conf",
    "code": "sudo -u postgres psql -Atc 'SHOW log_line_prefix' -c 'SHOW lc_messages'\nsystemctl restart wazuh-agent",
-   "verify": "As postgres on the jt-ipam host (jt-ipam 1.0.6 or later): psql -d jt_ipam -c 'SET ROLE jt_ipam' -c 'UPDATE audit_logs SET action = action WHERE false'. It changes nothing and fails with \"permission denied for table audit_logs\"; expect rule 131687 (level 12) on the manager. The alert is real by design: tell whoever watches the alerts first.",
+   "verify": "As postgres on the jt-ipam host (jt-ipam 1.0.6 or later): psql -d jt_ipam -c 'SET ROLE jt_ipam' -c 'UPDATE audit_logs SET action = action WHERE false'. It changes nothing and fails with \"permission denied for table audit_logs\"; rule 131687 (level 12) appears on the manager. The alert is real by design: tell whoever watches the alerts first.",
    "verify_zh": "在 jt-ipam 主機上以 postgres 身分執行（jt-ipam 1.0.6 以上）：psql -d jt_ipam -c 'SET ROLE jt_ipam' -c 'UPDATE audit_logs SET action = action WHERE false'。它不會改到任何資料，會以「permission denied for table audit_logs」失敗；manager 端應出現規則 131687（level 12）。這是刻意產生的真告警，請先告知看告警的人。"
   }
  ],

@@ -20,7 +20,9 @@
   "Optional liveness check (setup step): the agent runs fail2ban-client status every hour, which is the only way to notice a fail2ban that died without logging anything. It answers whether the server runs and has jails; a filter thread hung by a regular expression (GHSA-33wh-ccjc-p397, GHSA-c2mg-2r7g-c3wp) still answers, so even this cannot prove that a jail works.",
   "What the pack cannot see: an administrator's unbanip is logged exactly like a ban that expired, and client commands are logged only at DEBUG; the mail-whois remote code execution (CVE-2021-32749, fixed in 0.10.7 and 0.11.3; Ubuntu 20.04 only through ESM) leaves no trace in fail2ban's log. The journal target carries no level name, so the \"ban not effective\" rule cannot work there. In 0.11 a module name of 23 or more characters (fail2ban.filterpyinotify) makes Wazuh's pre-decoder drop the program name; those few lines are not decoded.",
   "No list, no site data: every rule works as shipped. Tested against fail2ban 0.11.1 (Ubuntu 20.04), 0.11.2, 1.0.x and 1.1.x message formats, quoted from the source (git tag 1.1.1, file and line in each rule comment). On the reference site two mail servers produced three bans, all install tests, in 41 days; the levels are set for hosts that face the internet.",
-  "PREREQUISITE - for the file target the base rule requires the event to come from a file named fail2ban. If the log is collected under a different name, adjust <location> in rule 131000. The syslog and journal shapes are recognised by program name and need nothing."
+  "PREREQUISITE - for the file target the base rule requires the event to come from a file named fail2ban. If the log is collected under a different name, adjust <location> in rule 131000. The syslog and journal shapes are recognised by program name and need nothing.",
+  "fail2ban's log collection is a group of its own, not part of a product group, because fail2ban runs on mail, web and jump hosts alike: tied to one product, every other host running it would be unseen.",
+  "Without fail2ban-client flushlogs in the logrotate rule, fail2ban keeps writing into the rotated file while Wazuh follows /var/log/fail2ban.log: one \"File rotated\" alert (rule 591) a week, and silence otherwise."
  ],
  "notes_zh": [
   "Wazuh 4.14.7 完全沒有內建 fail2ban 的解碼器與規則。以真實記錄餵給 wazuh-logtest 驗證過，每一種格式都是 No decoder matched。",
@@ -36,7 +38,9 @@
   "選用的存活檢查（部署步驟）：agent 每小時執行 fail2ban-client status，這是發現 fail2ban 無聲死掉的唯一辦法。它能回答服務是否在跑、有沒有 jail；但被正規表示式卡住的過濾執行緒（GHSA-33wh-ccjc-p397、GHSA-c2mg-2r7g-c3wp）照樣會回應，所以這也無法證明 jail 正常運作。",
   "套件看不到的：管理者的 unbanip 與封鎖到期的記錄完全一樣，用戶端指令只在 DEBUG 等級才記錄；mail-whois 遠端執行程式碼漏洞（CVE-2021-32749，0.10.7 與 0.11.3 修正；Ubuntu 20.04 只能透過 ESM）在 fail2ban 記錄裡不留痕跡。journal 目標不帶等級名稱，所以「封鎖無效」規則在那裡無法運作。0.11 中 23 個字元以上的模組名稱（fail2ban.filterpyinotify）會讓 Wazuh 前置解碼器丟掉程式名稱，這少數幾行不會解碼。",
   "沒有清單、沒有站台資料：每條規則照原樣就能用。依 fail2ban 0.11.1（Ubuntu 20.04）、0.11.2、1.0.x、1.1.x 的訊息格式測試，格式取自原始碼（git tag 1.1.1，每條規則的註解寫有檔案與行號）。參考站台兩台郵件伺服器 41 天內只有三次封鎖，全是安裝測試；等級是依對外的主機設定的。",
-  "前提條件 - 檔案目標的基礎規則要求事件來自檔名含 fail2ban 的來源。若以其他名稱收集，請調整規則 131000 的 <location>。syslog 與 journal 形式以程式名稱辨識，不需調整。"
+  "前提條件 - 檔案目標的基礎規則要求事件來自檔名含 fail2ban 的來源。若以其他名稱收集，請調整規則 131000 的 <location>。syslog 與 journal 形式以程式名稱辨識，不需調整。",
+  "fail2ban 的記錄收集是獨立群組，不屬於任何產品群組，因為郵件、網站、跳板機都可能跑 fail2ban：綁在某個產品上，其他執行它的主機就全都看不到。",
+  "logrotate 規則少了 fail2ban-client flushlogs 時，fail2ban 會繼續寫進已輪替的檔案，而 Wazuh 追的是 /var/log/fail2ban.log：每週一則「File rotated」告警（規則 591），其餘一片安靜。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -66,20 +70,22 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+   "title": "Install the pack and reload every node",
+   "title_zh": "安裝套件並重新載入所有節點",
+   "body": "1. Install the pack from this page.\n2. Click Reload Ruleset on the Rules tab: it reloads every cluster node.",
+   "body_zh": "1. 在本頁安裝套件。\n2. 到「規則」分頁按「重新載入規則集」：會重新載入叢集的每個節點。",
+   "verify": "The reload result shows every node as reloaded, with no warning.",
+   "verify_zh": "重新載入的結果顯示每個節點都已重新載入，且沒有警告。"
   },
   {
    "platform": "linux",
    "required": true,
-   "title": "Assign every host running fail2ban to the fail2ban group",
+   "title": "Add every fail2ban host to the fail2ban group",
    "title_zh": "把所有執行 fail2ban 的主機加入 fail2ban 群組",
-   "body": "With its default logtarget fail2ban writes /var/log/fail2ban.log rather than syslog, so nothing arrives until the agent reads that file. The group exists on its own because fail2ban runs on mail, web and jump hosts alike.",
-   "body_zh": "預設的 logtarget 下 fail2ban 寫的是 /var/log/fail2ban.log 而不是 syslog，agent 不讀這個檔案就什麼都收不到。它是獨立群組，因為郵件、網站、跳板機都可能跑 fail2ban。",
+   "body": "1. Assign every host that runs fail2ban to the fail2ban group and restart its agent (commands below; <agent_id> is the host's agent ID).\n2. The group reads /var/log/fail2ban.log, fail2ban's default log target. Hosts that log to syslog or the journal are covered by the next step.",
+   "body_zh": "1. 把每台執行 fail2ban 的主機加入 fail2ban 群組並重新啟動它的 agent（指令如下；<agent_id> 是該主機的 agent ID）。\n2. 群組讀取 fail2ban 預設的記錄目標 /var/log/fail2ban.log。記錄寫到 syslog 或 journal 的主機請見下一步。",
    "file": "agent/agent.conf",
-   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g fail2ban",
+   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g fail2ban -q\n/var/ossec/bin/agent_control -R -u <agent_id>",
    "verify": "fail2ban-client set sshd banip 192.0.2.10 ; fail2ban-client set sshd unbanip 192.0.2.10  - expect rule 131001 (level 3); the unban is recorded at level 2 (archives only).",
    "verify_zh": "fail2ban-client set sshd banip 192.0.2.10 ; fail2ban-client set sshd unbanip 192.0.2.10 - 應出現規則 131001（level 3）；解除封鎖記在 level 2（只在 archives）。"
   },
@@ -89,8 +95,8 @@
    "since": "1.3",
    "title": "Check where fail2ban logs",
    "title_zh": "確認 fail2ban 的記錄寫到哪裡",
-   "body": "Run the command on the host. /var/log/fail2ban.log (or another file): the group's entry collects it. SYSLOG, SYSTEMD-JOURNAL or SYSOUT: the pack decodes those lines from /var/log/syslog or the journal, which agents usually read already (agents 4.9 and later read the journal by default); agent.conf has a commented journald entry for an agent that reads neither. The startup errors and systemd's messages about fail2ban.service always go to the journal or syslog, whatever logtarget says.",
-   "body_zh": "在主機上執行指令。/var/log/fail2ban.log（或其他檔案）：群組設定會收集它。SYSLOG、SYSTEMD-JOURNAL 或 SYSOUT：套件會解碼 /var/log/syslog 或 journal 裡的這些行，agent 通常本來就在讀（4.9 以後的 agent 預設讀 journal）；兩者都不讀的 agent，agent.conf 裡有一段註解掉的 journald 設定可用。啟動錯誤與 systemd 關於 fail2ban.service 的訊息，不論 logtarget 怎麼設，一律進 journal 或 syslog。",
+   "body": "Run the command below on the host.\n1. /var/log/fail2ban.log: the group collects it.\n2. Another file: add a localfile for it on that agent. Rule 131000 accepts only a location containing fail2ban; adjust it otherwise.\n3. SYSLOG, SYSTEMD-JOURNAL or SYSOUT: the lines come from /var/log/syslog or the journal, which agents 4.9 and later read by default. For an agent that reads neither, use the commented journald entry in the group's agent.conf.",
+   "body_zh": "在主機上執行下列指令。\n1. /var/log/fail2ban.log：群組會收集。\n2. 其他檔案：在該 agent 為它加一個 localfile。規則 131000 只接受 location 含 fail2ban 的來源，否則請調整。\n3. SYSLOG、SYSTEMD-JOURNAL 或 SYSOUT：這些行來自 /var/log/syslog 或 journal，4.9 以後的 agent 預設就會讀取。兩者都不讀的 agent，請使用群組 agent.conf 裡註解掉的 journald 設定。",
    "code": "fail2ban-client get logtarget",
    "verify": "systemctl restart fail2ban  - expect 131036 \"fail2ban stopped\" (level 5), then 131035 \"starting\" (level 2, archives only).",
    "verify_zh": "systemctl restart fail2ban - 應出現 131036「fail2ban stopped」（level 5），接著是 131035「starting」（level 2，只在 archives）。"
@@ -99,10 +105,10 @@
    "platform": "linux",
    "required": false,
    "since": "1.3",
-   "title": "Make sure log rotation tells fail2ban to reopen its log",
-   "title_zh": "確認記錄輪替會讓 fail2ban 重新開啟記錄檔",
-   "body": "With the file target, the logrotate rule must run fail2ban-client flushlogs after rotating. Without it fail2ban keeps writing into the rotated file and Wazuh, which follows /var/log/fail2ban.log, sees nothing from the first rotation on (a \"File rotated\" alert, rule 591, every week and then silence). Distribution packages ship it; check hand-made installations.",
-   "body_zh": "使用檔案目標時，logrotate 規則在輪替後必須執行 fail2ban-client flushlogs。少了它，fail2ban 會繼續寫進已輪替的檔案，而追著 /var/log/fail2ban.log 的 Wazuh 從第一次輪替起就什麼都收不到（每週一則「File rotated」告警，規則 591，之後一片安靜）。發行版套件都有這一行；手動安裝的請檢查。",
+   "title": "Make log rotation reopen fail2ban's log",
+   "title_zh": "讓記錄輪替後 fail2ban 重新開啟記錄檔",
+   "body": "With the file target, the logrotate rule must run fail2ban-client flushlogs after rotating (check below). Distribution packages include it; check hand-made installations. Without it Wazuh receives nothing from that host after the first rotation.",
+   "body_zh": "使用檔案目標時，logrotate 規則在輪替後必須執行 fail2ban-client flushlogs（檢查方式如下）。發行版套件都有這一行；手動安裝的請檢查。少了它，第一次輪替之後 Wazuh 就收不到該主機的任何記錄。",
    "code": "grep -A3 postrotate /etc/logrotate.d/fail2ban    # expect: fail2ban-client flushlogs",
    "verify": "After the next rotation a ban still raises 131001.",
    "verify_zh": "下次輪替之後，封鎖仍會觸發 131001。"
@@ -111,10 +117,10 @@
    "platform": "linux",
    "required": false,
    "since": "1.3",
-   "title": "Optional: hourly liveness check of fail2ban",
+   "title": "Optional: check hourly that fail2ban is alive",
    "title_zh": "選用：每小時檢查 fail2ban 是否還活著",
-   "body": "A fail2ban that died without a word cannot be seen in its log. This entry makes the agent run fail2ban-client status every hour: rule 131072 (level 10) when it does not answer, 131073 (level 10) when it runs without any jail, nothing when it is healthy. Put it in the host's own /var/ossec/etc/ossec.conf and restart the agent. To send it through the fail2ban group instead, each agent must first allow remote commands (logcollector.remote_commands=1 in local_internal_options.conf), which lets anyone who can edit group files run commands as root on those agents: that is why the pack does not ship it in agent.conf. The agent runs as root; nothing else changes on the host.",
-   "body_zh": "無聲死掉的 fail2ban 在它的記錄裡看不出來。這段設定讓 agent 每小時執行 fail2ban-client status：沒有回應時觸發規則 131072（level 10），運作中卻沒有任何 jail 時觸發 131073（level 10），正常時什麼都沒有。請放在主機自己的 /var/ossec/etc/ossec.conf 並重啟 agent。若改經 fail2ban 群組派送，每台 agent 必須先允許遠端指令（local_internal_options.conf 的 logcollector.remote_commands=1），這等於讓能改群組檔案的人都能以 root 在那些 agent 上執行指令：所以套件沒有把它放進 agent.conf。agent 以 root 執行；主機上其他東西都不變。",
+   "body": "1. Add the entry below to the host's own /var/ossec/etc/ossec.conf, not to the group: a command sent through a group needs logcollector.remote_commands=1 on the agent, which lets anyone who can edit group files run commands as root there.\n2. Restart the agent.\nIt raises 131072 (level 10) when fail2ban does not answer and 131073 (level 10) when it runs without any jail; nothing when it is healthy.",
+   "body_zh": "1. 把下列設定加進主機自己的 /var/ossec/etc/ossec.conf，不要放進群組：經群組派送的指令需要 agent 開啟 logcollector.remote_commands=1，這等於讓能改群組檔案的人都能在那台主機上以 root 執行指令。\n2. 重新啟動 agent。\nfail2ban 沒有回應時觸發 131072（level 10），運作中卻沒有任何 jail 時觸發 131073（level 10）；正常時什麼都沒有。",
    "code": "<localfile>\n  <log_format>command</log_format>\n  <command>fail2ban-client status || echo fail2ban-client failed</command>\n  <alias>fail2ban-health</alias>\n  <frequency>3600</frequency>\n</localfile>",
    "verify": "systemctl stop fail2ban, then restart the agent: expect 131072 within a minute. Start fail2ban again.",
    "verify_zh": "systemctl stop fail2ban 後重啟 agent：一分鐘內應出現 131072。之後記得再啟動 fail2ban。"
@@ -123,10 +129,10 @@
    "platform": "manager",
    "required": false,
    "since": "1.3",
-   "title": "Before enabling the active response: whitelist your own addresses",
+   "title": "Before the active response: whitelist your addresses",
    "title_zh": "啟用主動回應之前：把自己的位址加入白名單",
-   "body": "The response below blocks an address on every agent. Put administration, monitoring, backup and VPN egress addresses into the manager's <global><white_list> on every node, and into fail2ban's ignoreip on the hosts, before enabling it.",
-   "body_zh": "下面的主動回應會在每台 agent 上封鎖位址。啟用前，請把管理、監控、備份與 VPN 出口位址加入每個節點 manager 的 <global><white_list>，並加入各主機 fail2ban 的 ignoreip。",
+   "body": "share-repeat-offender blocks an address on every agent. Before switching it on:\n1. Add administration, monitoring, backup and VPN egress addresses to <global><white_list> in ossec.conf on every manager node (example below); the restart that enables the response applies it.\n2. Add the same addresses to fail2ban's ignoreip on the hosts.",
+   "body_zh": "share-repeat-offender 會在每台 agent 上封鎖位址。開啟之前：\n1. 把管理、監控、備份與 VPN 出口位址加入每個 manager 節點 ossec.conf 的 <global><white_list>（範例如下）；開啟回應時的重新啟動會一併套用。\n2. 把同樣的位址加入各主機 fail2ban 的 ignoreip。",
    "code": "<global>\n  <white_list>192.0.2.0/24</white_list>\n</global>"
   }
  ],

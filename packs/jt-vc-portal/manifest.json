@@ -25,7 +25,8 @@
   "The portal's retention clean-up rewrites the audit file in place, and the agent cannot follow that. Measured on 4.14.7 with the portal's own method: when the file stays shorter than before until the agent's next file check (about a minute), the agent reads the whole file again and every remaining record arrives a second time as a new event; when a new record makes it longer first, the agent goes on from its old position and the records in between are never sent. Neither is announced. The clean-up only rewrites the file when a record is older than the retention period (365 days by default), so set the retention to its maximum, 3650 days, on a portal whose audit file Wazuh reads: Wazuh keeps the history anyway.",
   "Docker events (since 1.2), from Wazuh's docker-listener wodle on the portal's docker host, below built-in rule 87907 (a command started in a container, level 3). The transcript worker, which the portal's guide schedules every minute through docker exec, is level 0: measured 1,440 level 3 alerts a day on one host, all the same command. The emergency tools login-path.php reset or set and sso-cli.php disable are level 8; login-path.php writes no audit record, so this is its only trace. Any other command that names the data directory /var/jaas-data (password hashes, second-factor secrets, every stored secret) is level 6: 31 in 11 days on one host where developers inspect the data. Only the portal's own fixed paths inside its image are matched, never a container name; health checks and other generic docker noise are not this pack's business.",
   "File integrity (since 1.2), from the agent group: any file added, changed or deleted in the JaaS private key directory (keys/) is level 10, because whoever has the key can sign meeting tokens with moderator rights for every room; settings.json is level 5, because every save on the settings pages changes it and is also in the audit log: its value is a change with no audit record next to it, an edit on the host or by login-path.php. users.json is not watched: it changes at every single sign-on. No report_changes: both files hold secrets. The rules recognise any directory whose name contains jt-vc-portal or jaas-auth. Tested in a sandbox with real file events, since logtest cannot replay them.",
-  "1.2.1, note: the three docker rules (132190-132192: the transcript worker, emergency sign-in commands, the data directory) hang off the built-in 87907, which reads docker.Action only from Wazuh 4.14. On 4.12 and 4.13 with a current Docker Engine (no \"status\" field) they never match; use Wazuh 4.14 or later for them. The audit log rules are not affected."
+  "1.2.1, note: the three docker rules (132190-132192: the transcript worker, emergency sign-in commands, the data directory) hang off the built-in 87907, which reads docker.Action only from Wazuh 4.14. On 4.12 and 4.13 with a current Docker Engine (no \"status\" field) they never match; use Wazuh 4.14 or later for them. The audit log rules are not affected.",
+  "Deployment details. Since 1.1 the decoder expects the prefix \"jt-vc-portal: \" that the agent group adds (1.0 sent the bare JSON); the portal's own export (syslog, CEF or GELF) is not needed when the group reads the file. The agent must be restarted to read a new or changed log file. A key or data directory that does not exist on a host is skipped without a warning, and a group change reaches the agent without a restart, but file integrity settings only apply after one. The export must use UDP because the portal sends no line end and the manager drops such TCP messages (measured)."
  ],
  "notes_zh": [
   "jt-vc-portal（記錄中自稱 jaas-auth）每個動作寫一行 JSON 到資料目錄的 audit-log.jsonl：登入與失敗、帳號、設定、匯出、錄影、逐字稿與會議。Wazuh 會用通用的 json 解碼器解開這些行，但沒有任何規則看它們。本套件為入口寫出的每一種動作分級。它的 agent 群組會在每一行前面加上「jt-vc-portal: 」，由套件自己的解碼器讀取：這樣用戶端位址才會成為 srcip（主動回應需要），登入也才有首次出現的判斷鍵。不能改用 Wazuh json 解碼器的子解碼器：那會讓其他所有 JSON 來源失去欄位（已實測）。沒有加前綴而收進來的行，仍然會命中每一條規則，只是少了這兩項。1.2 起本套件另外讀取 Wazuh 關於入口的兩種來源：其容器的 docker 事件，以及其簽署金鑰與設定檔的檔案完整性。",
@@ -46,7 +47,8 @@
   "入口的保留期限清理會原地改寫稽核檔，而 agent 跟不上這種改寫。以入口自己的方式在 4.14.7 實測：若檔案在 agent 下次檢查檔案（約一分鐘）之前一直比原本短，agent 會把整個檔案重讀一次，剩下的每筆記錄都會以新事件再送一次；若在那之前有新記錄讓檔案變得比原本長，agent 會從舊的位置繼續讀，中間的記錄永遠不會送出。兩種情況都不會有任何訊息。清理只在有記錄超過保留期限（預設 365 天）時才改寫檔案，所以 Wazuh 讀取稽核檔的入口請把保留天數設為上限 3650 天：歷史本來就保存在 Wazuh。",
   "Docker 事件（1.2 起），來自入口所在 docker 主機上的 Wazuh docker-listener 模組，掛在內建規則 87907（容器中啟動了指令，level 3）之下。入口安裝說明以 docker exec 每分鐘執行一次的逐字稿背景工作為 level 0：實測單一主機每天 1,440 則 level 3 告警，全是同一個指令。緊急工具 login-path.php reset 或 set 與 sso-cli.php disable 為 level 8；login-path.php 不寫稽核記錄，這是它唯一的痕跡。其他提到資料目錄 /var/jaas-data（密碼雜湊、第二因素密鑰與所有儲存的密鑰）的指令為 level 6：在一台開發人員會檢視資料的主機上 11 天 31 次。只比對入口映像內固定的路徑，從不比對容器名稱；健康檢查等一般的 docker 雜訊不屬於本套件的範圍。",
   "檔案完整性（1.2 起），來自 agent 群組：JaaS 私鑰目錄（keys/）中任何檔案的新增、修改或刪除為 level 10，因為持有金鑰的人可以為每個會議室簽發具主持人權限的會議權杖；settings.json 為 level 5，因為設定頁的每次儲存都會改變它，而且稽核記錄裡也有：它的價值在於旁邊沒有稽核記錄的變更，也就是在主機上直接編輯，或 login-path.php 造成的變更。不監看 users.json：每次單一登入都會改變它。不開 report_changes：兩個檔案都含有密鑰。規則會辨認名稱含 jt-vc-portal 或 jaas-auth 的任何目錄。已在沙箱中以真實的檔案事件測試，因為 logtest 無法重放這類事件。",
-  "1.2.1，說明：三條 docker 規則（132190-132192：逐字稿工作、緊急登入指令、資料目錄）掛在內建 87907 底下，而 87907 從 Wazuh 4.14 起才讀 docker.Action。在 4.12、4.13 搭配新版 Docker Engine（不送 \"status\"）時，這三條永遠不成立；要使用它們請升到 Wazuh 4.14 以上。稽核記錄的規則不受影響。"
+  "1.2.1，說明：三條 docker 規則（132190-132192：逐字稿工作、緊急登入指令、資料目錄）掛在內建 87907 底下，而 87907 從 Wazuh 4.14 起才讀 docker.Action。在 4.12、4.13 搭配新版 Docker Engine（不送 \"status\"）時，這三條永遠不成立；要使用它們請升到 Wazuh 4.14 以上。稽核記錄的規則不受影響。",
+  "部署細節。1.1 起解碼器預期 agent 群組加上的前綴「jt-vc-portal: 」（1.0 送的是原始 JSON）；群組讀取檔案時，不需要入口自己的外拋（syslog、CEF 或 GELF）。agent 要重新啟動才會讀取新的或改過的記錄檔。主機上不存在的金鑰或資料目錄會被略過，不會有警告；群組設定變更會送到 agent 而不需重新啟動，但檔案完整性設定要重新啟動後才生效。外拋必須用 UDP，因為入口送出的訊息沒有換行字元，manager 會把這類 TCP 訊息丟掉（已實測）。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -89,10 +91,12 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+   "title": "Install the pack and reload every node",
+   "title_zh": "安裝套件並重新載入所有節點",
+   "body": "1. Install the pack from this page.\n2. On the Rules tab, click Reload Ruleset. A cluster copies rule files to the workers but does not reload them.",
+   "body_zh": "1. 在本頁安裝套件。\n2. 到「規則」分頁按「重新載入規則集」。叢集會把規則檔複製到 worker，但不會重新載入。",
+   "verify": "On the Rules tab, a hierarchy search for jt_vc_portal lists the rules of 132100-jt_vc_portal_rules.xml.",
+   "verify_zh": "在「規則」分頁的階層模式搜尋 jt_vc_portal，會列出 132100-jt_vc_portal_rules.xml 的規則。"
   },
   {
    "platform": "linux",
@@ -100,8 +104,8 @@
    "since": "1.1",
    "title": "Assign the portal host to the jt-vc-portal group",
    "title_zh": "把入口主機加入 jt-vc-portal 群組",
-   "body": "The decoders expect the audit file as this group sends it: audit-log.jsonl read on the docker host, every line with the prefix \"jt-vc-portal: \" (since 1.1; 1.0 sent the bare JSON). That is the primary path; the portal's own export (syslog, CEF or GELF, for example to Graylog) is not needed and is not read by this group. The group reads the file from the documented data locations, /opt/jt-vc-portal/data (the volume in the docker run examples) and /var/jaas-data (DATA_DIR without docker), and since 1.2 also watches the key directory and settings.json (see the file integrity step). If the data volume is mounted elsewhere, use the same localfile with that path in the group configuration or in the agent's own ossec.conf: the file is on the docker host, at the source of the volume mounted on /var/jaas-data. Nothing changes on the portal. The agent must be restarted to pick up a new or changed log file; only lines written afterwards are sent.",
-   "body_zh": "解碼器預期的是這個群組送出的稽核檔：在 docker 主機上讀取 audit-log.jsonl，每一行前面加上「jt-vc-portal: 」（1.1 起；1.0 送的是原始 JSON）。這是主要來源；入口自己的外拋（syslog、CEF 或 GELF，例如送往 Graylog）不需要，這個群組也不讀它。群組會讀取文件記載的資料位置中的檔案：/opt/jt-vc-portal/data（docker run 範例的資料卷）與 /var/jaas-data（不用 docker 時的 DATA_DIR），1.2 起也監看金鑰目錄與 settings.json（見檔案完整性步驟）。若資料卷掛在別處，請在群組設定或該 agent 自己的 ossec.conf 用相同的 localfile 寫上那個路徑：檔案位於 docker 主機上、掛到 /var/jaas-data 的那個資料卷來源。入口本身不需要任何變更。agent 必須重新啟動才會讀取新的或改過的記錄檔；只會送出之後寫入的行。",
+   "body": "1. On the manager, run the first two commands with the docker host's agent ID in place of <agent_id>.\n2. The group reads audit-log.jsonl in /opt/jt-vc-portal/data and /var/jaas-data. Data volume elsewhere: add the localfile block to that agent's ossec.conf with the real path (on the docker host) and restart the agent.\n3. If the agent's own ossec.conf already reads the file, remove that block: only one definition of a file is kept.\nNothing changes on the portal.",
+   "body_zh": "1. 在 manager 上執行前兩行指令，把 <agent_id> 換成 docker 主機的 agent ID。\n2. 群組會讀取 /opt/jt-vc-portal/data 與 /var/jaas-data 裡的 audit-log.jsonl。資料卷在別處：把 localfile 區塊加到該 agent 的 ossec.conf 並寫上實際路徑（docker 主機上的路徑），再重新啟動 agent。\n3. 若該 agent 自己的 ossec.conf 已經讀這個檔案，請刪掉那一段：同一個檔案只會保留一份定義。\n入口本身不需要任何變更。",
    "file": "agent/agent.conf",
    "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g jt-vc-portal\n/var/ossec/bin/agent_control -R -u <agent_id>\n# data volume elsewhere: add to the agent's ossec.conf\n<localfile>\n  <location>/path/to/data/audit-log.jsonl</location>\n  <log_format>syslog</log_format>\n  <out_format>jt-vc-portal: $(log)</out_format>\n</localfile>",
    "verify": "Sign in to the portal from a new address, or as an administrator. Expect rule 132117 or 132112 (level 3) on the node the agent reports to.",
@@ -111,10 +115,10 @@
    "platform": "linux",
    "required": true,
    "since": "1.2",
-   "title": "Watch the signing key and the settings file (file integrity)",
-   "title_zh": "監看簽署金鑰與設定檔（檔案完整性）",
-   "body": "Since 1.2 the group's configuration watches, in real time, the JaaS private key directory of the documented installations (/opt/jt-vc-portal/keys, mounted into the container on /var/www/html/keys, and /var/www/jt-vc-portal/keys without docker) and settings.json in the two documented data directories. A directory that does not exist is skipped without a warning. If your key or data directory is elsewhere, add the same two lines with your paths to the agent's own ossec.conf (inside its syscheck section): the rules recognise any directory whose name contains jt-vc-portal or jaas-auth; for any other name, name the directory so or ask for a local rule. Do not add report_changes: both files hold secrets. A group change reaches the agent without restarting it, but file integrity settings only apply after a restart.",
-   "body_zh": "1.2 起群組設定會即時監看文件記載的安裝方式中的 JaaS 私鑰目錄（/opt/jt-vc-portal/keys，掛到容器的 /var/www/html/keys；不用 docker 時為 /var/www/jt-vc-portal/keys），以及兩個文件記載的資料目錄中的 settings.json。不存在的目錄會被略過，不會有警告。若你的金鑰或資料目錄在別處，請把下面兩行改成你的路徑，加到該 agent 自己的 ossec.conf（syscheck 區段內）：規則會辨認名稱含 jt-vc-portal 或 jaas-auth 的任何目錄；其他名稱請把目錄改成這樣命名，或另寫本地規則。不要加 report_changes：兩個檔案都含有密鑰。群組設定變更會送到 agent，但不會讓它重新啟動，而檔案完整性的設定要重新啟動後才生效。",
+   "title": "Watch the signing key and settings file",
+   "title_zh": "監看簽署金鑰與設定檔",
+   "body": "The group already watches /opt/jt-vc-portal/keys, /var/www/jt-vc-portal/keys and settings.json in the two data directories. Key or data directory elsewhere: add the two directories lines with your paths inside the syscheck section of the agent's ossec.conf. The path must contain jt-vc-portal or jaas-auth, or the rules do not recognise it. Do not add report_changes (both files hold secrets), then restart the agent.",
+   "body_zh": "群組已監看 /opt/jt-vc-portal/keys、/var/www/jt-vc-portal/keys，以及兩個資料目錄中的 settings.json。金鑰或資料目錄在別處：把兩行 directories 改成你的路徑，加到該 agent 的 ossec.conf 的 syscheck 區段內。路徑必須含有 jt-vc-portal 或 jaas-auth，否則規則認不得。不要加 report_changes（兩個檔案都含有密鑰），然後重新啟動 agent。",
    "file": "agent/agent.conf",
    "code": "<directories realtime=\"yes\" check_all=\"yes\">/path/to/jt-vc-portal/keys</directories>\n<directories realtime=\"yes\" check_all=\"yes\" recursion_level=\"0\" restrict=\"settings.json$\">/path/to/jt-vc-portal/data</directories>\n\n/var/ossec/bin/agent_control -R -u <agent_id>",
    "verify": "Save any setting in the portal (for example the colour theme). Expect rule 132196 (level 5) on the node the agent reports to, next to the portal's own settings record.",
@@ -122,33 +126,33 @@
   },
   {
    "platform": "linux",
-   "required": false,
-   "since": "1.2",
-   "title": "Optional: docker events of the portal's container",
-   "title_zh": "選用：入口容器的 docker 事件",
-   "body": "Rules 132190-132192 read docker events, which Wazuh's docker-listener wodle sends from the docker host: they drop the every-minute transcript worker to level 0 and raise the emergency command line tools (login-path.php, which writes no audit record, and sso-cli.php) and commands that read the data directory. If docker events from this host already reach the manager (rule 87907 appears for it), there is nothing to do. Otherwise enable the wodle once on the portal's host, in its own ossec.conf (not in a second group as well: one definition per agent). It needs Python 3 and the Python docker library on the host (see Wazuh's docker-listener documentation for the versions) and an agent restart. Nothing changes on the portal or its container.",
-   "body_zh": "規則 132190-132192 讀取 docker 事件，由 docker 主機上的 Wazuh docker-listener 模組送出：它們把每分鐘一次的逐字稿背景工作降為 level 0，並提高緊急指令列工具（不寫稽核記錄的 login-path.php，以及 sso-cli.php）與讀取資料目錄之指令的等級。若這台主機的 docker 事件已經送到 manager（看得到它的規則 87907），就不需要任何動作。否則請在入口主機自己的 ossec.conf 啟用這個模組一次（不要再在另一個群組也啟用：每個 agent 只能有一份定義）。主機上需要 Python 3 與 Python docker 程式庫（版本見 Wazuh 的 docker-listener 文件），並重新啟動 agent。入口與其容器本身不需要任何變更。",
-   "code": "<wodle name=\"docker-listener\">\n  <disabled>no</disabled>\n</wodle>\n\n/var/ossec/bin/agent_control -R -u <agent_id>",
-   "verify": "On the docker host run: docker exec <container> php /var/www/html/login-path.php show. Expect rule 87907 (level 3) for that container, and no 87907 alerts for the transcript worker.",
-   "verify_zh": "在 docker 主機上執行：docker exec <容器> php /var/www/html/login-path.php show。應出現該容器的規則 87907（level 3），而逐字稿背景工作不再出現 87907 告警。"
-  },
-  {
-   "platform": "linux",
    "required": true,
-   "title": "Set the portal's audit log retention to 3650 days",
-   "title_zh": "把入口的稽核記錄保留天數設為 3650 天",
-   "body": "In the portal's settings (meeting room settings, audit log retention), set the maximum, 3650 days. Its clean-up rewrites the audit file in place once a record is older than the retention period, and the agent then either sends the remaining history again or silently skips new records (measured). With the default of 365 days this starts one year after the first record. The history stays in Wazuh.",
-   "body_zh": "在入口的設定（會議室設定中的稽核記錄保留天數）設為上限 3650 天。一旦有記錄超過保留期限，入口的清理會原地改寫稽核檔，agent 接著不是把剩下的歷史重送一次，就是無聲地跳過新記錄（實測）。預設 365 天，所以會從第一筆記錄的一年後開始發生。歷史會保存在 Wazuh。",
+   "title": "Set the audit log retention to 3650 days",
+   "title_zh": "把稽核記錄保留天數設為 3650 天",
+   "body": "In the portal's meeting room settings, set the audit log retention to the maximum, 3650 days. With a shorter retention the portal's clean-up rewrites the audit file, and Wazuh then resends old records or misses new ones. Wazuh keeps the history.",
+   "body_zh": "在入口的會議室設定中，把稽核記錄保留天數設為上限 3650 天。保留天數較短時，入口的清理會改寫稽核檔，Wazuh 接著會重送舊記錄或漏掉新記錄。歷史會保存在 Wazuh。",
    "verify": "The portal's settings page shows 3650 days for the audit log.",
    "verify_zh": "入口設定頁的稽核記錄保留天數顯示 3650 天。"
   },
   {
    "platform": "linux",
    "required": false,
-   "title": "Make sure the portal records the real client address",
-   "title_zh": "確認入口記錄的是真正的用戶端位址",
-   "body": "Behind a reverse proxy, set JTVC_TRUSTED_PROXIES on the container to the proxy's address (and nothing a client can reach through). Left empty, the portal accepts X-Real-IP from anyone, so a direct client can forge the address in the log, evade the brute-force rule, have its public sign-ins look private, and aim an active response at an address of its choice. Changing the variable recreates the container: a short outage.",
-   "body_zh": "在反向代理之後，請把容器的 JTVC_TRUSTED_PROXIES 設為代理伺服器的位址（不要包含用戶端能經由它連入的位址）。留空時入口接受任何人送來的 X-Real-IP，直接連入的用戶端就能偽造記錄中的位址、躲過暴力破解規則、讓公開位址的登入看起來像私有位址，並讓主動回應封鎖它指定的位址。修改這個變數要重建容器：會有短暫中斷。",
+   "since": "1.2",
+   "title": "Optional: collect the container's docker events",
+   "title_zh": "選用：收集入口容器的 docker 事件",
+   "body": "Skip this if rule 87907 already appears for this host. Otherwise:\n1. Install Python 3 and the Python docker library on the docker host (versions: Wazuh's docker-listener documentation).\n2. Add the wodle to the host's own ossec.conf, not to a group as well (one definition per agent).\n3. Restart the agent.\nRules 132190-132192 need Wazuh 4.14 or later.",
+   "body_zh": "若這台主機已經出現規則 87907，就略過這一步。否則：\n1. 在 docker 主機安裝 Python 3 與 Python docker 程式庫（版本見 Wazuh 的 docker-listener 文件）。\n2. 把模組加到該主機自己的 ossec.conf，不要再在群組裡定義一次（每個 agent 只能有一份）。\n3. 重新啟動 agent。\n規則 132190-132192 需要 Wazuh 4.14 以上。",
+   "code": "<wodle name=\"docker-listener\">\n  <disabled>no</disabled>\n</wodle>\n\n/var/ossec/bin/agent_control -R -u <agent_id>",
+   "verify": "On the docker host run: docker exec <container> php /var/www/html/login-path.php show. Expect rule 87907 (level 3) for that container, and no 87907 alerts for the transcript worker.",
+   "verify_zh": "在 docker 主機上執行：docker exec <容器> php /var/www/html/login-path.php show。應出現該容器的規則 87907（level 3），而逐字稿背景工作不再出現 87907 告警。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Make the portal record the real client address",
+   "title_zh": "讓入口記錄真正的用戶端位址",
+   "body": "Behind a reverse proxy, set JTVC_TRUSTED_PROXIES on the container to the proxy's address only. Left empty, any client can forge the address in the log (and aim an active response at it). Changing it recreates the container: a short outage.",
+   "body_zh": "在反向代理之後，把容器的 JTVC_TRUSTED_PROXIES 設為代理伺服器的位址（只放它）。留空時，任何用戶端都能偽造記錄中的位址（並讓主動回應封鎖它指定的位址）。修改後要重建容器，會短暫中斷服務。",
    "code": "docker run ... -e JTVC_TRUSTED_PROXIES=<proxy address> ...",
    "verify": "Sign in through the proxy and open the portal's audit page: the address is your client's, not the proxy's.",
    "verify_zh": "經由代理登入後開啟入口的稽核頁：位址應是你的用戶端，而不是代理伺服器。"
@@ -156,10 +160,10 @@
   {
    "platform": "manager",
    "required": false,
-   "title": "Optional: list the accounts a script uses",
+   "title": "Optional: list accounts that scripts use",
    "title_zh": "選用：列出腳本使用的帳號",
-   "body": "Only needed for administrator accounts that a script signs in with (test automation, monitoring), which are level 3 at every sign-in. One line per account name, as the portal logs it, then reload the ruleset. Their sign-ins from a private address, transcript downloads and speaker edits drop to level 0, and they are left out of the rule for a session used from a new address (132109). Sign-ins from a public address, failures, account and settings changes, exports and deleted recordings still alert.",
-   "body_zh": "只有腳本用來登入的管理員帳號（自動化測試、監控）才需要，因為它們每次登入都是 level 3。每個帳號名稱一行（與入口記錄中的一樣），加入後重新載入規則集。這些帳號從私有位址的登入、下載逐字稿與修改發言者名稱會降為 level 0，也排除在「從新位址使用工作階段」的規則（132109）之外。從公開位址登入、登入失敗、帳號與設定變更、匯出與刪除錄影仍會告警。",
+   "body": "Only for administrator accounts a script signs in with (test automation, monitoring); each of their sign-ins is level 3. Add one account name per line, as the portal logs it, then reload the ruleset. Their private-address sign-ins, transcript downloads and speaker edits drop to level 0; public sign-ins, failures and changes still alert.",
+   "body_zh": "只有腳本用來登入的管理員帳號（自動化測試、監控）才需要；它們每次登入都是 level 3。每行一個帳號名稱（與入口記錄中的一樣），加入後重新載入規則集。這些帳號從私有位址的登入、下載逐字稿與修改發言者會降為 level 0；從公開位址登入、失敗與各種變更仍會告警。",
    "code": "echo 'ci-admin:test' >> /var/ossec/etc/lists/jt-vc-portal-quiet-accounts"
   },
   {
@@ -167,8 +171,8 @@
    "required": false,
    "title": "Alternative: send the portal's export to the manager",
    "title_zh": "替代方式：把入口的外拋送到 manager",
-   "body": "Only where the agent cannot read the file. In the portal's settings (Login log forwarding / SIEM) set the manager as host, port 514, UDP (not TCP: the portal sends no line end, and the manager drops such messages, measured), format CEF (address, result and first-seen check included) or syslog (no address: no address rules and no active response). The export has one destination, so this replaces whatever it sends to now; do not combine it with the file, or every record alerts twice. The record of the export being turned off is never exported. The manager needs a syslog listener that admits the portal host, which restarts the manager.",
-   "body_zh": "僅在 agent 無法讀取檔案時使用。在入口的設定（登入記錄外拋／SIEM）把主機設為 manager、埠 514、UDP（不要用 TCP：入口送出的訊息沒有換行字元，manager 會把它丟掉，已實測），格式選 CEF（含位址、結果與首次出現的判斷）或 syslog（沒有位址：沒有位址相關的規則，也無法主動回應）。外拋只有一個目的地，所以這會取代它目前送往的地方；不要與檔案並用，否則每筆記錄都會告警兩次。「外拋被關閉」這筆記錄永遠不會被外拋出去。manager 需要一個允許入口主機的 syslog 接收設定，修改後要重新啟動 manager。",
+   "body": "Only where the agent cannot read the audit file; never use both, or every record alerts twice.\n1. On the manager, add the remote block with the portal host's address and restart the manager.\n2. In the portal (Login log forwarding / SIEM) set host = the manager, port 514, UDP (TCP messages are dropped), format CEF. Syslog format has no address: no address rules, no active response.\nThe export has one destination, so this replaces its current one.",
+   "body_zh": "僅在 agent 無法讀取稽核檔時使用；絕對不要兩者並用，否則每筆記錄都會告警兩次。\n1. 在 manager 加上 remote 區塊並填入入口主機的位址，重新啟動 manager。\n2. 在入口（登入記錄外拋／SIEM）把主機設為 manager、埠 514、UDP（TCP 的訊息會被丟掉）、格式 CEF。syslog 格式沒有位址：沒有位址相關規則，也無法主動回應。\n外拋只有一個目的地，所以這會取代它目前的目的地。",
    "code": "<remote>\n  <connection>syslog</connection>\n  <port>514</port>\n  <protocol>udp</protocol>\n  <allowed-ips><portal host address></allowed-ips>\n</remote>",
    "verify": "Press the export's test button. Expect rule 132103 (level 3).",
    "verify_zh": "按下外拋的測試按鈕，應出現規則 132103（level 3）。"

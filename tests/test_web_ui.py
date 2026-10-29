@@ -780,6 +780,22 @@ class TestDecoders(WebUITestCase):
                     self.client.get('/api/decoders/file?filename=' + bad).status_code, 400)
 
 
+class TestRulesetApiFailures(WebUITestCase):
+    """A failed API call used to show up as an empty table ("no CDB lists")."""
+
+    api_reply = {'error': 'Read timed out. (read timeout=60)'}
+
+    def test_cdb_list_failure_is_reported(self):
+        resp = self.client.get('/api/lists')
+        self.assertEqual(resp.status_code, 502)
+        self.assertIn('timed out', resp.get_json()['error'])
+
+    def test_decoder_failure_is_reported(self):
+        resp = self.client.get('/api/decoders')
+        self.assertEqual(resp.status_code, 502)
+        self.assertIn('timed out', resp.get_json()['error'])
+
+
 class TestCdbLists(WebUITestCase):
 
     api_reply = {'error': 0, 'data': {
@@ -805,6 +821,12 @@ class TestCdbLists(WebUITestCase):
 
     def test_lists_are_flagged_custom(self):
         self.assertTrue(self.client.get('/api/lists').get_json()['lists'][0]['is_custom'])
+
+    def test_lists_are_read_by_name_not_with_their_content(self):
+        # /lists returns every entry of every list: a million-entry hash list
+        # made the request time out on a production manager.
+        self.client.get('/api/lists')
+        self.assertEqual(self.api_calls[0][1], '/lists/files')
 
     def test_read_returns_plain_text(self):
         data = self.client.get('/api/lists/file?filename=blacklist').get_json()
@@ -1501,6 +1523,74 @@ class TestRulePacks(PackFixture):
         self.assertIn('could NOT schedule upd.py', data['message'])
         self.assertIn('17 */6 * * *', data['message'], 'the line to add by hand is missing')
         self.assertFalse(os.path.exists(os.path.join(self.tmp, 'no-cron.d')))
+
+    def _cron_local(self, text, mode=0o644):
+        os.makedirs(os.path.join(self.tmp, 'etc/jt-packs'), exist_ok=True)
+        path = os.path.join(self.tmp, 'etc/jt-packs/jt-testscript.cron.local')
+        if os.path.lexists(path):
+            os.unlink(path)
+        with io.open(path, 'w', encoding='utf-8') as fh:
+            fh.write(text)
+        os.chmod(path, mode)
+        return path
+
+    def _cron_text(self):
+        return io.open(os.path.join(self._cron_dir, 'jt-jt-testscript'), encoding='utf-8').read()
+
+    def test_site_options_in_cron_local_are_applied_and_survive_a_rewrite(self):
+        """1.26: offline options added to /etc/cron.d by hand were lost on every
+        pack update, which rewrites that file; <id>.cron.local keeps them."""
+        self._fake_pack('jt-testscript', self._script_manifest(),
+                        {'rules/r.xml': self.RULE_XML, 'scripts/upd.py': self.SCRIPT_BODY})
+        self.assertEqual(self.client.post('/api/packs/jt-testscript/install').status_code, 200)
+        self._cron_local('# offline\nupd.py: --skip-download --source file:///var/ossec/etc/jt-packs/offline/\n'
+                         'https_proxy=http://proxy.example.com:3128\n')
+        resp = self.client.post('/api/packs/jt-testscript/schedule')
+        data = resp.get_json()
+        self.assertEqual(resp.status_code, 200, data)
+        self.assertTrue(data['changed'])
+        text = self._cron_text()
+        line = [l for l in text.splitlines() if 'upd.py' in l and not l.startswith('#')][0]
+        self.assertIn('--skip-download --source file:///var/ossec/etc/jt-packs/offline/ >>', line)
+        self.assertIn('\nhttps_proxy=http://proxy.example.com:3128\n', text)
+        self.assertLess(text.index('https_proxy='), text.index(line), 'environment must precede the job')
+        self.assertIn('--skip-download', data['scheduled'][0]['crontab_line'])
+        again = self.client.post('/api/packs/jt-testscript/schedule').get_json()
+        self.assertFalse(again['changed'], 'an unchanged schedule must not be rewritten')
+
+    def test_cron_local_refuses_what_could_reach_the_shell(self):
+        self._fake_pack('jt-testscript', self._script_manifest(),
+                        {'rules/r.xml': self.RULE_XML, 'scripts/upd.py': self.SCRIPT_BODY})
+        self.assertEqual(self.client.post('/api/packs/jt-testscript/install').status_code, 200)
+        before = self._cron_text()
+        for text, mode, why in (
+                ('upd.py: --x; rm -rf /\n', 0o644, 'semicolon'),
+                ('upd.py: --x $(id)\n', 0o644, 'command substitution'),
+                ('upd.py: --x > /etc/passwd\n', 0o644, 'redirection'),
+                ('upd.py: --date +%Y\n', 0o644, 'percent is a newline to cron'),
+                ('other.py: --x\n', 0o644, 'not a script of this pack'),
+                ('PATH=/tmp\n', 0o644, 'PATH'),
+                ('X=a b\n', 0o644, 'space in a value'),
+                ('just text\n', 0o644, 'unparsable line'),
+                ('upd.py: --x\n', 0o666, 'writable by others'),
+                ('upd.py: --x\n', 0o664, 'writable by group')):
+            with self.subTest(why=why):
+                self._cron_local(text, mode)
+                resp = self.client.post('/api/packs/jt-testscript/schedule')
+                self.assertEqual(resp.status_code, 400, resp.get_json())
+                self.assertIn('cron.local', resp.get_json()['error'])
+                self.assertEqual(self._cron_text(), before)
+        real = self._cron_local('upd.py: --x\n')
+        link = real + '.link'
+        os.rename(real, link)
+        os.symlink(link, real)
+        self.assertEqual(self.client.post('/api/packs/jt-testscript/schedule').status_code, 400)
+
+    def test_rewriting_the_schedule_needs_the_pack_installed(self):
+        self._fake_pack('jt-testscript', self._script_manifest(),
+                        {'rules/r.xml': self.RULE_XML, 'scripts/upd.py': self.SCRIPT_BODY})
+        self.assertEqual(self.client.post('/api/packs/jt-testscript/schedule').status_code, 400)
+        self.assertEqual(self.client.post('/api/packs/no-such-pack/schedule').status_code, 404)
 
     def test_the_schedule_names_the_system_python_not_the_running_one(self):
         # v1.16.0: run from Wazuh's framework python, the tool wrote that interpreter
@@ -2867,6 +2957,63 @@ class TestI18n(unittest.TestCase):
                     'Exit Selection', 'Add Agents to Group', 'Clean Queue DB Results']:
             with self.subTest(key=key):
                 self.assertIn("'%s':" % key, self.dict_block)
+
+    def _translator(self, strings):
+        """Run the engine's own translate() under node and return, per language,
+        the strings it leaves untranslated."""
+        if not shutil.which('node'):
+            self.skipTest('node not available')
+        hook = '  function getLang() {'
+        self.assertIn(hook, self.engine)
+        engine = self.engine.replace(
+            hook, '  globalThis.__jtTranslate = function (r, l) { return translate(r, l); };\n' + hook, 1)
+        js = ('global.document = { readyState: "loading", addEventListener() {} }; global.window = {};\n' +
+              engine + '\nconst S = %s, out = {};\n'
+              'for (const l of ["zh-TW", "ja"]) out[l] = S.filter(s => __jtTranslate(s, l) === null);\n'
+              'console.log(JSON.stringify(out));' % json.dumps(strings))
+        r = subprocess.run(['node', '-'], input=js, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_pack_dialog_sentences_are_translated(self):
+        """Every fixed sentence in the pack dialogs has a dictionary key.
+
+        The pack dialogs are HTML strings split around <code>, so one sentence
+        is several text nodes and each needs its own key; the "Agent group"
+        section shipped in English for months that way. This reads the pack UI
+        source, joins literals concatenated with +, and takes every piece of text
+        that sits between two tags -- the text nodes the browser will create.
+        Text next to an interpolated value is left to the patterns and to the
+        E2E journey J25, which opens every pack dialog in both languages.
+        """
+        import html
+        src = web_ui.HTML_TEMPLATE
+        block = src[src.index('// ---------- Rule packs ----------'):
+                    src.index('// ---------- Node daemon health ----------')]
+        lit = r"'(?:[^'\\\n]|\\.)*'"
+        segments = set()
+        for m in re.finditer(lit + r"(?:\s*\+\s*" + lit + r")*", block):
+            s = ''.join(x[1:-1] for x in re.findall(lit, m.group(0))).replace("\\'", "'")
+            for t in re.finditer(r'<(\w+)[^<>]*>([^<>]+)<', s):
+                if t.group(1) in ('code', 'pre'):
+                    continue
+                text = html.unescape(t.group(2)).strip()
+                if re.search(r'[A-Za-z]{2,}', text) and text not in ('ID',):
+                    segments.add(text)
+        self.assertIn('Creates the agent group', segments)   # the extraction itself works
+        self.assertGreater(len(segments), 60)
+        missing = self._translator(sorted(segments))
+        for lang, left in missing.items():
+            with self.subTest(lang=lang):
+                self.assertEqual(left, [], 'pack dialog text with no %s translation' % lang)
+
+    def test_multi_line_template_sentences_are_looked_up_with_whitespace_collapsed(self):
+        # A sentence written over several template lines keeps the line break
+        # and indentation inside its text node.
+        raw = ('Wazuh API does not provide access to raw config files on worker nodes.\n'
+               '                            To enable remote config editing, you need to set up SSH key-based authentication\n'
+               '                            from the master node to worker nodes.')
+        self.assertEqual(self._translator([raw]), {'zh-TW': [], 'ja': []})
 
 
 class TestShippedPacks(unittest.TestCase):

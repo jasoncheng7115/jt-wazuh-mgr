@@ -1,0 +1,95 @@
+{
+ "id": "jt-sharetech",
+ "name": "ShareTech Firewall Detection Suite",
+ "name_zh": "ShareTech（眾至）防火牆偵測套組",
+ "version": "1.0",
+ "summary": "Decoders and graded rules for ShareTech NU series firewall CEF syslog: firewall protection, IPS, WAF, thresholds, application control, administrator logins, configuration changes and SSL VPN. Levels follow Wazuh's classification and the direction of the traffic, so an internal host doing what the Internet does all day stands out; account names typed at the login page cannot forge the outcome or the source.",
+ "summary_zh": "ShareTech（眾至）NU 系列防火牆 CEF syslog 的解碼器與分級規則：防火牆防護、IPS、WAF、門檻、應用程式控管、管理者登入、設定變更與 SSL VPN。等級依 Wazuh 的分級定義與流量方向決定，內部主機做出網際網路上每天都在發生的事時會特別突顯；登入頁面輸入的帳號無法偽造結果或來源。",
+ "rule_id_range": "100500-100599",
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.9"
+ ],
+ "notes": [
+  "Built from records of an NU-8700C on firmware 9.0.3 with the WAF, IPSec/SSL VPN and Sandstorm modules, and from the site rules first written for it in 2025. Other NU models and firmware use the same CEF layout as far as known; an event type without a rule reports at level 3 with its name (100506), so nothing new is silently dropped.",
+  "Replaces the 2025 site files in place: the decoder and rule files keep their names (jasontools-sharetech-decorder.xml, jasontools-sharetech-rule.xml), the decoder name sharetech-cef and the field names stay, so installing from this tool backs the old files up and removing the pack restores them. IDs whose meaning stayed are kept; retired: 100502-100504 (traffic is level 0 and gets no rules), 100511 (every protection event had an attack type, so it raised all of them to 10; see 100510/100512), 100521-100523 (EventLevel is 20 on every IPS record measured, scans and policy notices included, so all IPS events were level 10; see 100524-100528), 100545 (a catch-all at level 7 that was tried before the level 6 numeric-IP rule; other WAF categories now stay on 100530 with the category in the description) and 100593 (a successful login is not an alert).",
+  "Fixed from the 2025 rules: the WAF category rules compared a field named cat, which the decoder stored as attack_category, so 100531-100539 never fired; WAF records carry no src=, the client address is in cs3 (labelled Hostname), so every WAF correlation treated all clients as one source; negate on empty values (unreliable in Wazuh) replaced by positive patterns; the VPN login rule compared LOGIN while the firewall writes Login; repetition rules counted only events that stopped on their parent rule and now count every rule of the family through a group.",
+  "Firewall protection records never reached the 2025 rules: their program name FirewallDefense starts with \"Firewalld\", and Wazuh's built-in firewalld rule 40900 (level 0, case-insensitive, loaded earlier) took them first. Rule 100509 hands them back.",
+  "Levels by direction: a block or signature from the Internet toward the firewall is level 6 (low-relevance attack, as Wazuh classifies the frequent IDS events an exposed firewall sees); the same from an internal (RFC 1918) source is level 10 (100512, 100527). IPS signature sets that only match an infected or compromised host (TROJAN, MALWARE, CNC, ATTACK_RESPONSE and similar) are level 12 either way (100528). POLICY and INFO sets are level 3; a server's 4xx error response signature is excluded.",
+  "WAF: SharetechAction=Log means the request was recorded and passed to the server. Command execution, command injection and upload attempts that were only logged are level 10 (100546-100548), the same when blocked level 8; five from one source in two minutes level 12 (100594).",
+  "Log injection: the login name (suser=) is written before src= and outcome=, and on a failed login it is whatever the client typed. A record that carries a security-relevant key twice is reported as possible log injection (100505, level 10) instead of being trusted, so a name typed as 'x outcome=Success' cannot turn a failure into a success and 'x src=10.0.0.5' cannot move the source inside.",
+  "Logins carry the shared markers jt_auth_success / jt_auth_failure (dstuser = account, srcip = address) for jt-account-guard. The account is also kept as srcuser, the name the 2025 decoders used.",
+  "Traffic records (program conntrack) are the bulk of the stream; they have their own decoder with the network fields only and stay at level 0. With logall_json they remain searchable in the archives."
+ ],
+ "notes_zh": [
+  "依據一台 NU-8700C（韌體 9.0.3，含 WAF、IPSec／SSL VPN、Sandstorm 模組）的真實記錄，以及 2025 年為它寫的站台規則製作。就目前所知，其他 NU 型號與韌體使用相同的 CEF 格式；沒有對應規則的事件類型會以 level 3 帶名稱回報（100506），新類型不會被默默丟掉。",
+  "原位取代 2025 年的站台檔案：解碼器與規則檔沿用原檔名（jasontools-sharetech-decorder.xml、jasontools-sharetech-rule.xml），解碼器名稱 sharetech-cef 與欄位名稱不變，所以從本工具安裝時會備份舊檔，移除套件時會還原。意義不變的規則編號沿用；退役的有：100502-100504（流量為 level 0、不設規則）、100511（每筆防護事件都有攻擊類型，等於全部升到 10；改看 100510／100512）、100521-100523（實測每筆 IPS 的 EventLevel 都是 20，連掃描與政策通知也是，所以原本所有 IPS 都是 level 10；改看 100524-100528）、100545（level 7 的總括規則會搶在 level 6 的數字 IP 規則之前；其他 WAF 類別改由 100530 在描述中帶出類別）、100593（登入成功不是告警）。",
+  "修正 2025 版規則的問題：WAF 類別規則比對的欄位叫 cat，但解碼器存成 attack_category，所以 100531-100539 從未觸發；WAF 記錄沒有 src=，客戶端位址在 cs3（標籤是 Hostname），所以所有 WAF 關聯都把全部客戶端當成同一個來源；空值的 negate（在 Wazuh 不可靠）改為正向比對；VPN 登入規則比對 LOGIN，但設備寫的是 Login；重複次數規則原本只計入停在父規則的事件，現在以群組計入整個類別的規則。",
+  "2025 版規則從未收到防火牆防護（FIREWALL_PROTECT）記錄：它的程式名稱 FirewallDefense 開頭剛好是「Firewalld」，被 Wazuh 內建、較早載入的 firewalld 規則 40900（level 0、不分大小寫）先接走。規則 100509 把它們接回來。",
+  "依方向分級：從網際網路打向防火牆的阻擋或簽章為 level 6（低相關性攻擊，Wazuh 對對外防火牆常見的 IDS 事件就是這樣分級）；同樣的事件來源是內部（RFC 1918）主機時為 level 10（100512、100527）。只會出現在已感染或已被入侵主機上的 IPS 簽章集（TROJAN、MALWARE、CNC、ATTACK_RESPONSE 等）一律 level 12（100528）。POLICY、INFO 為 level 3；伺服器回應 4xx 的簽章予以排除。",
+  "WAF：SharetechAction=Log 表示請求只被記錄、仍送到了伺服器。只被記錄的指令執行、指令注入與上傳攻擊為 level 10（100546-100548），被阻擋時為 level 8；同一來源兩分鐘內五次為 level 12（100594）。",
+  "記錄注入：登入帳號（suser=）寫在 src= 與 outcome= 之前，登入失敗時就是客戶端輸入的任意文字。同一筆記錄中安全相關的欄位出現兩次時，會以可能的記錄注入回報（100505，level 10），不採信其內容；所以把帳號輸入成「x outcome=Success」無法讓失敗變成功，輸入「x src=10.0.0.5」也無法把來源偽造成內部位址。",
+  "登入規則帶有共用標記 jt_auth_success／jt_auth_failure（dstuser＝帳號、srcip＝位址），供 jt-account-guard 使用。帳號同時保留在 2025 版解碼器使用的 srcuser 欄位。",
+  "流量記錄（程式名 conntrack）佔串流的絕大部分，使用只解網路欄位的獨立解碼器並維持 level 0。開啟 logall_json 時仍可在 archives 中搜尋。"
+ ],
+ "files": [
+  {
+   "type": "decoder",
+   "name": "jasontools-sharetech-decorder.xml",
+   "dest": "etc/decoders/jasontools-sharetech-decorder.xml",
+   "sha256": "8fdbc2243886d98f182d474af0111a557655a12007db4ea73e13ff977c05fde8"
+  },
+  {
+   "type": "rule",
+   "name": "jasontools-sharetech-rule.xml",
+   "dest": "etc/rules/jasontools-sharetech-rule.xml",
+   "sha256": "71b496433a6d699db6fe4b2887b33c1b3bd9e231300f496c8d44f6db0a35c3b1"
+  }
+ ],
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset",
+   "title_zh": "安裝套件並重新載入規則集",
+   "body": "1. Install from this page. Existing jasontools-sharetech-*.xml files are replaced and backed up.\n2. Rules tab → Reload Ruleset (on a cluster this reloads every node).\n3. If old copies exist under other file names, delete them.",
+   "body_zh": "1. 在本頁安裝。既有的 jasontools-sharetech-*.xml 會被取代並自動備份。\n2. 到「規則」分頁按「重新載入規則集」（叢集會重載所有節點）。\n3. 若有以其他檔名存放的舊副本，請刪除。",
+   "verify": "grep -l sharetech-cef /var/ossec/etc/decoders/*.xml lists exactly one file.",
+   "verify_zh": "grep -l sharetech-cef /var/ossec/etc/decoders/*.xml 只列出一個檔案。"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Accept syslog from the firewall",
+   "title_zh": "讓管理端接收防火牆的 syslog",
+   "body": "Add this block to /var/ossec/etc/ossec.conf on the node that receives the logs, with the firewall's address in allowed-ips (required: without it syslog is disabled), then restart the manager.",
+   "body_zh": "在接收記錄的節點的 /var/ossec/etc/ossec.conf 加入下列區塊，allowed-ips 填防火牆位址（必填，沒有它 syslog 會被停用），然後重啟管理端。",
+   "code": "<remote>\n  <connection>syslog</connection>\n  <protocol>udp</protocol>\n  <port>514</port>\n  <allowed-ips>192.0.2.1/32</allowed-ips>\n</remote>",
+   "verify": "After the restart, grep 'Syslog server disabled' /var/ossec/logs/ossec.log prints nothing new.",
+   "verify_zh": "重啟後 grep 'Syslog server disabled' /var/ossec/logs/ossec.log 沒有新的輸出。"
+  },
+  {
+   "platform": "network",
+   "required": true,
+   "title": "Send the firewall's logs in CEF",
+   "title_zh": "讓防火牆以 CEF 送出記錄",
+   "body": "In the firewall's syslog settings add the manager (address and port from the previous step) as a remote syslog server in CEF format. Send: firewall protection, IPS, WAF, advanced protection, system events, VPN (and application control if used). Traffic records are optional: they never alert and are most of the volume.",
+   "body_zh": "在防火牆的 syslog 設定新增遠端 syslog 伺服器：管理端位址與上一步的埠，格式選 CEF。勾選：防火牆防護、IPS、WAF、進階防護、系統事件、VPN（有用應用程式控管也勾）。流量記錄可不送：它不會告警，卻佔大部分流量。",
+   "verify": "Log in to the firewall's web console once: within a minute 100571 (100580 from a public address) appears with your account.",
+   "verify_zh": "登入一次防火牆管理頁面：一分鐘內出現帶有你帳號的 100571（從公開位址登入則是 100580）。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "Optional: keep records that raise no alert",
+   "title_zh": "選用：保留不產生告警的記錄",
+   "body": "Only level 3 and above reach alerts.json. To search the rest (traffic, logouts), enable archives in <global> of ossec.conf and restart. Archives grow fast with traffic records.",
+   "body_zh": "只有 level 3 以上會寫入 alerts.json。要搜尋其他記錄（流量、登出），在 ossec.conf 的 <global> 開啟 archives 並重啟。有流量記錄時 archives 成長很快。",
+   "code": "<global>\n  <logall>yes</logall>\n  <logall_json>yes</logall_json>\n</global>"
+  }
+ ]
+}

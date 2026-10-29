@@ -23,7 +23,11 @@
   "What does not reach Wazuh through the plugin: it selects syslog programs, not facilities, so sshd (auth facility), API key failures (program api) and OPNsense's login protection (lockout_handler) cannot be selected. Key-based SSH logins leave no trace at all. The pack has rules for the API and login protection lines; they fire only if the firewall also sends syslog to the manager.",
   "Prerequisites: OPNsense with the os-wazuh-agent plugin (1.3 tested), which writes the selected programs to /var/ossec/logs/opnsense_syslog.log in BSD syslog format. OPNsense's own log files under /var/log use RFC 5424, which Wazuh does not decode, so the plugin's file is the only usable source. Keep OPNsense at 26.1.8 or later (four advisories with code execution or an authentication bypass were fixed in 26.1.6 to 26.1.8), and at 26.7.4 or later before relying on the web interface brute-force response.",
   "Cross-pack login groups (patch release): jt_auth_success on 131501, 131537, 131533, 131536, 131534, 131535, 131507, 131528, 131529, 131585, 131589; jt_auth_failure on 131502, 131547, 131510, 131563, 131564; jt_auth_lockout on 131555. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. One copy per login: the web interface is tagged on the line with the address (131501, 131502 and their children), not on the authenticator line (131506, 131509); OpenVPN failures on the daemon line with the address (131563, 131564), not on the password script line (131566). OpenVPN successes (131567) decode the account as srcuser and are not tagged; certificate errors and IPsec failures name no account. 131503 and 131556 now count failures through pack-only groups (jt_opnsense_gui_failure on 131502, jt_opnsense_svc_failure on 131510) instead of if_matched_sid: same rules, same thresholds, but the failures also reach the cross-pack group lists, which skip any rule named by an if_matched_sid.",
-  "1.2.2: the daily pkg audit alert (131578) names the vulnerable packages and counts their CVEs. The agent group's command now pipes pkg-static audit -F through awk (logcollector runs commands with popen(), that is through /bin/sh), which folds the report into one line: \"<summary> Vulnerable: openvpn-2.7.7; openssl35-3.5.9. CVEs: 4.\". Before, only the summary reached a rule and every package line was a separate level 0 event, so the alert said how many but not which. Still one alert per firewall per day. The decoder accepts the old summary-only line too, so an agent that has not received the new group file keeps working. Packages are separated by \"; \" because FreeBSD versions can carry an epoch after a comma."
+  "1.2.2: the daily pkg audit alert (131578) names the vulnerable packages and counts their CVEs. The agent group's command now pipes pkg-static audit -F through awk (logcollector runs commands with popen(), that is through /bin/sh), which folds the report into one line: \"<summary> Vulnerable: openvpn-2.7.7; openssl35-3.5.9. CVEs: 4.\". Before, only the summary reached a rule and every package line was a separate level 0 event, so the alert said how many but not which. Still one alert per firewall per day. The decoder accepts the old summary-only line too, so an agent that has not received the new group file keeps working. Packages are separated by \"; \" because FreeBSD versions can carry an epoch after a comma.",
+  "Volume per forwarded application, measured: audit about 30 lines a day, configd 400 to 50,000 a day (nearly all level 0), OpenVPN about 4,400 a day (a status poll every minute, level 0). filterlog is covered in the note on the firewall log.",
+  "The opnsense group's file integrity check runs on the plugin's own FIM, which scans every 12 hours (FreeBSD has no real-time mode). After a firmware update, expect built-in rule 550 (level 7) only for the actions and hooks whose content changed, usually a handful. Of CrowdSec's log only decisions, the overflows behind them and fatal errors are kept.",
+  "Daily check details: pkg-static audit -F downloads FreeBSD's vulnerability list (vuxml.freebsd.org) on the firewall and runs the same check as System > Firmware > Status > Audit; if the firewall cannot download the list, no summary line is printed and nothing alerts. The plugin's Wazuh remote commands checkbox (Active response tab) writes a misspelled option in os-wazuh-agent 1.3 and has no effect.",
+  "Why block-gui-bruteforce stays off before 26.7.4: one piece of each forged record (GHSA-jjm2-jg4p-3v9q) can be a clean \"failed login from <any address>\" line, and six of them make the response block an address the attacker chose: an administrator's workstation, the manager, a partner. Rule 131539 (level 10) reports the leftover every forgery leaves, with the real sender, but cannot unmake the clean piece. The fix in 26.7.4 turns line breaks into spaces in OPNsense's own log files; whether the plugin's copy gets the same treatment was not verified. The advisories behind 26.1.8: CVE-2026-34578 (26.1.6), CVE-2026-44193 (26.1.7), CVE-2026-44194 and CVE-2026-45158 (26.1.8)."
  ],
  "notes_zh": [
   "OPNsense 把稽核軌跡（網頁介面登入、登入失敗、設定變更、韌體操作）寫在 syslog 名稱「audit」底下。Wazuh 把這個名稱當成 Solaris BSM 解碼，並在規則 6100（level 0）丟掉，所以從來沒有告警過：實測兩台防火牆 30 天有 549 行稽核記錄、零筆告警。本套件的解碼器是那個解碼器的子解碼器，依 OPNsense 原始碼的格式字串撰寫；有真實記錄的情境，都用這兩台防火牆的真實記錄測過。",
@@ -42,7 +46,11 @@
   "透過外掛程式送不到 Wazuh 的：外掛程式選的是 syslog 程式而不是 facility，所以 sshd（auth facility）、API 金鑰失敗（程式 api）與 OPNsense 的登入保護（lockout_handler）都無法勾選。以金鑰登入 SSH 完全不留痕跡。本套件仍有 API 與登入保護的規則，只有在防火牆另外把 syslog 送到 manager 時才會觸發。",
   "前提：OPNsense 安裝 os-wazuh-agent 外掛程式（測試版本 1.3），它會把勾選的程式以 BSD syslog 格式寫進 /var/ossec/logs/opnsense_syslog.log。OPNsense 自己在 /var/log 下的記錄檔是 RFC 5424 格式，Wazuh 無法解碼，所以外掛程式的檔案是唯一可用的來源。請讓 OPNsense 保持在 26.1.8 以上（26.1.6 到 26.1.8 修正了四個遠端執行程式碼或繞過認證的弱點），要依賴網頁介面暴力破解的主動回應之前，請先升到 26.7.4 以上。",
   "跨套件登入群組（修補版）：jt_auth_success：131501, 131537, 131533, 131536, 131534, 131535, 131507, 131528, 131529, 131585, 131589；jt_auth_failure：131502, 131547, 131510, 131563, 131564；jt_auth_lockout：131555。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。每次登入只標一份：網頁介面標在有位址的那行（131501、131502 與其子規則），不標驗證器那行（131506、131509）；OpenVPN 失敗標在有位址的服務程式那行（131563、131564），不標密碼腳本那行（131566）。OpenVPN 成功（131567）的帳號解在 srcuser，不加標記；憑證錯誤與 IPsec 失敗沒有帳號。131503 與 131556 改以套件專屬群組計算失敗（131502 上的 jt_opnsense_gui_failure、131510 上的 jt_opnsense_svc_failure），不再用 if_matched_sid：同樣的規則與門檻，但失敗事件也能進入跨套件群組清單（被 if_matched_sid 指名的規則會被群組清單略過）。",
-  "1.2.2：每天的 pkg audit 告警（131578）會列出有弱點的套件名稱與 CVE 數量。agent 群組的指令改為把 pkg-static audit -F 的輸出交給 awk（logcollector 以 popen() 執行指令，也就是經過 /bin/sh），整理成一行：「<摘要> Vulnerable: openvpn-2.7.7; openssl35-3.5.9. CVEs: 4.」。原本只有摘要那一行會對到規則，每個套件那一行都是個別的 level 0 事件，所以告警只說有幾個、沒說是哪些。仍然是每台防火牆每天一則。解碼器也接受舊的只有摘要的格式，還沒收到新群組設定的 agent 照常運作。套件之間以「; 」分隔，因為 FreeBSD 的版本號可能帶有逗號後的 epoch。"
+  "1.2.2：每天的 pkg audit 告警（131578）會列出有弱點的套件名稱與 CVE 數量。agent 群組的指令改為把 pkg-static audit -F 的輸出交給 awk（logcollector 以 popen() 執行指令，也就是經過 /bin/sh），整理成一行：「<摘要> Vulnerable: openvpn-2.7.7; openssl35-3.5.9. CVEs: 4.」。原本只有摘要那一行會對到規則，每個套件那一行都是個別的 level 0 事件，所以告警只說有幾個、沒說是哪些。仍然是每台防火牆每天一則。解碼器也接受舊的只有摘要的格式，還沒收到新群組設定的 agent 照常運作。套件之間以「; 」分隔，因為 FreeBSD 的版本號可能帶有逗號後的 epoch。",
+  "各轉送應用程式的量（實測）：audit 每天約 30 行，configd 每天 400 到 50,000 行（幾乎都是 level 0），OpenVPN 每天約 4,400 行（每分鐘一次狀態查詢，level 0）。filterlog 見防火牆記錄的說明。",
+  "opnsense 群組的檔案完整性檢查使用外掛程式自己的 FIM，每 12 小時掃描一次（FreeBSD 沒有即時模式）。韌體更新之後，只有內容真的改變的動作與掛勾會出現內建規則 550（level 7），通常只有幾個。CrowdSec 記錄只保留決策、觸發決策的事件與嚴重錯誤。",
+  "每日檢查的細節：pkg-static audit -F 會在防火牆上下載 FreeBSD 的弱點清單（vuxml.freebsd.org），與 System > Firmware > Status > Audit 的檢查相同；防火牆下載不到清單時不會印出摘要行，也就不會告警。外掛程式的 Wazuh remote commands 勾選框（Active response 分頁）在 os-wazuh-agent 1.3 會寫出拼錯的選項名稱，沒有作用。",
+  "為什麼 26.7.4 之前 block-gui-bruteforce 要保持關閉：每一筆偽造記錄（GHSA-jjm2-jg4p-3v9q）中，可以有一段是乾淨的「某位址登入失敗」行，位址任選；六段就會讓這個回應封鎖攻擊者指定的位址：管理者的工作站、manager 本身、合作夥伴。規則 131539（level 10）會回報每次偽造必然留下的殘段並附上真正的送出者，但無法讓那段乾淨的行消失。26.7.4 的修正會把 OPNsense 自己記錄檔裡的換行換成空白；外掛程式的副本是否也一樣處理，尚未驗證。26.1.8 之前的公告：CVE-2026-34578（26.1.6）、CVE-2026-44193（26.1.7）、CVE-2026-44194 與 CVE-2026-45158（26.1.8）。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -85,18 +93,20 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers.",
-   "body_zh": "在本頁安裝後，到「規則」分頁按「重新載入規則集」。叢集只同步規則檔、不會重載 worker。"
+   "title": "Install the pack and reload every node",
+   "title_zh": "安裝套件並重新載入所有節點",
+   "body": "1. Install the pack from this page. It declares its CDB list in ossec.conf on every cluster node; if the result names a node it could not reach, add the <list> lines to that node's <ruleset> by hand.\n2. Click Reload Ruleset on the Rules tab: it reloads every cluster node.",
+   "body_zh": "1. 在本頁安裝套件。安裝時會在每個叢集節點的 ossec.conf 宣告CDB 清單；若結果列出無法連線的節點，請手動把 <list> 加進該節點的 <ruleset>。\n2. 到「規則」分頁按「重新載入規則集」：會重新載入叢集的每個節點。",
+   "verify": "The reload result shows every node as reloaded, with no warning.",
+   "verify_zh": "重新載入的結果顯示每個節點都已重新載入，且沒有警告。"
   },
   {
    "platform": "manager",
    "required": true,
-   "title": "Define the opnsense-fw command on every manager node (for the active responses)",
-   "title_zh": "在每個 manager 節點定義 opnsense-fw 指令（主動回應需要）",
-   "body": "The active responses of this pack use the os-wazuh-agent plugin's own script, which the plugin installs on the firewall as /var/ossec/active-response/bin/opnsense-fw (it adds the address to the alias __wazuh_agent_drop and removes it again when the timeout expires, so timeout_allowed must be yes). Wazuh does not define that command by default: paste the block into ossec.conf on every manager node, inside <ossec_config>, and restart the manager or reload its configuration. The response only works on agents that have the script, that is OPNsense firewalls with the plugin and its Active response setting enabled (the default); on any other agent the command fails and nothing is blocked. Nothing is blocked until a response is switched on in this pack.",
-   "body_zh": "本套件的主動回應使用 os-wazuh-agent 外掛程式自己的腳本，外掛程式把它安裝在防火牆的 /var/ossec/active-response/bin/opnsense-fw（它把位址加入 __wazuh_agent_drop 別名，逾時後再移除，所以 timeout_allowed 必須是 yes）。Wazuh 預設沒有定義這個指令：請把下列區塊貼進每個 manager 節點 ossec.conf 的 <ossec_config> 內，然後重新啟動 manager 或重新載入設定。這個回應只在有該腳本的 agent 上有效，也就是安裝了外掛程式、且其 Active response 設定已啟用（預設）的 OPNsense 防火牆；在其他 agent 上指令會失敗，什麼都不會被封鎖。在本套件中開啟回應之前，不會封鎖任何東西。",
+   "title": "Define the opnsense-fw command on every node",
+   "title_zh": "在每個節點定義 opnsense-fw 指令",
+   "body": "Needed only for this pack's active responses.\n1. Paste the block below into ossec.conf, inside <ossec_config>, on every manager node. Keep timeout_allowed yes: the script removes the address when the timeout ends.\n2. Restart the manager on each node. Switching a response on needs a restart too, so one restart after both is enough.\nThe script is the os-wazuh-agent plugin's own, so it runs only on OPNsense agents with the plugin's Active response setting on (the default). Nothing is blocked until you switch a response on.",
+   "body_zh": "只有本套件的主動回應需要。\n1. 把下列區塊貼進每個 manager 節點 ossec.conf 的 <ossec_config> 內。timeout_allowed 要維持 yes：逾時結束時由腳本移除位址。\n2. 在每個節點重新啟動 manager。開啟回應也需要重新啟動，所以兩件事做完再重新啟動一次即可。\n腳本是 os-wazuh-agent 外掛程式自己的，因此只在外掛程式 Active response 設定開啟（預設）的 OPNsense agent 上執行。在本套件中開啟回應之前，不會封鎖任何東西。",
    "code": "<command>\n  <name>opnsense-fw</name>\n  <executable>opnsense-fw</executable>\n  <timeout_allowed>yes</timeout_allowed>\n</command>",
    "verify": "Before enabling a response, check that every node has the block: grep -A3 '<name>opnsense-fw</name>' /var/ossec/etc/ossec.conf",
    "verify_zh": "開啟回應之前，確認每個節點都有這個區塊：grep -A3 '<name>opnsense-fw</name>' /var/ossec/etc/ossec.conf"
@@ -104,22 +114,22 @@
   {
    "platform": "network",
    "required": true,
-   "title": "Select the applications the plugin forwards (OPNsense web interface)",
-   "title_zh": "選擇外掛程式要轉送的應用程式（OPNsense 網頁介面）",
-   "body": "On each firewall: Services > Wazuh Agent > Settings, field Applications. Tick audit (audit), configd (configd.py), kernel (kernel), pkg (pkg) and pkg (pkg-static), gateways (dpinger), openvpn (openvpn) if OpenVPN is used, ipsec (charon) if IPsec is used. filter (filterlog) only if the multiple-blocks alert 87702 is wanted: it is by far the largest source (measured 930,000 lines a day on one firewall). Then Apply. The plugin rewrites its syslog-ng filter and restarts the agent: the agent reconnects within seconds and traffic is not affected. Expected extra volume, measured: audit about 30 lines a day, configd from 400 to 50,000 lines a day (nearly all level 0), OpenVPN about 4,400 a day (a status poll every minute, level 0).",
-   "body_zh": "每台防火牆：Services > Wazuh Agent > Settings 的 Applications 欄位。勾選 audit (audit)、configd (configd.py)、kernel (kernel)、pkg (pkg) 與 pkg (pkg-static)、gateways (dpinger)，有用 OpenVPN 時勾 openvpn (openvpn)，有用 IPsec 時勾 ipsec (charon)。只有需要多次封鎖告警 87702 時才勾 filter (filterlog)：它是最大的來源（實測一台每天 930,000 行）。然後按 Apply。外掛程式會改寫 syslog-ng 篩選並重新啟動 agent：agent 幾秒內重新連線，不影響流量。實測增加的量：audit 每天約 30 行，configd 每天 400 到 50,000 行（幾乎都是 level 0），OpenVPN 每天約 4,400 行（每分鐘一次狀態查詢，level 0）。",
+   "title": "Select the applications the plugin forwards",
+   "title_zh": "選擇外掛程式要轉送的應用程式",
+   "body": "On each firewall: Services > Wazuh Agent > Settings, field Applications.\n1. Tick audit (audit), configd (configd.py), kernel (kernel), pkg (pkg), pkg (pkg-static) and gateways (dpinger).\n2. Tick openvpn (openvpn) if OpenVPN is used and ipsec (charon) if IPsec is used.\n3. Tick filter (filterlog) only if you want the multiple-blocks alert 87702: it is by far the largest source.\n4. Click Apply. The plugin restarts the agent, which reconnects within seconds; traffic is not affected.",
+   "body_zh": "每台防火牆：Services > Wazuh Agent > Settings 的 Applications 欄位。\n1. 勾選 audit (audit)、configd (configd.py)、kernel (kernel)、pkg (pkg)、pkg (pkg-static) 與 gateways (dpinger)。\n2. 有用 OpenVPN 時勾 openvpn (openvpn)，有用 IPsec 時勾 ipsec (charon)。\n3. 只有需要多次封鎖告警 87702 時才勾 filter (filterlog)：它是最大的來源。\n4. 按 Apply。外掛程式會重新啟動 agent，幾秒內重新連線，不影響流量。",
    "verify": "Log in to the web interface as root. Expect rule 131533 (level 3) for the firewall's agent on the manager; another account's first login from an address shows as 131536 (level 3).",
    "verify_zh": "以 root 登入網頁介面，manager 端該防火牆的 agent 應出現規則 131533（level 3）；其他帳號第一次從某位址登入會出現 131536（level 3）。"
   },
   {
    "platform": "manager",
    "required": false,
-   "title": "Assign the firewalls to the opnsense group (CrowdSec, file integrity, daily checks)",
-   "title_zh": "把防火牆加入 opnsense 群組（CrowdSec、檔案完整性、每日檢查）",
-   "body": "The group adds three things, each working only with an option of the plugin on: CrowdSec's own log file, keeping decisions, the overflows behind them and fatal errors (firewalls running os-crowdsec); file integrity of /usr/local/opnsense/service/conf/actions.d, /usr/local/etc/rc.syshook.d and /root/.ssh (the plugin's File integrity monitoring option; scanned every 12 hours, FreeBSD has no real-time mode); and a daily pkg audit and opnsense-version (the Logcollector remote commands option, see the step below). Nothing else in the pack depends on the group. File integrity compares content, owner and mode, not time stamps: after a firmware update expect built-in rule 550 (level 7) only for the actions and hooks whose content changed, usually a handful.",
-   "body_zh": "群組會加上三樣東西，各自要外掛程式的某個選項開啟才有作用：CrowdSec 自己的記錄檔，只保留決策、觸發決策的事件與嚴重錯誤（執行 os-crowdsec 的防火牆）；/usr/local/opnsense/service/conf/actions.d、/usr/local/etc/rc.syshook.d 與 /root/.ssh 的檔案完整性（外掛程式的 File integrity monitoring 選項；每 12 小時掃描一次，FreeBSD 沒有即時模式）；以及每日的 pkg audit 與 opnsense-version（Logcollector remote commands 選項，見下方步驟）。套件其他部分不依賴這個群組。檔案完整性比對內容、擁有者與權限，不比對時間戳記：韌體更新之後，只有內容真的改變的動作與掛勾會出現內建規則 550（level 7），通常只有幾個。",
+   "title": "Optional: add the firewalls to the opnsense group",
+   "title_zh": "選用：把防火牆加入 opnsense 群組",
+   "body": "1. Assign each firewall to the opnsense group and restart its agent (commands below; <agent_id> is the firewall's agent ID).\n2. In the plugin settings, turn on File integrity monitoring for the integrity checks (configd actions, boot hooks, root's SSH keys), and Logcollector remote commands for the daily checks (next step).\nThe CrowdSec log is read on firewalls that run os-crowdsec. Nothing else in the pack depends on the group.",
+   "body_zh": "1. 把每台防火牆加入 opnsense 群組並重新啟動它的 agent（指令如下；<agent_id> 是防火牆的 agent ID）。\n2. 在外掛程式設定中，開啟 File integrity monitoring 以啟用完整性檢查（configd 動作、開機掛勾、root 的 SSH 金鑰），開啟 Logcollector remote commands 以啟用每日檢查（下一步）。\n執行 os-crowdsec 的防火牆會讀取 CrowdSec 記錄。套件其他部分不依賴這個群組。",
    "file": "agent/agent.conf",
-   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g opnsense\n/var/ossec/bin/agent_control -R -u <agent_id>",
+   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g opnsense -q\n/var/ossec/bin/agent_control -R -u <agent_id>",
    "verify": "After CrowdSec's next decision, expect rule 131591 (level 5). On the firewall, /var/ossec/etc/shared/agent.conf now contains the text jt-opnsense-pkg-audit.",
    "verify_zh": "CrowdSec 下一次做出決策後，應出現規則 131591（level 5）。防火牆上的 /var/ossec/etc/shared/agent.conf 應含有 jt-opnsense-pkg-audit 字樣。"
   },
@@ -127,10 +137,10 @@
    "platform": "network",
    "required": false,
    "since": "1.2",
-   "title": "Optional: let the agent run the daily vulnerability and version check",
-   "title_zh": "選用：讓 agent 每天執行弱點與版本檢查",
-   "body": "On each firewall in the opnsense group: Services > Wazuh Agent > Settings, tick Logcollector remote commands, then Apply (the plugin restarts the agent; it reconnects within seconds). The agent then runs two commands from the group configuration once a day: pkg-static audit -F, which downloads FreeBSD's vulnerability list (vuxml.freebsd.org) and checks the installed packages, the same check as System > Firmware > Status > Audit; and opnsense-version. Rule 131578 (level 5) reports vulnerable packages, 131579 (level 7) a community release older than 26.1.8. Risk: with this option on, anyone who can change the opnsense group's configuration on the manager can run any command as root on the firewall, so keep write access to the manager to the people who already administer the firewalls. The plugin's other checkbox, Wazuh remote commands (Active response tab), is not needed and has no effect in os-wazuh-agent 1.3: its template writes a misspelled option. Without the option the agent logs \"Remote commands are not accepted from the manager\" once at start and skips the two commands; the rest of the group still applies.",
-   "body_zh": "opnsense 群組裡的每台防火牆：Services > Wazuh Agent > Settings，勾選 Logcollector remote commands 後按 Apply（外掛程式會重新啟動 agent，幾秒內重新連線）。之後 agent 每天執行群組設定裡的兩個指令一次：pkg-static audit -F，它會下載 FreeBSD 的弱點清單（vuxml.freebsd.org）並檢查已安裝的套件，與 System > Firmware > Status > Audit 的檢查相同；以及 opnsense-version。規則 131578（level 5）回報有弱點的套件，131579（level 7）回報早於 26.1.8 的社群版本。風險：開啟這個選項後，任何能修改 manager 上 opnsense 群組設定的人，都能在防火牆上以 root 執行任意指令，所以 manager 的寫入權限只應給本來就管理防火牆的人。外掛程式的另一個勾選框 Wazuh remote commands（Active response 分頁）不需要，在 os-wazuh-agent 1.3 上也沒有作用：它的範本寫出拼錯的選項名稱。沒有開啟這個選項時，agent 啟動時會記錄一次「Remote commands are not accepted from the manager」並略過這兩個指令，群組其他設定照常生效。",
+   "title": "Optional: turn on the daily vulnerability check",
+   "title_zh": "選用：開啟每日弱點與版本檢查",
+   "body": "On each firewall in the opnsense group:\n1. Services > Wazuh Agent > Settings, tick Logcollector remote commands, then Apply (the agent restarts and reconnects within seconds).\n2. Leave Wazuh remote commands on the Active response tab as it is: it is not needed and has no effect in os-wazuh-agent 1.3.\nThe firewall itself must reach vuxml.freebsd.org; if the download fails, the check reports nothing. With this option on, anyone who can edit the opnsense group on the manager can run commands as root on the firewall, so limit write access to the manager.",
+   "body_zh": "opnsense 群組裡的每台防火牆：\n1. Services > Wazuh Agent > Settings，勾選 Logcollector remote commands 後按 Apply（agent 會重新啟動，幾秒內重新連線）。\n2. Active response 分頁的 Wazuh remote commands 維持原樣：不需要，在 os-wazuh-agent 1.3 上也沒有作用。\n防火牆本身必須連得到 vuxml.freebsd.org；下載失敗時這項檢查不會回報任何東西。開啟這個選項後，能修改 manager 上 opnsense 群組設定的人都能在防火牆上以 root 執行指令，所以請限制 manager 的寫入權限。",
    "verify": "On the firewall: grep jt-opnsense /var/ossec/logs/ossec.log shows no \"not accepted\" line after the restart. On the manager, a firewall older than 26.1.8 shows rule 131579 within a minute of the agent starting.",
    "verify_zh": "在防火牆上：grep jt-opnsense /var/ossec/logs/ossec.log 在重新啟動之後不應有「not accepted」的行。在 manager 上，早於 26.1.8 的防火牆會在 agent 啟動一分鐘內出現規則 131579。"
   },
@@ -138,10 +148,10 @@
    "platform": "network",
    "required": false,
    "since": "1.2",
-   "title": "Optional: send intrusion detection alerts (Suricata) to Wazuh",
-   "title_zh": "選用：把入侵偵測告警（Suricata）送到 Wazuh",
-   "body": "On firewalls running intrusion detection: Services > Wazuh Agent > Settings, tick Intrusion detection events, then Apply. The agent reads /var/log/suricata/eve.json. The pack grades the alerts with no list (rules 131596, 131500, 131599; see the notes) and the grading applies to every Suricata eve.json source on the manager, not only OPNsense. If the manager already has rules of its own under the built-in 86601, they become siblings of these: remove or retire them, or the result depends on rule levels. Measured volume on one internet-facing firewall: about 26 alerts a day before grading, about 5 after.",
-   "body_zh": "有執行入侵偵測的防火牆：Services > Wazuh Agent > Settings，勾選 Intrusion detection events 後按 Apply。agent 會讀取 /var/log/suricata/eve.json。本套件不用清單就能把告警分級（規則 131596、131500、131599，見說明），分級套用到 manager 上所有 Suricata eve.json 來源，不只 OPNsense。若 manager 上已有自己掛在內建 86601 底下的規則，它們會和這些規則成為同層規則：請移除或停用，否則結果取決於規則等級。實測一台面向網際網路的防火牆：分級前每天約 26 筆告警，分級後約 5 筆。",
+   "title": "Optional: send Suricata alerts to Wazuh",
+   "title_zh": "選用：把 Suricata 告警送到 Wazuh",
+   "body": "1. On firewalls running intrusion detection: Services > Wazuh Agent > Settings, tick Intrusion detection events, then Apply. The agent then reads /var/log/suricata/eve.json.\n2. If the manager has rules of its own under the built-in 86601, remove or retire them: they would become siblings of the pack's grading rules and the result would depend on rule levels.\nThe grading applies to every Suricata eve.json source on the manager, not only OPNsense.",
+   "body_zh": "1. 有執行入侵偵測的防火牆：Services > Wazuh Agent > Settings，勾選 Intrusion detection events 後按 Apply。agent 之後會讀取 /var/log/suricata/eve.json。\n2. 若 manager 上有自己掛在內建 86601 底下的規則，請移除或停用：它們會和本套件的分級規則成為同層規則，結果會取決於規則等級。\n分級套用到 manager 上所有 Suricata eve.json 來源，不只 OPNsense。",
    "verify": "The next IDS alert of a low-priority signature shows as rule 131596 in the archives (level 2, not in alerts); a compromise-class alert as 131599.",
    "verify_zh": "下一筆低優先等級特徵的 IDS 告警，在 archives 中為規則 131596（level 2，不會出現在 alerts）；入侵後類別的告警則為 131599。"
   },
@@ -149,37 +159,37 @@
    "platform": "manager",
    "required": false,
    "since": "1.2",
-   "title": "Keep the web interface brute-force response off before OPNsense 26.7.4",
-   "title_zh": "OPNsense 26.7.4 之前，不要開啟網頁介面暴力破解的主動回應",
-   "body": "Up to 26.7.3 (and 26.4.2 of the Business Edition) a line break in the user name posted to the login page writes extra audit lines (GHSA-jjm2-jg4p-3v9q). One piece of each forged record can be a clean \"failed login from <any address>\" line, and six of them make block-gui-bruteforce block an address the attacker chose: an administrator's workstation, the manager, a partner. Rule 131539 (level 10) reports the leftover every forgery leaves, with the real sender, but it cannot unmake the clean piece. Leave that response off on such firewalls. The fix in 26.7.4 turns line breaks into spaces in OPNsense's own log files; whether the plugin's copy (/var/ossec/logs/opnsense_syslog.log) gets the same treatment was not verified, so test it on your version before enabling the response there too. Also keep OPNsense at 26.1.8 or later: CVE-2026-34578 (26.1.6), CVE-2026-44193 (26.1.7), CVE-2026-44194 and CVE-2026-45158 (26.1.8).",
-   "body_zh": "26.7.3 以前（以及 Business Edition 的 26.4.2），在登入頁送出的使用者名稱裡放換行，就能多寫出稽核記錄行（GHSA-jjm2-jg4p-3v9q）。每一筆偽造記錄中，可以有一段是乾淨的「某位址登入失敗」行，位址任選；六段就會讓 block-gui-bruteforce 封鎖攻擊者指定的位址：管理者的工作站、manager 本身、合作夥伴。規則 131539（level 10）會回報每次偽造必然留下的殘段並附上真正的送出者，但無法讓那段乾淨的行消失。這類防火牆請不要開啟該回應。26.7.4 的修正會把 OPNsense 自己記錄檔裡的換行換成空白；外掛程式的那份副本（/var/ossec/logs/opnsense_syslog.log）是否也一樣處理，尚未驗證，在那些版本上開啟之前也請先測試。另請讓 OPNsense 保持在 26.1.8 以上：CVE-2026-34578（26.1.6）、CVE-2026-44193（26.1.7）、CVE-2026-44194 與 CVE-2026-45158（26.1.8）。",
+   "title": "Keep the web login block off before 26.7.4",
+   "title_zh": "26.7.4 之前不要開啟網頁登入封鎖",
+   "body": "1. Do not switch on block-gui-bruteforce on firewalls older than OPNsense 26.7.4 (Business Edition 26.4.2p1): forged login lines (GHSA-jjm2-jg4p-3v9q) can make it block any address an attacker names.\n2. On 26.7.4 or later, run the check below on a lab firewall first: the fix is confirmed for OPNsense's own log files, not for the plugin's copy (/var/ossec/logs/opnsense_syslog.log).\n3. In any case keep OPNsense at 26.1.8 or later.",
+   "body_zh": "1. OPNsense 26.7.4（Business Edition 為 26.4.2p1）之前的防火牆不要開啟 block-gui-bruteforce：偽造的登入記錄（GHSA-jjm2-jg4p-3v9q）能讓它封鎖攻擊者指定的任何位址。\n2. 26.7.4 以後的版本，請先在測試用防火牆上做下列檢查：修正已確認涵蓋 OPNsense 自己的記錄檔，但未確認涵蓋外掛程式的副本（/var/ossec/logs/opnsense_syslog.log）。\n3. 無論如何，OPNsense 都要保持在 26.1.8 以上。",
    "verify": "On a lab firewall, a failed login whose user name contains a line break, sent from an address you own, should show 131539 on the manager, and the plugin's file should hold it as one line. Until that holds, leave the response off.",
    "verify_zh": "在測試用防火牆上，從自己的位址送出一次使用者名稱含換行的失敗登入，manager 應出現 131539，且外掛程式的檔案裡應是一行。在確認之前，請保持該回應關閉。"
   },
   {
    "platform": "manager",
    "required": false,
-   "title": "Optional: list accounts that log in for backups or monitoring",
-   "title_zh": "選用：列出用於備份或監控而定期登入的帳號",
-   "body": "Not needed for a quiet default: such logins are already recorded below the alert level after the first one. Listing an account (one OPNsense user name per line, then reload the ruleset) also silences that first alert and root-level alerts for it. Its failures still alert.",
-   "body_zh": "預設已經安靜，不需要這一步：這類登入在第一次之後就只記錄、不告警。列入清單（每行一個 OPNsense 使用者名稱，然後重新載入規則集）會連第一次的告警也靜音。失敗仍會告警。",
+   "title": "Optional: list backup or monitoring accounts",
+   "title_zh": "選用：列出備份或監控用的帳號",
+   "body": "Not needed for a quiet default: logins of such accounts to SSH, the console or IPsec already alert only the first time. Listing an account also silences that first alert and the root alert; its failures still alert. Add one OPNsense user name per line as <user>:<label>, then reload the ruleset.",
+   "body_zh": "預設已經安靜，不需要這一步：這類帳號登入 SSH、主控台或 IPsec，本來就只在第一次告警。列入清單後連第一次與 root 的告警也會靜音；失敗仍會告警。以 <使用者>:<標籤> 的格式每行加入一個 OPNsense 使用者名稱，然後重新載入規則集。",
    "code": "echo 'cfgbackup:service' >> /var/ossec/etc/lists/jt-opnsense-service-accounts"
   },
   {
    "platform": "network",
    "required": false,
-   "title": "Keep successful web interface logins in the log",
+   "title": "Keep logging successful web logins",
    "title_zh": "保留網頁介面登入成功的記錄",
-   "body": "If System > Settings > Administration > \"Disable logging of web GUI successful logins\" is ticked, OPNsense does not write the line with the client address, and rules 131501 and 131504 cannot fire. The account still appears at level 2 (131506).",
-   "body_zh": "若勾選了 System > Settings > Administration 的「Disable logging of web GUI successful logins」，OPNsense 不會寫出帶有來源位址的那一行，規則 131501 與 131504 無法觸發。帳號仍會以 level 2 出現（131506）。"
+   "body": "In System > Settings > Administration, leave \"Disable logging of web GUI successful logins\" unticked. When it is ticked, OPNsense does not write the line with the client address, so 131501 and 131504 cannot fire (the account still appears at level 2, 131506).",
+   "body_zh": "System > Settings > Administration 的「Disable logging of web GUI successful logins」請保持不勾選。勾選後 OPNsense 不會寫出帶有來源位址的那一行，規則 131501 與 131504 無法觸發（帳號仍會以 level 2 出現，131506）。"
   },
   {
    "platform": "network",
    "required": false,
-   "title": "Also send syslog to the manager for sshd, API keys and login protection",
-   "title_zh": "另外把 syslog 送到 manager，取得 sshd、API 金鑰與登入保護",
-   "body": "The plugin cannot select these. To get them: System > Settings > Logging > Remote, add a destination pointing at the manager's syslog port (the manager needs a <remote> syslog section that allows the firewall's address), transport UDP, RFC 5424 unticked, facilities auth (sshd) and local4 (API key messages). OPNsense's login protection (lockout_handler) logs under the user facility, which carries much more; add it only if that volume is acceptable. The events then arrive at the manager itself with the firewall's address as location, so the built-in sshd rules, 131517-131519 and 131555 apply; an active response for them must name the firewall's agent (defined-agent).",
-   "body_zh": "外掛程式無法選取這些。要取得時：System > Settings > Logging > Remote 新增一個目的地，指向 manager 的 syslog 連接埠（manager 需要有允許該防火牆位址的 <remote> syslog 區段），傳輸 UDP，不勾 RFC 5424，facility 選 auth（sshd）與 local4（API 金鑰訊息）。OPNsense 的登入保護（lockout_handler）寫在 user facility，那裡的量大得多；能接受時再加上。事件會送到 manager 本身、以防火牆位址為 location，因此內建 sshd 規則、131517-131519 與 131555 會套用；針對它們的主動回應必須指定防火牆的 agent（defined-agent）。"
+   "title": "Optional: send sshd, API key and lockout logs by syslog",
+   "title_zh": "選用：以 syslog 另送 sshd、API 金鑰與登入保護記錄",
+   "body": "The plugin cannot select these.\n1. On the manager, add a syslog <remote> block that allows the firewall's address, and restart the manager.\n2. On the firewall: System > Settings > Logging > Remote, add a destination: the manager's address and syslog port, transport UDP, RFC 5424 unticked, facilities auth (sshd) and local4 (API keys).\n3. Add the user facility (login protection, lockout_handler) only if its much larger volume is acceptable.\nThese events have the firewall's address as location, so an active response for them must use defined-agent with the firewall's agent.",
+   "body_zh": "外掛程式無法選取這些記錄。\n1. 在 manager 新增允許該防火牆位址的 syslog <remote> 區塊，並重新啟動 manager。\n2. 在防火牆：System > Settings > Logging > Remote 新增目的地：manager 的位址與 syslog 連接埠，傳輸 UDP，不勾 RFC 5424，facility 選 auth（sshd）與 local4（API 金鑰）。\n3. 登入保護（lockout_handler）寫在 user facility，量大得多；能接受時再加上。\n這些事件以防火牆位址為 location，所以針對它們的主動回應必須以 defined-agent 指定防火牆的 agent。"
   }
  ],
  "active_response": [

@@ -678,7 +678,7 @@ _THEME_HEAD = """
     html[data-theme="light"] .btn-primary { --btn-fill: #1f5bb0; --btn-hover: #174d96; --btn-ink: #ffffff; --btn-line: #1f5bb0; --btn-tint: #dbe4f1; }
     html[data-theme="light"] .btn-success { --btn-fill: #1a7f37; --btn-hover: #116329; --btn-ink: #ffffff; --btn-line: #1a7f37; --btn-tint: #dbe9e3; }
     html[data-theme="light"] .btn-danger { --btn-fill: #b4202a; --btn-hover: #8f1a22; --btn-ink: #ffffff; --btn-line: #b4202a; --btn-tint: #eddde1; }
-    html[data-theme="light"] .btn-warning { --btn-fill: #e8a92a; --btn-hover: #d4951a; --btn-ink: #24292f; --btn-line: #e8a92a; --btn-tint: #f3eee1; }
+    html[data-theme="light"] .btn-warning { --btn-fill: #f2c037; --btn-hover: #e5b02a; --btn-ink: #1b1f24; --btn-line: #d9a520; --btn-tint: #f3eee1; }
     html[data-theme="light"] :not(.btn)[style*="var(--solid-17a2b8)"] { color: #0b5f75 !important; }
     html[data-theme="light"] .btn[style*="var(--solid-17a2b8)"] { --btn-fill: #0e7490; --btn-hover: #0b5f75; --btn-ink: #ffffff; --btn-line: #0e7490; --btn-tint: #d9e7ed; }
     html[data-theme="light"] :not(.btn)[style*="var(--solid-fd7e14)"] { color: #8a3500 !important; }
@@ -1204,7 +1204,7 @@ HTML_TEMPLATE = '''
         .pack-act-replace, .pack-act-remove { border-color: #fd7e14; color: var(--orange-fd7e14); }
         .pack-act-modified, .pack-act-remove-modified { border-color: #e94560; color: var(--danger-ff7b93); }
         .pack-choice { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; cursor: pointer; }
-        .pack-step-body { margin: 4px 0 8px; }
+        .pack-step-body { margin: 4px 0 8px; white-space: pre-line; }
         .pack-code { position: relative; margin: 8px 0; }
         .pack-code pre { background: var(--code-bg); border: 1px solid var(--border-23304d); border-radius: 4px; padding: 10px 12px; margin: 0; overflow-x: auto; font-size: 13px; line-height: 1.5; color: var(--text-pre); white-space: pre; }
         .pack-code .pack-copy { position: absolute; top: 6px; right: 6px; z-index: 1; }
@@ -6859,16 +6859,49 @@ HTML_TEMPLATE = '''
                 tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:30px;">No decoders match.</td></tr>';
                 return;
             }
-            tbody.innerHTML = decodersData.map(d => {
+            tbody.innerHTML = decodersData.map((d, i) => {
                 const file = d.filename || '';
                 return '<tr>' +
-                    '<td><a class="rule-id-link" onclick="showDecoderFile(\\'' + escapeHtml(file) + '\\')">' + escapeHtml(d.name || '') + '</a></td>' +
+                    '<td><a class="rule-id-link" onclick="showDecoderDetail(' + i + ')">' + escapeHtml(d.name || '') + '</a></td>' +
                     '<td>' + escapeHtml(String(d.position !== undefined ? d.position : '')) + '</td>' +
-                    '<td>' + escapeHtml(d.parent || '') + '</td>' +
+                    '<td>' + escapeHtml(decoderParent(d)) + '</td>' +
                     '<td' + (d.is_custom ? ' style="color:var(--orange);"' : '') + '>' + escapeHtml(file) + '</td>' +
                     '<td><span class="rule-type-badge ' + (d.is_custom ? 'custom' : 'builtin') + '">' + (d.is_custom ? 'Custom' : 'Built-in') + '</span></td>' +
                     '</tr>';
             }).join('');
+        }
+
+        // The API puts the parent with the other definition fields under details.
+        function decoderParent(d) {
+            return String((d.details && d.details.parent) || d.parent || '');
+        }
+
+        // One decoder's own definition: what it matches on and what it extracts,
+        // and which decoders hang below it. The file holds every decoder of that
+        // name and many others, so it is one button away rather than the default.
+        function showDecoderDetail(i) {
+            const d = decodersData[i];
+            if (!d) return;
+            const details = d.details || {};
+            const show = (v) => (v === null || v === undefined) ? '' :
+                (typeof v === 'object' ? JSON.stringify(v) : String(v));
+            const rows = [['Name', d.name], ['Position', d.position], ['Parent', decoderParent(d)],
+                          ['File', (d.relative_dirname ? d.relative_dirname + '/' : '') + (d.filename || '')],
+                          ['Status', d.status]];
+            Object.keys(details).filter(k => k !== 'parent').sort().forEach(k => rows.push([k, details[k]]));
+            const children = decodersData.filter(c => decoderParent(c) === d.name && c !== d)
+                .map(c => c.name + (c.position !== undefined ? ' #' + c.position : ''));
+            let html = '<table class="kv-table"><tbody>' + rows.filter(r => show(r[1]) !== '').map(r =>
+                '<tr><th style="text-align:left;padding:4px 12px 4px 0;white-space:nowrap;vertical-align:top;">' + escapeHtml(r[0]) +
+                '</th><td style="font-family:monospace;font-size:12px;word-break:break-all;">' + escapeHtml(show(r[1])) + '</td></tr>').join('') +
+                '</tbody></table>';
+            if (children.length) {
+                html += '<h4 class="pack-h">Child decoders</h4><div style="font-family:monospace;font-size:12px;">' +
+                    children.map(escapeHtml).join('<br>') + '</div>';
+            }
+            showModal('Decoder - ' + (d.name || ''), html,
+                '<button class="btn" onclick="showDecoderFile(\\'' + escapeHtml(d.filename || '') + '\\')"><svg class="icon"><use href="#icon-eye"/></svg>View file</button>' +
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
         }
 
         async function showDecoderFile(filename) {
@@ -6927,7 +6960,7 @@ HTML_TEMPLATE = '''
                 content = data.content || '';
             }
             const body =
-                '<p style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">One <code>key:value</code> pair per line. The ruleset must be reloaded before changes take effect.</p>' +
+                '<p style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">Each line holds one <code>key:value</code> pair. The ruleset must be reloaded before changes take effect.</p>' +
                 '<div style="margin-bottom:10px;">Name <input type="text" id="cdbName" value="' + escapeHtml(filename || '') + '"' +
                 (isNew ? '' : ' readonly') + ' style="width:280px;background:var(--surface);border:1px solid var(--border-1a3a6e);color:var(--text);padding:6px 10px;border-radius:4px;"></div>' +
                 '<textarea id="cdbContent" style="width:100%;height:45vh;background:var(--sunken);color:var(--text);border:1px solid var(--border-1a3a6e);border-radius:4px;padding:10px;font-family:monospace;font-size:12px;">' +
@@ -7490,6 +7523,16 @@ HTML_TEMPLATE = '''
                     'agent never reads, so assign your agents to that group after installing. ' +
                     'An existing group of the same name is never overwritten.</div>';
             }
+            if (d.installed && (m.scripts || []).some(x => x.cron)) {
+                html += '<h4 class="pack-h">Schedule</h4>' +
+                    '<div class="alert alert-info">' +
+                    'Site options for this schedule go in <code>' + escapeHtml('/var/ossec/etc/jt-packs/' + packId + '.cron.local') + '</code>, ' +
+                    'never in the cron file, which is rewritten on every install and update. ' +
+                    'A line <code>&lt;script&gt;: &lt;options&gt;</code> adds options to that script, a line <code>NAME=value</code> sets an environment variable.' +
+                    '</div><div><button class="btn btn-sm" onclick="rewritePackSchedule(\\'' + escapeHtml(packId) + '\\')">' +
+                    '<svg class="icon"><use href="#icon-refresh"/></svg><span>Rewrite schedule</span></button></div>' +
+                    '<div id="packScheduleResult" style="margin-top:8px;"></div>';
+            }
             body.innerHTML = html + '</div>';
             if ((m.active_response || []).length) loadPackAr(packId);
             const footer = document.getElementById('modalFooter');
@@ -7503,6 +7546,20 @@ HTML_TEMPLATE = '''
                         : '<button class="btn btn-success" onclick="closeModal();installPack(\\'' + escapeHtml(packId) + '\\')"><svg class="icon"><use href="#icon-download"/></svg>Install</button>') +
                     '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>';
             }
+        }
+
+        async function rewritePackSchedule(packId) {
+            const out = document.getElementById('packScheduleResult');
+            const data = await api('/packs/' + encodeURIComponent(packId) + '/schedule', 'POST', {});
+            if (!data || data.error) {
+                const msg = (data && data.error) || 'Failed to rewrite the schedule';
+                if (out) out.innerHTML = '<div class="alert alert-error">' + escapeHtml(msg) + '</div>';
+                else showToast(msg, 'error');
+                return;
+            }
+            showToast(data.message || 'Schedule rewritten.', 'success');
+            if (out) out.innerHTML = '<pre style="background:var(--sunken);padding:10px;border-radius:4px;font-size:12px;overflow:auto;"><code>' +
+                (data.scheduled || []).map(j => escapeHtml(j.crontab_line || '')).join('\\n') + '</code></pre>';
         }
 
         // ---------- Active response a pack offers ----------
@@ -8675,6 +8732,36 @@ _I18N_SCRIPT = r"""
       'AGPL-3.0 — source code': 'AGPL-3.0 — 原始碼',
       'Incomplete on some nodes': '部分節點未完成',
       'Agent group': 'Agent 群組',
+      // the "Agent group" and "Incomplete on some nodes" sections of the pack
+      // detail are split into text nodes around <code>; one key per text node
+      'Creates the agent group': '會建立',
+      'holding the log collection this pack needs. Manager-side rules cannot see a log the agent never reads, so assign your agents to that group after installing. An existing group of the same name is never overwritten.': '這個 agent 群組，內含本套件需要的記錄收集設定。Manager 端的規則看不到 agent 從未讀取的記錄，所以安裝後請把 agent 指派到這個群組。已有同名群組時不會覆寫。',
+      'The CDB list is not declared on': 'CDB 清單未在下列節點宣告：',
+      '. Rules that read the list are ignored there, with no error and no warning. Declare the list inside': '。這些節點會忽略讀取該清單的規則，既不報錯也沒有警告。請在該節點 ossec.conf 的',
+      'in the ossec.conf on that node and reload it, or install this pack again once the node can be reached.': '區段內宣告清單並重新載入，或等該節點連得上之後重新安裝本套件。',
+      'ossec.conf is not synchronised by the cluster. Compared against the master': 'ossec.conf 不會由叢集同步。比對基準為 master',
+      'Files in this group\'s directory': '此群組目錄中的檔案',
+      // agent dialogs
+      'Section:': '區段：',
+      'Each line holds one': '每行一組',
+      'pair. The ruleset must be reloaded before changes take effect.': '。變更要在重新載入規則集後才會生效。',
+      'Manager connection': 'Manager 連線',
+      'Event buffer': '事件緩衝區',
+      'Labels': '標籤',
+      'File integrity': '檔案完整性',
+      'Log collection': '記錄收集',
+      'Use this key to re-register the agent with': '這把金鑰可用來以',
+      '. Treat it as a secret.': '重新註冊 agent。請當成機密保管。',
+      'firewall-drop - Block an IP with the local firewall': 'firewall-drop - 以本機防火牆封鎖 IP',
+      'restart-wazuh - Restart the Wazuh agent': 'restart-wazuh - 重新啟動 Wazuh agent',
+      'host-deny - Add the IP to hosts.deny': 'host-deny - 把 IP 加入 hosts.deny',
+      'disable-account - Disable a user account': 'disable-account - 停用使用者帳號',
+      '— Please configure email_notification, smtp_server, email_from, email_to in the <global> section of ossec.conf first.': '— 請先在 ossec.conf 的 <global> 區段設定 email_notification、smtp_server、email_from、email_to。',
+      // SSH setup guide, sentences that span several template lines
+      '. Only needed if you want to edit worker node configs or restart services remotely from this web interface.': '。只有要從這個網頁介面編輯 worker 節點設定或遠端重新啟動服務時才需要。',
+      'Wazuh API does not provide access to raw config files on worker nodes. To enable remote config editing, you need to set up SSH key-based authentication from the master node to worker nodes.': 'Wazuh API 無法存取 worker 節點上的原始設定檔。若要遠端編輯設定，需要設定從 master 節點到 worker 節點的 SSH 金鑰認證。',
+      '(as root):': '（以 root 身分）：',
+      'Ensure proper file permissions on SSH keys (600 for private key). Consider using a dedicated service account instead of root for production environments.': '請確認 SSH 金鑰的檔案權限正確（私鑰為 600）。正式環境建議改用專用的服務帳號，而不是 root。',
       'This pack installs an updater and runs it as root on a schedule. It is removed again when the pack is removed.': '本套件會安裝一支更新程式，並以 root 身分排程執行。移除套件時會一併刪除。',
       'Installs to': '安裝位置',
       'Installed': '已安裝',
@@ -8687,6 +8774,18 @@ _I18N_SCRIPT = r"""
       'Optional': '選用',
       'Copied': '已複製',
       'View file': '檢視檔案',
+      'Child decoders': '子解碼器',
+      'Schedule': '排程',
+      'Rewrite schedule': '重寫排程',
+      'Schedule rewritten.': '已重寫排程。',
+      'Schedule already up to date.': '排程已是最新。',
+      'Failed to rewrite the schedule': '重寫排程失敗',
+      'The pack is not installed': '尚未安裝此套件',
+      'This pack schedules nothing': '此套件沒有排程',
+      'Site options for this schedule go in': '此排程的站台選項請放在',
+      ', never in the cron file, which is rewritten on every install and update. A line': '，不要改 cron 檔（每次安裝與更新都會重寫）。',
+      'adds options to that script, a line': '一行替該腳本加上選項，',
+      'sets an environment variable.': '一行設定環境變數。',
       'How to check': '如何確認',
       'Tested with Wazuh': '已測試的 Wazuh 版本',
       'Steps outside the manager that this pack depends on. Rules cannot see what an agent never collects.': '本套件依賴、但必須在管理端以外完成的步驟。agent 沒收集的東西，規則看不到。',
@@ -9106,7 +9205,7 @@ _I18N_SCRIPT = r"""
       '(API user)': '（API 使用者）',
       '(system - API admin)': '（系統 - API 管理員）',
       '(system - Dashboard)': '（系統 - Dashboard）',
-      'for changes to take effect.': '以使變更生效。',
+      'for changes to take effect.': '，變更才會生效。',
       'Upgrade history has been cleared.': '升級記錄已清除。',
       // --- WPK / upgrade helper ---
       'Check if the WPK files exist for your target version': '請確認目標版本的 WPK 檔案存在',
@@ -9115,7 +9214,8 @@ _I18N_SCRIPT = r"""
       'Options': '選項',
       // --- SSH setup guide ---
       'Add SSH settings to': '將 SSH 設定加入到',
-      'After modifying': '修改後',
+      'After modifying': '修改',
+      ', you must': '後，必須',
       'restart this tool': '重新啟動本工具',
       'Run this on the': '在以下位置執行：',
       'on the worker node.': '在 Worker 節點上。',
@@ -9446,6 +9546,32 @@ _I18N_SCRIPT = r"""
       'AGPL-3.0 — source code': 'AGPL-3.0 — ソースコード',
       'Incomplete on some nodes': '一部のノードで未完了',
       'Agent group': 'エージェントグループ',
+      'Creates the agent group': 'エージェントグループ',
+      'holding the log collection this pack needs. Manager-side rules cannot see a log the agent never reads, so assign your agents to that group after installing. An existing group of the same name is never overwritten.': 'を作成します。このパックに必要なログ収集の設定が入っています。マネージャー側のルールは、エージェントが読み取らないログを見ることができないため、インストール後にエージェントをこのグループに割り当ててください。同名のグループが既にある場合は上書きしません。',
+      'The CDB list is not declared on': 'CDB リストが次のノードで宣言されていません：',
+      '. Rules that read the list are ignored there, with no error and no warning. Declare the list inside': '。これらのノードでは、リストを参照するルールがエラーも警告もなく無視されます。そのノードの ossec.conf の',
+      'in the ossec.conf on that node and reload it, or install this pack again once the node can be reached.': '内でリストを宣言して再読み込みするか、ノードに接続できるようになってからこのパックを再インストールしてください。',
+      'ossec.conf is not synchronised by the cluster. Compared against the master': 'ossec.conf はクラスターで同期されません。比較の基準は master',
+      'Files in this group\'s directory': 'このグループのディレクトリにあるファイル',
+      'Section:': 'セクション：',
+      'Each line holds one': '1 行に 1 組の',
+      'pair. The ruleset must be reloaded before changes take effect.': 'を書きます。変更はルールセットを再読み込みすると反映されます。',
+      'Manager connection': 'マネージャー接続',
+      'Event buffer': 'イベントバッファー',
+      'Labels': 'ラベル',
+      'File integrity': 'ファイル整合性',
+      'Log collection': 'ログ収集',
+      'Use this key to re-register the agent with': 'このキーは',
+      '. Treat it as a secret.': 'でエージェントを再登録するときに使います。機密情報として扱ってください。',
+      'firewall-drop - Block an IP with the local firewall': 'firewall-drop - ローカルのファイアウォールで IP をブロック',
+      'restart-wazuh - Restart the Wazuh agent': 'restart-wazuh - Wazuh エージェントを再起動',
+      'host-deny - Add the IP to hosts.deny': 'host-deny - IP を hosts.deny に追加',
+      'disable-account - Disable a user account': 'disable-account - ユーザーアカウントを無効化',
+      '— Please configure email_notification, smtp_server, email_from, email_to in the <global> section of ossec.conf first.': '— 先に ossec.conf の <global> セクションで email_notification、smtp_server、email_from、email_to を設定してください。',
+      '. Only needed if you want to edit worker node configs or restart services remotely from this web interface.': '。この Web 画面からワーカーノードの設定を編集したり、サービスをリモートで再起動したりする場合にのみ必要です。',
+      'Wazuh API does not provide access to raw config files on worker nodes. To enable remote config editing, you need to set up SSH key-based authentication from the master node to worker nodes.': 'Wazuh API ではワーカーノード上の設定ファイルそのものにはアクセスできません。設定をリモートで編集するには、マスターノードからワーカーノードへの SSH 鍵認証を設定する必要があります。',
+      '(as root):': '（root で）：',
+      'Ensure proper file permissions on SSH keys (600 for private key). Consider using a dedicated service account instead of root for production environments.': 'SSH 鍵のファイル権限を適切に設定してください（秘密鍵は 600）。本番環境では root ではなく専用のサービスアカウントの使用を検討してください。',
       'This pack installs an updater and runs it as root on a schedule. It is removed again when the pack is removed.': 'このパックは更新プログラムをインストールし、root 権限でスケジュール実行します。パックを削除すると更新プログラムも削除されます。',
       'Installs to': 'インストール先',
       'Installed': 'インストール済み',
@@ -9458,6 +9584,18 @@ _I18N_SCRIPT = r"""
       'Optional': '任意',
       'Copied': 'コピーしました',
       'View file': 'ファイルを表示',
+      'Child decoders': '子デコーダー',
+      'Schedule': 'スケジュール',
+      'Rewrite schedule': 'スケジュールを書き直す',
+      'Schedule rewritten.': 'スケジュールを書き直しました。',
+      'Schedule already up to date.': 'スケジュールは最新です。',
+      'Failed to rewrite the schedule': 'スケジュールの書き直しに失敗しました',
+      'The pack is not installed': 'このパックはインストールされていません',
+      'This pack schedules nothing': 'このパックにはスケジュールがありません',
+      'Site options for this schedule go in': 'このスケジュールのサイト用オプションは',
+      ', never in the cron file, which is rewritten on every install and update. A line': 'に置きます。cron ファイルは編集しないでください（インストールと更新のたびに書き直されます）。',
+      'adds options to that script, a line': 'の行はそのスクリプトにオプションを追加し、',
+      'sets an environment variable.': 'の行は環境変数を設定します。',
       'How to check': '確認方法',
       'Tested with Wazuh': '動作確認済みの Wazuh',
       'Steps outside the manager that this pack depends on. Rules cannot see what an agent never collects.': 'このパックが依存する、マネージャー以外で行う手順です。エージェントが収集しないものはルールから見えません。',
@@ -9862,7 +10000,7 @@ _I18N_SCRIPT = r"""
       '(API user)': '（API ユーザー）',
       '(system - API admin)': '（システム - API 管理者）',
       '(system - Dashboard)': '（システム - Dashboard）',
-      'for changes to take effect.': '変更が反映されます。',
+      'for changes to take effect.': '。再起動すると変更が反映されます。',
       'Upgrade history has been cleared.': 'アップグレード履歴をクリアしました。',
       // --- WPK / upgrade helper ---
       'Check if the WPK files exist for your target version': '対象バージョンの WPK ファイルが存在するか確認してください',
@@ -9871,7 +10009,8 @@ _I18N_SCRIPT = r"""
       'Options': 'オプション',
       // --- SSH setup guide ---
       'Add SSH settings to': 'SSH 設定を次に追加します：',
-      'After modifying': '変更後は',
+      'After modifying': '設定ファイル',
+      ', you must': 'を変更したら、必ず',
       'restart this tool': '本ツールを再起動してください',
       'Run this on the': '次の場所で実行します：',
       'on the worker node.': 'ワーカーノード上で実行します。',
@@ -9984,6 +10123,42 @@ _I18N_SCRIPT = r"""
       [/^Remove pack "(.+)"\? Files it replaced are restored\.$/, function (m) { return '要移除套件「' + m[1] + '」嗎？被它覆蓋的檔案會還原。'; }],
       [/^Rule ID conflict: (.+)\. Update anyway\?$/, function (m) { return '規則 ID 衝突：' + m[1] + '。仍要更新嗎？'; }],
       [/^New in (.+)$/, function (m) { return m[1] + ' 新增'; }],
+      // pack detail meta line: " · version 1.2 · rules 12 · ID range 100-199" (nbsp separators)
+      [/^version (\S+)\s+rules (\d+)\s+ID range (.+)$/, function (m) { return '版本 ' + m[1] + '   規則 ' + m[2] + ' 條   ID 範圍 ' + m[3]; }],
+      [/^Rule ID conflict: (.+)\. Install anyway and overwrite\?$/, function (m) { return '規則 ID 衝突：' + m[1] + '。仍要安裝並覆寫嗎？'; }],
+      [/^Update the pack first: installed (\S+), catalogue (\S+)$/, function (m) { return '請先更新套件：已安裝 ' + m[1] + '，目錄清單為 ' + m[2]; }],
+      [/^These files were edited after installation: (.+)\. Remove them anyway\?$/, function (m) { return '這些檔案在安裝後被修改過：' + m[1] + '。仍要移除嗎？'; }],
+      [/^(.*) Apply it to this manager only\?$/, function (m) { return m[1] + ' 要只套用到這台 Manager 嗎？'; }],
+      [/^(\d+)-(\d+) of (\d+)$/, function (m) { return '第 ' + m[1] + '-' + m[2] + ' 條，共 ' + m[3] + ' 條'; }],
+      [/^(\d+) \/ (\d+) rules$/, function (m) { return m[1] + ' / ' + m[2] + ' 條規則'; }],
+      [/^\(showing (\d+) of (\d+) lines\)$/, function (m) { return '（顯示 ' + m[1] + ' / ' + m[2] + ' 行）'; }],
+      [/^API: (.+)$/, function (m) { return 'API：' + m[1]; }],
+      [/^Loading ([\w.-]+)\.\.\.$/, function (m) { return '正在載入 ' + m[1] + '…'; }],
+      [/^(\S+) \((\d+) agents?\)$/, function (m) { return m[1] + '（' + m[2] + ' 個代理程式）'; }],
+      [/^Note: Agents will be added to the target group and removed from "(.+)"\.$/, function (m) { return '注意：代理程式會加入目標群組，並從「' + m[1] + '」移除。'; }],
+      // the 501 a 5.x server gets for a feature it removed
+      [/^Not available on Wazuh (\S+): this needs (.+)\.$/, function (m) {
+        var what = {
+        'the /rules, /decoders and /lists endpoints': '/rules、/decoders 與 /lists 端點',
+        'the ruleset as XML files under etc/rules': 'etc/rules 下的 XML 規則檔',
+        'CDB lists (5.x uses a key-value database)': 'CDB 清單（5.x 改用鍵值資料庫）',
+        'the /logtest endpoint': '/logtest 端點',
+        'the /manager/* endpoints': '/manager/* 端點',
+        'the /syscollector/* endpoints': '/syscollector/* 端點',
+        'the /active-response endpoint': '/active-response 端點',
+        'the /agents/reconnect endpoint': '/agents/reconnect 端點',
+        'the /agents/upgrade_result endpoint': '/agents/upgrade_result 端點',
+        'rule packs, which install XML rules and CDB lists': '規則套件（安裝 XML 規則與 CDB 清單）',
+        'the analysisd ruleset reload endpoint': 'analysisd 的規則集重新載入端點',
+        'the /groups/{id}/configuration endpoint': '/groups/{id}/configuration 端點'
+      };
+        return 'Wazuh ' + m[1] + ' 不支援：這項功能需要' + (what[m[2]] || m[2]) + '。';
+      }],
+      // distribution bar tooltips: "active: 10 (83.3%)"
+      [/^active: (\d+) \(([\d.]+%)\)$/, function (m) { return '已連線：' + m[1] + ' (' + m[2] + ')'; }],
+      [/^disconnected: (\d+) \(([\d.]+%)\)$/, function (m) { return '已離線：' + m[1] + ' (' + m[2] + ')'; }],
+      [/^pending: (\d+) \(([\d.]+%)\)$/, function (m) { return '等待中：' + m[1] + ' (' + m[2] + ')'; }],
+      [/^never_connected: (\d+) \(([\d.]+%)\)$/, function (m) { return '從未連線：' + m[1] + ' (' + m[2] + ')'; }],
       [/^Installed (.+)\. Reload the ruleset for it to take effect\.$/, function (m) { return '已安裝 ' + m[1] + '，請重新載入規則集使其生效。'; }],
       [/^Removed (.+)\. Reload the ruleset for it to take effect\.$/, function (m) { return '已移除 ' + m[1] + '，請重新載入規則集使其生效。'; }],
       [/^Reload the ruleset on "(.+)"\? Running services are not restarted\.$/, function (m) { return '要在「' + m[1] + '」重新載入規則集嗎？執行中的服務不會重新啟動。'; }],
@@ -10115,6 +10290,39 @@ _I18N_SCRIPT = r"""
       [/^Remove pack "(.+)"\? Files it replaced are restored\.$/, function (m) { return 'パック「' + m[1] + '」を削除しますか？ 上書きされていたファイルは復元されます。'; }],
       [/^Rule ID conflict: (.+)\. Update anyway\?$/, function (m) { return 'ルール ID が競合しています：' + m[1] + '。それでも更新しますか？'; }],
       [/^New in (.+)$/, function (m) { return m[1] + ' で追加'; }],
+      [/^version (\S+)\s+rules (\d+)\s+ID range (.+)$/, function (m) { return 'バージョン ' + m[1] + '   ルール ' + m[2] + ' 件   ID 範囲 ' + m[3]; }],
+      [/^Rule ID conflict: (.+)\. Install anyway and overwrite\?$/, function (m) { return 'ルール ID が競合しています：' + m[1] + '。それでも上書きしてインストールしますか？'; }],
+      [/^Update the pack first: installed (\S+), catalogue (\S+)$/, function (m) { return '先にパックを更新してください：インストール済み ' + m[1] + '、カタログ ' + m[2]; }],
+      [/^These files were edited after installation: (.+)\. Remove them anyway\?$/, function (m) { return '次のファイルはインストール後に編集されています：' + m[1] + '。それでも削除しますか？'; }],
+      [/^(.*) Apply it to this manager only\?$/, function (m) { return m[1] + ' このマネージャーだけに適用しますか？'; }],
+      [/^(\d+)-(\d+) of (\d+)$/, function (m) { return m[3] + ' 件中 ' + m[1] + '-' + m[2] + ' 件'; }],
+      [/^(\d+) \/ (\d+) rules$/, function (m) { return m[1] + ' / ' + m[2] + ' 件のルール'; }],
+      [/^\(showing (\d+) of (\d+) lines\)$/, function (m) { return '（' + m[2] + ' 行中 ' + m[1] + ' 行を表示）'; }],
+      [/^API: (.+)$/, function (m) { return 'API：' + m[1]; }],
+      [/^Loading ([\w.-]+)\.\.\.$/, function (m) { return m[1] + ' を読み込み中…'; }],
+      [/^(\S+) \((\d+) agents?\)$/, function (m) { return m[1] + '（' + m[2] + ' 件のエージェント）'; }],
+      [/^Note: Agents will be added to the target group and removed from "(.+)"\.$/, function (m) { return '注意：エージェントは対象グループに追加され、「' + m[1] + '」から削除されます。'; }],
+      [/^Not available on Wazuh (\S+): this needs (.+)\.$/, function (m) {
+        var what = {
+        'the /rules, /decoders and /lists endpoints': '/rules、/decoders、/lists エンドポイント',
+        'the ruleset as XML files under etc/rules': 'etc/rules 配下の XML ルールファイル',
+        'CDB lists (5.x uses a key-value database)': 'CDB リスト（5.x はキーバリューデータベースを使用）',
+        'the /logtest endpoint': '/logtest エンドポイント',
+        'the /manager/* endpoints': '/manager/* エンドポイント',
+        'the /syscollector/* endpoints': '/syscollector/* エンドポイント',
+        'the /active-response endpoint': '/active-response エンドポイント',
+        'the /agents/reconnect endpoint': '/agents/reconnect エンドポイント',
+        'the /agents/upgrade_result endpoint': '/agents/upgrade_result エンドポイント',
+        'rule packs, which install XML rules and CDB lists': 'ルールパック（XML ルールと CDB リストをインストール）',
+        'the analysisd ruleset reload endpoint': 'analysisd のルールセット再読み込みエンドポイント',
+        'the /groups/{id}/configuration endpoint': '/groups/{id}/configuration エンドポイント'
+      };
+        return 'Wazuh ' + m[1] + ' では使用できません：' + (what[m[2]] || m[2]) + 'が必要です。';
+      }],
+      [/^active: (\d+) \(([\d.]+%)\)$/, function (m) { return '接続中：' + m[1] + ' (' + m[2] + ')'; }],
+      [/^disconnected: (\d+) \(([\d.]+%)\)$/, function (m) { return '切断：' + m[1] + ' (' + m[2] + ')'; }],
+      [/^pending: (\d+) \(([\d.]+%)\)$/, function (m) { return '保留中：' + m[1] + ' (' + m[2] + ')'; }],
+      [/^never_connected: (\d+) \(([\d.]+%)\)$/, function (m) { return '未接続：' + m[1] + ' (' + m[2] + ')'; }],
       [/^Installed (.+)\. Reload the ruleset for it to take effect\.$/, function (m) { return m[1] + ' をインストールしました。反映するにはルールセットを再読み込みしてください。'; }],
       [/^Removed (.+)\. Reload the ruleset for it to take effect\.$/, function (m) { return m[1] + ' を削除しました。反映するにはルールセットを再読み込みしてください。'; }],
       [/^Reload the ruleset on "(.+)"\? Running services are not restarted\.$/, function (m) { return '「' + m[1] + '」でルールセットを再読み込みしますか？ 稼働中のサービスは再起動されません。'; }],
@@ -10195,14 +10403,20 @@ _I18N_SCRIPT = r"""
     var key = raw.trim();
     if (!key) return null;
     var dict = I18N[lang];
-    if (dict && Object.prototype.hasOwnProperty.call(dict, key)) {
-      var v = dict[key];
+    // A sentence written across several template lines keeps its line breaks
+    // and indentation inside the text node; look it up with the whitespace
+    // collapsed as well, so the dictionary key is the sentence as it reads.
+    var flat = key.replace(/\s+/g, ' ');
+    var has = function (k) { return dict && Object.prototype.hasOwnProperty.call(dict, k); };
+    var hit = has(key) ? key : (flat !== key && has(flat) ? flat : null);
+    if (hit !== null) {
+      var v = dict[hit];
       if (v === '') return null; // intentionally skip (handled by pattern)
       return raw.replace(key, v);
     }
     var pats = I18N_PATTERNS[lang] || [];
     for (var i = 0; i < pats.length; i++) {
-      var mm = key.match(pats[i][0]);
+      var mm = key.match(pats[i][0]) || (flat !== key ? flat.match(pats[i][0]) : null);
       if (mm) return raw.replace(key, pats[i][1](mm));
     }
     return null;
@@ -15340,6 +15554,64 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         import sys as _sys
         return _sys.executable if os.path.isabs(_sys.executable or '') else PACK_SYSTEM_PYTHON
 
+    CRON_LOCAL_ARGS = re.compile(r'^[\w ./=:@,+~-]*$')
+    CRON_LOCAL_ENV = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)=([\w./=:@,+~-]*)$')
+    CRON_LOCAL_SCRIPT = re.compile(r'^([A-Za-z0-9][A-Za-z0-9_.-]*):(.*)$')
+
+    def _cron_local_path(wazuh, pack_id):
+        return os.path.join(wazuh, 'etc', 'jt-packs', pack_id + '.cron.local')
+
+    def _read_cron_local(wazuh, pack_id, script_names):
+        """Site options for a pack's schedule, kept outside the file the tool rewrites.
+
+        /etc/cron.d/jt-<id> is regenerated on every install and update, so an
+        option added there by hand (an offline source, a proxy) silently
+        disappeared with the next update. <wazuh>/etc/jt-packs/<id>.cron.local
+        holds them instead:
+            <script name>: <extra options>     appended to that script's line
+            NAME=value                         an environment variable for the jobs
+        Its content ends up in a root cron command, so the file must belong to
+        root (or this process), not be writable by others or be a link, and every
+        value is limited to characters that mean nothing to the shell or to cron
+        (no quotes, $, ;, |, &, <, >, backquote, % or line breaks).
+        Returns (env [(name, value)], {script: options}, path or None).
+        """
+        path = _cron_local_path(wazuh, pack_id)
+        if not os.path.lexists(path):
+            return [], {}, None
+        info = os.lstat(path)
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+            raise ValueError('%s must be a regular file, not a link' % path)
+        if info.st_uid not in (0, os.geteuid()):
+            raise ValueError('%s must belong to root' % path)
+        if info.st_mode & 0o022:
+            raise ValueError('%s must not be writable by group or others (chmod 644)' % path)
+        env, extra = [], {}
+        with open(path, encoding='utf-8') as fh:
+            for no, raw in enumerate(fh, 1):
+                line = raw.strip()
+                if not line or line.startswith('#'):
+                    continue
+                m = CRON_LOCAL_SCRIPT.match(line)
+                if m and '=' not in m.group(1):
+                    name, opts = m.group(1), m.group(2).strip()
+                    if name not in script_names:
+                        raise ValueError('%s line %d: %s is not a script of this pack (%s)'
+                                         % (path, no, name, ', '.join(sorted(script_names))))
+                    if not CRON_LOCAL_ARGS.match(opts):
+                        raise ValueError('%s line %d: options may only use letters, digits, '
+                                         'spaces and . / = : @ , + ~ - _' % (path, no))
+                    extra[name] = (extra.get(name, '') + ' ' + opts).strip()
+                    continue
+                m = CRON_LOCAL_ENV.match(line)
+                if m:
+                    if m.group(1) in ('SHELL', 'PATH'):
+                        raise ValueError('%s line %d: %s cannot be changed' % (path, no, m.group(1)))
+                    env.append((m.group(1), m.group(2)))
+                    continue
+                raise ValueError('%s line %d: expected "<script>: <options>" or NAME=value' % (path, no))
+        return env, extra, path
+
     def _schedule_scripts(manifest, wazuh, written):
         """Write the pack's cron file from its manifest; returns what is scheduled.
 
@@ -15347,6 +15619,8 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         touching a script the site has edited.
         """
         scheduled, cron_lines = [], []
+        site_env, site_args, site_path = _read_cron_local(
+            wazuh, manifest.get('id', 'pack'), {e.get('name', '') for e in (manifest.get('scripts') or [])})
         for entry in (manifest.get('scripts') or []):
             dest_rel = entry.get('dest', '')
             if not _validate_dest(dest_rel) or not dest_rel.startswith('etc/jt-packs/bin/'):
@@ -15360,6 +15634,8 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             args = (entry.get('args') or '').format(wazuh_path=wazuh)
             if not re.match(r'^[\w\s./=:-]*$', args):
                 raise ValueError('Refusing unsafe script arguments: %r' % args[:40])
+            if site_args.get(entry['name']):
+                args = (args + ' ' + site_args[entry['name']]).strip()
             logfile = os.path.join(wazuh, 'logs', os.path.splitext(entry['name'])[0] + '.log')
             # cron runs with a minimal environment, so the interpreter is named
             # outright rather than relying on PATH or on the shebang resolving.
@@ -15370,7 +15646,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             cron_lines.append('%s root %s %s %s >> %s 2>&1'
                               % (schedule, python, dest, args, logfile))
             scheduled.append({'script': entry['name'], 'schedule': schedule, 'log': logfile,
-                              'written': True,
+                              'written': True, 'site_options': site_args.get(entry['name'], ''),
                               'crontab_line': '%s %s %s %s >> %s 2>&1'
                                               % (schedule, python, dest, args, logfile)})
 
@@ -15384,7 +15660,11 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             path = _cron_path(manifest.get('id', 'pack'))
             body = ('# Installed by jt-wazuh-mgr for pack %s. Removed when the pack is.\n'
                     'SHELL=/bin/sh\nPATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n'
-                    % manifest.get('id', '')) + '\n'.join(cron_lines) + '\n'
+                    % manifest.get('id', ''))
+            if site_path:
+                body += '# Site options from %s\n' % site_path + ''.join(
+                    '%s=%s\n' % (k, v) for k, v in site_env)
+            body += '\n'.join(cron_lines) + '\n'
             try:
                 with open(path, encoding='utf-8') as fh:
                     current = fh.read()
@@ -16220,6 +16500,40 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                         'group': (plan['group'] or {}).get('name'),
                         'undeclared_nodes': undeclared_nodes, 'setup_new': plan['setup_new'],
                         'message': message})
+
+    @app.route('/api/packs/<pack_id>/schedule', methods=['POST'])
+    @login_required
+    @require_capability('rule_packs')
+    def reschedule_pack(pack_id):
+        """Rewrite the pack's cron file now, with the site's <id>.cron.local applied.
+
+        Install and update do this anyway; this is for a site that has just
+        created or changed its cron.local. Only for the installed version: a
+        newer catalogue manifest could schedule scripts that are not there yet.
+        """
+        manifest = _read_manifest(pack_id)
+        if not manifest:
+            return jsonify({'error': 'Unknown pack'}), 404
+        state = _installed_state(pack_id)
+        if not state:
+            return jsonify({'error': 'The pack is not installed'}), 400
+        if state.get('version') != manifest.get('version'):
+            return jsonify({'error': 'Update the pack first: installed %s, catalogue %s'
+                                     % (state.get('version'), manifest.get('version'))}), 409
+        if not any((e.get('cron') or '').strip() for e in (manifest.get('scripts') or [])):
+            return jsonify({'error': 'This pack schedules nothing'}), 400
+        wazuh = _wazuh_path()
+        written = []
+        try:
+            scheduled = _schedule_scripts(manifest, wazuh, written)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        except OSError as e:
+            return jsonify({'error': 'Could not write the schedule: %s' % e}), 500
+        local = _cron_local_path(wazuh, pack_id)
+        return jsonify({'scheduled': scheduled, 'changed': bool(written),
+                        'cron_local': local if os.path.exists(local) else None,
+                        'message': ('Schedule rewritten.' if written else 'Schedule already up to date.')})
 
     @app.route('/api/packs/<pack_id>', methods=['DELETE'])
     @login_required
@@ -17086,6 +17400,21 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    def _api_failure(result):
+        """The error text of a failed Wazuh API reply, or None when it succeeded.
+
+        A success carries "error": 0 and "data". A failure from the API has a
+        non-zero error and a title/detail; one from WazuhAPISession.request
+        (timeout, connection refused) is {"error": "<text>"}. Reading only
+        data.affected_items turns either into an empty list on the screen.
+        """
+        if not isinstance(result, dict):
+            return 'unexpected reply'
+        err = result.get('error')
+        if err in (0, None, False) or (result.get('data') and err == 0):
+            return None
+        return str(result.get('detail') or result.get('title') or err)
+
     @app.route('/api/decoders', methods=['GET'])
     @login_required
     @require_capability('ruleset_on_disk')
@@ -17101,6 +17430,9 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     params[key] = value
             api = get_api_session()
             result = api.request('GET', '/decoders', params=params)
+            failure = _api_failure(result)
+            if failure:
+                return jsonify({'error': 'Wazuh API: ' + failure}), 502
             items = result.get('data', {}).get('affected_items') or []
             for item in items:
                 # relative_dirname is relative to /var/ossec: built-ins live under
@@ -17132,10 +17464,19 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
     @login_required
     @require_capability('cdb_lists')
     def get_cdb_lists():
-        """List the CDB lists known to the manager."""
+        """List the CDB lists known to the manager.
+
+        /lists/files returns the names only. /lists returns every list's
+        content as well: with a large list (a malware hash list holds over a
+        million entries) that request runs into the timeout, and the tab used
+        to show "no lists" because the failure was not reported.
+        """
         try:
             api = get_api_session()
-            result = api.request('GET', '/lists', params={'limit': 1000})
+            result = api.request('GET', '/lists/files', params={'limit': 1000})
+            failure = _api_failure(result)
+            if failure:
+                return jsonify({'error': 'Wazuh API: ' + failure}), 502
             items = result.get('data', {}).get('affected_items') or []
             for item in items:
                 item['is_custom'] = (item.get('relative_dirname') or '').startswith('etc/')

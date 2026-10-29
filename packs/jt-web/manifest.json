@@ -24,7 +24,9 @@
   "Internal monitoring is quiet: server-status and similar pages polled from loopback or private addresses, and monitoring checks (certificate, HTTP, uptime) that get a 4xx from a private address, go to level 2. These were the largest share of web alerts on a live manager: about 380 a day from one host's server-status polling alone.",
   "Paths inside WebDAV (/remote.php/ and /public.php/webdav, Nextcloud and ownCloud) are never treated as probes: sync clients upload .git folders, .env files and keys that live in users' directories.",
   "Active responses (1.1, opt-in: installing or updating the pack blocks nothing). A firewall cannot block a visitor who comes through Cloudflare or another proxy, because the connection it sees is the proxy's, so these responses block where the client address is known: in nginx (jt-nginx-deny, a deny list included at http level and matched against the address realip restored) or at Cloudflare (jt-cloudflare-block, an IP Access Rule made through the API from the manager). They are offered for the high-confidence rules only: a sensitive file or exploit endpoint answered with content (133012, 133022), six probes from one source in five minutes (133040, 133041) and a scanner flood (133042). Both refuse private, loopback, carrier NAT, documentation and Cloudflare addresses and anything in their allowlist; a block ends with the timeout (a day by default), and jt-nginx-deny also drops entries older than a week, for when an agent restart makes execd forget its timer. 133050 (level 10) reports a block or unblock that failed, 133051 (level 7) an alert whose source was a Cloudflare address, which means that site does not restore the client address.",
-  "The agent group web reads every access and error log under /var/log/apache2, /var/log/httpd and /var/log/nginx. The default agent configuration reads only access.log and error.log, so sites with their own log files were never analysed. A file also listed elsewhere is read once. JSON access logs in the same directories are read too and decoded by the built-in json decoder; this pack's rules apply to the combined format only."
+  "The agent group web reads every access and error log under /var/log/apache2, /var/log/httpd and /var/log/nginx. The default agent configuration reads only access.log and error.log, so sites with their own log files were never analysed. A file also listed elsewhere is read once. JSON access logs in the same directories are read too and decoded by the built-in json decoder; this pack's rules apply to the combined format only.",
+  "jt-nginx-deny details: the script is copied into active-response/bin, not linked, because /var/ossec/etc/shared changes whenever the group's files change and a program that runs as root must not. A location that answers with return (a redirect) answers before access checks and is not blocked; proxied and static content is. Settings (paths, ipv6_prefix 64 to block a /64, reloading through systemctl) go in /var/ossec/etc/jt-nginx-deny.conf. The hourly --expire in the setup commands removes entries older than a week, for when an agent restart made execd forget a timer.",
+  "jt-cloudflare-block runs with /usr/bin/python3: the Python bundled with Wazuh has no CA certificates. It refuses a token file that anyone but root can read, and never writes the token to a log or message. Its proxy setting takes an http(s)://host:port URL without credentials."
  ],
  "notes_zh": [
   "攻擊特徵仍然用 Wazuh 自己的規則：SQL injection、XSS、目錄穿越、過長網址、Shellshock 與大量 4xx/5xx 是 31100-31170 與 31500-31540，隨規則集維護。本套件補上它們沒有的部分，需要那些規則讀得懂的 combined 記錄格式。",
@@ -35,7 +37,9 @@
   "內部監控不吵：從本機或私有位址輪詢 server-status 這類頁面、以及監控檢查（憑證、HTTP、運作時間）從私有位址得到 4xx，都是 level 2。在一台正式 manager 上這是網頁告警的最大宗：光一台主機的 server-status 輪詢每天約 380 筆。",
   "WebDAV 底下的路徑（/remote.php/ 與 /public.php/webdav，Nextcloud 與 ownCloud）一律不當成探測：同步程式會上傳使用者目錄裡的 .git 資料夾、.env 與金鑰。",
   "主動回應（1.1，需自行開啟：安裝或更新套件不會封鎖任何東西）。經 Cloudflare 或其他代理連進來的訪客，防火牆封鎖不了，因為它看到的是代理的連線；所以這些回應在知道用戶端位址的地方封鎖：在 nginx（jt-nginx-deny，在 http 層引入的封鎖清單，比對 realip 還原後的位址），或在 Cloudflare（jt-cloudflare-block，由 manager 透過 API 建立 IP Access Rule）。只提供給高可信度的規則：敏感檔案或漏洞端點回應了內容（133012、133022）、同一來源五分鐘內六次探測（133040、133041）與大量掃描（133042）。兩者都拒絕封鎖私有、迴環、電信業者 NAT、文件用途與 Cloudflare 的位址，以及允許清單裡的位址；封鎖在逾時（預設一天）後解除，jt-nginx-deny 另外會移除超過一週的項目，以防 agent 重啟讓 execd 忘了計時。133050（level 10）回報封鎖或解除失敗，133051（level 7）回報告警來源是 Cloudflare 的位址，代表那個網站沒有還原用戶端位址。",
-  "agent 群組 web 讀取 /var/log/apache2、/var/log/httpd、/var/log/nginx 底下所有存取與錯誤記錄。agent 預設只讀 access.log 與 error.log，所以有自己記錄檔的網站從來沒被分析過。同一個檔案在別處也有列出時只讀一次。同目錄下的 JSON 存取記錄也會被讀取並由內建 json 解碼器解析；本套件的規則只適用 combined 格式。"
+  "agent 群組 web 讀取 /var/log/apache2、/var/log/httpd、/var/log/nginx 底下所有存取與錯誤記錄。agent 預設只讀 access.log 與 error.log，所以有自己記錄檔的網站從來沒被分析過。同一個檔案在別處也有列出時只讀一次。同目錄下的 JSON 存取記錄也會被讀取並由內建 json 解碼器解析；本套件的規則只適用 combined 格式。",
+  "jt-nginx-deny 的細節：腳本是複製到 active-response/bin，而不是用連結，因為群組檔案每次變動 /var/ossec/etc/shared 都會跟著變，而以 root 執行的程式不應如此。以 return 回應的 location（轉址）會在存取檢查前就回應，不會被擋；代理與靜態內容都會被擋。設定（路徑、ipv6_prefix 設 64 以封鎖整個 /64、改用 systemctl 重新載入）寫在 /var/ossec/etc/jt-nginx-deny.conf。部署指令中每小時一次的 --expire 會移除超過一週的項目，用於 agent 重啟讓 execd 忘了計時的情況。",
+  "jt-cloudflare-block 以 /usr/bin/python3 執行：Wazuh 內附的 Python 沒有 CA 憑證。root 以外的人讀得到的 token 檔它會拒絕使用，token 也絕不會寫進記錄或訊息。proxy 設定接受 http(s)://主機:連接埠 形式的網址，不含帳密。"
  ],
  "files": [
   {
@@ -58,43 +62,52 @@
   {
    "platform": "manager",
    "required": true,
-   "title": "Install the pack and reload the ruleset on every node",
-   "title_zh": "安裝套件並在所有節點重新載入規則集",
-   "body": "Install from this page, then use Reload Ruleset on the Rules tab. A cluster synchronises rule files but does not reload the workers. The pack is one rule file on the built-in web access rules and needs no list.",
-   "body_zh": "從本頁安裝，再到規則分頁按「重新載入規則集」。叢集會同步規則檔，但不會重新載入 worker。本套件是掛在內建網頁存取規則下的一個規則檔，不需要清單。"
+   "title": "Install the pack and reload every node",
+   "title_zh": "安裝套件並重新載入所有節點",
+   "body": "1. Install the pack from this page.\n2. Click Reload Ruleset on the Rules tab: it reloads every cluster node.",
+   "body_zh": "1. 在本頁安裝套件。\n2. 到「規則」分頁按「重新載入規則集」：會重新載入叢集的每個節點。",
+   "verify": "The reload result shows every node as reloaded, with no warning.",
+   "verify_zh": "重新載入的結果顯示每個節點都已重新載入，且沒有警告。"
   },
   {
    "platform": "linux",
    "required": true,
    "title": "Add every web server to the web group",
    "title_zh": "把每台網頁伺服器加入 web 群組",
-   "body": "Assign agents that run Apache or nginx to the group web and restart them (agent_control -R -u <id>). The group reads every access and error log in the usual directories, not only access.log.",
-   "body_zh": "把執行 Apache 或 nginx 的 agent 加入 web 群組並重啟（agent_control -R -u <id>）。這個群組會讀取常見目錄下所有存取與錯誤記錄，而不只是 access.log。"
+   "body": "Assign each agent that runs Apache or nginx to the web group and restart it (commands below; <agent_id> is the agent's ID). The group reads every access and error log under /var/log/apache2, /var/log/httpd and /var/log/nginx, not only access.log.",
+   "body_zh": "把每台執行 Apache 或 nginx 的 agent 加入 web 群組並重新啟動（指令如下；<agent_id> 是該 agent 的 ID）。群組會讀取 /var/log/apache2、/var/log/httpd 與 /var/log/nginx 底下所有存取與錯誤記錄，而不只是 access.log。",
+   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g web -q\n/var/ossec/bin/agent_control -R -u <agent_id>",
+   "verify": "From another host request /.env on one of its sites (answered 404): rule 133010 (level 6) appears for that agent.",
+   "verify_zh": "從另一台主機請求其中一個網站的 /.env（回應 404）：該 agent 應出現規則 133010（level 6）。"
   },
   {
    "platform": "linux",
    "required": false,
    "title": "nginx: log the combined format with the content type",
    "title_zh": "nginx：以 combined 格式記錄並附上內容類型",
-   "body": "Wazuh's web rules read the combined format. If a site logs JSON for another collector, add a second access_log for Wazuh. Define the format once, in a file nginx reads before the server blocks that use it:\nlog_format jt_combined '$remote_addr - $remote_user [$time_local] \"$request\" $status $body_bytes_sent \"$http_referer\" \"$http_user_agent\" \"$sent_http_content_type\"';\nThen in each server block: access_log /var/log/nginx/<site>.combined.log jt_combined; Run nginx -t before reloading. Behind a CDN, make sure realip is set so $remote_addr is the client.",
-   "body_zh": "Wazuh 的網頁規則讀 combined 格式。網站若為其他收集器記 JSON，就為 Wazuh 再加一份 access_log。在 nginx 先讀到的檔案定義一次格式（要早於使用它的 server 區塊）：\nlog_format jt_combined '$remote_addr - $remote_user [$time_local] \"$request\" $status $body_bytes_sent \"$http_referer\" \"$http_user_agent\" \"$sent_http_content_type\"';\n再於每個 server 區塊加：access_log /var/log/nginx/<site>.combined.log jt_combined; 重新載入前先執行 nginx -t。在 CDN 後面要確認 realip 已設定，$remote_addr 才是真正的用戶端。"
+   "body": "Wazuh's web rules read the combined format; a JSON log for another collector can stay, this is a second log.\n1. Define jt_combined once (first line below) in a file nginx reads inside http, before the server blocks that use it.\n2. Add the access_log line to each server block, with <site> replaced by the site's name.\n3. Run nginx -t, then reload nginx.\nBehind a CDN, set up realip first so that $remote_addr is the client.",
+   "body_zh": "Wazuh 的網頁規則讀 combined 格式；給其他收集器的 JSON 記錄可以保留，這是第二份記錄。\n1. 在 nginx 於 http 內、早於使用它的 server 區塊讀到的檔案中，定義一次 jt_combined（下列第一行）。\n2. 在每個 server 區塊加上 access_log 那一行，<site> 換成網站名稱。\n3. 執行 nginx -t，再重新載入 nginx。\n在 CDN 後面時，請先設定 realip，讓 $remote_addr 是真正的用戶端。",
+   "code": "log_format jt_combined '$remote_addr - $remote_user [$time_local] \"$request\" $status $body_bytes_sent \"$http_referer\" \"$http_user_agent\" \"$sent_http_content_type\"';\naccess_log /var/log/nginx/<site>.combined.log jt_combined;",
+   "verify": "tail -1 /var/log/nginx/<site>.combined.log ends with the response content type in quotes, for example \"text/html\".",
+   "verify_zh": "tail -1 /var/log/nginx/<site>.combined.log 的結尾是加上引號的回應內容類型，例如 \"text/html\"。"
   },
   {
    "platform": "linux",
    "required": false,
-   "title": "Apache: keep the combined format, with the content type if you can",
-   "title_zh": "Apache：維持 combined 格式，可以的話附上內容類型",
-   "body": "Use the standard combined format so the client address comes first: LogFormat \"%h %l %u %t \\\"%r\\\" %>s %b \\\"%{Referer}i\\\" \\\"%{User-Agent}i\\\" \\\"%{Content-Type}o\\\"\" jt_combined. A format that puts the virtual host name second (vhost_combined, or %a %v ...) is decoded by Wazuh with the host name as the source address.",
-   "body_zh": "使用標準 combined 格式，讓用戶端位址在最前面：LogFormat \"%h %l %u %t \\\"%r\\\" %>s %b \\\"%{Referer}i\\\" \\\"%{User-Agent}i\\\" \\\"%{Content-Type}o\\\"\" jt_combined。把虛擬主機名稱放在第二欄的格式（vhost_combined，或 %a %v ...），Wazuh 會把主機名稱當成來源位址。"
+   "title": "Apache: keep the combined format, add the content type",
+   "title_zh": "Apache：維持 combined 格式並附上內容類型",
+   "body": "Define the format below and use jt_combined instead of combined in each site's CustomLog, then reload Apache. It is the standard combined format with the client address first and the response content type last. Do not use a format with the virtual host second (vhost_combined, or %a %v ...): Wazuh would read the host name as the source address.",
+   "body_zh": "定義下列格式，並在每個網站的 CustomLog 以 jt_combined 取代 combined，然後重新載入 Apache。它就是標準的 combined 格式：用戶端位址在最前面，回應內容類型在最後。不要使用把虛擬主機名稱放在第二欄的格式（vhost_combined，或 %a %v ...）：Wazuh 會把主機名稱當成來源位址。",
+   "code": "LogFormat \"%h %l %u %t \\\"%r\\\" %>s %b \\\"%{Referer}i\\\" \\\"%{User-Agent}i\\\" \\\"%{Content-Type}o\\\"\" jt_combined"
   },
   {
    "platform": "manager",
    "required": false,
    "since": "1.1",
-   "title": "Active responses: define the commands on every manager node",
-   "title_zh": "主動回應：在每個 manager 節點定義指令",
-   "body": "Only needed for the active responses below, and only the command of the responses you will use. Paste the block into ossec.conf on every manager node, inside <ossec_config>, and restart the manager there: an active response, and a command it uses, take effect only after a restart (the manager also sends its agents the new command list then). timeout_allowed must be yes: the block is removed by the delete Wazuh sends at the end of the timeout. Addresses in the manager's <global><white_list> are never sent to a response. Nothing is blocked until a response is switched on in this pack.",
-   "body_zh": "只有下方的主動回應需要，而且只需要你會用到的那個指令。把區塊貼進每個 manager 節點 ossec.conf 的 <ossec_config> 內，然後在那個節點重新啟動 manager：主動回應與它使用的指令要重新啟動後才生效（manager 也會在那時把新的指令清單送給 agent）。timeout_allowed 必須是 yes：封鎖是由 Wazuh 在逾時結束時送出的 delete 解除。manager 的 <global><white_list> 裡的位址永遠不會送給回應。在本套件中開啟回應之前，不會封鎖任何東西。",
+   "title": "Active responses: define the commands on every node",
+   "title_zh": "主動回應：在每個節點定義指令",
+   "body": "Only for the active responses, and only the commands of the responses you will use.\n1. Paste the block below into ossec.conf, inside <ossec_config>, on every manager node.\n2. Restart the manager on each node: a command and an active response take effect only after a restart.\nKeep timeout_allowed yes: the block is lifted by the delete Wazuh sends when the timeout ends. Nothing is blocked until you switch a response on.",
+   "body_zh": "只有主動回應需要，而且只需要你會用到的那些指令。\n1. 把下列區塊貼進每個 manager 節點 ossec.conf 的 <ossec_config> 內。\n2. 在每個節點重新啟動 manager：指令與主動回應都要重新啟動後才生效。\ntimeout_allowed 要維持 yes：封鎖是由 Wazuh 在逾時結束時送出的 delete 解除。在本套件中開啟回應之前，不會封鎖任何東西。",
    "code": "<command>\n  <name>jt-nginx-deny</name>\n  <executable>jt-nginx-deny</executable>\n  <timeout_allowed>yes</timeout_allowed>\n</command>\n<command>\n  <name>jt-cloudflare-block</name>\n  <executable>jt-cloudflare-block</executable>\n  <timeout_allowed>yes</timeout_allowed>\n</command>",
    "verify": "On every node: grep -A3 '<name>jt-nginx-deny</name>' /var/ossec/etc/ossec.conf, and /var/ossec/bin/wazuh-analysisd -t prints no error.",
    "verify_zh": "在每個節點：grep -A3 '<name>jt-nginx-deny</name>' /var/ossec/etc/ossec.conf，且 /var/ossec/bin/wazuh-analysisd -t 沒有錯誤。"
@@ -103,11 +116,11 @@
    "platform": "linux",
    "required": false,
    "since": "1.1",
-   "title": "Active responses: install the nginx deny list on each reverse proxy",
-   "title_zh": "主動回應：在每台反向代理安裝 nginx 封鎖清單",
+   "title": "Active responses: set up nginx blocking on the proxy",
+   "title_zh": "主動回應：在反向代理設定 nginx 封鎖",
    "file": "agent/jt-ar-deny-nginx.conf",
-   "body": "On each nginx host that should block (usually the reverse proxy), as root. The web group delivers the script and the snippet to /var/ossec/etc/shared/, where they do nothing. Copy the script into active-response/bin rather than linking it: the shared folder changes whenever the group's files change, and a program that runs as root must not; after a pack update, compare and copy again. The snippet goes in a file nginx reads inside the http block and before the server blocks (conf.d/000-... on a stock nginx.org install, or the first file of the directory nginx.conf includes for the sites): it includes the deny list at http level, which every server and location inherits unless it has allow or deny lines of its own. Find those with grep -rnE '^\\s*(allow|deny)\\s' /etc/nginx and add include /etc/nginx/jt-ar-deny.rules; before their own lines, or put if ($jt_ar_denied) { return 403; } in that server, which covers all its locations. A location that answers with return (a redirect) answers before access checks; proxied and static content is blocked. Check that set_real_ip_from lists only Cloudflare's and your own proxies' ranges, never 0.0.0.0/0. Put administrator, monitoring and partner addresses in /etc/nginx/jt-ar-allow.txt, one address or network per line; a line that does not parse stops every block until fixed. Each block reloads nginx, so set worker_shutdown_timeout (for example 30s) if the sites keep WebSocket or other long connections, or old workers pile up. Optional: an hourly --expire from cron removes entries older than a week if an agent restart made execd forget a timer. Settings (paths, ipv6_prefix 64 to block a /64, reload through systemctl) go in /var/ossec/etc/jt-nginx-deny.conf.",
-   "body_zh": "以 root 在每台要封鎖的 nginx 主機上執行（通常是反向代理）。web 群組會把腳本與設定片段送到 /var/ossec/etc/shared/，放在那裡不會有任何作用。請把腳本複製到 active-response/bin，不要用連結：群組檔案每次變動 shared 資料夾都會跟著變，而以 root 執行的程式不應如此；套件更新後請比對再複製一次。設定片段放在 nginx 於 http 區塊內、早於 server 區塊讀到的檔案（nginx.org 標準安裝是 conf.d/000-...，或 nginx.conf 為網站引入的目錄中第一個檔案）：它在 http 層引入封鎖清單，每個 server 與 location 都會繼承，除非它自己有 allow 或 deny。用 grep -rnE '^\\s*(allow|deny)\\s' /etc/nginx 找出這些區塊，在它們自己的那幾行之前加上 include /etc/nginx/jt-ar-deny.rules;，或在該 server 加 if ($jt_ar_denied) { return 403; }，可涵蓋其所有 location。以 return 回應的 location（轉址）會在存取檢查前就回應；代理與靜態內容都會被擋。確認 set_real_ip_from 只列 Cloudflare 與自家代理的範圍，絕不能是 0.0.0.0/0。把管理者、監控與合作夥伴的位址寫進 /etc/nginx/jt-ar-allow.txt，每行一個位址或網段；有一行無法解析時，修好之前所有封鎖都會停止。每次封鎖都會重新載入 nginx，網站有 WebSocket 或其他長連線時請設定 worker_shutdown_timeout（例如 30s），否則舊的 worker 會越積越多。選用：由 cron 每小時執行一次 --expire，在 agent 重啟讓 execd 忘了計時時移除超過一週的項目。設定（路徑、ipv6_prefix 設 64 以封鎖整個 /64、改用 systemctl 重新載入）寫在 /var/ossec/etc/jt-nginx-deny.conf。",
+   "body": "On each nginx host that should block (usually the reverse proxy), as root:\n1. Run the commands below: they copy the script from /var/ossec/etc/shared into active-response/bin (copy, never link; copy again after a pack update), create the empty lists, install the snippet in conf.d (it must load inside http, before the server blocks) and add an hourly clean-up.\n2. A server or location with allow or deny lines of its own does not inherit the deny list. Find them with grep -rnE '^\\s*(allow|deny)\\s' /etc/nginx and add include /etc/nginx/jt-ar-deny.rules; before their lines, or put if ($jt_ar_denied) { return 403; } in that server.\n3. Check that set_real_ip_from lists only Cloudflare's and your own proxies' ranges, never 0.0.0.0/0.\n4. Put administrator, monitoring and partner addresses in /etc/nginx/jt-ar-allow.txt, one address or network per line: a line that does not parse stops every block until fixed.\n5. If the sites keep WebSocket or other long connections, set worker_shutdown_timeout (for example 30s): each block reloads nginx.",
+   "body_zh": "以 root 在每台要封鎖的 nginx 主機上（通常是反向代理）：\n1. 執行下列指令：把腳本從 /var/ossec/etc/shared 複製到 active-response/bin（要複製，不要用連結；套件更新後再複製一次）、建立空的清單、把設定片段放進 conf.d（必須在 http 內、早於 server 區塊載入），並加上每小時的清理排程。\n2. 自己有 allow 或 deny 的 server 或 location 不會繼承封鎖清單。用 grep -rnE '^\\s*(allow|deny)\\s' /etc/nginx 找出它們，在它們那幾行之前加上 include /etc/nginx/jt-ar-deny.rules;，或在該 server 加 if ($jt_ar_denied) { return 403; }。\n3. 確認 set_real_ip_from 只列 Cloudflare 與自家代理的範圍，絕不能是 0.0.0.0/0。\n4. 把管理者、監控與合作夥伴的位址寫進 /etc/nginx/jt-ar-allow.txt，每行一個位址或網段：有一行無法解析時，修好之前所有封鎖都會停止。\n5. 網站有 WebSocket 或其他長連線時，請設定 worker_shutdown_timeout（例如 30s）：每次封鎖都會重新載入 nginx。",
    "code": "install -o root -g wazuh -m 0750 /var/ossec/etc/shared/jt-nginx-deny /var/ossec/active-response/bin/jt-nginx-deny\ntouch /etc/nginx/jt-ar-deny.map /etc/nginx/jt-ar-deny.rules /etc/nginx/jt-ar-allow.txt\ninstall -m 0644 /var/ossec/etc/shared/jt-ar-deny-nginx.conf /etc/nginx/conf.d/000-jt-ar-deny.conf\nnginx -t && nginx -s reload\n/var/ossec/active-response/bin/jt-nginx-deny --check\necho '17 * * * * root /var/ossec/active-response/bin/jt-nginx-deny --expire >/dev/null' > /etc/cron.d/jt-nginx-deny",
    "verify": "--check prints settings ok and nginx -t ok. After a response blocks, jt-nginx-deny --list shows the address and the manager shows rule 657 (Active response: active-response/bin/jt-nginx-deny - add); a failure is rule 133050. jt-nginx-deny --unblock <address> lifts a block by hand.",
    "verify_zh": "--check 會顯示 settings ok 與 nginx -t ok。回應封鎖之後，jt-nginx-deny --list 會列出該位址，manager 上出現規則 657（Active response: active-response/bin/jt-nginx-deny - add）；失敗是規則 133050。jt-nginx-deny --unblock <位址> 可以手動解除封鎖。"
@@ -116,14 +129,26 @@
    "platform": "manager",
    "required": false,
    "since": "1.1",
-   "title": "Active responses: block at Cloudflare (sites proxied by Cloudflare)",
-   "title_zh": "主動回應：在 Cloudflare 封鎖（經 Cloudflare 代理的網站）",
+   "title": "Active responses: block at Cloudflare",
+   "title_zh": "主動回應：在 Cloudflare 封鎖",
    "file": "scripts/jt-cloudflare-block",
-   "body": "On every manager node, as root: the response runs on the node that raised the alert, so a worker needs the same files (copy them from the master). Create an API token in the Cloudflare dashboard with the permission Account > Account Firewall Access Rules > Edit for account scope, or Zone > Firewall Services > Edit for the zones listed (zone scope), and nothing else; put it alone in /var/ossec/etc/jt-cloudflare.token, owned by root, mode 600: the script refuses a file others can read and never writes the token anywhere. account_id (or zone_ids) is on the dashboard's overview page. The managers need outbound HTTPS to api.cloudflare.com (set proxy= in the settings file if they go through one), and the script runs with /usr/bin/python3: the Python bundled with Wazuh has no CA certificates. Put administrator, monitoring and partner addresses in /var/ossec/etc/jt-cloudflare-allow.txt. mode can be managed_challenge instead of block for a softer response.",
-   "body_zh": "以 root 在每個 manager 節點執行：回應在產生告警的節點上執行，所以 worker 也需要同樣的檔案（從 master 複製）。在 Cloudflare 控制台建立 API token，帳戶範圍給 Account > Account Firewall Access Rules > Edit 權限，zone 範圍則給列出的 zone 的 Zone > Firewall Services > Edit，其他一律不給；把它單獨放在 /var/ossec/etc/jt-cloudflare.token，擁有者 root、權限 600：其他人讀得到的檔案腳本會拒絕使用，token 也絕不會寫到任何地方。account_id（或 zone_ids）在控制台的概覽頁。manager 需要能以 HTTPS 連到 api.cloudflare.com（透過代理時在設定檔加 proxy=），腳本以 /usr/bin/python3 執行：Wazuh 內附的 Python 沒有 CA 憑證。把管理者、監控與合作夥伴的位址寫進 /var/ossec/etc/jt-cloudflare-allow.txt。想要溫和一點的回應，可以把 mode 設為 managed_challenge 而不是 block。",
+   "body": "For sites proxied by Cloudflare. On every manager node (master and workers), as root:\n1. In the Cloudflare dashboard create an API token with only Account > Account Firewall Access Rules > Edit (account scope) or Zone > Firewall Services > Edit (zone scope).\n2. On a worker, first copy /var/ossec/etc/jt-packs/bin/jt-cloudflare-block from the master: the cluster does not copy scripts.\n3. Run the commands below. Write the token alone into /var/ossec/etc/jt-cloudflare.token, and replace <32 hex digits> with the account ID from the dashboard's overview page (zone scope: scope=zone and zone_ids=<id>,<id>).\n4. Put administrator, monitoring and partner addresses in /var/ossec/etc/jt-cloudflare-allow.txt.\nThe managers need outbound HTTPS to api.cloudflare.com (see the step for a manager without Internet access). mode=managed_challenge gives a softer response than block.",
+   "body_zh": "適用於經 Cloudflare 代理的網站。以 root 在每個 manager 節點（master 與 worker）：\n1. 在 Cloudflare 控制台建立 API token，只給 Account > Account Firewall Access Rules > Edit（帳戶範圍）或 Zone > Firewall Services > Edit（zone 範圍）權限。\n2. worker 上請先從 master 複製 /var/ossec/etc/jt-packs/bin/jt-cloudflare-block：叢集不會複製腳本。\n3. 執行下列指令。把 token 單獨寫進 /var/ossec/etc/jt-cloudflare.token，並把 <32 hex digits> 換成控制台概覽頁上的帳戶 ID（zone 範圍：scope=zone 與 zone_ids=<id>,<id>）。\n4. 把管理者、監控與合作夥伴的位址寫進 /var/ossec/etc/jt-cloudflare-allow.txt。\nmanager 需要能以 HTTPS 連到 api.cloudflare.com（見管理端無法連外時的步驟）。mode=managed_challenge 是比 block 溫和的回應。",
    "code": "install -o root -g wazuh -m 0750 /var/ossec/etc/jt-packs/bin/jt-cloudflare-block /var/ossec/active-response/bin/jt-cloudflare-block\ninstall -o root -g root -m 0600 /dev/null /var/ossec/etc/jt-cloudflare.token   # then write the token into it\nprintf 'scope=account\\naccount_id=<32 hex digits>\\nmode=block\\n' > /var/ossec/etc/jt-cloudflare-block.conf\ntouch /var/ossec/etc/jt-cloudflare-allow.txt\n/var/ossec/active-response/bin/jt-cloudflare-block --check",
    "verify": "--check prints the scope and that the token can read its access rules. After a response blocks, --list shows the rule and the manager shows rule 657; Cloudflare's dashboard lists it under Security > WAF > Tools with the note jt-wazuh-mgr active response.",
    "verify_zh": "--check 會顯示範圍，以及 token 能讀取存取規則。回應封鎖之後，--list 會列出規則，manager 上出現規則 657；Cloudflare 控制台的 Security > WAF > Tools 會列出備註為 jt-wazuh-mgr active response 的規則。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.1",
+   "title": "Manager without Internet access",
+   "title_zh": "管理端無法連外時",
+   "body": "Only the Cloudflare response needs the Internet: the manager node that raised the alert calls api.cloudflare.com over HTTPS. The rules and the nginx responses need nothing.\n1. If the managers go out through a proxy, add the proxy line below to /var/ossec/etc/jt-cloudflare-block.conf on every node, with <proxy host> and <port> of your HTTP proxy.\n2. With no route at all, do not switch on cloudflare-block: every block would fail and raise rule 133050 (level 10). Sites behind Cloudflare can still be blocked by the nginx responses on their reverse proxy.",
+   "body_zh": "只有 Cloudflare 回應需要網際網路：產生告警的 manager 節點會以 HTTPS 呼叫 api.cloudflare.com。規則與 nginx 回應都不需要。\n1. manager 經代理連外時，在每個節點的 /var/ossec/etc/jt-cloudflare-block.conf 加上下列 proxy 設定，<proxy host> 與 <port> 換成你的 HTTP 代理。\n2. 完全無法連外時，不要開啟 cloudflare-block：每次封鎖都會失敗並觸發規則 133050（level 10）。經 Cloudflare 的網站仍可由其反向代理上的 nginx 回應封鎖。",
+   "code": "echo 'proxy=http://<proxy host>:<port>' >> /var/ossec/etc/jt-cloudflare-block.conf\n/var/ossec/active-response/bin/jt-cloudflare-block --check",
+   "verify": "--check prints the scope and that the token can read its access rules; a network error means the proxy or the route is wrong.",
+   "verify_zh": "--check 會顯示範圍，以及 token 能讀取存取規則；出現網路錯誤代表代理或路由有誤。"
   }
  ],
  "scripts": [
