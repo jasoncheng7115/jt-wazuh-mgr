@@ -2,7 +2,7 @@
  "id": "jt-nextcloud",
  "name": "Nextcloud Detection Suite",
  "name_zh": "Nextcloud 偵測套組",
- "version": "1.2.2",
+ "version": "1.2.3",
  "summary": "Failed logins and brute force per address (also for Nextcloud 35, which logs client failures only in the audit log), second-factor failures, administrator logins, logins from public and new addresses, impersonation, administrator rights, security apps switched off, risky apps, occ commands that weaken protection, public links, ransomware-like renames, mass deletions, antivirus detections and changes of the configuration files, from the Nextcloud log, the audit log and file integrity monitoring, with the client address decoded as srcip.",
  "summary_zh": "從 Nextcloud 記錄、稽核記錄與檔案完整性監控偵測：依來源位址計算的登入失敗與暴力破解（含 Nextcloud 35，其用戶端登入失敗只寫在稽核記錄）、第二因素驗證失敗、管理者登入、來自公開位址與新位址的登入、以他人身分操作、管理者權限、關閉安全 App、高風險 App、削弱防護的 occ 指令、公開連結、類勒索軟體的大量更名、大量刪除、防毒偵測與設定檔變更，並把來源位址解成 srcip。",
  "rule_id_range": "131700-131799",
@@ -23,7 +23,8 @@
   "Cross-pack login groups (patch release): jt_auth_success on 131720, 131721, 131777, 131770, 131771, 131772, 131778, 131773, 131774, 131775, 131776; jt_auth_failure on 131710; jt_auth_lockout on 131722. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. The failed login line names no account in a decoded field, so 131710 only serves the address-based correlations. Not tagged: the second copy from the suspicious_login app (131739), impersonation (131729), a wrong second factor (131713).",
   "1.2.2: works on managers before Wazuh 4.14. 4.14 turns the JSON key \"user\" into dstuser; 4.12 and 4.13 keep it as a dynamic field, so every rule with <user> or <same_user/> never matched there: deleted files, renamed files, ransomware-style renames and many public links (12 cases). The decoder now reads the account from the line into the static user field as well, as it already did for srcip. Verified on 4.12.0 and 4.14.9 (174 of 174 cases each).",
   "The audit log grows by one line per login, share, deletion and file access; Nextcloud rotates it at log_rotate_size (100 MB by default). The log.condition entries of the setup make Nextcloud write the admin_audit lines and the brute-force protection messages (131722-131725) at the default loglevel 2 without raising the level of everything else.",
-  "An access log that starts with the client address followed by the virtual host name (Apache \"%a %v ...\"): Wazuh's built-in web decoder takes the host name as srcip, so the built-in rule 31151 (level 10, many 400 errors from one address) fires on all traffic combined and no address can be blocked. Rule 131779 recognises entry points only under a directory whose name starts with nextcloud; for an installation elsewhere the built-in rule 550 (level 7) reports the change."
+  "An access log that starts with the client address followed by the virtual host name (Apache \"%a %v ...\"): Wazuh's built-in web decoder takes the host name as srcip, so the built-in rule 31151 (level 10, many 400 errors from one address) fires on all traffic combined and no address can be blocked. Rule 131779 recognises entry points only under a directory whose name starts with nextcloud; for an installation elsewhere the built-in rule 550 (level 7) reports the change.",
+  "Account names for notifications (1.2.3): with an LDAP directory, Nextcloud's id for a directory user is the entry's UUID, and that is what the alerts name. jt-nextcloud-names.py, run daily on each manager node, writes the names of the accounts whose id is not their name to etc/jt-packs/jt-alert-digest-names.d/nextcloud, which jt-alert-digest 1.14 and later reads to show \"Alice Chen (3094106c...)\" in every channel. It uses the OCS provisioning API (the user list, a page at a time, then each user's display name and e-mail address) with an administrator's app password from a root-only file, never logged. The file is written in full and renamed into place; a failed run keeps the previous file, and so does an answer with fewer than half the names of the previous file (--force writes it). A failure raises 131783 (level 5), three days without a successful run 131784 (level 7). Without etc/jt-packs/jt-nextcloud.conf the script does nothing. A user's display name is under that user's control, so the digest cleans and escapes it like any alert text."
  ],
  "notes_zh": [
   "本套件透過 agent 群組 nextcloud 讀取 Nextcloud 自己的記錄（nextcloud.log）與 admin_audit 稽核記錄；群組會在每一行前面加上前綴，交給本套件的解碼器處理。解碼器保留所有 JSON 欄位，並另外把 remoteAddr 解成 srcip，這是 Wazuh 內建 json 解碼器做不到的。替內建 json 解碼器加子解碼器也不可行：4.14.7 實測，只要它有一個子解碼器，manager 上其他所有 JSON 來源（Suricata、雲端整合）的欄位就全部消失。不經這個群組收進來的行，仍由內建規則 88200-88216 處理。",
@@ -42,7 +43,8 @@
   "跨套件登入群組（修補版）：jt_auth_success：131720, 131721, 131777, 131770, 131771, 131772, 131778, 131773, 131774, 131775, 131776；jt_auth_failure：131710；jt_auth_lockout：131722。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。登入失敗那行沒有解出帳號欄位，所以 131710 只用於以來源位址關聯的規則。未加標記：suspicious_login 應用程式的第二份（131739）、模擬身分（131729）、第二因素錯誤（131713）。",
   "1.2.2：支援 Wazuh 4.14 之前的 manager。4.14 會把 JSON 的 \"user\" 轉成 dstuser；4.12、4.13 則保留為動態欄位，所以所有使用 <user> 或 <same_user/> 的規則在舊版都不成立：刪除檔案、改名、勒索軟體式改名與大量公開連結（12 個案例）。解碼器現在也從記錄行把帳號讀進靜態的 user 欄位，做法與 srcip 相同。已在 4.12.0 與 4.14.9 驗證（各 174 個案例全過）。",
   "稽核記錄每次登入、分享、刪除與檔案存取都會多一行；Nextcloud 會在達到 log_rotate_size（預設 100 MB）時輪替。部署說明中的 log.condition 項目讓 Nextcloud 在預設 loglevel 2 下也寫入 admin_audit 與暴力破解防護的訊息（131722-131725），而不必提高其他所有訊息的等級。",
-  "存取記錄若以來源位址開頭、接著是虛擬主機名稱（Apache \"%a %v ...\"）：Wazuh 內建的網頁解碼器會把主機名稱當成 srcip，內建規則 31151（level 10，同一位址大量 400 錯誤）會把全部流量合在一起計算，也無法封鎖任何位址。規則 131779 只認得名稱以 nextcloud 開頭的目錄底下的進入點；安裝在其他位置時，由內建規則 550（level 7）回報變更。"
+  "存取記錄若以來源位址開頭、接著是虛擬主機名稱（Apache \"%a %v ...\"）：Wazuh 內建的網頁解碼器會把主機名稱當成 srcip，內建規則 31151（level 10，同一位址大量 400 錯誤）會把全部流量合在一起計算，也無法封鎖任何位址。規則 131779 只認得名稱以 nextcloud 開頭的目錄底下的進入點；安裝在其他位置時，由內建規則 550（level 7）回報變更。",
+  "通知中的帳號名稱（1.2.3）：接 LDAP 目錄時，Nextcloud 給目錄使用者的 ID 是目錄項目的 UUID，告警寫的就是它。jt-nextcloud-names.py 每天在每個 manager 節點執行一次，把 ID 與名稱不同的帳號名稱寫入 etc/jt-packs/jt-alert-digest-names.d/nextcloud，jt-alert-digest 1.14 以後會讀取它，在每個管道顯示「王小明 (3094106c…)」。它使用 OCS provisioning API（使用者清單分頁讀取，再讀每個使用者的顯示名稱與電子郵件），以管理員的應用程式密碼登入；密碼讀自只有 root 可讀的檔案，不會出現在任何記錄中。檔案完整寫好後才改名就位；執行失敗時保留原本的檔案，回應的名稱數不到原檔一半時也保留（--force 才會寫入）。失敗觸發 131783（level 5），三天沒有成功執行則是 131784（level 7）。沒有 etc/jt-packs/jt-nextcloud.conf 時腳本什麼都不做。顯示名稱由使用者自己設定，所以摘要會像其他告警文字一樣清理並跳脫它。"
  ],
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -65,7 +67,17 @@
    "type": "rule",
    "name": "zz-131700-jt_nextcloud_rules.xml",
    "dest": "etc/rules/zz-131700-jt_nextcloud_rules.xml",
-   "sha256": "ace376093e02c2269fd4e5045c4efb429685f5b2d461874b432d56cedf3dffca"
+   "sha256": "ec1ea74886778bae28448c3b1accfc99de75d45b8c99694e58b90d38173b0880"
+  }
+ ],
+ "scripts": [
+  {
+   "name": "jt-nextcloud-names.py",
+   "dest": "etc/jt-packs/bin/jt-nextcloud-names.py",
+   "sha256": "7d1bdb5342c5cc2e89eb574d9ee7435e2be2fcdba08347aafd0270709de0118b",
+   "cron": "17 4 * * *",
+   "args": "--wazuh-path {wazuh_path}",
+   "description": "Writes the names of Nextcloud's accounts (an LDAP user's id is the entry's UUID) for jt-alert-digest's account names map, from the OCS provisioning API; does nothing until etc/jt-packs/jt-nextcloud.conf exists"
   }
  ],
  "agent_group": {
@@ -165,6 +177,18 @@
    "code": "sudo -u www-data php /var/www/nextcloud/occ config:system:get log.condition\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 2 message --value=\"Detected a login from a suspicious login\"\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 2 loglevel --value=1 --type=integer",
    "verify": "The next login the app flags raises rule 131739 (level 8).",
    "verify_zh": "下一次該 App 判定可疑的登入會觸發規則 131739（level 8）。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.2.3",
+   "title": "Optional: names instead of LDAP ids in notifications",
+   "title_zh": "選用：通知中以姓名取代 LDAP 的 ID",
+   "body": "Only with jt-alert-digest 1.14 or later, for a Nextcloud on an LDAP directory: its users' ids are UUIDs. The schedule is written on install and does nothing until the settings exist.\n1. In Nextcloud, as an administrator: Personal settings, Security, Create new app password.\n2. Put the app password in a root-only file and fill jt-nextcloud.conf (commands below).\n3. Run --check, then --once.\n4. Cluster: do the same on every node, which mails with its own names file: copy the script, /etc/cron.d/jt-jt-nextcloud, the settings and the password file to each worker.",
+   "body_zh": "只適用於 jt-alert-digest 1.14 以後、接 LDAP 目錄的 Nextcloud：其使用者的 ID 是 UUID。安裝時就會寫入排程，但在設定檔存在之前什麼都不做。\n1. 在 Nextcloud 以管理員身分：個人設定、安全性、建立新的應用程式密碼。\n2. 把應用程式密碼放進只有 root 可讀的檔案，並填寫 jt-nextcloud.conf（指令如下）。\n3. 執行 --check，再執行 --once。\n4. 叢集：每個節點都要做，因為每個節點以自己的名稱檔寄送：把腳本、/etc/cron.d/jt-jt-nextcloud、設定檔與密碼檔複製到每台 worker。",
+   "code": "umask 077\nread -rs -p 'App password: ' p; echo; printf '%s\\n' \"$p\" > /var/ossec/etc/jt-packs/jt-nextcloud-app-password; unset p\nprintf '%s\\n' 'url = https://cloud.example.com' 'user = <admin login>' 'app_password_file = /var/ossec/etc/jt-packs/jt-nextcloud-app-password' > /var/ossec/etc/jt-packs/jt-nextcloud.conf\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-nextcloud-names.py --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-nextcloud-names.py --once",
+   "verify": "--check ends with \"result: Nextcloud accepted the login and lists users\"; after --once, jt-alert-digest.py --check shows \"account names: N entries from .../jt-alert-digest-names.d/nextcloud\".",
+   "verify_zh": "--check 最後一行是「result: Nextcloud accepted the login and lists users」；執行 --once 之後，jt-alert-digest.py --check 顯示「account names: N entries from .../jt-alert-digest-names.d/nextcloud」。"
   }
  ],
  "active_response": [

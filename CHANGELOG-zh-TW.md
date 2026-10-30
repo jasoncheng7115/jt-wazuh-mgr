@@ -4,6 +4,16 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.30.0（2026-10-31）
+
+- **jt-alert-digest 1.14：以帳號名稱取代 ID。** Nextcloud 接 LDAP 時以內部 ID（目錄的 entryUUID）記錄使用者，Windows 事件有時只寫帳號的 SID。
+  新增選用的名稱對照表（`jt-alert-digest-names` 與 `jt-alert-digest-names.d/` 內的檔案，每行 `id: 名稱`，root 擁有、其他人不可寫），
+  所有通知管道都會把這類值顯示成「名稱（3094106c…）」或「名稱（…-1104）」。只取代完整的值與獨立的 UUID／SID，名稱與其他告警文字
+  一樣跳脫，檔案路徑與原始記錄保留 ID，webhook 新增 `account_name` 並保留原值；沒有對照表時輸出與先前逐位元相同。
+- **jt-nextcloud 1.2.3：`jt-nextcloud-names.py`** 每天從 Nextcloud 的使用者管理 API（每個 ID 的顯示名稱與 email）產生上述對照表，
+  使用存放在 root 專屬檔案中的管理員應用程式密碼。執行失敗時保留先前的對照表；規則 131783（更新失敗，level 5）、131784（3 天未更新，
+  level 7）。沒有設定檔時不做任何事。
+
 ## v1.29.0（2026-10-30）
 
 - **套件看板分成中文版與英文版。** 每個套件附 `<id>.ndjson`（英文）與 `<id>.zh-TW.ndjson`（中文），不再是每個標籤都同時寫兩種語言的

@@ -1096,3 +1096,36 @@
   </rule>
 
 </group>
+
+<!--
+  Account names for notifications (1.2.3). etc/jt-packs/bin/jt-nextcloud-names.py
+  runs daily on each manager node and writes the names of Nextcloud's
+  accounts for jt-alert-digest's account names map (an LDAP user's id is the
+  entry's UUID, which is what this pack's alerts name). Its events are the
+  manager's own (location jt-nextcloud-names); the built-in JSON decoder reads
+  them. A failed run keeps the previous names, so notifications still show
+  them; after three days without a successful run, staff and address changes
+  in the directory are no longer reflected.
+-->
+<group name="nextcloud,jt_nextcloud,jt_nextcloud_names,">
+
+  <rule id="131780" level="0">
+    <decoded_as>json</decoded_as>
+    <location>^jt-nextcloud-names$</location>
+    <field name="jt_nextcloud_names.event">\.+</field>
+    <description>Nextcloud account names: status event</description>
+  </rule>
+
+  <rule id="131783" level="5">
+    <if_sid>131780</if_sid>
+    <field name="jt_nextcloud_names.event">^failed$</field>
+    <description>Nextcloud account names for notifications could not be updated, the previous names stay in use (last success $(jt_nextcloud_names.last_success)): $(jt_nextcloud_names.detail)</description>
+  </rule>
+
+  <rule id="131784" level="7">
+    <if_sid>131780</if_sid>
+    <field name="jt_nextcloud_names.event">^stale$</field>
+    <description>[WARN] Nextcloud account names for notifications have not been updated for $(jt_nextcloud_names.age_days) days (last success $(jt_nextcloud_names.last_success)): $(jt_nextcloud_names.detail)</description>
+  </rule>
+
+</group>

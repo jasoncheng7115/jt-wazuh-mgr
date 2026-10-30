@@ -43,6 +43,10 @@ Telegram, Slack, Discord, Mattermost, LINE, or as JSON to any webhook (all
 from the settings file). Each channel keeps its own position in the alert
 file, so an outage of one cannot lose or repeat another's messages.
 
+Where an alert names an account by an internal id (an LDAP entry's UUID in
+Nextcloud, a SID in Windows), an optional account names map shows the
+person instead (1.14, names_file; see "Account names" below).
+
 Once this is delivering, turn wazuh-maild off, or both will send: set
 <email_notification> to no and stop that daemon. Do not raise
 email_alert_level for that purpose; this script reads it too.
@@ -79,7 +83,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.13.1"
+VERSION = "1.14"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -249,7 +253,7 @@ def read_global_config(wazuh):
 KNOWN_SETTINGS = ("dashboard", "smtp_server", "smtp_port", "tls", "tls_verify",
                   "tls_ca_file", "smtp_user", "smtp_password_file", "sendmail_args",
                   "level", "to", "exclude_rules", "exclude_agents", "repeat",
-                  "daily", "max_per_hour", "link")
+                  "daily", "max_per_hour", "link", "names_file")
 TLS_MODES = ("none", "may", "required", "verify", "implicit")
 
 # The threat-hunting events view of a 4.9+ dashboard, filtered to one rule,
@@ -291,18 +295,21 @@ def _time_of_day(value):
     return (int(match.group(1)), int(match.group(2)))
 
 
-def read_secret(path, setting="smtp_password_file"):
-    """A password, key, token or webhook address, only from a file nobody but
-    root can read, and never through a symbolic link.
+def open_checked(path, setting, private=True):
+    """(file object, None), or (None, problem) naming the file.
 
-    The value itself never appears in a message: the problems name the file.
+    A regular file, opened without following a symbolic link (whoever can
+    change the link chooses what is read), that belongs to root. private: no
+    one else may read it (a password, key or webhook address); otherwise no one
+    else may write it (the account names map, which is not secret but decides
+    what a reader is told). The checks are made on the file actually opened,
+    not on the name.
     """
     try:
         info = os.lstat(path)
     except OSError as exc:
         return None, "%s %s cannot be read: %s" % (setting, path, exc.strerror or exc)
     if stat.S_ISLNK(info.st_mode):
-        # whoever can change the link chooses what is read as the secret
         return None, "%s %s is a symbolic link; name the file itself" % (setting, path)
     if not stat.S_ISREG(info.st_mode):
         return None, "%s %s is not a regular file" % (setting, path)
@@ -310,14 +317,39 @@ def read_secret(path, setting="smtp_password_file"):
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
     except OSError:
         return None, "%s %s cannot be read" % (setting, path)
+    fh = None
     try:
-        with os.fdopen(fd, encoding="utf-8") as fh:
-            info = os.fstat(fh.fileno())     # the file actually opened, not the name checked
-            if not stat.S_ISREG(info.st_mode) or info.st_uid not in (0, os.geteuid()) \
-                    or info.st_mode & 0o077:
-                return None, ("%s %s must belong to root and be readable by "
-                              "root only (chmod 600)" % (setting, path))
-            secret = fh.readline().rstrip("\r\n")
+        fh = os.fdopen(fd, "rb")
+        info = os.fstat(fh.fileno())
+    except OSError:
+        if fh is None:
+            os.close(fd)
+        else:
+            fh.close()
+        return None, "%s %s cannot be read" % (setting, path)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid not in (0, os.geteuid()) \
+            or info.st_mode & (0o077 if private else 0o022):
+        fh.close()
+        if private:
+            return None, ("%s %s must belong to root and be readable by "
+                          "root only (chmod 600)" % (setting, path))
+        return None, ("%s %s must belong to root and be writable by root only "
+                      "(chmod 644 or 600)" % (setting, path))
+    return fh, None
+
+
+def read_secret(path, setting="smtp_password_file"):
+    """A password, key, token or webhook address, only from a file nobody but
+    root can read, and never through a symbolic link.
+
+    The value itself never appears in a message: the problems name the file.
+    """
+    fh, problem = open_checked(path, setting)
+    if problem:
+        return None, problem
+    try:
+        with fh:
+            secret = re.split(r"[\r\n]", fh.readline().decode("utf-8"), maxsplit=1)[0]
     except (OSError, UnicodeDecodeError):
         return None, "%s %s cannot be read" % (setting, path)
     if not secret:
@@ -871,6 +903,296 @@ def save_agents(path):
         AGENTS_CHANGED[0] = False
     except OSError:
         pass
+
+
+# --------------------------------------------------------------------------
+# Account names (1.14): show a person where an alert names an internal id
+# --------------------------------------------------------------------------
+#
+# A directory-backed service often logs an account by an internal id rather
+# than the login: Nextcloud on an LDAP directory uses the entry's UUID
+# ("3094106c-645c-103a-832e-5343dab4befe"), Windows sometimes gives only a SID.
+# A rule cannot look a value up, so the digest does it where it prints: an
+# optional map from id to the name to show, kept by the site (or written by a
+# script such as jt-nextcloud's jt-nextcloud-names.py).
+#
+# The map only changes how a value is shown. Groups, holds, NEW badges, the
+# state file and the alerts in Wazuh are unchanged, the webhook gets the name
+# in an added field beside the untouched value, and the id stays visible
+# ("Alice (3094106c...)", "Alice (...-1104)") with the raw log under it.
+# Only exact matches are replaced: a whole account value, or a UUID or SID
+# token standing on its own; never a part of a longer word. Names come from a
+# directory anyone with an account there may edit, so they are cleaned of
+# control characters here and escaped like any other alert text per channel.
+
+NAMES_FILE = os.path.join("etc", "jt-packs", "jt-alert-digest-names")
+NAMES_DIR = NAMES_FILE + ".d"
+NAMES_MAX_BYTES = 8 << 20     # one file
+NAMES_MAX = 200000            # entries over all files
+NAMES_MAX_FILES = 100         # files read from one directory
+NAME_MAX = 120                # longest name shown
+NAMES_SKIP = ("~", ".tmp", ".swp", ".bak", ".old", ".orig", ".rpmnew", ".rpmsave",
+              ".dpkg-old", ".dpkg-new", ".dpkg-dist", ".dpkg-tmp")
+UUID_TEXT = r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+SID_TEXT = r"S-1-\d{1,3}(?:-\d{1,10}){1,15}"
+UUID_ID = re.compile(r"^%s$" % UUID_TEXT)
+SID_ID = re.compile(r"^%s$" % SID_TEXT)
+# A token: not preceded or followed by a letter, digit, underscore or hyphen,
+# so an id inside a longer word or a longer id is never taken.
+ID_TOKEN = re.compile(r"(?<![\w-])(%s|%s)(?![\w-])" % (UUID_TEXT, SID_TEXT))
+ACCOUNT_LABELS = ("Account", "User", "By", "Member", "Source account")
+NAMES = {}
+NAMES_REPORT = {"read": [], "refused": [], "entries": 0, "ignored": 0, "off": False}
+
+
+def name_key(value):
+    """The form an id is stored and looked up in: UUIDs in lower case."""
+    value = str(value).strip()
+    return value.lower() if UUID_ID.match(value) else value
+
+
+def clean_name(value):
+    """A name as shown: no control or formatting characters (a newline would
+    start a line of its own in a chat message, a right-to-left override would
+    reverse what follows), single spaces, at most NAME_MAX characters."""
+    out = []
+    for char in str(value):
+        kind = unicodedata.category(char)
+        if kind in ("Cc", "Zl", "Zp"):
+            out.append(" ")
+        elif kind not in ("Cf", "Cs", "Co"):
+            out.append(char)
+    return trim("".join(out), NAME_MAX)
+
+
+def parse_names(text, names):
+    """Lines "id: name" into names; returns (entries, lines ignored)."""
+    entries = ignored = 0
+    for line in text.lstrip("﻿").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, name = line.partition(":")
+        key, name = key.strip(), clean_name(name)
+        if not sep or not key or not name or len(key) > 256 \
+                or any(unicodedata.category(c)[0] == "C" for c in key):
+            ignored += 1
+            continue
+        if name.casefold() == key.casefold():
+            continue        # nothing to tell the reader
+        if len(names) >= NAMES_MAX and name_key(key) not in names:
+            ignored += 1
+            continue
+        names[name_key(key)] = name
+        entries += 1
+    return entries, ignored
+
+
+def read_names_file(path, names, report):
+    fh, problem = open_checked(path, "names file", private=False)
+    if problem:
+        report["refused"].append((path, problem))
+        return
+    with fh:
+        try:
+            raw = fh.read(NAMES_MAX_BYTES + 1)
+        except OSError as exc:
+            report["refused"].append((path, "names file %s cannot be read: %s"
+                                      % (path, exc.strerror or exc)))
+            return
+    if len(raw) > NAMES_MAX_BYTES:
+        report["refused"].append((path, "names file %s is larger than %d MB"
+                                  % (path, NAMES_MAX_BYTES >> 20)))
+        return
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        report["refused"].append((path, "names file %s is not UTF-8 text" % path))
+        return
+    entries, ignored = parse_names(text, names)
+    report["read"].append((path, entries))
+    report["ignored"] += ignored
+
+
+def read_names_dir(path, names, report):
+    """Every file directly in the directory, in name order (a later file wins
+    for an id both define); hidden files and editor or package leftovers are
+    skipped, so a writer can rename a hidden temporary file into place."""
+    try:
+        info = os.lstat(path)
+    except OSError as exc:
+        report["refused"].append((path, "names directory %s cannot be read: %s"
+                                  % (path, exc.strerror or exc)))
+        return
+    if stat.S_ISLNK(info.st_mode):
+        report["refused"].append((path, "names directory %s is a symbolic link; name the "
+                                  "directory itself" % path))
+        return
+    if info.st_uid not in (0, os.geteuid()) or info.st_mode & 0o022:
+        # whoever may add a file to it chooses what readers are told
+        report["refused"].append((path, "names directory %s must belong to root and be "
+                                  "writable by root only (chmod 755 or 700)" % path))
+        return
+    try:
+        entries = sorted(os.listdir(path))
+    except OSError as exc:
+        report["refused"].append((path, "names directory %s cannot be read: %s"
+                                  % (path, exc.strerror or exc)))
+        return
+    entries = [e for e in entries if not e.startswith(".") and not e.endswith(NAMES_SKIP)]
+    if len(entries) > NAMES_MAX_FILES:
+        report["refused"].append((path, "names directory %s holds more than %d files; only the "
+                                  "first %d were read" % (path, NAMES_MAX_FILES, NAMES_MAX_FILES)))
+    for entry in entries[:NAMES_MAX_FILES]:
+        read_names_file(os.path.join(path, entry), names, report)
+
+
+def load_names(site, wazuh):
+    """Read the account names map into NAMES; returns the problems, for warnings.
+
+    names_file in the settings file: one or more paths (comma or space
+    separated), each a file or a directory, read in the order given; a later
+    entry wins for an id two of them define. Not set: etc/jt-packs/
+    jt-alert-digest-names and the directory jt-alert-digest-names.d next to
+    it, whichever exist. names_file = off turns the map off.
+    """
+    NAMES.clear()
+    report = {"read": [], "refused": [], "entries": 0, "ignored": 0, "off": False}
+    NAMES_REPORT.clear()
+    NAMES_REPORT.update(report)
+    setting = (site.get("names_file") or "").strip()
+    if setting.lower() in ("off", "no", "none"):
+        NAMES_REPORT["off"] = True
+        return []
+    explicit = bool(setting)
+    paths = split_list(setting) if explicit else [os.path.join(wazuh, NAMES_FILE),
+                                                  os.path.join(wazuh, NAMES_DIR)]
+    names = {}
+    for path in paths:
+        try:
+            info = os.lstat(path)
+        except OSError as exc:
+            if explicit:
+                report["refused"].append((path, "names_file %s cannot be read: %s"
+                                          % (path, exc.strerror or exc)))
+            continue
+        if stat.S_ISDIR(info.st_mode):
+            read_names_dir(path, names, report)
+        else:
+            read_names_file(path, names, report)
+    NAMES.update(names)
+    report["entries"] = len(names)
+    NAMES_REPORT.update(report)
+    return [problem for _, problem in report["refused"]]
+
+
+def lookup_name(value):
+    """(id, name) when the whole value is a key of the map, else None."""
+    if not NAMES:
+        return None
+    key = name_key(value)
+    name = NAMES.get(key)
+    return (key, name) if name else None
+
+
+def shown_name(key, name):
+    """The name with enough of the id to tell two people of one name apart and
+    to find the id in the log: "Alice (3094106c...)", for a SID its last part,
+    the account's relative id: "Alice (...-1104)"."""
+    if SID_ID.match(key):
+        return "%s (…-%s)" % (name, key.rsplit("-", 1)[1])
+    if len(key) <= 8:
+        return "%s (%s)" % (name, key)
+    return "%s (%s…)" % (name, key[:8])
+
+
+def name_tokens(text, found=None):
+    """Each UUID or SID token of text that the map knows, shown by name."""
+    if not NAMES or not text:
+        return text
+
+    def swap(match):
+        hit = lookup_name(match.group(1))
+        if not hit:
+            return match.group(0)
+        if found is not None:
+            found[hit[0]] = hit[1]
+        return shown_name(*hit)
+    return ID_TOKEN.sub(swap, str(text))
+
+
+def name_value(value, found=None):
+    """An account value shown by name: the whole value, the account part of
+    DOMAIN\\account, the value before a trailing "(...)" such as Sysmon's
+    integrity level, else its UUID or SID tokens."""
+    if not NAMES:
+        return value
+    text = str(value)
+    hit = lookup_name(text)
+    if hit:
+        if found is not None:
+            found[hit[0]] = hit[1]
+        return shown_name(*hit)
+    if "\\" in text:
+        domain, _, account = text.rpartition("\\")
+        hit = lookup_name(account)
+        if hit:
+            if found is not None:
+                found[hit[0]] = hit[1]
+            return "%s\\%s" % (domain, shown_name(*hit))
+    suffix = re.match(r"^(.+?)( \([^()]*\))$", text)
+    if suffix:
+        inner = {}
+        shown = name_value(suffix.group(1), inner)
+        if inner:
+            if found is not None:
+                found.update(inner)
+            return shown + suffix.group(2)
+    return name_tokens(text, found)
+
+
+def account_sources(alert):
+    """(label, value) of the decoded fields that name an account, for a row of
+    its own when the map knows the value and nothing shown carries it yet."""
+    data = alert.get("data") or {}
+    out = [("Account", data.get("dstuser")), ("Source account", data.get("srcuser")),
+           ("Account", data.get("user"))]
+    win = data.get("win")
+    if isinstance(win, dict):
+        event = win.get("eventdata") or {}
+        out += [("Account", event.get(k)) for k in ("targetUserName", "targetSid", "targetUserSid")]
+        out += [("By", event.get(k)) for k in ("subjectUserName", "subjectUserSid")]
+        out += [("Member", event.get(k)) for k in ("memberName", "memberSid")]
+    return [(label, unwin(value).strip()) for label, value in out
+            if isinstance(value, str) and value.strip() not in ("", "-")]
+
+
+def account_rows(fields, alert):
+    """(label, value, shown, names) per field: shown is the value with the map
+    applied (account rows only), names the ids it resolved. Without a map,
+    shown is the value and nothing is added."""
+    if not NAMES:
+        return [(label, value, value, {}) for label, value in fields]
+    rows = []
+    for label, value in fields:
+        found = OrderedDict()
+        shown = value
+        if label in ACCOUNT_LABELS:
+            by = re.match(r"^(.*  as )(.+)$", str(value)) if label == "By" else None
+            shown = (by.group(1) + name_value(by.group(2), found)) if by \
+                else name_value(value, found)
+        rows.append((label, value, shown, found))
+    if alert.get("syscheck"):
+        return rows
+    for label, value in account_sources(alert):
+        found = OrderedDict()
+        shown = name_value(value, found)
+        if not found or any(r[0] == label for r in rows) or \
+                any(value in str(r[1]) for r in rows if r[0] != "Log"):
+            continue
+        at = next((i for i, r in enumerate(rows) if r[0] == "Log"), len(rows))
+        rows.insert(at, (label, trim(value), trim(shown, MAX_FIELD + NAME_MAX), found))
+    return rows
 
 
 class Batch(object):
@@ -1662,12 +1984,25 @@ def esc(value):
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
-def card_fields(group, samples):
+def sample_rows(group, samples):
+    """Per sample shown, (label, value, shown, names) for each field: see account_rows."""
     if group.get("kind") == "vulnerability" and group.get("vulns"):
-        return [vuln_fields(group)]
+        return [[(label, value, value, {}) for label, value in vuln_fields(group)]]
     if group.get("kind") == "container" and group.get("images"):
-        return [image_fields(group)]
-    return [interesting_fields(sample) for sample in group.get("samples", [])[:samples]]
+        return [[(label, value, value, {}) for label, value in image_fields(group)]]
+    return [account_rows(interesting_fields(sample), sample)
+            for sample in group.get("samples", [])[:samples]]
+
+
+def card_fields(group, samples):
+    """The (label, value) rows of each sample shown, account names applied."""
+    return [[(label, shown) for label, _, shown, _ in rows] for rows in sample_rows(group, samples)]
+
+
+def title(group, rule_id="?"):
+    """heading() as shown to a reader: ids the account names map knows, by name.
+    heading() itself stays raw, for the state file and the webhook."""
+    return name_tokens(heading(group, rule_id))
 
 
 def html_card(index, rule_id, agent, group, samples, link=None):
@@ -1698,7 +2033,7 @@ def html_card(index, rule_id, agent, group, samples, link=None):
            ('&nbsp;&nbsp;<span style="font-family:%s;font-size:13px;color:%s;">%s</span>'
             % (MONO, MUTED, esc(detail))) if detail else ''))
     out.append('<div style="margin:6px 0 2px;font-size:15px;line-height:1.45;'
-               'font-weight:600;">%s</div>' % esc(heading(group, rule_id)))
+               'font-weight:600;">%s</div>' % esc(title(group, rule_id)))
     meta = esc(headline(group))
     if group.get("mitre"):
         meta += '&nbsp;&middot;&nbsp;' + esc(mitre_line(group))
@@ -1799,7 +2134,8 @@ def held_line(entry):
     since = time.strftime("%H:%M", time.localtime(entry.get("mailed") or now()))
     return ("L%d rule %s on %s: +%d since the full mail at %s (last %s) - %s"
             % (entry.get("level", 0), entry.get("rule", "?"), entry.get("agent", "?"),
-               entry.get("n", 0), since, clock(entry.get("last", "")), entry.get("heading", "")))
+               entry.get("n", 0), since, clock(entry.get("last", "")),
+               name_tokens(entry.get("heading", ""))))
 
 
 def render_text(groups, total, min_level, dashboard, context=None):
@@ -1828,7 +2164,7 @@ def render_text(groups, total, min_level, dashboard, context=None):
         for (rule_id, agent), group in items[:MAX_GROUPS]:
             lines.append("  L%d rule %s x%d %s - %s%s"
                          % (group["level"], rule_id, group["count"], agent,
-                            trim(heading(group, rule_id), 80),
+                            trim(title(group, rule_id), 80),
                             ("  " + badge(group)) if badge(group) else ""))
         lines.append("")
     for index, ((rule_id, agent), group) in enumerate(items):
@@ -1847,7 +2183,7 @@ def render_text(groups, total, min_level, dashboard, context=None):
                         group["level"], rule_id, count, mark))
         detail = host_detail(group)
         lines.append("  Host: %s%s" % (agent, " (%s)" % detail if detail else ""))
-        lines.append("  " + heading(group, rule_id))
+        lines.append("  " + title(group, rule_id))
         stamp = "  " + headline(group)
         if group.get("mitre"):
             stamp += "   " + mitre_line(group)
@@ -1932,7 +2268,7 @@ def render_html(groups, total, min_level, dashboard, context=None):
                 '<td style="width:46px;padding:2px 0;color:%s;">&times;%d</td>'
                 '<td style="padding:2px 0;overflow-wrap:anywhere;">%s%s</td></tr>'
                 % (band, group["level"], MONO, esc(agent), MUTED, group["count"],
-                   esc(trim(heading(group, rule_id), 90)),
+                   esc(trim(title(group, rule_id), 90)),
                    ('&nbsp;<span style="color:%s;font-weight:700;">%s</span>'
                     % (NEWBADGE, mark)) if mark else ''))
         out.append('</table></div>')
@@ -1990,12 +2326,12 @@ def subject(groups, total, held=None):
     if not groups:
         entries = held or []
         top = max(entries, key=lambda e: (e.get("level", 0), e.get("n", 0))) if entries else {}
-        text = trim_words(ascii_only(top.get("heading", "")), 50)
+        text = trim_words(ascii_only(name_tokens(top.get("heading", ""))), 50)
         return clean_header("[Wazuh] Still ongoing: L%d %s - %s (+%d)"
                             % (top.get("level", 0), ascii_only(top.get("agent", "?")), text,
                                sum(e.get("n", 0) for e in entries)))
     (rule_id, agent), group = ordered_groups(groups)[0]
-    text = heading(group, rule_id)
+    text = title(group, rule_id)
     if ": " in text:
         text = text.split(": ")[0]
     text = trim_words(ascii_only(text).replace(" ...", ""), 62)
@@ -2513,10 +2849,10 @@ def zulip_group(rule_id, agent, group, samples, link=None, compact=False):
     if compact:
         return "- %s **L%d** \u00b7 **%s** \u00b7 rule %s%s \u00b7 %s" % (
             level_mark(group["level"]), group["level"], md(agent), rule, count,
-            md(trim(heading(group, rule_id), 90)))
-    title = SEVERITY_MARKER.sub("", heading(group, rule_id))
+            md(trim(title(group, rule_id), 90)))
+    heading_ = SEVERITY_MARKER.sub("", title(group, rule_id))
     blocks = ["%s\n%s **L%d \u00b7 %s**%s%s" % (level_bar(group["level"]), level_mark(group["level"]),
-                                               group["level"], md(title), count, mark)]
+                                               group["level"], md(heading_), count, mark)]
     rows, below = [], []
 
     def place(label, value, shown):
@@ -3017,7 +3353,7 @@ def group_view(rule_id, agent, group, samples, link=None):
     if group.get("earlier"):
         notes.append("plus %d earlier since the last full post" % group["earlier"])
     return {"rule": rule_id, "agent": agent, "level": group["level"], "count": group["count"],
-            "title": SEVERITY_MARKER.sub("", heading(group, rule_id)), "badge": badge(group),
+            "title": SEVERITY_MARKER.sub("", title(group, rule_id)), "badge": badge(group),
             "link": link if link and re.match(r"^https?://[^\s<>|\"]+$", link) else None,
             "rows": rows, "more": more, "logs": logs, "notes": notes}
 
@@ -3065,8 +3401,9 @@ def daily_view(info):
     if info["top"]:
         sections.append(("Most frequent at L%d+" % options["level"], [
             "%s L%d \u00b7 rule %s \u00d7%s \u00b7 %s" % (level_mark(level), level, rule_id,
-                                                          "{:,}".format(count), trim(title, 90))
-            for rule_id, (count, level, title) in info["top"]]))
+                                                          "{:,}".format(count),
+                                                          trim(name_tokens(text), 90))
+            for rule_id, (count, level, text) in info["top"]]))
     if info["stopped"]:
         sections.append(("Agents stopped and not back within %d minutes" % (STOP_GRACE // 60),
                          ["%s \u00b7 %s" % (n, local_iso(st)[5:16]) for n, st in info["stopped"]]))
@@ -4198,17 +4535,35 @@ class TeamsChannel(Channel):
 # --- Generic webhook --------------------------------------------------------
 
 def webhook_group(rule_id, agent, group, link):
-    return {"rule_id": rule_id, "level": group["level"], "title": heading(group, rule_id),
-            "descriptions": [redact(d) for d in (group.get("descriptions") or [])[:10]],
-            "agent": {"name": agent, "id": group.get("agent_id") or None,
-                      "ip": group.get("agent_ip") or None},
-            "count": group["count"], "first": group.get("first"), "last": group.get("last"),
-            "new": group.get("new") or None, "earlier": group.get("earlier", 0),
-            "mitre": {"ids": list(group.get("mitre") or []),
-                      "tactics": dedupe(group.get("tactics") or [])},
-            "link": link,
-            "samples": [[{"label": label, "value": value} for label, value in fields]
-                        for fields in card_fields(group, MAX_SAMPLES)]}
+    """Values as they are in the alert. With the account names map (1.14), a
+    sample row whose account it knows carries account_name beside the value,
+    and the group lists account_names {id: name} for every id it resolved, in
+    the title, the descriptions or the samples."""
+    descriptions = [redact(d) for d in (group.get("descriptions") or [])[:10]]
+    rows = sample_rows(group, MAX_SAMPLES)
+    doc = {"rule_id": rule_id, "level": group["level"], "title": heading(group, rule_id),
+           "descriptions": descriptions,
+           "agent": {"name": agent, "id": group.get("agent_id") or None,
+                     "ip": group.get("agent_ip") or None},
+           "count": group["count"], "first": group.get("first"), "last": group.get("last"),
+           "new": group.get("new") or None, "earlier": group.get("earlier", 0),
+           "mitre": {"ids": list(group.get("mitre") or []),
+                     "tactics": dedupe(group.get("tactics") or [])},
+           "link": link,
+           "samples": [[dict({"label": label, "value": value},
+                             **({"account_name": ", ".join(dedupe(list(names.values())))}
+                                if names else {}))
+                        for label, value, _, names in fields] for fields in rows]}
+    if NAMES:
+        found = OrderedDict()
+        for text in [doc["title"]] + descriptions:
+            name_tokens(text, found)
+        for fields in rows:
+            for _, _, _, names in fields:
+                found.update(names)
+        if found:
+            doc["account_names"] = dict(found)
+    return doc
 
 
 class WebhookChannel(Channel):
@@ -4595,9 +4950,9 @@ def render_daily(state, options, context, warnings, others=()):
     if top:
         lines.append("")
         lines.append("Most frequent rules at mail level:")
-        for rule_id, (count, level, title) in top:
+        for rule_id, (count, level, text) in top:
             lines.append("  rule %s L%d x%s - %s" % (rule_id, level, "{:,}".format(count),
-                                                     trim(title, 90)))
+                                                     trim(name_tokens(text), 90)))
     if stopped:
         lines.append("")
         lines.append("Agents that stopped and did not start again within %d minutes:"
@@ -4678,8 +5033,9 @@ def daily_zulip(context, options, daily, t, levels, top, stopped, failure, other
     if top:
         blocks.append("**Most frequent at L%d+**\n" % options["level"] + "\n".join(
             "- %s **L%d** \u00b7 rule %s \u00d7%s \u00b7 %s"
-            % (level_mark(level), level, md(rule_id), "{:,}".format(count), md(trim(title, 90)))
-            for rule_id, (count, level, title) in top))
+            % (level_mark(level), level, md(rule_id), "{:,}".format(count),
+               md(trim(name_tokens(text), 90)))
+            for rule_id, (count, level, text) in top))
 
     def listed(title, items):
         lines = ["- " + item for item in items]
@@ -4809,6 +5165,7 @@ def run(args):
     _NODE = config["node"]
     site = read_site_settings(wazuh)
     options, fatal, warnings = build_options(site, config, args)
+    warnings.extend(load_names(site, wazuh))
     context = make_context(config, options)
 
     if args.check:
@@ -5304,6 +5661,20 @@ def check_zulip(z, zfatal):
     return 0
 
 
+def names_summary():
+    """One line on the account names map, for --check."""
+    report = NAMES_REPORT
+    if report.get("off"):
+        return "off (names_file = off)"
+    if not report.get("read"):
+        return "none (no names file%s)" % (" could be read" if report.get("refused") else "")
+    text = "{:,} entries from ".format(report.get("entries", 0)) + ", ".join(
+        "%s ({:,})".format(n) % path for path, n in report["read"])
+    if report.get("ignored"):
+        text += "; {:,} lines ignored (not \"id: name\")".format(report["ignored"])
+    return text
+
+
 def check_mail(wazuh, config, options, fatal, warnings):
     """Report the settings and walk the SMTP dialogue up to RCPT TO, then RSET.
 
@@ -5332,10 +5703,15 @@ def check_mail(wazuh, config, options, fatal, warnings):
         options["max_per_hour"] or "no limit"))
     print("  dashboard: %s; per-group links: %s" % (options.get("dashboard") or "-",
                                                     "on" if options.get("link") else "off"))
+    print("  account names: %s" % names_summary())
+    refused = [problem for _, problem in NAMES_REPORT.get("refused") or []]
+    for problem in refused:
+        print("  account names: REFUSED %s" % problem)
     for problem in fatal:
         print("  PROBLEM: %s" % problem)
     for warning in warnings:
-        print("  warning: %s" % warning)
+        if warning not in refused:
+            print("  warning: %s" % warning)
 
     alerts_path = os.path.join(wazuh, "logs", "alerts", "alerts.json")
     try:

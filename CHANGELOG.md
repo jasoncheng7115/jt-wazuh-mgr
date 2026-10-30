@@ -4,6 +4,23 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.30.0 (2026-10-31)
+
+- **jt-alert-digest 1.14: account names instead of ids.** Nextcloud connected to an
+  LDAP directory names users by their internal id (the directory's entryUUID), and
+  Windows events sometimes name an account only by SID. An optional names map
+  (`jt-alert-digest-names` and the files in `jt-alert-digest-names.d/`, `id: name`
+  per line, root-owned, not writable by others) makes every channel show
+  "name (3094106c…)" or "name (…-1104)" for such a value. Only whole values and
+  standalone UUID/SID tokens are replaced, names are escaped like any alert text, file
+  paths and the raw log keep the id, the webhook adds `account_name` and keeps the raw
+  value, and without a map the output is byte-identical to before.
+- **jt-nextcloud 1.2.3: `jt-nextcloud-names.py`** fills that map daily from Nextcloud's
+  user provisioning API (display name and e-mail per id) with an administrator's app
+  password kept in a root-only file. A failed run keeps the previous map; rules 131783
+  (update failed, level 5) and 131784 (no update for 3 days, level 7). Without its
+  settings file it does nothing.
+
 ## v1.29.0 (2026-10-30)
 
 - **Pack dashboards in English and Chinese.** Each pack ships `<id>.ndjson` (English)

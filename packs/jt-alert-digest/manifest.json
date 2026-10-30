@@ -2,7 +2,7 @@
  "id": "jt-alert-digest",
  "name": "Readable Alert Digest",
  "name_zh": "可讀的告警摘要信",
- "version": "1.13.1",
+ "version": "1.14",
  "summary": "Replaces wazuh-maild's raw notifications with one grouped, readable message per run, optionally posts the same digest to Zulip, Microsoft Teams, Telegram, Slack, Discord, Mattermost, LINE or any webhook, and reports its own failures in the console.",
  "summary_zh": "把 wazuh-maild 的原始通知換成分組整理過、讀得完的摘要信，可選擇同時發到 Zulip、Microsoft Teams、Telegram、Slack、Discord、Mattermost、LINE 或任何 webhook，並在主控台回報自己的故障。",
  "rule_id_range": "131100-131199",
@@ -39,7 +39,8 @@
   "Per channel: <name>_level posts from that level up (ignoring rule.mail) instead of the mail level, for example a phone channel for level 14 only; <name>_daily = off drops that channel's daily summary; <name>_max_backlog (24 hours by default) bounds what is replayed after an outage; <name>_ca_file and <name>_tls_verify for a server with a private CA. zulip_level and zulip_daily work the same way.",
   "LINE counts every push message against the channel's monthly quota, once per recipient, so a group of ten people is ten messages. The digest therefore sends each run as one request of up to five text messages, which LINE counts as one, and retries with the same X-Line-Retry-Key so a retry is never counted twice. Set line_level and keep the repeat hold on; --test line also counts.",
   "Generic webhook: POST of JSON with schema, kind (digest, daily or test), node, level, total, groups (rule_id, level, title, agent name/id/ip, count, first, last, new, mitre, link, samples as label/value pairs, redacted as in the mail) and held repeats. Headers: X-JT-Event, X-JT-Delivery (the same on every retry, for de-duplication) and, with webhook_hmac_key_file, X-JT-Timestamp and X-JT-Signature = sha256= hex HMAC-SHA256(key, timestamp + \".\" + body). Nothing in it is escaped: the receiver must treat every string as untrusted text.",
-  "1.13.1, found by sending to a real Mattermost server: its incoming webhooks are Slack-compatible, so the server itself turned <!channel>, <!here> and <!all> in alert text into live @channel, @here and @all mentions (and <url|text> into a link) after the text had been escaped; no < now reaches Mattermost. Slack headers could be two characters over Slack's 150 (trim() added its ellipsis beyond the limit), which makes Slack refuse the whole message, so long-titled alerts never reached Slack. How each channel was verified: Mattermost end to end on a real server; Teams cards against Microsoft's Adaptive Card 1.4 schema; Slack, Discord, Telegram and LINE messages against each platform's documented limits; every channel against a stand-in server in the unit tests. Teams, Slack, Discord, Telegram and LINE have not yet been posted to the real service: run --test <channel> once after setting one up."
+  "1.13.1, found by sending to a real Mattermost server: its incoming webhooks are Slack-compatible, so the server itself turned <!channel>, <!here> and <!all> in alert text into live @channel, @here and @all mentions (and <url|text> into a link) after the text had been escaped; no < now reaches Mattermost. Slack headers could be two characters over Slack's 150 (trim() added its ellipsis beyond the limit), which makes Slack refuse the whole message, so long-titled alerts never reached Slack. How each channel was verified: Mattermost end to end on a real server; Teams cards against Microsoft's Adaptive Card 1.4 schema; Slack, Discord, Telegram and LINE messages against each platform's documented limits; every channel against a stand-in server in the unit tests. Teams, Slack, Discord, Telegram and LINE have not yet been posted to the real service: run --test <channel> once after setting one up.",
+  "Account names (1.14): Nextcloud on an LDAP directory names users by the entry's UUID, and Windows sometimes names an account only by its SID, so a notification said \"3094106c-645c-103a-832e-5343dab4befe logged in\". An optional map of \"id: name\" lines makes every channel show the person, with enough of the id to find it in the log: \"Alice Chen (3094106c...)\", for a SID its last part: \"Alice Chen (...-1104)\". It is read from etc/jt-packs/jt-alert-digest-names and every file in the directory jt-alert-digest-names.d beside it (in name order, a later file wins; hidden files and editor or package leftovers are skipped), or from the paths names_file lists; names_file = off turns it off. jt-nextcloud 1.2.3 writes jt-alert-digest-names.d/nextcloud. Only exact matches change: the whole value of an account field (Account, User, By, Member; DOMAIN\\account too) or a UUID or SID standing on its own in a title; never part of a longer word, and never a file path or the raw log, which keeps the full id. Where only a SID field resolves (memberSid, targetSid, subjectUserSid), a row of its own is added. Groups, repeat holds, NEW badges, the state file and the alerts in Wazuh do not change. The webhook keeps every value as it was and adds account_name to a sample row and account_names {id: name} to the group. Names are cleaned of control and formatting characters, cut at 120 characters and escaped per channel like any alert text. Each file must be a regular file owned by root and writable by root only, the directory likewise; anything else is refused, named by --check and listed under \"Settings ignored\" in the daily summary. Without a map every message is byte for byte what 1.13.1 sent. Every node reads its own copy."
  ],
  "notes_zh": [
   "郵件管道通常本來就有、也本來就通。讓它沒有用的是格式：wazuh-maild 會把 full_log 原文加上每個解碼欄位再印一次，還把一小時內的告警串成一封。在正式機實測，一封信有 17 則通知、數千行，而其中唯一真正的偵測被壓在 14 則來自建置主機的告警底下。",
@@ -69,7 +70,8 @@
   "各頻道可個別設定：<名稱>_level 從該等級起發送（不看 rule.mail），取代郵件等級，例如手機頻道只收 level 14；<名稱>_daily = off 不發該頻道的每日摘要；<名稱>_max_backlog（預設 24 小時）限制中斷後補發的範圍；<名稱>_ca_file 與 <名稱>_tls_verify 用於私有 CA 的伺服器。zulip_level、zulip_daily 用法相同。",
   "LINE 的每一則 push 都會計入頻道的每月訊息額度，而且是依收件人計算：十個人的群組就是十則。因此摘要每次執行只送一個請求、最多五則文字訊息（LINE 算一則），重試時使用同一個 X-Line-Retry-Key，重試不會被重複計算。請設定 line_level 並保留重複壓制；--test line 也會計入額度。",
   "通用 webhook：以 POST 送出 JSON，含 schema、kind（digest、daily 或 test）、node、level、total、groups（rule_id、level、title、agent 名稱/ID/IP、count、first、last、new、mitre、link、samples 為 label/value 配對，與郵件相同已遮蔽帳密）與 held 重複項目。標頭：X-JT-Event、X-JT-Delivery（同一份文件每次重試都相同，可用來去重），設定 webhook_hmac_key_file 時另有 X-JT-Timestamp 與 X-JT-Signature = sha256= 加上 HMAC-SHA256(金鑰, timestamp + \".\" + body) 的十六進位。內容完全不跳脫：接收端必須把每個字串都當成不可信的文字。",
-  "1.13.1（以真實 Mattermost 伺服器實測發現）：Mattermost 的 incoming webhook 相容 Slack 語法，伺服器收到後會自己把告警文字裡的 <!channel>、<!here>、<!all> 變成真正的 @channel、@here、@all 提及（<url|文字> 變成連結），繞過了跳脫；現在不會有任何 < 送到 Mattermost。Slack 的標題可能比上限 150 多兩個字元（trim() 的省略號加在上限之外），Slack 會因此拒收整則訊息，標題長的告警永遠到不了 Slack。各管道的驗證方式：Mattermost 以真實伺服器端到端測試；Teams 卡片以 Microsoft 的 Adaptive Card 1.4 schema 驗證；Slack、Discord、Telegram、LINE 依各平台文件的限制逐項檢查；所有管道都有單元測試（模擬伺服器）。Teams、Slack、Discord、Telegram、LINE 尚未實際發到真正的服務：設定後請先執行一次 --test <管道>。"
+  "1.13.1（以真實 Mattermost 伺服器實測發現）：Mattermost 的 incoming webhook 相容 Slack 語法，伺服器收到後會自己把告警文字裡的 <!channel>、<!here>、<!all> 變成真正的 @channel、@here、@all 提及（<url|文字> 變成連結），繞過了跳脫；現在不會有任何 < 送到 Mattermost。Slack 的標題可能比上限 150 多兩個字元（trim() 的省略號加在上限之外），Slack 會因此拒收整則訊息，標題長的告警永遠到不了 Slack。各管道的驗證方式：Mattermost 以真實伺服器端到端測試；Teams 卡片以 Microsoft 的 Adaptive Card 1.4 schema 驗證；Slack、Discord、Telegram、LINE 依各平台文件的限制逐項檢查；所有管道都有單元測試（模擬伺服器）。Teams、Slack、Discord、Telegram、LINE 尚未實際發到真正的服務：設定後請先執行一次 --test <管道>。",
+  "帳號名稱（1.14）：Nextcloud 接 LDAP 目錄時以目錄項目的 UUID 稱呼使用者，Windows 有時只給帳號的 SID，所以通知寫的是「3094106c-645c-103a-832e-5343dab4befe logged in」。選用的「ID: 名稱」對照表讓每個管道都顯示人名，並保留足以在記錄中找到它的部分 ID：「王小明 (3094106c…)」，SID 則保留最後一段：「王小明 (…-1104)」。對照表讀自 etc/jt-packs/jt-alert-digest-names，以及旁邊 jt-alert-digest-names.d 目錄裡的每個檔案（依檔名順序，同一個 ID 以後讀到的為準；隱藏檔與編輯器、套件管理留下的檔案略過），或 names_file 列出的路徑；names_file = off 可關閉。jt-nextcloud 1.2.3 會寫入 jt-alert-digest-names.d/nextcloud。只替換完全相符的值：帳號欄位（Account、User、By、Member，也包括 DOMAIN\\帳號）的整個值，或標題中獨立的 UUID、SID；絕不替換較長字詞的一部分，也不動檔案路徑與原始記錄，原始記錄保留完整 ID。只有 SID 欄位（memberSid、targetSid、subjectUserSid）查得到名稱時，另加一列顯示。分組、重複壓制、NEW 標記、狀態檔與 Wazuh 裡的告警都不變。webhook 的每個值維持原樣，另在樣本列加上 account_name、在群組加上 account_names {ID: 名稱}。名稱會去掉控制字元與格式字元、截在 120 個字元，並和其他告警文字一樣依各管道跳脫。每個檔案必須是 root 擁有、只有 root 可寫的一般檔案，目錄亦同；不符合的會被拒絕，由 --check 列出，並列在每日摘要的「Settings ignored」中。沒有對照表時，每則訊息與 1.13.1 送出的逐位元組相同。每個節點讀自己的那一份。"
  ],
  "files": [
   {
@@ -83,7 +85,7 @@
   {
    "name": "jt-alert-digest.py",
    "dest": "etc/jt-packs/bin/jt-alert-digest.py",
-   "sha256": "ccb84582235a43ad74172601c6a68e29d27204705f09fbd608ea26bbc4f704e3",
+   "sha256": "311de0a3aaa2ef2077b475efcd6c1c798a25971224508e2415eb3ef1f0f50157",
    "cron": "*/2 * * * *",
    "args": "--wazuh-path {wazuh_path}",
    "description": "Groups new alerts and sends one readable message, using the mail settings already in ossec.conf, optionally also to Zulip, Teams, Telegram, Slack, Discord, Mattermost, LINE or a webhook; reports its own failures to the manager"
@@ -288,6 +290,18 @@
    "code": "https_proxy=http://<proxy-host>:<port>\nno_proxy=localhost,127.0.0.1,<internal-zulip-or-webhook-host>",
    "verify": "With the variables exported, --check reaches each configured channel, for example \"slack result: the webhook exists\".",
    "verify_zh": "export 這些變數後，--check 能連到每個已設定的頻道，例如「slack result: the webhook exists」。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "since": "1.14",
+   "title": "Optional: show account names instead of internal ids",
+   "title_zh": "選用：以帳號名稱取代內部 ID",
+   "body": "For alerts that name an account by an internal id: an LDAP user's UUID in Nextcloud, a SID in Windows.\n1. Write one \"id: name\" line per account in /var/ossec/etc/jt-packs/jt-alert-digest-names, or one file per source in the directory jt-alert-digest-names.d beside it. jt-nextcloud 1.2.3 can write Nextcloud's file (its setup guide).\n2. Files and directory must belong to root and be writable by root only.\n3. Each node reads its own copy: copy the files, or run the script that writes them, on every node.\nnames_file in jt-alert-digest.conf names other paths, or off.",
+   "body_zh": "適用於以內部 ID 稱呼帳號的告警：Nextcloud 中 LDAP 使用者的 UUID、Windows 的 SID。\n1. 在 /var/ossec/etc/jt-packs/jt-alert-digest-names 每個帳號寫一行「ID: 名稱」，或在旁邊的 jt-alert-digest-names.d 目錄中每個來源放一個檔案。jt-nextcloud 1.2.3 可以寫入 Nextcloud 的那一份（見該套件的部署說明）。\n2. 檔案與目錄必須由 root 擁有、只有 root 可寫。\n3. 每個節點讀自己的那一份：在每個節點複製這些檔案，或執行產生它們的腳本。\njt-alert-digest.conf 的 names_file 可指定其他路徑，或設為 off。",
+   "code": "( umask 077; printf '%s\\n' '3094106c-645c-103a-832e-5343dab4befe: Alice Chen (alice@example.com)' >> /var/ossec/etc/jt-packs/jt-alert-digest-names )\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-alert-digest.py --check | grep 'account names'",
+   "verify": "--check prints \"account names: N entries from ...\" and no REFUSED line.",
+   "verify_zh": "--check 印出「account names: N entries from ...」，而且沒有 REFUSED 那一行。"
   }
  ],
  "tested_with": [
