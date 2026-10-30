@@ -640,10 +640,20 @@ _THEME_HEAD = """
        pair here is at least 4.5:1 (unit test). Inline fills in the templates
        use the --solid-* tokens so they can be restyled here; !important is only
        used where an inline style must lose. */
-    html[data-theme="light"] header { border: 1px solid #c9d1d9; border-radius: 10px; box-shadow: 0 1px 2px var(--shadow); }
-    html[data-theme="light"] .stat-item { background: #e9edf2; border: 1px solid #c9d1d9; }
+    /* Header: a soft blue wash from the left and one tint per figure, so the
+       bar reads at a glance without anything bright (2026-10-30, "too plain"). */
+    html[data-theme="light"] header { border: 1px solid #c3d0e0; border-radius: 10px; box-shadow: 0 1px 3px var(--shadow);
+        background: linear-gradient(100deg, #dde8f6 0%, #e9eff7 38%, #f3f5f8 100%); }
+    html[data-theme="light"] .stat-item { background: #e4ecf8; border: 1px solid #b9cdea; border-top: 3px solid #1f5bb0; }
     html[data-theme="light"] .stat-item:hover { box-shadow: 0 3px 8px var(--shadow); }
-    html[data-theme="light"] .stat-value { color: #24292f; }
+    html[data-theme="light"] .stat-value { color: #1f5bb0; }
+    html[data-theme="light"] .stat-item.active { background: #e2f1e7; border-color: #b3d9bf; border-top-color: #1a7f37; }
+    html[data-theme="light"] .stat-item.active .stat-value { color: #116329; }
+    html[data-theme="light"] .stat-item.disconnected { background: #fae6e4; border-color: #edbcb7; border-top-color: #cf222e; }
+    html[data-theme="light"] .stat-item.disconnected .stat-value { color: #a40e26; }
+    html[data-theme="light"] .stat-item.pending { background: #fbf0d9; border-color: #e8cf98; border-top-color: #bf8700; }
+    html[data-theme="light"] .stat-item.pending .stat-value { color: #6e4500; }
+    html[data-theme="light"] .stat-label { color: #3d444d; }
 
     html[data-theme="light"] .tabs { gap: 2px; border-bottom: 1px solid #c9d1d9; margin-bottom: 14px; }
     html[data-theme="light"] .tab { background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; color: #57606a; bottom: -1px; padding: 10px 14px; }
@@ -727,11 +737,11 @@ _THEME_HEAD = """
         opacity: 1; background: var(--btn-tint) !important; color: #57606a !important; border-color: var(--btn-tint); box-shadow: none;
     }
 
-    html[data-theme="light"] .btn-settings { background: #f5f7fa; color: #24292f; border-color: #c9d1d9; box-shadow: 0 1px 0 rgba(36,41,47,0.05); }
-    html[data-theme="light"] .btn-settings:hover { background: #e2e7ed; border-color: #a8b3bf; }
-    html[data-theme="light"] .btn-settings .icon, html[data-theme="light"] .btn-settings svg { color: #57606a; }
-    html[data-theme="light"] .btn-logout { background: #f5f7fa; color: #b4202a; border-color: #c9d1d9; box-shadow: 0 1px 0 rgba(36,41,47,0.05); }
-    html[data-theme="light"] .btn-logout:hover { background: #f9dcd9; border-color: #b4202a; }
+    html[data-theme="light"] .btn-settings { background: #e4ecf8; color: #1f3f73; border-color: #b9cdea; box-shadow: 0 1px 0 rgba(36,41,47,0.05); }
+    html[data-theme="light"] .btn-settings:hover { background: #d3e1f4; border-color: #8fb0dc; }
+    html[data-theme="light"] .btn-settings .icon, html[data-theme="light"] .btn-settings svg { color: #1f5bb0; }
+    html[data-theme="light"] .btn-logout { background: #fae6e4; color: #a40e26; border-color: #edbcb7; box-shadow: 0 1px 0 rgba(36,41,47,0.05); }
+    html[data-theme="light"] .btn-logout:hover { background: #f5d2ce; border-color: #cf222e; }
     html[data-theme="light"] .jtwz-lang-fab { background: #f5f7fa; color: #24292f; border-color: #c9d1d9; }
     html[data-theme="light"] .jtwz-lang-fab:hover { background: #e2e7ed; color: #24292f; }
     html[data-theme="light"] .jtwz-lang-menu { border-color: #c9d1d9; }
@@ -1835,7 +1845,8 @@ HTML_TEMPLATE = '''
                     <option value="not-installed">Not installed</option>
                 </select>
                 <span style="color:var(--text-muted);font-size:12px;">Rule series maintained by Jason Tools. Each pack bundles rules, decoders and CDB lists, and can be removed again.</span>
-                <button class="btn btn-primary btn-sm" style="margin-left:auto;" onclick="refreshPacks()" title="Refresh"><svg class="icon"><use href="#icon-refresh"/></svg></button>
+                <button class="btn btn-sm" style="margin-left:auto;" onclick="showAllPackDashboards()"><svg class="icon"><use href="#icon-upload"/></svg><span>Import all dashboards</span></button>
+                <button class="btn btn-primary btn-sm" onclick="refreshPacks()" title="Refresh"><svg class="icon"><use href="#icon-refresh"/></svg></button>
                 <span id="packsStatus" style="color:var(--text-muted);font-size:13px;"></span>
             </div>
             <div class="table-container" style="flex:1;overflow:auto;min-height:0;">
@@ -7584,6 +7595,49 @@ HTML_TEMPLATE = '''
                 (data.scheduled || []).map(j => escapeHtml(j.crontab_line || '')).join('\\n') + '</code></pre>';
         }
 
+        // Every installed pack's dashboard with one dashboard login.
+        async function showAllPackDashboards() {
+            const info = await api('/packs/dashboards');
+            if (!info || info.error) { showToast((info && info.error) || 'Failed to load the dashboard', 'error'); return; }
+            if (!(info.packs || []).length) { showToast('No installed pack has a dashboard', 'warning'); return; }
+            const field = 'width:100%;background:var(--surface);border:1px solid var(--border-1a3a6e);color:var(--text);padding:6px 10px;border-radius:4px;';
+            const body =
+                '<p class="pack-lead">Imports the dashboards of ' + escapeHtml(String(info.packs.length)) + ' installed packs into the Wazuh dashboard. Importing again replaces them in place.</p>' +
+                '<div style="margin:8px 0;"><label>Dashboard address</label><input type="text" id="dashUrl" value="' + escapeHtml(info.default_url || '') + '" style="' + field + '"></div>' +
+                '<div style="margin:8px 0;"><label>User name</label><input type="text" id="dashUser" value="admin" autocomplete="username" style="' + field + '"></div>' +
+                '<div style="margin:8px 0;"><label>Password</label><input type="password" id="dashPass" autocomplete="current-password" style="' + field + '"></div>' +
+                '<div style="margin:8px 0;"><label><input type="checkbox" id="dashVerify" checked> Verify the certificate with the Wazuh root CA</label></div>' +
+                '<p style="color:var(--text-muted);font-size:12px;">A dashboard user such as admin: the Wazuh API account does not work there. The password is used for this request only and is not stored.</p>' +
+                '<div id="dashResult"></div>';
+            showModal('Import all dashboards', body,
+                '<button class="btn btn-primary" onclick="submitAllPackDashboards()">Import</button>' +
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', false);
+        }
+
+        async function submitAllPackDashboards() {
+            const out = document.getElementById('dashResult');
+            const payload = {
+                url: (document.getElementById('dashUrl') || {}).value || '',
+                username: (document.getElementById('dashUser') || {}).value || '',
+                password: (document.getElementById('dashPass') || {}).value || '',
+                verify_tls: !!(document.getElementById('dashVerify') || {}).checked,
+            };
+            if (out) out.innerHTML = '<div class="loading"><div class="spinner"></div>Working...</div>';
+            const data = await api('/packs/dashboards', 'POST', payload);
+            const pass = document.getElementById('dashPass');
+            if (pass) pass.value = '';
+            if (!data || data.error) {
+                if (out) out.innerHTML = '<div class="alert alert-error">' + escapeHtml((data && data.error) || 'Request failed') + '</div>';
+                return;
+            }
+            showToast(data.message || 'Done', data.failed ? 'warning' : 'success');
+            const rows = (data.results || []).map(r => '<div style="font-family:monospace;font-size:12px;">' +
+                (r.ok ? '<span style="color:var(--success);">OK</span> ' : '<span style="color:var(--danger);">FAILED</span> ') +
+                escapeHtml(r.pack) + (r.ok ? '' : ': ' + escapeHtml(r.error || '')) + '</div>').join('');
+            if (out) out.innerHTML = '<div class="alert ' + (data.failed ? 'alert-warning' : 'alert-success') + '">' + escapeHtml(data.message || '') +
+                (data.list_link ? ' <a target="_blank" rel="noopener" href="' + escapeHtml(data.list_link) + '">Open the dashboard list</a>' : '') + '</div>' + rows;
+        }
+
         // Importing needs a dashboard (indexer) user, not the Wazuh API account the
         // tool is logged in with. The password is sent with this one request only.
         async function showPackDashboard(packId, action) {
@@ -8841,6 +8895,11 @@ _I18N_SCRIPT = r"""
       'Optional': '選用',
       'Copied': '已複製',
       'View file': '檢視檔案',
+      'Import': '匯入',
+      'FAILED': '失敗',
+      'Import all dashboards': '匯入所有看板',
+      'Open the dashboard list': '開啟看板清單',
+      'No installed pack has a dashboard': '已安裝的套件都沒有看板',
       'A dashboard user such as admin: the Wazuh API account does not work there. The password is used for this request only and is not stored.': '請使用 dashboard 的使用者（例如 admin）：Wazuh API 帳號在那裡無法使用。密碼只用於這次請求，不會被儲存。',
       'Dashboard': '看板',
       'Dashboard address': 'Dashboard 位址',
@@ -9673,6 +9732,11 @@ _I18N_SCRIPT = r"""
       'Optional': '任意',
       'Copied': 'コピーしました',
       'View file': 'ファイルを表示',
+      'Import': 'インポート',
+      'FAILED': '失敗',
+      'Import all dashboards': 'すべてのダッシュボードをインポート',
+      'Open the dashboard list': 'ダッシュボードの一覧を開く',
+      'No installed pack has a dashboard': 'ダッシュボードのあるインストール済みパックがありません',
       'A dashboard user such as admin: the Wazuh API account does not work there. The password is used for this request only and is not stored.': 'admin などのダッシュボードのユーザーを使います（Wazuh API のアカウントは使えません）。パスワードはこのリクエストにのみ使い、保存しません。',
       'Dashboard': 'ダッシュボード',
       'Dashboard address': 'ダッシュボードのアドレス',
@@ -10243,6 +10307,8 @@ _I18N_SCRIPT = r"""
       [/^Import failed \(HTTP (\d+)\)(.*)$/, function (m) { return '匯入失敗（HTTP ' + m[1] + '）' + m[2]; }],
       [/^Could not delete: (.+)$/, function (m) { return '無法刪除：' + m[1]; }],
       [/^The dashboard certificate could not be verified with the Wazuh root CA \((.+)\)\. Use the host name the certificate names\.$/, function (m) { return '無法以 Wazuh 根 CA（' + m[1] + '）驗證 Dashboard 的憑證。請使用憑證上的主機名稱。'; }],
+      [/^Imports the dashboards of (\d+) installed packs into the Wazuh dashboard\. Importing again replaces them in place\.$/, function (m) { return '將 ' + m[1] + ' 個已安裝套件的看板匯入 Wazuh Dashboard。再次匯入會原地取代。'; }],
+      [/^Imported (\d+) of (\d+) dashboards\.$/, function (m) { return '已匯入 ' + m[1] + '／' + m[2] + ' 個看板。'; }],
       [/^Update the pack first: installed (\S+), catalogue (\S+)$/, function (m) { return '請先更新套件：已安裝 ' + m[1] + '，目錄清單為 ' + m[2]; }],
       [/^These files were edited after installation: (.+)\. Remove them anyway\?$/, function (m) { return '這些檔案在安裝後被修改過：' + m[1] + '。仍要移除嗎？'; }],
       [/^(.*) Apply it to this manager only\?$/, function (m) { return m[1] + ' 要只套用到這台 Manager 嗎？'; }],
@@ -10415,6 +10481,8 @@ _I18N_SCRIPT = r"""
       [/^Import failed \(HTTP (\d+)\)(.*)$/, function (m) { return 'インポートに失敗しました（HTTP ' + m[1] + '）' + m[2]; }],
       [/^Could not delete: (.+)$/, function (m) { return '削除できません：' + m[1]; }],
       [/^The dashboard certificate could not be verified with the Wazuh root CA \((.+)\)\. Use the host name the certificate names\.$/, function (m) { return 'Wazuh ルート CA（' + m[1] + '）でダッシュボードの証明書を検証できません。証明書に記載のホスト名を使ってください。'; }],
+      [/^Imports the dashboards of (\d+) installed packs into the Wazuh dashboard\. Importing again replaces them in place\.$/, function (m) { return m[1] + ' 個のインストール済みパックのダッシュボードを Wazuh ダッシュボードにインポートします。再インポートするとその場で置き換わります。'; }],
+      [/^Imported (\d+) of (\d+) dashboards\.$/, function (m) { return m[2] + ' 個中 ' + m[1] + ' 個のダッシュボードをインポートしました。'; }],
       [/^Update the pack first: installed (\S+), catalogue (\S+)$/, function (m) { return '先にパックを更新してください：インストール済み ' + m[1] + '、カタログ ' + m[2]; }],
       [/^These files were edited after installation: (.+)\. Remove them anyway\?$/, function (m) { return '次のファイルはインストール後に編集されています：' + m[1] + '。それでも削除しますか？'; }],
       [/^(.*) Apply it to this manager only\?$/, function (m) { return m[1] + ' このマネージャーだけに適用しますか？'; }],
@@ -16154,6 +16222,87 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 pass
         return sess, base
 
+    def _dashboard_pattern_check(sess, base):
+        r = sess.get('%s/api/saved_objects/index-pattern/%s' % (base, WAZUH_ALERTS_PATTERN), timeout=20)
+        if r.status_code == 404:
+            raise DashboardError('The index pattern wazuh-alerts-* does not exist yet: open the Wazuh app '
+                                 'in the dashboard once (it creates it), then import again')
+
+    def _import_pack_dashboard(pack_id, sess, base):
+        """Import one pack's dashboard (overwrite in place), drop objects an older
+        version had and this one does not, and record it. Returns (link, objects, stale)."""
+        path = _pack_dashboard_file(pack_id)
+        if not path:
+            raise DashboardError('This pack has no dashboard')
+        objects = _pack_dashboard_objects(path)
+        state = _installed_state(pack_id)
+        previous = [tuple(x) for x in ((state or {}).get('dashboard') or {}).get('objects') or []]
+        with open(path, 'rb') as fh:
+            content = fh.read()
+        r = sess.post(base + '/api/saved_objects/_import?overwrite=true',
+                      files={'file': (os.path.basename(path), content, 'application/ndjson')}, timeout=60)
+        try:
+            result = r.json()
+        except ValueError:
+            result = {}
+        if r.status_code != 200 or not result.get('success') or result.get('successCount') != len(objects):
+            errs = '; '.join('%s %s: %s' % (e.get('type'), e.get('id'), (e.get('error') or {}).get('type'))
+                             for e in (result.get('errors') or [])[:3])
+            raise DashboardError('Import failed (HTTP %d)%s' % (r.status_code, ': ' + errs if errs else ''))
+        stale = [o for o in previous if o not in objects]
+        for otype, oid in stale:
+            sess.delete('%s/api/saved_objects/%s/%s' % (base, otype, oid), timeout=20)
+        link = '%s/app/dashboards#/view/jt-pack-%s-dashboard' % (base, pack_id)
+        if state is not None:
+            state['dashboard'] = {'url': base, 'link': link, 'imported': _now_iso(),
+                                  'version': (_read_manifest(pack_id) or {}).get('version'),
+                                  'objects': [list(o) for o in objects]}
+            _write_pack_state(pack_id, state)
+        return link, len(objects), len(stale)
+
+    @app.route('/api/packs/dashboards', methods=['GET', 'POST'])
+    @login_required
+    @require_capability('rule_packs')
+    def pack_dashboards_all():
+        """The dashboards of every installed pack at once (one login for all).
+
+        GET: which installed packs have one, and the default address. POST:
+        url, username, password, verify_tls; imports them one by one and reports
+        each, so one failure does not hide the others.
+        """
+        installed = []
+        for pid in sorted(os.listdir(PACKS_DIR)):
+            if _pack_dashboard_file(pid) and _installed_state(pid):
+                installed.append(pid)
+        if request.method == 'GET':
+            url, multitenancy = _dashboard_default_url()
+            return jsonify({'packs': installed, 'default_url': url, 'multitenancy': multitenancy,
+                            'ca': _dashboard_ca()})
+        if not installed:
+            return jsonify({'error': 'No installed pack has a dashboard'}), 400
+        body = request.get_json(silent=True) or {}
+        try:
+            sess, base = _dashboard_session(body.get('url'), body.get('username'), body.get('password'),
+                                            body.get('verify_tls', True) is not False)
+            _dashboard_pattern_check(sess, base)
+        except DashboardError as e:
+            return jsonify({'error': str(e)}), 400
+        except http_requests.exceptions.RequestException as e:
+            return jsonify({'error': 'Could not reach the dashboard: %s' % e.__class__.__name__}), 502
+        results = []
+        for pid in installed:
+            try:
+                link, count, _stale = _import_pack_dashboard(pid, sess, base)
+                results.append({'pack': pid, 'ok': True, 'objects': count, 'link': link})
+            except (DashboardError, OSError, ValueError) as e:
+                results.append({'pack': pid, 'ok': False, 'error': str(e)})
+            except http_requests.exceptions.RequestException as e:
+                results.append({'pack': pid, 'ok': False, 'error': e.__class__.__name__})
+        done = sum(1 for r in results if r['ok'])
+        return jsonify({'results': results, 'imported': done, 'failed': len(results) - done,
+                        'list_link': base + '/app/dashboards#/list?filter=jt',
+                        'message': 'Imported %d of %d dashboards.' % (done, len(results))})
+
     @app.route('/api/packs/<pack_id>/dashboard', methods=['GET', 'POST'])
     @login_required
     @require_capability('rule_packs')
@@ -16196,33 +16345,10 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     state.pop('dashboard', None)
                     _write_pack_state(pack_id, state)
                 return jsonify({'message': 'Dashboard removed.'})
-            r = sess.get('%s/api/saved_objects/index-pattern/%s' % (base, WAZUH_ALERTS_PATTERN), timeout=20)
-            if r.status_code == 404:
-                raise DashboardError('The index pattern wazuh-alerts-* does not exist yet: open the Wazuh app '
-                                     'in the dashboard once (it creates it), then import again')
-            with open(path, 'rb') as fh:
-                content = fh.read()
-            r = sess.post(base + '/api/saved_objects/_import?overwrite=true',
-                          files={'file': (os.path.basename(path), content, 'application/ndjson')}, timeout=60)
-            try:
-                result = r.json()
-            except ValueError:
-                result = {}
-            if r.status_code != 200 or not result.get('success') or result.get('successCount') != len(objects):
-                errs = '; '.join('%s %s: %s' % (e.get('type'), e.get('id'), (e.get('error') or {}).get('type'))
-                                 for e in (result.get('errors') or [])[:3])
-                raise DashboardError('Import failed (HTTP %d)%s' % (r.status_code, ': ' + errs if errs else ''))
-            stale = [o for o in previous if o not in objects]
-            for otype, oid in stale:
-                sess.delete('%s/api/saved_objects/%s/%s' % (base, otype, oid), timeout=20)
-            link = '%s/app/dashboards#/view/jt-pack-%s-dashboard' % (base, pack_id)
-            if state is not None:
-                state['dashboard'] = {'url': base, 'link': link, 'imported': _now_iso(),
-                                      'version': (_read_manifest(pack_id) or {}).get('version'),
-                                      'objects': [list(o) for o in objects]}
-                _write_pack_state(pack_id, state)
-            return jsonify({'message': 'Dashboard imported.', 'link': link, 'objects': len(objects),
-                            'removed_stale': len(stale)})
+            _dashboard_pattern_check(sess, base)
+            link, count, stale = _import_pack_dashboard(pack_id, sess, base)
+            return jsonify({'message': 'Dashboard imported.', 'link': link, 'objects': count,
+                            'removed_stale': stale})
         except DashboardError as e:
             return jsonify({'error': str(e)}), 400
         except (OSError, ValueError) as e:

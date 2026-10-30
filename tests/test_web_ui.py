@@ -1680,6 +1680,23 @@ class TestRulePacks(PackFixture):
             with self.subTest(body=body):
                 self.assertEqual(self._dash_post(**body).status_code, 400)
 
+    def test_all_installed_pack_dashboards_import_with_one_login(self):
+        self._dash_pack()
+        info = self.client.get('/api/packs/dashboards').get_json()
+        self.assertIn('jt-testscript', info['packs'])
+        resp = self.client.post('/api/packs/dashboards', json={
+            'url': 'https://dash.example.com', 'username': 'admin', 'password': 'S3cret-pass'})
+        data = resp.get_json()
+        self.assertEqual(resp.status_code, 200, data)
+        mine = [r for r in data['results'] if r['pack'] == 'jt-testscript'][0]
+        self.assertTrue(mine['ok'], mine)
+        self.assertEqual(data['failed'], 0)
+        state = json.load(io.open(os.path.join(self.tmp, 'etc/jt-packs/jt-testscript.json'), encoding='utf-8'))
+        self.assertEqual(len(state['dashboard']['objects']), 2)
+        self.assertNotIn('S3cret-pass', json.dumps(state))
+        bad = self.client.post('/api/packs/dashboards', json={'url': 'https://dash.example.com', 'username': 'admin'})
+        self.assertEqual(bad.status_code, 400, 'no password: nothing is attempted')
+
     def test_pack_dashboard_remove_deletes_every_object(self):
         self._dash_pack()
         self.assertEqual(self._dash_post().status_code, 200)

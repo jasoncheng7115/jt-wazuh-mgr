@@ -4,6 +4,16 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.28.0 (2026-10-30)
+
+- **Import all dashboards at once.** The Rule packs tab has an Import all dashboards
+  button: one dashboard login imports the dashboard of every installed pack and reports
+  each pack's result, with a link to the dashboard list. Importing again still replaces
+  them in place.
+- Light theme: the header has a soft blue wash and each figure its own tint (total
+  blue, connected green, disconnected red, pending amber); the header buttons are tinted
+  too. Every pair keeps a contrast of at least 4.5; the dark theme is unchanged.
+
 ## v1.27.0 (2026-10-30)
 
 - **A Wazuh dashboard for every pack.** Each of the 30 packs ships
