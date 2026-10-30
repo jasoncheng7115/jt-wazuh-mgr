@@ -7561,7 +7561,7 @@ HTML_TEMPLATE = '''
                         ' (version ' + escapeHtml(done.version || '') + ').</p>' : '') +
                     '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
                     '<button class="btn btn-sm btn-primary" onclick="showPackDashboard(\\'' + escapeHtml(packId) + '\\', \\'import\\')"><svg class="icon"><use href="#icon-upload"/></svg><span>Import into Wazuh dashboard</span></button>' +
-                    '<a class="btn btn-sm" href="/api/packs/' + encodeURIComponent(packId) + '/file?download=1&path=' + encodeURIComponent(dsh.file) + '"><svg class="icon"><use href="#icon-download"/></svg><span>Download</span></a>' +
+                    '<a class="btn btn-sm" href="/api/packs/' + encodeURIComponent(packId) + '/file?download=1&path=' + encodeURIComponent(packUiLang() === 'zh-TW' && dsh.file_zh ? dsh.file_zh : dsh.file) + '"><svg class="icon"><use href="#icon-download"/></svg><span>Download</span></a>' +
                     (done && done.link ? '<a class="btn btn-sm" target="_blank" rel="noopener" href="' + escapeHtml(done.link) + '"><svg class="icon"><use href="#icon-eye"/></svg><span>Open dashboard</span></a>' : '') +
                     (done ? '<button class="btn btn-sm btn-danger" onclick="showPackDashboard(\\'' + escapeHtml(packId) + '\\', \\'remove\\')"><svg class="icon"><use href="#icon-trash"/></svg><span>Remove from dashboard</span></button>' : '') +
                     '</div>';
@@ -7595,6 +7595,13 @@ HTML_TEMPLATE = '''
                 (data.scheduled || []).map(j => escapeHtml(j.crontab_line || '')).join('\\n') + '</code></pre>';
         }
 
+        // The dashboards come in English and Chinese: the one imported or
+        // downloaded follows the interface language (Japanese gets English).
+        function packUiLang() {
+            try { return localStorage.getItem('jtwz_lang') === 'zh-TW' ? 'zh-TW' : 'en'; }
+            catch (e) { return 'en'; }
+        }
+
         // Every installed pack's dashboard with one dashboard login.
         async function showAllPackDashboards() {
             const info = await api('/packs/dashboards');
@@ -7621,6 +7628,7 @@ HTML_TEMPLATE = '''
                 username: (document.getElementById('dashUser') || {}).value || '',
                 password: (document.getElementById('dashPass') || {}).value || '',
                 verify_tls: !!(document.getElementById('dashVerify') || {}).checked,
+                lang: packUiLang(),
             };
             if (out) out.innerHTML = '<div class="loading"><div class="spinner"></div>Working...</div>';
             const data = await api('/packs/dashboards', 'POST', payload);
@@ -7669,6 +7677,7 @@ HTML_TEMPLATE = '''
                 username: (document.getElementById('dashUser') || {}).value || '',
                 password: (document.getElementById('dashPass') || {}).value || '',
                 verify_tls: !!(document.getElementById('dashVerify') || {}).checked,
+                lang: packUiLang(),
             };
             if (out) out.innerHTML = '<div class="loading"><div class="spinner"></div>Working...</div>';
             const data = await api('/packs/' + encodeURIComponent(packId) + '/dashboard', 'POST', payload);
@@ -16130,10 +16139,21 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 'Content-Disposition': 'attachment; filename="%s"' % parts[1]})
         return jsonify({'path': rel, 'name': parts[1], 'content': content})
 
-    def _pack_dashboard_file(pack_id):
+    def _pack_dashboard_file(pack_id, lang='en'):
+        """The pack's dashboard in the interface language: <id>.zh-TW.ndjson for
+        Chinese, <id>.ndjson (English) otherwise. Both editions use the same
+        object ids, so importing one replaces the other in place."""
         pdir = _pack_dir(pack_id)
-        path = os.path.join(pdir, 'dashboards', pack_id + '.ndjson') if pdir else None
-        return path if path and os.path.isfile(path) else None
+        if not pdir:
+            return None
+        names = [pack_id + '.ndjson']
+        if str(lang or '').startswith('zh'):
+            names.insert(0, pack_id + '.zh-TW.ndjson')
+        for name in names:
+            path = os.path.join(pdir, 'dashboards', name)
+            if os.path.isfile(path):
+                return path
+        return None
 
     def _pack_dashboard_objects(path):
         """(type, id) of every saved object in a pack's dashboard file."""
@@ -16155,7 +16175,9 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             count = len(_pack_dashboard_objects(path))
         except (OSError, ValueError):
             count = 0
+        zh = _pack_dashboard_file(pack_id, 'zh-TW')
         return {'file': 'dashboards/' + os.path.basename(path), 'objects': count,
+                'file_zh': 'dashboards/' + os.path.basename(zh) if zh and zh != path else None,
                 'dashboard_id': 'jt-pack-%s-dashboard' % pack_id}
 
     def _dashboard_default_url():
@@ -16228,10 +16250,10 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             raise DashboardError('The index pattern wazuh-alerts-* does not exist yet: open the Wazuh app '
                                  'in the dashboard once (it creates it), then import again')
 
-    def _import_pack_dashboard(pack_id, sess, base):
+    def _import_pack_dashboard(pack_id, sess, base, lang='en'):
         """Import one pack's dashboard (overwrite in place), drop objects an older
         version had and this one does not, and record it. Returns (link, objects, stale)."""
-        path = _pack_dashboard_file(pack_id)
+        path = _pack_dashboard_file(pack_id, lang)
         if not path:
             raise DashboardError('This pack has no dashboard')
         objects = _pack_dashboard_objects(path)
@@ -16255,6 +16277,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         link = '%s/app/dashboards#/view/jt-pack-%s-dashboard' % (base, pack_id)
         if state is not None:
             state['dashboard'] = {'url': base, 'link': link, 'imported': _now_iso(),
+                                  'lang': 'zh-TW' if path.endswith('.zh-TW.ndjson') else 'en',
                                   'version': (_read_manifest(pack_id) or {}).get('version'),
                                   'objects': [list(o) for o in objects]}
             _write_pack_state(pack_id, state)
@@ -16292,7 +16315,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
         results = []
         for pid in installed:
             try:
-                link, count, _stale = _import_pack_dashboard(pid, sess, base)
+                link, count, _stale = _import_pack_dashboard(pid, sess, base, body.get('lang') or 'en')
                 results.append({'pack': pid, 'ok': True, 'objects': count, 'link': link})
             except (DashboardError, OSError, ValueError) as e:
                 results.append({'pack': pid, 'ok': False, 'error': str(e)})
@@ -16346,7 +16369,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     _write_pack_state(pack_id, state)
                 return jsonify({'message': 'Dashboard removed.'})
             _dashboard_pattern_check(sess, base)
-            link, count, stale = _import_pack_dashboard(pack_id, sess, base)
+            link, count, stale = _import_pack_dashboard(pack_id, sess, base, body.get('lang') or 'en')
             return jsonify({'message': 'Dashboard imported.', 'link': link, 'objects': count,
                             'removed_stale': stale})
         except DashboardError as e:

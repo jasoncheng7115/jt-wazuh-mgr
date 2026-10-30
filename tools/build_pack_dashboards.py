@@ -186,8 +186,18 @@ def short_names(manifest):
     return en, zh
 
 
+# The language the dashboards are built in: 'en' or 'zh-TW' (2026-10-30, owner:
+# "separate Chinese and English versions, a widget with both is too much text").
+LANG = 'en'
+LANGS = ('en', 'zh-TW')
+
+
+def T(en, zh):
+    return zh if LANG == 'zh-TW' and zh else en
+
+
 def bilingual(en, zh):
-    return en if not zh or zh == en else '%s｜%s' % (en, zh)
+    return T(en, zh)
 
 
 def search_source(query):
@@ -263,40 +273,75 @@ class Builder:
         ranges = self.m['rule_id_range']
         ranges = ', '.join(ranges) if isinstance(ranges, list) else ranges
         text = '\n\n'.join([
-            '### %s' % bilingual(self.m['name'], self.m['name_zh']),
-            '`%s` · rules %s｜規則 %s' % (self.pid, ranges, ranges),
-            self.m.get('summary_zh', ''),
-            self.m.get('summary', ''),
-            'Discover query｜在 Discover 使用的查詢:\n\n`%s`' % self.query,
+            '### %s' % T(self.m['name'], self.m['name_zh']),
+            T('`%s` · rules %s', '`%s` · 規則 %s') % (self.pid, ranges),
+            T(self.m.get('summary', ''), self.m.get('summary_zh', '')),
+            T('Discover query:', '在 Discover 使用的查詢：') + '\n\n`%s`' % self.query,
         ])
-        vid = self.vis('intro', 'About｜說明', {
+        vid = self.vis('intro', T('About', '說明'), {
             'aggs': [], 'type': 'markdown',
             'params': {'fontSize': 11, 'markdown': text, 'openLinksInNewTab': False}},
             uses_index=False)
         self.panels.append((vid, 'visualization', 20, 12))
 
     def metric(self):
-        vid = self.vis('count', 'Alerts｜告警數', {
-            'type': 'metric',
-            'aggs': [count('Alerts｜告警'),
-                     {'enabled': True, 'id': '2', 'schema': 'group', 'type': 'filters', 'params': {
-                         'filters': [
-                             {'input': {'language': 'lucene', 'query': '*'}, 'label': 'All｜全部'},
-                             {'input': {'language': 'lucene', 'query': 'rule.level:>=%d' % HIGH_LEVEL},
-                              'label': 'Level %d+｜等級 %d 以上' % (HIGH_LEVEL, HIGH_LEVEL)}]}}],
-            'params': {'addLegend': False, 'addTooltip': True, 'type': 'metric', 'metric': {
-                'colorSchema': 'Green to Red', 'colorsRange': [{'from': 0, 'to': 10000}],
-                'invertColors': False, 'labels': {'show': True}, 'metricColorMode': 'None',
-                'percentageMode': False, 'useRanges': False,
-                'style': {'bgColor': False, 'bgFill': '#000', 'fontSize': 36,
-                          'labelColor': False, 'subText': ''}}}})
+        """Three counts, each in the colour of what it means (2026-10-30, owner:
+        "the numbers should have matching colours"). A metric visualization
+        colours by value range only, the same for every number it shows, so
+        this is Vega: all alerts in blue; levels 7-11 amber and 12+ red when
+        there are any, green when there are none."""
+        mid_lo, high = 7, HIGH_LEVEL
+        spec = {
+            '$schema': 'https://vega.github.io/schema/vega-lite/v5.json',
+            'data': {
+                'url': {
+                    'index': INDEX_PATTERN_ID,
+                    'body': {
+                        'size': 0,
+                        'query': {'bool': {
+                            'must': ['%dashboard_context-must_clause%',
+                                     {'range': {TIME_FIELD: {'%timefilter%': True}}},
+                                     {'query_string': {'query': self.query, 'analyze_wildcard': True}}],
+                            'filter': ['%dashboard_context-filter_clause%'],
+                            'must_not': ['%dashboard_context-must_not_clause%']}},
+                        'aggs': {'lv': {'filters': {'filters': [
+                            {'match_all': {}},
+                            {'range': {'rule.level': {'gte': mid_lo, 'lte': high - 1}}},
+                            {'range': {'rule.level': {'gte': high}}}]}}},
+                    },
+                },
+                'format': {'property': 'aggregations.lv.buckets'},
+            },
+            'transform': [
+                {'window': [{'op': 'row_number', 'as': 'ord'}]},
+                {'calculate': "format(datum.doc_count, ',')", 'as': 'num'},
+                {'calculate': "datum.ord == 1 ? '%s' : (datum.ord == 2 ? '%s' : '%s')" % (
+                    T('All alerts', '全部告警'), T('Level %d-%d' % (mid_lo, high - 1), '等級 %d–%d' % (mid_lo, high - 1)),
+                    T('Level %d+' % high, '等級 %d 以上' % high)), 'as': 'label'},
+                {'calculate': "datum.ord == 1 ? '#1f5bb0' : (datum.doc_count == 0 ? '#2e7d32'"
+                              " : (datum.ord == 2 ? '#b26a00' : '#c62828'))", 'as': 'colour'},
+            ],
+            'encoding': {'x': {'field': 'ord', 'type': 'ordinal', 'axis': None}},
+            'layer': [
+                {'mark': {'type': 'text', 'fontSize': 34, 'fontWeight': 'bold', 'baseline': 'bottom', 'dy': -4},
+                 'encoding': {'text': {'field': 'num'},
+                              'color': {'field': 'colour', 'type': 'nominal', 'scale': None}}},
+                {'mark': {'type': 'text', 'fontSize': 13, 'baseline': 'top', 'dy': 6, 'color': '#3d444d'},
+                 'encoding': {'text': {'field': 'label'}}},
+            ],
+            'config': {'kibana': {'hideWarnings': True}, 'view': {'stroke': None}},
+        }
+        vid = self.vis('count', T('Alerts', '告警數'), {
+            'aggs': [], 'type': 'vega',
+            'params': {'spec': json.dumps(spec, ensure_ascii=False, indent=2, sort_keys=True)}},
+            uses_index=False)
         self.panels.append((vid, 'visualization', 12, 12))
 
     def levels(self):
-        vid = self.vis('levels', 'Level distribution｜等級分布', {
+        vid = self.vis('levels', T('Level distribution', '等級分布'), {
             'type': 'pie',
-            'aggs': [count('Alerts｜告警'),
-                     terms('2', 'rule.level', 16, 'segment', 'Level｜等級', order_by='_key')],
+            'aggs': [count(T('Alerts', '告警')),
+                     terms('2', 'rule.level', 16, 'segment', T('Level', '等級'), order_by='_key')],
             'params': {'addLegend': True, 'addTooltip': True, 'isDonut': True, 'legendPosition': 'right',
                        'type': 'pie', 'labels': {'last_level': True, 'show': False, 'truncate': 100,
                                                  'values': True}}},
@@ -304,14 +349,14 @@ class Builder:
         self.panels.append((vid, 'visualization', 16, 12))
 
     def timeline(self):
-        vid = self.vis('timeline', 'Alerts over time by level｜各等級告警趨勢', {
+        vid = self.vis('timeline', T('Alerts over time by level', '各等級告警趨勢'), {
             'type': 'histogram',
-            'aggs': [count('Alerts｜告警'),
+            'aggs': [count(T('Alerts', '告警')),
                      {'enabled': True, 'id': '2', 'schema': 'segment', 'type': 'date_histogram',
                       'params': {'drop_partials': False, 'extended_bounds': {}, 'field': TIME_FIELD,
                                  'interval': 'auto', 'min_doc_count': 1, 'scaleMetricValues': False,
                                  'useNormalizedOpenSearchInterval': True}},
-                     terms('3', 'rule.level', 16, 'group', 'Level｜等級', order_by='_key')],
+                     terms('3', 'rule.level', 16, 'group', T('Level', '等級'), order_by='_key')],
             'params': {
                 'addLegend': True, 'addTimeMarker': False, 'addTooltip': True,
                 'categoryAxes': [{'id': 'CategoryAxis-1', 'labels': {'filter': True, 'show': True,
@@ -319,7 +364,7 @@ class Builder:
                                   'position': 'bottom', 'scale': {'type': 'linear'}, 'show': True,
                                   'style': {}, 'title': {}, 'type': 'category'}],
                 'grid': {'categoryLines': False}, 'labels': {'show': False}, 'legendPosition': 'right',
-                'seriesParams': [{'data': {'id': '1', 'label': 'Alerts｜告警'}, 'drawLinesBetweenPoints': True,
+                'seriesParams': [{'data': {'id': '1', 'label': T('Alerts', '告警')}, 'drawLinesBetweenPoints': True,
                                   'lineWidth': 2, 'mode': 'stacked', 'show': True, 'showCircles': True,
                                   'type': 'histogram', 'valueAxis': 'ValueAxis-1'}],
                 'thresholdLine': {'color': '#E7664C', 'show': False, 'style': 'full', 'value': 10,
@@ -329,25 +374,25 @@ class Builder:
                                                                'truncate': 100},
                                'name': 'LeftAxis-1', 'position': 'left',
                                'scale': {'mode': 'normal', 'type': 'linear'}, 'show': True, 'style': {},
-                               'title': {'text': 'Alerts｜告警'}, 'type': 'value'}]}},
+                               'title': {'text': T('Alerts', '告警')}, 'type': 'value'}]}},
             ui_state=level_colours())
         self.panels.append((vid, 'visualization', 48, 13))
 
     def top_rules(self):
-        vid = self.vis('rules', 'Top rules｜觸發最多的規則', {
+        vid = self.vis('rules', T('Top rules', '觸發最多的規則'), {
             'type': 'table',
-            'aggs': [count('Alerts｜告警'),
+            'aggs': [count(T('Alerts', '告警')),
                      {'enabled': True, 'id': '4', 'schema': 'metric', 'type': 'max',
-                      'params': {'customLabel': 'Level｜等級', 'field': 'rule.level'}},
-                     terms('2', 'rule.id', 50, 'bucket', 'Rule｜規則'),
-                     terms('3', 'rule.description', 1, 'bucket', 'Description｜說明')],
+                      'params': {'customLabel': T('Level', '等級'), 'field': 'rule.level'}},
+                     terms('2', 'rule.id', 50, 'bucket', T('Rule', '規則')),
+                     terms('3', 'rule.description', 1, 'bucket', T('Description', '說明'))],
             'params': TABLE_PARAMS})
         self.panels.append((vid, 'visualization', 30, 16))
 
     def top_terms(self, part, field, title, size=20, w=24, h=16, column=None):
         vid = self.vis(part, title, {
             'type': 'table',
-            'aggs': [count('Alerts｜告警'), terms('2', field, size, 'bucket', column or field)],
+            'aggs': [count(T('Alerts', '告警')), terms('2', field, size, 'bucket', column or field)],
             'params': TABLE_PARAMS})
         self.panels.append((vid, 'visualization', w, h))
 
@@ -377,7 +422,7 @@ class Builder:
             'mark': {'type': 'bar', 'tooltip': True, 'color': '#6092C0'},
             'encoding': {
                 'y': {'field': 'key', 'type': 'nominal', 'sort': '-x', 'title': field},
-                'x': {'field': 'doc_count', 'type': 'quantitative', 'title': 'Alerts｜告警'},
+                'x': {'field': 'doc_count', 'type': 'quantitative', 'title': T('Alerts', '告警')},
             },
         }
         vid = self.vis(part, title, {
@@ -398,11 +443,11 @@ class Builder:
                 'columns': columns, 'description': '', 'hits': 0,
                 'kibanaSavedObjectMeta': {'searchSourceJSON': search_source(self.query)},
                 'sort': [[TIME_FIELD, 'desc']],
-                'title': '%s · Latest alerts｜最新告警' % self.pid, 'version': 1},
+                'title': T('%s · Latest alerts', '%s · 最新告警') % self.pid, 'version': 1},
             'id': self.oid('search'), 'migrationVersion': {'search': '7.9.3'},
             'references': [{'id': INDEX_PATTERN_ID, 'name': INDEX_REF, 'type': 'index-pattern'}],
             'type': 'search'})
-        self.titles[self.oid('search')] = 'Latest alerts｜最新告警'
+        self.titles[self.oid('search')] = T('Latest alerts', '最新告警')
         self.panels.append((self.oid('search'), 'search', 48, 20))
 
     def dashboard(self):
@@ -422,8 +467,8 @@ class Builder:
         ranges = ', '.join(ranges) if isinstance(ranges, list) else ranges
         return {
             'attributes': {
-                'description': 'jt-wazuh-mgr rule pack %s, rules %s｜jt-wazuh-mgr 規則套件 %s，規則 %s'
-                               % (self.pid, ranges, self.pid, ranges),
+                'description': T('jt-wazuh-mgr rule pack %s, rules %s', 'jt-wazuh-mgr 規則套件 %s，規則 %s')
+                               % (self.pid, ranges),
                 'hits': 0,
                 'kibanaSavedObjectMeta': {'searchSourceJSON': dumps(
                     {'filter': [], 'query': {'language': 'kuery', 'query': ''}})},
@@ -441,14 +486,14 @@ class Builder:
         self.levels()
         self.timeline()
         self.top_rules()
-        self.top_terms('agents', 'agent.name', 'Top agents｜告警最多的代理程式', w=18,
-                       column='Agent｜代理程式')
+        self.top_terms('agents', 'agent.name', T('Top agents', '告警最多的代理程式'), w=18,
+                       column=T('Agent', '代理程式'))
         if self.srcip:
-            self.top_terms('srcip', 'data.srcip', 'Top source addresses｜來源位址排行',
-                           column='Source address (data.srcip)｜來源位址')
+            self.top_terms('srcip', 'data.srcip', T('Top source addresses', '來源位址排行'),
+                           column=T('Source address (data.srcip)', '來源位址'))
         if self.dstuser:
-            self.top_terms('dstuser', 'data.dstuser', 'Top accounts｜帳號排行',
-                           column='Account (data.dstuser)｜帳號')
+            self.top_terms('dstuser', 'data.dstuser', T('Top accounts', '帳號排行'),
+                           column=T('Account (data.dstuser)', '帳號'))
         for item in self.extra:
             field = item['field']
             title = bilingual(item.get('title') or field, item.get('title_zh') or '')
@@ -470,13 +515,21 @@ def load_manifest(pack_id):
         return pdir, json.load(fh)
 
 
-def build(pack_id, fields=None):
+def build(pack_id, fields=None, lang='en'):
+    """One pack's dashboard in one language. Both languages use the same
+    object ids: importing the other one replaces it in place."""
+    global LANG
     pdir, manifest = load_manifest(pack_id)
-    return Builder(pdir, manifest, fields or template_fields()).build()
+    previous, LANG = LANG, lang
+    try:
+        return Builder(pdir, manifest, fields or template_fields()).build()
+    finally:
+        LANG = previous
 
 
-def output_path(pack_id):
-    return os.path.join(PACKS_DIR, pack_id, 'dashboards', pack_id + '.ndjson')
+def output_path(pack_id, lang='en'):
+    name = pack_id + ('.ndjson' if lang == 'en' else '.%s.ndjson' % lang)
+    return os.path.join(PACKS_DIR, pack_id, 'dashboards', name)
 
 
 def all_packs():
@@ -492,26 +545,27 @@ def main(argv):
     for pack_id in packs:
         if not re.match(r'^[a-z0-9][a-z0-9._-]{0,63}$', pack_id):
             raise SystemExit('invalid pack id %r' % pack_id)
-        body = build(pack_id, fields)
-        path = output_path(pack_id)
-        current = None
-        if os.path.isfile(path):
-            with io.open(path, encoding='utf-8') as fh:
-                current = fh.read()
-        if current == body:
-            continue
-        stale.append(pack_id)
-        if not check:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with io.open(path, 'w', encoding='utf-8', newline='\n') as fh:
-                fh.write(body)
+        for lang in LANGS:
+            body = build(pack_id, fields, lang)
+            path = output_path(pack_id, lang)
+            current = None
+            if os.path.isfile(path):
+                with io.open(path, encoding='utf-8') as fh:
+                    current = fh.read()
+            if current == body:
+                continue
+            stale.append('%s (%s)' % (pack_id, lang))
+            if not check:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with io.open(path, 'w', encoding='utf-8', newline='\n') as fh:
+                    fh.write(body)
     if check:
         if stale:
             print('stale dashboards: %s (run tools/build_pack_dashboards.py)' % ', '.join(stale))
             return 1
-        print('%d dashboards up to date' % len(packs))
+        print('%d dashboards up to date (%s)' % (len(packs), ', '.join(LANGS)))
         return 0
-    print('%d written, %d unchanged' % (len(stale), len(packs) - len(stale)))
+    print('%d written, %d unchanged' % (len(stale), len(packs) * len(LANGS) - len(stale)))
     return 0
 
 

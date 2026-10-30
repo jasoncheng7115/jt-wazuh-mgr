@@ -161,12 +161,15 @@ class TestPackDashboards(unittest.TestCase):
         for mf in sorted(glob.glob(os.path.join(PACKS_DIR, '*', 'manifest.json'))):
             with io.open(mf, encoding='utf-8') as fh:
                 m = json.load(fh)
-            path = os.path.join(os.path.dirname(mf), 'dashboards', m['id'] + '.ndjson')
-            objects = []
-            if os.path.isfile(path):
-                with io.open(path, encoding='utf-8') as fh:
-                    objects = [json.loads(line) for line in fh if line.strip()]
-            cls.packs.append((m, path, objects))
+            # one dashboard per language, same object ids (importing the other
+            # language replaces the first in place)
+            for name in (m['id'] + '.ndjson', m['id'] + '.zh-TW.ndjson'):
+                path = os.path.join(os.path.dirname(mf), 'dashboards', name)
+                objects = []
+                if os.path.isfile(path):
+                    with io.open(path, encoding='utf-8') as fh:
+                        objects = [json.loads(line) for line in fh if line.strip()]
+                cls.packs.append((m, path, objects))
         if not cls.packs:
             raise unittest.SkipTest('no packs/ catalogue in this checkout')
 
@@ -184,7 +187,8 @@ class TestPackDashboards(unittest.TestCase):
                 self.assertTrue(os.path.isfile(path), 'missing %s; run tools/build_pack_dashboards.py' % path)
                 with io.open(path, encoding='utf-8') as fh:
                     committed = fh.read()
-                self.assertEqual(committed, self.builder.build(m['id'], self.fields),
+                lang = 'zh-TW' if path.endswith('.zh-TW.ndjson') else 'en'
+                self.assertEqual(committed, self.builder.build(m['id'], self.fields, lang),
                                  'stale; run tools/build_pack_dashboards.py')
 
     def test_the_build_is_deterministic(self):
@@ -210,13 +214,14 @@ class TestPackDashboards(unittest.TestCase):
                         json.loads(json.loads(a['visState'])['params']['spec'])
 
     def test_object_ids_are_fixed_and_unique(self):
-        seen = {}
-        for m, _, objects in self.packs:
+        seen = {}      # per language: both editions deliberately share their ids
+        for m, path, objects in self.packs:
+            lang_seen = seen.setdefault(path.endswith('.zh-TW.ndjson'), {})
             for o in objects:
                 with self.subTest(pack=m['id'], id=o['id']):
                     self.assertRegex(o['id'], r'^jt-pack-%s-[a-z0-9-]+$' % re.escape(m['id']))
-                    self.assertNotIn(o['id'], seen)
-                    seen[o['id']] = m['id']
+                    self.assertNotIn(o['id'], lang_seen)
+                    lang_seen[o['id']] = m['id']
             ids = {o['type']: o['id'] for o in objects if o['type'] != 'visualization'}
             self.assertEqual(ids.get('dashboard'), 'jt-pack-%s-dashboard' % m['id'])
             self.assertEqual(ids.get('search'), 'jt-pack-%s-search' % m['id'])
@@ -286,9 +291,20 @@ class TestPackDashboards(unittest.TestCase):
             vis = json.loads(a.get('visState') or '{}')
             if vis.get('type') == 'vega':
                 spec = json.loads(vis['params']['spec'])
-                for agg in spec['data']['url']['body']['aggs'].values():
-                    for body in agg.values():
-                        yield o['id'], body['field'], 'vega'
+
+                def walk(node):
+                    if isinstance(node, dict):
+                        if isinstance(node.get('field'), str):
+                            yield node['field']
+                        if isinstance(node.get('range'), dict):
+                            yield from node['range']
+                        for value in node.values():
+                            yield from walk(value)
+                    elif isinstance(node, list):
+                        for value in node:
+                            yield from walk(value)
+                for field in walk(spec['data']['url']['body']['aggs']):
+                    yield o['id'], field, 'vega'
                 for clause in spec['data']['url']['body']['query']['bool']['must']:
                     if isinstance(clause, dict) and 'range' in clause:
                         for f in clause['range']:
@@ -322,6 +338,25 @@ class TestPackDashboards(unittest.TestCase):
                         for y in range(g['y'], g['y'] + g['h']):
                             self.assertNotIn((x, y), cells)
                             cells.add((x, y))
+
+    def test_each_language_has_its_own_dashboard_with_the_same_ids(self):
+        """2026-10-30, owner: one widget carrying both languages is too much text."""
+        import re
+        cjk = re.compile(r'[\u3400-\u9fff\uff00-\uffef]')
+        by_pack = {}
+        for m, path, objects in self.packs:
+            text = json.dumps(objects, ensure_ascii=False)
+            with self.subTest(file=os.path.basename(path)):
+                self.assertNotIn('｜', text, 'a label still carries both languages')
+                if not path.endswith('.zh-TW.ndjson'):
+                    found = cjk.search(text)
+                    self.assertIsNone(found, 'Chinese in the English dashboard: %r'
+                                      % (text[max(0, found.start() - 30):found.end() + 30] if found else ''))
+            by_pack.setdefault(m['id'], []).append(sorted(o['id'] for o in objects))
+        for pid, ids in by_pack.items():
+            with self.subTest(pack=pid):
+                self.assertEqual(len(ids), 2)
+                self.assertEqual(ids[0], ids[1])
 
     def test_titles_name_the_pack_in_both_languages(self):
         for m, _, objects in self.packs:

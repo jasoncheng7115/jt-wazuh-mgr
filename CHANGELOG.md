@@ -4,6 +4,17 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.29.0 (2026-10-30)
+
+- **Pack dashboards in English and Chinese.** Each pack ships `<id>.ndjson` (English)
+  and `<id>.zh-TW.ndjson` (Chinese) instead of one dashboard whose every label carried
+  both languages. Importing from the tool takes the one of the interface language
+  (Japanese gets English); both share their object ids, so importing the other
+  language replaces the first in place.
+- **The alert counts are coloured by meaning:** all alerts in blue, levels 7-11 in
+  amber and 12 and above in red when there are any, green when there are none.
+  Checked on OpenSearch Dashboards 2.19.6.
+
 ## v1.28.0 (2026-10-30)
 
 - **Import all dashboards at once.** The Rule packs tab has an Import all dashboards

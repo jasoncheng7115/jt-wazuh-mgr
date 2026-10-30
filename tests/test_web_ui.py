@@ -1617,6 +1617,7 @@ class TestRulePacks(PackFixture):
 
         def post(self, url, files=None, timeout=None):
             self.calls.append(('POST', url, dict(self.headers)))
+            self.posted_file = files['file'][0]
             n = files['file'][1].decode().count('\n')
             return self._resp(200, {'success': self.import_ok, 'successCount': n if self.import_ok else 0,
                                     'errors': [] if self.import_ok else [{'type': 'dashboard', 'id': 'x',
@@ -1628,7 +1629,8 @@ class TestRulePacks(PackFixture):
 
     def _dash_pack(self, **kw):
         files = {'rules/r.xml': self.RULE_XML, 'scripts/upd.py': self.SCRIPT_BODY,
-                 'dashboards/jt-testscript.ndjson': self.NDJSON}
+                 'dashboards/jt-testscript.ndjson': self.NDJSON,
+                 'dashboards/jt-testscript.zh-TW.ndjson': self.NDJSON}
         self._fake_pack('jt-testscript', self._script_manifest(), files)
         self.assertEqual(self.client.post('/api/packs/jt-testscript/install').status_code, 200)
         self.addCleanup(setattr, web_ui.http_requests, 'Session', web_ui.http_requests.Session)
@@ -1696,6 +1698,16 @@ class TestRulePacks(PackFixture):
         self.assertNotIn('S3cret-pass', json.dumps(state))
         bad = self.client.post('/api/packs/dashboards', json={'url': 'https://dash.example.com', 'username': 'admin'})
         self.assertEqual(bad.status_code, 400, 'no password: nothing is attempted')
+
+    def test_pack_dashboard_follows_the_interface_language(self):
+        # 2026-10-30: one edition per language instead of bilingual labels
+        self._dash_pack()
+        self.assertEqual(self._dash_post(lang='zh-TW').status_code, 200)
+        self.assertEqual(self.dash.posted_file, 'jt-testscript.zh-TW.ndjson')
+        self.assertEqual(self._dash_post(lang='en').status_code, 200)
+        self.assertEqual(self.dash.posted_file, 'jt-testscript.ndjson')
+        self.assertEqual(self._dash_post(lang='ja').status_code, 200)
+        self.assertEqual(self.dash.posted_file, 'jt-testscript.ndjson', 'Japanese gets English')
 
     def test_pack_dashboard_remove_deletes_every_object(self):
         self._dash_pack()
