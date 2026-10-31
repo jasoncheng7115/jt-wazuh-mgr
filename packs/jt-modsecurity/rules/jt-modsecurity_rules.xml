@@ -1,0 +1,129 @@
+<!--
+  jt-modsecurity: rules for the ModSecurity v3 JSON audit log
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  An audit entry exists when at least one rule produced a message
+  (SecAuditEngine RelevantOnly). With the OWASP Core Rule Set most of them
+  are below the anomaly threshold and only feed the score; those stay at the
+  level-0 base rule. What is reported is the CRS verdict itself:
+  949110 "Inbound Anomaly Score Exceeded" (the request would be, or was,
+  blocked), 959100 for responses, and the request-body errors 200002-200004.
+
+  The engine mode decides the meaning. In DetectionOnly the request reached
+  the application, so a request over the threshold from a public address is
+  level 6, and level 8 when the matching rules are the code-execution
+  families (932 command injection, 933 PHP injection, 944 Java). With the
+  engine on, the request was refused (level 5). Internal addresses over the
+  threshold are level 4: monitoring, integrations and test tools do this
+  every day, and a site exclusion is the fix, not an alert.
+
+  Rule-ID tests use transaction.messages, the array of rule messages that the
+  JSON plugin keeps as one string.
+-->
+<group name="modsecurity,web,jt_modsecurity,">
+
+  <!-- Level 0 on purpose: a decoded_as base rule at levels 1-4 loses to the
+       built-in 1002 (level 2) on lines that contain words like "attack". -->
+  <rule id="133500" level="0">
+    <decoded_as>jt-modsecurity</decoded_as>
+    <field name="transaction.producer.modsecurity">^ModSecurity v3</field>
+    <description>ModSecurity: $(transaction.request.method) $(transaction.request.uri) from $(srcip)</description>
+  </rule>
+
+  <rule id="133501" level="4">
+    <if_sid>133500</if_sid>
+    <field name="transaction.producer.secrules_engine">^DetectionOnly$</field>
+    <field name="transaction.messages" type="pcre2">\bruleId\W+949110\b</field>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>fc00::/7</srcip>
+    <srcip>fe80::/10</srcip>
+    <description>ModSecurity (detection only): request from internal address $(srcip) exceeded the anomaly threshold: $(transaction.request.method) $(transaction.request.uri)</description>
+  </rule>
+
+  <rule id="133502" level="6">
+    <if_sid>133500</if_sid>
+    <field name="transaction.producer.secrules_engine">^DetectionOnly$</field>
+    <field name="transaction.messages" type="pcre2">\bruleId\W+949110\b</field>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">fc00::/7</srcip>
+    <srcip negate="yes">fe80::/10</srcip>
+    <description>ModSecurity (detection only): request from $(srcip) exceeded the anomaly threshold and reached the application: $(transaction.request.method) $(transaction.request.uri)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>attack,</group>
+  </rule>
+
+  <rule id="133503" level="8">
+    <if_sid>133502</if_sid>
+    <field name="transaction.messages" type="pcre2">\bruleId\W+(?:93[23]|944)\d{3}\b</field>
+    <description>ModSecurity (detection only): command, PHP or Java injection from $(srcip) reached the application: $(transaction.request.method) $(transaction.request.uri)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>attack,</group>
+  </rule>
+
+  <rule id="133504" level="5">
+    <if_sid>133500</if_sid>
+    <field name="transaction.producer.secrules_engine">^Enabled$</field>
+    <field name="transaction.messages" type="pcre2">\bruleId\W+949110\b</field>
+    <description>ModSecurity blocked a request from $(srcip): $(transaction.request.method) $(transaction.request.uri)</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>attack,access_denied,</group>
+  </rule>
+
+  <!-- 959100 is the response-side verdict (error pages, SQL errors, directory
+       listings, leaked source). Level 5 so that a request over the inbound
+       threshold in the same entry still reports as 133502 / 133503. -->
+  <rule id="133505" level="5">
+    <if_sid>133500</if_sid>
+    <field name="transaction.messages" type="pcre2">\bruleId\W+959100\b</field>
+    <description>ModSecurity: the response to $(srcip) exceeded the outbound anomaly threshold (error details or data leakage): $(transaction.request.method) $(transaction.request.uri)</description>
+  </rule>
+
+  <rule id="133506" level="4">
+    <if_sid>133500</if_sid>
+    <field name="transaction.messages" type="pcre2">\bruleId\W+20000[234]\b</field>
+    <description>ModSecurity: request body from $(srcip) could not be parsed or exceeded the inspection limit (rejected with 400 when blocking): $(transaction.request.method) $(transaction.request.uri)</description>
+  </rule>
+
+  <rule id="133510" level="10" frequency="10" timeframe="120">
+    <if_matched_sid>133502</if_matched_sid>
+    <same_source_ip />
+    <description>ModSecurity (detection only): 10 requests from $(srcip) over the anomaly threshold within 2 minutes</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>attack,web_scan,</group>
+  </rule>
+
+  <rule id="133511" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>133503</if_matched_sid>
+    <same_source_ip />
+    <description>ModSecurity (detection only): 5 command, PHP or Java injection attempts from $(srcip) reached the application within 2 minutes</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>attack,</group>
+  </rule>
+
+  <rule id="133512" level="10" frequency="20" timeframe="120">
+    <if_matched_sid>133504</if_matched_sid>
+    <same_source_ip />
+    <description>ModSecurity blocked 20 requests from $(srcip) within 2 minutes</description>
+    <mitre>
+      <id>T1595.002</id>
+    </mitre>
+    <group>attack,web_scan,</group>
+  </rule>
+
+</group>

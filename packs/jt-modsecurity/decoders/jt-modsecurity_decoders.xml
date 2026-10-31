@@ -1,0 +1,41 @@
+<!--
+  jt-modsecurity: ModSecurity v3 JSON audit log (libmodsecurity 3 with any
+  connector; SecAuditLogFormat JSON, one object per line)
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  The agent reads the audit log with the prefix "jt-modsecurity: " (localfile
+  out_format, see the pack's setup). That prefix is what this decoder looks
+  for, for the same reasons as jt-nextcloud:
+  - Without it the line is taken by Wazuh's built-in "json" decoder, which
+    keeps the client address only as transaction.client_ip. Without srcip no
+    rule can count per address, no address list applies and no active
+    response can block anything.
+  - A child decoder of "json" is not an option: once "json" has a child,
+    every other JSON event on the manager loses its fields.
+
+  srcip is read from the start of the object. libmodsecurity writes
+  "transaction":{"client_ip":... as the first key, before anything the client
+  controls, and a quote inside the URI is written as \" in JSON, so a request
+  cannot put a second "client_ip" in front of the real one.
+
+  All other fields come from the JSON plugin: transaction.unique_id,
+  transaction.request.method / uri, transaction.response.http_code,
+  transaction.producer.secrules_engine and transaction.messages (the array of
+  rule messages, kept as one JSON string that the rules search for rule IDs).
+-->
+
+<decoder name="jt-modsecurity">
+  <prematch>^jt-modsecurity:</prematch>
+</decoder>
+
+<decoder name="jt-modsecurity-fields">
+  <parent>jt-modsecurity</parent>
+  <prematch>^jt-modsecurity:</prematch>
+  <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
+</decoder>
+
+<decoder name="jt-modsecurity-fields">
+  <parent>jt-modsecurity</parent>
+  <regex type="pcre2">^jt-modsecurity: \{"transaction":\{"client_ip":"([0-9A-Fa-f.:]+)"</regex>
+  <order>srcip</order>
+</decoder>

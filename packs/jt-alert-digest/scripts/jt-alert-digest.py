@@ -5565,10 +5565,12 @@ def channel_round(alerts_path, state, ch, options, context, warnings, dry_run, p
                                        max_backlog // 3600, ch.label)], name)
             sub.pop("dropped", None)
         persist()
+        # counted now: channel_flush empties this very list as it posts
+        parts = len(items)
         if not channel_flush(sub, ch, persist):
             return 1
         log("%s: posted %d alerts in %d groups as %d message%s"
-            % (name, r.total, len(r.full), len(items), "" if len(items) == 1 else "s"))
+            % (name, r.total, len(r.full), parts, "" if parts == 1 else "s"))
     else:
         consume(sub, r, False)
 

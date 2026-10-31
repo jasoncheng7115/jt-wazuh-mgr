@@ -1,0 +1,106 @@
+{
+ "id": "jt-modsecurity",
+ "name": "ModSecurity WAF Audit Log",
+ "name_zh": "ModSecurity WAF 稽核記錄",
+ "version": "1.0",
+ "summary": "Decoder and graded rules for the ModSecurity v3 JSON audit log (libmodsecurity 3 with the OWASP Core Rule Set, e.g. in front of nginx). Reports the CRS verdict, not every rule hit: a request over the anomaly threshold that reached the application in detection-only mode, code-injection families, blocked requests, leaking responses and body errors, with the client address as srcip so that repeats per address, address lists and active responses work.",
+ "summary_zh": "ModSecurity v3 JSON 稽核記錄（libmodsecurity 3＋OWASP Core Rule Set，例如放在 nginx 前面）的解碼器與分級規則。回報的是 CRS 的判定，而不是每一條命中：只記錄模式下超過異常分數門檻而且送到了應用程式的請求、程式碼注入類攻擊、被阻擋的請求、洩漏資訊的回應與請求本體錯誤；用戶端位址解成 srcip，所以能依位址計算次數、比對位址清單、搭配主動回應。",
+ "rule_id_range": "133500-133599",
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.9"
+ ],
+ "notes": [
+  "Only entries with the CRS verdict alert. With the Core Rule Set most audit entries hold rules that only add to the anomaly score; they stay at the level-0 base rule 133500. 949110 (inbound threshold) is the alert: level 6 from a public address in detection-only mode (the request reached the application), level 8 when the matching rules are command, PHP or Java injection (CRS 932, 933, 944), level 4 from an internal address, level 5 when the engine is on and the request was refused. 959100 (response over the outbound threshold) is level 5, request-body errors (200002-200004) level 4. Repeats from one address within two minutes are level 10 (133510-133512).",
+  "srcip comes from the start of the JSON object, where libmodsecurity writes the client address before anything the client controls; a quote in the URI is escaped in JSON, so a request cannot forge it. It is the address the web server saw after its own real-IP handling (for example CF-Connecting-IP behind Cloudflare).",
+  "Detection-only mode is invisible without this pack: the nginx connector writes 'ModSecurity: Warning' at info level, below nginx's default error_log level, and Wazuh's built-in rules only see blocked requests (31333).",
+  "Privacy: keep SecAuditLogParts at AHZ. Parts B, C and I would write request headers and bodies (cookies, Authorization headers, login forms) into the log, and from there into Wazuh and the indexer. Even with AHZ, a rule match records the matched value; if a password field triggers a false positive, add an exclusion for that argument.",
+  "Rotate the audit log with copytruncate: libmodsecurity opens it once and does not reopen it on reload or USR1."
+ ],
+ "notes_zh": [
+  "只有帶 CRS 判定的記錄會告警。使用 Core Rule Set 時，大部分稽核記錄裡的規則只是在累加異常分數，這些停在 level 0 的基底規則 133500。告警看的是 949110（請求超過門檻）：只記錄模式下來自公開位址為 level 6（請求已送到應用程式），命中的是命令、PHP 或 Java 注入（CRS 932、933、944）時為 level 8，來自內部位址為 level 4，引擎開啟而請求被拒絕時為 level 5。959100（回應超過門檻）為 level 5，請求本體錯誤（200002-200004）為 level 4。同一位址兩分鐘內重複則為 level 10（133510-133512）。",
+  "srcip 取自 JSON 物件開頭：libmodsecurity 先寫用戶端位址，之後才是用戶端能控制的內容；網址裡的引號在 JSON 中會被跳脫，所以請求無法偽造它。這是網站伺服器做完真實 IP 還原之後的位址（例如在 Cloudflare 後面時取 CF-Connecting-IP）。",
+  "沒有這個套件時，只記錄模式在 Wazuh 完全看不到：nginx 的連接器把「ModSecurity: Warning」寫在 info 等級，低於 nginx 預設的 error_log 等級，而 Wazuh 內建規則只看得到被阻擋的請求（31333）。",
+  "隱私：SecAuditLogParts 保持 AHZ。B、C、I 會把請求標頭與本體（Cookie、Authorization 標頭、登入表單）寫進記錄，再進到 Wazuh 與 indexer。即使是 AHZ，規則命中時仍會記下命中的值；如果密碼欄位造成誤判，請針對那個參數加排除。",
+  "稽核記錄的輪替要用 copytruncate：libmodsecurity 只開檔一次，reload 或 USR1 都不會重新開檔。"
+ ],
+ "files": [
+  {
+   "type": "decoder",
+   "name": "jt-modsecurity_decoders.xml",
+   "dest": "etc/decoders/jt-modsecurity_decoders.xml",
+   "sha256": "b0134d4fba9644b52db95cb7352ee3589bf05481037b45ef2ad132b3fd57407d"
+  },
+  {
+   "type": "rule",
+   "name": "jt-modsecurity_rules.xml",
+   "dest": "etc/rules/jt-modsecurity_rules.xml",
+   "sha256": "0f383b1669c36a4ebeeea26a114040103dd15474b2895fffedfe40de5ef07197"
+  }
+ ],
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset",
+   "title_zh": "安裝套件並重新載入規則集",
+   "body": "1. Install from this page.\n2. Rules tab → Reload Ruleset (on a cluster this reloads every node).",
+   "body_zh": "1. 在本頁安裝。\n2. 到「規則」分頁按「重新載入規則集」（叢集會重載所有節點）。",
+   "verify": "Rules tab → search 133500 shows the rules.",
+   "verify_zh": "在「規則」分頁搜尋 133500 可以看到這組規則。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Write the audit log as JSON (web server)",
+   "title_zh": "讓稽核記錄寫成 JSON（網站伺服器）",
+   "body": "In the ModSecurity configuration (for example modsecurity.conf):\n\nSecAuditEngine RelevantOnly\nSecAuditLogFormat JSON\nSecAuditLogType Serial\nSecAuditLogParts AHZ\nSecAuditLog /var/log/modsecurity/modsec_audit.log\n\nCreate the directory, readable by root only. Rotate the file with copytruncate.",
+   "body_zh": "在 ModSecurity 設定（例如 modsecurity.conf）加上：\n\nSecAuditEngine RelevantOnly\nSecAuditLogFormat JSON\nSecAuditLogType Serial\nSecAuditLogParts AHZ\nSecAuditLog /var/log/modsecurity/modsec_audit.log\n\n建立該目錄，只給 root 讀取。輪替時用 copytruncate。",
+   "verify": "Each line of /var/log/modsecurity/modsec_audit.log is one JSON object starting with {\"transaction\":{\"client_ip\":",
+   "verify_zh": "/var/log/modsecurity/modsec_audit.log 每一行是一個 JSON 物件，以 {\"transaction\":{\"client_ip\": 開頭。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Collect the log with the pack's prefix",
+   "title_zh": "以套件的前綴收集記錄",
+   "body": "Add to /var/ossec/etc/ossec.conf on the web server (or to the agent.conf of a group), then restart the agent:\n\n<localfile>\n  <log_format>syslog</log_format>\n  <location>/var/log/modsecurity/modsec_audit.log</location>\n  <out_format>jt-modsecurity: $(log)</out_format>\n</localfile>\n\nThe prefix is required: without it the built-in json decoder takes the line and there is no srcip.",
+   "body_zh": "在網站伺服器的 /var/ossec/etc/ossec.conf（或某個群組的 agent.conf）加上下列設定，再重啟 agent：\n\n<localfile>\n  <log_format>syslog</log_format>\n  <location>/var/log/modsecurity/modsec_audit.log</location>\n  <out_format>jt-modsecurity: $(log)</out_format>\n</localfile>\n\n前綴不能省：少了它，記錄會被內建的 json 解碼器接走，就沒有 srcip。",
+   "verify": "The agent's ossec.log shows: Analyzing file: '/var/log/modsecurity/modsec_audit.log'.",
+   "verify_zh": "agent 的 ossec.log 出現：Analyzing file: '/var/log/modsecurity/modsec_audit.log'。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Start in detection-only mode",
+   "title_zh": "先用只記錄模式",
+   "body": "Run with SecRuleEngine DetectionOnly first. Every request over the threshold appears as 133501/133502; add an exclusion for each false positive (one rule, one argument, scoped to a host and a path), then turn the engine on per site. Keep large uploads (WebDAV and the like) out of the WAF: the connector reads the whole request body into memory.",
+   "body_zh": "先以 SecRuleEngine DetectionOnly 執行。每個超過門檻的請求都會以 133501／133502 出現；每個誤判加一條排除（一條規則、一個參數，限定主機與路徑），再逐站開啟阻擋。大檔上傳（WebDAV 之類）不要經過 WAF：連接器會把整個請求本體讀進記憶體。",
+   "verify": "A test request such as /?x=<script>alert(1)</script> appears as 133501 (internal) or 133502 (public).",
+   "verify_zh": "測試請求（例如 /?x=<script>alert(1)</script>）會以 133501（內部）或 133502（公開）出現。"
+  }
+ ],
+ "dashboard": {
+  "fields": [
+   {
+    "field": "data.transaction.request.uri",
+    "title": "Request URI",
+    "title_zh": "請求網址"
+   },
+   {
+    "field": "data.transaction.producer.secrules_engine",
+    "title": "Engine mode",
+    "title_zh": "引擎模式"
+   },
+   {
+    "field": "data.transaction.response.http_code",
+    "title": "Response code",
+    "title_zh": "回應碼"
+   }
+  ]
+ }
+}

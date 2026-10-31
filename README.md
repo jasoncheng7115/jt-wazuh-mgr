@@ -1,4 +1,4 @@
-# jt-wazuh-mgr v1.30.0
+# jt-wazuh-mgr v1.31.0
 
 [English](README.md) | [繁體中文](README-zh-TW.md) | [日本語](README-ja.md)
 
@@ -8,7 +8,7 @@ A powerful web-based management tool for Wazuh agents in cluster environments.
 
 > **Recommended**: Use the Web UI as the primary interface — it's the main feature of this tool with full functionality.
 
-![Version](https://img.shields.io/badge/version-1.30.0-blue)
+![Version](https://img.shields.io/badge/version-1.31.0-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 ![License](https://img.shields.io/badge/license-AGPL--3.0-orange)
 ![Languages](https://img.shields.io/badge/UI-English%20%7C%20%E7%B9%81%E9%AB%94%E4%B8%AD%E6%96%87%20%7C%20%E6%97%A5%E6%9C%AC%E8%AA%9E-blueviolet)
@@ -119,7 +119,7 @@ grep __version__ /opt/jt-wazuh-mgr/lib/__init__.py && systemctl is-active jt-waz
 - **Quiet on a fresh install:** no pack needs a site list to stop flooding. A successful login alerts only when it matters (built-in administrator, public address, right after failures, or an account seen from an address for the first time); allowlists are optional tuning
 - **Account security across services:** packs tag every login attempt the same way, so one address spraying the SSO, the mail server and Nextcloud at once, or logging in right after it, is one alert rather than three unrelated ones; mail accounts get takeover chains (a new-address login followed by forwarding, password or 2FA changes), SMTP/ActiveSync spraying and mailbox harvesting
 - **A Wazuh dashboard for every pack** (Explore → Dashboards): alert counts, levels over time, top rules, agents, source addresses and accounts, and the latest alerts, filtered to the pack's own rule IDs. Import it from the pack dialog with a dashboard user, or download the file and import it under Saved objects (works offline)
-- Ships with 30 packs: vulnerabilities Wazuh grades too low or not at all (CISA KEV findings raised to level 12, unscored findings no longer silent) and Node.js / Python versions checked against nodejs.org and python.org, cross-service account security, web probes and exposure (sensitive files and exploit endpoints, and whether one was served), PHP (hosts missing a php.net security release or on an unsupported branch, without waiting for a CVE feed; worker crashes, configuration back doors, web shells in upload directories, commands started by PHP), Linux host integrity (accounts, sudo, every scheduled-task location, systemd, PAM, preload, SSH keys), vulnerabilities in the images of running Docker containers (Trivy, daily, with CISA KEV), portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, a readable alert digest by mail, Zimbra, Z-Push, Proxmox VE and Ceph, Proxmox Backup Server, Proxmox Mail Gateway, OPNsense, ShareTech firewalls, Zenarmor, AdGuard Home, fail2ban, Keycloak, Univention Corporate Server / Samba AD, Nextcloud, LibreNMS, Synology DSM, Odoo, Jitsi Meet, Docker, jt-ipam and jt-vc-portal. Each one is checked against the vendor's documentation, the product's source code for the exact log lines, its security advisories (including CISA KEV) and MITRE ATT&CK, and is tested case by case in a throwaway Wazuh manager container
+- Ships with 31 packs: vulnerabilities Wazuh grades too low or not at all (CISA KEV findings raised to level 12, unscored findings no longer silent) and Node.js / Python versions checked against nodejs.org and python.org, cross-service account security, web probes and exposure (sensitive files and exploit endpoints, and whether one was served), PHP (hosts missing a php.net security release or on an unsupported branch, without waiting for a CVE feed; worker crashes, configuration back doors, web shells in upload directories, commands started by PHP), Linux host integrity (accounts, sudo, every scheduled-task location, systemd, PAM, preload, SSH keys), vulnerabilities in the images of running Docker containers (Trivy, daily, with CISA KEV), portable-executable detection (Windows/Linux/macOS), IP threat intelligence, malware hash matching, a readable alert digest by mail, Zimbra, Z-Push, Proxmox VE and Ceph, Proxmox Backup Server, Proxmox Mail Gateway, OPNsense, ShareTech firewalls, ModSecurity WAF audit logs, Zenarmor, AdGuard Home, fail2ban, Keycloak, Univention Corporate Server / Samba AD, Nextcloud, LibreNMS, Synology DSM, Odoo, Jitsi Meet, Docker, jt-ipam and jt-vc-portal. Each one is checked against the vendor's documentation, the product's source code for the exact log lines, its security advisories (including CISA KEV) and MITRE ATT&CK, and is tested case by case in a throwaway Wazuh manager container
 
 ### Security
 - Input validation for all parameters; command-injection and path-traversal protection

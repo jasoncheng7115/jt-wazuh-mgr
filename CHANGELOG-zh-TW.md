@@ -4,6 +4,19 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.31.0 (2026-10-31)
+
+- **新套件 jt-modsecurity 1.0（規則 133500-133599）：ModSecurity v3 的 JSON 稽核記錄。**
+  只記錄模式下的 WAF 在 Wazuh 完全看不到（nginx 連接器把警告寫在 info 等級，內建規則只看得到
+  被阻擋的請求）。套件讀稽核記錄：收集時加上 `jt-modsecurity: ` 前綴，讓用戶端位址成為 srcip
+  （取自物件開頭，請求無法偽造），回報的是 Core Rule Set 的判定而不是每一條命中：
+  公開位址超過異常分數門檻（level 6）、命令／PHP／Java 注入送到了應用程式（level 8）、
+  內部位址（level 4）、被阻擋的請求（level 5）、洩漏資訊的回應（959100，level 5）、
+  請求本體錯誤（level 4），以及同一位址兩分鐘內重複（level 10）。未達門檻的記錄停在 level 0
+  的基底規則。14 個案例取自去識別化的真實記錄，包含試圖在網址裡塞第二個 client_ip 的請求。
+- **jt-alert-digest 1.14.1**：Zulip 的記錄行自 1.13 起一直寫「as 0 messages」，但訊息其實都有送達
+  （則數是在送出佇列清空之後才計算的）。
+
 ## v1.30.0（2026-10-31）
 
 - **jt-alert-digest 1.14：以帳號名稱取代 ID。** Nextcloud 接 LDAP 時以內部 ID（目錄的 entryUUID）記錄使用者，Windows 事件有時只寫帳號的 SID。

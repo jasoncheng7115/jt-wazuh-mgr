@@ -4,6 +4,24 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.31.0 (2026-10-31)
+
+- **New pack jt-modsecurity 1.0 (rules 133500-133599): the ModSecurity v3 JSON audit
+  log.** In detection-only mode a WAF is invisible to Wazuh (the nginx connector logs
+  its warnings at info level and the built-in rules only see blocked requests). The
+  pack reads the audit log, collected with a `jt-modsecurity: ` prefix so that the
+  client address becomes srcip (read from the start of the object, where a request
+  cannot forge it), and reports the Core Rule Set's verdict instead of every rule hit:
+  over the anomaly threshold from a public address (level 6), command/PHP/Java
+  injection that reached the application (level 8), internal addresses (level 4),
+  blocked requests (level 5), leaking responses (959100, level 5), body errors
+  (level 4), and repeats from one address within two minutes (level 10). Below-threshold
+  entries stay at a level-0 base rule. 14 cases from de-identified real entries,
+  including a URI that tries to plant a second client_ip.
+- **jt-alert-digest 1.14.1:** the Zulip log line said "as 0 messages" since 1.13 even
+  though every message was delivered (the count was taken after the send queue had
+  been emptied).
+
 ## v1.30.0 (2026-10-31)
 
 - **jt-alert-digest 1.14: account names instead of ids.** Nextcloud connected to an
