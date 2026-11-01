@@ -4,6 +4,22 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.32.2 (2026-11-01)
+
+- **Pack dashboards: clickable counts and a better layout** (all 31 packs). The three
+  numbers of the Alerts panel (all alerts, levels 7-11, level 12 and up) are now
+  clickable: a click adds that filter to the whole dashboard, with a readable label.
+  The panel is Vega (Vega-Lite cannot call `opensearchDashboardsAddFilter` on a
+  click). The first row is three equal panels and taller, so a long pack description
+  is no longer cut; the Top rules table gives the description the room (rule 90 px,
+  alerts 100 px, level 70 px, through the table's stored column widths) and the
+  agents table is narrower. Verified on OpenSearch Dashboards 2.19.6 (the Wazuh
+  4.14.9 dashboard): widths applied, the click adds the filter and every panel
+  follows it. Import again from the Rule packs tab to get them.
+- **jt-nextcloud 1.2.4:** deprecation notices from Nextcloud apps (for example the
+  Assistant app's notifier on every notifications poll, 21,256 level 3 alerts in a week
+  on one server) drop to level 2 (131785).
+
 ## v1.32.1 (2026-11-01)
 
 - **Import all dashboards shows its progress.** The dialog imports one pack per request

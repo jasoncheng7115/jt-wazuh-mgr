@@ -134,6 +134,12 @@ def expected_ids(declared):
     return out
 
 
+
+def vega_sources(spec):
+    """The data sources of a Vega-Lite (one object) or Vega (a list) spec that query the index."""
+    data = spec['data'] if isinstance(spec['data'], list) else [spec['data']]
+    return [d for d in data if isinstance(d.get('url'), dict)]
+
 class TestRuleFilterEvaluator(unittest.TestCase):
     """The evaluator is only worth something if it shows the naive filter wrong."""
 
@@ -249,7 +255,8 @@ class TestPackDashboards(unittest.TestCase):
                     vis = json.loads(o['attributes'].get('visState') or '{}')
                     if vis.get('type') == 'vega':
                         spec = json.loads(vis['params']['spec'])
-                        self.assertEqual(spec['data']['url']['index'], INDEX_PATTERN_ID)
+                        for src in vega_sources(spec):
+                            self.assertEqual(src['url']['index'], INDEX_PATTERN_ID)
 
     def _queries(self, objects):
         for o in objects:
@@ -257,10 +264,11 @@ class TestPackDashboards(unittest.TestCase):
             vis = json.loads(o['attributes'].get('visState') or '{}')
             if vis.get('type') == 'vega':
                 spec = json.loads(vis['params']['spec'])
-                must = spec['data']['url']['body']['query']['bool']['must']
-                qs = [c['query_string']['query'] for c in must if isinstance(c, dict) and 'query_string' in c]
-                self.assertEqual(len(qs), 1, o['id'])
-                yield o['id'], qs[0]
+                for src in vega_sources(spec):
+                    must = src['url']['body']['query']['bool']['must']
+                    qs = [c['query_string']['query'] for c in must if isinstance(c, dict) and 'query_string' in c]
+                    self.assertEqual(len(qs), 1, o['id'])
+                    yield o['id'], qs[0]
             elif vis.get('type') == 'markdown' or o['type'] == 'dashboard':
                 # no data of their own; the dashboard's query is left empty for the operator
                 self.assertEqual(source['query']['query'], '', o['id'])
@@ -303,12 +311,13 @@ class TestPackDashboards(unittest.TestCase):
                     elif isinstance(node, list):
                         for value in node:
                             yield from walk(value)
-                for field in walk(spec['data']['url']['body']['aggs']):
-                    yield o['id'], field, 'vega'
-                for clause in spec['data']['url']['body']['query']['bool']['must']:
-                    if isinstance(clause, dict) and 'range' in clause:
-                        for f in clause['range']:
-                            yield o['id'], f, 'vega'
+                for src in vega_sources(spec):
+                    for field in walk(src['url']['body']['aggs']):
+                        yield o['id'], field, 'vega'
+                    for clause in src['url']['body']['query']['bool']['must']:
+                        if isinstance(clause, dict) and 'range' in clause:
+                            for f in clause['range']:
+                                yield o['id'], f, 'vega'
                 continue
             for agg in vis.get('aggs', []):
                 if 'field' in agg.get('params', {}):
@@ -383,6 +392,22 @@ class TestPackDashboards(unittest.TestCase):
                         self.assertTrue(item.get('title_zh'), 'a title needs title_zh too')
                 for c in opts.get('columns', []):
                     self.builder.field_kind(c, self.fields)
+
+    def test_the_count_panel_filters_the_dashboard_on_click(self):
+        """2026-11-01, owner: "it should be clickable, to filter". Each of the three
+        numbers adds a filter: the pack's rules, levels 7-11, levels 12 and up."""
+        for m, _, objects in self.packs:
+            with self.subTest(pack=m['id']):
+                count = next(o for o in objects if o['id'] == 'jt-pack-%s-count' % m['id'])
+                spec = json.loads(json.loads(count['attributes']['visState'])['params']['spec'])
+                self.assertIn('vega/v5', spec['$schema'], 'Vega-Lite cannot call opensearchDashboardsAddFilter on click')
+                expr = ' '.join(on['update'] for sig in spec['signals'] for on in sig.get('on', []))
+                self.assertEqual(expr.count('opensearchDashboardsAddFilter('), 3)
+                self.assertIn('"gte": 7', expr)
+                self.assertIn('"gte": 12', expr)
+                self.assertIn(json.dumps(INDEX_PATTERN_ID), expr)
+                marks = {mk['name']: mk for mk in spec['marks']}
+                self.assertEqual(marks['num']['encode']['enter']['cursor'], {'value': 'pointer'})
 
 
 if __name__ == '__main__':

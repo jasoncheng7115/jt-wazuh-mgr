@@ -106,6 +106,22 @@
     <description>Nextcloud: a calendar subscription could not be refreshed</description>
   </rule>
 
+  <!--
+    Deprecation notices: an app using an API Nextcloud has deprecated, for
+    example the Assistant app's notifier ("...::prepare() threw
+    \InvalidArgumentException which is deprecated. Throw
+    \OCP\Notification\UnknownNotificationException..."), written every time a
+    browser polls the notifications endpoint: 21,256 level 3 alerts in a week on
+    one server (2026-11-01). A message for the app's developers, not an event;
+    the fix comes with an update of that app.
+  -->
+  <rule id="131785" level="2">
+    <if_sid>131703</if_sid>
+    <field name="message" type="pcre2">\bwhich is deprecated\b|\bis deprecated and will be removed\b</field>
+    <options>no_full_log</options>
+    <description>Nextcloud: an app uses a deprecated API ($(app))</description>
+  </rule>
+
   <rule id="131707" level="2">
     <if_sid>131704</if_sid>
     <field name="message" type="pcre2">^(?:Unable to open preview stream at |Error while running background job OCA\\PreviewGenerator\\)</field>
