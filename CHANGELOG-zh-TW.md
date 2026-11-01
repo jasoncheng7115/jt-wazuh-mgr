@@ -4,6 +4,15 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.32.1 (2026-11-01)
+
+- **「匯入所有看板」顯示進度。** 對話框改成每個套件送一個請求，顯示進度條、目前匯入的套件
+  （「正在匯入 jt-web（5／31）」）並逐一列出結果。位址錯誤、帳密被拒或沒有 `wazuh-alerts-*` 索引樣式時
+  在第一個套件就停止（單一套件的匯入路由以 `scope: login` 標示這類錯誤）；單一套件失敗不影響其他套件；
+  按「關閉」會中止。密碼只留在瀏覽器的這個函式內，結束時清除。
+- **jt-modsecurity 1.1.1**：規則 133527（libmodsecurity3／nginx 有待更新）改為寄信。ModSecurity 主機的 nginx
+  通常被鎖定版本，這則通知是得知 nginx 安全更新的管道。
+
 ## v1.32.0 (2026-11-01)
 
 - **jt-modsecurity 1.1：Core Rule Set 會自己保持最新。** `agent/jt-crs-update.py` 每天在網站伺服器上執行：

@@ -4,6 +4,19 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.32.1 (2026-11-01)
+
+- **Import all dashboards shows its progress.** The dialog imports one pack per request
+  and shows a progress bar, the pack being imported ("Importing jt-web (5 of 31)") and
+  each result as it arrives. A wrong address, a refused login or a missing
+  `wazuh-alerts-*` index pattern stops it at the first pack (the per-pack route marks
+  those errors with `scope: login`); one pack failing does not stop the others; Close
+  stops the loop. The password stays in the browser function and is cleared when it
+  ends.
+- **jt-modsecurity 1.1.1:** rule 133527 (libmodsecurity3 / nginx updates pending) is
+  mailed. nginx is usually held on a ModSecurity host, so this notice is how its
+  security updates get noticed.
+
 ## v1.32.0 (2026-11-01)
 
 - **jt-modsecurity 1.1: the Core Rule Set keeps itself current.** `agent/jt-crs-update.py`

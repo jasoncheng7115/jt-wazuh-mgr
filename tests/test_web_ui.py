@@ -1665,15 +1665,23 @@ class TestRulePacks(PackFixture):
         self.assertEqual(post[2].get('securitytenant'), 'global')
 
     def test_pack_dashboard_reports_refusals_and_missing_pattern(self):
+        # scope "login" tells the browser's import-all loop to stop at the first pack;
+        # a failure of one pack's import has no scope, so the loop goes on.
         self._dash_pack(status=401)
-        self.assertIn('refused', self._dash_post().get_json()['error'])
+        refused = self._dash_post().get_json()
+        self.assertIn('refused', refused['error'])
+        self.assertEqual(refused.get('scope'), 'login')
         web_ui.http_requests.Session = lambda: TestRulePacks.FakeDashboard(self, pattern=404)
         resp = self._dash_post()
         self.assertEqual(resp.status_code, 400)
         self.assertIn('wazuh-alerts-*', resp.get_json()['error'])
+        self.assertEqual(resp.get_json().get('scope'), 'login')
         self.assertFalse([c for c in self.dash.calls if c[0] == 'POST'], 'nothing imported without the pattern')
         web_ui.http_requests.Session = lambda: TestRulePacks.FakeDashboard(self, import_ok=False)
-        self.assertIn('Import failed', self._dash_post().get_json()['error'])
+        failed = self._dash_post().get_json()
+        self.assertIn('Import failed', failed['error'])
+        self.assertNotIn('scope', failed, 'one pack failing must not stop the others')
+        self.assertEqual(self._dash_post(url='ftp://dash.example.com').get_json().get('scope'), 'login')
 
     def test_pack_dashboard_validates_address_and_credentials(self):
         self._dash_pack()

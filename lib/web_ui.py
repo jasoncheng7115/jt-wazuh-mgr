@@ -1222,6 +1222,10 @@ HTML_TEMPLATE = '''
         .pack-act-modified, .pack-act-remove-modified { border-color: #e94560; color: var(--danger-ff7b93); }
         .pack-choice { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; cursor: pointer; }
         .pack-step-body { margin: 4px 0 8px; white-space: pre-line; }
+        .dash-progress { height: 8px; background: var(--border-1a3a6e); border-radius: 4px; overflow: hidden; margin: 8px 0; }
+        .dash-progress-bar { height: 100%; background: var(--accent); transition: width 0.2s; }
+        .dash-progress-text { font-size: 13px; margin-top: 8px; }
+        .dash-progress-rows { max-height: 220px; overflow-y: auto; }
         .pack-code { position: relative; margin: 8px 0; }
         .pack-code pre { background: var(--code-bg); border: 1px solid var(--border-23304d); border-radius: 4px; padding: 10px 12px; margin: 0; overflow-x: auto; font-size: 13px; line-height: 1.5; color: var(--text-pre); white-space: pre; }
         .pack-code .pack-copy { position: absolute; top: 6px; right: 6px; z-index: 1; }
@@ -7617,33 +7621,80 @@ HTML_TEMPLATE = '''
                 '<p style="color:var(--text-muted);font-size:12px;">A dashboard user such as admin: the Wazuh API account does not work there. The password is used for this request only and is not stored.</p>' +
                 '<div id="dashResult"></div>';
             showModal('Import all dashboards', body,
-                '<button class="btn btn-primary" onclick="submitAllPackDashboards()">Import</button>' +
-                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', false);
+                '<button class="btn btn-primary" id="dashImportBtn" onclick="submitAllPackDashboards()">Import</button>' +
+                '<button class="btn" onclick="dashImportStop = true; closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', false);
         }
+
+        // One request per pack, so the dialog can show which pack is being imported
+        // and how far it got. A login-level error (address, account, missing index
+        // pattern) stops the loop at the first pack instead of repeating 30 times.
+        // The password lives in this function only and is cleared when it ends.
+        let dashImportStop = false;
 
         async function submitAllPackDashboards() {
             const out = document.getElementById('dashResult');
-            const payload = {
+            const btn = document.getElementById('dashImportBtn');
+            const creds = {
+                action: 'import',
                 url: (document.getElementById('dashUrl') || {}).value || '',
                 username: (document.getElementById('dashUser') || {}).value || '',
                 password: (document.getElementById('dashPass') || {}).value || '',
                 verify_tls: !!(document.getElementById('dashVerify') || {}).checked,
                 lang: packUiLang(),
             };
-            if (out) out.innerHTML = '<div class="loading"><div class="spinner"></div>Working...</div>';
-            const data = await api('/packs/dashboards', 'POST', payload);
             const pass = document.getElementById('dashPass');
             if (pass) pass.value = '';
-            if (!data || data.error) {
-                if (out) out.innerHTML = '<div class="alert alert-error">' + escapeHtml((data && data.error) || 'Request failed') + '</div>';
+            if (!creds.username || !creds.password) {
+                if (out) out.innerHTML = '<div class="alert alert-error">' + escapeHtml('Enter the user name and password of a dashboard user') + '</div>';
                 return;
             }
-            showToast(data.message || 'Done', data.failed ? 'warning' : 'success');
-            const rows = (data.results || []).map(r => '<div style="font-family:monospace;font-size:12px;">' +
-                (r.ok ? '<span style="color:var(--success);">OK</span> ' : '<span style="color:var(--danger);">FAILED</span> ') +
-                escapeHtml(r.pack) + (r.ok ? '' : ': ' + escapeHtml(r.error || '')) + '</div>').join('');
-            if (out) out.innerHTML = '<div class="alert ' + (data.failed ? 'alert-warning' : 'alert-success') + '">' + escapeHtml(data.message || '') +
-                (data.list_link ? ' <a target="_blank" rel="noopener" href="' + escapeHtml(data.list_link) + '">Open the dashboard list</a>' : '') + '</div>' + rows;
+            const info = await api('/packs/dashboards');
+            const packs = (info && info.packs) || [];
+            if (!packs.length) {
+                if (out) out.innerHTML = '<div class="alert alert-error">' + escapeHtml((info && info.error) || 'No installed pack has a dashboard') + '</div>';
+                return;
+            }
+            dashImportStop = false;
+            if (btn) btn.disabled = true;
+            const rows = [];
+            let done = 0, failed = 0, stopped = '';
+            const draw = (i, current) => {
+                const box = document.getElementById('dashResult');
+                if (!box) return;
+                box.innerHTML = (current ? '<div class="dash-progress-text">' + escapeHtml('Importing ' + current + ' (' + (i + 1) + ' of ' + packs.length + ')') + '</div>' : '') +
+                    '<div class="dash-progress"><div class="dash-progress-bar" style="width:' + Math.round(100 * i / packs.length) + '%"></div></div>' +
+                    '<div class="dash-progress-rows">' + rows.join('') + '</div>';
+            };
+            for (let i = 0; i < packs.length; i++) {
+                if (dashImportStop) { stopped = 'Stopped after ' + i + ' of ' + packs.length + ' dashboards.'; break; }
+                draw(i, packs[i]);
+                let d = null;
+                try {
+                    d = await api('/packs/' + encodeURIComponent(packs[i]) + '/dashboard', 'POST', creds);
+                } catch (e) {
+                    d = { error: 'Request failed', scope: 'login' };
+                }
+                if (d && d.scope === 'login') { stopped = d.error || 'Request failed'; break; }
+                const ok = d && !d.error;
+                if (ok) done++; else failed++;
+                rows.push('<div style="font-family:monospace;font-size:12px;">' +
+                    (ok ? '<span style="color:var(--success);">OK</span> ' : '<span style="color:var(--danger);">FAILED</span> ') +
+                    escapeHtml(packs[i]) + (ok ? '' : ': ' + escapeHtml((d && d.error) || 'Request failed')) + '</div>');
+            }
+            creds.password = '';
+            if (btn) btn.disabled = false;
+            if (dashImportStop) return;
+            const box = document.getElementById('dashResult');
+            if (!box) return;
+            let base = creds.url;
+            while (base.endsWith('/')) base = base.slice(0, -1);
+            const message = 'Imported ' + done + ' of ' + packs.length + ' dashboards.';
+            showToast(stopped ? stopped : message, stopped ? 'error' : (failed ? 'warning' : 'success'));
+            box.innerHTML = (stopped ? '<div class="alert alert-error">' + escapeHtml(stopped) + '</div>' : '') +
+                '<div class="alert ' + (stopped || failed ? 'alert-warning' : 'alert-success') + '">' + escapeHtml(message) +
+                (done ? ' <a target="_blank" rel="noopener" href="' + escapeHtml(base + '/app/dashboards#/list?filter=jt') + '">Open the dashboard list</a>' : '') + '</div>' +
+                '<div class="dash-progress"><div class="dash-progress-bar" style="width:' + Math.round(100 * (done + failed) / packs.length) + '%"></div></div>' +
+                '<div class="dash-progress-rows">' + rows.join('') + '</div>';
         }
 
         // Importing needs a dashboard (indexer) user, not the Wazuh API account the
@@ -10318,6 +10369,8 @@ _I18N_SCRIPT = r"""
       [/^The dashboard certificate could not be verified with the Wazuh root CA \((.+)\)\. Use the host name the certificate names\.$/, function (m) { return '無法以 Wazuh 根 CA（' + m[1] + '）驗證 Dashboard 的憑證。請使用憑證上的主機名稱。'; }],
       [/^Imports the dashboards of (\d+) installed packs into the Wazuh dashboard\. Importing again replaces them in place\.$/, function (m) { return '將 ' + m[1] + ' 個已安裝套件的看板匯入 Wazuh Dashboard。再次匯入會原地取代。'; }],
       [/^Imported (\d+) of (\d+) dashboards\.$/, function (m) { return '已匯入 ' + m[1] + '／' + m[2] + ' 個看板。'; }],
+      [/^Importing (\S+) \((\d+) of (\d+)\)$/, function (m) { return '正在匯入 ' + m[1] + '（' + m[2] + '／' + m[3] + '）'; }],
+      [/^Stopped after (\d+) of (\d+) dashboards\.$/, function (m) { return '已中止：完成 ' + m[1] + '／' + m[2] + ' 個看板。'; }],
       [/^Update the pack first: installed (\S+), catalogue (\S+)$/, function (m) { return '請先更新套件：已安裝 ' + m[1] + '，目錄清單為 ' + m[2]; }],
       [/^These files were edited after installation: (.+)\. Remove them anyway\?$/, function (m) { return '這些檔案在安裝後被修改過：' + m[1] + '。仍要移除嗎？'; }],
       [/^(.*) Apply it to this manager only\?$/, function (m) { return m[1] + ' 要只套用到這台 Manager 嗎？'; }],
@@ -10492,6 +10545,8 @@ _I18N_SCRIPT = r"""
       [/^The dashboard certificate could not be verified with the Wazuh root CA \((.+)\)\. Use the host name the certificate names\.$/, function (m) { return 'Wazuh ルート CA（' + m[1] + '）でダッシュボードの証明書を検証できません。証明書に記載のホスト名を使ってください。'; }],
       [/^Imports the dashboards of (\d+) installed packs into the Wazuh dashboard\. Importing again replaces them in place\.$/, function (m) { return m[1] + ' 個のインストール済みパックのダッシュボードを Wazuh ダッシュボードにインポートします。再インポートするとその場で置き換わります。'; }],
       [/^Imported (\d+) of (\d+) dashboards\.$/, function (m) { return m[2] + ' 個中 ' + m[1] + ' 個のダッシュボードをインポートしました。'; }],
+      [/^Importing (\S+) \((\d+) of (\d+)\)$/, function (m) { return m[1] + ' をインポート中（' + m[2] + '／' + m[3] + '）'; }],
+      [/^Stopped after (\d+) of (\d+) dashboards\.$/, function (m) { return m[2] + ' 個中 ' + m[1] + ' 個で中止しました。'; }],
       [/^Update the pack first: installed (\S+), catalogue (\S+)$/, function (m) { return '先にパックを更新してください：インストール済み ' + m[1] + '、カタログ ' + m[2]; }],
       [/^These files were edited after installation: (.+)\. Remove them anyway\?$/, function (m) { return '次のファイルはインストール後に編集されています：' + m[1] + '。それでも削除しますか？'; }],
       [/^(.*) Apply it to this manager only\?$/, function (m) { return m[1] + ' このマネージャーだけに適用しますか？'; }],
@@ -16353,8 +16408,19 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             return jsonify({'error': 'action must be import or remove'}), 400
         try:
             objects = _pack_dashboard_objects(path)
-            sess, base = _dashboard_session(body.get('url'), body.get('username'), body.get('password'),
-                                            body.get('verify_tls', True) is not False)
+            # scope "login": the address, the account or the index pattern is the
+            # problem, not this pack, so the browser's import-all loop stops there
+            # instead of failing the same way for every pack.
+            try:
+                sess, base = _dashboard_session(body.get('url'), body.get('username'), body.get('password'),
+                                                body.get('verify_tls', True) is not False)
+                if action == 'import':
+                    _dashboard_pattern_check(sess, base)
+            except DashboardError as e:
+                return jsonify({'error': str(e), 'scope': 'login'}), 400
+            except http_requests.exceptions.RequestException as e:
+                return jsonify({'error': 'Could not reach the dashboard: %s' % e.__class__.__name__,
+                                'scope': 'login'}), 502
             previous = [tuple(x) for x in ((state or {}).get('dashboard') or {}).get('objects') or []]
             if action == 'remove':
                 failed = []
@@ -16368,7 +16434,6 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                     state.pop('dashboard', None)
                     _write_pack_state(pack_id, state)
                 return jsonify({'message': 'Dashboard removed.'})
-            _dashboard_pattern_check(sess, base)
             link, count, stale = _import_pack_dashboard(pack_id, sess, base, body.get('lang') or 'en')
             return jsonify({'message': 'Dashboard imported.', 'link': link, 'objects': count,
                             'removed_stale': stale})
