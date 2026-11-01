@@ -4,6 +4,20 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.32.0 (2026-11-01)
+
+- **jt-modsecurity 1.1: the Core Rule Set keeps itself current.** `agent/jt-crs-update.py`
+  runs daily on the web server: it takes the newest CRS release of the major version in
+  use once it has been out for 7 days, applies it only when the `.asc` is a valid
+  signature by the CRS release key (pinned primary fingerprint, key shipped with the
+  pack), unpacks it next to the current version, switches the `crs` symlink, runs
+  `nginx -t`, reloads and checks the error log, and puts the previous version back on any
+  failure. Tarballs with paths outside their directory, another version inside or a bad
+  signature are refused. A new major version and pending libmodsecurity3/nginx updates
+  are reported, never installed. Rules 133520-133528 grade the outcomes (signature
+  failure L12, refused update or 14 days without a successful check L10). The pack now
+  has an agent group `modsecurity` that carries the log collection and the updater.
+
 ## v1.31.0 (2026-10-31)
 
 - **New pack jt-modsecurity 1.0 (rules 133500-133599): the ModSecurity v3 JSON audit

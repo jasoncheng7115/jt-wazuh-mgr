@@ -2,9 +2,9 @@
  "id": "jt-modsecurity",
  "name": "ModSecurity WAF Audit Log",
  "name_zh": "ModSecurity WAF 稽核記錄",
- "version": "1.0",
- "summary": "Decoder and graded rules for the ModSecurity v3 JSON audit log (libmodsecurity 3 with the OWASP Core Rule Set, e.g. in front of nginx). Reports the CRS verdict, not every rule hit: a request over the anomaly threshold that reached the application in detection-only mode, code-injection families, blocked requests, leaking responses and body errors, with the client address as srcip so that repeats per address, address lists and active responses work.",
- "summary_zh": "ModSecurity v3 JSON 稽核記錄（libmodsecurity 3＋OWASP Core Rule Set，例如放在 nginx 前面）的解碼器與分級規則。回報的是 CRS 的判定，而不是每一條命中：只記錄模式下超過異常分數門檻而且送到了應用程式的請求、程式碼注入類攻擊、被阻擋的請求、洩漏資訊的回應與請求本體錯誤；用戶端位址解成 srcip，所以能依位址計算次數、比對位址清單、搭配主動回應。",
+ "version": "1.1",
+ "summary": "Decoder and graded rules for the ModSecurity v3 JSON audit log (libmodsecurity 3 with the OWASP Core Rule Set, e.g. in front of nginx). Reports the CRS verdict, not every rule hit: a request over the anomaly threshold that reached the application in detection-only mode, code-injection families, blocked requests, leaking responses and body errors, with the client address as srcip so that repeats per address, address lists and active responses work. Includes an updater for the Core Rule Set itself (signed releases only, with automatic rollback when nginx refuses them).",
+ "summary_zh": "ModSecurity v3 JSON 稽核記錄（libmodsecurity 3＋OWASP Core Rule Set，例如放在 nginx 前面）的解碼器與分級規則。回報的是 CRS 的判定，而不是每一條命中：只記錄模式下超過異常分數門檻而且送到了應用程式的請求、程式碼注入類攻擊、被阻擋的請求、洩漏資訊的回應與請求本體錯誤；用戶端位址解成 srcip，所以能依位址計算次數、比對位址清單、搭配主動回應。另附 Core Rule Set 本身的自動更新程式（只套用有簽章的正式版，nginx 不接受時自動退回）。",
  "rule_id_range": "133500-133599",
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -19,14 +19,16 @@
   "srcip comes from the start of the JSON object, where libmodsecurity writes the client address before anything the client controls; a quote in the URI is escaped in JSON, so a request cannot forge it. It is the address the web server saw after its own real-IP handling (for example CF-Connecting-IP behind Cloudflare).",
   "Detection-only mode is invisible without this pack: the nginx connector writes 'ModSecurity: Warning' at info level, below nginx's default error_log level, and Wazuh's built-in rules only see blocked requests (31333).",
   "Privacy: keep SecAuditLogParts at AHZ. Parts B, C and I would write request headers and bodies (cookies, Authorization headers, login forms) into the log, and from there into Wazuh and the indexer. Even with AHZ, a rule match records the matched value; if a password field triggers a false positive, add an exclusion for that argument.",
-  "Rotate the audit log with copytruncate: libmodsecurity opens it once and does not reopen it on reload or USR1."
+  "Rotate the audit log with copytruncate: libmodsecurity opens it once and does not reopen it on reload or USR1.",
+  "jt-crs-update (agent/jt-crs-update.py, 1.1) keeps the Core Rule Set current on the web server: once a day it asks GitHub for CRS releases, takes the newest one of the major version in use after it has been out for 7 days, applies it only if its signature is valid and made by the CRS release key (primary key 36006F0E0BA167832158821138EEACA1AB8A6E72, shipped as crs-signing-key.asc), unpacks it next to the current version, switches the crs symlink, runs nginx -t and reloads, and puts the previous version back on any failure. A new major version and pending libmodsecurity3/nginx package updates are reported, never installed (the library needs an nginx restart, nginx a rebuilt connector module). Outcomes are syslog lines that rules 133520-133528 grade: updated L3, signature failure L12, nginx refused the update L10, no successful check for 14 days L10, a failed check L5, new major version or pending packages L7, operator rollback L3."
  ],
  "notes_zh": [
   "只有帶 CRS 判定的記錄會告警。使用 Core Rule Set 時，大部分稽核記錄裡的規則只是在累加異常分數，這些停在 level 0 的基底規則 133500。告警看的是 949110（請求超過門檻）：只記錄模式下來自公開位址為 level 6（請求已送到應用程式），命中的是命令、PHP 或 Java 注入（CRS 932、933、944）時為 level 8，來自內部位址為 level 4，引擎開啟而請求被拒絕時為 level 5。959100（回應超過門檻）為 level 5，請求本體錯誤（200002-200004）為 level 4。同一位址兩分鐘內重複則為 level 10（133510-133512）。",
   "srcip 取自 JSON 物件開頭：libmodsecurity 先寫用戶端位址，之後才是用戶端能控制的內容；網址裡的引號在 JSON 中會被跳脫，所以請求無法偽造它。這是網站伺服器做完真實 IP 還原之後的位址（例如在 Cloudflare 後面時取 CF-Connecting-IP）。",
   "沒有這個套件時，只記錄模式在 Wazuh 完全看不到：nginx 的連接器把「ModSecurity: Warning」寫在 info 等級，低於 nginx 預設的 error_log 等級，而 Wazuh 內建規則只看得到被阻擋的請求（31333）。",
   "隱私：SecAuditLogParts 保持 AHZ。B、C、I 會把請求標頭與本體（Cookie、Authorization 標頭、登入表單）寫進記錄，再進到 Wazuh 與 indexer。即使是 AHZ，規則命中時仍會記下命中的值；如果密碼欄位造成誤判，請針對那個參數加排除。",
-  "稽核記錄的輪替要用 copytruncate：libmodsecurity 只開檔一次，reload 或 USR1 都不會重新開檔。"
+  "稽核記錄的輪替要用 copytruncate：libmodsecurity 只開檔一次，reload 或 USR1 都不會重新開檔。",
+  "jt-crs-update（agent/jt-crs-update.py，1.1 起）在網站伺服器上讓 Core Rule Set 保持最新：每天向 GitHub 查 CRS 的發行版，取目前主版本中最新、已發布滿 7 天的一版，簽章有效而且是 CRS 發行金鑰（主金鑰 36006F0E0BA167832158821138EEACA1AB8A6E72，隨附 crs-signing-key.asc）簽的才套用；解開在現有版本旁邊、切換 crs 符號連結、執行 nginx -t 並 reload，任何一步失敗就換回原本的版本。新的主版本與待更新的 libmodsecurity3／nginx 套件只回報、不安裝（函式庫更新要重啟 nginx，nginx 更新要先重編連接器模組）。結果寫成 syslog，由規則 133520-133528 分級：已更新 L3、簽章失敗 L12、nginx 不接受 L10、14 天沒有成功檢查 L10、單次檢查失敗 L5、新主版本或待更新套件 L7、手動退回 L3。"
  ],
  "files": [
   {
@@ -39,7 +41,7 @@
    "type": "rule",
    "name": "jt-modsecurity_rules.xml",
    "dest": "etc/rules/jt-modsecurity_rules.xml",
-   "sha256": "0f383b1669c36a4ebeeea26a114040103dd15474b2895fffedfe40de5ef07197"
+   "sha256": "a950c635a120a38a8abcabe3dfb65a3ebb8c0b5ee97787a9709c2a0583669bfd"
   }
  ],
  "setup": [
@@ -68,10 +70,21 @@
    "required": true,
    "title": "Collect the log with the pack's prefix",
    "title_zh": "以套件的前綴收集記錄",
-   "body": "Add to /var/ossec/etc/ossec.conf on the web server (or to the agent.conf of a group), then restart the agent:\n\n<localfile>\n  <log_format>syslog</log_format>\n  <location>/var/log/modsecurity/modsec_audit.log</location>\n  <out_format>jt-modsecurity: $(log)</out_format>\n</localfile>\n\nThe prefix is required: without it the built-in json decoder takes the line and there is no srcip.",
-   "body_zh": "在網站伺服器的 /var/ossec/etc/ossec.conf（或某個群組的 agent.conf）加上下列設定，再重啟 agent：\n\n<localfile>\n  <log_format>syslog</log_format>\n  <location>/var/log/modsecurity/modsec_audit.log</location>\n  <out_format>jt-modsecurity: $(log)</out_format>\n</localfile>\n\n前綴不能省：少了它，記錄會被內建的 json 解碼器接走，就沒有 srcip。",
+   "body": "Add to /var/ossec/etc/ossec.conf on the web server (or put the host in the pack's agent group \"modsecurity\", which carries the same block), then restart the agent:\n\n<localfile>\n  <log_format>syslog</log_format>\n  <location>/var/log/modsecurity/modsec_audit.log</location>\n  <out_format>jt-modsecurity: $(log)</out_format>\n</localfile>\n\nThe prefix is required: without it the built-in json decoder takes the line and there is no srcip.",
+   "body_zh": "在網站伺服器的 /var/ossec/etc/ossec.conf（或把主機加入套件的 agent 群組「modsecurity」，裡面是同一段設定）加上下列設定，再重啟 agent：\n\n<localfile>\n  <log_format>syslog</log_format>\n  <location>/var/log/modsecurity/modsec_audit.log</location>\n  <out_format>jt-modsecurity: $(log)</out_format>\n</localfile>\n\n前綴不能省：少了它，記錄會被內建的 json 解碼器接走，就沒有 srcip。",
    "verify": "The agent's ossec.log shows: Analyzing file: '/var/log/modsecurity/modsec_audit.log'.",
    "verify_zh": "agent 的 ossec.log 出現：Analyzing file: '/var/log/modsecurity/modsec_audit.log'。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "since": "1.1",
+   "title": "Keep the Core Rule Set current (web server)",
+   "title_zh": "讓 Core Rule Set 自動更新（網站伺服器）",
+   "body": "Needs python3, gpg and outbound HTTPS to api.github.com and github.com. The two files come with the agent group (/var/ossec/etc/shared/) or from the pack's agent/ directory. As root, in the directory that holds them:\n\ninstall -m 750 jt-crs-update.py /usr/local/sbin/jt-crs-update\ninstall -d -m 755 /usr/local/share/jt-crs-update\ninstall -m 644 crs-signing-key.asc /usr/local/share/jt-crs-update/\njt-crs-update --setup\njt-crs-update --dry-run\necho '37 4 * * * root /usr/local/sbin/jt-crs-update >/dev/null 2>&1' > /etc/cron.d/jt-crs-update\n\n--setup turns the crs/ directory that main.conf includes into crs-<version>/ plus a symlink (nginx -t first, undone if it fails). --dry-run downloads the current release and checks its signature without changing anything. Settings, if the defaults do not fit: /etc/default/jt-crs-update (CRS_DIR, WAIT_DAYS, KEEP, STALE_DAYS, CHECK_APT, RELOAD). The host's syslog must reach Wazuh (rules 133520-133528).\n\nTo go back after a bad update: jt-crs-update --rollback.\n\nWithout Internet on the web server: download coreruleset-<version>-minimal.tar.gz and its .asc from the CRS GitHub releases elsewhere, check them with gpg --verify against crs-signing-key.asc, unpack next to the current version as crs-<version>, then ln -sfn crs-<version> crs, nginx -t and systemctl reload nginx.",
+   "body_zh": "需要 python3、gpg，以及連到 api.github.com、github.com 的 HTTPS。兩個檔案會隨 agent 群組送到 /var/ossec/etc/shared/，也可以從套件的 agent/ 目錄取得。以 root 在檔案所在目錄執行：\n\ninstall -m 750 jt-crs-update.py /usr/local/sbin/jt-crs-update\ninstall -d -m 755 /usr/local/share/jt-crs-update\ninstall -m 644 crs-signing-key.asc /usr/local/share/jt-crs-update/\njt-crs-update --setup\njt-crs-update --dry-run\necho '37 4 * * * root /usr/local/sbin/jt-crs-update >/dev/null 2>&1' > /etc/cron.d/jt-crs-update\n\n--setup 把 main.conf 載入的 crs/ 目錄改成 crs-<版本>/ 加符號連結（先跑 nginx -t，失敗就還原）。--dry-run 下載目前版本並檢查簽章，不改任何東西。預設不合用時的設定檔：/etc/default/jt-crs-update（CRS_DIR、WAIT_DAYS、KEEP、STALE_DAYS、CHECK_APT、RELOAD）。主機的 syslog 要送進 Wazuh（規則 133520-133528）。\n\n更新後有問題要退回：jt-crs-update --rollback。\n\n網站伺服器不能連外時：在別處從 CRS 的 GitHub releases 下載 coreruleset-<版本>-minimal.tar.gz 與 .asc，用 gpg --verify 對 crs-signing-key.asc 驗證，解開在現有版本旁邊（crs-<版本>），再 ln -sfn crs-<版本> crs、nginx -t、systemctl reload nginx。",
+   "verify": "jt-crs-update --status marks the version in use, and --dry-run ends with 'signature valid'.",
+   "verify_zh": "jt-crs-update --status 標出使用中的版本，--dry-run 最後顯示 signature valid。"
   },
   {
    "platform": "linux",
@@ -102,5 +115,14 @@
     "title_zh": "回應碼"
    }
   ]
+ },
+ "agent_group": {
+  "name": "modsecurity",
+  "config": "agent.conf",
+  "files": [
+   "jt-crs-update.py",
+   "crs-signing-key.asc"
+  ],
+  "description": "Collects the ModSecurity JSON audit log with the pack's prefix and delivers the Core Rule Set updater and the CRS release key to the web server"
  }
 }

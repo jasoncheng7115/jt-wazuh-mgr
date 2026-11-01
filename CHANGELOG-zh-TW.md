@@ -4,6 +4,15 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.32.0 (2026-11-01)
+
+- **jt-modsecurity 1.1：Core Rule Set 會自己保持最新。** `agent/jt-crs-update.py` 每天在網站伺服器上執行：
+  取目前主版本中最新、已發布滿 7 天的 CRS 版本，只有 `.asc` 是 CRS 發行金鑰（固定主金鑰指紋，金鑰隨套件附上）
+  的有效簽章才套用；解開在現有版本旁邊、切換 `crs` 符號連結、執行 `nginx -t`、reload 並檢查 error log，
+  任何一步失敗就換回原本的版本。壓縮檔內有越界路徑、內含其他版本或簽章不對時一律拒絕。新的主版本與
+  待更新的 libmodsecurity3／nginx 只回報、不安裝。規則 133520-133528 為結果分級（簽章失敗 L12、
+  nginx 不接受或 14 天沒有成功檢查 L10）。套件新增 agent 群組 `modsecurity`，帶有記錄收集設定與更新程式。
+
 ## v1.31.0 (2026-10-31)
 
 - **新套件 jt-modsecurity 1.0（規則 133500-133599）：ModSecurity v3 的 JSON 稽核記錄。**
