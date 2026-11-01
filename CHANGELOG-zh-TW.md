@@ -4,6 +4,20 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.32.3 (2026-11-01)
+
+- **jt-nextcloud 1.2.5：Nextcloud 告警會進 Wazuh Dashboard。** Nextcloud 稽核記錄的每一行（以及 nextcloud.log 的部分行）
+  都帶 `"data":{"app":...}` 物件。Wazuh 解成 `data.data`，而 Wazuh 告警索引範本把它定義為 keyword，所以 indexer
+  拒收每一筆這類告警（「failed to parse field [data.data]」）：一台 manager 一週 22,779 筆。這些告警在 alerts.json 與
+  通知信裡，Dashboard 卻沒有。改索引會動到 Wazuh 自己的索引，所以本套件不這樣做，而是在 Nextcloud 主機新增 rsyslog
+  轉存（`agent/jt-nextcloud-relay.conf`）：把兩個記錄複製到 `/var/log/jt-nextcloud/`，只把這個鍵改名為 `context`
+  （純文字取代，不可能比對到 JSON 字串內的文字），群組改讀副本。**請先在每台 Nextcloud 主機設好轉存，再更新套件**
+  （新的部署步驟 4），否則該主機在完成前不會送出任何 Nextcloud 記錄。rsyslog 停止時，cron 檢查
+  （`jt-nextcloud-relay-check.sh`）會在副本寫入一行：規則 131786，level 10，會寄信。沒有任何規則用到 `data.data`；
+  180 個案例在 Wazuh 4.14.9 全部通過，原有案例改為轉存後的格式。
+- **jt-nextcloud：選用的「帳號名稱」步驟補上 worker 指令。** 叢集中每個節點以自己的名稱檔寄送，但原本的步驟只用文字說
+  「把腳本、排程、設定檔與密碼檔複製到每台 worker」，現在列出 `scp` 與 `ssh` 指令（發版關卡的叢集情境發現）。
+
 ## v1.32.2 (2026-11-01)
 
 - **套件看板：告警數可點擊，版面重新調整**（31 個套件）。告警數面板的三個數字（全部、等級 7–11、等級 12 以上）

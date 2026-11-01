@@ -1,0 +1,18 @@
+# jt-nextcloud log relay (jt-nextcloud 1.2.5): install as /etc/logrotate.d/jt-nextcloud.
+# rsyslog keeps the copies open; rsyslog-rotate (Debian, Ubuntu) makes it reopen
+# them. On other systems use the postrotate line of the host's own rsyslog
+# logrotate file. The Wazuh agent follows the rotation by name.
+/var/log/jt-nextcloud/nextcloud.log
+/var/log/jt-nextcloud/audit.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 root adm
+    sharedscripts
+    postrotate
+        /usr/lib/rsyslog/rsyslog-rotate
+    endscript
+}

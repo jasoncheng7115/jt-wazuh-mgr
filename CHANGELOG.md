@@ -4,6 +4,27 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.32.3 (2026-11-01)
+
+- **jt-nextcloud 1.2.5: Nextcloud alerts reach the Wazuh dashboard.** Every line of
+  Nextcloud's audit log (and some lines of nextcloud.log) carries the object
+  `"data":{"app":...}`. Wazuh decodes it as `data.data`, which the Wazuh alerts index
+  template maps as a keyword, so the indexer refused every such alert ("failed to parse
+  field [data.data]"): on one manager 22,779 in a week. They were in alerts.json and the
+  mail, never in the dashboard. Changing the index would touch Wazuh's own indices, so
+  the pack does not: a new rsyslog relay on the Nextcloud host
+  (`agent/jt-nextcloud-relay.conf`) copies the two logs to `/var/log/jt-nextcloud/` with
+  that key renamed to `context` (a text replacement that cannot match inside a JSON
+  string), and the agent group reads the copies. **Set the relay up on every Nextcloud
+  host before updating the pack** (new setup step 4), or the host sends no Nextcloud log
+  until it is. A cron check (`jt-nextcloud-relay-check.sh`) writes a line into the copy
+  when rsyslog stops: rule 131786, level 10, mailed. No rule used `data.data`; all 180
+  cases pass on Wazuh 4.14.9, the existing ones now in the relayed shape.
+- **jt-nextcloud: the optional account-names step now lists the worker commands.** On a
+  cluster each node mails with its own names file, but the step only said in prose to copy
+  the script, schedule, settings and password file to each worker. It now gives the `scp`
+  and `ssh` lines (found by the release gate's cluster scenario).
+
 ## v1.32.2 (2026-11-01)
 
 - **Pack dashboards: clickable counts and a better layout** (all 31 packs). The three

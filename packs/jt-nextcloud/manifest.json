@@ -1,226 +1,245 @@
 {
- "id": "jt-nextcloud",
- "name": "Nextcloud Detection Suite",
- "name_zh": "Nextcloud 偵測套組",
- "version": "1.2.4",
- "summary": "Failed logins and brute force per address (also for Nextcloud 35, which logs client failures only in the audit log), second-factor failures, administrator logins, logins from public and new addresses, impersonation, administrator rights, security apps switched off, risky apps, occ commands that weaken protection, public links, ransomware-like renames, mass deletions, antivirus detections and changes of the configuration files, from the Nextcloud log, the audit log and file integrity monitoring, with the client address decoded as srcip.",
- "summary_zh": "從 Nextcloud 記錄、稽核記錄與檔案完整性監控偵測：依來源位址計算的登入失敗與暴力破解（含 Nextcloud 35，其用戶端登入失敗只寫在稽核記錄）、第二因素驗證失敗、管理者登入、來自公開位址與新位址的登入、以他人身分操作、管理者權限、關閉安全 App、高風險 App、削弱防護的 occ 指令、公開連結、類勒索軟體的大量更名、大量刪除、防毒偵測與設定檔變更，並把來源位址解成 srcip。",
- "rule_id_range": "131700-131799",
- "notes": [
-  "The pack reads Nextcloud's own log (nextcloud.log) and the admin_audit log through the agent group nextcloud, which puts a prefix in front of every line for the pack's decoder. The decoder keeps every JSON field and decodes remoteAddr as srcip as well, which Wazuh's json decoder cannot do. A child of the built-in json decoder is not a way out: measured on 4.14.7, as soon as it has one, every other JSON source on the manager (Suricata, cloud integrations) loses all its fields. Lines collected without the group stay with the built-in rules 88200-88216.",
-  "On one Nextcloud 33 server over 10 days the built-in rules raised 44,146 alerts. 40,802 were \"Login successful\", which Nextcloud writes for every request that carries a password or app password (88 per cent from one monitoring account). A failed login is written twice, to nextcloud.log and audit.log, and both copies count towards the built-in brute-force rule 88203, which has no per-address condition: one user mistyping four times in 44 seconds raised it at level 10. The built-in file rules look for wording the audit app no longer writes and never match. Replayed through version 1.0 of this pack, the same 10 days gave 26 alerts.",
-  "Failed logins: one failure is level 5, 8 from one address in 10 minutes level 10, 20 across addresses level 10. Each failure is counted once in every version: through Nextcloud 34 from nextcloud.log (the audit copy is not counted); from 35 on, Nextcloud writes the failure of a client (WebDAV, app password, API) to nextcloud.log at debug level only, so its audit copy is counted instead, while a login page failure is still counted from nextcloud.log (1.2, checked in the source of 28 to 35). On 35 a WebDAV password guess is therefore only visible with the audit app. A wrong second factor, which Nextcloud asks for only after a correct password, is level 7, and 4 from one address level 10.",
-  "Successful logins are not alerts by themselves (1.1). Nextcloud writes \"Login successful\" for every request that carries a password or app password: 166,128 lines in 40 days on one server, 9 of them from the login page. They are recorded below the alert level, except: an administrator account (the names Nextcloud installers give the built-in administrator: admin, administrator, root, ncadmin, and ncp of NextcloudPi) logging in from a private address, level 3; a login from a public address, level 5, an administrator account level 8; the first time an account authenticates from an address, level 3 (fts, first time seen); a success from an address that has just failed 8 times, level 12. For sync clients, apps and API callers, which authenticate on every request, the address and account levels apply only the first time the pair is seen, so a monitoring check alerts once per address, ever. Replayed on the same 40 days: 64 alerts instead of 166,128 from the built-in rules, 27 of them the first request from a new public address (a phone on mobile data, a laptop at home); after the first month about one a day. No list is needed for any of this.",
-  "Private addresses are 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 100.64.0.0/10, fc00::/7 and fe80::/10; an IPv4 address written as ::ffff:a.b.c.d is read without the prefix. The IPv6 loopback ::1 counts as public, because Wazuh 4.14.7 matches ::1 against every IPv4 address. Group membership is not in the log line, so members of the admin group other than the built-in account count as ordinary accounts; their group change itself is level 12. The first-seen pairs are kept by Wazuh in queue/fts on each manager node; on a fresh install every pair is new, so the first day brings one level 3 or 5 alert per account and address.",
-  "Nextcloud's own brute-force protection: refusing an address is level 10, slowing one down level 4, each at most once per 2 and 10 minutes, because every refused request writes the message again. Nextcloud writes these at info level, so they appear only with loglevel 1 or with the log.condition entries in the setup.",
-  "From the audit log: a user added to the admin group is level 12; the audit app disabled level 10. Apps (1.2): a security app disabled (any twofactor_ provider, suspicious_login, files_antivirus, password_policy, encryption, files_accesscontrol) level 10; workflow_script or impersonate enabled level 10 (the first runs commands on the server, the second lets administrators act as any account); an LDAP, SAML, OpenID Connect or external storage app enabled level 7; any other app enabled level 6. occ: two-factor authentication switched off or no longer enforced, brute-force protection or audit log settings, an address added to the brute-force allow list, encryption switched off or all files decrypted, and a new app store or app directory are level 10; logging and trusted proxy settings, a trusted root certificate, external storage mounts, the sharing policy, debug mode, app passwords made for an account and the LDAP, SAML and OpenID Connect configuration level 7; routine and read-only commands (including the background and task processing workers that systemd restarts) are recorded below the alert level. A user deleted is level 6; a user created, a password or e-mail address changed level 5. Public links and shares to e-mail or federated recipients are level 5, a link with which anyone can change or delete files level 6, 10 links by one account within 10 minutes level 10, removing a link's expiry date level 4. 100 files deleted by one account within 5 minutes is level 10; 20 files renamed to the same name plus an extension (a.docx to a.docx.locked, what ransomware on a synced computer produces) within 5 minutes level 12.",
-  "Not detected, because Nextcloud does not log it: a user switching off their own second factor in the web interface, an administrator doing it through the provisioning API, sub-administrator assignments, app passwords created in the web interface, sharing settings changed on the administration page and file access control rules edited there. Only the occ equivalents are visible. Whether a new public link has a password cannot be told either: the password is set in a separate request. File reads, writes, uploads, copies, previews and the file cache lines of Nextcloud 30 and later stay on the host: the agent group drops them, because no rule uses them and they are most of the audit log (on one server the cache lines alone were about 400 a day). Renames are sent from 1.2 (18 in 9 days on that server).",
-  "Recorded below the alert level, measured on one server: calendar subscriptions that cannot be refreshed (1,512 of 1,524 warnings in 10 days), preview generation errors (4,138 errors in 30 days), requests refused during maintenance mode, shares between users of the same server, and the occ task processing worker that systemd restarts every few minutes (280 lines a day, level 3 in 1.1). Other warnings are level 3, errors level 5, fatal errors level 8.",
-  "Prerequisites: Nextcloud log_type file (the default); the admin_audit app enabled, with a log.condition entry so that it writes at the default log level; and behind a reverse proxy, trusted_proxies and forwarded_for_headers set, otherwise remoteAddr, and with it srcip, is the proxy's address for every user.",
-  "The agent group also takes the data directory out of file integrity monitoring: on one server user files were 98,358 of the 200,000 entries the database may hold, which left no room for the paths that matter. Nextcloud's code (apps, lib, core, 3rdparty) is outside the data directory and stays monitored.",
-  "Also in 1.2: impersonation with the impersonate app (an account switching to another one) is level 8 and every request for it level 4; a login the suspicious_login app flags is level 8 (it writes this at info level, see the setup); the antivirus app (files_antivirus) finding an infected file that stays stored is level 10, removing one level 8; an end-of-life Nextcloud version (32 and older at the time of writing) is level 5 once a day.",
-  "File integrity (1.2): the agent group watches Nextcloud's config directory and the web root entry points (index.php, remote.php, public.php, status.php, cron.php, console.php, occ, ocs/v1.php, ocs/v2.php, .htaccess, .user.ini) in real time, without content diffs, because config.php holds the database password. A new *.config.php is level 10: Nextcloud loads every one of them on every request, so it can switch off the brute-force protection or move the log without occ and without an audit line. config.php changed and an entry point changed are level 7 (occ config:system:set, maintenance mode and upgrades also change them). These entries are a few files and one small directory, so they do not crowd the file integrity database, and they leave a site's existing monitoring of /var/www as it is. New PHP files under apps/ are not watched by the group: upgrades add thousands, and the app directories alone held 85,659 entries on one server.",
-  "Cross-pack login groups (patch release): jt_auth_success on 131720, 131721, 131777, 131770, 131771, 131772, 131778, 131773, 131774, 131775, 131776; jt_auth_failure on 131710; jt_auth_lockout on 131722. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. The failed login line names no account in a decoded field, so 131710 only serves the address-based correlations. Not tagged: the second copy from the suspicious_login app (131739), impersonation (131729), a wrong second factor (131713).",
-  "1.2.2: works on managers before Wazuh 4.14. 4.14 turns the JSON key \"user\" into dstuser; 4.12 and 4.13 keep it as a dynamic field, so every rule with <user> or <same_user/> never matched there: deleted files, renamed files, ransomware-style renames and many public links (12 cases). The decoder now reads the account from the line into the static user field as well, as it already did for srcip. Verified on 4.12.0 and 4.14.9 (174 of 174 cases each).",
-  "The audit log grows by one line per login, share, deletion and file access; Nextcloud rotates it at log_rotate_size (100 MB by default). The log.condition entries of the setup make Nextcloud write the admin_audit lines and the brute-force protection messages (131722-131725) at the default loglevel 2 without raising the level of everything else.",
-  "An access log that starts with the client address followed by the virtual host name (Apache \"%a %v ...\"): Wazuh's built-in web decoder takes the host name as srcip, so the built-in rule 31151 (level 10, many 400 errors from one address) fires on all traffic combined and no address can be blocked. Rule 131779 recognises entry points only under a directory whose name starts with nextcloud; for an installation elsewhere the built-in rule 550 (level 7) reports the change.",
-  "Account names for notifications (1.2.3): with an LDAP directory, Nextcloud's id for a directory user is the entry's UUID, and that is what the alerts name. jt-nextcloud-names.py, run daily on each manager node, writes the names of the accounts whose id is not their name to etc/jt-packs/jt-alert-digest-names.d/nextcloud, which jt-alert-digest 1.14 and later reads to show \"Alice Chen (3094106c...)\" in every channel. It uses the OCS provisioning API (the user list, a page at a time, then each user's display name and e-mail address) with an administrator's app password from a root-only file, never logged. The file is written in full and renamed into place; a failed run keeps the previous file, and so does an answer with fewer than half the names of the previous file (--force writes it). A failure raises 131783 (level 5), three days without a successful run 131784 (level 7). Without etc/jt-packs/jt-nextcloud.conf the script does nothing. A user's display name is under that user's control, so the digest cleans and escapes it like any alert text."
- ],
- "notes_zh": [
-  "本套件透過 agent 群組 nextcloud 讀取 Nextcloud 自己的記錄（nextcloud.log）與 admin_audit 稽核記錄；群組會在每一行前面加上前綴，交給本套件的解碼器處理。解碼器保留所有 JSON 欄位，並另外把 remoteAddr 解成 srcip，這是 Wazuh 內建 json 解碼器做不到的。替內建 json 解碼器加子解碼器也不可行：4.14.7 實測，只要它有一個子解碼器，manager 上其他所有 JSON 來源（Suricata、雲端整合）的欄位就全部消失。不經這個群組收進來的行，仍由內建規則 88200-88216 處理。",
-  "一台 Nextcloud 33 在 10 天內，內建規則產生 44,146 筆告警。其中 40,802 筆是「Login successful」：Nextcloud 對每個帶密碼或 App 密碼的請求都會寫一次（88% 來自單一監控帳號）。登入失敗會寫兩次（nextcloud.log 與 audit.log），兩份都計入內建暴力破解規則 88203，而該規則不分來源位址：一位使用者在 44 秒內打錯四次密碼，就觸發了 level 10。內建的檔案規則比對的是稽核 App 已不再使用的寫法，永遠不會命中。同樣 10 天的資料以本套件 1.0 版重跑，只有 26 筆告警。",
-  "登入失敗：單次失敗為 level 5，同一位址 10 分鐘內 8 次為 level 10，跨位址合計 20 次為 level 10。每次失敗在各版本都只計算一次：到 Nextcloud 34 為止從 nextcloud.log 計算（稽核記錄那一份不計）；從 35 起，Nextcloud 只以 debug 等級把用戶端（WebDAV、App 密碼、API）的登入失敗寫進 nextcloud.log，因此改計稽核記錄的那一份，登入頁的失敗仍從 nextcloud.log 計算（1.2，依 28 到 35 版原始碼確認）。也就是說，在 35 上猜 WebDAV 密碼只有啟用稽核 App 才看得到。第二因素驗證錯誤（Nextcloud 只在密碼正確之後才會要求）為 level 7，同一位址 4 次為 level 10。",
-  "成功登入本身不是告警（1.1）。Nextcloud 對每個帶密碼或 App 密碼的請求都會寫「Login successful」：一台伺服器 40 天內 166,128 行，其中只有 9 行來自登入頁。這些都記錄在告警等級之下，例外是：管理者帳號（Nextcloud 安裝程式為內建管理者使用的名稱：admin、administrator、root、ncadmin，以及 NextcloudPi 的 ncp）從私有位址登入為 level 3；從公開位址登入為 level 5，管理者帳號為 level 8；某帳號第一次從某位址通過驗證為 level 3（fts，首次出現）；剛失敗 8 次的位址接著成功為 level 12。同步程式、App 與 API 呼叫每個請求都會驗證，對它們而言位址與帳號的等級只在這組配對第一次出現時套用，因此監控檢查每個位址永遠只告警一次。以同樣 40 天的資料重跑：64 筆告警（內建規則為 166,128 筆），其中 27 筆是從新的公開位址發出的第一個請求（使用行動網路的手機、在家中的筆電）；第一個月之後約每天一筆。這些都不需要任何清單。",
-  "私有位址為 10.0.0.0/8、172.16.0.0/12、192.168.0.0/16、127.0.0.0/8、100.64.0.0/10、fc00::/7 與 fe80::/10；寫成 ::ffff:a.b.c.d 的 IPv4 位址會去掉前綴再判斷。IPv6 回送位址 ::1 視為公開位址，因為 Wazuh 4.14.7 會讓 ::1 比對到所有 IPv4 位址。記錄行中沒有群組資訊，因此內建帳號以外的 admin 群組成員視為一般帳號；把他們加入群組的那一筆本身為 level 12。首次出現的配對由 Wazuh 存在各 manager 節點的 queue/fts；剛安裝時每組配對都是新的，因此第一天每組帳號與位址會各有一筆 level 3 或 5 告警。",
-  "Nextcloud 自己的暴力破解防護：拒絕某個位址為 level 10，對某個位址降速為 level 4，分別最多每 2 分鐘、10 分鐘告警一次，因為被拒絕期間每個請求都會再寫一次同樣的訊息。Nextcloud 以 info 等級寫這些訊息，因此只有 loglevel 設為 1，或加上部署說明裡的 log.condition 設定才會出現。",
-  "稽核記錄：使用者被加入 admin 群組為 level 12；停用稽核 App 為 level 10。App（1.2）：停用安全 App（任何 twofactor_ 驗證提供者、suspicious_login、files_antivirus、password_policy、encryption、files_accesscontrol）為 level 10；啟用 workflow_script 或 impersonate 為 level 10（前者會在伺服器上執行指令，後者讓管理者以任何帳號的身分操作）；啟用 LDAP、SAML、OpenID Connect 或外部儲存空間 App 為 level 7；啟用其他 App 為 level 6。occ：關閉或取消強制第二因素驗證、變更暴力破解防護或稽核記錄設定、把位址加入暴力破解防護的允許清單、關閉加密或解密所有檔案、改用新的 App 商店或 App 目錄為 level 10；記錄與受信任 proxy 設定、受信任的根憑證、外部儲存空間掛載、分享原則、除錯模式、替帳號建立 App 密碼，以及 LDAP、SAML、OpenID Connect 設定為 level 7；例行與唯讀指令（包括由 systemd 重新啟動的背景工作與工作處理 worker）記錄在告警等級之下。刪除使用者為 level 6；建立使用者、變更密碼或電子郵件地址為 level 5。公開連結以及分享給電子郵件或聯邦收件者為 level 5，任何人都能修改或刪除檔案的連結為 level 6，同一帳號 10 分鐘內建立 10 個連結為 level 10，移除連結的到期日為 level 4。同一帳號 5 分鐘內刪除 100 個檔案為 level 10；5 分鐘內有 20 個檔案被改成原檔名再加一個副檔名（a.docx 改為 a.docx.locked，正是同步電腦上的勒索軟體會產生的樣子）為 level 12。",
-  "偵測不到的項目（因為 Nextcloud 不記錄）：使用者在網頁介面自行關閉第二因素驗證、管理者透過 provisioning API 關閉、指派子管理者、在網頁介面建立 App 密碼、在管理頁面變更分享設定，以及在那裡修改檔案存取控制規則。只有對應的 occ 指令看得到。新的公開連結有沒有設密碼也無從得知：密碼是在另一個請求裡設定的。檔案的讀取、寫入、上傳、複製、預覽，以及 Nextcloud 30 起的檔案快取記錄留在主機上：agent 群組會把它們丟掉，因為沒有規則用到，而它們占了稽核記錄的大部分（一台伺服器上光是快取記錄每天約 400 行）。從 1.2 起會送出更名記錄（那台伺服器 9 天 18 筆）。",
-  "以下記錄在告警等級之下（一台伺服器實測）：無法更新的行事曆訂閱（10 天內 1,524 筆警告中的 1,512 筆）、預覽產生錯誤（30 天 4,138 筆錯誤）、維護模式期間被拒絕的請求、同一伺服器使用者之間的分享，以及每隔幾分鐘就被 systemd 重新啟動的 occ 工作處理 worker（每天 280 行，1.1 版為 level 3）。其他警告為 level 3，錯誤為 level 5，致命錯誤為 level 8。",
-  "前提：Nextcloud 的 log_type 為 file（預設值）；已啟用 admin_audit App，並加上 log.condition 讓它在預設記錄等級下也會寫入；若在反向 proxy 之後，必須設定 trusted_proxies 與 forwarded_for_headers，否則 remoteAddr（連帶 srcip）對所有使用者都會是 proxy 的位址。",
-  "agent 群組也會把資料目錄排除在檔案完整性監控之外：一台伺服器上使用者檔案占了資料庫上限 200,000 筆中的 98,358 筆，重要的路徑因此沒有空間。Nextcloud 的程式碼（apps、lib、core、3rdparty）不在資料目錄內，仍會被監控。",
-  "1.2 另外新增：以 impersonate App 切換成另一個帳號為 level 8，每次提出切換要求為 level 4；suspicious_login App 判定可疑的登入為 level 8（它以 info 等級寫入，見部署說明）；防毒 App（files_antivirus）發現仍留存的受感染檔案為 level 10，移除受感染檔案為 level 8；已終止支援的 Nextcloud 版本（撰寫時為 32 與更舊的版本）每天一次 level 5。",
-  "檔案完整性（1.2）：agent 群組即時監控 Nextcloud 的 config 目錄與網站根目錄的進入點（index.php、remote.php、public.php、status.php、cron.php、console.php、occ、ocs/v1.php、ocs/v2.php、.htaccess、.user.ini），不傳送內容差異，因為 config.php 內含資料庫密碼。新增 *.config.php 為 level 10：Nextcloud 每個請求都會載入它們，因此可以不經 occ、不留稽核記錄就關掉暴力破解防護或改掉記錄位置。config.php 變更與進入點變更為 level 7（occ config:system:set、維護模式與升級也會改動它們）。這些項目只有幾個檔案和一個小目錄，不會擠占檔案完整性資料庫，也不會改變站台原本對 /var/www 的監控。群組不監控 apps/ 底下新增的 PHP 檔：每次升級都會新增上千個，而一台伺服器上光是 App 目錄就有 85,659 筆。",
-  "跨套件登入群組（修補版）：jt_auth_success：131720, 131721, 131777, 131770, 131771, 131772, 131778, 131773, 131774, 131775, 131776；jt_auth_failure：131710；jt_auth_lockout：131722。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。登入失敗那行沒有解出帳號欄位，所以 131710 只用於以來源位址關聯的規則。未加標記：suspicious_login 應用程式的第二份（131739）、模擬身分（131729）、第二因素錯誤（131713）。",
-  "1.2.2：支援 Wazuh 4.14 之前的 manager。4.14 會把 JSON 的 \"user\" 轉成 dstuser；4.12、4.13 則保留為動態欄位，所以所有使用 <user> 或 <same_user/> 的規則在舊版都不成立：刪除檔案、改名、勒索軟體式改名與大量公開連結（12 個案例）。解碼器現在也從記錄行把帳號讀進靜態的 user 欄位，做法與 srcip 相同。已在 4.12.0 與 4.14.9 驗證（各 174 個案例全過）。",
-  "稽核記錄每次登入、分享、刪除與檔案存取都會多一行；Nextcloud 會在達到 log_rotate_size（預設 100 MB）時輪替。部署說明中的 log.condition 項目讓 Nextcloud 在預設 loglevel 2 下也寫入 admin_audit 與暴力破解防護的訊息（131722-131725），而不必提高其他所有訊息的等級。",
-  "存取記錄若以來源位址開頭、接著是虛擬主機名稱（Apache \"%a %v ...\"）：Wazuh 內建的網頁解碼器會把主機名稱當成 srcip，內建規則 31151（level 10，同一位址大量 400 錯誤）會把全部流量合在一起計算，也無法封鎖任何位址。規則 131779 只認得名稱以 nextcloud 開頭的目錄底下的進入點；安裝在其他位置時，由內建規則 550（level 7）回報變更。",
-  "通知中的帳號名稱（1.2.3）：接 LDAP 目錄時，Nextcloud 給目錄使用者的 ID 是目錄項目的 UUID，告警寫的就是它。jt-nextcloud-names.py 每天在每個 manager 節點執行一次，把 ID 與名稱不同的帳號名稱寫入 etc/jt-packs/jt-alert-digest-names.d/nextcloud，jt-alert-digest 1.14 以後會讀取它，在每個管道顯示「王小明 (3094106c…)」。它使用 OCS provisioning API（使用者清單分頁讀取，再讀每個使用者的顯示名稱與電子郵件），以管理員的應用程式密碼登入；密碼讀自只有 root 可讀的檔案，不會出現在任何記錄中。檔案完整寫好後才改名就位；執行失敗時保留原本的檔案，回應的名稱數不到原檔一半時也保留（--force 才會寫入）。失敗觸發 131783（level 5），三天沒有成功執行則是 131784（level 7）。沒有 etc/jt-packs/jt-nextcloud.conf 時腳本什麼都不做。顯示名稱由使用者自己設定，所以摘要會像其他告警文字一樣清理並跳脫它。"
- ],
- "author": "Jason Tools",
- "license": "AGPL-3.0-or-later",
- "requires": {
-  "wazuh": ">=4.8"
- },
- "tested_with": [
-  "4.12.0",
-  "4.14.7",
-  "4.14.9"
- ],
- "files": [
-  {
-   "type": "decoder",
-   "name": "jt-nextcloud_decoders.xml",
-   "dest": "etc/decoders/jt-nextcloud_decoders.xml",
-   "sha256": "46df66df1d748b4f93713f4125c5017d9ca042324ed9f2f845cbf5dd1430b40b"
+  "id": "jt-nextcloud",
+  "name": "Nextcloud Detection Suite",
+  "name_zh": "Nextcloud 偵測套組",
+  "version": "1.2.5",
+  "summary": "Failed logins and brute force per address (also for Nextcloud 35, which logs client failures only in the audit log), second-factor failures, administrator logins, logins from public and new addresses, impersonation, administrator rights, security apps switched off, risky apps, occ commands that weaken protection, public links, ransomware-like renames, mass deletions, antivirus detections and changes of the configuration files, from the Nextcloud log, the audit log and file integrity monitoring, with the client address decoded as srcip.",
+  "summary_zh": "從 Nextcloud 記錄、稽核記錄與檔案完整性監控偵測：依來源位址計算的登入失敗與暴力破解（含 Nextcloud 35，其用戶端登入失敗只寫在稽核記錄）、第二因素驗證失敗、管理者登入、來自公開位址與新位址的登入、以他人身分操作、管理者權限、關閉安全 App、高風險 App、削弱防護的 occ 指令、公開連結、類勒索軟體的大量更名、大量刪除、防毒偵測與設定檔變更，並把來源位址解成 srcip。",
+  "rule_id_range": "131700-131799",
+  "notes": [
+    "The pack reads Nextcloud's own log (nextcloud.log) and the admin_audit log through the agent group nextcloud, which puts a prefix in front of every line for the pack's decoder. The decoder keeps every JSON field and decodes remoteAddr as srcip as well, which Wazuh's json decoder cannot do. A child of the built-in json decoder is not a way out: measured on 4.14.7, as soon as it has one, every other JSON source on the manager (Suricata, cloud integrations) loses all its fields. Lines collected without the group stay with the built-in rules 88200-88216.",
+    "On one Nextcloud 33 server over 10 days the built-in rules raised 44,146 alerts. 40,802 were \"Login successful\", which Nextcloud writes for every request that carries a password or app password (88 per cent from one monitoring account). A failed login is written twice, to nextcloud.log and audit.log, and both copies count towards the built-in brute-force rule 88203, which has no per-address condition: one user mistyping four times in 44 seconds raised it at level 10. The built-in file rules look for wording the audit app no longer writes and never match. Replayed through version 1.0 of this pack, the same 10 days gave 26 alerts.",
+    "Failed logins: one failure is level 5, 8 from one address in 10 minutes level 10, 20 across addresses level 10. Each failure is counted once in every version: through Nextcloud 34 from nextcloud.log (the audit copy is not counted); from 35 on, Nextcloud writes the failure of a client (WebDAV, app password, API) to nextcloud.log at debug level only, so its audit copy is counted instead, while a login page failure is still counted from nextcloud.log (1.2, checked in the source of 28 to 35). On 35 a WebDAV password guess is therefore only visible with the audit app. A wrong second factor, which Nextcloud asks for only after a correct password, is level 7, and 4 from one address level 10.",
+    "Successful logins are not alerts by themselves (1.1). Nextcloud writes \"Login successful\" for every request that carries a password or app password: 166,128 lines in 40 days on one server, 9 of them from the login page. They are recorded below the alert level, except: an administrator account (the names Nextcloud installers give the built-in administrator: admin, administrator, root, ncadmin, and ncp of NextcloudPi) logging in from a private address, level 3; a login from a public address, level 5, an administrator account level 8; the first time an account authenticates from an address, level 3 (fts, first time seen); a success from an address that has just failed 8 times, level 12. For sync clients, apps and API callers, which authenticate on every request, the address and account levels apply only the first time the pair is seen, so a monitoring check alerts once per address, ever. Replayed on the same 40 days: 64 alerts instead of 166,128 from the built-in rules, 27 of them the first request from a new public address (a phone on mobile data, a laptop at home); after the first month about one a day. No list is needed for any of this.",
+    "Private addresses are 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 100.64.0.0/10, fc00::/7 and fe80::/10; an IPv4 address written as ::ffff:a.b.c.d is read without the prefix. The IPv6 loopback ::1 counts as public, because Wazuh 4.14.7 matches ::1 against every IPv4 address. Group membership is not in the log line, so members of the admin group other than the built-in account count as ordinary accounts; their group change itself is level 12. The first-seen pairs are kept by Wazuh in queue/fts on each manager node; on a fresh install every pair is new, so the first day brings one level 3 or 5 alert per account and address.",
+    "Nextcloud's own brute-force protection: refusing an address is level 10, slowing one down level 4, each at most once per 2 and 10 minutes, because every refused request writes the message again. Nextcloud writes these at info level, so they appear only with loglevel 1 or with the log.condition entries in the setup.",
+    "From the audit log: a user added to the admin group is level 12; the audit app disabled level 10. Apps (1.2): a security app disabled (any twofactor_ provider, suspicious_login, files_antivirus, password_policy, encryption, files_accesscontrol) level 10; workflow_script or impersonate enabled level 10 (the first runs commands on the server, the second lets administrators act as any account); an LDAP, SAML, OpenID Connect or external storage app enabled level 7; any other app enabled level 6. occ: two-factor authentication switched off or no longer enforced, brute-force protection or audit log settings, an address added to the brute-force allow list, encryption switched off or all files decrypted, and a new app store or app directory are level 10; logging and trusted proxy settings, a trusted root certificate, external storage mounts, the sharing policy, debug mode, app passwords made for an account and the LDAP, SAML and OpenID Connect configuration level 7; routine and read-only commands (including the background and task processing workers that systemd restarts) are recorded below the alert level. A user deleted is level 6; a user created, a password or e-mail address changed level 5. Public links and shares to e-mail or federated recipients are level 5, a link with which anyone can change or delete files level 6, 10 links by one account within 10 minutes level 10, removing a link's expiry date level 4. 100 files deleted by one account within 5 minutes is level 10; 20 files renamed to the same name plus an extension (a.docx to a.docx.locked, what ransomware on a synced computer produces) within 5 minutes level 12.",
+    "Not detected, because Nextcloud does not log it: a user switching off their own second factor in the web interface, an administrator doing it through the provisioning API, sub-administrator assignments, app passwords created in the web interface, sharing settings changed on the administration page and file access control rules edited there. Only the occ equivalents are visible. Whether a new public link has a password cannot be told either: the password is set in a separate request. File reads, writes, uploads, copies, previews and the file cache lines of Nextcloud 30 and later stay on the host: the agent group drops them, because no rule uses them and they are most of the audit log (on one server the cache lines alone were about 400 a day). Renames are sent from 1.2 (18 in 9 days on that server).",
+    "Recorded below the alert level, measured on one server: calendar subscriptions that cannot be refreshed (1,512 of 1,524 warnings in 10 days), preview generation errors (4,138 errors in 30 days), requests refused during maintenance mode, shares between users of the same server, and the occ task processing worker that systemd restarts every few minutes (280 lines a day, level 3 in 1.1). Other warnings are level 3, errors level 5, fatal errors level 8.",
+    "Prerequisites: Nextcloud log_type file (the default); the admin_audit app enabled, with a log.condition entry so that it writes at the default log level; and behind a reverse proxy, trusted_proxies and forwarded_for_headers set, otherwise remoteAddr, and with it srcip, is the proxy's address for every user.",
+    "The agent group also takes the data directory out of file integrity monitoring: on one server user files were 98,358 of the 200,000 entries the database may hold, which left no room for the paths that matter. Nextcloud's code (apps, lib, core, 3rdparty) is outside the data directory and stays monitored.",
+    "Also in 1.2: impersonation with the impersonate app (an account switching to another one) is level 8 and every request for it level 4; a login the suspicious_login app flags is level 8 (it writes this at info level, see the setup); the antivirus app (files_antivirus) finding an infected file that stays stored is level 10, removing one level 8; an end-of-life Nextcloud version (32 and older at the time of writing) is level 5 once a day.",
+    "File integrity (1.2): the agent group watches Nextcloud's config directory and the web root entry points (index.php, remote.php, public.php, status.php, cron.php, console.php, occ, ocs/v1.php, ocs/v2.php, .htaccess, .user.ini) in real time, without content diffs, because config.php holds the database password. A new *.config.php is level 10: Nextcloud loads every one of them on every request, so it can switch off the brute-force protection or move the log without occ and without an audit line. config.php changed and an entry point changed are level 7 (occ config:system:set, maintenance mode and upgrades also change them). These entries are a few files and one small directory, so they do not crowd the file integrity database, and they leave a site's existing monitoring of /var/www as it is. New PHP files under apps/ are not watched by the group: upgrades add thousands, and the app directories alone held 85,659 entries on one server.",
+    "Cross-pack login groups (patch release): jt_auth_success on 131720, 131721, 131777, 131770, 131771, 131772, 131778, 131773, 131774, 131775, 131776; jt_auth_failure on 131710; jt_auth_lockout on 131722. They let jt-account-guard correlate logins across services and jt-ioc look up the address of every tagged successful login; levels and matching are unchanged, and without those packs the groups do nothing. The failed login line names no account in a decoded field, so 131710 only serves the address-based correlations. Not tagged: the second copy from the suspicious_login app (131739), impersonation (131729), a wrong second factor (131713).",
+    "1.2.2: works on managers before Wazuh 4.14. 4.14 turns the JSON key \"user\" into dstuser; 4.12 and 4.13 keep it as a dynamic field, so every rule with <user> or <same_user/> never matched there: deleted files, renamed files, ransomware-style renames and many public links (12 cases). The decoder now reads the account from the line into the static user field as well, as it already did for srcip. Verified on 4.12.0 and 4.14.9 (174 of 174 cases each).",
+    "The audit log grows by one line per login, share, deletion and file access; Nextcloud rotates it at log_rotate_size (100 MB by default). The log.condition entries of the setup make Nextcloud write the admin_audit lines and the brute-force protection messages (131722-131725) at the default loglevel 2 without raising the level of everything else.",
+    "An access log that starts with the client address followed by the virtual host name (Apache \"%a %v ...\"): Wazuh's built-in web decoder takes the host name as srcip, so the built-in rule 31151 (level 10, many 400 errors from one address) fires on all traffic combined and no address can be blocked. Rule 131779 recognises entry points only under a directory whose name starts with nextcloud; for an installation elsewhere the built-in rule 550 (level 7) reports the change.",
+    "Account names for notifications (1.2.3): with an LDAP directory, Nextcloud's id for a directory user is the entry's UUID, and that is what the alerts name. jt-nextcloud-names.py, run daily on each manager node, writes the names of the accounts whose id is not their name to etc/jt-packs/jt-alert-digest-names.d/nextcloud, which jt-alert-digest 1.14 and later reads to show \"Alice Chen (3094106c...)\" in every channel. It uses the OCS provisioning API (the user list, a page at a time, then each user's display name and e-mail address) with an administrator's app password from a root-only file, never logged. The file is written in full and renamed into place; a failed run keeps the previous file, and so does an answer with fewer than half the names of the previous file (--force writes it). A failure raises 131783 (level 5), three days without a successful run 131784 (level 7). Without etc/jt-packs/jt-nextcloud.conf the script does nothing. A user's display name is under that user's control, so the digest cleans and escapes it like any alert text.",
+    "1.2.5: the alerts reach the Wazuh dashboard. Every audit line (and some lines of nextcloud.log) carries the object \"data\":{\"app\":...}; Wazuh decodes it as data.data, which the Wazuh alerts index template maps as a keyword, so the indexer refused every such alert (\"failed to parse field [data.data]\"): on one manager 22,779 in a week, all of them from the Nextcloud host. They were in alerts.json and the mail, never in the dashboard. Changing the index (a pipeline, a template) would work but touches Wazuh's own indices, so the pack does not: an rsyslog relay on the Nextcloud host copies the two logs to /var/log/jt-nextcloud/ with that key renamed to \"context\" (a plain text replacement of ,\"data\":{ that cannot match inside a JSON string), and the agent group reads the copies. No rule used data.data. If rsyslog stops, a cron check writes one line into the copy: rule 131786, level 10, mailed. Alerts refused before 1.2.5 are not re-sent."
+  ],
+  "notes_zh": [
+    "本套件透過 agent 群組 nextcloud 讀取 Nextcloud 自己的記錄（nextcloud.log）與 admin_audit 稽核記錄；群組會在每一行前面加上前綴，交給本套件的解碼器處理。解碼器保留所有 JSON 欄位，並另外把 remoteAddr 解成 srcip，這是 Wazuh 內建 json 解碼器做不到的。替內建 json 解碼器加子解碼器也不可行：4.14.7 實測，只要它有一個子解碼器，manager 上其他所有 JSON 來源（Suricata、雲端整合）的欄位就全部消失。不經這個群組收進來的行，仍由內建規則 88200-88216 處理。",
+    "一台 Nextcloud 33 在 10 天內，內建規則產生 44,146 筆告警。其中 40,802 筆是「Login successful」：Nextcloud 對每個帶密碼或 App 密碼的請求都會寫一次（88% 來自單一監控帳號）。登入失敗會寫兩次（nextcloud.log 與 audit.log），兩份都計入內建暴力破解規則 88203，而該規則不分來源位址：一位使用者在 44 秒內打錯四次密碼，就觸發了 level 10。內建的檔案規則比對的是稽核 App 已不再使用的寫法，永遠不會命中。同樣 10 天的資料以本套件 1.0 版重跑，只有 26 筆告警。",
+    "登入失敗：單次失敗為 level 5，同一位址 10 分鐘內 8 次為 level 10，跨位址合計 20 次為 level 10。每次失敗在各版本都只計算一次：到 Nextcloud 34 為止從 nextcloud.log 計算（稽核記錄那一份不計）；從 35 起，Nextcloud 只以 debug 等級把用戶端（WebDAV、App 密碼、API）的登入失敗寫進 nextcloud.log，因此改計稽核記錄的那一份，登入頁的失敗仍從 nextcloud.log 計算（1.2，依 28 到 35 版原始碼確認）。也就是說，在 35 上猜 WebDAV 密碼只有啟用稽核 App 才看得到。第二因素驗證錯誤（Nextcloud 只在密碼正確之後才會要求）為 level 7，同一位址 4 次為 level 10。",
+    "成功登入本身不是告警（1.1）。Nextcloud 對每個帶密碼或 App 密碼的請求都會寫「Login successful」：一台伺服器 40 天內 166,128 行，其中只有 9 行來自登入頁。這些都記錄在告警等級之下，例外是：管理者帳號（Nextcloud 安裝程式為內建管理者使用的名稱：admin、administrator、root、ncadmin，以及 NextcloudPi 的 ncp）從私有位址登入為 level 3；從公開位址登入為 level 5，管理者帳號為 level 8；某帳號第一次從某位址通過驗證為 level 3（fts，首次出現）；剛失敗 8 次的位址接著成功為 level 12。同步程式、App 與 API 呼叫每個請求都會驗證，對它們而言位址與帳號的等級只在這組配對第一次出現時套用，因此監控檢查每個位址永遠只告警一次。以同樣 40 天的資料重跑：64 筆告警（內建規則為 166,128 筆），其中 27 筆是從新的公開位址發出的第一個請求（使用行動網路的手機、在家中的筆電）；第一個月之後約每天一筆。這些都不需要任何清單。",
+    "私有位址為 10.0.0.0/8、172.16.0.0/12、192.168.0.0/16、127.0.0.0/8、100.64.0.0/10、fc00::/7 與 fe80::/10；寫成 ::ffff:a.b.c.d 的 IPv4 位址會去掉前綴再判斷。IPv6 回送位址 ::1 視為公開位址，因為 Wazuh 4.14.7 會讓 ::1 比對到所有 IPv4 位址。記錄行中沒有群組資訊，因此內建帳號以外的 admin 群組成員視為一般帳號；把他們加入群組的那一筆本身為 level 12。首次出現的配對由 Wazuh 存在各 manager 節點的 queue/fts；剛安裝時每組配對都是新的，因此第一天每組帳號與位址會各有一筆 level 3 或 5 告警。",
+    "Nextcloud 自己的暴力破解防護：拒絕某個位址為 level 10，對某個位址降速為 level 4，分別最多每 2 分鐘、10 分鐘告警一次，因為被拒絕期間每個請求都會再寫一次同樣的訊息。Nextcloud 以 info 等級寫這些訊息，因此只有 loglevel 設為 1，或加上部署說明裡的 log.condition 設定才會出現。",
+    "稽核記錄：使用者被加入 admin 群組為 level 12；停用稽核 App 為 level 10。App（1.2）：停用安全 App（任何 twofactor_ 驗證提供者、suspicious_login、files_antivirus、password_policy、encryption、files_accesscontrol）為 level 10；啟用 workflow_script 或 impersonate 為 level 10（前者會在伺服器上執行指令，後者讓管理者以任何帳號的身分操作）；啟用 LDAP、SAML、OpenID Connect 或外部儲存空間 App 為 level 7；啟用其他 App 為 level 6。occ：關閉或取消強制第二因素驗證、變更暴力破解防護或稽核記錄設定、把位址加入暴力破解防護的允許清單、關閉加密或解密所有檔案、改用新的 App 商店或 App 目錄為 level 10；記錄與受信任 proxy 設定、受信任的根憑證、外部儲存空間掛載、分享原則、除錯模式、替帳號建立 App 密碼，以及 LDAP、SAML、OpenID Connect 設定為 level 7；例行與唯讀指令（包括由 systemd 重新啟動的背景工作與工作處理 worker）記錄在告警等級之下。刪除使用者為 level 6；建立使用者、變更密碼或電子郵件地址為 level 5。公開連結以及分享給電子郵件或聯邦收件者為 level 5，任何人都能修改或刪除檔案的連結為 level 6，同一帳號 10 分鐘內建立 10 個連結為 level 10，移除連結的到期日為 level 4。同一帳號 5 分鐘內刪除 100 個檔案為 level 10；5 分鐘內有 20 個檔案被改成原檔名再加一個副檔名（a.docx 改為 a.docx.locked，正是同步電腦上的勒索軟體會產生的樣子）為 level 12。",
+    "偵測不到的項目（因為 Nextcloud 不記錄）：使用者在網頁介面自行關閉第二因素驗證、管理者透過 provisioning API 關閉、指派子管理者、在網頁介面建立 App 密碼、在管理頁面變更分享設定，以及在那裡修改檔案存取控制規則。只有對應的 occ 指令看得到。新的公開連結有沒有設密碼也無從得知：密碼是在另一個請求裡設定的。檔案的讀取、寫入、上傳、複製、預覽，以及 Nextcloud 30 起的檔案快取記錄留在主機上：agent 群組會把它們丟掉，因為沒有規則用到，而它們占了稽核記錄的大部分（一台伺服器上光是快取記錄每天約 400 行）。從 1.2 起會送出更名記錄（那台伺服器 9 天 18 筆）。",
+    "以下記錄在告警等級之下（一台伺服器實測）：無法更新的行事曆訂閱（10 天內 1,524 筆警告中的 1,512 筆）、預覽產生錯誤（30 天 4,138 筆錯誤）、維護模式期間被拒絕的請求、同一伺服器使用者之間的分享，以及每隔幾分鐘就被 systemd 重新啟動的 occ 工作處理 worker（每天 280 行，1.1 版為 level 3）。其他警告為 level 3，錯誤為 level 5，致命錯誤為 level 8。",
+    "前提：Nextcloud 的 log_type 為 file（預設值）；已啟用 admin_audit App，並加上 log.condition 讓它在預設記錄等級下也會寫入；若在反向 proxy 之後，必須設定 trusted_proxies 與 forwarded_for_headers，否則 remoteAddr（連帶 srcip）對所有使用者都會是 proxy 的位址。",
+    "agent 群組也會把資料目錄排除在檔案完整性監控之外：一台伺服器上使用者檔案占了資料庫上限 200,000 筆中的 98,358 筆，重要的路徑因此沒有空間。Nextcloud 的程式碼（apps、lib、core、3rdparty）不在資料目錄內，仍會被監控。",
+    "1.2 另外新增：以 impersonate App 切換成另一個帳號為 level 8，每次提出切換要求為 level 4；suspicious_login App 判定可疑的登入為 level 8（它以 info 等級寫入，見部署說明）；防毒 App（files_antivirus）發現仍留存的受感染檔案為 level 10，移除受感染檔案為 level 8；已終止支援的 Nextcloud 版本（撰寫時為 32 與更舊的版本）每天一次 level 5。",
+    "檔案完整性（1.2）：agent 群組即時監控 Nextcloud 的 config 目錄與網站根目錄的進入點（index.php、remote.php、public.php、status.php、cron.php、console.php、occ、ocs/v1.php、ocs/v2.php、.htaccess、.user.ini），不傳送內容差異，因為 config.php 內含資料庫密碼。新增 *.config.php 為 level 10：Nextcloud 每個請求都會載入它們，因此可以不經 occ、不留稽核記錄就關掉暴力破解防護或改掉記錄位置。config.php 變更與進入點變更為 level 7（occ config:system:set、維護模式與升級也會改動它們）。這些項目只有幾個檔案和一個小目錄，不會擠占檔案完整性資料庫，也不會改變站台原本對 /var/www 的監控。群組不監控 apps/ 底下新增的 PHP 檔：每次升級都會新增上千個，而一台伺服器上光是 App 目錄就有 85,659 筆。",
+    "跨套件登入群組（修補版）：jt_auth_success：131720, 131721, 131777, 131770, 131771, 131772, 131778, 131773, 131774, 131775, 131776；jt_auth_failure：131710；jt_auth_lockout：131722。讓 jt-account-guard 跨服務關聯登入、jt-ioc 查詢每一筆加標記的成功登入來源位址；等級與比對條件不變，沒有安裝這些套件時群組沒有作用。登入失敗那行沒有解出帳號欄位，所以 131710 只用於以來源位址關聯的規則。未加標記：suspicious_login 應用程式的第二份（131739）、模擬身分（131729）、第二因素錯誤（131713）。",
+    "1.2.2：支援 Wazuh 4.14 之前的 manager。4.14 會把 JSON 的 \"user\" 轉成 dstuser；4.12、4.13 則保留為動態欄位，所以所有使用 <user> 或 <same_user/> 的規則在舊版都不成立：刪除檔案、改名、勒索軟體式改名與大量公開連結（12 個案例）。解碼器現在也從記錄行把帳號讀進靜態的 user 欄位，做法與 srcip 相同。已在 4.12.0 與 4.14.9 驗證（各 174 個案例全過）。",
+    "稽核記錄每次登入、分享、刪除與檔案存取都會多一行；Nextcloud 會在達到 log_rotate_size（預設 100 MB）時輪替。部署說明中的 log.condition 項目讓 Nextcloud 在預設 loglevel 2 下也寫入 admin_audit 與暴力破解防護的訊息（131722-131725），而不必提高其他所有訊息的等級。",
+    "存取記錄若以來源位址開頭、接著是虛擬主機名稱（Apache \"%a %v ...\"）：Wazuh 內建的網頁解碼器會把主機名稱當成 srcip，內建規則 31151（level 10，同一位址大量 400 錯誤）會把全部流量合在一起計算，也無法封鎖任何位址。規則 131779 只認得名稱以 nextcloud 開頭的目錄底下的進入點；安裝在其他位置時，由內建規則 550（level 7）回報變更。",
+    "通知中的帳號名稱（1.2.3）：接 LDAP 目錄時，Nextcloud 給目錄使用者的 ID 是目錄項目的 UUID，告警寫的就是它。jt-nextcloud-names.py 每天在每個 manager 節點執行一次，把 ID 與名稱不同的帳號名稱寫入 etc/jt-packs/jt-alert-digest-names.d/nextcloud，jt-alert-digest 1.14 以後會讀取它，在每個管道顯示「王小明 (3094106c…)」。它使用 OCS provisioning API（使用者清單分頁讀取，再讀每個使用者的顯示名稱與電子郵件），以管理員的應用程式密碼登入；密碼讀自只有 root 可讀的檔案，不會出現在任何記錄中。檔案完整寫好後才改名就位；執行失敗時保留原本的檔案，回應的名稱數不到原檔一半時也保留（--force 才會寫入）。失敗觸發 131783（level 5），三天沒有成功執行則是 131784（level 7）。沒有 etc/jt-packs/jt-nextcloud.conf 時腳本什麼都不做。顯示名稱由使用者自己設定，所以摘要會像其他告警文字一樣清理並跳脫它。",
+    "1.2.5：告警會進 Wazuh Dashboard。Nextcloud 稽核記錄的每一行（以及 nextcloud.log 的部分行）都帶 \"data\":{\"app\":...} 物件；Wazuh 解成 data.data，而 Wazuh 告警索引範本把 data.data 定義為 keyword，所以 indexer 拒收每一筆這類告警（「failed to parse field [data.data]」）：一台 manager 一週 22,779 筆，全部來自 Nextcloud 主機。這些告警在 alerts.json 與通知信裡，Dashboard 卻沒有。改索引（處理流程、範本）也能解決，但會動到 Wazuh 自己的索引，所以本套件不這樣做，而是在 Nextcloud 主機以 rsyslog 轉存：把兩個記錄複製到 /var/log/jt-nextcloud/，只把這個鍵改名為 \"context\"（純文字取代 ,\"data\":{，不可能比對到 JSON 字串內的文字），群組改讀副本。沒有任何規則用到 data.data。rsyslog 停止時，cron 檢查會在副本寫入一行：規則 131786，level 10，會寄信。1.2.5 之前被拒收的告警不會補送。"
+  ],
+  "author": "Jason Tools",
+  "license": "AGPL-3.0-or-later",
+  "requires": {
+    "wazuh": ">=4.8"
   },
-  {
-   "type": "rule",
-   "name": "zz-131700-jt_nextcloud_rules.xml",
-   "dest": "etc/rules/zz-131700-jt_nextcloud_rules.xml",
-   "sha256": "d25d6d35993295b121339fa199db165b88c53d0de62627c43aec78d26d85b3de"
-  }
- ],
- "scripts": [
-  {
-   "name": "jt-nextcloud-names.py",
-   "dest": "etc/jt-packs/bin/jt-nextcloud-names.py",
-   "sha256": "7d1bdb5342c5cc2e89eb574d9ee7435e2be2fcdba08347aafd0270709de0118b",
-   "cron": "17 4 * * *",
-   "args": "--wazuh-path {wazuh_path}",
-   "description": "Writes the names of Nextcloud's accounts (an LDAP user's id is the entry's UUID) for jt-alert-digest's account names map, from the OCS provisioning API; does nothing until etc/jt-packs/jt-nextcloud.conf exists"
-  }
- ],
- "agent_group": {
-  "name": "nextcloud",
-  "config": "agent.conf",
-  "files": [],
-  "description": "Nextcloud log and admin_audit log, sent with the prefix the pack decoder reads; the data directory left out of file integrity monitoring; the config directory and the web root entry points watched in real time without content diffs"
- },
- "setup": [
-  {
-   "platform": "manager",
-   "required": true,
-   "title": "Install the pack and reload the ruleset",
-   "title_zh": "安裝套件並重新載入規則集",
-   "body": "1. Install from this page.\n2. On the Rules tab, click Reload Ruleset. The cluster copies rule files but does not reload the workers.",
-   "body_zh": "1. 在本頁安裝。\n2. 到「規則」分頁按「重新載入規則集」。叢集只同步規則檔，不會重載 worker。",
-   "verify": "The reload reports success with no warning for any node.",
-   "verify_zh": "重新載入回報成功，任何節點都沒有警告。"
+  "tested_with": [
+    "4.12.0",
+    "4.14.7",
+    "4.14.9"
+  ],
+  "files": [
+    {
+      "type": "decoder",
+      "name": "jt-nextcloud_decoders.xml",
+      "dest": "etc/decoders/jt-nextcloud_decoders.xml",
+      "sha256": "46df66df1d748b4f93713f4125c5017d9ca042324ed9f2f845cbf5dd1430b40b"
+    },
+    {
+      "type": "rule",
+      "name": "zz-131700-jt_nextcloud_rules.xml",
+      "dest": "etc/rules/zz-131700-jt_nextcloud_rules.xml",
+      "sha256": "6fafdc023b344c6c5fe04472c3441879fe86c373e31c01adba03a13360c17545"
+    }
+  ],
+  "scripts": [
+    {
+      "name": "jt-nextcloud-names.py",
+      "dest": "etc/jt-packs/bin/jt-nextcloud-names.py",
+      "sha256": "7d1bdb5342c5cc2e89eb574d9ee7435e2be2fcdba08347aafd0270709de0118b",
+      "cron": "17 4 * * *",
+      "args": "--wazuh-path {wazuh_path}",
+      "description": "Writes the names of Nextcloud's accounts (an LDAP user's id is the entry's UUID) for jt-alert-digest's account names map, from the OCS provisioning API; does nothing until etc/jt-packs/jt-nextcloud.conf exists"
+    }
+  ],
+  "agent_group": {
+    "name": "nextcloud",
+    "config": "agent.conf",
+    "files": [
+      "jt-nextcloud-relay.conf",
+      "jt-nextcloud-relay.logrotate",
+      "jt-nextcloud-relay-check.sh"
+    ],
+    "description": "Nextcloud log and admin_audit log, read from the copies the pack's rsyslog relay writes to /var/log/jt-nextcloud/ (the JSON key data renamed to context, which the Wazuh alerts index would reject) and sent with the prefix the pack decoder reads; the relay files themselves; the data directory left out of file integrity monitoring; the config directory and the web root entry points watched in real time without content diffs"
   },
-  {
-   "platform": "linux",
-   "required": true,
-   "title": "Check where Nextcloud writes its logs",
-   "title_zh": "確認 Nextcloud 記錄的位置",
-   "body": "Run the commands below on the Nextcloud host. occ runs as the web server user (www-data on Debian and Ubuntu).\n1. log_type and log_type_audit must print file or nothing. With syslog, systemd or errorlog this pack cannot read the logs.\n2. The group reads /var/www/nextcloud/data/nextcloud.log and audit.log. If datadirectory, logfile or logfile_audit point elsewhere, change the two locations in the group's agent.conf.\n3. Docker or snap: use the path as the host sees it (the volume, or under /var/snap/nextcloud).",
-   "body_zh": "在 Nextcloud 主機上執行下列指令。occ 要以網頁伺服器的使用者執行（Debian 與 Ubuntu 為 www-data）。\n1. log_type 與 log_type_audit 必須印出 file 或沒有值。若是 syslog、systemd 或 errorlog，本套件無法讀取。\n2. 群組讀取 /var/www/nextcloud/data/nextcloud.log 與 audit.log。若 datadirectory、logfile 或 logfile_audit 指向別處，請修改群組 agent.conf 中的兩個 location。\n3. Docker 或 snap：請填主機上看到的路徑（volume，或 /var/snap/nextcloud 底下）。",
-   "file": "agent/agent.conf",
-   "code": "sudo -u www-data php /var/www/nextcloud/occ config:system:get datadirectory\nsudo -u www-data php /var/www/nextcloud/occ config:system:get log_type\nsudo -u www-data php /var/www/nextcloud/occ config:system:get logfile\nsudo -u www-data php /var/www/nextcloud/occ config:system:get log_type_audit\nsudo -u www-data php /var/www/nextcloud/occ config:system:get logfile_audit\nsudo -u www-data php /var/www/nextcloud/occ config:system:get loglevel\nsudo -u www-data php /var/www/nextcloud/occ config:system:get log.condition",
-   "verify": "log_type and log_type_audit print file or an empty line, and the data directory is the one the group's agent.conf reads.",
-   "verify_zh": "log_type 與 log_type_audit 印出 file 或空白，資料目錄與群組 agent.conf 讀取的位置一致。"
-  },
-  {
-   "platform": "linux",
-   "required": true,
-   "title": "Enable the audit log app",
-   "title_zh": "啟用稽核記錄 App",
-   "body": "1. Check the current log.condition (last command of the previous step). The commands below set entries 0 and 1 and replace whatever is there.\n2. Run the commands below. They enable admin_audit and let Nextcloud write the audit lines and the brute-force protection messages at the default log level.\nIf loglevel is already 1, only the app:enable line is needed. No restart is needed.",
-   "body_zh": "1. 先檢查現有的 log.condition（上一步的最後一個指令）。下列指令會設定第 0、1 項，原本的內容會被取代。\n2. 執行下列指令。它們會啟用 admin_audit，並讓 Nextcloud 在預設記錄等級下也寫入稽核記錄與暴力破解防護的訊息。\n若 loglevel 已經是 1，只需要 app:enable 那一行。不需要重新啟動。",
-   "code": "sudo -u www-data php /var/www/nextcloud/occ app:enable admin_audit\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition apps 0 --value=admin_audit\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 0 message --value=\"Bruteforce attempt from\"\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 0 loglevel --value=1 --type=integer\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 1 message --value=\"IP address\"\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 1 loglevel --value=1 --type=integer",
-   "verify": "Log out and in again: the last line of audit.log is \"Login successful\".",
-   "verify_zh": "登出再登入：audit.log 最後一行是「Login successful」。"
-  },
-  {
-   "platform": "linux",
-   "required": true,
-   "title": "Add the Nextcloud host to the nextcloud group",
-   "title_zh": "把 Nextcloud 主機加入 nextcloud 群組",
-   "body": "1. Remove any localfile block for nextcloud.log or audit.log from the agent's own ossec.conf. The agent keeps only one definition per file, and lines without the group's \"jt-nextcloud: \" prefix never reach this pack's rules.\n2. If the paths differ from the defaults, edit them in the group's agent.conf and keep the out_format line.\n3. Add the agent to the group and restart it (commands below; <agent_id> is the agent's ID in Wazuh).\nRestarting the agent does not affect Nextcloud.",
-   "body_zh": "1. 把 agent 自己 ossec.conf 中讀取 nextcloud.log 或 audit.log 的 localfile 區塊移除。agent 每個檔案只保留一個定義，而沒有群組前綴「jt-nextcloud: 」的行不會進到本套件的規則。\n2. 若路徑與預設不同，請在群組的 agent.conf 中修改，並保留 out_format 那一行。\n3. 把 agent 加入群組並重新啟動（指令如下；<agent_id> 是該 agent 在 Wazuh 的 ID）。\n重新啟動 agent 不影響 Nextcloud。",
-   "file": "agent/agent.conf",
-   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g nextcloud\n/var/ossec/bin/agent_control -R -u <agent_id>",
-   "verify": "Log in through the web page from a private address for the first time: rule 131773 (level 3) appears, with decoder jt-nextcloud and your address as srcip; from a public address 131772 (level 5). Rule 88211 instead means the line arrived without the prefix: the old localfile block is still in use.",
-   "verify_zh": "第一次從私有位址經網頁登入：應出現規則 131773（level 3），解碼器為 jt-nextcloud，srcip 是你的位址；從公開位址則是 131772（level 5）。若出現的是規則 88211，表示該行沒有前綴：舊的 localfile 區塊仍在作用。"
-  },
-  {
-   "platform": "linux",
-   "required": false,
-   "title": "Behind a reverse proxy: log the client address",
-   "title_zh": "在反向 proxy 之後：記錄真實來源位址",
-   "body": "Only when a reverse proxy or load balancer sits in front of Nextcloud. Otherwise every user is logged with the proxy's address, and an active response would block the proxy.\n1. The first command lists the trusted proxies already set; use the next free index if there are any.\n2. Add the proxy's address (<proxy address>) to trusted_proxies and its header to forwarded_for_headers (commands below).\n3. Block at the proxy, not on the Nextcloud host (see active response).",
-   "body_zh": "只在 Nextcloud 前面有反向 proxy 或負載平衡器時需要。否則所有使用者都以 proxy 的位址記錄，主動回應還會封鎖 proxy 本身。\n1. 第一個指令列出已設定的信任 proxy；若已有項目，請用下一個未用的索引。\n2. 把 proxy 的位址（<proxy address>）加入 trusted_proxies，把它的標頭加入 forwarded_for_headers（指令如下）。\n3. 封鎖要在 proxy 上做，不是在 Nextcloud 主機上（見主動回應）。",
-   "code": "sudo -u www-data php /var/www/nextcloud/occ config:system:get trusted_proxies\nsudo -u www-data php /var/www/nextcloud/occ config:system:set trusted_proxies 0 --value=<proxy address>\nsudo -u www-data php /var/www/nextcloud/occ config:system:set forwarded_for_headers 0 --value=HTTP_X_FORWARDED_FOR",
-   "verify": "Log in from a known address: remoteAddr in nextcloud.log and srcip in the alert are that address, not the proxy's.",
-   "verify_zh": "從已知位址登入：nextcloud.log 的 remoteAddr 與告警的 srcip 都是該位址，而不是 proxy 的位址。"
-  },
-  {
-   "platform": "linux",
-   "required": false,
-   "title": "Put the virtual host first in the access log",
-   "title_zh": "存取記錄改為虛擬主機在前",
-   "body": "Only if each access log line starts with the client address followed by the virtual host name (Apache \"%a %v ...\" or \"%h %v ...\"). Wazuh then takes the host name as srcip and treats all clients as one source.\n1. Put %v first, or use the standard combined or vhost_combined format (example below).\n2. Update anything else that parses this log, such as a log shipper.\n3. Run apachectl configtest, then reload Apache.",
-   "body_zh": "只在存取記錄每行開頭是來源位址、接著是虛擬主機名稱時需要（Apache \"%a %v ...\" 或 \"%h %v ...\"）。此時 Wazuh 會把主機名稱當成 srcip，所有來源看起來都是同一個。\n1. 把 %v 放到前面，或改用標準的 combined 或 vhost_combined 格式（範例如下）。\n2. 其他解析這份記錄的程式（例如記錄轉送工具）也要跟著改。\n3. 執行 apachectl configtest，再 reload Apache。",
-   "code": "# before: LogFormat \"%a %v %l %u %t \\\"%r\\\" %>s %b ...\" name\n# after:  LogFormat \"%v %a %l %u %t \\\"%r\\\" %>s %b ...\" name\napachectl configtest && systemctl reload apache2",
-   "verify": "After the reload, a web alert from this host has a client address as srcip, not the host name.",
-   "verify_zh": "reload 後，這台主機的網頁告警 srcip 是來源位址，而不是主機名稱。"
-  },
-  {
-   "platform": "linux",
-   "required": false,
-   "since": "1.2",
-   "title": "Check the file integrity paths",
-   "title_zh": "確認檔案完整性監控的路徑",
-   "body": "The group watches /var/www/nextcloud/config and the web root entry points in real time, with report_changes=\"no\" so that config.php (database password, instance secret) never leaves the host.\nIf Nextcloud is installed elsewhere, change these paths in the group's agent.conf together with the log locations, keep report_changes=\"no\", and restart the agent. Nothing changes for Nextcloud.",
-   "body_zh": "群組即時監控 /var/www/nextcloud/config 與網站根目錄的進入點檔案，並設 report_changes=\"no\"，讓 config.php 的內容（資料庫密碼、實例密鑰）不會離開主機。\n若 Nextcloud 安裝在別處，請在群組的 agent.conf 中與記錄位置一起修改這些路徑，保留 report_changes=\"no\"，再重新啟動 agent。Nextcloud 不受影響。",
-   "file": "agent/agent.conf",
-   "verify": "After the agent restart, its ossec.log lists \"Directory set for real time monitoring\" for the config directory and each entry point. Setting any harmless value with occ config:system:set (and setting it back) gives rule 131769 for config.php.",
-   "verify_zh": "agent 重新啟動後，其 ossec.log 會對 config 目錄與每個進入點列出「Directory set for real time monitoring」。以 occ config:system:set 設定任一無害的值（再改回來），config.php 應出現規則 131769。"
-  },
-  {
-   "platform": "linux",
-   "required": false,
-   "since": "1.2",
-   "title": "Optional: log suspicious_login detections",
-   "title_zh": "選用：記錄 suspicious_login 的偵測",
-   "body": "Only if the suspicious_login app is installed. It writes the logins it flags at info level, which the default loglevel 2 drops.\n1. Check the existing log.condition (first command).\n2. Add one more matches entry at the next free index: 2 if only the entries 0 and 1 of the audit step exist (commands below).",
-   "body_zh": "只在有安裝 suspicious_login App 時需要。它以 info 等級寫入判定可疑的登入，預設的 loglevel 2 會把它擋掉。\n1. 檢查現有的 log.condition（第一個指令）。\n2. 在下一個未用的索引再加一個 matches 項目：若只有稽核步驟設定的第 0、1 項，就用 2（指令如下）。",
-   "code": "sudo -u www-data php /var/www/nextcloud/occ config:system:get log.condition\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 2 message --value=\"Detected a login from a suspicious login\"\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 2 loglevel --value=1 --type=integer",
-   "verify": "The next login the app flags raises rule 131739 (level 8).",
-   "verify_zh": "下一次該 App 判定可疑的登入會觸發規則 131739（level 8）。"
-  },
-  {
-   "platform": "manager",
-   "required": false,
-   "since": "1.2.3",
-   "title": "Optional: names instead of LDAP ids in notifications",
-   "title_zh": "選用：通知中以姓名取代 LDAP 的 ID",
-   "body": "Only with jt-alert-digest 1.14 or later, for a Nextcloud on an LDAP directory: its users' ids are UUIDs. The schedule is written on install and does nothing until the settings exist.\n1. In Nextcloud, as an administrator: Personal settings, Security, Create new app password.\n2. Put the app password in a root-only file and fill jt-nextcloud.conf (commands below).\n3. Run --check, then --once.\n4. Cluster: do the same on every node, which mails with its own names file: copy the script, /etc/cron.d/jt-jt-nextcloud, the settings and the password file to each worker.",
-   "body_zh": "只適用於 jt-alert-digest 1.14 以後、接 LDAP 目錄的 Nextcloud：其使用者的 ID 是 UUID。安裝時就會寫入排程，但在設定檔存在之前什麼都不做。\n1. 在 Nextcloud 以管理員身分：個人設定、安全性、建立新的應用程式密碼。\n2. 把應用程式密碼放進只有 root 可讀的檔案，並填寫 jt-nextcloud.conf（指令如下）。\n3. 執行 --check，再執行 --once。\n4. 叢集：每個節點都要做，因為每個節點以自己的名稱檔寄送：把腳本、/etc/cron.d/jt-jt-nextcloud、設定檔與密碼檔複製到每台 worker。",
-   "code": "umask 077\nread -rs -p 'App password: ' p; echo; printf '%s\\n' \"$p\" > /var/ossec/etc/jt-packs/jt-nextcloud-app-password; unset p\nprintf '%s\\n' 'url = https://cloud.example.com' 'user = <admin login>' 'app_password_file = /var/ossec/etc/jt-packs/jt-nextcloud-app-password' > /var/ossec/etc/jt-packs/jt-nextcloud.conf\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-nextcloud-names.py --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-nextcloud-names.py --once",
-   "verify": "--check ends with \"result: Nextcloud accepted the login and lists users\"; after --once, jt-alert-digest.py --check shows \"account names: N entries from .../jt-alert-digest-names.d/nextcloud\".",
-   "verify_zh": "--check 最後一行是「result: Nextcloud accepted the login and lists users」；執行 --once 之後，jt-alert-digest.py --check 顯示「account names: N entries from .../jt-alert-digest-names.d/nextcloud」。"
-  }
- ],
- "active_response": [
-  {
-   "id": "block-login-bruteforce",
-   "command": "firewall-drop",
-   "rules_id": [
-    "131711",
-    "131714",
-    "131722"
-   ],
-   "location": "local",
-   "timeout": 600,
-   "title": "Block an address that keeps failing to log in (Nextcloud reached directly)",
-   "title_zh": "封鎖一再登入失敗的位址（使用者直接連到 Nextcloud 時）",
-   "body": "Drops traffic from srcip on the Nextcloud host for 10 minutes, with iptables or nftables, after 8 failed logins or 4 wrong second factors from one address in 10 minutes, or when Nextcloud's own brute-force protection refuses the address. srcip is Nextcloud's remoteAddr. Use this only when clients connect to the Nextcloud host itself: behind a reverse proxy the packets come from the proxy, so blocking the client address there stops nothing, and without trusted_proxies remoteAddr is the proxy, which would be blocked for every user. Risks: a user with a stale password in a sync client, or an administrator who mistypes, is locked out for 10 minutes, and so is everyone behind the same NAT address (an office). Put management and office networks in the manager's white_list first.",
-   "body_zh": "同一位址 10 分鐘內登入失敗 8 次、第二因素錯誤 4 次，或 Nextcloud 自己的暴力破解防護拒絕該位址時，在 Nextcloud 主機上以 iptables 或 nftables 封鎖 srcip 10 分鐘。srcip 即 Nextcloud 的 remoteAddr。只在來源直接連到 Nextcloud 主機時使用：在反向 proxy 之後，封包來自 proxy，在 Nextcloud 主機上封鎖來源位址沒有作用；若未設定 trusted_proxies，remoteAddr 是 proxy 的位址，封鎖它等於擋掉所有使用者。風險：同步程式裡還存著舊密碼的使用者、打錯密碼的管理者會被擋 10 分鐘，同一個 NAT 位址後面的所有人（整間辦公室）也一樣。請先把管理網段與辦公室網段加入 manager 的 white_list。"
-  },
-  {
-   "id": "block-login-bruteforce-at-proxy",
-   "command": "firewall-drop",
-   "rules_id": [
-    "131711",
-    "131714",
-    "131722"
-   ],
-   "location": "defined-agent",
-   "timeout": 600,
-   "title": "Block an address that keeps failing to log in, on the reverse proxy",
-   "title_zh": "在反向 proxy 上封鎖一再登入失敗的位址",
-   "body": "The same trigger, but the address is dropped on the reverse proxy in front of Nextcloud, which needs a Wazuh agent: choose that agent. This is the only place a client address can be blocked when Nextcloud is behind a proxy, and it requires trusted_proxies and forwarded_for_headers in Nextcloud, or srcip is the proxy itself. If yet another layer sits in front (a CDN), the proxy sees the CDN's addresses and the block has to happen there. Risks as for the direct case, and the block covers every site the proxy serves, not only Nextcloud.",
-   "body_zh": "觸發條件相同，但封鎖在 Nextcloud 前面的反向 proxy 上執行，該 proxy 需要有 Wazuh agent：請選擇那台 agent。Nextcloud 在 proxy 之後時，只有這裡能封鎖來源位址；而且 Nextcloud 必須設定 trusted_proxies 與 forwarded_for_headers，否則 srcip 就是 proxy 本身。若前面還有一層（CDN），proxy 看到的是 CDN 的位址，封鎖必須在那一層做。風險與直接連線的情況相同，而且封鎖會擋掉這台 proxy 服務的所有網站，不只是 Nextcloud。"
-  }
- ]
+  "setup": [
+    {
+      "platform": "manager",
+      "required": true,
+      "title": "Install the pack and reload the ruleset",
+      "title_zh": "安裝套件並重新載入規則集",
+      "body": "1. Install from this page.\n2. On the Rules tab, click Reload Ruleset. The cluster copies rule files but does not reload the workers.",
+      "body_zh": "1. 在本頁安裝。\n2. 到「規則」分頁按「重新載入規則集」。叢集只同步規則檔，不會重載 worker。",
+      "verify": "The reload reports success with no warning for any node.",
+      "verify_zh": "重新載入回報成功，任何節點都沒有警告。"
+    },
+    {
+      "platform": "linux",
+      "required": true,
+      "title": "Check where Nextcloud writes its logs",
+      "title_zh": "確認 Nextcloud 記錄的位置",
+      "body": "Run the commands below on the Nextcloud host. occ runs as the web server user (www-data on Debian and Ubuntu).\n1. log_type and log_type_audit must print file or nothing. With syslog, systemd or errorlog this pack cannot read the logs.\n2. The relay of the next steps reads /var/www/nextcloud/data/nextcloud.log and audit.log. If datadirectory, logfile or logfile_audit point elsewhere, change the two file= paths in jt-nextcloud-relay.conf. The group reads the copies in /var/log/jt-nextcloud/ and needs no change.\n3. Docker or snap: use the path as the host sees it (the volume, or under /var/snap/nextcloud).",
+      "body_zh": "在 Nextcloud 主機上執行下列指令。occ 要以網頁伺服器的使用者執行（Debian 與 Ubuntu 為 www-data）。\n1. log_type 與 log_type_audit 必須印出 file 或沒有值。若是 syslog、systemd 或 errorlog，本套件無法讀取。\n2. 後面步驟的轉存讀取 /var/www/nextcloud/data/nextcloud.log 與 audit.log。若 datadirectory、logfile 或 logfile_audit 指向別處，請修改 jt-nextcloud-relay.conf 中的兩個 file= 路徑。群組讀的是 /var/log/jt-nextcloud/ 的副本，不必修改。\n3. Docker 或 snap：請填主機上看到的路徑（volume，或 /var/snap/nextcloud 底下）。",
+      "file": "agent/jt-nextcloud-relay.conf",
+      "code": "sudo -u www-data php /var/www/nextcloud/occ config:system:get datadirectory\nsudo -u www-data php /var/www/nextcloud/occ config:system:get log_type\nsudo -u www-data php /var/www/nextcloud/occ config:system:get logfile\nsudo -u www-data php /var/www/nextcloud/occ config:system:get log_type_audit\nsudo -u www-data php /var/www/nextcloud/occ config:system:get logfile_audit\nsudo -u www-data php /var/www/nextcloud/occ config:system:get loglevel\nsudo -u www-data php /var/www/nextcloud/occ config:system:get log.condition",
+      "verify": "log_type and log_type_audit print file or an empty line, and the data directory is the one the group's agent.conf reads.",
+      "verify_zh": "log_type 與 log_type_audit 印出 file 或空白，資料目錄與群組 agent.conf 讀取的位置一致。"
+    },
+    {
+      "platform": "linux",
+      "required": true,
+      "title": "Enable the audit log app",
+      "title_zh": "啟用稽核記錄 App",
+      "body": "1. Check the current log.condition (last command of the previous step). The commands below set entries 0 and 1 and replace whatever is there.\n2. Run the commands below. They enable admin_audit and let Nextcloud write the audit lines and the brute-force protection messages at the default log level.\nIf loglevel is already 1, only the app:enable line is needed. No restart is needed.",
+      "body_zh": "1. 先檢查現有的 log.condition（上一步的最後一個指令）。下列指令會設定第 0、1 項，原本的內容會被取代。\n2. 執行下列指令。它們會啟用 admin_audit，並讓 Nextcloud 在預設記錄等級下也寫入稽核記錄與暴力破解防護的訊息。\n若 loglevel 已經是 1，只需要 app:enable 那一行。不需要重新啟動。",
+      "code": "sudo -u www-data php /var/www/nextcloud/occ app:enable admin_audit\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition apps 0 --value=admin_audit\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 0 message --value=\"Bruteforce attempt from\"\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 0 loglevel --value=1 --type=integer\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 1 message --value=\"IP address\"\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 1 loglevel --value=1 --type=integer",
+      "verify": "Log out and in again: the last line of audit.log is \"Login successful\".",
+      "verify_zh": "登出再登入：audit.log 最後一行是「Login successful」。"
+    },
+    {
+      "platform": "linux",
+      "required": true,
+      "since": "1.2.5",
+      "title": "Copy the logs through rsyslog (before the group update)",
+      "title_zh": "以 rsyslog 轉存記錄（在群組更新之前）",
+      "file": "agent/jt-nextcloud-relay.conf",
+      "body": "Every audit line carries the object \"data\":{...}. Wazuh decodes it as data.data, which the Wazuh alerts index maps as text, so the indexer refuses every such alert: it stays in alerts.json and the mail but never reaches the dashboard. The pack changes nothing in Wazuh. Instead rsyslog copies the two logs to /var/log/jt-nextcloud/ with that one key renamed to \"context\", and from 1.2.5 the agent group reads the copies.\nDo this on every Nextcloud host BEFORE the 1.2.5 group configuration reaches it, or the host sends no Nextcloud log until it is done.\n1. rsyslog must be installed and running (Debian and Ubuntu have it by default; otherwise install it).\n2. The three files are in this pack's agent/ directory (on the manager: <jt-wazuh-mgr>/packs/jt-nextcloud/agent/); once the host is in the group with 1.2.5, the agent also has them in /var/ossec/etc/shared/. Copy them to the host and run the commands below as root, with D set to where they are.\n3. imfile must be loaded exactly once. If grep -r imfile /etc/rsyslog.conf /etc/rsyslog.d finds nothing, remove the # in front of the module line of 60-jt-nextcloud.conf.\n4. The check script runs from cron every 15 minutes: if Nextcloud keeps writing but the copy falls behind, it writes one line into the copy, which raises rule 131786 (level 10, mailed).\nThe copies take as much disk as the two logs for 7 days. Restarting rsyslog does not affect Nextcloud.",
+      "body_zh": "Nextcloud 稽核記錄的每一行都帶 \"data\":{...} 這個物件。Wazuh 把它解成 data.data，而 Wazuh 告警索引把 data.data 定義為文字，所以 indexer 拒收每一筆這類告警：告警留在 alerts.json 與通知信，Dashboard 卻永遠看不到。本套件不改 Wazuh 的任何東西，而是由 rsyslog 把兩個記錄複製到 /var/log/jt-nextcloud/，只把這一個鍵改名為 \"context\"；從 1.2.5 起群組讀的是副本。\n請在 1.2.5 的群組設定送到每台 Nextcloud 主機「之前」完成，否則該主機在完成前不會送出任何 Nextcloud 記錄。\n1. 主機要裝好並執行 rsyslog（Debian、Ubuntu 預設已安裝；其他系統請先安裝）。\n2. 三個檔案在本套件的 agent/ 目錄（manager 上是 <jt-wazuh-mgr>/packs/jt-nextcloud/agent/）；主機在 1.2.5 群組裡之後，agent 的 /var/ossec/etc/shared/ 也會有。複製到主機後，以 root 執行下列指令，D 設為檔案所在目錄。\n3. imfile 只能載入一次。若 grep -r imfile /etc/rsyslog.conf /etc/rsyslog.d 找不到任何結果，請把 60-jt-nextcloud.conf 中 module 那一行前面的 # 拿掉。\n4. 檢查腳本由 cron 每 15 分鐘執行：Nextcloud 持續在寫、副本卻落後時，會在副本寫入一行，觸發規則 131786（level 10，會寄信）。\n副本佔用的磁碟約等於兩個記錄 7 天的量。重新啟動 rsyslog 不影響 Nextcloud。",
+      "code": "D=/var/ossec/etc/shared   # or the directory you copied the pack's agent/ files to\ninstall -m 644 $D/jt-nextcloud-relay.conf /etc/rsyslog.d/60-jt-nextcloud.conf\ninstall -m 644 $D/jt-nextcloud-relay.logrotate /etc/logrotate.d/jt-nextcloud\ninstall -m 755 $D/jt-nextcloud-relay-check.sh /usr/local/sbin/jt-nextcloud-relay-check\necho '*/15 * * * * root /usr/local/sbin/jt-nextcloud-relay-check' > /etc/cron.d/jt-nextcloud-relay\nrsyslogd -N1 && systemctl restart rsyslog\nls -l /var/log/jt-nextcloud/",
+      "verify": "The copies grow with the originals: wc -l /var/www/nextcloud/data/audit.log /var/log/jt-nextcloud/audit.log gives the same count, and grep -c ',\"data\":{' /var/log/jt-nextcloud/audit.log gives 0. After the group update, Nextcloud alerts appear in the dashboard and the filebeat log of the manager has no new \"failed to parse field [data.data]\".",
+      "verify_zh": "副本與原檔同步增長：wc -l /var/www/nextcloud/data/audit.log /var/log/jt-nextcloud/audit.log 行數相同，grep -c ',\"data\":{' /var/log/jt-nextcloud/audit.log 為 0。群組更新後，Nextcloud 的告警會出現在 Dashboard，manager 的 filebeat 記錄不再出現新的「failed to parse field [data.data]」。"
+    },
+    {
+      "platform": "linux",
+      "required": true,
+      "title": "Add the Nextcloud host to the nextcloud group",
+      "title_zh": "把 Nextcloud 主機加入 nextcloud 群組",
+      "body": "1. Remove any localfile block for nextcloud.log or audit.log from the agent's own ossec.conf. The agent keeps only one definition per file, and lines without the group's \"jt-nextcloud: \" prefix never reach this pack's rules.\n2. The group reads the copies in /var/log/jt-nextcloud/ of the previous step. If you edit the group's agent.conf, keep the out_format line.\n3. Add the agent to the group and restart it (commands below; <agent_id> is the agent's ID in Wazuh).\nRestarting the agent does not affect Nextcloud.",
+      "body_zh": "1. 把 agent 自己 ossec.conf 中讀取 nextcloud.log 或 audit.log 的 localfile 區塊移除。agent 每個檔案只保留一個定義，而沒有群組前綴「jt-nextcloud: 」的行不會進到本套件的規則。\n2. 群組讀的是上一步在 /var/log/jt-nextcloud/ 的副本。若修改群組的 agent.conf，請保留 out_format 那一行。\n3. 把 agent 加入群組並重新啟動（指令如下；<agent_id> 是該 agent 在 Wazuh 的 ID）。\n重新啟動 agent 不影響 Nextcloud。",
+      "file": "agent/agent.conf",
+      "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g nextcloud\n/var/ossec/bin/agent_control -R -u <agent_id>",
+      "verify": "Log in through the web page from a private address for the first time: rule 131773 (level 3) appears, with decoder jt-nextcloud and your address as srcip; from a public address 131772 (level 5). Rule 88211 instead means the line arrived without the prefix: the old localfile block is still in use.",
+      "verify_zh": "第一次從私有位址經網頁登入：應出現規則 131773（level 3），解碼器為 jt-nextcloud，srcip 是你的位址；從公開位址則是 131772（level 5）。若出現的是規則 88211，表示該行沒有前綴：舊的 localfile 區塊仍在作用。"
+    },
+    {
+      "platform": "linux",
+      "required": false,
+      "title": "Behind a reverse proxy: log the client address",
+      "title_zh": "在反向 proxy 之後：記錄真實來源位址",
+      "body": "Only when a reverse proxy or load balancer sits in front of Nextcloud. Otherwise every user is logged with the proxy's address, and an active response would block the proxy.\n1. The first command lists the trusted proxies already set; use the next free index if there are any.\n2. Add the proxy's address (<proxy address>) to trusted_proxies and its header to forwarded_for_headers (commands below).\n3. Block at the proxy, not on the Nextcloud host (see active response).",
+      "body_zh": "只在 Nextcloud 前面有反向 proxy 或負載平衡器時需要。否則所有使用者都以 proxy 的位址記錄，主動回應還會封鎖 proxy 本身。\n1. 第一個指令列出已設定的信任 proxy；若已有項目，請用下一個未用的索引。\n2. 把 proxy 的位址（<proxy address>）加入 trusted_proxies，把它的標頭加入 forwarded_for_headers（指令如下）。\n3. 封鎖要在 proxy 上做，不是在 Nextcloud 主機上（見主動回應）。",
+      "code": "sudo -u www-data php /var/www/nextcloud/occ config:system:get trusted_proxies\nsudo -u www-data php /var/www/nextcloud/occ config:system:set trusted_proxies 0 --value=<proxy address>\nsudo -u www-data php /var/www/nextcloud/occ config:system:set forwarded_for_headers 0 --value=HTTP_X_FORWARDED_FOR",
+      "verify": "Log in from a known address: remoteAddr in nextcloud.log and srcip in the alert are that address, not the proxy's.",
+      "verify_zh": "從已知位址登入：nextcloud.log 的 remoteAddr 與告警的 srcip 都是該位址，而不是 proxy 的位址。"
+    },
+    {
+      "platform": "linux",
+      "required": false,
+      "title": "Put the virtual host first in the access log",
+      "title_zh": "存取記錄改為虛擬主機在前",
+      "body": "Only if each access log line starts with the client address followed by the virtual host name (Apache \"%a %v ...\" or \"%h %v ...\"). Wazuh then takes the host name as srcip and treats all clients as one source.\n1. Put %v first, or use the standard combined or vhost_combined format (example below).\n2. Update anything else that parses this log, such as a log shipper.\n3. Run apachectl configtest, then reload Apache.",
+      "body_zh": "只在存取記錄每行開頭是來源位址、接著是虛擬主機名稱時需要（Apache \"%a %v ...\" 或 \"%h %v ...\"）。此時 Wazuh 會把主機名稱當成 srcip，所有來源看起來都是同一個。\n1. 把 %v 放到前面，或改用標準的 combined 或 vhost_combined 格式（範例如下）。\n2. 其他解析這份記錄的程式（例如記錄轉送工具）也要跟著改。\n3. 執行 apachectl configtest，再 reload Apache。",
+      "code": "# before: LogFormat \"%a %v %l %u %t \\\"%r\\\" %>s %b ...\" name\n# after:  LogFormat \"%v %a %l %u %t \\\"%r\\\" %>s %b ...\" name\napachectl configtest && systemctl reload apache2",
+      "verify": "After the reload, a web alert from this host has a client address as srcip, not the host name.",
+      "verify_zh": "reload 後，這台主機的網頁告警 srcip 是來源位址，而不是主機名稱。"
+    },
+    {
+      "platform": "linux",
+      "required": false,
+      "since": "1.2",
+      "title": "Check the file integrity paths",
+      "title_zh": "確認檔案完整性監控的路徑",
+      "body": "The group watches /var/www/nextcloud/config and the web root entry points in real time, with report_changes=\"no\" so that config.php (database password, instance secret) never leaves the host.\nIf Nextcloud is installed elsewhere, change these paths in the group's agent.conf together with the log locations, keep report_changes=\"no\", and restart the agent. Nothing changes for Nextcloud.",
+      "body_zh": "群組即時監控 /var/www/nextcloud/config 與網站根目錄的進入點檔案，並設 report_changes=\"no\"，讓 config.php 的內容（資料庫密碼、實例密鑰）不會離開主機。\n若 Nextcloud 安裝在別處，請在群組的 agent.conf 中與記錄位置一起修改這些路徑，保留 report_changes=\"no\"，再重新啟動 agent。Nextcloud 不受影響。",
+      "file": "agent/agent.conf",
+      "verify": "After the agent restart, its ossec.log lists \"Directory set for real time monitoring\" for the config directory and each entry point. Setting any harmless value with occ config:system:set (and setting it back) gives rule 131769 for config.php.",
+      "verify_zh": "agent 重新啟動後，其 ossec.log 會對 config 目錄與每個進入點列出「Directory set for real time monitoring」。以 occ config:system:set 設定任一無害的值（再改回來），config.php 應出現規則 131769。"
+    },
+    {
+      "platform": "linux",
+      "required": false,
+      "since": "1.2",
+      "title": "Optional: log suspicious_login detections",
+      "title_zh": "選用：記錄 suspicious_login 的偵測",
+      "body": "Only if the suspicious_login app is installed. It writes the logins it flags at info level, which the default loglevel 2 drops.\n1. Check the existing log.condition (first command).\n2. Add one more matches entry at the next free index: 2 if only the entries 0 and 1 of the audit step exist (commands below).",
+      "body_zh": "只在有安裝 suspicious_login App 時需要。它以 info 等級寫入判定可疑的登入，預設的 loglevel 2 會把它擋掉。\n1. 檢查現有的 log.condition（第一個指令）。\n2. 在下一個未用的索引再加一個 matches 項目：若只有稽核步驟設定的第 0、1 項，就用 2（指令如下）。",
+      "code": "sudo -u www-data php /var/www/nextcloud/occ config:system:get log.condition\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 2 message --value=\"Detected a login from a suspicious login\"\nsudo -u www-data php /var/www/nextcloud/occ config:system:set log.condition matches 2 loglevel --value=1 --type=integer",
+      "verify": "The next login the app flags raises rule 131739 (level 8).",
+      "verify_zh": "下一次該 App 判定可疑的登入會觸發規則 131739（level 8）。"
+    },
+    {
+      "platform": "manager",
+      "required": false,
+      "since": "1.2.3",
+      "title": "Optional: names instead of LDAP ids in notifications",
+      "title_zh": "選用：通知中以姓名取代 LDAP 的 ID",
+      "body": "Only with jt-alert-digest 1.14 or later, for a Nextcloud on an LDAP directory: its users' ids are UUIDs. The schedule is written on install and does nothing until the settings exist.\n1. In Nextcloud, as an administrator: Personal settings, Security, Create new app password.\n2. Put the app password in a root-only file and fill jt-nextcloud.conf (commands below).\n3. Run --check, then --once.\n4. Cluster: every node mails with its own names file, so each worker needs the script, its schedule, the settings and the password file (the last lines below, run on the master; <worker> is the worker's address).",
+      "body_zh": "只適用於 jt-alert-digest 1.14 以後、接 LDAP 目錄的 Nextcloud：其使用者的 ID 是 UUID。安裝時就會寫入排程，但在設定檔存在之前什麼都不做。\n1. 在 Nextcloud 以管理員身分：個人設定、安全性、建立新的應用程式密碼。\n2. 把應用程式密碼放進只有 root 可讀的檔案，並填寫 jt-nextcloud.conf（指令如下）。\n3. 執行 --check，再執行 --once。\n4. 叢集：每個節點以自己的名稱檔寄送，所以每台 worker 都要有腳本、排程、設定檔與密碼檔（下列最後幾行，在 master 上執行；<worker> 是 worker 的位址）。",
+      "code": "umask 077\nread -rs -p 'App password: ' p; echo; printf '%s\\n' \"$p\" > /var/ossec/etc/jt-packs/jt-nextcloud-app-password; unset p\nprintf '%s\\n' 'url = https://cloud.example.com' 'user = <admin login>' 'app_password_file = /var/ossec/etc/jt-packs/jt-nextcloud-app-password' > /var/ossec/etc/jt-packs/jt-nextcloud.conf\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-nextcloud-names.py --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-nextcloud-names.py --once\n# Cluster: on the master, for each worker\nscp /var/ossec/etc/jt-packs/bin/jt-nextcloud-names.py <worker>:/var/ossec/etc/jt-packs/bin/\nssh <worker> 'echo \"17 4 * * * root /usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-nextcloud-names.py --wazuh-path /var/ossec >> /var/ossec/logs/jt-nextcloud-names.log 2>&1\" > /etc/cron.d/jt-jt-nextcloud'\ncd /var/ossec/etc/jt-packs && scp -p jt-nextcloud.conf jt-nextcloud-app-password <worker>:/var/ossec/etc/jt-packs/",
+      "verify": "--check ends with \"result: Nextcloud accepted the login and lists users\"; after --once, jt-alert-digest.py --check shows \"account names: N entries from .../jt-alert-digest-names.d/nextcloud\".",
+      "verify_zh": "--check 最後一行是「result: Nextcloud accepted the login and lists users」；執行 --once 之後，jt-alert-digest.py --check 顯示「account names: N entries from .../jt-alert-digest-names.d/nextcloud」。"
+    }
+  ],
+  "active_response": [
+    {
+      "id": "block-login-bruteforce",
+      "command": "firewall-drop",
+      "rules_id": [
+        "131711",
+        "131714",
+        "131722"
+      ],
+      "location": "local",
+      "timeout": 600,
+      "title": "Block an address that keeps failing to log in (Nextcloud reached directly)",
+      "title_zh": "封鎖一再登入失敗的位址（使用者直接連到 Nextcloud 時）",
+      "body": "Drops traffic from srcip on the Nextcloud host for 10 minutes, with iptables or nftables, after 8 failed logins or 4 wrong second factors from one address in 10 minutes, or when Nextcloud's own brute-force protection refuses the address. srcip is Nextcloud's remoteAddr. Use this only when clients connect to the Nextcloud host itself: behind a reverse proxy the packets come from the proxy, so blocking the client address there stops nothing, and without trusted_proxies remoteAddr is the proxy, which would be blocked for every user. Risks: a user with a stale password in a sync client, or an administrator who mistypes, is locked out for 10 minutes, and so is everyone behind the same NAT address (an office). Put management and office networks in the manager's white_list first.",
+      "body_zh": "同一位址 10 分鐘內登入失敗 8 次、第二因素錯誤 4 次，或 Nextcloud 自己的暴力破解防護拒絕該位址時，在 Nextcloud 主機上以 iptables 或 nftables 封鎖 srcip 10 分鐘。srcip 即 Nextcloud 的 remoteAddr。只在來源直接連到 Nextcloud 主機時使用：在反向 proxy 之後，封包來自 proxy，在 Nextcloud 主機上封鎖來源位址沒有作用；若未設定 trusted_proxies，remoteAddr 是 proxy 的位址，封鎖它等於擋掉所有使用者。風險：同步程式裡還存著舊密碼的使用者、打錯密碼的管理者會被擋 10 分鐘，同一個 NAT 位址後面的所有人（整間辦公室）也一樣。請先把管理網段與辦公室網段加入 manager 的 white_list。"
+    },
+    {
+      "id": "block-login-bruteforce-at-proxy",
+      "command": "firewall-drop",
+      "rules_id": [
+        "131711",
+        "131714",
+        "131722"
+      ],
+      "location": "defined-agent",
+      "timeout": 600,
+      "title": "Block an address that keeps failing to log in, on the reverse proxy",
+      "title_zh": "在反向 proxy 上封鎖一再登入失敗的位址",
+      "body": "The same trigger, but the address is dropped on the reverse proxy in front of Nextcloud, which needs a Wazuh agent: choose that agent. This is the only place a client address can be blocked when Nextcloud is behind a proxy, and it requires trusted_proxies and forwarded_for_headers in Nextcloud, or srcip is the proxy itself. If yet another layer sits in front (a CDN), the proxy sees the CDN's addresses and the block has to happen there. Risks as for the direct case, and the block covers every site the proxy serves, not only Nextcloud.",
+      "body_zh": "觸發條件相同，但封鎖在 Nextcloud 前面的反向 proxy 上執行，該 proxy 需要有 Wazuh agent：請選擇那台 agent。Nextcloud 在 proxy 之後時，只有這裡能封鎖來源位址；而且 Nextcloud 必須設定 trusted_proxies 與 forwarded_for_headers，否則 srcip 就是 proxy 本身。若前面還有一層（CDN），proxy 看到的是 CDN 的位址，封鎖必須在那一層做。風險與直接連線的情況相同，而且封鎖會擋掉這台 proxy 服務的所有網站，不只是 Nextcloud。"
+    }
+  ]
 }

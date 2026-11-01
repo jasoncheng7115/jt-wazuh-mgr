@@ -122,6 +122,20 @@
     <description>Nextcloud: an app uses a deprecated API ($(app))</description>
   </rule>
 
+  <!--
+    1.2.5: the rsyslog relay copies Nextcloud's logs to /var/log/jt-nextcloud/
+    (see the agent group). When it stops, Wazuh simply receives nothing. The
+    check script of the group (jt-nextcloud-relay-check, cron) then appends
+    {"jt_relay":"stale",...} to the copy itself, which the agent still reads.
+    Mailed, because every other Nextcloud rule is blind until it is fixed.
+  -->
+  <rule id="131786" level="10">
+    <if_sid>131700</if_sid>
+    <field name="jt_relay" type="pcre2">^stale$</field>
+    <options>alert_by_email</options>
+    <description>[WARN] Nextcloud log relay stopped: $(source) is $(lag_seconds) seconds ahead of $(relay), Wazuh receives no Nextcloud log</description>
+  </rule>
+
   <rule id="131707" level="2">
     <if_sid>131704</if_sid>
     <field name="message" type="pcre2">^(?:Unable to open preview stream at |Error while running background job OCA\\PreviewGenerator\\)</field>
