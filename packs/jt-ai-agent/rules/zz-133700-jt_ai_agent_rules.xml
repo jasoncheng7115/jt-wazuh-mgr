@@ -1,0 +1,240 @@
+<!--
+  jt-ai-agent: what AI coding agents do on a host (Claude Code, via the hook
+  jt-ai-agent-hook.py; one line per tool call, see the decoder).
+  Rule range 133700-133799. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  The point is an audit trail you can search ("which session ran what, where,
+  when"), so every shell command, file change, web fetch, MCP call, subagent
+  and session start is stored at level 3. Reads and searches stay at level 2
+  (not stored). Above that, by evidence:
+  - level 12: an agent tampers with this audit (its log, its hook, the managed
+    Claude Code settings, disableAllHooks); a destructive command sent to
+    another host over SSH
+  - level 10: destructive commands (filesystem, disk, VM, database, firewall,
+    force push, stopping security or core services); an agent changing Claude
+    Code settings (its own permissions and hooks)
+  - level 9: an agent reading private keys or credential files
+  - level 8: download-and-run (curl | sh); a session started with all
+    permission prompts off (bypassPermissions)
+  - level 4: SSH / SCP / rsync to another host; a shell command run with all
+    permission prompts off
+  The hook records the call before it runs (PreToolUse), so a call that the
+  user or the permission system then refused is recorded too: these are
+  attempts. Secrets in command lines are already replaced with *** by the hook.
+
+  Rules match regular expressions on the command line. A command can always be
+  written so that a pattern misses it (variables, encodings, a script file);
+  the high levels are for the plain, common forms, the level-3 record is for
+  everything.
+-->
+<group name="ai_agent,jt_ai_agent,">
+
+  <rule id="133700" level="0">
+    <decoded_as>jt-ai-agent</decoded_as>
+    <description>AI agent audit messages</description>
+  </rule>
+
+  <!-- tampering with the audit itself -->
+  <rule id="133720" level="12">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)\bdisableAllHooks\b|(?:\b(?:rm|truncate|shred|mv|cp|chattr|chmod|chown|unlink|ln|tee|install)\b|\bsed\s+-i)[^;\x26|\n]*(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/)|(?:^|\s)[0-9]?\x3e{1,2}\s*["']?(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/)</field>
+    <description>[WARN] AI agent ($(jt_ai.user) on $(jt_ai.host)) changed the agent audit log, its hook or the managed settings</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>jt_ai_agent_tamper,</group>
+  </rule>
+
+  <rule id="133721" level="12">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit|NotebookEdit)$</field>
+    <field name="jt_ai.path" type="pcre2">^(?:/etc/claude-code/|/var/log/jt-ai-agent/|/usr/local/lib/jt-ai-agent/)</field>
+    <description>[WARN] AI agent ($(jt_ai.user) on $(jt_ai.host)) edited $(jt_ai.path): the agent audit or the managed settings</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>jt_ai_agent_tamper,</group>
+  </rule>
+
+  <!-- destructive commands -->
+  <rule id="133712" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)(?:^|[\s;\x26|(`'"])(?:rm\s+(?:-[a-z]*\s+)*-[a-z]*r[a-z]*\s+(?:-\S+\s+)*["']?(?:/|/\*|~/?|\$HOME/?|/(?:etc|usr|var|boot|root|home|opt|srv|bin|sbin|lib|lib64|var/lib|var/ossec|var/log)/?\*?)["']?(?=$|[\s;\x26|)'"])|mkfs(?:\.\w+)?\s|dd\s[^;\x26|\n]*\bof=/dev/(?!null\b)|wipefs\s|shred\s|(?:pct|qm)\s+destroy\b|(?:zfs|zpool)\s+destroy\b|(?:lv|vg|pv)remove\b|git\s+push\b[^;\x26|\n]*\s(?:--force(?:-with-lease)?|-f)(?=$|\s)|crontab\s+-r\b|iptables\s+-F\b|nft\s+flush\s+ruleset\b|drop\s+(?:database|table|schema)\b|truncate\s+table\b|systemctl\s+(?:stop|disable|mask|kill)\s+[^;\x26|\n]*\b(?:wazuh-(?:manager|agent|indexer|dashboard)|auditd|sshd?|nginx|apache2|httpd|postgresql|mysql|mariadb|zimbra|docker|pve-cluster|pveproxy)\b|wazuh-control\s+stop\b|/var/ossec/bin/wazuh-db(?=$|[\s;\x26|)'"])|docker\s+(?:system\s+prune|volume\s+(?:rm|prune))\b|chmod\s+-R\s+0?777\s+/(?=$|\s))</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) ran a destructive command in $(jt_ai.cwd)</description>
+    <mitre>
+      <id>T1485</id>
+      <id>T1489</id>
+    </mitre>
+    <group>jt_ai_agent_destructive,</group>
+  </rule>
+
+  <rule id="133716" level="12">
+    <if_sid>133712</if_sid>
+    <field name="jt_ai.remote" type="pcre2">\S</field>
+    <description>[WARN] AI agent ($(jt_ai.user) on $(jt_ai.host)) sent a destructive command to $(jt_ai.remote)</description>
+    <mitre>
+      <id>T1485</id>
+      <id>T1021.004</id>
+    </mitre>
+    <group>jt_ai_agent_destructive,</group>
+  </rule>
+
+  <!-- the agent changing its own permissions and hooks -->
+  <rule id="133713" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit|NotebookEdit)$</field>
+    <field name="jt_ai.path" type="pcre2">/\.claude/settings(?:\.local)?\.json$</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) changed Claude Code settings $(jt_ai.path) (permissions and hooks)</description>
+    <mitre>
+      <id>T1548</id>
+    </mitre>
+  </rule>
+
+  <rule id="133714" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?:\b(?:sed\s+-i|tee|mv|cp|jq|python3?|perl)\b|\x3e)[^;\x26|\n]*\.claude/settings(?:\.local)?\.json</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) changed Claude Code settings from a shell command (permissions and hooks)</description>
+    <mitre>
+      <id>T1548</id>
+    </mitre>
+  </rule>
+
+  <!-- private keys and credential files -->
+  <rule id="133711" level="9">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Read$</field>
+    <field name="jt_ai.path" type="pcre2">(?i)(?:/\.ssh/(?![^/]*\.pub$)(?:id_[^/]*|[^/]*_key)$|/etc/g?shadow$|/\.aws/credentials$|/\.docker/config\.json$|/\.netrc$|/\.git-credentials$|/\.pgpass$|/\.kube/config$|/\.claude/\.credentials\.json$|/ossec/etc/(?:client\.keys|authd\.pass|sslmanager\.key)$|(?:privkey|[-_.]key)\.pem$|\.(?:key|p12|pfx|kdbx)$)</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) read a private key or credential file: $(jt_ai.path)</description>
+    <mitre>
+      <id>T1552.004</id>
+      <id>T1552.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="133715" level="9">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)(?:^|[\s;\x26|(`'"])(?:cat|less|more|head|tail|base64|xxd|od|strings|cp|tar|zip|gpg)\s[^;\x26|\n]*?(?:/\.ssh/id_[A-Za-z0-9_-]+(?!\.pub)(?=$|[\s'";\x26|)])|/etc/g?shadow\b|/\.aws/credentials\b|/\.git-credentials\b|/\.netrc\b|/\.claude/\.credentials\.json|/client\.keys\b|/authd\.pass\b|\bprivkey\.pem\b)</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) read or copied a private key or credential file from a shell command</description>
+    <mitre>
+      <id>T1552.004</id>
+      <id>T1552.001</id>
+    </mitre>
+  </rule>
+
+  <!-- download and run -->
+  <rule id="133717" level="8">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)\b(?:curl|wget)\b[^;\x26\n]*\|\s*(?:sudo\s+)?(?:(?:ba|z|da|k)?sh|python[0-9.]*|perl|node|ruby)(?:\s+-s?)?\s*(?=$|[;\x26|)\n])|\b(?:ba)?sh\s+(?:-c\s+["']?\$\(|\x3c\(\s*)(?:curl|wget)\b</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) downloaded and ran a script in one command</description>
+    <mitre>
+      <id>T1105</id>
+      <id>T1059.004</id>
+    </mitre>
+  </rule>
+
+  <!-- the audit trail, level 3 -->
+  <rule id="133703" level="4">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.remote" type="pcre2">\S</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) connected to $(jt_ai.remote) over SSH</description>
+    <mitre>
+      <id>T1021.004</id>
+    </mitre>
+    <group>jt_ai_agent_command,</group>
+  </rule>
+
+  <rule id="133702" level="3">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) ran a shell command in $(jt_ai.cwd)</description>
+    <group>jt_ai_agent_command,</group>
+  </rule>
+
+  <rule id="133718" level="4">
+    <if_sid>133702</if_sid>
+    <field name="jt_ai.mode" type="pcre2">^bypassPermissions$</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) ran a shell command with all permission prompts off</description>
+    <group>jt_ai_agent_command,</group>
+  </rule>
+
+  <rule id="133704" level="3">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit|NotebookEdit)$</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) changed $(jt_ai.path)</description>
+  </rule>
+
+  <rule id="133705" level="3">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.event" type="pcre2">^SessionStart$</field>
+    <description>AI agent session $(jt_ai.session) started ($(jt_ai.source)) by $(jt_ai.user) on $(jt_ai.host) in $(jt_ai.cwd), mode $(jt_ai.mode)</description>
+  </rule>
+
+  <rule id="133710" level="8">
+    <if_sid>133705</if_sid>
+    <field name="jt_ai.mode" type="pcre2">^bypassPermissions$</field>
+    <description>AI agent session started by $(jt_ai.user) on $(jt_ai.host) with all permission prompts off (bypassPermissions)</description>
+    <mitre>
+      <id>T1548</id>
+    </mitre>
+  </rule>
+
+  <rule id="133706" level="3">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^(?:WebFetch|WebSearch)$</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) used $(jt_ai.tool): $(jt_ai.url)$(jt_ai.query)</description>
+  </rule>
+
+  <rule id="133707" level="3">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^mcp__</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) called MCP tool $(jt_ai.tool)</description>
+  </rule>
+
+  <rule id="133708" level="3">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^(?:Agent|Task)$</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) started a subagent ($(jt_ai.task_subagent_type)): $(jt_ai.task_description)</description>
+  </rule>
+
+  <rule id="133701" level="2">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.event" type="pcre2">\S</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)): $(jt_ai.tool) $(jt_ai.path)$(jt_ai.pattern)</description>
+  </rule>
+
+</group>
+
+<!--
+  File integrity of the audit itself (the pack's agent group monitors these
+  two directories in real time): the hook and the managed Claude Code
+  settings, which is where the hook is made mandatory. Changed by anyone, not
+  only by an agent.
+-->
+<group name="ai_agent,jt_ai_agent,jt_ai_agent_tamper,">
+
+  <rule id="133722" level="10">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/etc/claude-code/|^/usr/local/lib/jt-ai-agent/</field>
+    <description>AI agent audit: $(file) was added or changed (the hook or the managed Claude Code settings)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="133723" level="12">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^/etc/claude-code/|^/usr/local/lib/jt-ai-agent/</field>
+    <description>[WARN] AI agent audit: $(file) was deleted (the hook or the managed Claude Code settings)</description>
+    <mitre>
+      <id>T1562.001</id>
+      <id>T1070</id>
+    </mitre>
+  </rule>
+
+</group>

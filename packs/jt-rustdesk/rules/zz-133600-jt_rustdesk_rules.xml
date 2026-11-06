@@ -1,0 +1,211 @@
+<!--
+  jt-rustdesk: RustDesk server (hbbs / hbbr)
+  Rule range 133600-133699. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  What the server logs at its default level, and what is reported:
+  - Relay authentication failed ... invalid key (hbbr, WARN): a client without
+    the server's key tried to use the relay. The relay enforces the key, so the
+    request was refused. From a private address it is almost always a client
+    set up with the wrong key (level 3); from a public address level 5, and 10
+    from one address within 10 minutes is level 10 (someone wants your relay).
+  - update_pk / IP change (hbbs, INFO): a client registered its ID and key, or
+    its address changed. From a private address level 2; from a public address
+    of a home country (CDB list jt-rustdesk-home, built by jt-rustdesk-geo.py
+    from the countries in etc/jt-packs/jt-rustdesk.conf, Taiwan by default)
+    level 3; from a public address outside them level 7, and 5 of those within
+    15 minutes level 10. A real IPv6 address cannot be placed in a country by
+    the list and is level 3.
+  - Both are raw (hbbr, INFO): one relayed session started. The line has no
+    address. Level 2, and 30 within 10 minutes level 8: on the server this pack
+    was written for that is a month of normal use.
+  - Start / signal terminate: the service started or stopped (level 3). Other
+    warnings level 3, errors level 5; "Failed to generate new id", which hbbs
+    writes now and then without consequence, level 2.
+  Logins to the computers themselves happen on the clients and never reach the
+  server; this pack sees the server's own use.
+-->
+<group name="rustdesk,jt_rustdesk,">
+
+  <rule id="133600" level="0">
+    <decoded_as>jt-rustdesk</decoded_as>
+    <description>RustDesk server log messages</description>
+  </rule>
+
+  <!-- relay sessions -->
+  <rule id="133601" level="2">
+    <if_sid>133600</if_sid>
+    <match type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] Both are raw$</match>
+    <options>no_full_log</options>
+    <description>RustDesk: relayed session started</description>
+    <group>jt_rustdesk_relay,</group>
+  </rule>
+
+  <rule id="133602" level="8" frequency="30" timeframe="600">
+    <if_matched_sid>133601</if_matched_sid>
+    <options>no_full_log</options>
+    <description>RustDesk: 30 relayed sessions within 10 minutes (unusual relay use)</description>
+    <mitre>
+      <id>T1219</id>
+    </mitre>
+  </rule>
+
+  <!-- relay key failures -->
+  <rule id="133603" level="3">
+    <if_sid>133600</if_sid>
+    <match type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] Relay authentication failed from </match>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <description>RustDesk: relay refused a client without the server key from internal address $(srcip) (client set up with the wrong key?)</description>
+  </rule>
+
+  <rule id="133604" level="5">
+    <if_sid>133600</if_sid>
+    <match type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] Relay authentication failed from </match>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <description>RustDesk: relay refused a client without the server key from $(srcip): $(rustdesk.reason)</description>
+    <mitre>
+      <id>T1133</id>
+    </mitre>
+  </rule>
+
+  <rule id="133605" level="10" frequency="10" timeframe="600">
+    <if_matched_sid>133604</if_matched_sid>
+    <same_source_ip />
+    <description>[WARN] RustDesk: 10 relay requests without the server key from $(srcip) within 10 minutes</description>
+    <mitre>
+      <id>T1133</id>
+    </mitre>
+  </rule>
+
+  <!-- client registrations and address changes -->
+  <rule id="133606" level="2">
+    <if_sid>133600</if_sid>
+    <match type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] (?:update_pk |IP change of )</match>
+    <srcip>10.0.0.0/8</srcip>
+    <srcip>172.16.0.0/12</srcip>
+    <srcip>192.168.0.0/16</srcip>
+    <srcip>127.0.0.0/8</srcip>
+    <srcip>100.64.0.0/10</srcip>
+    <options>no_full_log</options>
+    <description>RustDesk: client $(rustdesk.id) registered from internal address $(srcip)</description>
+  </rule>
+
+  <rule id="133607" level="3">
+    <if_sid>133600</if_sid>
+    <match type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] (?:update_pk |IP change of )</match>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <list field="srcip" lookup="address_match_key">etc/lists/jt-rustdesk-home</list>
+    <options>no_full_log</options>
+    <description>RustDesk: client $(rustdesk.id) registered from public address $(srcip) (home country)</description>
+  </rule>
+
+  <rule id="133608" level="7">
+    <if_sid>133600</if_sid>
+    <match type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] (?:update_pk |IP change of )</match>
+    <srcip negate="yes">10.0.0.0/8</srcip>
+    <srcip negate="yes">172.16.0.0/12</srcip>
+    <srcip negate="yes">192.168.0.0/16</srcip>
+    <srcip negate="yes">127.0.0.0/8</srcip>
+    <srcip negate="yes">100.64.0.0/10</srcip>
+    <list field="srcip" lookup="not_address_match_key">etc/lists/jt-rustdesk-home</list>
+    <description>RustDesk: client $(rustdesk.id) registered from $(srcip), outside the home countries</description>
+    <mitre>
+      <id>T1133</id>
+    </mitre>
+  </rule>
+
+  <rule id="133609" level="10" frequency="5" timeframe="900">
+    <if_matched_sid>133608</if_matched_sid>
+    <description>[WARN] RustDesk: 5 client registrations from outside the home countries within 15 minutes</description>
+    <mitre>
+      <id>T1133</id>
+    </mitre>
+  </rule>
+
+  <rule id="133610" level="3">
+    <if_sid>133600</if_sid>
+    <match type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] (?:update_pk |IP change of )</match>
+    <field name="rustdesk.ip6">:</field>
+    <options>no_full_log</options>
+    <description>RustDesk: client $(rustdesk.id) registered from IPv6 address $(rustdesk.ip6)</description>
+  </rule>
+
+  <!-- service -->
+  <rule id="133611" level="3">
+    <if_sid>133600</if_sid>
+    <match type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] Start$</match>
+    <description>RustDesk server: $(rustdesk.src) started</description>
+  </rule>
+
+  <rule id="133612" level="3">
+    <if_sid>133600</if_sid>
+    <match type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] signal terminate$</match>
+    <description>RustDesk server: stopping (signal terminate)</description>
+  </rule>
+
+  <rule id="133613" level="5">
+    <if_sid>133600</if_sid>
+    <field name="rustdesk.level">^ERROR$</field>
+    <description>RustDesk server error ($(rustdesk.src))</description>
+  </rule>
+
+  <rule id="133614" level="2">
+    <if_sid>133613</if_sid>
+    <match type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] Failed to generate new id</match>
+    <options>no_full_log</options>
+    <description>RustDesk server: failed to generate a new id (harmless, written now and then)</description>
+  </rule>
+
+  <rule id="133615" level="3">
+    <if_sid>133600</if_sid>
+    <field name="rustdesk.level">^WARN$</field>
+    <description>RustDesk server warning ($(rustdesk.src))</description>
+  </rule>
+
+</group>
+
+<!--
+  jt-rustdesk-geo.py runs on the manager and keeps etc/lists/jt-rustdesk-home.
+  Its events are the manager's own (location jt-rustdesk-geo); the built-in
+  JSON decoder reads them. While it fails the list stays as it was, so the
+  home-country rules keep working with the last good list.
+-->
+<group name="rustdesk,jt_rustdesk,jt_rustdesk_geo,">
+
+  <rule id="133690" level="0">
+    <decoded_as>json</decoded_as>
+    <location>^jt-rustdesk-geo$</location>
+    <field name="jt_rustdesk_geo.state">\.+</field>
+    <description>RustDesk home-country list: status event</description>
+  </rule>
+
+  <rule id="133691" level="5">
+    <if_sid>133690</if_sid>
+    <field name="jt_rustdesk_geo.state">^failing$</field>
+    <description>RustDesk home-country list could not be updated, the previous list stays in use: $(jt_rustdesk_geo.detail)</description>
+  </rule>
+
+  <rule id="133692" level="7">
+    <if_sid>133690</if_sid>
+    <field name="jt_rustdesk_geo.state">^stale$</field>
+    <description>[WARN] RustDesk home-country list has not been updated for $(jt_rustdesk_geo.days) days: $(jt_rustdesk_geo.detail)</description>
+  </rule>
+
+  <rule id="133693" level="3">
+    <if_sid>133690</if_sid>
+    <field name="jt_rustdesk_geo.state">^recovered$</field>
+    <description>RustDesk home-country list is updated again after $(jt_rustdesk_geo.hours) hours</description>
+  </rule>
+
+</group>

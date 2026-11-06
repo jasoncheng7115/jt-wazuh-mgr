@@ -2,7 +2,7 @@
  "id": "jt-zimbra",
  "name": "Zimbra Detection Suite",
  "name_zh": "Zimbra 偵測套組",
- "version": "3.6",
+ "version": "3.7",
  "summary": "FIM, web, authentication, account-takeover, administrative-change, SOAP, MTA and host-noise rules for Zimbra mail servers, with the decoders they need.",
  "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、帳號接管、管理變更、SOAP、MTA 與主機雜訊規則，並附上所需的解碼器。",
  "rule_id_range": [
@@ -72,7 +72,8 @@
   "The first run of jt-zimbra-baseline-check.py reports every Zimbra server once: 133301 when its release is not covered by the list, otherwise a level 2 record. It reads wazuh-db with SELECT statements only and writes the manager's own events (location jt-zimbra-baseline).",
   "3.4: a site rule that names 100936-100942 in if_sid, if_matched_sid or overwrite no longer loads (analysisd warns that the signature was not found and drops it). jt-linux-integrity already keeps dpkg-new and other transient names, .wants links and snap units quiet, so such a site rule can often simply be deleted.",
   "zimbra_additional_logging adds only the \"account not found\" line in 10.1.20. That line prints the typed name as it was sent (String.format, not Zimbra's escaping), so a client may be able to put a line break in it and start a line of its own in audit.log. This was not tested on a live server; until it is, the block-zimbra-bruteforce active response should stay off on servers with the setting.",
-  "The agent-side filter for the SMTP AUTH tokens is an <ignore> on the /var/log/zimbra.log localfile and needs agent 4.6 or later; it matches lines such as \"zmpost: url=... returned buffer->data=...<authToken>...\". Zimbra's rsyslog file sends auth.* to /var/log/zimbra.log; with auth.info the debug lines are not written at all. Zimbra may rewrite that file on upgrade."
+  "The agent-side filter for the SMTP AUTH tokens is an <ignore> on the /var/log/zimbra.log localfile and needs agent 4.6 or later; it matches lines such as \"zmpost: url=... returned buffer->data=...<authToken>...\". Zimbra's rsyslog file sends auth.* to /var/log/zimbra.log; with auth.info the debug lines are not written at all. Zimbra may rewrite that file on upgrade.",
+  "3.7: unusual outgoing mail (133360-133368). Every message amavis marks {RelayedOutbound} from a local origin (ORIGINATING) is recorded at level 3 with sender, first recipient and size. One account sending 20 outgoing messages within 10 minutes is level 10, a second burst within 10 minutes level 12; one message to 20 or more recipients level 8, 50 or more level 10; a message of 10 MB or more level 5, three from one account within 10 minutes level 10 (data carried out by mail). On the host that hands mail to the internet (Zimbra itself or a Postfix gateway in front of it), 20 outgoing messages bounced by outside servers within 10 minutes is level 10, typical of spam sent to a harvested list. The thresholds suit an organisation sending tens of outside messages a day; raise them with overwrite=\"yes\" copies. The amavis decoder now also reads the after-queue origin ORIGINATING_POST (written by Zimbra 10 for mail submitted through the after-queue content filter); before 3.7 such lines had no action, flow or origin, so 100946/100948 did not see blocked outgoing viruses and spam in them, and 100945 would have reported a local infected message as inbound (level 7 instead of 12)."
  ],
  "notes_zh": [
   "zimbra-webfiles 是原廠檔案基線。隨附的版本產生自 Zimbra 10.1.20（FOSS 與 NETWORK 版聯集），是起點而非自行產生的替代品。",
@@ -128,7 +129,8 @@
   "jt-zimbra-baseline-check.py 第一次執行時會把每台 Zimbra 伺服器各回報一次：版本不在清單內時觸發 133301，否則記一筆 level 2。它只以 SELECT 讀取 wazuh-db，寫入的是管理端自己的事件（location jt-zimbra-baseline）。",
   "3.4：在 if_sid、if_matched_sid 或 overwrite 中指名 100936-100942 的站台規則將不再載入（analysisd 會警告找不到該規則並略過它）。jt-linux-integrity 已經讓 dpkg-new 等暫存檔名、.wants 連結與 snap 單元保持安靜，所以這類站台規則常常可以直接刪除。",
   "zimbra_additional_logging 在 10.1.20 只會多寫「account not found」這一行。那一行會把輸入的名稱原樣印出（String.format，沒有經過 Zimbra 的跳脫），用戶端可能可以在名稱裡放換行，在 audit.log 寫出自己的一行。尚未在實機上驗證；在驗證之前，開著這個設定的伺服器不應啟用 block-zimbra-bruteforce 主動回應。",
-  "agent 端過濾 SMTP AUTH 權杖的方式，是 /var/log/zimbra.log 這個 localfile 上的 <ignore>，需要 4.6 以後的 agent；它比對的是「zmpost: url=... returned buffer->data=...<authToken>...」這類記錄。Zimbra 的 rsyslog 設定把 auth.* 寫進 /var/log/zimbra.log；改成 auth.info 後，這些 debug 記錄根本不會寫出。Zimbra 升級時可能改寫這個檔。"
+  "agent 端過濾 SMTP AUTH 權杖的方式，是 /var/log/zimbra.log 這個 localfile 上的 <ignore>，需要 4.6 以後的 agent；它比對的是「zmpost: url=... returned buffer->data=...<authToken>...」這類記錄。Zimbra 的 rsyslog 設定把 auth.* 寫進 /var/log/zimbra.log；改成 auth.info 後，這些 debug 記錄根本不會寫出。Zimbra 升級時可能改寫這個檔。",
+  "3.7：異常的對外寄信（133360-133368）。amavis 標成 {RelayedOutbound}、而且來自本地（ORIGINATING）的每一封信，都以 level 3 記錄寄件人、第一個收件人與大小。同一帳號 10 分鐘內寄出 20 封外寄信為 level 10，10 分鐘內再一輪為 level 12；一封信 20 個以上收件人為 level 8，50 個以上為 level 10；10 MB 以上的外寄信為 level 5，同一帳號 10 分鐘內三封為 level 10（以郵件帶出資料）。負責把信送上網際網路的主機（Zimbra 本身或前面的 Postfix 閘道）10 分鐘內被外部伺服器退回 20 封為 level 10，這是寄給蒐集來的名單的垃圾信常見的樣子。門檻適合每天寄出數十封外寄信的單位；要調高請用 overwrite=\"yes\" 的副本。 amavis 解碼器現在也認得 after-queue 的來源標記 ORIGINATING_POST（Zimbra 10 對經過 after-queue 內容過濾的信會這樣寫）；3.7 以前這種行解不出動作、流向與來源，所以 100946／100948 看不到其中被攔下的外寄病毒與垃圾信，100945 還會把本地送出的中毒信當成外來信（level 7 而不是 12）。"
  ],
  "files": [
   {
@@ -147,7 +149,7 @@
    "type": "decoder",
    "name": "jt-zimbra_service_decoders.xml",
    "dest": "etc/decoders/jt-zimbra_service_decoders.xml",
-   "sha256": "e228ef32db8bfa15f126ddffcd3c389da87639941a30b6e9816dc4d58a94974b"
+   "sha256": "7ecefee159e003e89de40cf04bb7ef1e305ca3f722d6238261f78ac04bcff946"
   },
   {
    "type": "rule",
@@ -195,7 +197,7 @@
    "type": "rule",
    "name": "zz-100866-zimbra_host_rules.xml",
    "dest": "etc/rules/zz-100866-zimbra_host_rules.xml",
-   "sha256": "6b0bacac71112535c783244e123cb41907e7feec05c6b0f5a28dd665b596dbd3"
+   "sha256": "450e7a4ced308ac72eaa28d7ef22e5cba23d3dc1f34f7d27aa24a1e4e0945156"
   },
   {
    "type": "list",
@@ -226,6 +228,12 @@
    "name": "zz-133300-jt_zimbra_baseline_rules.xml",
    "dest": "etc/rules/zz-133300-jt_zimbra_baseline_rules.xml",
    "sha256": "781024a6dd1780e21e3ae8e141e373088a339087610fdd9a34f78910a1742a55"
+  },
+  {
+   "type": "rule",
+   "name": "zz-133360-zimbra_outbound_rules.xml",
+   "dest": "etc/rules/zz-133360-zimbra_outbound_rules.xml",
+   "sha256": "8af0768d47ac80906f7f6364367363dfe2d4273fbd0d16635ce7ed1f29b20521"
   }
  ],
  "agent_group": {

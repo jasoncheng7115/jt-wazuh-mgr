@@ -69,7 +69,7 @@
 
 <decoder name="zimbra-amavis-fields">
   <parent>zimbra-amavis</parent>
-  <regex type="pcre2">^\(([\w-]+)\) (Passed|Blocked) ([A-Z][A-Z-]*)(?: \(([^)]*)\))? \{([^}]*)\},\s*([A-Z/ ]*?)\s*\[([0-9a-fA-F.:]+)\]</regex>
+  <regex type="pcre2">^\(([\w-]+)\) (Passed|Blocked) ([A-Z][A-Z-]*)(?: \(([^)]*)\))? \{([^}]*)\},\s*([A-Z_/ ]*?)\s*\[([0-9a-fA-F.:]+)\]</regex>
   <order>zimbra.amavis_id, action, status, zimbra.amavis_reason, zimbra.amavis_flow, zimbra.amavis_origin, srcip</order>
 </decoder>
 
@@ -77,6 +77,15 @@
   <parent>zimbra-amavis</parent>
   <regex type="pcre2">^\([\w-]+\) (?:Passed|Blocked) .*?\x3c([^\x3e]*)\x3e -\x3e \x3c([^\x3e]*)\x3e</regex>
   <order>zimbra.sender, zimbra.rcpt</order>
+</decoder>
+
+<!-- The whole recipient list and the message size, for the outgoing-mail rules
+     (133360-133379). The size is read from the end of the line, after the
+     Message-ID, which the sender chooses: "size: N[, queued_as: Q][, dkim_sd=...], N ms". -->
+<decoder name="zimbra-amavis-fields">
+  <parent>zimbra-amavis</parent>
+  <regex type="pcre2">^\([\w-]+\) (?:Passed|Blocked) .*?\x3c[^\x3e]*\x3e -\x3e ((?:\x3c[^\x3e]*\x3e,)*\x3c[^\x3e]*\x3e), .*\bsize: (\d+)(?:, queued_as: [^,\s]+)?(?:, dkim_sd=[^,\s]+)*, \d+ ms\s*$</regex>
+  <order>zimbra.rcpts, zimbra.msg_size</order>
 </decoder>
 
 <decoder name="zimbra-amavis-fields">

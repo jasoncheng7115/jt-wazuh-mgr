@@ -393,21 +393,48 @@ class TestPackDashboards(unittest.TestCase):
                 for c in opts.get('columns', []):
                     self.builder.field_kind(c, self.fields)
 
-    def test_the_count_panel_filters_the_dashboard_on_click(self):
-        """2026-11-01, owner: "it should be clickable, to filter". Each of the three
-        numbers adds a filter: the pack's rules, levels 7-11, levels 12 and up."""
+    def test_the_count_cards_filter_the_dashboard_on_click(self):
+        """2026-11-01, owner: "it should be clickable, to filter"; 2026-11-06: one card per
+        number. Each card adds one filter: the pack's rules, levels 7-11, levels 12 and up."""
         for m, _, objects in self.packs:
             with self.subTest(pack=m['id']):
-                count = next(o for o in objects if o['id'] == 'jt-pack-%s-count' % m['id'])
-                spec = json.loads(json.loads(count['attributes']['visState'])['params']['spec'])
-                self.assertIn('vega/v5', spec['$schema'], 'Vega-Lite cannot call opensearchDashboardsAddFilter on click')
-                expr = ' '.join(on['update'] for sig in spec['signals'] for on in sig.get('on', []))
-                self.assertEqual(expr.count('opensearchDashboardsAddFilter('), 3)
-                self.assertIn('"gte": 7', expr)
-                self.assertIn('"gte": 12', expr)
-                self.assertIn(json.dumps(INDEX_PATTERN_ID), expr)
-                marks = {mk['name']: mk for mk in spec['marks']}
-                self.assertEqual(marks['num']['encode']['enter']['cursor'], {'value': 'pointer'})
+                exprs = {}
+                for part in ('count', 'count-mid', 'count-high'):
+                    card = next(o for o in objects if o['id'] == 'jt-pack-%s-%s' % (m['id'], part))
+                    spec = json.loads(json.loads(card['attributes']['visState'])['params']['spec'])
+                    self.assertIn('vega/v5', spec['$schema'], 'Vega-Lite cannot call opensearchDashboardsAddFilter on click')
+                    expr = ' '.join(on['update'] for sig in spec['signals'] for on in sig.get('on', []))
+                    self.assertEqual(expr.count('opensearchDashboardsAddFilter('), 1, part)
+                    self.assertIn(json.dumps(INDEX_PATTERN_ID), expr)
+                    marks = {mk['name']: mk for mk in spec['marks']}
+                    self.assertEqual(marks['num']['encode']['enter']['cursor'], {'value': 'pointer'})
+                    self.assertIn('signal', marks['num']['encode']['enter']['fontSize'], 'the number scales with the card')
+                    exprs[part] = expr
+                self.assertIn('query_string', exprs['count'])
+                self.assertIn('"gte": 7', exprs['count-mid'])
+                self.assertIn('"gte": 12', exprs['count-high'])
+
+    def test_layout_description_row_then_cards_beside_the_levels(self):
+        """2026-11-06, owner: the description on a row of its own; the counts and the level
+        distribution on one row, the counts wider; each count a separate card without a
+        panel title (the card carries its own label)."""
+        for m, _, objects in self.packs:
+            with self.subTest(pack=m['id']):
+                dash = next(o for o in objects if o['type'] == 'dashboard')
+                panels = json.loads(dash['attributes']['panelsJSON'])
+                refs = {r['name']: r['id'] for r in dash['references']}
+                by_id = {refs[p['panelRefName']].rsplit('-', 1)[-1] if not refs[p['panelRefName']].endswith(('-mid', '-high'))
+                         else refs[p['panelRefName']].split('jt-pack-%s-' % m['id'])[1]: p for p in panels}
+                intro = by_id['intro']['gridData']
+                self.assertEqual((intro['x'], intro['y'], intro['w']), (0, 0, 48))
+                cards = [by_id[k] for k in ('count', 'count-mid', 'count-high')]
+                levels = by_id['levels']
+                row = {p['gridData']['y'] for p in cards + [levels]}
+                self.assertEqual(len(row), 1, 'cards and level distribution share one row')
+                self.assertGreater(sum(p['gridData']['w'] for p in cards), levels['gridData']['w'])
+                for p in cards:
+                    self.assertTrue(p['embeddableConfig'].get('hidePanelTitles'))
+                self.assertFalse(levels['embeddableConfig'].get('hidePanelTitles'))
 
 
 if __name__ == '__main__':

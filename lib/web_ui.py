@@ -1226,6 +1226,8 @@ HTML_TEMPLATE = '''
         .dash-progress-bar { height: 100%; background: var(--accent); transition: width 0.2s; }
         .dash-progress-text { font-size: 13px; margin-top: 8px; }
         .dash-progress-rows { max-height: 220px; overflow-y: auto; }
+        #dashUrl:disabled, #dashUser:disabled, #dashPass:disabled { opacity: 0.6; cursor: not-allowed; }
+        #dashVerify:disabled, #dashVerify:disabled + * { cursor: not-allowed; }
         .pack-code { position: relative; margin: 8px 0; }
         .pack-code pre { background: var(--code-bg); border: 1px solid var(--border-23304d); border-radius: 4px; padding: 10px 12px; margin: 0; overflow-x: auto; font-size: 13px; line-height: 1.5; color: var(--text-pre); white-space: pre; }
         .pack-code .pack-copy { position: absolute; top: 6px; right: 6px; z-index: 1; }
@@ -7613,11 +7615,11 @@ HTML_TEMPLATE = '''
             if (!(info.packs || []).length) { showToast('No installed pack has a dashboard', 'warning'); return; }
             const field = 'width:100%;background:var(--surface);border:1px solid var(--border-1a3a6e);color:var(--text);padding:6px 10px;border-radius:4px;';
             const body =
-                '<p class="pack-lead">Imports the dashboards of ' + escapeHtml(String(info.packs.length)) + ' installed packs into the Wazuh dashboard. Importing again replaces them in place.</p>' +
+                '<p class="pack-lead">Imports the dashboards of ' + escapeHtml(String(info.packs.length)) + ' installed packs into the Wazuh dashboard. Importing again overwrites the existing dashboards.</p>' +
                 '<div style="margin:8px 0;"><label>Dashboard address</label><input type="text" id="dashUrl" value="' + escapeHtml(info.default_url || '') + '" style="' + field + '"></div>' +
                 '<div style="margin:8px 0;"><label>User name</label><input type="text" id="dashUser" value="admin" autocomplete="username" style="' + field + '"></div>' +
                 '<div style="margin:8px 0;"><label>Password</label><input type="password" id="dashPass" autocomplete="current-password" style="' + field + '"></div>' +
-                '<div style="margin:8px 0;"><label><input type="checkbox" id="dashVerify" checked> Verify the certificate with the Wazuh root CA</label></div>' +
+                '<div style="margin:8px 0;"><label><input type="checkbox" id="dashVerify" checked> Check the dashboard\u2019s HTTPS certificate (it must be signed by the root CA this Wazuh installation created)</label></div>' +
                 '<p style="color:var(--text-muted);font-size:12px;">A dashboard user such as admin: the Wazuh API account does not work there. The password is used for this request only and is not stored.</p>' +
                 '<div id="dashResult"></div>';
             showModal('Import all dashboards', body,
@@ -7630,6 +7632,19 @@ HTML_TEMPLATE = '''
         // pattern) stops the loop at the first pack instead of repeating 30 times.
         // The password lives in this function only and is cleared when it ends.
         let dashImportStop = false;
+
+        // While the import runs the form is locked (what is being imported cannot
+        // change half-way), and the progress list follows the newest line.
+        function dashLockInputs(locked) {
+            ['dashUrl', 'dashUser', 'dashPass', 'dashVerify'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = locked;
+            });
+        }
+        function dashScrollRows() {
+            const list = document.querySelector('#dashResult .dash-progress-rows');
+            if (list) list.scrollTop = list.scrollHeight;
+        }
 
         async function submitAllPackDashboards() {
             const out = document.getElementById('dashResult');
@@ -7656,6 +7671,7 @@ HTML_TEMPLATE = '''
             }
             dashImportStop = false;
             if (btn) btn.disabled = true;
+            dashLockInputs(true);
             const rows = [];
             let done = 0, failed = 0, stopped = '';
             const draw = (i, current) => {
@@ -7664,6 +7680,7 @@ HTML_TEMPLATE = '''
                 box.innerHTML = (current ? '<div class="dash-progress-text">' + escapeHtml('Importing ' + current + ' (' + (i + 1) + ' of ' + packs.length + ')') + '</div>' : '') +
                     '<div class="dash-progress"><div class="dash-progress-bar" style="width:' + Math.round(100 * i / packs.length) + '%"></div></div>' +
                     '<div class="dash-progress-rows">' + rows.join('') + '</div>';
+                dashScrollRows();
             };
             for (let i = 0; i < packs.length; i++) {
                 if (dashImportStop) { stopped = 'Stopped after ' + i + ' of ' + packs.length + ' dashboards.'; break; }
@@ -7683,6 +7700,7 @@ HTML_TEMPLATE = '''
             }
             creds.password = '';
             if (btn) btn.disabled = false;
+            dashLockInputs(false);
             if (dashImportStop) return;
             const box = document.getElementById('dashResult');
             if (!box) return;
@@ -7695,6 +7713,7 @@ HTML_TEMPLATE = '''
                 (done ? ' <a target="_blank" rel="noopener" href="' + escapeHtml(base + '/app/dashboards#/list?filter=jt') + '">Open the dashboard list</a>' : '') + '</div>' +
                 '<div class="dash-progress"><div class="dash-progress-bar" style="width:' + Math.round(100 * (done + failed) / packs.length) + '%"></div></div>' +
                 '<div class="dash-progress-rows">' + rows.join('') + '</div>';
+            dashScrollRows();
         }
 
         // Importing needs a dashboard (indexer) user, not the Wazuh API account the
@@ -7707,11 +7726,11 @@ HTML_TEMPLATE = '''
             const body =
                 '<p class="pack-lead">' + (action === 'remove'
                     ? 'Deletes this pack\\'s dashboard objects from the Wazuh dashboard.'
-                    : 'Imports ' + escapeHtml(String(info.objects || 0)) + ' saved objects. Importing again replaces them in place.') + '</p>' +
+                    : 'Imports ' + escapeHtml(String(info.objects || 0)) + ' saved objects. Importing again overwrites the existing ones.') + '</p>' +
                 '<div style="margin:8px 0;"><label>Dashboard address</label><input type="text" id="dashUrl" value="' + escapeHtml(url) + '" style="' + field + '"></div>' +
                 '<div style="margin:8px 0;"><label>User name</label><input type="text" id="dashUser" value="admin" autocomplete="username" style="' + field + '"></div>' +
                 '<div style="margin:8px 0;"><label>Password</label><input type="password" id="dashPass" autocomplete="current-password" style="' + field + '"></div>' +
-                '<div style="margin:8px 0;"><label><input type="checkbox" id="dashVerify" checked> Verify the certificate with the Wazuh root CA</label></div>' +
+                '<div style="margin:8px 0;"><label><input type="checkbox" id="dashVerify" checked> Check the dashboard\u2019s HTTPS certificate (it must be signed by the root CA this Wazuh installation created)</label></div>' +
                 '<p style="color:var(--text-muted);font-size:12px;">A dashboard user such as admin: the Wazuh API account does not work there. The password is used for this request only and is not stored.</p>' +
                 '<div id="dashResult"></div>';
             showModal(action === 'remove' ? 'Remove dashboard' : 'Import dashboard', body,
@@ -8967,7 +8986,7 @@ _I18N_SCRIPT = r"""
       'Open dashboard': '開啟看板',
       'Remove from dashboard': '從 Dashboard 移除',
       'User name': '使用者名稱',
-      'Verify the certificate with the Wazuh root CA': '以 Wazuh 根 CA 驗證憑證',
+      'Check the dashboard’s HTTPS certificate (it must be signed by the root CA this Wazuh installation created)': '檢查 Dashboard 的 HTTPS 憑證（須由這套 Wazuh 安裝時建立的根憑證簽發）',
       'This pack ships a Wazuh dashboard: alert counts, levels over time, top rules, agents, source addresses and accounts, and the latest alerts. Import it here, or download the file and import it in the Wazuh dashboard under Dashboards Management, Saved objects, Import.': '本套件附有 Wazuh 看板：告警數、各等級趨勢、最常觸發的規則、代理程式、來源位址與帳號，以及最新告警。可在這裡匯入，或下載檔案後在 Wazuh Dashboard 的 Dashboards Management → Saved objects → Import 匯入。',
       'Deletes this pack\'s dashboard objects from the Wazuh dashboard.': '從 Wazuh Dashboard 刪除本套件的看板物件。',
       'Remove dashboard': '移除看板',
@@ -9804,7 +9823,7 @@ _I18N_SCRIPT = r"""
       'Open dashboard': 'ダッシュボードを開く',
       'Remove from dashboard': 'ダッシュボードから削除',
       'User name': 'ユーザー名',
-      'Verify the certificate with the Wazuh root CA': 'Wazuh ルート CA で証明書を検証する',
+      'Check the dashboard’s HTTPS certificate (it must be signed by the root CA this Wazuh installation created)': 'ダッシュボードの HTTPS 証明書を検証する（この Wazuh のインストール時に作成されたルート CA で署名されている必要があります）',
       'This pack ships a Wazuh dashboard: alert counts, levels over time, top rules, agents, source addresses and accounts, and the latest alerts. Import it here, or download the file and import it in the Wazuh dashboard under Dashboards Management, Saved objects, Import.': 'このパックには Wazuh ダッシュボードが付属します：アラート数、レベル別の推移、上位のルール、エージェント、送信元アドレスとアカウント、最新のアラート。ここでインポートするか、ファイルをダウンロードして Wazuh ダッシュボードの Dashboards Management → Saved objects → Import でインポートします。',
       'Deletes this pack\'s dashboard objects from the Wazuh dashboard.': 'このパックのダッシュボードのオブジェクトを Wazuh ダッシュボードから削除します。',
       'Remove dashboard': 'ダッシュボードを削除',
@@ -10362,12 +10381,12 @@ _I18N_SCRIPT = r"""
       [/^version (\S+)\s+rules (\d+)\s+ID range (.+)$/, function (m) { return '版本 ' + m[1] + '   規則 ' + m[2] + ' 條   ID 範圍 ' + m[3]; }],
       [/^Rule ID conflict: (.+)\. Install anyway and overwrite\?$/, function (m) { return '規則 ID 衝突：' + m[1] + '。仍要安裝並覆寫嗎？'; }],
       [/^Imported (.+) into (.+) \(version (.+)\)\.$/, function (m) { return '於 ' + m[1] + ' 匯入到 ' + m[2] + '（版本 ' + m[3] + '）。'; }],
-      [/^Imports (\d+) saved objects\. Importing again replaces them in place\.$/, function (m) { return '將匯入 ' + m[1] + ' 個儲存物件。再次匯入會原地取代，不會重複。'; }],
+      [/^Imports (\d+) saved objects\. Importing again overwrites the existing ones\.$/, function (m) { return '將匯入 ' + m[1] + ' 個儲存物件。再次匯入會覆蓋原本的物件，不會重複。'; }],
       [/^Could not reach the dashboard: (.+)$/, function (m) { return '無法連到 Dashboard：' + m[1]; }],
       [/^Import failed \(HTTP (\d+)\)(.*)$/, function (m) { return '匯入失敗（HTTP ' + m[1] + '）' + m[2]; }],
       [/^Could not delete: (.+)$/, function (m) { return '無法刪除：' + m[1]; }],
       [/^The dashboard certificate could not be verified with the Wazuh root CA \((.+)\)\. Use the host name the certificate names\.$/, function (m) { return '無法以 Wazuh 根 CA（' + m[1] + '）驗證 Dashboard 的憑證。請使用憑證上的主機名稱。'; }],
-      [/^Imports the dashboards of (\d+) installed packs into the Wazuh dashboard\. Importing again replaces them in place\.$/, function (m) { return '將 ' + m[1] + ' 個已安裝套件的看板匯入 Wazuh Dashboard。再次匯入會原地取代。'; }],
+      [/^Imports the dashboards of (\d+) installed packs into the Wazuh dashboard\. Importing again overwrites the existing dashboards\.$/, function (m) { return '將 ' + m[1] + ' 個已安裝套件的看板匯入 Wazuh Dashboard。再次匯入會覆蓋原本的看板，不會重複。'; }],
       [/^Imported (\d+) of (\d+) dashboards\.$/, function (m) { return '已匯入 ' + m[1] + '／' + m[2] + ' 個看板。'; }],
       [/^Importing (\S+) \((\d+) of (\d+)\)$/, function (m) { return '正在匯入 ' + m[1] + '（' + m[2] + '／' + m[3] + '）'; }],
       [/^Stopped after (\d+) of (\d+) dashboards\.$/, function (m) { return '已中止：完成 ' + m[1] + '／' + m[2] + ' 個看板。'; }],
@@ -10538,12 +10557,12 @@ _I18N_SCRIPT = r"""
       [/^version (\S+)\s+rules (\d+)\s+ID range (.+)$/, function (m) { return 'バージョン ' + m[1] + '   ルール ' + m[2] + ' 件   ID 範囲 ' + m[3]; }],
       [/^Rule ID conflict: (.+)\. Install anyway and overwrite\?$/, function (m) { return 'ルール ID が競合しています：' + m[1] + '。それでも上書きしてインストールしますか？'; }],
       [/^Imported (.+) into (.+) \(version (.+)\)\.$/, function (m) { return m[1] + ' に ' + m[2] + ' へインポート済み（バージョン ' + m[3] + '）。'; }],
-      [/^Imports (\d+) saved objects\. Importing again replaces them in place\.$/, function (m) { return m[1] + ' 個の保存オブジェクトをインポートします。再インポートするとその場で置き換わります。'; }],
+      [/^Imports (\d+) saved objects\. Importing again overwrites the existing ones\.$/, function (m) { return m[1] + ' 個の保存オブジェクトをインポートします。再インポートすると既存のものが上書きされ、重複はしません。'; }],
       [/^Could not reach the dashboard: (.+)$/, function (m) { return 'ダッシュボードに接続できません：' + m[1]; }],
       [/^Import failed \(HTTP (\d+)\)(.*)$/, function (m) { return 'インポートに失敗しました（HTTP ' + m[1] + '）' + m[2]; }],
       [/^Could not delete: (.+)$/, function (m) { return '削除できません：' + m[1]; }],
       [/^The dashboard certificate could not be verified with the Wazuh root CA \((.+)\)\. Use the host name the certificate names\.$/, function (m) { return 'Wazuh ルート CA（' + m[1] + '）でダッシュボードの証明書を検証できません。証明書に記載のホスト名を使ってください。'; }],
-      [/^Imports the dashboards of (\d+) installed packs into the Wazuh dashboard\. Importing again replaces them in place\.$/, function (m) { return m[1] + ' 個のインストール済みパックのダッシュボードを Wazuh ダッシュボードにインポートします。再インポートするとその場で置き換わります。'; }],
+      [/^Imports the dashboards of (\d+) installed packs into the Wazuh dashboard\. Importing again overwrites the existing dashboards\.$/, function (m) { return m[1] + ' 個のインストール済みパックのダッシュボードを Wazuh ダッシュボードにインポートします。再インポートすると既存のダッシュボードが上書きされ、重複はしません。'; }],
       [/^Imported (\d+) of (\d+) dashboards\.$/, function (m) { return m[2] + ' 個中 ' + m[1] + ' 個のダッシュボードをインポートしました。'; }],
       [/^Importing (\S+) \((\d+) of (\d+)\)$/, function (m) { return m[1] + ' をインポート中（' + m[2] + '／' + m[3] + '）'; }],
       [/^Stopped after (\d+) of (\d+) dashboards\.$/, function (m) { return m[2] + ' 個中 ' + m[1] + ' 個で中止しました。'; }],

@@ -1181,5 +1181,71 @@ class TestZulip(DigestCase):
         self.assertFalse(any('https' in f for f in options['zulip_fatal']))
 
 
+def waf_alert(n, level=5, rule='133504', src='203.0.113.7', host='shop.example.com', uri='/.env',
+              desc=None, when=None):
+    a = {'timestamp': stamp(when if when is not None else T0 - 600 + n),
+         'rule': {'level': level, 'id': rule, 'mail': False, 'groups': ['modsecurity', 'web', 'jt_modsecurity'],
+                  'description': desc or ('ModSecurity blocked a request from %s: GET %s' % (src, uri))},
+         'agent': {'id': '005', 'name': 'proxy1', 'ip': '192.0.2.5'},
+         'data': {'srcip': src, 'transaction': {'client_ip': src, 'unique_id': host + '-abc%d' % n,
+                                                'request': {'method': 'GET', 'uri': uri}}},
+         'id': '9.%d' % n, 'full_log': 'jt-modsecurity: {}', 'location': '/var/log/modsecurity/modsec_audit.log'}
+    return json.dumps(a, separators=(',', ':'))
+
+
+class TestDailyGroups(DigestCase):
+    """daily_groups (1.15): a rule group's alerts summarised once a day, whatever their level."""
+
+    def summary_for(self, conf, lines):
+        t = Tree(self, conf='repeat = 0\ndaily = %s\n%s' % (time.strftime('%H:%M', time.localtime(T0 + 600)), conf))
+        self.run_digest(t)
+        t.write(*lines)
+        self.mod.NOW = T0 + 900
+        self.run_digest(t)
+        daily = [m for m in self.sent if 'Daily summary' in m['Subject']]
+        self.assertEqual(len(daily), 1)
+        return daily[0]
+
+    def lines(self):
+        out = [waf_alert(i, src='203.0.113.7', uri='/.env') for i in range(5)]
+        out += [waf_alert(10 + i, src='198.51.100.9', host='mail.example.com', uri='/wp-login.php?x=1')
+                for i in range(3)]
+        out.append(waf_alert(20, level=6, rule='133502', src='198.51.100.9', uri='/<script>x</script>',
+                             desc='ModSecurity (detection only): request from 198.51.100.9 exceeded the '
+                                  'anomaly threshold and reached the application: GET /<script>x</script>'))
+        out.append(waf_alert(21, level=4, rule='133501', src='10.0.0.86', uri='/api/x',
+                             desc='ModSecurity (detection only): request from internal address 10.0.0.86 '
+                                  'exceeded the anomaly threshold: GET /api/x'))
+        out.append(alert(30, level=5, rule='5710'))      # another group: not in the section
+        return out
+
+    def test_section_counts_alerts_below_the_mail_level(self):
+        message = self.summary_for('daily_groups = modsecurity\n', self.lines())
+        text = self.body(message)
+        self.assertIn('Rule group modsecurity: 10 alerts (1 from internal addresses)', text)
+        self.assertIn('rule 133504 \u00d78 \u00b7 ModSecurity blocked a request from <address>: GET <url>', text)
+        self.assertIn('rule 133502 \u00d71', text)
+        self.assertIn('Most frequent sources: 203.0.113.7 \u00d75, 198.51.100.9 \u00d74', text)
+        self.assertIn('shop.example.com/.env \u00d75', text)
+        self.assertIn('mail.example.com/wp-login.php \u00d73', text)   # query string left out
+        self.assertNotIn('5710', text.split('Rule group modsecurity')[1].split('\n\n')[0])
+
+    def test_section_text_is_escaped_in_html(self):
+        message = self.summary_for('daily_groups = modsecurity\n', self.lines())
+        html = message.get_body(('html',)).get_content()
+        self.assertNotIn('<script>x</script>', html)
+        self.assertIn('&lt;script&gt;', html)
+
+    def test_no_section_without_the_setting(self):
+        text = self.body(self.summary_for('', self.lines()))
+        self.assertNotIn('Rule group', text)
+
+    def test_bad_group_name_is_reported_and_ignored(self):
+        config = self.mod.read_global_config(Tree(self).root)
+        options, fatal, warnings = self.mod.build_options({'daily_groups': 'modsecurity, b@d!, web'}, config)
+        self.assertEqual(options['daily_groups'], ['modsecurity', 'web'])
+        self.assertTrue(any('daily_groups entry' in w for w in warnings), warnings)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -1,0 +1,126 @@
+{
+ "id": "jt-ai-agent",
+ "name": "AI Coding Agent Audit",
+ "name_zh": "AI 程式代理稽核",
+ "version": "1.0",
+ "summary": "An audit trail of what AI coding agents (Claude Code) do on a host: every shell command, file change, web fetch, MCP call, subagent and session, recorded by a hook before it runs, with secrets in command lines replaced by ***. Graded rules for destructive commands (locally and over SSH), reading private keys and credential files, download-and-run, an agent changing its own permissions and hooks, sessions with all permission prompts off, and tampering with the audit itself.",
+ "summary_zh": "AI 程式代理（Claude Code）在主機上做了什麼的稽核記錄：每一個 shell 指令、檔案變更、網頁讀取、MCP 呼叫、子代理與工作階段，都在執行前由 hook 記下，指令裡的密碼與 token 先換成 ***。分級規則涵蓋：破壞性指令（本機與經 SSH）、讀取私鑰與帳密檔、下載後直接執行、代理修改自己的權限與 hook、關閉所有權限確認的工作階段，以及竄改稽核本身。",
+ "rule_id_range": "133700-133799",
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.9"
+ ],
+ "notes": [
+  "What is recorded: who (OS user, session id, subagent), where (host, working directory, permission mode) and what (the tool; for shell commands the command line, up to 2,000 characters; for file tools the path; for web tools the address). Never file contents, command output or prompts.",
+  "Secrets: the hook replaces passwords, tokens and keys in command lines before anything is written (variables such as DB_PASSWORD=, options such as --password and -p of mysql, user:password in URLs and curl -u, Authorization and Cookie headers, private key blocks, and the GitHub, GitLab, Slack, AWS, Google and JWT token formats). It cannot know every program's syntax: a secret written into a heredoc or a positional argument may stay. Treat the log and the alerts as sensitive.",
+  "The hook runs before the call (PreToolUse), so calls that were then refused by the user or the permission system are recorded too: the alerts are attempts.",
+  "The hook never blocks anything: it prints nothing, exits 0, gives up silently on any error, and does nothing on a host where /var/log/jt-ai-agent/actions.log does not exist.",
+  "Make it mandatory through the managed settings (/etc/claude-code/managed-settings.json): hooks there cannot be turned off by users, also not with disableAllHooks. A user's own ~/.claude/settings.json works for one user but that user can remove it.",
+  "The log is writable by every local user (mode 0622) so that agents running as ordinary users can write to it. A local user can therefore append forged lines; what Wazuh has already read stays in Wazuh. Changes to the hook and the managed settings are reported by file integrity (133722, 133723).",
+  "Rules match the plain, common forms of risky commands; a command can always be written so that a pattern misses it. The level-3 record of every command is the part that cannot be avoided as long as the hook runs.",
+  "Other agents (Codex, Cursor, opencode, Aider ...) are not covered by the hook; any tool that writes the same JSON line to the log is read the same way."
+ ],
+ "notes_zh": [
+  "記錄的內容：誰（作業系統帳號、工作階段 ID、子代理）、在哪裡（主機、工作目錄、權限模式）、做了什麼（工具；shell 指令記錄指令內容，最多 2,000 字元；檔案工具記錄路徑；網頁工具記錄網址）。不記錄檔案內容、指令輸出與提示詞。",
+  "機密：hook 在寫入前會把指令裡的密碼、token、金鑰換成 ***（DB_PASSWORD= 這類變數、--password 與 mysql 的 -p 這類選項、網址與 curl -u 裡的帳號:密碼、Authorization 與 Cookie 標頭、私鑰區塊，以及 GitHub、GitLab、Slack、AWS、Google、JWT 的 token 格式）。它無法認得每一支程式的語法：寫在 heredoc 或位置參數裡的密碼可能留下。記錄與告警都要當成機密資料保護。",
+  "hook 在呼叫執行前（PreToolUse）記錄，所以之後被使用者或權限系統拒絕的呼叫也會留下：告警代表的是「嘗試」。",
+  "hook 永遠不會擋下任何動作：不輸出任何東西、一律以 0 結束、任何錯誤都安靜放棄；主機上沒有 /var/log/jt-ai-agent/actions.log 時什麼都不做。",
+  "要強制啟用就放在 managed settings（/etc/claude-code/managed-settings.json）：那裡的 hook 使用者關不掉，disableAllHooks 也關不掉。放在使用者自己的 ~/.claude/settings.json 只對那個使用者有效，而且他自己可以拿掉。",
+  "記錄檔對所有本機帳號開放寫入（權限 0622），讓以一般帳號執行的代理也能寫。所以本機帳號可以附加偽造的行；已被 Wazuh 讀走的內容會留在 Wazuh。hook 與 managed settings 的變更由檔案完整性回報（133722、133723）。",
+  "規則比對的是高風險指令最常見的寫法，指令總有辦法改寫成比對不到的形式。只要 hook 有在跑，每一個指令的 level 3 記錄是避不開的那一層。",
+  "其他代理（Codex、Cursor、opencode、Aider……）不在 hook 的範圍內；任何工具只要把同樣格式的 JSON 寫進這個記錄檔，就會以同樣方式讀取。"
+ ],
+ "files": [
+  {
+   "type": "decoder",
+   "name": "jt-ai-agent_decoders.xml",
+   "dest": "etc/decoders/jt-ai-agent_decoders.xml",
+   "sha256": "76a541baf7bf1de8891e9cc5c625e95ecae6cc6abd84ad4a97e51acffb2e106e"
+  },
+  {
+   "type": "rule",
+   "name": "zz-133700-jt_ai_agent_rules.xml",
+   "dest": "etc/rules/zz-133700-jt_ai_agent_rules.xml",
+   "sha256": "1834f915e41d3d64cbe60ee79ec54d538f9982846ed63c569dc6dfcbb7b14233"
+  }
+ ],
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset",
+   "title_zh": "安裝套件並重新載入規則集",
+   "body": "1. Install from this page.\n2. Rules tab → Reload Ruleset (on a cluster this reloads every node).",
+   "body_zh": "1. 在本頁安裝。\n2. 到「規則」分頁按「重新載入規則集」（叢集會重載所有節點）。",
+   "verify": "Rules tab → search 133700 shows the rules.",
+   "verify_zh": "在「規則」分頁搜尋 133700 可以看到這組規則。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Put the host in the agent group \"ai-agent\"",
+   "title_zh": "把主機加入 agent 群組「ai-agent」",
+   "body": "Add every host where people run AI coding agents to the group \"ai-agent\" (Groups tab). The group collects the audit log with the pack's prefix, watches the hook and the managed settings, and delivers jt-ai-agent-hook.py and jt-ai-agent.logrotate to /var/ossec/etc/shared/ on the host.\n\nIf the host's own ossec.conf already reads /var/log/jt-ai-agent/actions.log, remove that block: the logcollector keeps one definition only.",
+   "body_zh": "把每一台有人在跑 AI 程式代理的主機加入群組「ai-agent」（「群組」分頁）。群組會以套件的前綴收集稽核記錄、監看 hook 與 managed settings，並把 jt-ai-agent-hook.py 與 jt-ai-agent.logrotate 送到主機的 /var/ossec/etc/shared/。\n\n如果主機自己的 ossec.conf 已經讀 /var/log/jt-ai-agent/actions.log，請拿掉那一段：logcollector 只保留一份定義。",
+   "verify": "Groups tab → ai-agent → the host is listed and synced.",
+   "verify_zh": "「群組」分頁 → ai-agent → 看得到該主機，而且是 synced。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Install the hook and create the log (as root on the host)",
+   "title_zh": "安裝 hook 並建立記錄檔（在主機上以 root 執行）",
+   "body": "install -D -m 0755 -o root -g root /var/ossec/etc/shared/jt-ai-agent-hook.py /usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py\ninstall -d -m 0755 /var/log/jt-ai-agent\ninstall -m 0622 /dev/null /var/log/jt-ai-agent/actions.log\ninstall -m 0644 /var/ossec/etc/shared/jt-ai-agent.logrotate /etc/logrotate.d/jt-ai-agent\n\nThe hook needs python3 (standard library only). It is run from /usr/local/lib, not from the shared directory, which the Wazuh manager can rewrite.",
+   "body_zh": "install -D -m 0755 -o root -g root /var/ossec/etc/shared/jt-ai-agent-hook.py /usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py\ninstall -d -m 0755 /var/log/jt-ai-agent\ninstall -m 0622 /dev/null /var/log/jt-ai-agent/actions.log\ninstall -m 0644 /var/ossec/etc/shared/jt-ai-agent.logrotate /etc/logrotate.d/jt-ai-agent\n\nhook 需要 python3（只用標準函式庫）。執行的是 /usr/local/lib 裡的副本，不是共享目錄裡的那份（Wazuh manager 可以改寫共享目錄）。",
+   "verify": "echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\"/tmp\"}' | /usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py; tail -1 /var/log/jt-ai-agent/actions.log shows the test line, and rule 133705 fires on the manager.",
+   "verify_zh": "執行 echo '{\"hook_event_name\":\"SessionStart\",\"session_id\":\"test\",\"cwd\":\"/tmp\"}' | /usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py 之後，tail -1 /var/log/jt-ai-agent/actions.log 看得到這一行，manager 上出現規則 133705。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Turn the hook on for every Claude Code user (managed settings)",
+   "title_zh": "對所有 Claude Code 使用者啟用 hook（managed settings）",
+   "body": "Create /etc/claude-code/managed-settings.json (root, 0644) with the block below. If the file exists, add the two entries to its \"hooks\" instead of replacing it. Hooks in this file run for every user and cannot be turned off from a user's or a project's settings.\n\n{\n  \"hooks\": {\n    \"PreToolUse\": [{\"matcher\": \"*\", \"hooks\": [{\"type\": \"command\", \"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py\", \"timeout\": 5}]}],\n    \"SessionStart\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py\", \"timeout\": 5}]}]\n  }\n}\n\nNew sessions pick it up; running sessions may need a restart. For a single user only, the same block can go into that user's ~/.claude/settings.json (the user can remove it).",
+   "body_zh": "建立 /etc/claude-code/managed-settings.json（root、0644），內容如下。檔案已經存在時，把這兩項加進它的 \"hooks\"，不要整份取代。這個檔案裡的 hook 對所有使用者生效，使用者或專案的設定都關不掉。\n\n{\n  \"hooks\": {\n    \"PreToolUse\": [{\"matcher\": \"*\", \"hooks\": [{\"type\": \"command\", \"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py\", \"timeout\": 5}]}],\n    \"SessionStart\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py\", \"timeout\": 5}]}]\n  }\n}\n\n新的工作階段就會套用；執行中的工作階段可能要重新開始。只想對一個使用者啟用時，同一段可以放在該使用者的 ~/.claude/settings.json（他自己可以拿掉）。",
+   "verify": "Start Claude Code, run any command, then tail -2 /var/log/jt-ai-agent/actions.log shows a SessionStart and a PreToolUse line; the manager shows 133705 and 133702.",
+   "verify_zh": "啟動 Claude Code、執行任一指令後，tail -2 /var/log/jt-ai-agent/actions.log 看得到 SessionStart 與 PreToolUse 兩行；manager 上出現 133705 與 133702。"
+  }
+ ],
+ "dashboard": {
+  "fields": [
+   {
+    "field": "data.jt_ai.host",
+    "title": "Host",
+    "title_zh": "主機"
+   },
+   {
+    "field": "data.jt_ai.user",
+    "title": "User",
+    "title_zh": "使用者"
+   },
+   {
+    "field": "data.jt_ai.cwd",
+    "title": "Working directory",
+    "title_zh": "工作目錄"
+   },
+   {
+    "field": "data.jt_ai.remote",
+    "title": "SSH destination",
+    "title_zh": "SSH 目的地"
+   }
+  ]
+ },
+ "agent_group": {
+  "name": "ai-agent",
+  "config": "agent.conf",
+  "files": [
+   "jt-ai-agent-hook.py",
+   "jt-ai-agent.logrotate"
+  ],
+  "description": "Collects the AI coding agent audit log with the pack's prefix, watches the hook and the managed Claude Code settings, and delivers the hook and its logrotate file"
+ }
+}

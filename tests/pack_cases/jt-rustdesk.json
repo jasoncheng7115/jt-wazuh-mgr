@@ -1,0 +1,233 @@
+{
+ "pack": "jt-rustdesk",
+ "cases": [
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/relay_server.rs:443] Both are raw",
+   "location": "/var/log/rustdesk-server/hbbr.log",
+   "expect_rule": "133601",
+   "expect_level": 2,
+   "note": "one relayed session"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/relay_server.rs:443] Both are raw",
+   "location": "/var/log/rustdesk-server/hbbr.log",
+   "expect_rule": "133602",
+   "expect_level": 8,
+   "note": "30 relayed sessions in 10 minutes",
+   "repeat": 30
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/relay_server.rs:443] Both are raw",
+   "location": "/var/log/rustdesk-server/hbbr.log",
+   "expect_rule": "133601",
+   "expect_level": 2,
+   "note": "29 sessions stay quiet",
+   "repeat": 29
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] WARN [src/relay_server.rs:431] Relay authentication failed from [::ffff:10.0.0.154]:64763 - invalid key",
+   "location": "/var/log/rustdesk-server/hbbr.log",
+   "expect_rule": "133603",
+   "expect_level": 3,
+   "note": "real shape: an internal client set up with the wrong key",
+   "expect_in_description": [
+    "10.0.0.154"
+   ]
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] WARN [src/relay_server.rs:431] Relay authentication failed from [::ffff:203.0.113.9]:51000 - invalid key",
+   "location": "/var/log/rustdesk-server/hbbr.log",
+   "expect_rule": "133604",
+   "expect_level": 5,
+   "note": "public address without the key; srcip without ::ffff:",
+   "expect_in_description": [
+    "203.0.113.9",
+    "invalid key"
+   ]
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] WARN [src/relay_server.rs:431] Relay authentication failed from [::ffff:203.0.113.9]:51000 - invalid key",
+   "location": "/var/log/rustdesk-server/hbbr.log",
+   "expect_rule": "133605",
+   "expect_level": 10,
+   "note": "10 from one public address in 10 minutes",
+   "repeat": 10
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] WARN [src/relay_server.rs:431] Relay authentication failed from [::ffff:10.0.0.154]:64763 - invalid key",
+   "location": "/var/log/rustdesk-server/hbbr.log",
+   "expect_rule": "133603",
+   "expect_level": 3,
+   "note": "internal failures are never counted towards 133605",
+   "repeat": 12
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/peer.rs:102] update_pk 123456789 [::ffff:10.0.0.168]:56535 b\"00000000-0000-4000-8000-000000000001\" b\"t\\xee\\xa2\"",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133606",
+   "expect_level": 2,
+   "note": "real shape: registration from the office"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/peer.rs:102] update_pk 123456789 [::ffff:1.34.20.30]:56535 b\"00000000-0000-4000-8000-000000000001\" b\"t\\xee\"",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133607",
+   "expect_level": 3,
+   "note": "real shape: from a Taiwanese address (HiNet), home country",
+   "expect_in_description": [
+    "1.34.20.30",
+    "123456789"
+   ]
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/peer.rs:102] update_pk 987654321 [::ffff:198.51.100.7]:50310 b\"f7867fdb-20f7-4ffe-953a-538310d651da\" b\"k\\xe1\"",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133608",
+   "expect_level": 7,
+   "note": "from outside the home countries",
+   "expect_in_description": [
+    "198.51.100.7",
+    "987654321"
+   ]
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/peer.rs:102] update_pk 987654321 [::ffff:198.51.100.7]:50310 b\"f7867fdb-20f7-4ffe-953a-538310d651da\" b\"k\\xe1\"",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133609",
+   "expect_level": 10,
+   "note": "5 registrations from abroad in 15 minutes",
+   "repeat": 5
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/rendezvous_server.rs:597] IP change of 123456789 from [::ffff:10.0.0.168]:56535 to [::ffff:1.34.10.20]:56535",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133607",
+   "expect_level": 3,
+   "note": "real shape: address change, the new address (Taiwanese mobile) is judged",
+   "expect_in_description": [
+    "1.34.10.20"
+   ]
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/rendezvous_server.rs:597] IP change of 123456789 from [::ffff:1.34.20.30]:56535 to [::ffff:203.0.113.133]:56535",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133608",
+   "expect_level": 7,
+   "note": "moved to a Japanese address, outside the default home country",
+   "expect_in_description": [
+    "203.0.113.133"
+   ]
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/peer.rs:102] update_pk 555000111 [2001:db8::5]:40001 b\"0e7d0d39-1c2b-4a77-9d2e-6b8f1f1e0a01\" b\"z\"",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133610",
+   "expect_level": 3,
+   "note": "real IPv6 client: no country lookup",
+   "expect_in_description": [
+    "2001:db8::5"
+   ]
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/peer.rs:102] update_pk 555000111 [::ffff:10.0.0.168]:40001 b\"x] Relay authentication failed from [::ffff:198.51.100.66]:1 - invalid key\" b\"z\"",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133606",
+   "expect_level": 2,
+   "note": "injection: relay-failure text inside the client UUID is not read as a refusal from 198.51.100.66"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/peer.rs:102] update_pk 555000111 [::ffff:10.0.0.168]:40001 b\"x] update_pk 1 [::ffff:198.51.100.66]:1 b\" b\"z\"",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133606",
+   "expect_level": 2,
+   "note": "injection: a second update_pk inside the UUID does not change the address",
+   "expect_in_description": [
+    "10.0.0.168"
+   ]
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/rendezvous_server.rs:193] Start",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133611",
+   "expect_level": 3,
+   "note": "hbbs started"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/relay_server.rs:87] Start",
+   "location": "/var/log/rustdesk-server/hbbr.log",
+   "expect_rule": "133611",
+   "expect_level": 3,
+   "note": "hbbr started"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/common.rs:172] signal terminate",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133612",
+   "expect_level": 3,
+   "note": "service stopping"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] ERROR [libs/hbb_common/src/config.rs:568] Failed to generate new id",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133614",
+   "expect_level": 2,
+   "note": "real shape: harmless error"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] ERROR [src/rendezvous_server.rs:900] Failed to bind tcp :21116: Address already in use",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133613",
+   "expect_level": 5,
+   "note": "other error"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] WARN [src/rendezvous_server.rs:800] something odd happened",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "133615",
+   "expect_level": 3,
+   "note": "other warning"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/rendezvous_server.rs:161] ALWAYS_USE_RELAY=N",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "startup details stay at level 0"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/peer.rs:130] pk updated instead of insert",
+   "location": "/var/log/rustdesk-server/hbbs.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "routine"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/app.rs:10] update_pk 1 [::ffff:198.51.100.7]:1",
+   "location": "/var/log/app.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "another program with the same line shape (src/app.rs) is not RustDesk"
+  },
+  {
+   "log": "{\"jt_rustdesk_geo\":{\"detail\":\"https://ftp.apnic.net/stats/apnic/delegated-apnic-latest: timed out\",\"state\":\"failing\"}}",
+   "location": "jt-rustdesk-geo",
+   "expect_rule": "133691",
+   "expect_level": 5,
+   "note": "list update failing"
+  },
+  {
+   "log": "{\"jt_rustdesk_geo\":{\"days\":15,\"detail\":\"timed out\",\"state\":\"stale\"}}",
+   "location": "jt-rustdesk-geo",
+   "expect_rule": "133692",
+   "expect_level": 7,
+   "note": "list not updated for 15 days"
+  },
+  {
+   "log": "{\"jt_rustdesk_geo\":{\"hours\":30,\"state\":\"recovered\"}}",
+   "location": "jt-rustdesk-geo",
+   "expect_rule": "133693",
+   "expect_level": 3,
+   "note": "updated again"
+  }
+ ]
+}

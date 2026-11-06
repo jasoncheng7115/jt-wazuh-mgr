@@ -1,0 +1,150 @@
+{
+ "id": "jt-rustdesk",
+ "name": "RustDesk Server (relay abuse, registrations from abroad)",
+ "name_zh": "RustDesk 伺服器（中繼濫用、國外註冊）",
+ "version": "1.0",
+ "summary": "RustDesk server (hbbs / hbbr): relay requests without the server key per address, client registrations and address changes from outside the home countries (CDB list built from a regional internet registry, Taiwan by default), surges of relayed sessions, service starts and stops, from the server's own log files.",
+ "summary_zh": "RustDesk 伺服器（hbbs／hbbr）：沒有伺服器金鑰的中繼請求（依來源位址）、從本國以外註冊或換位址的用戶端（以區域網際網路註冊管理機構資料建立的 CDB 清單，預設台灣）、中繼連線暴增、服務啟停，讀伺服器自己的記錄檔。",
+ "rule_id_range": "133600-133699",
+ "author": "Jason Tools",
+ "license": "AGPL-3.0-or-later",
+ "requires": {
+  "wazuh": ">=4.8"
+ },
+ "tested_with": [
+  "4.14.9"
+ ],
+ "files": [
+  {
+   "type": "decoder",
+   "name": "jt-rustdesk_decoders.xml",
+   "dest": "etc/decoders/jt-rustdesk_decoders.xml",
+   "sha256": "83d1843f20403feba0d8a76b046a29426354c15de9e9f90b4e544638c4ac3287"
+  },
+  {
+   "type": "rule",
+   "name": "zz-133600-jt_rustdesk_rules.xml",
+   "dest": "etc/rules/zz-133600-jt_rustdesk_rules.xml",
+   "sha256": "120a7d6f5593dd0ef71b816e0c80ae2e96a3112aed82bf57018bd5cdd605f5a6"
+  },
+  {
+   "type": "list",
+   "name": "jt-rustdesk-home",
+   "dest": "etc/lists/jt-rustdesk-home",
+   "declare": true,
+   "keep": true,
+   "sha256": "050124a183bf63608bec7d77224453f74b7e4254175b23498b043ddaba268d62"
+  }
+ ],
+ "scripts": [
+  {
+   "name": "jt-rustdesk-geo.py",
+   "dest": "etc/jt-packs/bin/jt-rustdesk-geo.py",
+   "sha256": "d2cbb593b58e13178a572651efe1c65fdc3edc20ce93e875656eb1b86b57af65",
+   "cron": "41 5 * * *",
+   "args": "--wazuh-path {wazuh_path}",
+   "description": "Keeps the CDB list jt-rustdesk-home (IPv4 prefixes of the home countries in etc/jt-packs/jt-rustdesk.conf, Taiwan by default) from APNIC's delegated statistics, at most one download a day, and reloads this node's ruleset after a change"
+  }
+ ],
+ "agent_group": {
+  "name": "rustdesk",
+  "config": "agent.conf",
+  "files": [],
+  "description": "The RustDesk server's log files (/var/log/rustdesk-server/hbbs.log and hbbr.log of the Debian packages); no prefix needed, the decoder recognises the line format"
+ },
+ "setup": [
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Install the pack and reload the ruleset",
+   "title_zh": "安裝套件並重新載入規則集",
+   "body": "1. Install from this page. It schedules jt-rustdesk-geo.py on this node (daily) and declares the list jt-rustdesk-home.\n2. On the Rules tab, click Reload Ruleset. The cluster copies rule files and lists but does not reload the workers.",
+   "body_zh": "1. 在本頁安裝。安裝時會在本節點排程 jt-rustdesk-geo.py（每天一次），並宣告清單 jt-rustdesk-home。\n2. 到「規則」分頁按「重新載入規則集」。叢集只同步規則檔與清單，不會重載 worker。",
+   "verify": "The reload reports success with no warning for any node; a search for 133600 on the Rules tab finds the rule.",
+   "verify_zh": "重新載入回報成功，任何節點都沒有警告；在「規則」分頁搜尋 133600 會找到這條規則。"
+  },
+  {
+   "platform": "manager",
+   "required": true,
+   "title": "Choose the home countries and fill the list",
+   "title_zh": "設定本國並產生清單",
+   "body": "The shipped list holds Taiwan's IPv4 prefixes. To use other countries, write their ISO codes to etc/jt-packs/jt-rustdesk.conf and run the script once; it downloads APNIC's delegated statistics (about 4 MB, at most once a day). For countries outside Asia-Pacific give another registry's delegated-*-extended-latest file with --url. The script refuses a result with fewer than half the prefixes of the last good one and keeps the old list.",
+   "body_zh": "套件內附台灣的 IPv4 前綴。要改成其他國家，把 ISO 代碼寫進 etc/jt-packs/jt-rustdesk.conf，執行一次腳本；它會下載 APNIC 的 delegated 統計檔（約 4 MB，每天最多一次）。亞太以外的國家，用 --url 指定其他註冊管理機構的 delegated-*-extended-latest 檔。結果的前綴數少於上次的一半時，腳本會拒絕並保留舊清單。",
+   "code": "printf 'countries = TW, JP\\n' > /var/ossec/etc/jt-packs/jt-rustdesk.conf\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-rustdesk-geo.py --wazuh-path /var/ossec --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-rustdesk-geo.py --wazuh-path /var/ossec --force",
+   "verify": "--check prints the number of prefixes; after the run the list has changed and the log says \"ruleset reload: ok\".",
+   "verify_zh": "--check 會印出前綴數；執行後清單有更新，記錄顯示「ruleset reload: ok」。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "Cluster: reload the workers after a list change",
+   "title_zh": "叢集：清單更新後重載 worker",
+   "body": "Run the script on the master only. The cluster copies the list to the workers; each worker reloads its own ruleset with --reload-if-changed (the last lines below, run on the master; <worker> is the worker's address). Without an API session the tool cannot declare the list on a worker either: add <list>etc/lists/jt-rustdesk-home</list> to the worker's ossec.conf ruleset.",
+   "body_zh": "腳本只在 master 執行。叢集會把清單複製到 worker；每台 worker 用 --reload-if-changed 重載自己的規則集（下列最後幾行，在 master 上執行；<worker> 是 worker 的位址）。沒有 API 工作階段時，工具也無法在 worker 宣告清單：請在 worker 的 ossec.conf ruleset 加上 <list>etc/lists/jt-rustdesk-home</list>。",
+   "code": "scp /var/ossec/etc/jt-packs/bin/jt-rustdesk-geo.py <worker>:/var/ossec/etc/jt-packs/bin/\nssh <worker> 'echo \"*/30 * * * * root /usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-rustdesk-geo.py --wazuh-path /var/ossec --reload-if-changed\" > /etc/cron.d/jt-jt-rustdesk'",
+   "verify": "On a worker, /var/ossec/var/jt-rustdesk-geo.state has a reloaded_mtime after the next list change.",
+   "verify_zh": "下次清單更新後，worker 的 /var/ossec/var/jt-rustdesk-geo.state 會有 reloaded_mtime。"
+  },
+  {
+   "platform": "linux",
+   "required": true,
+   "title": "Add the RustDesk server to the rustdesk group",
+   "title_zh": "把 RustDesk 伺服器加入 rustdesk 群組",
+   "body": "1. The group reads /var/log/rustdesk-server/hbbs.log and hbbr.log (Debian / Ubuntu packages). The container images log to stdout: send that to a file and change the locations.\n2. If the agent's own ossec.conf already reads these files it keeps working; the agent keeps one definition per file.\n3. Add the agent to the group (commands below).",
+   "body_zh": "1. 群組讀取 /var/log/rustdesk-server/hbbs.log 與 hbbr.log（Debian／Ubuntu 套件）。容器版記錄輸出到 stdout：請導到檔案並修改 location。\n2. 若 agent 自己的 ossec.conf 已經讀這些檔案，照樣可用；agent 每個檔案只保留一個定義。\n3. 把 agent 加入群組（指令如下）。",
+   "file": "agent/agent.conf",
+   "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g rustdesk",
+   "verify": "Restart hbbs (systemctl restart rustdesk-hbbs): rule 133611 (service started, level 3) appears for the agent.",
+   "verify_zh": "重新啟動 hbbs（systemctl restart rustdesk-hbbs）：該 agent 出現規則 133611（服務啟動，level 3）。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "title": "Make sure the server enforces its key",
+   "title_zh": "確認伺服器強制金鑰",
+   "body": "Without the key anyone can use your server and relay. hbbs and hbbr read the key pair from id_ed25519 in their working directory; current versions refuse clients without it (the log line \"Relay authentication failed ... invalid key\", rule 133603 / 133604, shows the relay does). To be explicit, start both with -k _ . Every client must have the server key set, or it cannot connect.",
+   "body_zh": "沒有金鑰時，任何人都能使用你的伺服器與中繼。hbbs、hbbr 從工作目錄的 id_ed25519 讀取金鑰；目前的版本會拒絕沒有金鑰的用戶端（記錄「Relay authentication failed ... invalid key」，即規則 133603／133604，表示中繼有在檢查）。若要明確設定，兩者都加上 -k _ 啟動。每個用戶端都必須設定伺服器金鑰，否則連不上。",
+   "verify": "A client without the key gets refused; rule 133603 or 133604 appears.",
+   "verify_zh": "沒設金鑰的用戶端會被拒絕，出現規則 133603 或 133604。"
+  },
+  {
+   "platform": "manager",
+   "required": false,
+   "title": "Manager without Internet access",
+   "title_zh": "manager 無法連外時",
+   "body": "Download the delegated statistics file elsewhere (https://ftp.apnic.net/stats/apnic/delegated-apnic-latest), copy it to the manager and build the list from it. Repeat when the registry changes, a few times a year is enough for a country list.",
+   "body_zh": "在其他電腦下載 delegated 統計檔（https://ftp.apnic.net/stats/apnic/delegated-apnic-latest），複製到 manager 後以它產生清單。國家清單一年更新幾次就夠了。",
+   "code": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-rustdesk-geo.py --wazuh-path /var/ossec --from-file /tmp/delegated-apnic-latest",
+   "verify": "The log says \"ruleset reload: ok\".",
+   "verify_zh": "記錄顯示「ruleset reload: ok」。"
+  }
+ ],
+ "notes": [
+  "Reads the RustDesk server's own log files (hbbs.log, hbbr.log). At the default level they record relay requests refused for a missing key (with the address), client registrations and address changes (with the ID and address), one line per relayed session (without an address), service starts and stops and errors. Connections and logins to the computers themselves happen on the clients and never reach the server.",
+  "Relay requests without the server key: from a private address level 3 (in practice a client set up with the wrong key), from a public address level 5, 10 from one address within 10 minutes level 10.",
+  "Registrations and address changes: private address level 2; public address of a home country level 3; outside the home countries level 7, five within 15 minutes level 10; a real IPv6 address level 3 (the list holds IPv4 only). The home countries are a CDB list of IPv4 prefixes (address_match_key) that jt-rustdesk-geo.py builds from APNIC's delegated statistics for the countries in etc/jt-packs/jt-rustdesk.conf, Taiwan by default; the shipped list is Taiwan's (9,027 prefixes). Blocks smaller than a /24 are written as their /24.",
+  "Relayed sessions: level 2 each, 30 within 10 minutes level 8. On the server this pack was written for, a month of normal use was 129 relayed sessions.",
+  "The shipped list is kept on update (keep), because the script owns it after installation."
+ ],
+ "notes_zh": [
+  "讀 RustDesk 伺服器自己的記錄檔（hbbs.log、hbbr.log）。預設等級下會記錄：因缺少金鑰被拒的中繼請求（含位址）、用戶端註冊與換位址（含 ID 與位址）、每個中繼連線一行（不含位址）、服務啟停與錯誤。連到電腦本身的連線與登入發生在用戶端，不會經過伺服器。",
+  "沒有伺服器金鑰的中繼請求：私有位址 level 3（通常是用戶端金鑰設錯）、公開位址 level 5，同一位址 10 分鐘 10 次 level 10。",
+  "註冊與換位址：私有位址 level 2；本國公開位址 level 3；本國以外 level 7，15 分鐘 5 次 level 10；真正的 IPv6 位址 level 3（清單只含 IPv4）。本國是一份 IPv4 前綴的 CDB 清單（address_match_key），由 jt-rustdesk-geo.py 依 etc/jt-packs/jt-rustdesk.conf 的國家（預設台灣）從 APNIC delegated 統計檔產生；套件內附台灣的清單（9,027 個前綴）。小於 /24 的區塊以所在的 /24 表示。",
+  "中繼連線：每個 level 2，10 分鐘 30 個 level 8。撰寫本套件的那台伺服器，一個月正常使用約 129 個中繼連線。",
+  "更新套件時保留清單（keep），因為安裝後由腳本維護。"
+ ],
+ "dashboard": {
+  "fields": [
+   {
+    "field": "data.rustdesk.id",
+    "title": "Client ID",
+    "title_zh": "用戶端 ID"
+   },
+   {
+    "field": "data.rustdesk.src",
+    "title": "Server component",
+    "title_zh": "伺服器元件"
+   }
+  ]
+ }
+}

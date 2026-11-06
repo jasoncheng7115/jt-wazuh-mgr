@@ -4,6 +4,51 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.33.0 (2026-11-06)
+
+- **New pack jt-ai-agent 1.0 (rules 133700-133799): an audit trail of AI coding agents.** A
+  Claude Code hook (`agent/jt-ai-agent-hook.py`, PreToolUse and SessionStart) writes one JSON
+  line per tool call to `/var/log/jt-ai-agent/actions.log`: who (OS user, session, subagent),
+  where (host, working directory, permission mode) and what (the shell command, the file path,
+  the address of a web fetch, the SSH destination). Never file contents, command output or
+  prompts; passwords, tokens and keys in command lines are replaced with `***` before anything
+  is written (checked against 72,000 real agent commands). The hook never blocks or changes a
+  call. Every command, file change, web fetch, MCP call, subagent and session is stored at
+  level 3; destructive commands are level 10 (level 12 when sent to another host over SSH),
+  reading private keys or credential files level 9, download-and-run level 8, an agent
+  changing its own permissions or hooks level 10, a session with all permission prompts off
+  level 8, and tampering with the audit itself (its log, its hook, the managed settings,
+  `disableAllHooks`) level 12, also through file integrity. Made mandatory through
+  `/etc/claude-code/managed-settings.json`. 54 sandbox cases.
+- **New pack jt-rustdesk 1.0 (rules 133600-133699): RustDesk servers (hbbs / hbbr).** Relay
+  sessions and bursts of them, relay requests without the server key (level 5 from a public
+  address, 10 when repeated), client registrations graded by where they come from: private,
+  a public address of a home country (level 3) or abroad (level 7, five within 15 minutes
+  level 10), with the home countries kept by `jt-rustdesk-geo.py` from the registry's
+  delegated statistics (Taiwan by default, `etc/jt-packs/jt-rustdesk.conf`). The decoders
+  read the server's own log format, so a host that already collects the logs needs no change.
+- **jt-zimbra 3.7: unusual outgoing mail (133360-133368).** Every message amavis marks as
+  outgoing from a local origin is recorded at level 3 (sender, first recipient, size); one
+  account sending 20 outgoing messages within 10 minutes is level 10 and a second burst level
+  12; one message to 20 or more recipients level 8, 50 or more level 10; messages of 10 MB or
+  more level 5, three from one account within 10 minutes level 10; 20 outgoing messages
+  bounced by outside servers within 10 minutes level 10. Thresholds were set from two months
+  of real mail. Also fixed: amavis lines with the after-queue origin `ORIGINATING_POST`
+  (Zimbra 10) were not decoded, so blocked outgoing viruses and spam in them were not
+  reported, and an infected local message could be reported as inbound.
+- **jt-alert-digest 1.15: daily_groups.** `daily_groups = modsecurity` in
+  `etc/jt-packs/jt-alert-digest.conf` adds a part to the daily summary for that rule group,
+  whatever the alert levels: alerts per rule, the most frequent sources and targets, and how
+  many came from internal addresses. For a WAF it is one summary a day instead of a message
+  per attack. Without the setting the summary is unchanged.
+- **Pack dashboards: one card per count** (all 33 packs). The description has a row of its
+  own; all alerts, levels 7-11 and levels 12 and up are separate cards with large numbers that
+  scale with the card, still clickable to filter, beside the level distribution. Re-import the
+  dashboards (Rule Packs tab, Import all dashboards) to get the new layout.
+- **Import all dashboards:** the form is locked while the import runs, the progress list
+  follows the newest line, and the certificate option and the overwrite note are worded more
+  plainly.
+
 ## v1.32.3 (2026-11-01)
 
 - **jt-nextcloud 1.2.5: Nextcloud alerts reach the Wazuh dashboard.** Every line of

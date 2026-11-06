@@ -1,0 +1,121 @@
+<!--
+  jt-zimbra: unusual outgoing mail (rules 133360-133379)
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  amavis writes one line per message with the direction and the origin:
+
+    (12345-06) Passed CLEAN {RelayedOutbound}, ORIGINATING/MYNETS LOCAL [192.0.2.5]:41552
+      <a@example.com> -> <x@example.org>,<y@example.net>, Queue-ID: ..., Message-ID: <...>,
+      mail_id: ..., Hits: -, size: 37497, queued_as: ..., 331 ms
+
+  {RelayedOutbound} with ORIGINATING is a message from a local account or host
+  to an outside recipient, which is what a hijacked account, an infected
+  workstation or someone carrying data out produces. Every such message is
+  recorded at level 3 (sender, first recipient, size), so outgoing mail can be
+  searched after the fact. Above that:
+  - one account sending 20 outgoing messages within 10 minutes (level 10),
+    and a second such burst within 10 minutes (level 12)
+  - one message to 20 or more recipients (level 8), 50 or more (level 10)
+  - a message of 10 MB or more (level 5), three of them from one account
+    within 10 minutes (level 10)
+  On the Postfix side, for the host that hands mail to the internet (the Zimbra
+  MTA itself or a gateway in front of it, which uses the same decoders):
+  - 20 outgoing messages bounced by outside servers within 10 minutes on one
+    host (level 10): mail to addresses that do not exist, typical of spam sent
+    to a bought or harvested list.
+  The thresholds suit an organisation sending tens of outside messages a day;
+  raise them with overwrite="yes" copies in a local rules file.
+  Blocked outgoing spam and viruses, block-listing by receivers, a full queue,
+  bursts of authenticated submissions and forwarding to outside addresses
+  have their own rules (100948/100949, 100946, 100904/100905, 100957/100958,
+  100933/100934, 100925, 100881/100914).
+-->
+<group name="zimbra,jt_zimbra,zimbra_outbound,">
+
+  <rule id="133360" level="3">
+    <if_sid>100944</if_sid>
+    <action>Passed</action>
+    <field name="zimbra.amavis_flow" type="pcre2">\bRelayedOutbound\b</field>
+    <field name="zimbra.amavis_origin" type="pcre2">\bORIGINATING</field>
+    <description>Outgoing mail from $(zimbra.sender) to $(zimbra.rcpt) ($(zimbra.msg_size) bytes)</description>
+  </rule>
+
+  <rule id="133363" level="8">
+    <if_sid>133360</if_sid>
+    <field name="zimbra.rcpts" type="pcre2">^(?:[^,]+,){19}</field>
+    <description>Outgoing message with 20 or more recipients from $(zimbra.sender)</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+  <rule id="133364" level="10">
+    <if_sid>133363</if_sid>
+    <field name="zimbra.rcpts" type="pcre2">^(?:[^,]+,){49}</field>
+    <description>[WARN] Outgoing message with 50 or more recipients from $(zimbra.sender): mass mailing from a local account</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+  <rule id="133365" level="5">
+    <if_sid>133360</if_sid>
+    <field name="zimbra.msg_size" type="pcre2">^(?:[1-9]\d{7,})$</field>
+    <description>Large outgoing message ($(zimbra.msg_size) bytes) from $(zimbra.sender) to $(zimbra.rcpt)</description>
+    <group>zimbra_outbound_large,</group>
+  </rule>
+
+  <rule id="133361" level="10" frequency="20" timeframe="600">
+    <if_matched_sid>133360</if_matched_sid>
+    <same_field>zimbra.sender</same_field>
+    <description>[WARN] $(zimbra.sender) sent 20 outgoing messages within 10 minutes: the account may be hijacked and sending spam</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+  <rule id="133362" level="12" frequency="2" timeframe="600" ignore="1800">
+    <if_matched_sid>133361</if_matched_sid>
+    <same_field>zimbra.sender</same_field>
+    <description>[HIGH] $(zimbra.sender) keeps sending outgoing mail in bursts of 20 within 10 minutes: the account is probably hijacked</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+  <rule id="133366" level="10" frequency="3" timeframe="600" ignore="600">
+    <if_matched_sid>133365</if_matched_sid>
+    <same_field>zimbra.sender</same_field>
+    <description>[WARN] $(zimbra.sender) sent three outgoing messages of 10 MB or more within 10 minutes: data may be carried out by mail</description>
+    <mitre>
+      <id>T1048.003</id>
+    </mitre>
+  </rule>
+
+  <!-- Postfix: outgoing mail bounced by an outside server. The relay is not a
+       private or loopback address (the hand-over to the mailbox server or to
+       an internal gateway is not "outgoing"). Refusals as spam stay with
+       100904, which is evaluated first. -->
+  <rule id="133367" level="2">
+    <if_sid>3320</if_sid>
+    <program_name type="pcre2">^postfix/smtp$</program_name>
+    <status>bounced</status>
+    <field name="zimbra.relay" type="pcre2">^(?!none$)(?!.*\[(?:127\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|::1\]|f[cd][0-9a-f]{2}:))</field>
+    <description>Outgoing mail to $(zimbra.rcpt) bounced by $(zimbra.relay)</description>
+  </rule>
+
+  <rule id="133368" level="10" frequency="20" timeframe="600" ignore="1800">
+    <if_matched_sid>133367</if_matched_sid>
+    <same_location />
+    <description>[WARN] 20 outgoing messages bounced by outside servers within 10 minutes: mail is being sent to addresses that do not exist, typical of spam from a hijacked account</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>spam,</group>
+  </rule>
+
+</group>

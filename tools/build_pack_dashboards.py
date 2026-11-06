@@ -237,6 +237,7 @@ class Builder:
         self.objects = []
         self.titles = {}          # object id -> panel title without the pack id
         self.panels = []          # (object id, type, width, height)
+        self.untitled = set()     # panels that carry their own label (the count cards)
         self.srcip, self.dstuser = carries(pdir, manifest)
         opts = manifest.get('dashboard') or {}
         self.extra = []
@@ -282,88 +283,94 @@ class Builder:
             'aggs': [], 'type': 'markdown',
             'params': {'fontSize': 11, 'markdown': text, 'openLinksInNewTab': False}},
             uses_index=False)
-        self.panels.append((vid, 'visualization', 16, 14))
+        # a row of its own (2026-11-06, owner): the text no longer squeezes the counts. Its height
+        # follows the summary: about 95 characters of Chinese or 190 of English to a line at full width.
+        summary = T(self.m.get('summary', ''), self.m.get('summary_zh', ''))
+        per_line = 95 if LANG == 'zh-TW' else 190
+        lines = -(-len(summary) // per_line)
+        self.panels.append((vid, 'visualization', 48, max(9, min(15, 8 + lines))))
 
     def metric(self):
-        """Three counts, each in the colour of what it means (2026-10-30, owner:
-        "the numbers should have matching colours"), and each one clickable
-        (2026-11-01, owner: "it should be clickable, to filter"): a click adds
-        the level range (or, for all alerts, the pack's rules) as a dashboard
-        filter through opensearchDashboardsAddFilter. A metric visualization
-        colours by value range only, the same for every number, and Vega-Lite
-        has no click handler that can call that function, so this is Vega:
-        all alerts in blue; levels 7-11 amber and 12+ red when there are any,
-        green when there are none."""
+        """Three counts, one card each (2026-11-06, owner: "the numbers are too small",
+        "like the separate cards" of the Wazuh overview), in the colour of what they
+        mean (2026-10-30) and clickable (2026-11-01): a click adds the level range
+        (or, for all alerts, the pack's rules) as a dashboard filter through
+        opensearchDashboardsAddFilter. A metric visualization colours by value range
+        only, and Vega-Lite has no click handler that can call that function, so
+        each card is a small Vega spec: all alerts in blue; levels 7-11 amber and
+        12+ red when there are any, green when there are none. The number scales
+        with the card."""
         mid_lo, high = 7, HIGH_LEVEL
-        filters = {
-            1: {'query_string': {'query': self.query, 'analyze_wildcard': True}},
-            2: {'range': {'rule.level': {'gte': mid_lo, 'lte': high - 1}}},
-            3: {'range': {'rule.level': {'gte': high}}},
-        }
-        names = {1: T('%s rules' % self.pid, '%s 的規則' % self.pid),
-                 2: T('Level %d-%d' % (mid_lo, high - 1), '等級 %d–%d' % (mid_lo, high - 1)),
-                 3: T('Level %d+' % high, '等級 %d 以上' % high)}
-        # the third argument is the filter's label; without it the pill shows the query JSON
-        click = ' : '.join('datum.ord == %d ? opensearchDashboardsAddFilter(%s, %s, %s)' % (
-            k, json.dumps(v, sort_keys=True), json.dumps(INDEX_PATTERN_ID), json.dumps(names[k], ensure_ascii=False))
-            for k, v in sorted(filters.items())) + ' : null'
-        spec = {
-            '$schema': 'https://vega.github.io/schema/vega/v5.json',
-            'autosize': {'type': 'fit', 'contains': 'padding'},
-            'config': {'kibana': {'hideWarnings': True}},
-            'data': [{
-                'name': 'lv',
-                'url': {
-                    'index': INDEX_PATTERN_ID,
-                    'body': {
-                        'size': 0,
-                        'query': {'bool': {
-                            'must': ['%dashboard_context-must_clause%',
-                                     {'range': {TIME_FIELD: {'%timefilter%': True}}},
-                                     {'query_string': {'query': self.query, 'analyze_wildcard': True}}],
-                            'filter': ['%dashboard_context-filter_clause%'],
-                            'must_not': ['%dashboard_context-must_not_clause%']}},
-                        'aggs': {'lv': {'filters': {'filters': [
-                            {'match_all': {}},
-                            {'range': {'rule.level': {'gte': mid_lo, 'lte': high - 1}}},
-                            {'range': {'rule.level': {'gte': high}}}]}}},
+        cards = [
+            ('count', T('All alerts', '全部告警'), {'match_all': {}},
+             {'query_string': {'query': self.query, 'analyze_wildcard': True}},
+             T('%s rules' % self.pid, '%s 的規則' % self.pid), "'#1f5bb0'"),
+            ('count-mid', T('Level %d-%d' % (mid_lo, high - 1), '等級 %d–%d' % (mid_lo, high - 1)),
+             {'range': {'rule.level': {'gte': mid_lo, 'lte': high - 1}}},
+             {'range': {'rule.level': {'gte': mid_lo, 'lte': high - 1}}},
+             T('Level %d-%d' % (mid_lo, high - 1), '等級 %d–%d' % (mid_lo, high - 1)),
+             "datum.doc_count == 0 ? '#2e7d32' : '#b26a00'"),
+            ('count-high', T('Level %d+' % high, '等級 %d 以上' % high),
+             {'range': {'rule.level': {'gte': high}}},
+             {'range': {'rule.level': {'gte': high}}},
+             T('Level %d+' % high, '等級 %d 以上' % high),
+             "datum.doc_count == 0 ? '#2e7d32' : '#c62828'"),
+        ]
+        for part, label, agg, flt, flt_name, colour in cards:
+            # the third argument is the filter's label; without it the pill shows the query JSON
+            click = 'opensearchDashboardsAddFilter(%s, %s, %s)' % (
+                json.dumps(flt, sort_keys=True), json.dumps(INDEX_PATTERN_ID), json.dumps(flt_name, ensure_ascii=False))
+            spec = {
+                '$schema': 'https://vega.github.io/schema/vega/v5.json',
+                'autosize': {'type': 'fit', 'contains': 'padding'},
+                'config': {'kibana': {'hideWarnings': True}},
+                'data': [{
+                    'name': 'lv',
+                    'url': {
+                        'index': INDEX_PATTERN_ID,
+                        'body': {
+                            'size': 0,
+                            'query': {'bool': {
+                                'must': ['%dashboard_context-must_clause%',
+                                         {'range': {TIME_FIELD: {'%timefilter%': True}}},
+                                         {'query_string': {'query': self.query, 'analyze_wildcard': True}}],
+                                'filter': ['%dashboard_context-filter_clause%'],
+                                'must_not': ['%dashboard_context-must_not_clause%']}},
+                            'aggs': {'lv': {'filters': {'filters': [agg]}}},
+                        },
                     },
-                },
-                'format': {'property': 'aggregations.lv.buckets'},
-                'transform': [
-                    {'type': 'window', 'ops': ['row_number'], 'as': ['ord']},
-                    {'type': 'formula', 'as': 'num', 'expr': "format(datum.doc_count, ',')"},
-                    {'type': 'formula', 'as': 'label', 'expr': "datum.ord == 1 ? '%s' : (datum.ord == 2 ? '%s' : '%s')" % (
-                        T('All alerts', '全部告警'), T('Level %d-%d' % (mid_lo, high - 1), '等級 %d–%d' % (mid_lo, high - 1)),
-                        T('Level %d+' % high, '等級 %d 以上' % high))},
-                    {'type': 'formula', 'as': 'colour', 'expr': "datum.ord == 1 ? '#1f5bb0' : (datum.doc_count == 0 ? '#2e7d32'"
-                                                               " : (datum.ord == 2 ? '#b26a00' : '#c62828'))"},
+                    'format': {'property': 'aggregations.lv.buckets'},
+                    'transform': [
+                        {'type': 'formula', 'as': 'num', 'expr': "format(datum.doc_count, ',')"},
+                        {'type': 'formula', 'as': 'colour', 'expr': colour},
+                    ],
+                }],
+                'signals': [{'name': 'jtFilter', 'value': None,
+                             'on': [{'events': '@num:click, @lbl:click', 'update': click}]}],
+                'marks': [
+                    {'name': 'num', 'type': 'text', 'from': {'data': 'lv'}, 'encode': {
+                        'enter': {'x': {'signal': 'width / 2'}, 'y': {'signal': 'height * 0.62'},
+                                  'text': {'field': 'num'}, 'fill': {'field': 'colour'}, 'align': {'value': 'center'},
+                                  'baseline': {'value': 'bottom'},
+                                  # as large as the card allows: by height, and by width for long numbers
+                                  'fontSize': {'signal': 'max(18, min(height * 0.5, width * 1.6 / max(3, length(datum.num))))'},
+                                  'fontWeight': {'value': 'bold'}, 'cursor': {'value': 'pointer'},
+                                  'tooltip': {'value': T('Click to filter the dashboard', '點擊以篩選看板')}},
+                        'hover': {'opacity': {'value': 0.75}}, 'update': {'opacity': {'value': 1}}}},
+                    {'name': 'lbl', 'type': 'text', 'from': {'data': 'lv'}, 'encode': {
+                        'enter': {'x': {'signal': 'width / 2'}, 'y': {'signal': 'height * 0.62'},
+                                  'text': {'value': '- %s -' % label}, 'fill': {'value': '#3d444d'},
+                                  'align': {'value': 'center'}, 'baseline': {'value': 'top'}, 'dy': {'value': 8},
+                                  'fontSize': {'signal': 'max(12, min(18, height * 0.09))'},
+                                  'cursor': {'value': 'pointer'}}}},
                 ],
-            }],
-            'scales': [{'name': 'x', 'type': 'band', 'domain': {'data': 'lv', 'field': 'ord'},
-                        'range': 'width', 'padding': 0.05}],
-            'signals': [{'name': 'jtFilter', 'value': None,
-                         'on': [{'events': '@num:click, @lbl:click', 'update': click}]}],
-            'marks': [
-                {'name': 'num', 'type': 'text', 'from': {'data': 'lv'}, 'encode': {
-                    'enter': {'x': {'scale': 'x', 'field': 'ord', 'band': 0.5}, 'y': {'signal': 'height / 2'},
-                              'text': {'field': 'num'}, 'fill': {'field': 'colour'}, 'align': {'value': 'center'},
-                              'baseline': {'value': 'bottom'}, 'dy': {'value': -4}, 'fontSize': {'value': 34},
-                              'fontWeight': {'value': 'bold'}, 'cursor': {'value': 'pointer'},
-                              'tooltip': {'value': T('Click to filter the dashboard', '點擊以篩選看板')}},
-                    'hover': {'opacity': {'value': 0.75}}, 'update': {'opacity': {'value': 1}}}},
-                {'name': 'lbl', 'type': 'text', 'from': {'data': 'lv'}, 'encode': {
-                    'enter': {'x': {'scale': 'x', 'field': 'ord', 'band': 0.5}, 'y': {'signal': 'height / 2'},
-                              'text': {'field': 'label'}, 'fill': {'value': '#3d444d'}, 'align': {'value': 'center'},
-                              'baseline': {'value': 'top'}, 'dy': {'value': 6}, 'fontSize': {'value': 13},
-                              'cursor': {'value': 'pointer'}}}},
-            ],
-        }
-        vid = self.vis('count', T('Alerts', '告警數'), {
-            'aggs': [], 'type': 'vega',
-            'params': {'spec': json.dumps(spec, ensure_ascii=False, indent=2, sort_keys=True)}},
-            uses_index=False)
-        self.panels.append((vid, 'visualization', 16, 14))
+            }
+            vid = self.vis(part, label, {
+                'aggs': [], 'type': 'vega',
+                'params': {'spec': json.dumps(spec, ensure_ascii=False, indent=2, sort_keys=True)}},
+                uses_index=False)
+            self.panels.append((vid, 'visualization', 10, 10))
+            self.untitled.add(vid)
 
     def levels(self):
         vid = self.vis('levels', T('Level distribution', '等級分布'), {
@@ -374,7 +381,7 @@ class Builder:
                        'type': 'pie', 'labels': {'last_level': True, 'show': False, 'truncate': 100,
                                                  'values': True}}},
             ui_state=level_colours())
-        self.panels.append((vid, 'visualization', 16, 14))
+        self.panels.append((vid, 'visualization', 18, 10))   # beside the three 10-wide cards
 
     def timeline(self):
         vid = self.vis('timeline', T('Alerts over time by level', '各等級告警趨勢'), {
@@ -491,7 +498,10 @@ class Builder:
             if x + w > 48:
                 x, y, row_h = 0, y + row_h, 0
             # the dashboard title names the pack; the panel shows the short title
-            panel = {'embeddableConfig': {'title': self.titles[oid]}, 'gridData': {'h': h, 'i': str(i + 1), 'w': w, 'x': x, 'y': y},
+            config = {'title': self.titles[oid]}
+            if oid in self.untitled:
+                config['hidePanelTitles'] = True
+            panel = {'embeddableConfig': config, 'gridData': {'h': h, 'i': str(i + 1), 'w': w, 'x': x, 'y': y},
                      'panelIndex': str(i + 1), 'panelRefName': 'panel_%d' % i, 'version': '7.10.0'}
             panels.append(panel)
             refs.append({'id': oid, 'name': 'panel_%d' % i, 'type': otype})

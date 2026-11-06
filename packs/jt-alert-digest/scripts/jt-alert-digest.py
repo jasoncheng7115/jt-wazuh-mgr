@@ -62,6 +62,7 @@ import gzip
 import hashlib
 import hmac
 import http.client
+import ipaddress
 import json
 import os
 import re
@@ -83,7 +84,7 @@ from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from urllib.parse import quote, urlencode, urlsplit
 
-VERSION = "1.14"
+VERSION = "1.15"
 DEFAULT_WAZUH = "/var/ossec"
 MAX_GROUPS = 40        # how many rule/agent groups one message details
 MAX_SAMPLES = 3        # how many instances are kept per group
@@ -253,7 +254,7 @@ def read_global_config(wazuh):
 KNOWN_SETTINGS = ("dashboard", "smtp_server", "smtp_port", "tls", "tls_verify",
                   "tls_ca_file", "smtp_user", "smtp_password_file", "sendmail_args",
                   "level", "to", "exclude_rules", "exclude_agents", "repeat",
-                  "daily", "max_per_hour", "link", "names_file")
+                  "daily", "daily_groups", "max_per_hour", "link", "names_file")
 TLS_MODES = ("none", "may", "required", "verify", "implicit")
 
 # The threat-hunting events view of a 4.9+ dashboard, filtered to one rule,
@@ -490,6 +491,15 @@ def build_options(site, config, args=None):
             o["daily"] = _time_of_day(site["daily"])
         except ValueError:
             warnings.append("daily = %s ignored, using 08:00" % site["daily"])
+    # Rule groups that get their own part in the daily summary, whatever their level (1.15):
+    # e.g. "modsecurity" for a WAF whose alerts sit below the mail level.
+    o["daily_groups"] = []
+    for value in split_list(site.get("daily_groups")):
+        if re.match(r"^[A-Za-z0-9_.-]{1,64}$", value) and value not in o["daily_groups"] \
+                and len(o["daily_groups"]) < 5:
+            o["daily_groups"].append(value)
+        else:
+            warnings.append("daily_groups entry %r ignored" % value)
     o["max_per_hour"] = 0
     if site.get("max_per_hour"):
         try:
@@ -1213,6 +1223,18 @@ class Batch(object):
         self.dropped = 0
         self.dropped_first = None
         self.dropped_last = None
+        self.sections = {}          # daily_groups: rule group -> counts for the daily summary
+        self.section_hints = [re.compile(b'"' + re.escape(g.encode("ascii")) + b'"')
+                              for g in options.get("daily_groups", ())]
+
+    def note_section(self, alert, rule, level):
+        """Count an alert of one of the daily_groups, whatever its level."""
+        groups = rule.get("groups") or []
+        if not isinstance(groups, list):
+            return
+        for name in self.options.get("daily_groups", ()):
+            if name in groups:
+                add_to_section(self.sections.setdefault(name, new_section()), alert, rule, level)
 
     def qualifies(self, rule, level):
         """rule.mail is analysisd's own verdict (email_alert_level, alert_by_email,
@@ -1235,6 +1257,13 @@ class Batch(object):
             below = level < self.options["level"]
             if below and (self.options.get("forced") or not MAIL_HINT.search(raw)):
                 self.levels[level] = self.levels.get(level, 0) + 1
+                if self.section_hints and any(h.search(raw) for h in self.section_hints):
+                    try:
+                        alert = json.loads(raw.decode("utf-8", "replace"))
+                    except ValueError:
+                        alert = None
+                    if isinstance(alert, dict) and isinstance(alert.get("rule"), dict):
+                        self.note_section(alert, alert["rule"], level)
                 return False
         try:
             alert = json.loads(raw.decode("utf-8", "replace"))
@@ -1250,6 +1279,8 @@ class Batch(object):
         except (TypeError, ValueError):
             return False
         self.levels[level] = self.levels.get(level, 0) + 1
+        if self.section_hints:
+            self.note_section(alert, rule, level)
         rule_id = str(rule.get("id", "?"))
         if agent_event(alert):
             self.health.append(alert)
@@ -3404,6 +3435,7 @@ def daily_view(info):
                                                           "{:,}".format(count),
                                                           trim(name_tokens(text), 90))
             for rule_id, (count, level, text) in info["top"]]))
+    sections.extend(section_parts(daily))
     if info["stopped"]:
         sections.append(("Agents stopped and not back within %d minutes" % (STOP_GRACE // 60),
                          ["%s \u00b7 %s" % (n, local_iso(st)[5:16]) for n, st in info["stopped"]]))
@@ -4860,7 +4892,125 @@ def daily_due(state, options):
 def new_daily(last=None):
     return {"last": last, "since": now(), "levels": {}, "qualifying": 0, "digests": 0,
             "mailed": 0, "held": 0, "excluded": 0, "failures": 0, "unparsed": 0,
-            "rules": {}, "stops": {}, "disconnects": {}}
+            "rules": {}, "stops": {}, "disconnects": {}, "sections": {}}
+
+
+# --- daily_groups: one part of the daily summary per rule group (1.15) ------
+
+SECTION_KEEP = 300      # per counter; the summary shows the top few
+
+
+def new_section():
+    return {"total": 0, "internal": 0, "rules": {}, "src": {}, "targets": {}}
+
+
+def alert_source(alert):
+    data = alert.get("data") or {}
+    if not isinstance(data, dict):
+        return ""
+    for value in (data.get("srcip"), data.get("src_ip"),
+                  (data.get("transaction") or {}).get("client_ip")
+                  if isinstance(data.get("transaction"), dict) else None):
+        if isinstance(value, str) and value:
+            return value[:64]
+    return ""
+
+
+def alert_target(alert):
+    """Where it was aimed: host and path of a web request (query string left out)."""
+    data = alert.get("data") or {}
+    if not isinstance(data, dict):
+        return ""
+    tx = data.get("transaction")
+    if isinstance(tx, dict):
+        request = tx.get("request") if isinstance(tx.get("request"), dict) else {}
+        path = str(request.get("uri") or "").split("?", 1)[0]
+        uid = str(tx.get("unique_id") or "")
+        host = uid.rsplit("-", 1)[0] if "-" in uid else ""
+        return (host + path)[:100]
+    for key in ("url", "uri"):
+        if isinstance(data.get(key), str):
+            return data[key].split("?", 1)[0][:100]
+    return ""
+
+
+INTERNAL_NETS = tuple(ipaddress.ip_network(n) for n in (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "127.0.0.0/8",
+    "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10"))
+
+
+def is_internal(address):
+    """RFC 1918, CGNAT, loopback, link-local and ULA (not ipaddress's is_private, which also
+    counts documentation and benchmark ranges)."""
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    return any(ip.version == net.version and ip in net for net in INTERNAL_NETS)
+
+
+def add_to_section(section, alert, rule, level):
+    section["total"] += 1
+    source, target = alert_source(alert), alert_target(alert)
+    if source and is_internal(source):
+        section["internal"] += 1
+    text = str(rule.get("description", ""))
+    data = alert.get("data") if isinstance(alert.get("data"), dict) else {}
+    tx = data.get("transaction") if isinstance(data.get("transaction"), dict) else {}
+    uri = str((tx.get("request") or {}).get("uri") or "") if isinstance(tx.get("request"), dict) else ""
+    for value, mark in ((uri, "<url>"), (source, "<address>")):   # one entry per rule, not per request
+        if value and len(value) > 3:
+            text = text.replace(value, mark)
+    rule_id = str(rule.get("id", "?"))
+    entry = section["rules"].get(rule_id) or [0, level, trim(text, 100)]
+    entry[0] += 1
+    entry[1] = max(entry[1], level)
+    section["rules"][rule_id] = entry
+    for key, value in (("src", source), ("targets", target)):
+        if value:
+            section[key][value] = section[key].get(value, 0) + 1
+
+
+def merge_section(into, part):
+    into["total"] = into.get("total", 0) + part.get("total", 0)
+    into["internal"] = into.get("internal", 0) + part.get("internal", 0)
+    rules = into.setdefault("rules", {})
+    for rule_id, (count, level, text) in part.get("rules", {}).items():
+        entry = rules.get(rule_id) or [0, level, text]
+        entry[0] += count
+        entry[1] = max(entry[1], level)
+        rules[rule_id] = entry
+    for key in ("src", "targets"):
+        counter = into.setdefault(key, {})
+        for value, count in part.get(key, {}).items():
+            counter[value] = counter.get(value, 0) + count
+        if len(counter) > SECTION_KEEP + 200:
+            into[key] = dict(sorted(counter.items(), key=lambda kv: -kv[1])[:SECTION_KEEP])
+
+
+def section_parts(daily):
+    """[(title, [line, ...])] for each daily_groups section, plain text (escaped by each channel)."""
+    out = []
+    for name, sec in sorted((daily.get("sections") or {}).items()):
+        if not isinstance(sec, dict) or not sec.get("total"):
+            continue
+        title = "Rule group %s: %s alerts" % (name, "{:,}".format(sec["total"]))
+        if sec.get("internal"):
+            title += " (%s from internal addresses)" % "{:,}".format(sec["internal"])
+        lines = ["%s L%d \u00b7 rule %s \u00d7%s \u00b7 %s" % (level_mark(level), level, rule_id,
+                                                          "{:,}".format(count), text)
+                 for rule_id, (count, level, text)
+                 in sorted(sec.get("rules", {}).items(), key=lambda kv: -kv[1][0])[:8]]
+        top_src = sorted(sec.get("src", {}).items(), key=lambda kv: -kv[1])[:5]
+        if top_src:
+            lines.append("Most frequent sources: " + ", ".join(
+                "%s \u00d7%s" % (host_label(a), "{:,}".format(c)) for a, c in top_src))
+        top_target = sorted(sec.get("targets", {}).items(), key=lambda kv: -kv[1])[:5]
+        if top_target:
+            lines.append("Most frequent targets: " + ", ".join(
+                "%s \u00d7%s" % (trim(t, 60), "{:,}".format(c)) for t, c in top_target))
+        out.append((title, lines))
+    return out
 
 
 def init_daily(options):
@@ -4905,6 +5055,10 @@ def count_batch(state, batch, mailed, held):
         rules[rule_id] = entry
     if len(rules) > 300:
         daily["rules"] = dict(sorted(rules.items(), key=lambda kv: -kv[1][0])[:200])
+    if batch.sections:
+        sections = daily.setdefault("sections", {})
+        for name, part in batch.sections.items():
+            merge_section(sections.setdefault(name, new_section()), part)
     for alert in batch.health:
         found = agent_event(alert)
         if not found:
@@ -4953,6 +5107,10 @@ def render_daily(state, options, context, warnings, others=()):
         for rule_id, (count, level, text) in top:
             lines.append("  rule %s L%d x%s - %s" % (rule_id, level, "{:,}".format(count),
                                                      trim(name_tokens(text), 90)))
+    for title, part in section_parts(daily):
+        lines.append("")
+        lines.append(title + ":")
+        lines.extend("  " + line for line in part)
     if stopped:
         lines.append("")
         lines.append("Agents that stopped and did not start again within %d minutes:"
@@ -5043,6 +5201,8 @@ def daily_zulip(context, options, daily, t, levels, top, stopped, failure, other
             return "**%s** (%d)\n%s" % (title, len(lines), spoiler_text("Show all", items))
         return "**%s** (%d)\n%s" % (title, len(lines), "\n".join(lines))
 
+    for title, lines in section_parts(daily):
+        blocks.append("**%s**\n%s" % (md(title), "\n".join("- " + md(line) for line in lines)))
     if stopped:
         blocks.append(listed("Agents stopped and not back within %d minutes" % (STOP_GRACE // 60),
                              ["%s \u00b7 %s" % (md(n), md(local_iso(st)[5:16])) for n, st in stopped]))

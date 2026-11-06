@@ -4,6 +4,37 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.33.0（2026-11-06）
+
+- **新套件 jt-ai-agent 1.0（規則 133700-133799）：AI 程式代理的稽核記錄。** Claude Code 的 hook
+  （`agent/jt-ai-agent-hook.py`，PreToolUse 與 SessionStart）把每一次工具呼叫寫成一行 JSON 到
+  `/var/log/jt-ai-agent/actions.log`：誰（作業系統帳號、工作階段、子代理）、在哪裡（主機、工作目錄、
+  權限模式）、做了什麼（shell 指令、檔案路徑、網頁讀取的網址、SSH 目的地）。不記錄檔案內容、指令輸出
+  與提示詞；指令裡的密碼、token、金鑰在寫入前就換成 `***`（以 7 萬 2 千個真實代理指令驗證）。hook 永遠
+  不會擋下或改變呼叫。每個指令、檔案變更、網頁讀取、MCP 呼叫、子代理與工作階段都以 level 3 保存；破壞性
+  指令 level 10（經 SSH 送到別台時 level 12）、讀取私鑰或帳密檔 level 9、下載後直接執行 level 8、代理修改
+  自己的權限或 hook level 10、關閉所有權限確認的工作階段 level 8、竄改稽核本身（記錄檔、hook、managed
+  settings、`disableAllHooks`）level 12，也由檔案完整性監看。以 `/etc/claude-code/managed-settings.json`
+  強制啟用。沙箱 54 個案例。
+- **新套件 jt-rustdesk 1.0（規則 133600-133699）：RustDesk 伺服器（hbbs／hbbr）。** 中繼連線與短時間
+  大量中繼、沒有伺服器金鑰的中繼請求（公開位址 level 5、重複時 level 10）、用戶端註冊依來源分級：私有位址、
+  本國公開位址（level 3）或國外（level 7，15 分鐘內 5 次 level 10）；本國位址清單由 `jt-rustdesk-geo.py`
+  從區域網際網路註冊機構的分配統計產生（預設台灣，`etc/jt-packs/jt-rustdesk.conf`）。解碼器讀的是伺服器
+  自己的記錄格式，已經在收記錄的主機不必改設定。
+- **jt-zimbra 3.7：異常的對外寄信（133360-133368）。** amavis 標記為本地送出的每一封外寄信都以 level 3
+  記錄（寄件人、第一個收件人、大小）；同一帳號 10 分鐘內 20 封為 level 10、再一輪為 level 12；一封信 20 個
+  以上收件人 level 8、50 個以上 level 10；10 MB 以上的信 level 5、同一帳號 10 分鐘內三封 level 10；10 分鐘內
+  被外部伺服器退回 20 封 level 10。門檻依兩個月的實際郵件訂定。另外修正：Zimbra 10 的 after-queue 來源
+  `ORIGINATING_POST` 原本解不出來，其中被攔下的外寄病毒與垃圾信不會告警，本地送出的中毒信還可能被當成外來信。
+- **jt-alert-digest 1.15：daily_groups。** 在 `etc/jt-packs/jt-alert-digest.conf` 設
+  `daily_groups = modsecurity`，每日摘要就會替該規則群組多列一段，不論告警等級：各規則的告警數、最常見的
+  來源與目標，以及其中有多少來自內網。用在 WAF 上，就是每天一份摘要，而不是每次攻擊一則通知。沒有這個設定時，
+  摘要和以前相同。
+- **套件看板：每個數字一張卡片**（全部 33 個套件）。說明獨立一整列；全部告警、等級 7–11、等級 12 以上各是
+  一張卡片，數字放大並隨卡片縮放，點擊照樣能篩選，旁邊是等級分布。要看到新版面，請重新匯入看板（「規則套件」
+  分頁 →「匯入所有看板」）。
+- **匯入所有看板：** 匯入時鎖住表單，進度清單自動捲到最新一行，憑證選項與覆蓋說明的文字改得更清楚。
+
 ## v1.32.3 (2026-11-01)
 
 - **jt-nextcloud 1.2.5：Nextcloud 告警會進 Wazuh Dashboard。** Nextcloud 稽核記錄的每一行（以及 nextcloud.log 的部分行）

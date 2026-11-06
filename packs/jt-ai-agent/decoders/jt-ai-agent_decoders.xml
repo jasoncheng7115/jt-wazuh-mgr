@@ -1,0 +1,27 @@
+<!--
+  jt-ai-agent: audit lines of AI coding agents (Claude Code hook jt-ai-agent-hook.py)
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  The hook writes one JSON object per tool call to
+  /var/log/jt-ai-agent/actions.log:
+
+    {"jt_ai":{"v":1,"ts":"...","host":"dev1","user":"root","event":"PreToolUse",
+              "session":"...","cwd":"/opt/project","mode":"auto","tool":"Bash",
+              "cmd":"ssh root@192.0.2.10 'systemctl restart nginx'","remote":"192.0.2.10",...}}
+
+  The agent reads it with the prefix "jt-ai-agent: " (localfile out_format in
+  the pack's agent group), for the same reason as jt-modsecurity: a child of
+  the built-in "json" decoder would take the fields away from every other
+  JSON event on the manager. All fields come from the JSON plugin, under
+  jt_ai.* (data.jt_ai.* in the indexer).
+-->
+
+<decoder name="jt-ai-agent">
+  <prematch>^jt-ai-agent: </prematch>
+</decoder>
+
+<decoder name="jt-ai-agent-fields">
+  <parent>jt-ai-agent</parent>
+  <prematch>^jt-ai-agent: </prematch>
+  <plugin_decoder offset="after_prematch">JSON_Decoder</plugin_decoder>
+</decoder>

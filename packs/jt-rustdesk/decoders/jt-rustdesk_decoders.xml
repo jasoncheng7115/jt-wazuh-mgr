@@ -1,0 +1,69 @@
+<!--
+  jt-rustdesk: RustDesk server (hbbs rendezvous / ID server, hbbr relay) log files
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  hbbs and hbbr write their own files (/var/log/rustdesk-server/hbbs.log and
+  hbbr.log in the Debian packages; the container images log to stdout):
+
+    [2026-10-25 22:51:34.916066 +08:00] WARN [src/relay_server.rs:431] Relay authentication failed from [::ffff:192.0.2.10]:64763 - invalid key
+    [2026-11-01 09:02:48.349048 +08:00] INFO [src/relay_server.rs:443] Both are raw
+    [2026-11-01 09:02:48.401731 +08:00] INFO [src/peer.rs:102] update_pk 123456789 [::ffff:198.51.100.7]:56535 b"<uuid>" b"<key>"
+    [2026-11-01 09:02:48.401731 +08:00] INFO [src/rendezvous_server.rs:597] IP change of 123456789 from [::ffff:192.0.2.1]:56535 to [::ffff:198.51.100.7]:56535
+
+  The line starts with neither a syslog header nor a bare ISO time, so the
+  pre-decoder leaves it whole and no program_name is set; the prematch is the
+  timestamp, the level and RustDesk's own source paths (src/relay_server.rs,
+  src/rendezvous_server.rs, src/peer.rs, src/common.rs, src/database.rs and
+  libs/hbb_common/), so no other log can match it and no agent-side prefix is
+  needed: a host that already reads these files keeps its configuration.
+
+  The client address is decoded as srcip without the ::ffff: of IPv4-mapped
+  addresses (a plain IPv4 address, as rules and CDB lookups need it). A real
+  IPv6 client address goes to rustdesk.ip6 instead, because the home-country
+  list holds IPv4 prefixes only. For "IP change" the new address is decoded.
+-->
+<decoder name="jt-rustdesk">
+  <prematch type="pcre2">^\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d+)? [+-]\d\d:?\d\d\] (?:TRACE|DEBUG|INFO|WARN|ERROR) \[(?:src/(?:relay_server|rendezvous_server|peer|common|database|main|hbbr|hbbs)\.rs|libs/hbb_common/src/[a-z_/]+\.rs):\d+\] </prematch>
+</decoder>
+
+<decoder name="jt-rustdesk-fields">
+  <parent>jt-rustdesk</parent>
+  <regex type="pcre2">^\[[^\]]+\] (TRACE|DEBUG|INFO|WARN|ERROR) \[([^\]]+)\] </regex>
+  <order>rustdesk.level, rustdesk.src</order>
+</decoder>
+
+<decoder name="jt-rustdesk-fields">
+  <parent>jt-rustdesk</parent>
+  <regex type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] update_pk (\S+) \[(?:::ffff:)?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\]:\d+</regex>
+  <order>rustdesk.id, srcip</order>
+</decoder>
+
+<decoder name="jt-rustdesk-fields">
+  <parent>jt-rustdesk</parent>
+  <regex type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] IP change of (\S+) from \S+ to \[(?:::ffff:)?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\]:\d+</regex>
+  <order>rustdesk.id, srcip</order>
+</decoder>
+
+<decoder name="jt-rustdesk-fields">
+  <parent>jt-rustdesk</parent>
+  <regex type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] Relay authentication failed from \[(?:::ffff:)?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\]:\d+ - (.+)$</regex>
+  <order>srcip, rustdesk.reason</order>
+</decoder>
+
+<decoder name="jt-rustdesk-fields">
+  <parent>jt-rustdesk</parent>
+  <regex type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] update_pk (\S+) \[((?!::ffff:)[0-9A-Fa-f]*:[0-9A-Fa-f:]+)\]:\d+</regex>
+  <order>rustdesk.id, rustdesk.ip6</order>
+</decoder>
+
+<decoder name="jt-rustdesk-fields">
+  <parent>jt-rustdesk</parent>
+  <regex type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] IP change of (\S+) from \S+ to \[((?!::ffff:)[0-9A-Fa-f]*:[0-9A-Fa-f:]+)\]:\d+</regex>
+  <order>rustdesk.id, rustdesk.ip6</order>
+</decoder>
+
+<decoder name="jt-rustdesk-fields">
+  <parent>jt-rustdesk</parent>
+  <regex type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] Relay authentication failed from \[((?!::ffff:)[0-9A-Fa-f]*:[0-9A-Fa-f:]+)\]:\d+ - (.+)$</regex>
+  <order>rustdesk.ip6, rustdesk.reason</order>
+</decoder>
