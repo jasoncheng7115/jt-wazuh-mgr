@@ -4,6 +4,19 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.33.1（2026-11-09）
+
+- **jt-modsecurity 1.2：常見應用程式的排除設定。** 新增網頁伺服器用的
+  `agent/jt-modsecurity-app-exclusions.conf`（隨 `modsecurity` agent 群組發送），收錄在 CRS 4 後面實際遇到的
+  誤判，每一項都縮到一個路徑加一條規則或一個參數。Zimbra 網頁版：以 JSON 送出的 SOAP 改用 JSON 解析；
+  使用者自己撰寫內容的寫入端點（SaveDraft、SendMsg、行事曆、工作、聯絡人、簽名、篩選規則、偏好設定）只計分、
+  不阻擋——一封一般的 HTML 草稿得到 35 分，被以「CSFE_SVC_ERROR 403」拒絕；REST 的 `/home/` 路徑。
+  Exchange ActiveSync 的 WBXML 內容類型（只限它的路徑，而且不會讓 CRS 預設的清單失效）。Zulip 訊息內容、
+  Nextcloud 的工作處理輪詢、Keycloak 的 `redirect_uri`、Cloudflare 的 `/cdn-cgi/rum`、MCP 用戶端的
+  `toolUseId` 參數名稱。新增一個部署步驟說明要放在哪裡。單獨測試（engine On、沒有站台排除）21 個案例：
+  每一項排除都有需要，其他路徑的路徑穿越、腳本注入與錯誤內容類型仍會被擋。
+- 以 Wazuh 4.14.10 驗證（套件發版關卡：全新安裝、升級、叢集，案例全數通過）。
+
 ## v1.33.0（2026-11-06）
 
 - **新套件 jt-ai-agent 1.0（規則 133700-133799）：AI 程式代理的稽核記錄。** Claude Code 的 hook

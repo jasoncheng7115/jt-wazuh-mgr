@@ -4,6 +4,24 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.33.1 (2026-11-09)
+
+- **jt-modsecurity 1.2: exclusions for common applications.** A new web-server file,
+  `agent/jt-modsecurity-app-exclusions.conf` (delivered with the `modsecurity` agent group),
+  holds the false positives met in production behind CRS 4, each reduced to one path and one
+  rule or argument. The Zimbra web client: SOAP sent as JSON is parsed as JSON, the write
+  endpoints whose bodies people compose (SaveDraft, SendMsg, appointments, tasks, contacts,
+  signatures, filters, preferences) are scored but not blocked, because a normal HTML draft
+  scored 35 and was refused with "CSFE_SVC_ERROR 403"; REST `/home/` paths. Exchange
+  ActiveSync's WBXML content type, only on its path and without dropping CRS's default list.
+  Zulip message text, Nextcloud's task-processing poll, Keycloak `redirect_uri`, Cloudflare's
+  `/cdn-cgi/rum` beacon and MCP clients' `toolUseId` argument name. A new setup step shows
+  where to include it. Tested on its own (engine On, no site exclusions) with 21 cases: each
+  exclusion is needed, and path traversal, script injection and wrong content types on other
+  paths are still blocked.
+- Checked against Wazuh 4.14.10 (pack release gate: fresh install, upgrade and cluster, all
+  cases passing).
+
 ## v1.33.0 (2026-11-06)
 
 - **New pack jt-ai-agent 1.0 (rules 133700-133799): an audit trail of AI coding agents.** A

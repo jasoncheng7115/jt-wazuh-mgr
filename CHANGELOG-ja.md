@@ -4,6 +4,21 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.33.1（2026-11-09）
+
+- **jt-modsecurity 1.2：よく使われるアプリケーションの除外設定。** Web サーバー用の新ファイル
+  `agent/jt-modsecurity-app-exclusions.conf`（`modsecurity` エージェントグループで配布）に、CRS 4 の背後で
+  実際に発生した誤検知をまとめました。それぞれ 1 つのパスと 1 つのルールまたは引数に絞っています。Zimbra
+  Web クライアント：JSON で送られる SOAP を JSON として解析、利用者が内容を書く書き込みエンドポイント
+  （SaveDraft、SendMsg、予定、タスク、連絡先、署名、フィルター、設定）はスコア付けのみでブロックしない
+  （通常の HTML 下書きが 35 点となり「CSFE_SVC_ERROR 403」で拒否されていたため）、REST の `/home/` パス。
+  Exchange ActiveSync の WBXML コンテンツタイプ（そのパスのみ、CRS の既定リストを無効にしない）。Zulip の
+  メッセージ本文、Nextcloud のタスク処理ポーリング、Keycloak の `redirect_uri`、Cloudflare の
+  `/cdn-cgi/rum`、MCP クライアントの `toolUseId` 引数名。設置場所を示すセットアップ手順を追加。単体
+  （engine On、サイトの除外なし）で 21 ケースをテストし、各除外が必要であること、他のパスでのパストラバーサル、
+  スクリプト注入、不正なコンテンツタイプが引き続きブロックされることを確認しました。
+- Wazuh 4.14.10 で検証（パックのリリースゲート：新規インストール、アップグレード、クラスター、全ケース合格）。
+
 ## v1.33.0（2026-11-06）
 
 - **新パック jt-ai-agent 1.0（ルール 133700-133799）：AI コーディングエージェントの監査記録。** Claude Code
