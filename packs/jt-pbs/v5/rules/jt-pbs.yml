@@ -1,0 +1,1516 @@
+# jt-pbs rules for Wazuh 5.x (Sigma, evaluated by the indexer; beta). Each carries the tag jt.rule.<id> of the
+# 4.x rule it replaces. 4.x rules below level 3 and the level 0 bases are not ported (on 5.x every decoded
+# event is indexed anyway). Sigma rules are independent (no if_sid): where a 4.x child rule replaced its
+# parent, the parent here excludes the child's case, so an event gives one finding as before. The frequency
+# and correlation rules (131805, 131806, 131809, 131812, 131819, 131823, 131836, 131866, 131877, 131880,
+# 131881) are Alerting monitors (monitors/jt-pbs.yml). The detection fields are the WCS fields the pack's
+# decoders fill (event.action names the kind of line; see the decoder comments). event.module or
+# event.dataset in every selection keeps the rules off other integrations' events in the same index.
+# Generated from a spec; levels: 4.x 3 -> informational, 4-6 -> low, 7-9 -> medium, 10-13 -> high.
+
+- metadata:
+    title: "Proxmox Backup Server: login of the administrator account {{user.name}}"
+    author: Jason Tools
+    description: "The built-in administrator (root@pam, or a root, admin or administrator account of another realm) logged in. The web interface renews its ticket every 15 minutes and each renewal is a login. The source address of the login is in the access log at the same second (131875)."
+    references: ["Migrated from jt-pbs 4.x rule 131807"]
+  sigma_id: jt-pbs-131807
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and admin
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "login"
+    admin:
+      user.name|startswith: ["root@", "admin@", "administrator@"]
+  tags: [jt.rule.131807, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: failed login for {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: "A wrong password (or a disabled or expired account) at the login. Read from syslog and from auth.log; the pbs agent group collects only successful logins from auth.log, so each failure arrives once."
+    references: ["Migrated from jt-pbs 4.x rule 131802"]
+  sigma_id: jt-pbs-131802
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "login-failed"
+  mitre:
+    tactic: {"id": ["TA0006"], "name": ["Credential Access"]}
+    technique: {"id": ["T1110"], "name": ["Brute Force"]}
+  tags: [jt.rule.131802, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: correct password but wrong second factor for {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: "The second login step is reached only after a correct password, so whoever is trying knows the password of the account. Repeated wrong TOTP codes lock TOTP after 8 tries (131825)."
+    references: ["Migrated from jt-pbs 4.x rule 131824"]
+  sigma_id: jt-pbs-131824
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "second-factor-failed"
+  mitre:
+    tactic: {"id": ["TA0001", "TA0006"], "name": ["Initial Access", "Credential Access"]}
+    technique: {"id": ["T1078", "T1110"], "name": ["Valid Accounts", "Brute Force"]}
+  tags: [jt.rule.131824, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: request refused from {{source.ip}}: {{event.reason}} (an API token that is wrong, disabled or expired)"
+    author: Jason Tools
+    description: "A request without a user name refused for a reason other than a missing or expired ticket: almost always a Proxmox VE node whose stored API token no longer works, so its backups fail."
+    references: ["Migrated from jt-pbs 4.x rule 131804"]
+  sigma_id: jt-pbs-131804
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "token-refused"
+  tags: [jt.rule.131804, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: the second factor of {{user.name}} is locked after repeated wrong codes"
+    author: Jason Tools
+    description: "TOTP locks after 8 wrong codes, every second factor for an hour after 100 failed tries. Someone who knows the password keeps trying; Proxmox Backup Server itself notifies no one."
+    references: ["Migrated from jt-pbs 4.x rule 131825"]
+  sigma_id: jt-pbs-131825
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "second-factor-locked"
+  mitre:
+    tactic: {"id": ["TA0006", "TA0001"], "name": ["Credential Access", "Initial Access"]}
+    technique: {"id": ["T1110", "T1078"], "name": ["Brute Force", "Valid Accounts"]}
+  tags: [jt.rule.131825, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: the datastore configuration lock could not be taken (usually while the services stop or restart)"
+    author: Jason Tools
+    description: "lookup_datastore could not take the datastore configuration lock; measured 8 a year, all while the services stopped for a reboot or an upgrade."
+    references: ["Migrated from jt-pbs 4.x rule 131887"]
+  sigma_id: jt-pbs-131887
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "datastore-lock-failed"
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+  tags: [jt.rule.131887, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: a datastore cannot be opened: {{error.message}}"
+    author: Jason Tools
+    description: "A datastore cannot be opened for a reason other than not mounted, maintenance or the configuration lock: its disk or chunk store is gone. 4.x reported it at most once an hour (ignore); 5.x reports every line."
+    references: ["Migrated from jt-pbs 4.x rule 131814"]
+  sigma_id: jt-pbs-131814
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "datastore-open-failed"
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+  tags: [jt.rule.131814, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: a task failed: {{error.message}}"
+    author: Jason Tools
+    description: "Syslog copy of a failed task result; the task archive reports the same failure with the task type, the backup group and the user."
+    references: ["Migrated from jt-pbs 4.x rule 131815"]
+  sigma_id: jt-pbs-131815
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc and not protected
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "task-error"
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+    protected:
+      message|contains: ["cannot remove protected snapshot", "only partially deleted due to protected snapshots"]
+  tags: [jt.rule.131815, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: a notification could not be delivered via {{service.target.name}}: {{error.message}}"
+    author: Jason Tools
+    description: "Job results and package update notices that could not be delivered; Proxmox Backup Server has no other way to tell anyone that a job failed."
+    references: ["Migrated from jt-pbs 4.x rule 131816"]
+  sigma_id: jt-pbs-131816
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "notification-failed"
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+  tags: [jt.rule.131816, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: a notification recipient has no e-mail address, nothing was sent to it"
+    author: Jason Tools
+    description: "A user named as a notification recipient has no e-mail address configured."
+    references: ["Migrated from jt-pbs 4.x rule 131817"]
+  sigma_id: jt-pbs-131817
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "notification-no-recipient-email"
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+  tags: [jt.rule.131817, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: a daemon is reloading or shutting down (update, restart or certificate change)"
+    author: Jason Tools
+    description: "proxmox-backup-proxy or proxmox-backup-api got a reload or shutdown request."
+    references: ["Migrated from jt-pbs 4.x rule 131820"]
+  sigma_id: jt-pbs-131820
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "daemon-reload"
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+  tags: [jt.rule.131820, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: the API certificate was replaced and reloaded"
+    author: Jason Tools
+    description: "The proxy reloads its certificate after a custom upload or an ACME order."
+    references: ["Migrated from jt-pbs 4.x rule 131821"]
+  sigma_id: jt-pbs-131821
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "certificate-reloaded"
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+  tags: [jt.rule.131821, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: out of disk space (No space left on device); backups to the datastore fail"
+    author: Jason Tools
+    description: "A Proxmox Backup Server daemon reports No space left on device (os error 28). Nothing is logged before the disk is full; the datastore usage rules (131892, 131893) warn earlier from df."
+    references: ["Migrated from jt-pbs 4.x rule 131822"]
+  sigma_id: jt-pbs-131822
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and enospc
+    selection:
+      event.module: "proxmox-backup"
+      event.dataset: "pbs.syslog"
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+  tags: [jt.rule.131822, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: a scheduled job could not be started: {{error.message}}"
+    author: Jason Tools
+    description: "The task scheduler could not start a scheduled job; no task is created, so the task archive has nothing to report. A datastore that is not mounted or in maintenance is left out. 4.x reported it at most once an hour (ignore)."
+    references: ["Migrated from jt-pbs 4.x rule 131827"]
+  sigma_id: jt-pbs-131827
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not unavailable and not enospc
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "job-start-failed"
+    unavailable:
+      message|contains: ["is not mounted", "maintenance mode", "is being unmounted", "is being deleted"]
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+  tags: [jt.rule.131827, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: the task scheduler failed, scheduled jobs do not run: {{error.message}}"
+    author: Jason Tools
+    description: "The scheduler loop itself failed: no scheduled job (GC, prune, sync, verify, tape) runs."
+    references: ["Migrated from jt-pbs 4.x rule 131828"]
+  sigma_id: jt-pbs-131828
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "task-scheduler-failed"
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+  tags: [jt.rule.131828, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: the task scheduler cannot read a job configuration or schedule, the job is skipped: {{error.message}}"
+    author: Jason Tools
+    description: "A job configuration file or schedule the scheduler cannot read; the affected jobs are skipped."
+    references: ["Migrated from jt-pbs 4.x rule 131829"]
+  sigma_id: jt-pbs-131829
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "job-config-unreadable"
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+  tags: [jt.rule.131829, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: a verification found corrupt or missing chunks; see the verification task log"
+    author: Jason Tools
+    description: "Since 3.3 the ERROR lines of a running verification reach syslog, before the task ends and without the agent group. A damaged datastore logs one line per chunk (4.x: at most once an hour)."
+    references: ["Migrated from jt-pbs 4.x rule 131859"]
+  sigma_id: jt-pbs-131859
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.module: "proxmox-backup"
+      event.action: "verification-chunk-error"
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+  tags: [jt.rule.131859, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: a request to delete protected backups was refused ({{http.request.method}} {{url.original}}, client {{source.ip}})"
+    author: Jason Tools
+    description: "Deleting protected snapshots was refused. Ransomware that reaches the backup server through a Proxmox VE node tries exactly this before it removes the protection (Pay2Key, 2025)."
+    references: ["Migrated from jt-pbs 4.x rule 131886"]
+  sigma_id: jt-pbs-131886
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and protected and not enospc
+    selection:
+      event.module: "proxmox-backup"
+      event.dataset: "pbs.syslog"
+    protected:
+      message|contains: ["cannot remove protected snapshot", "only partially deleted due to protected snapshots"]
+    enospc:
+      message|contains: ["No space left on device", "os error 28"]
+  mitre:
+    tactic: {"id": ["TA0040"], "name": ["Impact"]}
+    technique: {"id": ["T1490"], "name": ["Inhibit System Recovery"]}
+  tags: [jt.rule.131886, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: task {{event.action}} {{service.target.name}} ended without a result (the service restarted while it ran?)"
+    author: Jason Tools
+    description: "A task in the archive with the result \"unknown\"."
+    references: ["Migrated from jt-pbs 4.x rule 131833"]
+  sigma_id: jt-pbs-131833
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "unknown"
+  tags: [jt.rule.131833, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: task {{event.action}} {{service.target.name}} failed: {{error.message}}"
+    author: Jason Tools
+    description: "A failed task of a type without a rule of its own (label-media, a failed mount, a failed move, ...)."
+    references: ["Migrated from jt-pbs 4.x rule 131834"]
+  sigma_id: jt-pbs-131834
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not typed and not enospc
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "failure"
+    typed:
+      event.action: ["backup", "garbage_collection", "prune", "prunejob", "sync", "syncjob", "tape-backup", "tape-backup-job", "tape-restore", "reader", "acme-new-cert", "acme-renew-cert", "termproxy", "verify", "verify_group", "verify_snapshot", "verificationjob"]
+    enospc:
+      error.message|contains: ["No space left on device", "os error 28", "ENOSPC"]
+  tags: [jt.rule.131834, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: backup of {{service.target.name}} by {{user.name}} failed: {{error.message}}"
+    author: Jason Tools
+    description: "A backup task failed. The same backup group failing three times a day is monitor 131836."
+    references: ["Migrated from jt-pbs 4.x rule 131835"]
+  sigma_id: jt-pbs-131835
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "failure"
+      event.action: "backup"
+    enospc:
+      error.message|contains: ["No space left on device", "os error 28", "ENOSPC"]
+  tags: [jt.rule.131835, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: verification of {{service.target.name}} found damaged backups (corrupt or missing chunks)"
+    author: Jason Tools
+    description: "Verification found snapshots it could not verify; which chunk and which snapshot is in the task log."
+    references: ["Migrated from jt-pbs 4.x rule 131837"]
+  sigma_id: jt-pbs-131837
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and damaged
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "failure"
+      event.action: ["verify", "verify_group", "verify_snapshot", "verificationjob"]
+    damaged:
+      error.message|contains: "verification failed - please check the log for details"
+  tags: [jt.rule.131837, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: verification of {{service.target.name}} did not complete: {{error.message}}"
+    author: Jason Tools
+    description: "A verification task failed for another reason than damaged backups (aborted, lock, ...)."
+    references: ["Migrated from jt-pbs 4.x rule 131838"]
+  sigma_id: jt-pbs-131838
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not damaged and not enospc
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "failure"
+      event.action: ["verify", "verify_group", "verify_snapshot", "verificationjob"]
+    damaged:
+      error.message|contains: "verification failed - please check the log for details"
+    enospc:
+      error.message|contains: ["No space left on device", "os error 28", "ENOSPC"]
+  tags: [jt.rule.131838, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: garbage collection of {{service.target.name}} failed, space is not being reclaimed: {{error.message}}"
+    author: Jason Tools
+    description: "Garbage collection failed; the datastore does not get its space back."
+    references: ["Migrated from jt-pbs 4.x rule 131839"]
+  sigma_id: jt-pbs-131839
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "failure"
+      event.action: ["garbage_collection"]
+    enospc:
+      error.message|contains: ["No space left on device", "os error 28", "ENOSPC"]
+  tags: [jt.rule.131839, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: prune {{service.target.name}} failed: {{error.message}}"
+    author: Jason Tools
+    description: "A prune task or prune job failed."
+    references: ["Migrated from jt-pbs 4.x rule 131840"]
+  sigma_id: jt-pbs-131840
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "failure"
+      event.action: ["prune", "prunejob"]
+    enospc:
+      error.message|contains: ["No space left on device", "os error 28", "ENOSPC"]
+  tags: [jt.rule.131840, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: sync job {{service.target.name}} failed, the copy is not up to date: {{error.message}}"
+    author: Jason Tools
+    description: "A sync job failed; the remote or local copy of the backups is not up to date."
+    references: ["Migrated from jt-pbs 4.x rule 131841"]
+  sigma_id: jt-pbs-131841
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "failure"
+      event.action: ["sync", "syncjob"]
+    enospc:
+      error.message|contains: ["No space left on device", "os error 28", "ENOSPC"]
+  tags: [jt.rule.131841, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: tape backup {{service.target.name}} failed: {{error.message}}"
+    author: Jason Tools
+    description: "A tape backup failed."
+    references: ["Migrated from jt-pbs 4.x rule 131842"]
+  sigma_id: jt-pbs-131842
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "failure"
+      event.action: ["tape-backup", "tape-backup-job"]
+    enospc:
+      error.message|contains: ["No space left on device", "os error 28", "ENOSPC"]
+  tags: [jt.rule.131842, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: tape restore {{service.target.name}} failed: {{error.message}}"
+    author: Jason Tools
+    description: "A tape restore failed."
+    references: ["Migrated from jt-pbs 4.x rule 131843"]
+  sigma_id: jt-pbs-131843
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "failure"
+      event.action: ["tape-restore"]
+    enospc:
+      error.message|contains: ["No space left on device", "os error 28", "ENOSPC"]
+  tags: [jt.rule.131843, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: restore session on {{service.target.name}} by {{user.name}} ended with an error: {{error.message}}"
+    author: Jason Tools
+    description: "A restore or file browsing session whose client went away."
+    references: ["Migrated from jt-pbs 4.x rule 131844"]
+  sigma_id: jt-pbs-131844
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "failure"
+      event.action: ["reader"]
+    enospc:
+      error.message|contains: ["No space left on device", "os error 28", "ENOSPC"]
+  tags: [jt.rule.131844, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: ordering or renewing the certificate failed: {{error.message}}"
+    author: Jason Tools
+    description: "An ACME certificate order or renewal failed; the certificate may expire."
+    references: ["Migrated from jt-pbs 4.x rule 131845"]
+  sigma_id: jt-pbs-131845
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "failure"
+      event.action: ["acme-new-cert", "acme-renew-cert"]
+    enospc:
+      error.message|contains: ["No space left on device", "os error 28", "ENOSPC"]
+  tags: [jt.rule.131845, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: task {{event.action}} {{service.target.name}} failed, out of disk space"
+    author: Jason Tools
+    description: "A task failed with No space left on device; backups to the datastore fail until space is freed."
+    references: ["Migrated from jt-pbs 4.x rule 131846"]
+  sigma_id: jt-pbs-131846
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and enospc and not damaged
+    selection:
+      event.dataset: "pbs.task"
+      event.outcome: "failure"
+    enospc:
+      error.message|contains: ["No space left on device", "os error 28", "ENOSPC"]
+    damaged:
+      error.message|contains: "verification failed - please check the log for details"
+      event.action: ["verify", "verify_group", "verify_snapshot", "verificationjob"]
+  tags: [jt.rule.131846, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: garbage collection of {{service.target.name}} finished with {{event.reason}}, often missing chunks; read the task log"
+    author: Jason Tools
+    description: "Garbage collection warnings are usually missing chunks."
+    references: ["Migrated from jt-pbs 4.x rule 131847"]
+  sigma_id: jt-pbs-131847
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.task"
+      log.level: "warning"
+      event.action: "garbage_collection"
+  tags: [jt.rule.131847, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: {{event.action}} {{service.target.name}} finished with {{event.reason}}"
+    author: Jason Tools
+    description: "A sync, tape backup or verification task finished with warnings."
+    references: ["Migrated from jt-pbs 4.x rule 131848"]
+  sigma_id: jt-pbs-131848
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.task"
+      log.level: "warning"
+      event.action: ["sync", "syncjob", "tape-backup", "tape-backup-job", "verify", "verify_group", "verify_snapshot", "verificationjob"]
+  tags: [jt.rule.131848, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: prune {{service.target.name}} finished with {{event.reason}}"
+    author: Jason Tools
+    description: "Usually a snapshot still in use by a running backup that could not be removed."
+    references: ["Migrated from jt-pbs 4.x rule 131849"]
+  sigma_id: jt-pbs-131849
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.task"
+      log.level: "warning"
+      event.action: ["prune", "prunejob"]
+  tags: [jt.rule.131849, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: disk {{service.target.name}} wiped by {{user.name}}"
+    author: Jason Tools
+    description: "A disk was wiped from the web interface or API."
+    references: ["Migrated from jt-pbs 4.x rule 131850"]
+  sigma_id: jt-pbs-131850
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.task"
+      log.level: "info"
+      event.action: "wipedisk"
+  mitre:
+    tactic: {"id": ["TA0040"], "name": ["Impact"]}
+    technique: {"id": ["T1561"], "name": ["Disk Wipe"]}
+    subtechnique: {"id": ["T1561.001"], "name": ["Disk Content Wipe"]}
+  tags: [jt.rule.131850, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: datastore {{service.target.name}} removed by {{user.name}}"
+    author: Jason Tools
+    description: "A datastore was removed."
+    references: ["Migrated from jt-pbs 4.x rule 131851"]
+  sigma_id: jt-pbs-131851
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.task"
+      log.level: "info"
+      event.action: "delete-datastore"
+  mitre:
+    tactic: {"id": ["TA0040"], "name": ["Impact"]}
+    technique: {"id": ["T1490", "T1485"], "name": ["Inhibit System Recovery", "Data Destruction"]}
+  tags: [jt.rule.131851, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: backups moved ({{event.action}} {{service.target.name}}) by {{user.name}}"
+    author: Jason Tools
+    description: "A backup group or namespace was moved (4.2)."
+    references: ["Migrated from jt-pbs 4.x rule 131852"]
+  sigma_id: jt-pbs-131852
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.task"
+      log.level: "info"
+      event.action: ["move-group", "move-namespace"]
+  tags: [jt.rule.131852, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: storage changed ({{event.action}} {{service.target.name}}) by {{user.name}}"
+    author: Jason Tools
+    description: "A datastore, directory or ZFS storage was created, or a directory storage removed."
+    references: ["Migrated from jt-pbs 4.x rule 131854"]
+  sigma_id: jt-pbs-131854
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.task"
+      log.level: "info"
+      event.action: ["create-datastore", "dircreate", "zfscreate", "dirremove"]
+  tags: [jt.rule.131854, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: removable datastore {{service.target.name}}: {{event.action}} by {{user.name}}"
+    author: Jason Tools
+    description: "A removable datastore was mounted or unmounted."
+    references: ["Migrated from jt-pbs 4.x rule 131855"]
+  sigma_id: jt-pbs-131855
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.task"
+      log.level: "info"
+      event.action: ["mount-device", "unmount-device"]
+  tags: [jt.rule.131855, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: certificate {{event.action}} by {{user.name}}"
+    author: Jason Tools
+    description: "An ACME certificate was ordered, renewed or revoked."
+    references: ["Migrated from jt-pbs 4.x rule 131856"]
+  sigma_id: jt-pbs-131856
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.task"
+      log.level: "info"
+      event.action: ["acme-new-cert", "acme-renew-cert", "acme-revoke-cert"]
+  tags: [jt.rule.131856, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: shell on {{host.hostname}} opened from the web interface by {{user.name}} (session ended: {{event.reason}})"
+    author: Jason Tools
+    description: "A root shell on the server from the web interface; the task ends when the window closes."
+    references: ["Migrated from jt-pbs 4.x rule 131857"]
+  sigma_id: jt-pbs-131857
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not enospc
+    selection:
+      event.dataset: "pbs.task"
+      event.action: "termproxy"
+      event.outcome: ["success", "failure"]
+    enospc:
+      error.message|contains: ["No space left on device", "os error 28", "ENOSPC"]
+  mitre:
+    tactic: {"id": ["TA0002"], "name": ["Execution"]}
+    technique: {"id": ["T1059"], "name": ["Command and Scripting Interpreter"]}
+    subtechnique: {"id": ["T1059.004"], "name": ["Unix Shell"]}
+  tags: [jt.rule.131857, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: service {{service.target.name}} stopped by {{user.name}}"
+    author: Jason Tools
+    description: "A service was stopped from the web interface or API."
+    references: ["Migrated from jt-pbs 4.x rule 131858"]
+  sigma_id: jt-pbs-131858
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.task"
+      log.level: "info"
+      event.action: "srvstop"
+  mitre:
+    tactic: {"id": ["TA0040"], "name": ["Impact"]}
+    technique: {"id": ["T1489"], "name": ["Service Stop"]}
+  tags: [jt.rule.131858, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: users, permissions or realms changed by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "Users, permissions, passwords, second factors or realms changed through the API."
+    references: ["Migrated from jt-pbs 4.x rule 131861"]
+  sigma_id: jt-pbs-131861
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok and not adminfactor
+    selection:
+      event.dataset: "pbs.access"
+      event.action: ["api-access", "api-admin-tfa"]
+      http.request.method: ["POST", "PUT", "DELETE"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+    adminfactor:
+      event.action: "api-admin-tfa"
+      http.request.method: ["PUT", "DELETE"]
+  mitre:
+    tactic: {"id": ["TA0003"], "name": ["Persistence"]}
+    technique: {"id": ["T1098"], "name": ["Account Manipulation"]}
+  tags: [jt.rule.131861, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: an API token was created, changed or removed by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "API tokens give a client (often a Proxmox VE cluster) access without a password or second factor."
+    references: ["Migrated from jt-pbs 4.x rule 131862"]
+  sigma_id: jt-pbs-131862
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-token"
+      http.request.method: ["POST", "PUT", "DELETE"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  mitre:
+    tactic: {"id": ["TA0003"], "name": ["Persistence"]}
+    technique: {"id": ["T1098"], "name": ["Account Manipulation"]}
+    subtechnique: {"id": ["T1098.001"], "name": ["Additional Cloud Credentials"]}
+  tags: [jt.rule.131862, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: a second factor of the administrator account was removed or unlocked by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "A second factor of an account named root, admin or administrator was removed, or its TFA lockout cleared; the administrator is left with a password only."
+    references: ["Migrated from jt-pbs 4.x rule 131826"]
+  sigma_id: jt-pbs-131826
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-admin-tfa"
+      http.request.method: ["PUT", "DELETE"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  mitre:
+    tactic: {"id": ["TA0006", "TA0003"], "name": ["Credential Access", "Persistence"]}
+    technique: {"id": ["T1556", "T1098"], "name": ["Modify Authentication Process", "Account Manipulation"]}
+    subtechnique: {"id": ["T1556.006"], "name": ["Multi-Factor Authentication"]}
+  tags: [jt.rule.131826, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: datastore configuration changed by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "A datastore was added, changed or removed (data kept)."
+    references: ["Migrated from jt-pbs 4.x rule 131863"]
+  sigma_id: jt-pbs-131863
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok and not destroy
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-datastore-config"
+      http.request.method: ["POST", "PUT", "DELETE"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+    destroy:
+      http.request.method: "DELETE"
+      tags: "pbs-destroy-data"
+  tags: [jt.rule.131863, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: a datastore was removed together with its backups by {{user.name}} ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "DELETE of a datastore with destroy-data set: the backups are gone."
+    references: ["Migrated from jt-pbs 4.x rule 131864"]
+  sigma_id: jt-pbs-131864
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-datastore-config"
+      http.request.method: "DELETE"
+      tags: "pbs-destroy-data"
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  mitre:
+    tactic: {"id": ["TA0040"], "name": ["Impact"]}
+    technique: {"id": ["T1490", "T1485"], "name": ["Inhibit System Recovery", "Data Destruction"]}
+  tags: [jt.rule.131864, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: backups deleted by {{user.name}} ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "Snapshots, backup groups or namespaces deleted. Many deletions from one address is monitor 131866; a deletion right after a protection change from the same address is monitor 131881."
+    references: ["Migrated from jt-pbs 4.x rule 131865"]
+  sigma_id: jt-pbs-131865
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-backup-delete"
+      http.request.method: "DELETE"
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  mitre:
+    tactic: {"id": ["TA0040"], "name": ["Impact"]}
+    technique: {"id": ["T1490"], "name": ["Inhibit System Recovery"]}
+  tags: [jt.rule.131865, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: retention, protection or ownership of backups changed by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "Ownership of backups changed (and protection changes other than a PUT)."
+    references: ["Migrated from jt-pbs 4.x rule 131867"]
+  sigma_id: jt-pbs-131867
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok and not protectput
+    selection:
+      event.dataset: "pbs.access"
+      event.action: ["api-backup-protection", "api-backup-owner"]
+      http.request.method: ["POST", "PUT", "DELETE"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+    protectput:
+      event.action: "api-backup-protection"
+      http.request.method: "PUT"
+  mitre:
+    tactic: {"id": ["TA0040"], "name": ["Impact"]}
+    technique: {"id": ["T1490"], "name": ["Inhibit System Recovery"]}
+  tags: [jt.rule.131867, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: prune job (retention) changed by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "Shortening the keep-* values deletes backups at the next prune run. The values are in the request body; the FIM diff of prune.cfg shows them (131897)."
+    references: ["Migrated from jt-pbs 4.x rule 131883"]
+  sigma_id: jt-pbs-131883
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-prune-config"
+      http.request.method: ["POST", "PUT", "DELETE"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  mitre:
+    tactic: {"id": ["TA0040"], "name": ["Impact"]}
+    technique: {"id": ["T1485"], "name": ["Data Destruction"]}
+  tags: [jt.rule.131883, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: protection of a backup changed by {{user.name}} ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "The web interface and Proxmox VE send the new value in the request body, so the direction is unknown."
+    references: ["Migrated from jt-pbs 4.x rule 131878"]
+  sigma_id: jt-pbs-131878
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok and not removed
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-backup-protection"
+      http.request.method: "PUT"
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+    removed:
+      tags: "pbs-protection-removed"
+  mitre:
+    tactic: {"id": ["TA0040"], "name": ["Impact"]}
+    technique: {"id": ["T1490"], "name": ["Inhibit System Recovery"]}
+  tags: [jt.rule.131878, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: protection of a backup removed by {{user.name}} ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "proxmox-backup-client sends the new value in the query string, where removing the protection is visible."
+    references: ["Migrated from jt-pbs 4.x rule 131888"]
+  sigma_id: jt-pbs-131888
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-backup-protection"
+      http.request.method: "PUT"
+      tags: "pbs-protection-removed"
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  mitre:
+    tactic: {"id": ["TA0040"], "name": ["Impact"]}
+    technique: {"id": ["T1490"], "name": ["Inhibit System Recovery"]}
+  tags: [jt.rule.131888, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: push or pull sync, S3 endpoint or sync encryption key by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "Ways to copy backups elsewhere, or to make pushed copies unreadable."
+    references: ["Migrated from jt-pbs 4.x rule 131882"]
+  sigma_id: jt-pbs-131882
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-sync-adhoc"
+      http.request.method: ["POST", "PUT", "DELETE"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  mitre:
+    tactic: {"id": ["TA0010"], "name": ["Exfiltration"]}
+    technique: {"id": ["T1537"], "name": ["Transfer Data to Cloud Account"]}
+  tags: [jt.rule.131882, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: remotes or sync jobs changed by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "A remote or a sync job was added, changed or removed."
+    references: ["Migrated from jt-pbs 4.x rule 131868"]
+  sigma_id: jt-pbs-131868
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-remote-sync-config"
+      http.request.method: ["POST", "PUT", "DELETE"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  mitre:
+    tactic: {"id": ["TA0010"], "name": ["Exfiltration"]}
+    technique: {"id": ["T1537"], "name": ["Transfer Data to Cloud Account"]}
+  tags: [jt.rule.131868, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: certificate or ACME configuration changed by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "The server certificate or the ACME configuration changed."
+    references: ["Migrated from jt-pbs 4.x rule 131869"]
+  sigma_id: jt-pbs-131869
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-certificate"
+      http.request.method: ["POST", "PUT", "DELETE"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  tags: [jt.rule.131869, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: notification settings changed by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "Notification endpoints, targets or matchers added or changed (a test notification is left out)."
+    references: ["Migrated from jt-pbs 4.x rule 131870"]
+  sigma_id: jt-pbs-131870
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-notification"
+      http.request.method: ["POST", "PUT"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  mitre:
+    tactic: {"id": ["TA0005"], "name": ["Defense Evasion"]}
+    technique: {"id": ["T1562"], "name": ["Impair Defenses"]}
+    subtechnique: {"id": ["T1562.006"], "name": ["Indicator Blocking"]}
+  tags: [jt.rule.131870, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: a notification endpoint or matcher was removed by {{user.name}} ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "Job failures may no longer reach anyone."
+    references: ["Migrated from jt-pbs 4.x rule 131884"]
+  sigma_id: jt-pbs-131884
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-notification"
+      http.request.method: "DELETE"
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  mitre:
+    tactic: {"id": ["TA0005"], "name": ["Defense Evasion"]}
+    technique: {"id": ["T1562"], "name": ["Impair Defenses"]}
+    subtechnique: {"id": ["T1562.006"], "name": ["Indicator Blocking"]}
+  tags: [jt.rule.131884, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: tape encryption keys changed by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "A tape encryption key was added or changed."
+    references: ["Migrated from jt-pbs 4.x rule 131871"]
+  sigma_id: jt-pbs-131871
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-tape-key"
+      http.request.method: ["POST", "PUT"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  tags: [jt.rule.131871, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: tape encryption key removed by {{user.name}} ({{url.original}}) from {{source.ip}}; tapes written with it cannot be read without a backup of the key"
+    author: Jason Tools
+    description: "A tape encryption key was removed."
+    references: ["Migrated from jt-pbs 4.x rule 131853"]
+  sigma_id: jt-pbs-131853
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-tape-key"
+      http.request.method: "DELETE"
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  mitre:
+    tactic: {"id": ["TA0040"], "name": ["Impact"]}
+    technique: {"id": ["T1485"], "name": ["Data Destruction"]}
+  tags: [jt.rule.131853, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: server settings changed by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "Network, DNS, time, node configuration, subscription or APT repositories changed."
+    references: ["Migrated from jt-pbs 4.x rule 131872"]
+  sigma_id: jt-pbs-131872
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-node-settings"
+      http.request.method: ["POST", "PUT", "DELETE"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  tags: [jt.rule.131872, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: job or tape configuration changed by {{user.name}} ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "Verification or tape jobs, media pools, drives, changers, traffic control or metrics servers changed."
+    references: ["Migrated from jt-pbs 4.x rule 131873"]
+  sigma_id: jt-pbs-131873
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok and not verifydelete
+    selection:
+      event.dataset: "pbs.access"
+      event.action: ["api-job-config", "api-verify-job"]
+      http.request.method: ["POST", "PUT", "DELETE"]
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+    verifydelete:
+      event.action: "api-verify-job"
+      http.request.method: "DELETE"
+  tags: [jt.rule.131873, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: a verification job was removed by {{user.name}} ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "Without verification, corruption or backups encrypted by ransomware go unnoticed."
+    references: ["Migrated from jt-pbs 4.x rule 131885"]
+  sigma_id: jt-pbs-131885
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and ok
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "api-verify-job"
+      http.request.method: "DELETE"
+    ok:
+      http.response.status_code|gte: 200
+      http.response.status_code|lt: 300
+  mitre:
+    tactic: {"id": ["TA0005"], "name": ["Defense Evasion"]}
+    technique: {"id": ["T1562"], "name": ["Impair Defenses"]}
+    subtechnique: {"id": ["T1562.001"], "name": ["Disable or Modify Tools"]}
+  tags: [jt.rule.131885, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: login from the external address {{source.ip}} (the account is in auth.log at the same second)"
+    author: Jason Tools
+    description: "A login ticket was issued to an address outside the private ranges (10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, fc00::/7, fe80::/10, ::1)."
+    references: ["Migrated from jt-pbs 4.x rule 131875"]
+  sigma_id: jt-pbs-131875
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not internal
+    selection:
+      event.dataset: "pbs.access"
+      event.action: "login-ticket"
+    internal:
+      source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10", "::1/128"]
+  mitre:
+    tactic: {"id": ["TA0001"], "name": ["Initial Access"]}
+    technique: {"id": ["T1078"], "name": ["Valid Accounts"]}
+  tags: [jt.rule.131875, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: {{user.name}} was refused {{http.request.method}} {{url.original}} from {{source.ip}}"
+    author: Jason Tools
+    description: "An authenticated user or API token tried a change it has no permission for (403)."
+    references: ["Migrated from jt-pbs 4.x rule 131874"]
+  sigma_id: jt-pbs-131874
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and not backups
+    selection:
+      event.dataset: "pbs.access"
+      http.request.method: ["POST", "PUT", "DELETE"]
+      http.response.status_code: 403
+      user.name|contains: "@"
+    backups:
+      event.action: ["api-backup-delete", "api-backup-protection"]
+  tags: [jt.rule.131874, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server API: {{user.name}} was refused deleting or unprotecting backups ({{http.request.method}} {{url.original}}, answer {{http.response.status_code}}) from {{source.ip}}"
+    author: Jason Tools
+    description: "With one DatastoreBackup-only token per Proxmox VE cluster (the documented ransomware protection), ransomware on a node that tries to delete its backups produces exactly these refusals. Five in ten minutes is monitor 131880."
+    references: ["Migrated from jt-pbs 4.x rule 131879"]
+  sigma_id: jt-pbs-131879
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.access"
+      event.action: ["api-backup-delete", "api-backup-protection"]
+      http.request.method: ["PUT", "DELETE"]
+      http.response.status_code|gte: 400
+      http.response.status_code|lt: 500
+      user.name|contains: "@"
+  mitre:
+    tactic: {"id": ["TA0040"], "name": ["Impact"]}
+    technique: {"id": ["T1490"], "name": ["Inhibit System Recovery"]}
+  tags: [jt.rule.131879, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: datastore filesystem {{volume.mount_name}} is {{event.reason}} (90 to 97 per cent)"
+    author: Jason Tools
+    description: "A datastore filesystem is 90 to 97 per cent full. Proxmox Backup Server logs nothing before the disk is full. 4.x repeated it at most every 6 hours (ignore); 5.x reports every df run."
+    references: ["Migrated from jt-pbs 4.x rule 131892"]
+  sigma_id: jt-pbs-131892
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.df"
+      event.action: "datastore-usage-high"
+  tags: [jt.rule.131892, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: datastore filesystem {{volume.mount_name}} is {{event.reason}}, almost out of space"
+    author: Jason Tools
+    description: "A datastore filesystem is 98 per cent full or more; backups fail at 100."
+    references: ["Migrated from jt-pbs 4.x rule 131893"]
+  sigma_id: jt-pbs-131893
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: "pbs.df"
+      event.action: "datastore-usage-critical"
+  tags: [jt.rule.131893, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: users, permissions, API tokens, passwords, realms or second factors changed on disk ({{file.path}}, {{event.action}})"
+    author: Jason Tools
+    description: "A change made with proxmox-backup-manager on the server shell never reaches the access log; this is its only record. A change made in the web interface is reported by both. Needs the pbs agent group (real-time FIM of /etc/proxmox-backup); decoded by the standard wazuh-fim integration."
+    references: ["Migrated from jt-pbs 4.x rule 131895"]
+  sigma_id: jt-pbs-131895
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and files
+    selection:
+      wazuh.integration.name: "wazuh-fim"
+      event.action: ["created", "modified", "deleted"]
+    files:
+      file.path: ["/etc/proxmox-backup/acl.cfg", "/etc/proxmox-backup/user.cfg", "/etc/proxmox-backup/token.shadow", "/etc/proxmox-backup/shadow.json", "/etc/proxmox-backup/domains.cfg", "/etc/proxmox-backup/tfa.json", "/etc/proxmox-backup/ldap_passwords.json"]
+  mitre:
+    tactic: {"id": ["TA0003"], "name": ["Persistence"]}
+    technique: {"id": ["T1098"], "name": ["Account Manipulation"]}
+  tags: [jt.rule.131895, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: datastores, remotes, sync jobs, S3 endpoints or sync encryption keys changed on disk ({{file.path}}, {{event.action}})"
+    author: Jason Tools
+    description: "Datastore, remote, sync, S3 or sync encryption key configuration changed on disk."
+    references: ["Migrated from jt-pbs 4.x rule 131896"]
+  sigma_id: jt-pbs-131896
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and (files or dirs)
+    selection:
+      wazuh.integration.name: "wazuh-fim"
+      event.action: ["created", "modified", "deleted"]
+    files:
+      file.path: ["/etc/proxmox-backup/datastore.cfg", "/etc/proxmox-backup/remote.cfg", "/etc/proxmox-backup/sync.cfg", "/etc/proxmox-backup/s3.cfg", "/etc/proxmox-backup/encryption-keys.cfg"]
+    dirs:
+      file.path|startswith: ["/etc/proxmox-backup/encryption-keys/"]
+  mitre:
+    tactic: {"id": ["TA0010"], "name": ["Exfiltration"]}
+    technique: {"id": ["T1537"], "name": ["Transfer Data to Cloud Account"]}
+  tags: [jt.rule.131896, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: prune (retention) or verification jobs changed on disk ({{file.path}}, {{event.action}})"
+    author: Jason Tools
+    description: "prune.cfg holds the keep-* values: the pbs group keeps a diff, so a shortened retention shows."
+    references: ["Migrated from jt-pbs 4.x rule 131897"]
+  sigma_id: jt-pbs-131897
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and files
+    selection:
+      wazuh.integration.name: "wazuh-fim"
+      event.action: ["created", "modified", "deleted"]
+    files:
+      file.path: ["/etc/proxmox-backup/prune.cfg", "/etc/proxmox-backup/verification.cfg"]
+  mitre:
+    tactic: {"id": ["TA0040", "TA0005"], "name": ["Impact", "Defense Evasion"]}
+    technique: {"id": ["T1485", "T1562"], "name": ["Data Destruction", "Impair Defenses"]}
+    subtechnique: {"id": ["T1562.001"], "name": ["Disable or Modify Tools"]}
+  tags: [jt.rule.131897, jt.pack.jt-pbs]
+
+- metadata:
+    title: "Proxmox Backup Server: notification settings changed on disk ({{file.path}}, {{event.action}})"
+    author: Jason Tools
+    description: "Notification targets and matchers (notifications.cfg) or their secrets (notifications-priv.cfg) changed."
+    references: ["Migrated from jt-pbs 4.x rule 131898"]
+  sigma_id: jt-pbs-131898
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-pbs}
+  detection:
+    condition: selection and files
+    selection:
+      wazuh.integration.name: "wazuh-fim"
+      event.action: ["created", "modified", "deleted"]
+    files:
+      file.path: ["/etc/proxmox-backup/notifications.cfg", "/etc/proxmox-backup/notifications-priv.cfg"]
+  mitre:
+    tactic: {"id": ["TA0005"], "name": ["Defense Evasion"]}
+    technique: {"id": ["T1562"], "name": ["Impair Defenses"]}
+    subtechnique: {"id": ["T1562.006"], "name": ["Indicator Blocking"]}
+  tags: [jt.rule.131898, jt.pack.jt-pbs]

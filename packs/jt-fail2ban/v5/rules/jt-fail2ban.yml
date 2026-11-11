@@ -1,0 +1,612 @@
+# jt-fail2ban rules for Wazuh 5.x (Sigma, evaluated by the indexer). Each one carries the tag
+# jt.rule.<id> of the 4.x rule it replaces. 4.x rules below level 3 are not ported: on 5.x every
+# decoded event is indexed anyway, and a rule only adds a finding. Sigma rules are independent
+# (no if_sid), so where a 4.x child rule replaced its parent, the parent here excludes the child's
+# case and an event gives one finding, as before. The frequency rules (131010, 131011, 131016-131019,
+# 131021, 131024) are Alerting monitors over these findings, not rules.
+# Levels: 4.x 3 -> informational, 5 -> low, 7 -> medium, 10-12 -> high.
+- metadata:
+    title: "fail2ban: {{rule.name}} banned {{source.address}}"
+    author: Jason Tools
+    description: fail2ban banned an address (or, with an F-ID filter, a user name) from the outside. The ban itself is the protection working; this is a record.
+    references: ["Migrated from jt-fail2ban 4.x rule 131001"]
+  sigma_id: jt-fail2ban-131001
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: ban and not internal and not recidive
+    ban: {event.action: ban}
+    recidive: {rule.name: recidive}
+    internal:
+      source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+  tags: [jt.rule.131001, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: internal address {{source.ip}} was banned by {{rule.name}}"
+    author: Jason Tools
+    description: An internal address earned a ban. Check that host, or a proxy or NAT in front of the service that makes every client look internal.
+    references: ["Migrated from jt-fail2ban 4.x rule 131002"]
+  sigma_id: jt-fail2ban-131002
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: ban and internal and not recidive
+    ban: {event.action: ban}
+    recidive: {rule.name: recidive}
+    internal:
+      source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+  tags: [jt.rule.131002, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: {{source.address}} is a repeat offender, banned by the recidive jail"
+    author: Jason Tools
+    description: The recidive jail banned an outside address that kept coming back after its bans expired.
+    references: ["Migrated from jt-fail2ban 4.x rule 131012"]
+  sigma_id: jt-fail2ban-131012
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: ban and recidive and not internal
+    ban: {event.action: ban}
+    recidive: {rule.name: recidive}
+    internal:
+      source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+  tags: [jt.rule.131012, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: internal address {{source.ip}} is a repeat offender, banned by the recidive jail"
+    author: Jason Tools
+    description: An internal address keeps earning bans after they expire. Treat the host as possibly compromised, or a misconfigured service account.
+    references: ["Migrated from jt-fail2ban 4.x rule 131013"]
+  sigma_id: jt-fail2ban-131013
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: ban and recidive and internal
+    ban: {event.action: ban}
+    recidive: {rule.name: recidive}
+    internal:
+      source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]
+  mitre:
+    tactic: {id: [TA0006, TA0001], name: [Credential Access, Initial Access]}
+    technique: {id: [T1110, T1078], name: [Brute Force, Valid Accounts]}
+  tags: [jt.rule.131013, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: {{rule.name}} lifted the ban of internal address {{source.ip}}"
+    author: Jason Tools
+    description: The ban of an internal address expired or was lifted; the host can reach the service again.
+    references: ["Migrated from jt-fail2ban 4.x rule 131007"]
+  sigma_id: jt-fail2ban-131007
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: unban and internal
+    unban: {event.action: unban}
+    internal:
+      source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]
+  tags: [jt.rule.131007, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: {{rule.name}} banned repeat offender {{source.address}} again with a long or permanent ban"
+    author: Jason Tools
+    description: fail2ban's incremental ban (bantime.increment) reached the fifth ban or a permanent ban for this address.
+    references: ["Migrated from jt-fail2ban 4.x rule 131015"]
+  sigma_id: jt-fail2ban-131015
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: increase and (count or permanent)
+    increase: {event.action: increase-ban}
+    count:
+      event.sequence|gte: 5
+    permanent:
+      message|contains: '# permanent ->'
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+  tags: [jt.rule.131015, jt.pack.jt-fail2ban]
+
+# --- health: fail2ban stops protecting the host -------------------------------------------------
+
+- metadata:
+    title: "fail2ban could not apply the ban of {{source.address}} in {{rule.name}}"
+    author: Jason Tools
+    description: The ban action (firewall command) failed, so the address that should be blocked is not.
+    references: ["Migrated from jt-fail2ban 4.x rule 131025"]
+  sigma_id: jt-fail2ban-131025
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      event.action: action-failed
+      message|contains: 'Failed to execute ban jail '
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.004], name: [Disable or Modify System Firewall]}
+  tags: [jt.rule.131025, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: an action of jail {{rule.name}} failed to start, the jail cannot ban"
+    author: Jason Tools
+    description: The jail's ban action did not start (missing firewall tool, wrong chain); nothing it detects is blocked.
+    references: ["Migrated from jt-fail2ban 4.x rule 131026"]
+  sigma_id: jt-fail2ban-131026
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      event.action: action-failed
+      message|contains: 'Failed to start jail '
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.004], name: [Disable or Modify System Firewall]}
+  tags: [jt.rule.131026, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: fail2ban could not remove a ban or its firewall rules
+    author: Jason Tools
+    description: An unban, flush or stop failed; an address may stay blocked, or old rules stay in the firewall.
+    references: ["Migrated from jt-fail2ban 4.x rule 131027"]
+  sigma_id: jt-fail2ban-131027
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      message|contains:
+        - "Failed to execute unban jail '"
+        - "Failed to flush bans in jail '"
+        - "Failed to stop jail '"
+        - 'Invariant check failed. Unban is impossible'
+        - 'Invariant check failed. Flush is impossible'
+  tags: [jt.rule.131027, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: its firewall rules disappeared and are being restored"
+    author: Jason Tools
+    description: Something removed fail2ban's firewall rules (a firewall reload or another tool); bans made before may be lost.
+    references: ["Migrated from jt-fail2ban 4.x rule 131028"]
+  sigma_id: jt-fail2ban-131028
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      message|contains: 'Invariant check failed. Trying to restore a sane environment'
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.004], name: [Disable or Modify System Firewall]}
+  tags: [jt.rule.131028, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: fail2ban could not restore its firewall rules, bans are not enforced
+    author: Jason Tools
+    description: After its rules disappeared, fail2ban failed to put them back; detected attacks are no longer blocked.
+    references: ["Migrated from jt-fail2ban 4.x rule 131029"]
+  sigma_id: jt-fail2ban-131029
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      message|contains: 'Unable to restore environment'
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.004], name: [Disable or Modify System Firewall]}
+  tags: [jt.rule.131029, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: an action command timed out"
+    author: Jason Tools
+    description: A ban or unban command did not finish in time (slow firewall, a hung remote action).
+    references: ["Migrated from jt-fail2ban 4.x rule 131030"]
+  sigma_id: jt-fail2ban-131030
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      message|contains: '-- timed out after'
+  tags: [jt.rule.131030, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: jail {{rule.name}} was skipped and is not running"
+    author: Jason Tools
+    description: The jail did not start (usually its log file is missing); the service it protects has no ban protection.
+    references: ["Migrated from jt-fail2ban 4.x rule 131034"]
+  sigma_id: jt-fail2ban-131034
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection: {event.action: jail-skipped}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131034, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban failed to start: the host has no ban protection"
+    author: Jason Tools
+    description: The server part of fail2ban did not start (configuration error, missing module, no log file found).
+    references: ["Migrated from jt-fail2ban 4.x rule 131037"]
+  sigma_id: jt-fail2ban-131037
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      message|contains:
+        - 'Failed during configuration: '
+        - 'Async configuration of server failed'
+        - 'Could not start fail2ban-server'
+        - 'Could not start server'
+        - 'No module named '
+        - 'Have not found any log file for'
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131037, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: a jail stopped reading its log and bans nothing from it"
+    author: Jason Tools
+    description: After too many errors the jail went idle or dropped the file from monitoring.
+    references: ["Migrated from jt-fail2ban 4.x rule 131038"]
+  sigma_id: jt-fail2ban-131038
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: (idle_a and idle_b) or dropped
+    idle_a:
+      message|contains: 'Too many errors at once ('
+    idle_b:
+      message|contains: '), going idle'
+    dropped:
+      message|contains: 'Too many errors. Remove file '
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131038, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban cannot open a log file it watches: that jail is blind"
+    author: Jason Tools
+    description: fail2ban could not open one of its log files (permissions, a moved file).
+    references: ["Migrated from jt-fail2ban 4.x rule 131039"]
+  sigma_id: jt-fail2ban-131039
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      message|contains: ['Unable to open /', 'Error opening /']
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131039, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: its ban database is not usable, bans will not survive a restart"
+    author: Jason Tools
+    description: The persistent ban database could not be opened or written (locked, corrupt).
+    references: ["Migrated from jt-fail2ban 4.x rule 131046"]
+  sigma_id: jt-fail2ban-131046
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      message|contains:
+        - 'Error connecting to fail2ban persistent database'
+        - 'Error opening fail2ban persistent database'
+        - 'Database update failed'
+        - 'database disk image is malformed'
+        - 'database is locked'
+  tags: [jt.rule.131046, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: jail {{rule.name}} stopped"
+    author: Jason Tools
+    description: A jail was stopped (by a reload, a restart or an administrator).
+    references: ["Migrated from jt-fail2ban 4.x rule 131033"]
+  sigma_id: jt-fail2ban-131033
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection: {event.action: jail-stopped}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131033, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban stopped: no new bans until it starts again"
+    author: Jason Tools
+    description: fail2ban's server exited.
+    references: ["Migrated from jt-fail2ban 4.x rule 131036"]
+  sigma_id: jt-fail2ban-131036
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection: {event.action: fail2ban-exiting}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131036, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: a log file it watches is missing"
+    author: Jason Tools
+    description: A watched log file disappeared (rotation without copytruncate, a stopped service).
+    references: ["Migrated from jt-fail2ban 4.x rule 131040"]
+  sigma_id: jt-fail2ban-131040
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      message|contains: "' seems to be down:"
+  tags: [jt.rule.131040, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: {{rule.name}} sees log times far from the current time"
+    author: Jason Tools
+    description: The log's time stamps are far from the clock (time zone mismatch or latency); fail2ban may count failures wrongly.
+    references: ["Migrated from jt-fail2ban 4.x rule 131041"]
+  sigma_id: jt-fail2ban-131041
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: (deviation_a and deviation_b) or simulate
+    deviation_a:
+      message|contains: 'Detected a log entry '
+    deviation_b:
+      message|contains: ' the current time in operation mode'
+    simulate:
+      message|contains: 'Simulate NOW in operation since found time has too large deviation'
+  tags: [jt.rule.131041, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban drops failures because it cannot read their time stamp"
+    author: Jason Tools
+    description: The filter matched but found no valid date; those failures are not counted and that jail misses attacks.
+    references: ["Migrated from jt-fail2ban 4.x rule 131042"]
+  sigma_id: jt-fail2ban-131042
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: match_a and match_b
+    match_a:
+      message|contains: 'Found a match '
+    match_b:
+      message|contains: 'but no valid date/time found'
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131042, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: "fail2ban: a ban address came from a DNS lookup of a logged host name"
+    author: Jason Tools
+    description: fail2ban resolved a host name taken from the log to an address and banned that; an attacker who controls the name can make fail2ban ban someone else.
+    references: ["Migrated from jt-fail2ban 4.x rule 131044"]
+  sigma_id: jt-fail2ban-131044
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      message|contains: 'Determined IP using DNS Lookup:'
+  tags: [jt.rule.131044, jt.pack.jt-fail2ban]
+
+# Any other ERROR / CRITICAL: the specific health rules above take their own messages.
+- metadata:
+    title: fail2ban reported an error
+    author: Jason Tools
+    description: fail2ban logged an error that no more specific rule of this pack explains.
+    references: ["Migrated from jt-fail2ban 4.x rule 131060"]
+  sigma_id: jt-fail2ban-131060
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: error and not 1 of known_*
+    error:
+      log.level: [error, critical]
+    known_action:
+      event.action: [action-failed, jail-skipped]
+    known_text:
+      message|contains:
+        - 'Invariant check failed.'
+        - 'Unable to restore environment'
+        - '-- timed out after'
+        - 'Failed during configuration: '
+        - 'Async configuration of server failed'
+        - 'Could not start fail2ban-server'
+        - 'Could not start server'
+        - 'No module named '
+        - 'Have not found any log file for'
+        - 'Too many errors'
+        - 'Unable to open /'
+        - 'Error opening /'
+        - 'Error connecting to fail2ban persistent database'
+        - 'Error opening fail2ban persistent database'
+        - 'Database update failed'
+        - 'database disk image is malformed'
+        - 'database is locked'
+        - ' -- returned '
+        - ' -- stderr: '
+        - ' -- stdout: '
+        - ' -- exec: '
+  tags: [jt.rule.131060, jt.pack.jt-fail2ban]
+
+# --- systemd about fail2ban.service (the standard syslog shape; process.name systemd) ------------
+
+- metadata:
+    title: "fail2ban.service exited with status 255 (configuration or start error)"
+    author: Jason Tools
+    description: systemd reports fail2ban's server exited with 255, a configuration or start error; systemd will retry.
+    references: ["Migrated from jt-fail2ban 4.x rule 131050"]
+  sigma_id: jt-fail2ban-131050
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      process.name: systemd
+      message|contains:
+        - 'fail2ban.service: Main process exited, code=exited, status=255/'
+        - 'fail2ban.service: main process exited, code=exited, status=255/'
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131050, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: fail2ban.service failed, systemd restarts it
+    author: Jason Tools
+    description: fail2ban's server was killed, dumped core or exited with an error other than 255.
+    references: ["Migrated from jt-fail2ban 4.x rule 131051"]
+  sigma_id: jt-fail2ban-131051
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection and how and not status255
+    selection:
+      process.name: systemd
+      message|contains:
+        - 'fail2ban.service: Main process exited, code='
+        - 'fail2ban.service: main process exited, code='
+    how:
+      message|contains: ['code=killed', 'code=dumped', 'code=exited, status=']
+    status255:
+      message|contains: 'status=255/'
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131051, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: fail2ban.service keeps failing, systemd gave up restarting it
+    author: Jason Tools
+    description: systemd hit the start limit for fail2ban.service; the host has no ban protection until someone starts it.
+    references: ["Migrated from jt-fail2ban 4.x rule 131052"]
+  sigma_id: jt-fail2ban-131052
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      process.name: systemd
+      message|contains:
+        - 'fail2ban.service: Start request repeated too quickly'
+        - 'fail2ban.service: start request repeated too quickly'
+        - 'start request repeated too quickly for fail2ban.service'
+        - 'Start request repeated too quickly for fail2ban.service'
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131052, jt.pack.jt-fail2ban]
+
+- metadata:
+    title: fail2ban.service stopped
+    author: Jason Tools
+    description: systemd stopped fail2ban.service.
+    references: ["Migrated from jt-fail2ban 4.x rule 131053"]
+  sigma_id: jt-fail2ban-131053
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-fail2ban}
+  detection:
+    condition: selection
+    selection:
+      process.name: systemd
+      message|startswith: ['Stopped fail2ban.service', 'Stopped Fail2Ban Service.']
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131053, jt.pack.jt-fail2ban]

@@ -1,0 +1,82 @@
+# jt-synology 4.x frequency rules as Alerting bucket-level monitors (Wazuh 5.x, beta), in the
+# tools/pack5_dev.py format (see packs/jt-fail2ban/v5/monitors). Windows are at least 5 minutes
+# because detectors write findings one or two minutes late; where 4.x counted over a shorter time the
+# count is kept, so these fire somewhat more readily than on 4.x.
+# Not here: 132030, 132031 (a success after at least four failures) and 132037-132039 (a success from
+# an address or for an account that set off a brute force monitor): they need "N failures and then a
+# success" in one bucket, which a single count or distinct cannot express (see PORTING.md).
+
+# 4.x 132024 / 132025: eight failures from one address in two minutes, split by internal and
+# external so a response can be tied to external addresses only. network.direction is set by the
+# decoder: internal = 10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, 169.254/16, fc00::/7, fe80::/10.
+- id: '132024'
+  title: "Synology DSM: brute force, one internal address failed to log in 8 times"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-synology-132020, network.direction: internal}
+  window: 5m
+  group_by: [source.ip]
+  count: 8
+
+- id: '132025'
+  title: "Synology DSM: brute force, one external address failed to log in 8 times"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-synology-132020, network.direction: inbound}
+  window: 5m
+  group_by: [source.ip]
+  count: 8
+
+# 4.x 132026: ten failed logins for one account in five minutes, from any address or none (DSM logs
+# some SMB failures without an address).
+- id: '132026'
+  title: "Synology DSM: password guessing, 10 failed logins for one account in 5 minutes"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-synology-132020}
+  window: 5m
+  group_by: [user.name]
+  count: 10
+
+# 4.x 132046: the same Hyper Backup task failed three times in three days (same_field synology.task;
+# the task name is process.title on 5.x). Unlike 4.x it is not limited by the manager's correlation
+# memory.
+- id: '132046'
+  title: "Synology Hyper Backup: one task failed 3 times in 3 days"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-synology-132042}
+  window: 3d
+  group_by: [process.title]
+  count: 3
+
+# 4.x 132055: five snapshots deleted (or deletion tried) on one NAS within ten minutes (same_location:
+# the NAS sending the syslog, host.hostname on 5.x).
+- id: '132055'
+  title: "Synology DSM: 5 snapshots deleted on one NAS within 10 minutes, as ransomware does before encrypting"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-synology-132054}
+  window: 10m
+  group_by: [host.hostname]
+  count: 5
+
+# 4.x 132052 / 132053 count file transfer log lines that are not findings (4.x level 2), so they
+# read the events. 4.x counted within one minute; the window here is five.
+- id: '132052'
+  title: "Synology DSM: one account deleted 300 files within minutes"
+  level: high
+  source: events
+  match: {wazuh.integration.name: jt-synology, event.dataset: synology.file_transfer, event.action: delete}
+  window: 5m
+  group_by: [user.name]
+  count: 300
+
+- id: '132053'
+  title: "Synology DSM: one account renamed 100 files within minutes, as file-encrypting malware does"
+  level: high
+  source: events
+  match: {wazuh.integration.name: jt-synology, event.dataset: synology.file_transfer, event.action: [rename, move]}
+  window: 5m
+  group_by: [user.name]
+  count: 100

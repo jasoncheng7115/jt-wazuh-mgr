@@ -1,0 +1,61 @@
+# /var/log/proxmox-backup/tasks/archive: one line when a task ends,
+#   UPID:<node>:<pid>:<pstart>:<task id>:<start>:<type>:<worker id>:<user>: <end> <result>
+#   UPID:pbs1:00148956:08143ED0:00001C1B:6ACAEE54:backup:store1\x3act-128:backup@pbs!pve: 6ACAEFC6 OK
+# The result is OK, "WARNINGS: <n>", "unknown" (the task had no end) or the error message. The worker
+# id keeps the systemd escaping of the log (\x3a is a colon, \x2d a hyphen). Field use:
+#   event.action        the task type (backup, verificationjob, garbage_collection, prunejob, ...)
+#   event.outcome       success (OK and WARNINGS), failure, unknown
+#   log.level           info (OK), warning (WARNINGS: n), error (failed), and nothing for unknown
+#   service.target.name the worker id (datastore and backup group, job id, disk, ...)
+#   user.name           the user or API token that ran the task
+#   event.reason        the result as written; error.message the error of a failed task
+#   host.hostname       the node; event.id the UPID
+name: decoder/jt-pbs-task/0
+enabled: true
+metadata:
+  title: Proxmox Backup Server task results
+  author: Jason Tools
+  description: Results of finished Proxmox Backup Server tasks from the task archive.
+  references:
+    - https://git.proxmox.com/?p=proxmox.git;a=blob;f=proxmox-rest-server/src/worker_task.rs
+parents:
+  - decoder/jt-core/0
+check: "regex_match($event.original, '^UPID:[^: ]+:[0-9A-F]{8,}:[0-9A-F]{8,}:[0-9A-F]{8,}:[0-9A-F]{8,}:[^: ]+:[^: ]*:[^: ]+: [0-9A-F]{8,} ')"
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: proxmox-backup
+      - event.dataset: pbs.task
+      - observer.vendor: Proxmox
+      - observer.product: Proxmox Backup Server
+      - observer.type: backup
+      - event.category: array_append(process)
+      - event.type: array_append(end)
+      - host.hostname: "regex_extract($event.original, '^UPID:([^:]+):')"
+      - event.id: "regex_extract($event.original, '^(UPID:[^:]+:[0-9A-F]+:[0-9A-F]+:[0-9A-F]+:[0-9A-F]+:[^:]+:[^:]*:[^:]+:)')"
+      - event.action: "regex_extract($event.original, '^UPID:[^:]+:[0-9A-F]+:[0-9A-F]+:[0-9A-F]+:[0-9A-F]+:([^:]+):')"
+      - _tmp.pbs_worker: "regex_extract($event.original, '^UPID:[^:]+:[0-9A-F]+:[0-9A-F]+:[0-9A-F]+:[0-9A-F]+:[^:]+:([^:]+):')"
+      - user.name: "regex_extract($event.original, '^UPID:[^:]+:[0-9A-F]+:[0-9A-F]+:[0-9A-F]+:[0-9A-F]+:[^:]+:[^:]*:([^:]+): ')"
+      - event.reason: "regex_extract($event.original, '^UPID:[^:]+:[0-9A-F]+:[0-9A-F]+:[0-9A-F]+:[0-9A-F]+:[^:]+:[^:]*:[^:]+: [0-9A-F]+ (.*)$')"
+      - related.user: array_append($user.name)
+  - check: exists($_tmp.pbs_worker)
+    map:
+      - service.target.name: $_tmp.pbs_worker
+  - check: "$event.reason == 'OK'"
+    map:
+      - event.outcome: success
+      - log.level: info
+  - check: "regex_match($event.reason, '^WARNINGS: [0-9]+$')"
+    map:
+      - event.outcome: success
+      - log.level: warning
+  - check: "$event.reason == 'unknown'"
+    map:
+      - event.outcome: unknown
+  - check: "$event.reason != 'OK' AND $event.reason != 'unknown' AND regex_not_match($event.reason, '^WARNINGS: [0-9]+$')"
+    map:
+      - event.outcome: failure
+      - log.level: error
+      - error.message: $event.reason
+  - map:
+      - _tmp: delete()

@@ -1,0 +1,18 @@
+# Proxmox Backup Server daemons in syslog (the header was read by decoder/jt-syslog/0):
+#   Oct  4 00:33:00 pbs1 proxmox-backup-proxy[1345]: lookup_datastore failed - datastore 'usb' is not mounted
+#   Oct 15 10:10:27 pbs1 proxmox-backup-api[3448590]: authentication failure; rhost=[::ffff:192.0.2.13]:5405 user=root@pam msg=...
+# Only the two daemons are taken; the message is classified by decoder/jt-pbs/0.
+name: decoder/jt-pbs-syslog/0
+enabled: true
+metadata:
+  title: Proxmox Backup Server daemons in syslog
+  author: Jason Tools
+  description: proxmox-backup-proxy and proxmox-backup-api lines from syslog or the journal; the message is decoded by decoder/jt-pbs/0.
+  references:
+    - https://git.proxmox.com/?p=proxmox-backup.git
+parents:
+  - decoder/jt-syslog/0
+check: "regex_match($process.name, '^proxmox-backup-(proxy|api)$')"
+normalize:
+  - map:
+      - event.dataset: pbs.syslog

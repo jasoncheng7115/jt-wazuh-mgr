@@ -1,0 +1,187 @@
+# --- file integrity of /etc/pve and the snippets directories -------------------------------------
+# These read the events of Wazuh's standard wazuh-fim integration (wazuh-events-v5-system-activity,
+# listed in detector.yml), not this pack's decoders. NOT VERIFIED on 5.0.0-rc2: no sample of a
+# 5.x agent's stateless FIM event was available to replay (see PORTING.md). They rely on file.path
+# and, for "content changed", on event.changed_fields (WCS: "fields that were updated since last
+# scan"): an event whose changed fields exist but name none of size / md5 / sha1 / sha256 (pmxcfs
+# renumbering an inode or touching mtime) gives no finding; an event without the field (added,
+# deleted, or a field naming that differs) still does, so a wrong guess fails loud, not silent.
+# 4.x 131290-131292 (pmxcfs churn, levels 0-2) only lowered the built-in rule 550; 5.x standard
+# rules cannot be lowered by a pack, so they are not ported.
+
+- metadata:
+    title: "Proxmox VE: {{file.path}} changed (API token secrets, the cluster-wide root SSH keys or the cluster CA)"
+    author: Jason Tools
+    description: The API token secrets, the root SSH keys that every cluster node trusts, or the cluster CA changed.
+    references: ["Migrated from jt-proxmox 4.x rule 131294"]
+  sigma_id: jt-proxmox-131294
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection and (content or not listed)
+    selection:
+      wazuh.integration.name: wazuh-fim
+      file.path: [/etc/pve/priv/token.cfg, /etc/pve/priv/authorized_keys, /etc/pve/priv/pve-root-ca.key, /etc/pve/pve-root-ca.pem]
+    content:
+      event.changed_fields|contains: [size, md5, sha1, sha256]
+    listed:
+      event.changed_fields|exists: true
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+    subtechnique: {id: [T1098.001, T1098.004], name: [Additional Cloud Credentials, SSH Authorized Keys]}
+  tags: [jt.rule.131294, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: the cluster configuration (corosync.conf) changed"
+    author: Jason Tools
+    description: /etc/pve/corosync.conf, the cluster membership and network configuration, changed.
+    references: ["Migrated from jt-proxmox 4.x rule 131295"]
+  sigma_id: jt-proxmox-131295
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection and (content or not listed)
+    selection:
+      wazuh.integration.name: wazuh-fim
+      file.path: /etc/pve/corosync.conf
+    content:
+      event.changed_fields|contains: [size, md5, sha1, sha256]
+    listed:
+      event.changed_fields|exists: true
+  tags: [jt.rule.131295, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: {{file.path}} changed (users, groups, permissions, tokens or authentication realms)"
+    author: Jason Tools
+    description: The user database or the authentication realm configuration of the cluster changed.
+    references: ["Migrated from jt-proxmox 4.x rule 131296"]
+  sigma_id: jt-proxmox-131296
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection and (content or not listed)
+    selection:
+      wazuh.integration.name: wazuh-fim
+      file.path: [/etc/pve/user.cfg, /etc/pve/domains.cfg]
+    content:
+      event.changed_fields|contains: [size, md5, sha1, sha256]
+    listed:
+      event.changed_fields|exists: true
+  mitre:
+    tactic: {id: [TA0003, TA0006], name: [Persistence, Credential Access]}
+    technique: {id: [T1098, T1556], name: [Account Manipulation, Modify Authentication Process]}
+  tags: [jt.rule.131296, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: {{file.path}} changed (second factors or pve realm passwords)"
+    author: Jason Tools
+    description: The second factors, or the password hashes of the pve realm, changed.
+    references: ["Migrated from jt-proxmox 4.x rule 131297"]
+  sigma_id: jt-proxmox-131297
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection and (content or not listed)
+    selection:
+      wazuh.integration.name: wazuh-fim
+      file.path: [/etc/pve/priv/tfa.cfg, /etc/pve/priv/shadow.cfg]
+    content:
+      event.changed_fields|contains: [size, md5, sha1, sha256]
+    listed:
+      event.changed_fields|exists: true
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1556], name: [Modify Authentication Process]}
+    subtechnique: {id: [T1556.006], name: [Multi-Factor Authentication]}
+  tags: [jt.rule.131297, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: datacenter or node firewall configuration changed ({{file.path}})"
+    author: Jason Tools
+    description: The datacenter firewall (cluster.fw) or a node's host firewall (host.fw) changed. Guest firewalls are not included.
+    references: ["Migrated from jt-proxmox 4.x rule 131298"]
+  sigma_id: jt-proxmox-131298
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: fim and (cluster_fw or (node_dir and host_fw)) and (content or not listed)
+    fim:
+      wazuh.integration.name: wazuh-fim
+    cluster_fw:
+      file.path: /etc/pve/firewall/cluster.fw
+    node_dir:
+      file.path|startswith: /etc/pve/nodes/
+    host_fw:
+      file.path|endswith: /host.fw
+    content:
+      event.changed_fields|contains: [size, md5, sha1, sha256]
+    listed:
+      event.changed_fields|exists: true
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.004], name: [Disable or Modify System Firewall]}
+  tags: [jt.rule.131298, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: backup jobs changed ({{file.path}})"
+    author: Jason Tools
+    description: The scheduled backup jobs changed.
+    references: ["Migrated from jt-proxmox 4.x rule 131299"]
+  sigma_id: jt-proxmox-131299
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection and (content or not listed)
+    selection:
+      wazuh.integration.name: wazuh-fim
+      file.path: [/etc/pve/jobs.cfg, /etc/pve/vzdump.cron]
+    content:
+      event.changed_fields|contains: [size, md5, sha1, sha256]
+    listed:
+      event.changed_fields|exists: true
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1490], name: [Inhibit System Recovery]}
+  tags: [jt.rule.131299, jt.pack.jt-proxmox]
+
+# Snippets (the agent group watches /var/lib/vz/snippets; network storages mount under /mnt/pve).
+# 4.x took added and modified files only; the 5.x FIM event type is not known here, so a deleted
+# snippet gives a finding too.
+- metadata:
+    title: "Proxmox VE: snippet {{file.path}} added or changed (hookscripts and cloud-init files run from here)"
+    author: Jason Tools
+    description: Hookscripts and cloud-init user data must live in a snippets directory and run as root on the host or inside the guest.
+    references: ["Migrated from jt-proxmox 4.x rule 131293"]
+  sigma_id: jt-proxmox-131293
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: fim and (local or (pve_mount and snippets))
+    fim:
+      wazuh.integration.name: wazuh-fim
+    local:
+      file.path|startswith: /var/lib/vz/snippets/
+    pve_mount:
+      file.path|startswith: /mnt/pve/
+    snippets:
+      file.path|contains: /snippets/
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1546], name: [Event Triggered Execution]}
+  tags: [jt.rule.131293, jt.pack.jt-proxmox]

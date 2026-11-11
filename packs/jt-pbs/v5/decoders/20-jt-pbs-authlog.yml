@@ -1,0 +1,20 @@
+# /var/log/proxmox-backup/api/auth.log (no syslog header):
+#   2026-09-17T01:10:02+08:00: successful auth for user 'root@pam'
+#   2026-08-20T18:33:36+08:00: authentication failure; rhost=[::ffff:192.0.2.13]:19433 user=root@pam msg=authentication error - AUTH_ERR (7)
+# The text after the timestamp goes to message, the same field the syslog copy of a failure ends up in,
+# so decoder/jt-pbs/0 classifies both the same way.
+name: decoder/jt-pbs-authlog/0
+enabled: true
+metadata:
+  title: Proxmox Backup Server auth.log
+  author: Jason Tools
+  description: Lines of api/auth.log (logins and refused requests); the message is decoded by decoder/jt-pbs/0.
+  references:
+    - https://git.proxmox.com/?p=proxmox.git;a=blob;f=proxmox-rest-server/src/environment.rs
+parents:
+  - decoder/jt-core/0
+check: "regex_match($event.original, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}: (successful auth for user |authentication failure; rhost=)')"
+normalize:
+  - map:
+      - message: "regex_extract($event.original, '^[^ ]+: (.*)$')"
+      - event.dataset: pbs.auth

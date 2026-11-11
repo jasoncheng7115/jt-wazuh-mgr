@@ -1,0 +1,31 @@
+# The LibreNMS application log, /opt/librenms/logs/librenms.log, as LibreNMS 25.1 and later format it
+# (App\Logging\LogFileFormatter):
+#   [2026-10-11T10:15:02][ERROR] Auth Error (mysql): No user () [admin] from 192.0.2.10
+#   [2026-10-11T10:15:02][ALERT] INFO: device:poll sw1.example.com (12) polled in 3.456s
+# The agent group (4.x agent/agent.conf, unchanged) joins stack-trace continuation lines to the
+# record they belong to, so one record is one event. The level goes to log.level (lower case), the
+# rest of the line, trailing blanks removed, to message.
+name: decoder/jt-librenms-log/0
+enabled: true
+metadata:
+  title: LibreNMS application log
+  author: Jason Tools
+  description: Lines of librenms.log in the 25.1+ shape (bracketed time and level); the rest goes to message.
+  references:
+    - https://github.com/librenms/librenms/blob/master/app/Logging/LogFileFormatter.php
+parents:
+  - decoder/jt-core/0
+check: "regex_match($event.original, '^[[][0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[^]]*[]][[](DEBUG|INFO|NOTICE|WARNING|ERROR|CRITICAL|ALERT|EMERGENCY)[]] ')"
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: librenms
+      - event.dataset: librenms.log
+      - service.type: librenms
+      - _tmp.lnms_level: "regex_extract($event.original, '^[[][^]]+[]][[]([A-Z]+)[]] ')"
+      - message: "regex_extract($event.original, '^[[][^]]+[]][[][A-Z]+[]] (.*?) *$')"
+  - check: exists($_tmp.lnms_level)
+    map:
+      - log.level: downcase($_tmp.lnms_level)
+  - map:
+      - _tmp: delete()

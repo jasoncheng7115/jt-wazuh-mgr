@@ -1,0 +1,178 @@
+# What a Proxmox Backup Server daemon or auth.log line says, from the message left by
+# decoder/jt-pbs-syslog/0 or decoder/jt-pbs-authlog/0. Every pattern is anchored at the start of the
+# message (never "first occurrence anywhere"): the account and the address of a failed login come from
+# fixed positions (rhost=... user=... msg=), so text a client controls (the msg part, a request path)
+# cannot supply them. Field use:
+#   event.action        the kind of line (login, login-failed, second-factor-failed, ticket-refused,
+#                       token-refused, second-factor-locked, datastore-not-mounted, datastore-unavailable,
+#                       datastore-lock-failed, datastore-open-failed, task-error, notification-failed,
+#                       notification-no-recipient-email, malformed-connection, daemon-reload,
+#                       certificate-reloaded, job-start-failed, task-scheduler-failed,
+#                       job-config-unreadable, verification-chunk-error, request-refused)
+#   user.name           the account of a login (realm kept: root@pam and root@pbs are different users)
+#   source.ip / .port   the client (::ffff: removed); absent when rhost is "unknown"
+#   service.target.name the datastore, or the notification target
+#   event.reason        the msg= part of a failed login or refused request
+#   error.message       the error of a failed task, datastore or notification
+#   http.request.method, url.original, http.response.status_code   a refused request copied to syslog
+name: decoder/jt-pbs/0
+enabled: true
+metadata:
+  title: Proxmox Backup Server messages
+  author: Jason Tools
+  description: Classifies Proxmox Backup Server daemon and auth.log messages (logins, datastores, tasks, notifications, scheduler) into WCS fields.
+  references:
+    - https://git.proxmox.com/?p=proxmox-backup.git;a=blob;f=src/bin/proxmox-backup-proxy.rs
+    - https://git.proxmox.com/?p=proxmox.git;a=blob;f=proxmox-rest-server/src/rest.rs
+parents:
+  - decoder/jt-pbs-syslog/0
+  - decoder/jt-pbs-authlog/0
+check: exists($message)
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: proxmox-backup
+      - observer.vendor: Proxmox
+      - observer.product: Proxmox Backup Server
+      - observer.type: backup
+
+  # --- logins (proxmox-rest-server environment.rs log_failed_auth, auth.log) --------------------
+  - check: "regex_match($message, '^successful auth for user .[^ ]+.$')"
+    map:
+      - user.name: "regex_extract($message, '^successful auth for user .([^ ]+).$')"
+      - event.action: login
+      - event.outcome: success
+      - event.category: array_append(authentication)
+      - event.type: array_append(start)
+  - check: "regex_match($message, '^authentication failure; rhost=[^ ]+ ')"
+    map:
+      - event.category: array_append(authentication)
+      - event.outcome: failure
+      - _tmp.pbs_ip: "regex_extract($message, '^authentication failure; rhost=[[](?:::ffff:)?([^]]+)[]]:[0-9]+ ')"
+      - _tmp.pbs_port: "regex_extract($message, '^authentication failure; rhost=[[][^]]+[]]:([0-9]+) ')"
+  - check: "regex_match($message, '^authentication failure; rhost=[^ ]+ user=[^ ]+ msg=')"
+    map:
+      - user.name: "regex_extract($message, '^authentication failure; rhost=[^ ]+ user=([^ ]+) msg=')"
+      - event.reason: "regex_extract($message, '^authentication failure; rhost=[^ ]+ user=[^ ]+ msg=(.*)$')"
+      - event.action: login-failed
+  # The second login step (proxmox-auth-api access.rs authenticate_2nd) returns exactly this after a
+  # correct password and a wrong second factor.
+  - check: "regex_match($message, '^authentication failure; rhost=[^ ]+ user=[^ ]+ msg=authentication failed$')"
+    map:
+      - event.action: second-factor-failed
+  - check: "regex_match($message, '^authentication failure; rhost=[^ ]+ msg=')"
+    map:
+      - event.reason: "regex_extract($message, '^authentication failure; rhost=[^ ]+ msg=(.*)$')"
+      - event.action: token-refused
+  - check: "regex_match($message, '^authentication failure; rhost=[^ ]+ msg=(invalid ticket|no authentication credentials provided|ticket with bad signature)')"
+    map:
+      - event.action: ticket-refused
+
+  # Second factors locked (proxmox-tfa api/mod.rs)
+  - check: "regex_match($message, '^(TOTP of user|refusing 2nd factor for user) .[^ ]+.')"
+    map:
+      - user.name: "regex_extract($message, '^(?:TOTP of user|refusing 2nd factor for user) .([^ ]+?).(?: is locked)?$')"
+      - event.action: second-factor-locked
+      - event.category: array_append(authentication)
+      - event.outcome: failure
+
+  # --- datastores ------------------------------------------------------------------------------
+  - check: "regex_match($message, '^lookup_datastore failed - ')"
+    map:
+      - error.message: "regex_extract($message, '^lookup_datastore failed - (.*)$')"
+      - event.action: datastore-open-failed
+  - check: "regex_match($message, '^lookup_datastore failed - datastore .[^ ]+. ')"
+    map:
+      - service.target.name: "regex_extract($message, '^lookup_datastore failed - datastore .([^ ]+). ')"
+  - check: "regex_match($message, '^lookup_datastore failed - datastore .[^ ]+. is not mounted$')"
+    map:
+      - event.action: datastore-not-mounted
+  - check: "regex_match($message, '^lookup_datastore failed - .*(maintenance mode|is being unmounted|is being deleted)')"
+    map:
+      - event.action: datastore-unavailable
+  - check: "regex_match($message, '^lookup_datastore failed - Unable to acquire lock ')"
+    map:
+      - event.action: datastore-lock-failed
+
+  # --- task errors copied to syslog (worker_task.rs log_result; ERROR lines since 3.3) ----------
+  - check: "regex_match($message, '^TASK ERROR: ')"
+    map:
+      - error.message: "regex_extract($message, '^TASK ERROR: (.*)$')"
+      - event.action: task-error
+      - event.outcome: failure
+  - check: "regex_match($message, '^(can.t verify chunk, load failed - |can.t verify missing chunk with digest |can.t verify chunk with digest |Failed to verify the following snapshots/groups:)')"
+    map:
+      - event.action: verification-chunk-error
+      - error.message: $message
+
+  # --- notifications ---------------------------------------------------------------------------
+  - check: "regex_match($message, '^could not notify via target .[^ ]+.: ')"
+    map:
+      - service.target.name: "regex_extract($message, '^could not notify via target .([^ ]+).: ')"
+      - error.message: "regex_extract($message, '^could not notify via target .[^ ]+.: (.*)$')"
+      - event.action: notification-failed
+      - event.outcome: failure
+  - check: "contains($message, 'does not have a configured email address')"
+    map:
+      - event.action: notification-no-recipient-email
+
+  # --- the API port ----------------------------------------------------------------------------
+  # A request refused with 4xx/5xx is copied to syslog (rest.rs log_response):
+  #   DELETE /api2/json/admin/datastore/store1/snapshots?backup-id=102: 400 Bad Request: [client [::ffff:192.0.2.9]:40112] cannot remove protected snapshot
+  - check: "regex_match($message, '^[A-Z]+ /[^ ]*: [0-9]{3} [A-Za-z -]+: [[]client [[][^]]+[]]:[0-9]+[]]')"
+    map:
+      - http.request.method: "regex_extract($message, '^([A-Z]+) ')"
+      - url.original: "regex_extract($message, '^[A-Z]+ (/[^ ]*): [0-9]{3} ')"
+      - _tmp.pbs_status: "regex_extract($message, '^[A-Z]+ /[^ ]*: ([0-9]{3}) ')"
+      - _tmp.pbs_ip: "regex_extract($message, '^[A-Z]+ /[^ ]*: [0-9]{3} [A-Za-z -]+: [[]client [[](?:::ffff:)?([^]]+)[]]:[0-9]+[]]')"
+      - _tmp.pbs_port: "regex_extract($message, '^[A-Z]+ /[^ ]*: [0-9]{3} [A-Za-z -]+: [[]client [[][^]]+[]]:([0-9]+)[]]')"
+      - error.message: "regex_extract($message, '^[A-Z]+ /[^ ]*: [0-9]{3} [A-Za-z -]+: [[]client [[][^]]+[]]:[0-9]+[]] (.*)$')"
+      - event.action: request-refused
+      - event.outcome: failure
+  - check: exists($_tmp.pbs_status)
+    map:
+      - http.response.status_code: parse_long($_tmp.pbs_status)
+  #   [[::ffff:192.0.2.44]:60128] failed to check for TLS handshake: couldn't peek into incoming TCP stream
+  - check: "regex_match($message, '^[[][[][^]]+[]]:[0-9]+[]] ')"
+    map:
+      - _tmp.pbs_ip: "regex_extract($message, '^[[][[](?:::ffff:)?([^]]+)[]]:[0-9]+[]] ')"
+      - _tmp.pbs_port: "regex_extract($message, '^[[][[][^]]+[]]:([0-9]+)[]] ')"
+  - check: "regex_match($message, '^([[][[][^]]+[]]:[0-9]+[]] failed to check for TLS handshake|[A-Z]+ /[^ ]*: 400 [A-Za-z ]+: [[]client [[][^]]+[]]:[0-9]+[]] invalid http method for path)')"
+    map:
+      - event.action: malformed-connection
+
+  # --- daemon life cycle -----------------------------------------------------------------------
+  - check: "regex_match($message, '^got (reload|shutdown) request')"
+    map:
+      - event.action: daemon-reload
+  - check: "regex_match($message, '^reloading certificate')"
+    map:
+      - event.action: certificate-reloaded
+
+  # --- task scheduler (proxmox-backup-proxy.rs prints to stderr; no task is created) ------------
+  - check: "regex_match($message, '^unable to start (garbage collection job on datastore|datastore (prune|sync|verification) job|tape backup job) ')"
+    map:
+      - event.action: job-start-failed
+      - error.message: $message
+  - check: "regex_match($message, '^task scheduler( panic|: | failed - )')"
+    map:
+      - event.action: task-scheduler-failed
+      - error.message: $message
+  - check: "regex_match($message, '^(unable to read (datastore|prune job|sync job|verification job|tape job) config - |(datastore|prune job|sync job|verification job|tape backup job) config from_value failed - |unable to parse schedule |compute_next_event for .[^ ]*. failed - |could not get last run time of )')"
+    map:
+      - event.action: job-config-unreadable
+      - error.message: $message
+
+  # The client address of a login failure or refused request, when it is an address ("unknown" is not).
+  - check: "exists($_tmp.pbs_ip) AND (is_ipv4($_tmp.pbs_ip) OR is_ipv6($_tmp.pbs_ip))"
+    map:
+      - source.ip: $_tmp.pbs_ip
+      - related.ip: array_append($_tmp.pbs_ip)
+  - check: "exists($source.ip) AND exists($_tmp.pbs_port)"
+    map:
+      - source.port: parse_long($_tmp.pbs_port)
+  - check: exists($user.name)
+    map:
+      - related.user: array_append($user.name)
+  - map:
+      - _tmp: delete()

@@ -1,0 +1,299 @@
+# jt-librenms rules for Wazuh 5.x (Sigma, evaluated by the indexer), part 1: the LibreNMS
+# application log (librenms.log) and the dispatcher service (librenms-service.py), both decoded by
+# this pack (event.dataset librenms.log / librenms.service, log.level in lower case, the text in
+# message). Each rule carries the tag jt.rule.<id> of the 4.x rule it replaces. 4.x rules below
+# level 3 are not ported (131901-131903, 131906, 131930-131932: every decoded event is indexed
+# anyway). Sigma rules are independent (no if_sid): where a 4.x child rule replaced its parent, the
+# parent here excludes the child's case, so an event gives one finding. The frequency rules 131911
+# and 131916 are Alerting monitors (monitors/jt-librenms.yml).
+# Levels: 4.x 3 -> informational, 4-6 -> low, 7-9 -> medium, 10-13 -> high.
+
+# --- application log (librenms.log) ------------------------------------------------------------
+
+- metadata:
+    title: "LibreNMS: login attempt from {{source.address}} with unknown user name {{user.name}}"
+    author: Jason Tools
+    description: >-
+      A login with a user name that does not exist in the configured back end (built-in, LDAP,
+      Active Directory, RADIUS). The only failed login LibreNMS writes to a file; a wrong password for
+      an existing user is recorded only in its database (see the access-log rule for those).
+    references: ["Migrated from jt-librenms 4.x rule 131910"]
+  sigma_id: jt-librenms-131910
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: librenms.log
+      event.action: authentication-failure
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+  tags: [jt.rule.131910, jt.pack.jt-librenms, jt.auth.failure]
+
+- metadata:
+    title: "LibreNMS error: {{message}}"
+    author: Jason Tools
+    description: An error in the LibreNMS application log that no more specific rule of this pack describes.
+    references: ["Migrated from jt-librenms 4.x rule 131904"]
+  sigma_id: jt-librenms-131904
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and not auth and not syslog_store and not database
+    selection:
+      event.dataset: librenms.log
+      log.level: error
+    auth:
+      message|startswith: 'Auth Error ('
+    syslog_store:
+      message|startswith: 'Failed to store syslog message from '
+    database:
+      message|contains: 'SQLSTATE['
+  tags: [jt.rule.131904, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS critical error: {{message}}"
+    author: Jason Tools
+    description: A critical, alert or emergency message in the LibreNMS application log (the per-device poll and discovery timing lines excluded).
+    references: ["Migrated from jt-librenms 4.x rule 131905"]
+  sigma_id: jt-librenms-131905
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and not timing and not database
+    selection:
+      event.dataset: librenms.log
+      log.level: [critical, alert, emergency]
+    timing:
+      message|startswith: ['INFO: device:poll ', 'INFO: device:discover ']
+    database:
+      message|contains: 'SQLSTATE['
+  tags: [jt.rule.131905, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: an alert notification could not be delivered, nobody was told"
+    author: Jason Tools
+    description: >-
+      An alert transport (mail, chat, webhook, syslog) failed. The alert is lost for whoever was to
+      receive it, and LibreNMS has no other way of saying so than this line.
+    references: ["Migrated from jt-librenms 4.x rule 131912"]
+  sigma_id: jt-librenms-131912
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and failed
+    selection:
+      event.dataset: librenms.log
+      log.level: warning
+      message|startswith: "Alert transport '"
+    failed:
+      message|contains: "' delivery failed for device "
+  tags: [jt.rule.131912, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: the configuration backup service is not reachable"
+    author: Jason Tools
+    description: Oxidized or Unimus, which keep the device configuration backups, could not be reached.
+    references: ["Migrated from jt-librenms 4.x rule 131913"]
+  sigma_id: jt-librenms-131913
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: librenms.log
+      log.level: warning
+      message|startswith: ['Oxidized is not reachable', 'Unimus is not reachable']
+  tags: [jt.rule.131913, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: a received syslog message could not be stored"
+    author: Jason Tools
+    description: LibreNMS's syslog intake failed to write a message to its database.
+    references: ["Migrated from jt-librenms 4.x rule 131914"]
+  sigma_id: jt-librenms-131914
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: librenms.log
+      log.level: error
+      message|startswith: 'Failed to store syslog message from '
+  tags: [jt.rule.131914, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: database error"
+    author: Jason Tools
+    description: >-
+      A database error (SQLSTATE) in the application log. During an outage every poll of every device
+      logs one, so a single error is informational and a burst raises the monitor 131916.
+    references: ["Migrated from jt-librenms 4.x rule 131915"]
+  sigma_id: jt-librenms-131915
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and sqlstate and not auth and not syslog_store and not timing
+    selection:
+      event.dataset: librenms.log
+      log.level: [error, critical, alert, emergency]
+    sqlstate:
+      message|contains: 'SQLSTATE['
+    auth:
+      message|startswith: 'Auth Error ('
+    syslog_store:
+      message|startswith: 'Failed to store syslog message '
+    timing:
+      message|startswith: ['INFO: device:poll ', 'INFO: device:discover ']
+  tags: [jt.rule.131915, jt.pack.jt-librenms]
+
+# --- dispatcher service (librenms-service.py) ---------------------------------------------------
+
+- metadata:
+    title: "LibreNMS dispatcher error: {{message}}"
+    author: Jason Tools
+    description: An error of the LibreNMS dispatcher service that no more specific rule of this pack describes.
+    references: ["Migrated from jt-librenms 4.x rule 131933"]
+  sigma_id: jt-librenms-131933
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and not (poll_or_discovery and failed) and not daily
+    selection:
+      event.dataset: librenms.service
+      log.level: error
+    poll_or_discovery:
+      message|startswith: ['Polling device ', 'Discovering device ']
+    failed:
+      message|contains: ' failed with exit code '
+    daily:
+      message|startswith: 'Error '
+      message|contains: ' in daily.sh'
+  tags: [jt.rule.131933, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS dispatcher critical error: {{message}}"
+    author: Jason Tools
+    description: A critical error of the LibreNMS dispatcher service.
+    references: ["Migrated from jt-librenms 4.x rule 131934"]
+  sigma_id: jt-librenms-131934
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and not backend
+    selection:
+      event.dataset: librenms.service
+      log.level: critical
+    backend:
+      message|startswith:
+        - 'ERROR: Could not connect to MySQL database'
+        - 'DB Connection exception'
+        - 'DB Exception'
+        - 'ERROR: Redis connection required'
+        - 'Queue manager could not connect to Redis'
+  tags: [jt.rule.131934, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS dispatcher: a device poll or discovery failed"
+    author: Jason Tools
+    description: A poll or discovery of one device ended with an error exit code (an unreachable device, exit code 6, is a warning and not reported).
+    references: ["Migrated from jt-librenms 4.x rule 131935"]
+  sigma_id: jt-librenms-131935
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and failed
+    selection:
+      event.dataset: librenms.service
+      log.level: error
+      message|startswith: ['Polling device ', 'Discovering device ']
+    failed:
+      message|contains: ' failed with exit code '
+  tags: [jt.rule.131935, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS dispatcher cannot reach its database or Redis, polling has stopped"
+    author: Jason Tools
+    description: >-
+      The dispatcher lost its database or Redis and stopped polling. systemd restarts it every
+      10 seconds; the 4.x rule limited this to one alert an hour (ignore=3600), which 5.0 has no
+      equivalent for, so expect one finding per restart while the outage lasts.
+    references: ["Migrated from jt-librenms 4.x rule 131936"]
+  sigma_id: jt-librenms-131936
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: librenms.service
+      log.level: critical
+      message|startswith:
+        - 'ERROR: Could not connect to MySQL database'
+        - 'DB Connection exception'
+        - 'DB Exception'
+        - 'ERROR: Redis connection required'
+        - 'Queue manager could not connect to Redis'
+  tags: [jt.rule.131936, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS dispatcher paused polling, memory is short"
+    author: Jason Tools
+    description: The dispatcher's memory guard paused taking new work.
+    references: ["Migrated from jt-librenms 4.x rule 131937"]
+  sigma_id: jt-librenms-131937
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and pausing
+    selection:
+      event.dataset: librenms.service
+      log.level: warning
+      message|startswith: 'Memory '
+    pausing:
+      message|contains: '; pausing intake'
+  tags: [jt.rule.131937, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS dispatcher: daily maintenance (daily.sh, includes updates) failed"
+    author: Jason Tools
+    description: The daily maintenance script, which also applies LibreNMS updates, exited with an error.
+    references: ["Migrated from jt-librenms 4.x rule 131938"]
+  sigma_id: jt-librenms-131938
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and daily
+    selection:
+      event.dataset: librenms.service
+      log.level: error
+      message|startswith: 'Error '
+    daily:
+      message|contains: ' in daily.sh'
+  tags: [jt.rule.131938, jt.pack.jt-librenms]

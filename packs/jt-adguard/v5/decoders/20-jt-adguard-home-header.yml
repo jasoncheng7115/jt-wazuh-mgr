@@ -1,0 +1,46 @@
+# AdGuard Home service log, header part. Two deliveries, one line shape:
+#   journald / syslog (program AdGuardHome, where a systemd install logs):
+#     Oct 11 11:15:16 dns1 AdGuardHome[812]: 2026/10/11 11:15:16.123456 [error] webapi: http error ...
+#   a log file read directly (log.file in AdGuardHome.yaml), no syslog header:
+#     2026/10/11 11:15:16.123456 [info] webapi: successful login user=admin ip=192.0.2.50
+# The microseconds keep it apart from the nginx error log ("2026/10/11 11:15:16 [error] 1234#0: ...").
+# Both decoders leave the text after "[level] " in message and the level in log.level; the events
+# are decoded by decoder/jt-adguard-home/0.
+name: decoder/jt-adguard-home-syslog/0
+enabled: true
+metadata:
+  title: AdGuard Home service log through syslog or the journal
+  author: Jason Tools
+  description: Header of AdGuard Home service log lines delivered with a syslog header (program AdGuardHome).
+  references:
+    - https://github.com/AdguardTeam/AdGuardHome/wiki/Configuration
+parents:
+  - decoder/jt-syslog/0
+check: >-
+  $process.name == 'AdGuardHome' AND regex_match($message, '^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]+ (?:[0-9]+#[0-9]+ )?[[](?:debug|info|error|fatal|panic)[]] ')
+normalize:
+  - map:
+      - log.level: >-
+          regex_extract($message, '^[^[]*[[]([a-z]+)[]] ')
+      - message: >-
+          regex_extract($message, '^[^[]*[[][a-z]+[]] (.*)$')
+---
+name: decoder/jt-adguard-home-file/0
+enabled: true
+metadata:
+  title: AdGuard Home service log file
+  author: Jason Tools
+  description: Header of AdGuard Home service log lines read from its own log file (no syslog header).
+  references:
+    - https://github.com/AdguardTeam/AdGuardHome/wiki/Configuration
+parents:
+  - decoder/jt-core/0
+check: >-
+  regex_match($event.original, '^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]+ (?:[0-9]+#[0-9]+ )?[[](?:debug|info|error|fatal|panic)[]] ')
+normalize:
+  - map:
+      - process.name: AdGuardHome
+      - log.level: >-
+          regex_extract($event.original, '^[^[]*[[]([a-z]+)[]] ')
+      - message: >-
+          regex_extract($event.original, '^[^[]*[[][a-z]+[]] (.*)$')

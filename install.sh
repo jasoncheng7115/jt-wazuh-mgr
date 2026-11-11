@@ -197,7 +197,7 @@ else
 fi
 
 # Download lib files
-LIB_FILES="__init__.py config.py wazuh_cli.py wazuh_api.py agent_ops.py group_ops.py node_ops.py stats.py output.py web_ui.py"
+LIB_FILES="__init__.py config.py wazuh_cli.py wazuh_api.py agent_ops.py group_ops.py node_ops.py stats.py output.py web_ui.py pack5.py"
 
 for file in $LIB_FILES; do
     fetch "lib/$file" "$INSTALL_DIR/lib/$file"
@@ -219,6 +219,14 @@ if fetch packs/INDEX "$INSTALL_DIR/packs/INDEX" 2>/dev/null; then
 else
     echo -e "  - packs ${YELLOW}(skipped, index unavailable)${NC}"
 fi
+
+# Wazuh 5.x (beta): the shared base integration every 5.x pack hangs off.
+PACKS5_BASE_FILES="integration.yml decoders/10-jt-core.yml decoders/20-jt-syslog.yml"
+mkdir -p "$INSTALL_DIR/packs5-base/decoders"
+for file in $PACKS5_BASE_FILES; do
+    fetch "packs5-base/$file" "$INSTALL_DIR/packs5-base/$file" 2>/dev/null || true
+done
+echo "  - packs5-base/ (Wazuh 5.x beta)"
 
 # Logo and the icons the web UI links to (favicon, touch icon)
 for img in logo-1.png icon.svg favicon.ico icon-16.png icon-32.png icon-48.png \

@@ -1,0 +1,33 @@
+# High availability state changes (pve-ha-manager, PVE/HA/Manager.pm and LRM.pm):
+#   node 'pve3': state changed from 'online' => 'unknown'
+#   service 'vm:105': state changed from 'started' to 'error'
+# Field use: orchestrator.resource.type (node or service), orchestrator.resource.name (the node or
+# the HA resource id), service.previous.state / service.state (old and new state),
+# event.action ha-state-change. Task lines of pve-ha-lrm ("<root@pam> starting task ...") belong to
+# decoder/jt-proxmox-actor/0 and are not taken here.
+name: decoder/jt-proxmox-ha/0
+enabled: true
+metadata:
+  title: Proxmox VE high availability
+  author: Jason Tools
+  description: Node and service state changes of the Proxmox VE HA stack (pve-ha-crm, pve-ha-lrm).
+  references:
+    - https://git.proxmox.com/?p=pve-ha-manager.git
+parents:
+  - decoder/jt-syslog/0
+check: "regex_match($process.name, '^pve-ha-(crm|lrm)$') AND regex_not_match($message, '^<[^> ]+> ')"
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: proxmox
+      - event.dataset: proxmox.ha
+      - observer.vendor: Proxmox
+      - observer.product: Proxmox VE
+  - check: "regex_match($message, '^(node|service) .[^ ]+.: state changed from .[a-z_]+. (=>|to) .[a-z_]+.')"
+    map:
+      - event.action: ha-state-change
+      - event.type: array_append(change)
+      - orchestrator.resource.type: "regex_extract($message, '^(node|service) ')"
+      - orchestrator.resource.name: "regex_extract($message, '^(?:node|service) .([^ ]+).: state changed ')"
+      - service.previous.state: "regex_extract($message, ': state changed from .([a-z_]+). ')"
+      - service.state: "regex_extract($message, ': state changed from .[a-z_]+. (?:=>|to) .([a-z_]+).')"

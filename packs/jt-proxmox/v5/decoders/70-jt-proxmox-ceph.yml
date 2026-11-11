@@ -1,0 +1,60 @@
+# The Ceph cluster log (/var/log/ceph/ceph.log on monitor nodes), collected by the pack's agent
+# group with the [DBG] lines and "overall HEALTH_OK" dropped on the agent:
+#   2026-10-07T22:03:08.863938+0800 mon.pve1 (mon.0) 2644626 : cluster [WRN] Health check failed: clock skew detected on mon.pve4 (MON_CLOCK_SKEW)
+# Not a syslog line (the time zone has no colon and the third token is "(mon.0)"), so it hangs
+# under the root decoder and reads event.original.
+# Field use: service.node.name (the reporting daemon, mon.pve1), log.level (debug, info,
+# warning, error; Ceph's DBG / INF / WRN / ERR, SEC kept as security), message (after the
+# level), event.code (the health check code in parentheses at the end of the line),
+# event.action health-check-failed / health-check-update / health-check-cleared.
+name: decoder/jt-proxmox-ceph/0
+enabled: true
+metadata:
+  title: Ceph cluster log
+  author: Jason Tools
+  description: Ceph monitor cluster log lines (health checks), as written on Proxmox VE monitor nodes.
+  references:
+    - https://docs.ceph.com/en/latest/rados/operations/health-checks/
+parents:
+  - decoder/jt-core/0
+check: "regex_match($event.original, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+[+-][0-9]{2}:?[0-9]{2} [^ ]+ [(][^ )]+[)] [0-9]+ : cluster [[][A-Z]+[]] ')"
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: ceph
+      - event.dataset: ceph.cluster
+      - observer.vendor: Ceph
+      - observer.product: Ceph
+      - service.type: ceph
+      - service.node.name: "regex_extract($event.original, '^[^ ]+ ([^ ]+) ')"
+      - _tmp.ceph_sev: "regex_extract($event.original, ' : cluster [[]([A-Z]+)[]] ')"
+      - message: "regex_extract($event.original, ' : cluster [[][A-Z]+[]] (.*)$')"
+  - check: "$_tmp.ceph_sev == 'DBG'"
+    map:
+      - log.level: debug
+  - check: "$_tmp.ceph_sev == 'INF'"
+    map:
+      - log.level: info
+  - check: "$_tmp.ceph_sev == 'WRN'"
+    map:
+      - log.level: warning
+  - check: "$_tmp.ceph_sev == 'ERR'"
+    map:
+      - log.level: error
+  - check: "$_tmp.ceph_sev == 'SEC'"
+    map:
+      - log.level: security
+  - check: "exists($message) AND regex_match($message, ' [(][A-Za-z0-9_]+[)]$')"
+    map:
+      - event.code: "regex_extract($message, ' [(]([A-Za-z0-9_]+)[)]$')"
+  - check: "exists($message) AND starts_with($message, 'Health check failed: ')"
+    map:
+      - event.action: health-check-failed
+  - check: "exists($message) AND starts_with($message, 'Health check update: ')"
+    map:
+      - event.action: health-check-update
+  - check: "exists($message) AND starts_with($message, 'Health check cleared: ')"
+    map:
+      - event.action: health-check-cleared
+  - map:
+      - _tmp: delete()

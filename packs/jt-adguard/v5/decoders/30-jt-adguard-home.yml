@@ -1,0 +1,211 @@
+# AdGuard Home service log events, from the message left by either header decoder. Shapes (v0.107.79
+# source, and the older format before the structured logger):
+#   webapi: http error host=H method=POST url=/control/login status=403 ip=A err="invalid username or password"
+#   filtering: warning: http error host=H method=POST raddr=A:port request_uri=/control/... status=400 err="..."
+#   POST H /control/login: from ip A: invalid username or password                       (older)
+#   webapi: successful login user=admin ip=A
+#   auth: user "admin" successfully logged in from ip A                                  (older)
+#   starting adguard home version="AdGuard Home, version v0.107.79" | AdGuard Home, version v0.107.43
+#
+# Trusted fields are read from fixed positions of the whole line (every expression is anchored at both
+# ends), never from "the first ip= anywhere": err="..." and a refused filter path are client data.
+#
+# Field use (WCS):
+#   source.ip / source.address  the client (ip=, raddr= without the port, "from ip"); ::ffff: removed
+#   user.name                   the web user of a successful login
+#   url.path, http.request.method, http.response.status_code, error.message (the err text)
+#   event.action                login-success | login-failure | login-locked-out | http-error | started
+#   event.category/outcome      authentication, success / failure, for logins
+#   observer.version            the version from the start line (v removed)
+#   file.path                   the local path a filter list refused (CVE-2024-36814 attempts)
+#   rule.id                     the list ID of "deleted filter id="
+#   server.address              the pprof listen address
+#   url.original                the list URL of "updating filter url="
+#   tags                        jt-adguard.vulnerable-version (before v0.107.73, CVE-2026-32136),
+#                               jt-adguard.outdated-version (v0.107.73 to v0.107.78)
+name: decoder/jt-adguard-home/0
+enabled: true
+metadata:
+  title: AdGuard Home service events
+  author: Jason Tools
+  description: Classifies AdGuard Home service log messages (web logins, HTTP errors, start, version) into WCS fields.
+  references:
+    - https://github.com/AdguardTeam/AdGuardHome/blob/master/internal/home/authhttp.go
+    - https://github.com/AdguardTeam/AdGuardHome/blob/master/internal/aghhttp/aghhttp.go
+parents:
+  - decoder/jt-adguard-home-syslog/0
+  - decoder/jt-adguard-home-file/0
+check: exists($message)
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: adguard
+      - event.dataset: adguard.service
+      - observer.vendor: AdGuard
+      - observer.product: AdGuard Home
+      - observer.type: dns
+
+  # HTTP error, login handler: host, method, url, status, ip, err (in this order).
+  - check: >-
+      regex_match($message, '^(?:[a-z]+: )?(?:warning: )?http error host=[^ ]+ method=[A-Z]+ url=[^ ]+ status=[0-9]+ ip=[^ ]+ err=".*"$')
+    map:
+      - event.action: http-error
+      - http.request.method: >-
+          regex_extract($message, '^(?:[a-z]+: )?(?:warning: )?http error host=[^ ]+ method=([A-Z]+) url=[^ ]+ status=[0-9]+ ip=[^ ]+ err=".*"$')
+      - _tmp.agh_url: >-
+          regex_extract($message, '^(?:[a-z]+: )?(?:warning: )?http error host=[^ ]+ method=[A-Z]+ url=([^ ]+) status=[0-9]+ ip=[^ ]+ err=".*"$')
+      - _tmp.agh_status: >-
+          regex_extract($message, '^(?:[a-z]+: )?(?:warning: )?http error host=[^ ]+ method=[A-Z]+ url=[^ ]+ status=([0-9]+) ip=[^ ]+ err=".*"$')
+      - _tmp.agh_ip: >-
+          regex_extract($message, '^(?:[a-z]+: )?(?:warning: )?http error host=[^ ]+ method=[A-Z]+ url=[^ ]+ status=[0-9]+ ip=([^ ]+) err=".*"$')
+      - error.message: >-
+          regex_extract($message, '^(?:[a-z]+: )?(?:warning: )?http error host=[^ ]+ method=[A-Z]+ url=[^ ]+ status=[0-9]+ ip=[^ ]+ err="(.*)"$')
+
+  # HTTP error, every other handler (aghhttp.ErrorAndLog): host, method, raddr=IP:port, request_uri, status, err.
+  - check: >-
+      regex_match($message, '^(?:[a-z]+: )?(?:warning: )?http error host=[^ ]+ method=[A-Z]+ raddr=[^ ]+ request_uri=[^ ]+ status=[0-9]+ err=".*"$')
+    map:
+      - event.action: http-error
+      - http.request.method: >-
+          regex_extract($message, '^(?:[a-z]+: )?(?:warning: )?http error host=[^ ]+ method=([A-Z]+) raddr=[^ ]+ request_uri=[^ ]+ status=[0-9]+ err=".*"$')
+      - _tmp.agh_raddr: >-
+          regex_extract($message, '^(?:[a-z]+: )?(?:warning: )?http error host=[^ ]+ method=[A-Z]+ raddr=([^ ]+) request_uri=[^ ]+ status=[0-9]+ err=".*"$')
+      - _tmp.agh_url: >-
+          regex_extract($message, '^(?:[a-z]+: )?(?:warning: )?http error host=[^ ]+ method=[A-Z]+ raddr=[^ ]+ request_uri=([^ ]+) status=[0-9]+ err=".*"$')
+      - _tmp.agh_status: >-
+          regex_extract($message, '^(?:[a-z]+: )?(?:warning: )?http error host=[^ ]+ method=[A-Z]+ raddr=[^ ]+ request_uri=[^ ]+ status=([0-9]+) err=".*"$')
+      - error.message: >-
+          regex_extract($message, '^(?:[a-z]+: )?(?:warning: )?http error host=[^ ]+ method=[A-Z]+ raddr=[^ ]+ request_uri=[^ ]+ status=[0-9]+ err="(.*)"$')
+  # raddr is IP:port, an IPv6 peer [IP]:port
+  - check: exists($_tmp.agh_raddr)
+    map:
+      - _tmp.agh_ip: >-
+          regex_extract($_tmp.agh_raddr, '^[[]?([0-9A-Fa-f:.]*[0-9A-Fa-f])[]]?:[0-9]+$')
+
+  # Older format: METHOD host /control/path: [from ip A: ]error text
+  - check: >-
+      regex_match($message, '^(?:GET|POST|PUT|DELETE|PATCH) [^ ]+ /control/[^ :?]+: ')
+    map:
+      - event.action: http-error
+      - http.request.method: >-
+          regex_extract($message, '^([A-Z]+) [^ ]+ /control/[^ :?]+: ')
+      - _tmp.agh_url: >-
+          regex_extract($message, '^[A-Z]+ [^ ]+ (/control/[^ :?]+): ')
+      - error.message: >-
+          regex_extract($message, '^[A-Z]+ [^ ]+ /control/[^ :?]+: (?:from ip [^ ]+: )?(.*)$')
+  - check: >-
+      regex_match($message, '^(?:GET|POST|PUT|DELETE|PATCH) [^ ]+ /control/[^ :?]+: from ip [^ ]+: ')
+    map:
+      - _tmp.agh_ip: >-
+          regex_extract($message, '^[A-Z]+ [^ ]+ /control/[^ :?]+: from ip ([^ ]+): ')
+
+  - check: exists($_tmp.agh_url)
+    map:
+      - url.path: >-
+          regex_extract($_tmp.agh_url, '^([^?]*)')
+  - check: exists($_tmp.agh_status)
+    map:
+      - http.response.status_code: parse_long($_tmp.agh_status)
+
+  # Successful login, current and older format. The address is the last field of the line.
+  - check: >-
+      regex_match($message, '^(?:[a-z]+: )?successful login user=[^ "]+ ip=[^ ]+$')
+    map:
+      - user.name: >-
+          regex_extract($message, '^(?:[a-z]+: )?successful login user=([^ "]+) ip=[^ ]+$')
+      - _tmp.agh_ip: >-
+          regex_extract($message, '^(?:[a-z]+: )?successful login user=[^ "]+ ip=([^ ]+)$')
+      - event.action: login-success
+  - check: >-
+      regex_match($message, '^(?:[a-z]+: )?successful login user="[^"]*" ip=[^ ]+$')
+    map:
+      - user.name: >-
+          regex_extract($message, '^(?:[a-z]+: )?successful login user="([^"]*)" ip=[^ ]+$')
+      - _tmp.agh_ip: >-
+          regex_extract($message, '^(?:[a-z]+: )?successful login user="[^"]*" ip=([^ ]+)$')
+      - event.action: login-success
+  - check: >-
+      regex_match($message, '^auth: user "[^"]*" successfully logged in from ip [^ ]+$')
+    map:
+      - user.name: >-
+          regex_extract($message, '^auth: user "([^"]*)" successfully logged in from ip [^ ]+$')
+      - _tmp.agh_ip: >-
+          regex_extract($message, '^auth: user "[^"]*" successfully logged in from ip ([^ ]+)$')
+      - event.action: login-success
+  - check: "$event.action == 'login-success'"
+    map:
+      - event.category: array_append(authentication)
+      - event.type: array_append(start)
+      - event.outcome: success
+      - related.user: array_append($user.name)
+
+  # Failed login and the login rate limiter (/control/login only).
+  - check: >-
+      $event.action == 'http-error' AND $url.path == '/control/login' AND contains($error.message, 'invalid username or password')
+    map:
+      - event.action: login-failure
+      - event.category: array_append(authentication)
+      - event.type: array_append(start)
+      - event.outcome: failure
+  - check: >-
+      $event.action == 'http-error' AND $url.path == '/control/login' AND contains($error.message, 'auth: blocked for')
+    map:
+      - event.action: login-locked-out
+      - event.category: array_append(authentication)
+      - event.type: array_append(denied)
+      - event.outcome: failure
+
+  # The client address: ::ffff: removed, only a real address becomes source.ip.
+  - check: exists($_tmp.agh_ip)
+    map:
+      - _tmp.agh_ip: >-
+          regex_extract($_tmp.agh_ip, '^(?i:::ffff:)?(.+)$')
+  - check: "exists($_tmp.agh_ip) AND (is_ipv4($_tmp.agh_ip) OR is_ipv6($_tmp.agh_ip))"
+    map:
+      - source.ip: $_tmp.agh_ip
+      - source.address: $_tmp.agh_ip
+      - related.ip: array_append($_tmp.agh_ip)
+
+  # A filter list that is a local path outside safe_fs_patterns (CVE-2024-36814 attempt).
+  - check: >-
+      exists($error.message) AND regex_match($error.message, 'path [^ ]*"[^"]+" does not match safe patterns')
+    map:
+      - file.path: >-
+          regex_extract($error.message, 'path [^ ]*"([^"]+?)[^a-zA-Z0-9_./~-]*" does not match safe patterns')
+
+  # Start line: version
+  - check: >-
+      regex_match($message, 'AdGuard Home, version v?[0-9]')
+    map:
+      - event.action: started
+      - event.category: array_append(process)
+      - event.type: array_append(start)
+      - observer.version: >-
+          regex_extract($message, 'AdGuard Home, version v?([0-9][^ ",]*)')
+  - check: >-
+      exists($observer.version) AND (regex_match($observer.version, '^0[.](?:[0-9]{1,2}|10[0-6])[.][0-9]+') OR regex_match($observer.version, '^0[.]107[.](?:[1-6]?[0-9]|7[0-2])(?:[^0-9]|$)'))
+    map:
+      - tags: array_append(jt-adguard.vulnerable-version)
+  - check: >-
+      exists($observer.version) AND regex_match($observer.version, '^0[.]107[.]7[3-8](?:[^0-9]|$)')
+    map:
+      - tags: array_append(jt-adguard.outdated-version)
+
+  - check: >-
+      regex_match($message, '^filtering: deleted filter id=-?[0-9]+')
+    map:
+      - rule.id: >-
+          regex_extract($message, '^filtering: deleted filter id=(-?[0-9]+)')
+  - check: >-
+      regex_match($message, '^pprof: listening addr=[^ ]+')
+    map:
+      - server.address: >-
+          regex_extract($message, '^pprof: listening addr=([^ ]+)')
+  - check: >-
+      regex_match($message, '^filtering: updating filter url=[^ ]+')
+    map:
+      - url.original: >-
+          regex_extract($message, '^filtering: updating filter url=([^ ]+)')
+
+  - map:
+      - _tmp: delete()

@@ -1,0 +1,35 @@
+# The dispatcher service (librenms.service runs librenms-service.py) logs to journald, one line per
+# record, as "<thread>(<LEVEL>):<message>", with -t a time first:
+#   Oct 11 10:15:02 nms1 librenms-service.py[812]: Poller_0-1(ERROR):Polling device 12 failed with exit code 1: ...
+#   Oct 11 10:15:02 nms1 librenms-service.py[812]: 2026-10-11 10:15:02,123 Discovery_0-1(ERROR):Discovering device 7 failed ...
+# Only the program librenms-service / librenms-service.py is taken (the same text from another
+# program is not LibreNMS's). Thread to process.thread.name, level (lower case) to log.level, the
+# text after the level to message.
+name: decoder/jt-librenms-service/0
+enabled: true
+metadata:
+  title: LibreNMS dispatcher service
+  author: Jason Tools
+  description: Messages of the LibreNMS dispatcher (librenms-service.py) delivered through the journal or syslog.
+  references:
+    - https://github.com/librenms/librenms/blob/master/LibreNMS/queuemanager.py
+parents:
+  - decoder/jt-syslog/0
+check: "regex_match($process.name, '^librenms-service([.]py)?$')"
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: librenms
+      - event.dataset: librenms.service
+      - service.type: librenms
+      - service.name: librenms-service
+  - check: "regex_match($message, '^([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]+ )?[^ (]+[(](DEBUG|INFO|WARNING|ERROR|CRITICAL)[)]:')"
+    map:
+      - process.thread.name: "regex_extract($message, '^(?:[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8},[0-9]+ )?([^ (]+)[(](?:DEBUG|INFO|WARNING|ERROR|CRITICAL)[)]:')"
+      - _tmp.lnms_level: "regex_extract($message, '^(?:[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8},[0-9]+ )?[^ (]+[(](DEBUG|INFO|WARNING|ERROR|CRITICAL)[)]:')"
+      - message: "regex_extract($message, '^(?:[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8},[0-9]+ )?[^ (]+[(](?:DEBUG|INFO|WARNING|ERROR|CRITICAL)[)]: ?(.*)$')"
+  - check: exists($_tmp.lnms_level)
+    map:
+      - log.level: downcase($_tmp.lnms_level)
+  - map:
+      - _tmp: delete()

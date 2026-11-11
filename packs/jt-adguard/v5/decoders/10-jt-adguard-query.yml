@@ -1,0 +1,194 @@
+# AdGuard Home query events, one JSON object per syslog message with the program name adguard:
+#   2026-10-11T02:43:17+00:00 dns-host adguard: {"Elapsed":215966,"IP":"192.0.2.171","QH":"dns.google",
+#   "QT":"A","Upstream":null,"action":"Blocked","filterlist_id":1720886277,
+#   "filterlist_name":"HaGeZi's Encrypted DNS/VPN/TOR/Proxy Bypass","filtertext":"||dns.google^"}
+# AdGuard Home's own querylog.json has only the numeric list ID, so a log shipper adds the list name
+# (setup guide of the 4.x pack). The program name is compared whole: "AdGuardHome" (the service log)
+# must not be read as a query event.
+#
+# Field use (WCS):
+#   source.ip / source.address  the client that asked (IP, ::ffff: removed); the only place the real
+#                               requester is recorded, a resolver or firewall sees AdGuard's address
+#   network.type                ipv4 or ipv6 (the public-client rules grade IPv4 only)
+#   dns.question.name           QH, lower case, trailing dot removed (DNS names are case-insensitive;
+#                               the rules compare whole strings and Sigma is case-sensitive)
+#   dns.question.type           QT, upper case
+#   event.action                blocked | allowed (AdGuard's action, lower case)
+#   event.duration              Elapsed (nanoseconds, as ECS wants)
+#   rule.id / rule.ruleset / rule.name   filterlist_id / filterlist_name / filtertext
+#   rule.category               the class of the list that blocked the query, decided here because the
+#                               4.x grading reads the list NAME case-insensitively with word boundaries
+#                               and exclusions, which Sigma cannot express (no |re|i):
+#                                 threat, bypass, bypass-probe, dyndns, rebind, abused-tld, nrd,
+#                                 safe-browsing (list ID -4), other (ads, trackers, parental control,
+#                                 blocked services, URL shorteners ...). Precedence as in 4.x:
+#                                 threat > bypass > dyndns > rebind > abused-tld > nrd.
+#   tags                        jt-adguard.<class> for names the 4.x allowed-query rules grade:
+#                                 oast, mining-pool, reverse-tunnel, tor, telegram-bot-api, ip-lookup,
+#                                 long-label, plus pattern-rule (a threat block that came only from a
+#                                 whole-TLD or pattern rule such as ||*.top^). Same regular expressions
+#                                 as the 4.x rules, on the lower-case name.
+name: decoder/jt-adguard-query/0
+enabled: true
+metadata:
+  title: AdGuard Home query events
+  author: Jason Tools
+  description: AdGuard Home query log events (client, domain, list, action) shipped as one JSON object per syslog message.
+  references:
+    - https://github.com/AdguardTeam/AdGuardHome/wiki/Configuration
+parents:
+  - decoder/jt-syslog/0
+check: "$process.name == 'adguard' AND starts_with($message, '{')"
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: adguard
+      - event.dataset: adguard.querylog
+      - observer.vendor: AdGuard
+      - observer.product: AdGuard Home
+      - observer.type: dns
+      - dns.type: query
+      - event.category: array_append(network)
+      - _tmp.q: parse_json($message)
+
+  # The client. IPv4-mapped IPv6 (::ffff:a.b.c.d) is stored as IPv4, so the address ranges apply.
+  - check: exists($_tmp.q.IP)
+    map:
+      - _tmp.ip: >-
+          regex_extract($_tmp.q.IP, '^(?i:::ffff:)?(.+)$')
+  - check: "exists($_tmp.ip) AND (is_ipv4($_tmp.ip) OR is_ipv6($_tmp.ip))"
+    map:
+      - source.ip: $_tmp.ip
+      - source.address: $_tmp.ip
+      - related.ip: array_append($_tmp.ip)
+  - check: "exists($source.ip) AND is_ipv4($source.ip)"
+    map:
+      - network.type: ipv4
+  - check: "exists($source.ip) AND is_ipv6($source.ip)"
+    map:
+      - network.type: ipv6
+
+  - check: exists($_tmp.q.QH)
+    map:
+      - dns.question.name: downcase($_tmp.q.QH)
+  - check: "exists($dns.question.name) AND ends_with($dns.question.name, '.')"
+    map:
+      - dns.question.name: >-
+          regex_extract($dns.question.name, '^(.*[^.])[.]+$')
+  - check: exists($_tmp.q.QT)
+    map:
+      - dns.question.type: upcase($_tmp.q.QT)
+  - check: exists($_tmp.q.action)
+    map:
+      - event.action: downcase($_tmp.q.action)
+  - check: "exists($_tmp.q.Elapsed) AND is_number($_tmp.q.Elapsed)"
+    map:
+      - event.duration: $_tmp.q.Elapsed
+  - check: exists($_tmp.q.filterlist_name)
+    map:
+      - rule.ruleset: $_tmp.q.filterlist_name
+  - check: exists($_tmp.q.filtertext)
+    map:
+      - rule.name: $_tmp.q.filtertext
+  - check: "exists($_tmp.q.filterlist_id) AND is_number($_tmp.q.filterlist_id)"
+    map:
+      - rule.id: to_string($_tmp.q.filterlist_id)
+  - check: "exists($_tmp.q.filterlist_id) AND is_string($_tmp.q.filterlist_id)"
+    map:
+      - rule.id: $_tmp.q.filterlist_id
+  - check: "$event.action == 'blocked'"
+    map:
+      - event.type: array_append(denied)
+  - check: "$event.action == 'allowed'"
+    map:
+      - event.type: array_append(allowed)
+
+  # ---- class of the blocking list (blocked queries only); later blocks override earlier ones ----
+  - check: "$event.action == 'blocked'"
+    map:
+      - rule.category: other
+  - check: >-
+      $event.action == 'blocked' AND regex_match($rule.ruleset, '(?i)newly.?registered|\\bNRD\\b')
+    map:
+      - rule.category: nrd
+  - check: >-
+      $event.action == 'blocked' AND regex_match($rule.ruleset, '(?i)abused\\s*TLD')
+    map:
+      - rule.category: abused-tld
+  - check: >-
+      $event.action == 'blocked' AND regex_match($rule.ruleset, '(?i)rebind')
+    map:
+      - rule.category: rebind
+  - check: >-
+      $event.action == 'blocked' AND regex_match($rule.ruleset, '(?i)dyn.?dns|dynamic.?dns|\\bDDNS\\b')
+    map:
+      - rule.category: dyndns
+  - check: >-
+      $event.action == 'blocked' AND regex_match($rule.ruleset, '(?i)bypass|encrypted.?dns|\\bDoH\\b|\\bDoT\\b|\\bTOR\\b|\\bVPN\\b|proxy|anonymi|private.?relay')
+    map:
+      - rule.category: bypass
+  # Threat lists. "abuse" counts, "Abused TLDs" (HaGeZi's The World's Most Abused TLDs) does not:
+  # 4.x wrote abuse(?!d\s*TLD); RE2 has no lookahead, so the second expression spells the same out.
+  - check: >-
+      $event.action == 'blocked' AND (regex_match($rule.ruleset, '(?i)malware|badware|phish|threat|scam|fraud|botnet|\\bC2\\b|command.?and.?control|ransom|malicious|spyware|stalkerware|hacked|crypto|coin.?min|nocoin|\\bDGA\\b')
+      OR regex_match($rule.ruleset, '(?i)abuse(?:$|[^d])|abused\\s*(?:$|[^\\st]|t(?:$|[^l])|tl(?:$|[^d]))'))
+    map:
+      - rule.category: threat
+  # AdGuard's own safe browsing service (list ID -4, no list name).
+  - check: "$event.action == 'blocked' AND $rule.id == '-4'"
+    map:
+      - rule.category: safe-browsing
+  # Apple iCloud Private Relay and Google tunnel probes: blocking these names is how a network opts
+  # out, the device then uses the local resolver (the device complying, not evading).
+  - check: >-
+      $rule.category == 'bypass' AND regex_match($dns.question.name, '^(?:mask(?:-h2|-api|-canary)?[.]icloud[.]com|(?:dns-tunnel-check|tunnel)[.]googlezip[.]net)$')
+    map:
+      - rule.category: bypass-probe
+  # The threat list blocks the whole TLD or a pattern, not this domain (||*.top^, ||zip^, /regex/).
+  - check: >-
+      $rule.category == 'threat' AND regex_match($rule.name, '(?i)^(?:@@)?(?:[|][|])?(?:[*]|/|[a-z0-9-]+\\^)')
+    map:
+      - tags: array_append(jt-adguard.pattern-rule)
+
+  # ---- names the allowed-query rules grade (SigmaHQ / Splunk / vendor lists, see the 4.x rules) ----
+  # Out-of-band interaction (OAST) callbacks: only names BELOW the service domain; the service's own
+  # www, polling, app and api hosts are the tester's tools.
+  - check: >-
+      exists($dns.question.name) AND regex_match($dns.question.name, '(?:^|[.])[^.]+[.](?:interact[.]sh|oast[.](?:fun|live|me|online|pro|site)|oastify[.]com|burpcollaborator[.]net|canarytokens[.]com|ceye[.]io|dnslog[.]cn|dnslog[.]ink|digimg[.]store|dnshook[.]site|requestbin[.]net|gobygo[.]net|p8[.]lol|log[.]javaweb[.]org|dns[.]su18[.]org|instances[.]httpworkbench[.]com|log[.]dnslog[.]pp[.]ua|log[.]dnslog[.]qzz[.]io|log[.]dnslogs[.]dpdns[.]org|log[.]nat[.]cloudns[.]ph)$')
+      AND regex_not_match($dns.question.name, '(?:^|[.])(?:www|polling|app|api)[.](?:interact[.]sh|oast[.](?:fun|live|me|online|pro|site)|oastify[.]com|burpcollaborator[.]net|canarytokens[.]com|ceye[.]io|dnslog[.]cn|dnslog[.]ink|digimg[.]store|dnshook[.]site|requestbin[.]net|gobygo[.]net|p8[.]lol|log[.]javaweb[.]org|dns[.]su18[.]org|instances[.]httpworkbench[.]com|log[.]dnslog[.]pp[.]ua|log[.]dnslog[.]qzz[.]io|log[.]dnslogs[.]dpdns[.]org|log[.]nat[.]cloudns[.]ph)$')
+    map:
+      - tags: array_append(jt-adguard.oast)
+  # Mining pools (whole pool domains, not their www site).
+  - check: >-
+      exists($dns.question.name) AND regex_match($dns.question.name, '(?:^|[.])(?:minexmr[.]com|supportxmr[.]com|c3pool[.](?:com|org)|nanopool[.]org|2miners[.]com|hashcity[.]org|f2pool[.]com|xmrpool[.]eu|hashvault[.]pro|moneroocean[.]stream|herominers[.]com|unmineable[.]com|minergate[.]com)$')
+      AND regex_not_match($dns.question.name, '^www[.]')
+    map:
+      - tags: array_append(jt-adguard.mining-pool)
+  # Reverse tunnel and exposure services.
+  - check: >-
+      exists($dns.question.name) AND regex_match($dns.question.name, '(?:^|[.])(?:trycloudflare[.]com|argotunnel[.]com|ngrok[.](?:io|app|dev)|ngrok-free[.](?:app|dev)|ngrok-agent[.]com|devtunnels[.]ms|tunnels[.]api[.]visualstudio[.]com|loca[.]lt|localtunnel[.]me)$')
+    map:
+      - tags: array_append(jt-adguard.reverse-tunnel)
+  # Tor onion names and tor2web gateways.
+  - check: >-
+      exists($dns.question.name) AND regex_match($dns.question.name, '(?:[.]onion(?:[.](?:ca|cab|casa|city|direct|dog|glass|gq|ink|it|link|lt|lu|nu|pet|plus|rip|sh|to|top))?|[.]tor2web[.](?:com|fi|io|org|xyz)|[.]t2w[.]pw|[.]torlink[.]co|[.]hiddenservice[.]net|[.]tor-gateways[.]de)$')
+    map:
+      - tags: array_append(jt-adguard.tor)
+  - check: "$dns.question.name == 'api.telegram.org'"
+    map:
+      - tags: array_append(jt-adguard.telegram-bot-api)
+  # External IP address lookup services.
+  - check: >-
+      exists($dns.question.name) AND regex_match($dns.question.name, '(?:^|[.])(?:ipify[.]org|icanhazip[.]com|ifconfig[.]me|ifconfig[.]io|ipconfig[.]io|ipinfo[.]io|ip-api[.]com|ipapi[.]co|ipecho[.]net|ident[.]me|myexternalip[.]com|wtfismyip[.]com|checkip[.]amazonaws[.]com|checkip[.]dyndns[.]org|ipwho[.]is|api[.]2ip[.]ua|api[.]bigdatacloud[.]net|jsonip[.]com|seeip[.]org|eth0[.]me|curlmyip[.]com|l2[.]io|whatismyip[.]akamai[.]com|whatismyipaddress[.]com)$')
+    map:
+      - tags: array_append(jt-adguard.ip-lookup)
+  # A label of 50 or more characters (DNS allows 63) carries encoded data; reverse lookups, .invalid
+  # probes and onion names are left out (a v3 onion address is a 56-character label).
+  - check: >-
+      exists($dns.question.name) AND regex_match($dns.question.name, '(?:^|[.])[^.]{50,}(?:[.]|$)')
+      AND regex_not_match($dns.question.name, '[.](?:arpa|invalid|onion)$') AND regex_not_match($dns.question.name, '[.]onion[.]')
+    map:
+      - tags: array_append(jt-adguard.long-label)
+
+  - map:
+      - _tmp: delete()

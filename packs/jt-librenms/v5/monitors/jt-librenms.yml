@@ -1,0 +1,48 @@
+# jt-librenms 4.x frequency rules as Alerting bucket-level monitors (Wazuh 5.x, beta); format as in
+# packs/jt-fail2ban/v5/monitors (tools/pack5_dev.py monitors). Windows are at least 5 minutes because
+# detectors write findings one or two minutes late, so the 2-minute 4.x windows become 5 minutes
+# (the count thresholds are kept, which makes the monitors slightly more sensitive than 4.x).
+- id: '131911'
+  title: "LibreNMS: repeated logins with unknown user names from one address (user name guessing)"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-librenms-131910}
+  window: 5m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 6
+
+- id: '131916'
+  title: "LibreNMS: repeated database errors, the database is unreachable or failing"
+  level: medium
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-librenms-131915}
+  window: 5m
+  group_by: [wazuh.agent.name]
+  count: 20
+
+- id: '131943'
+  title: "LibreNMS: repeated failed web logins from one address"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-librenms-131942}
+  window: 5m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 5
+
+- id: '131952'
+  title: "LibreNMS API: repeated requests with a rejected token from one address"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-librenms-131951}
+  window: 5m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 8
+
+- id: '131982'
+  title: "LibreNMS: repeated logins with credentials in the URL from one address (brute force)"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-librenms-131981}
+  window: 5m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 6

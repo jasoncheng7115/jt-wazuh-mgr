@@ -1,0 +1,80 @@
+# jt-zenarmor 4.x frequency rules as Alerting bucket-level monitors (Wazuh 5.x, beta).
+# 5.0 has no frequency / same_field / different_field / if_matched_* in rules; a monitor counts
+# findings or events over a window and raises an alert per group (format: see jt-fail2ban).
+#
+# Most counts here are of events that raise no finding (4.x level 2 lookups), so they read the
+# events and pick them by the tags the classification decoder sets (4.x groups):
+#   zenarmor.client-query    zenarmor_client_query
+#   zenarmor.resolver-query  zenarmor_resolver_query
+#   zenarmor.threat-block    zenarmor_threat_block
+# 4.x same_field ip_src_saddr / zenarmor.domain -> group_by source.ip / destination.domain;
+# different_field zenarmor.domain -> distinct destination.domain.
+# Difference from 4.x: a client-style lookup forwarded by a resolver that 4.x recognised from an
+# earlier resolver-style record of the same source (130844, 130847, 130848, 130850, 130865) stays a
+# client lookup here and counts towards 130832 / 130833; list such a forwarder in the KVDB
+# jt-zenarmor-resolvers to move it to 130834 / 130835.
+# The 4.x windows were 15 minutes because of analysisd's correlation memory; the monitors keep
+# them (the indexer has no such limit, a longer window would see slower beacons).
+
+- id: '130830'
+  title: "Zenarmor: one internal host made repeated unblocked malicious connections, the host may be compromised"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-zenarmor-130801}
+  window: 5m
+  group_by: [source.ip]
+  count: 6
+
+- id: '130831'
+  title: "Zenarmor: one internal host keeps retrying malicious connections, all blocked so far, check the host"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-zenarmor-130802}
+  window: 15m
+  group_by: [source.ip]
+  count: 20
+
+- id: '130832'
+  title: "Zenarmor: one host keeps looking up the same threat domain, a sign of malware beaconing"
+  level: high
+  source: events
+  match: {wazuh.integration.name: jt-zenarmor, tags: zenarmor.client-query}
+  window: 15m
+  group_by: [source.ip, destination.domain]
+  count: 15
+
+- id: '130833'
+  title: "Zenarmor: one host looked up or was blocked from many different threat domains, possible infection or DGA"
+  level: high
+  source: events
+  match: {wazuh.integration.name: jt-zenarmor, tags: zenarmor.threat-block}
+  window: 15m
+  group_by: [source.ip]
+  distinct: {field: destination.domain, gte: 20}
+
+- id: '130834'
+  title: "Zenarmor: a resolver keeps looking up the same threat domain for a client behind it, check its query log"
+  level: low
+  source: events
+  match: {wazuh.integration.name: jt-zenarmor, tags: zenarmor.resolver-query}
+  window: 15m
+  group_by: [source.ip, destination.domain]
+  count: 40
+
+- id: '130835'
+  title: "Zenarmor: a resolver looked up many different threat domains for clients behind it, check its query log"
+  level: medium
+  source: events
+  match: {wazuh.integration.name: jt-zenarmor, tags: zenarmor.resolver-query}
+  window: 15m
+  group_by: [source.ip]
+  distinct: {field: destination.domain, gte: 40}
+
+- id: '130860'
+  title: "Zenarmor: one host keeps sending malformed DNS packets, a broken DNS client or a DNS tunnelling tool"
+  level: low
+  source: events
+  match: {wazuh.integration.name: jt-zenarmor, event.dataset: zenarmor.alert, tags: zenarmor.st-malformed-dns}
+  window: 15m
+  group_by: [source.ip]
+  count: 20

@@ -1,0 +1,39 @@
+# Backup job output as vzdump writes it, on its own or through pvescheduler:
+#   ERROR: Backup of VM 102 failed - unable to open file '/dev/zvol/x' - No such file
+#   INFO: Backup job finished successfully
+# Field use: log.level (info, warning, error), orchestrator.resource.id (the guest named in the
+# line), event.action backup-failed for "ERROR: Backup of VM|CT <id> failed".
+name: decoder/jt-proxmox-backup/0
+enabled: true
+metadata:
+  title: Proxmox VE backup output
+  author: Jason Tools
+  description: vzdump backup job output (INFO, WARN and ERROR lines).
+  references:
+    - https://git.proxmox.com/?p=pve-manager.git
+parents:
+  - decoder/jt-syslog/0
+check: "regex_match($process.name, '^(pvescheduler|vzdump)$') AND regex_match($message, '^(INFO|WARN|ERROR): ')"
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: proxmox
+      - event.dataset: proxmox.backup
+      - observer.vendor: Proxmox
+      - observer.product: Proxmox VE
+  - check: "starts_with($message, 'INFO: ')"
+    map:
+      - log.level: info
+  - check: "starts_with($message, 'WARN: ')"
+    map:
+      - log.level: warning
+  - check: "starts_with($message, 'ERROR: ')"
+    map:
+      - log.level: error
+  - check: "regex_match($message, '^(INFO|WARN|ERROR): .*(VM|CT) [0-9]+')"
+    map:
+      - orchestrator.resource.id: "regex_extract($message, '^(?:INFO|WARN|ERROR): .*?(?:VM|CT) ([0-9]+)')"
+  - check: "regex_match($message, '^ERROR: Backup of (VM|CT) [0-9]+ failed')"
+    map:
+      - event.action: backup-failed
+      - event.outcome: failure

@@ -1,0 +1,83 @@
+# jt-fail2ban 4.x frequency rules as Alerting bucket-level monitors (Wazuh 5.x, beta).
+# 5.0 has no frequency / same_source_ip / if_matched_sid in rules; the documented replacement is a
+# monitor that counts findings (or events) over a window and raises an alert per group.
+# tools/pack5_dev.py turns each entry into a POST _plugins/_alerting/monitors body:
+#   source      findings (wazuh-findings-v5-*) or events (wazuh-events-v5-*)
+#   match       term filters (a list value is "any of"); findings are picked by the rule's sigma_id
+#   window      look-back; at least 5m because detectors write findings one or two minutes late
+#   group_by    the composite buckets (4.x same_* options)
+#   count       alert when a bucket holds at least this many documents, or
+#   distinct    alert when a bucket holds at least gte different values of field
+#   level       informational | low | medium | high | critical (alert severity 5..1)
+- id: '131010'
+  title: "fail2ban: one address keeps getting banned on one host (working through credentials or ranges)"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-fail2ban-131001}
+  window: 30m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 4
+
+- id: '131017'
+  title: "fail2ban: one address was banned on several hosts within an hour"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: [jt-fail2ban-131001, jt-fail2ban-131012]}
+  window: 60m
+  group_by: [source.ip]
+  distinct: {field: wazuh.agent.name, gte: 3}
+
+- id: '131018'
+  title: "fail2ban: one address was banned by several jails of one host within an hour"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: [jt-fail2ban-131001, jt-fail2ban-131012]}
+  window: 60m
+  group_by: [wazuh.agent.name, source.ip]
+  distinct: {field: rule.name, gte: 3}
+
+- id: '131019'
+  title: "fail2ban: ban storm, 20 or more bans within five minutes on one host"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: [jt-fail2ban-131001, jt-fail2ban-131002, jt-fail2ban-131012, jt-fail2ban-131013]}
+  window: 5m
+  group_by: [wazuh.agent.name]
+  count: 20
+
+- id: '131011'
+  title: "fail2ban: an internal address keeps earning bans, check that host"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: [jt-fail2ban-131002, jt-fail2ban-131013]}
+  window: 30m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 3
+
+- id: '131016'
+  title: "fail2ban: an internal address was banned on several hosts, treat it as possibly compromised"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: [jt-fail2ban-131002, jt-fail2ban-131013]}
+  window: 60m
+  group_by: [source.ip]
+  distinct: {field: wazuh.agent.name, gte: 2}
+
+# These two count events the per-event rules do not raise (4.x level 2), so they read the events.
+- id: '131021'
+  title: "fail2ban: a whitelisted address keeps failing and will never be banned"
+  level: low
+  source: events
+  match: {wazuh.integration.name: jt-fail2ban, event.action: ignore}
+  window: 10m
+  group_by: [wazuh.agent.name, rule.name, source.ip]
+  count: 10
+
+- id: '131024'
+  title: "fail2ban: a ban is not effective, failures from the banned address keep arriving"
+  level: medium
+  source: events
+  match: {wazuh.integration.name: jt-fail2ban, event.action: already-banned, log.level: warning}
+  window: 10m
+  group_by: [wazuh.agent.name, rule.name, source.ip]
+  count: 3

@@ -1,0 +1,137 @@
+# /var/log/proxmox-backup/api/access.log (REST API requests; the pbs agent group keeps only the ones
+# that change something):
+#   ::ffff:192.0.2.200 - root@pam [17/09/2026:00:41:43 +0800] "PUT /api2/extjs/config/prune/storeconfig-store1" 200 0 Mozilla/5.0 ...
+# Unlike other access logs the request has no HTTP version. The user is "-" without credentials; an
+# API token appears as user@realm!tokenname. Every field is read from its fixed position from the start
+# of the line (the user agent at the end is free text a client controls and is read last).
+#
+# event.action names the part of the API the request is about (the rules add method and status):
+#   api-access          users, permissions, passwords, second factors, realms (access/*, config/access)
+#   api-token           API tokens (access/users/<user>/token...)
+#   api-admin-tfa       a second factor or the TFA lockout of an account named root/admin/administrator
+#   api-datastore-config  datastore configuration (config/datastore)
+#   api-backup-delete   snapshots, groups, namespaces of a datastore (admin/datastore/<ds>/snapshots|groups|namespace)
+#   api-backup-protection, api-backup-owner   admin/datastore/<ds>/protected, change-owner
+#   api-prune-config    prune jobs (config/prune)
+#   api-sync-adhoc      push, pull, S3 endpoints, sync encryption keys
+#   api-remote-sync-config  remotes and sync jobs (config/remote, config/sync)
+#   api-certificate     certificates and ACME (nodes/<n>/certificates/, config/acme)
+#   api-notification, api-notification-test   notification settings, the test of a target
+#   api-tape-key        tape encryption keys
+#   api-node-settings   network, DNS, time, node config, subscription, APT repositories
+#   api-verify-job      verification jobs (config/verify)
+#   api-job-config      tape jobs, media pools, drives, changers, traffic control, metrics
+#   login-ticket        a successful login ticket request (POST access/ticket, 2xx);
+#                       login-ticket-refused for any other answer
+#   api-request         anything else
+# tags carry two flags read from the query string: pbs-protection-removed (protected=false|0|no|off)
+# and pbs-destroy-data (destroy-data=1|true|yes|on).
+name: decoder/jt-pbs-access/0
+enabled: true
+metadata:
+  title: Proxmox Backup Server API access log
+  author: Jason Tools
+  description: REST API requests of Proxmox Backup Server (api/access.log), with the part of the API each request is about.
+  references:
+    - https://pbs.proxmox.com/docs/api-viewer/index.html
+parents:
+  - decoder/jt-core/0
+check: "regex_match($event.original, '^[^ ]+ - [^ ]+ [[][0-9]{2}/[0-9]{2}/[0-9]{4}:[0-9]{2}:[0-9]{2}:[0-9]{2} [+-][0-9]{4}[]] \"[A-Z]+ [^ \"]+\" [0-9]{3} ')"
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: proxmox-backup
+      - event.dataset: pbs.access
+      - observer.vendor: Proxmox
+      - observer.product: Proxmox Backup Server
+      - observer.type: backup
+      - event.category: array_append(web)
+      - _tmp.pbs_ip: "regex_extract($event.original, '^(?:::ffff:)?([^ ]+) - ')"
+      - _tmp.pbs_user: "regex_extract($event.original, '^[^ ]+ - ([^ ]+) [[]')"
+      - http.request.method: "regex_extract($event.original, '^[^ ]+ - [^ ]+ [[][^]]+[]] \"([A-Z]+) ')"
+      - url.original: "regex_extract($event.original, '^[^ ]+ - [^ ]+ [[][^]]+[]] \"[A-Z]+ ([^ \"]+)\" ')"
+      - _tmp.pbs_status: "regex_extract($event.original, '^[^ ]+ - [^ ]+ [[][^]]+[]] \"[A-Z]+ [^ \"]+\" ([0-9]{3}) ')"
+      - user_agent.original: "regex_extract($event.original, '^[^ ]+ - [^ ]+ [[][^]]+[]] \"[A-Z]+ [^ \"]+\" [0-9]{3} [^ ]+ (.+)$')"
+      - url.path: "regex_extract($url.original, '^([^?]*)')"
+      - url.query: "regex_extract($url.original, '[?](.*)$')"
+      - http.response.status_code: parse_long($_tmp.pbs_status)
+      - event.action: api-request
+  - check: "exists($_tmp.pbs_ip) AND (is_ipv4($_tmp.pbs_ip) OR is_ipv6($_tmp.pbs_ip))"
+    map:
+      - source.ip: $_tmp.pbs_ip
+      - related.ip: array_append($_tmp.pbs_ip)
+  - check: "exists($_tmp.pbs_user) AND $_tmp.pbs_user != '-'"
+    map:
+      - user.name: $_tmp.pbs_user
+      - related.user: array_append($_tmp.pbs_user)
+
+  # The part of the API (patterns of jt-pbs 4.x rules 131861-131885; later blocks are more specific).
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+(access/(users|acl|password|tfa|domains/[^/?]+/sync)|config/access)([/?]|$)')"
+    map:
+      - event.action: api-access
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+access/users/[^/?]+/token([/?]|$)')"
+    map:
+      - event.action: api-token
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+access/(tfa/+(root|admin|administrator)(%40|@)[^/?]+/[^/?]+|users/+(root|admin|administrator)(%40|@)[^/?]+/unlock-tfa)([?]|$)')"
+    map:
+      - event.action: api-admin-tfa
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+config/datastore([/?]|$)')"
+    map:
+      - event.action: api-datastore-config
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+admin/datastore/[^/?]+/(snapshots|groups|namespace)([/?]|$)')"
+    map:
+      - event.action: api-backup-delete
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+admin/datastore/[^/?]+/protected([/?]|$)')"
+    map:
+      - event.action: api-backup-protection
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+admin/datastore/[^/?]+/change-owner([/?]|$)')"
+    map:
+      - event.action: api-backup-owner
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+config/prune([/?]|$)')"
+    map:
+      - event.action: api-prune-config
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+(push|pull|config/(s3|encryption-keys))([/?]|$)')"
+    map:
+      - event.action: api-sync-adhoc
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+config/(remote|sync)([/?]|$)')"
+    map:
+      - event.action: api-remote-sync-config
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+(nodes/[^/?]+/certificates/|config/acme([/?]|$))')"
+    map:
+      - event.action: api-certificate
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+config/notifications([/?]|$)')"
+    map:
+      - event.action: api-notification
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+config/notifications/targets/[^/?]+/test([?]|$)')"
+    map:
+      - event.action: api-notification-test
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+config/tape-encryption-keys([/?]|$)')"
+    map:
+      - event.action: api-tape-key
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+nodes/[^/?]+/(network|dns|time|config|subscription|apt/repositories)([/?]|$)')"
+    map:
+      - event.action: api-node-settings
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+config/(verify|tape-backup-job|media-pool|drive|changer|traffic-control|metrics)([/?]|$)')"
+    map:
+      - event.action: api-job-config
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+config/verify/')"
+    map:
+      - event.action: api-verify-job
+  - check: "regex_match($url.original, '^/api2/(json|extjs)/+access/ticket$')"
+    map:
+      - event.action: login-ticket-refused
+      - event.category: array_append(authentication)
+      - event.outcome: failure
+  - check: "$event.action == 'login-ticket-refused' AND $http.request.method == 'POST' AND regex_match($_tmp.pbs_status, '^2')"
+    map:
+      - event.action: login-ticket
+      - event.outcome: success
+  # Flags in the query string
+  - check: "exists($url.query) AND regex_match($url.query, '(^|&)protected=(false|0|no|off)(&|$)')"
+    map:
+      - tags: array_append(pbs-protection-removed)
+  - check: "exists($url.query) AND regex_match($url.query, '(^|&)destroy-data=(1|true|yes|on)(&|$)')"
+    map:
+      - tags: array_append(pbs-destroy-data)
+  - map:
+      - _tmp: delete()

@@ -1,0 +1,40 @@
+# The cluster stack's own daemons; the rules match the text.
+#   corosync   [QUORUM] Members[5]: 1 2 3 4 5 / [KNET  ] link: host: 6 link: 1 is down /
+#              [QUORUM] This node is within the non-primary component and will NOT provide any services.
+#   pmxcfs     [quorum] crit: quorum_dispatch failed: CS_ERR_LIBRARY
+#   pve-firewall  clear PVE-generated firewall rules
+# event.action corosync-link-down marks a link flap (the burst monitor 131243 counts these events).
+# pmxcfs "[status] notice: received log" (about 20,000 lines a day on one node) is not taken: it
+# stays unclassified and is not indexed a second time by this integration.
+name: decoder/jt-proxmox-cluster/0
+enabled: true
+metadata:
+  title: Proxmox VE cluster daemons
+  author: Jason Tools
+  description: corosync, the cluster file system (pmxcfs) and the firewall daemon (pve-firewall).
+  references:
+    - https://git.proxmox.com/?p=pve-cluster.git
+    - https://git.proxmox.com/?p=pve-firewall.git
+parents:
+  - decoder/jt-syslog/0
+check: "regex_match($process.name, '^(corosync|pmxcfs|pve-firewall)$') AND regex_not_match($message, '^[[]status[]] notice: received log')"
+normalize:
+  - map:
+      - event.kind: event
+      - observer.vendor: Proxmox
+      - observer.product: Proxmox VE
+  - check: "$process.name == 'corosync'"
+    map:
+      - event.module: corosync
+      - event.dataset: proxmox.corosync
+  - check: "$process.name == 'corosync' AND regex_match($message, '[[]KNET *[]] link: host: [0-9]+ link: [0-9]+ is down')"
+    map:
+      - event.action: corosync-link-down
+  - check: "$process.name == 'pmxcfs'"
+    map:
+      - event.module: proxmox
+      - event.dataset: proxmox.pmxcfs
+  - check: "$process.name == 'pve-firewall'"
+    map:
+      - event.module: proxmox
+      - event.dataset: proxmox.firewall

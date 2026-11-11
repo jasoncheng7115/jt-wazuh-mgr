@@ -1,0 +1,23 @@
+# systemd about fail2ban.service ("fail2ban.service: Main process exited ...", "Stopped
+# fail2ban.service"). Only these lines are taken, so other packs' systemd decoders still see
+# everything else; the event then belongs to this integration and its rules see it.
+name: decoder/jt-fail2ban-systemd/0
+enabled: true
+metadata:
+  title: systemd about fail2ban.service
+  author: Jason Tools
+  description: systemd messages about fail2ban.service, for the service health rules.
+  references:
+    - https://www.freedesktop.org/software/systemd/man/systemd.service.html
+parents:
+  - decoder/jt-syslog/0
+check: "$process.name == 'systemd' AND (contains($message, 'fail2ban.service') OR contains($message, 'Fail2Ban Service'))"
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: fail2ban
+      - event.dataset: fail2ban.service
+      - observer.vendor: Fail2ban
+      - observer.product: Fail2ban
+      - service.name: fail2ban.service
+      - event.category: array_append(process)

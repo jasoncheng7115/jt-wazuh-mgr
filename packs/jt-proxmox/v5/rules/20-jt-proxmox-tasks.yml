@@ -1,0 +1,302 @@
+# --- tasks ("<user> starting task UPID:..." / "end task UPID:... <status>") --------------------
+# event.action is the task type, event.type start or end, orchestrator.resource.id the task's
+# object (guest id, disk, pool, daemon; absent for a node shell).
+
+- metadata:
+    title: "Proxmox VE: guest {{orchestrator.resource.id}} destroyed by {{user.name}} on {{service.node.name}}"
+    author: Jason Tools
+    description: A virtual machine or container was destroyed.
+    references: ["Migrated from jt-proxmox 4.x rule 131213"]
+  sigma_id: jt-proxmox-131213
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.task
+      event.type: start
+      event.action: [qmdestroy, vzdestroy]
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1485], name: [Data Destruction]}
+  tags: [jt.rule.131213, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: guest {{orchestrator.resource.id}} rolled back to a snapshot by {{user.name}}"
+    author: Jason Tools
+    description: A guest was rolled back to a snapshot; everything written after the snapshot is gone.
+    references: ["Migrated from jt-proxmox 4.x rule 131214"]
+  sigma_id: jt-proxmox-131214
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.task
+      event.type: start
+      event.action: [qmrollback, vzrollback]
+  tags: [jt.rule.131214, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: shell on node {{service.node.name}} opened from the web interface by {{user.name}}"
+    author: Jason Tools
+    description: A root shell on the node itself (no guest id) was opened from the web interface.
+    references: ["Migrated from jt-proxmox 4.x rule 131215"]
+  sigma_id: jt-proxmox-131215
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection and not guest
+    selection:
+      event.dataset: proxmox.task
+      event.type: start
+      event.action: [vncshell, termproxy, spiceshell]
+    guest:
+      orchestrator.resource.id|exists: true
+  mitre:
+    tactic: {id: [TA0002], name: [Execution]}
+    technique: {id: [T1059], name: [Command and Scripting Interpreter]}
+    subtechnique: {id: [T1059.004], name: [Unix Shell]}
+  tags: [jt.rule.131215, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: console of guest {{orchestrator.resource.id}} opened by {{user.name}}"
+    author: Jason Tools
+    description: A guest console (VNC, terminal or SPICE) was opened.
+    references: ["Migrated from jt-proxmox 4.x rule 131216"]
+  sigma_id: jt-proxmox-131216
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection and guest
+    selection:
+      event.dataset: proxmox.task
+      event.type: start
+      event.action: [vncproxy, termproxy, spiceproxy]
+    guest:
+      orchestrator.resource.id|exists: true
+  tags: [jt.rule.131216, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: guest {{orchestrator.resource.id}} created ({{event.action}}) by {{user.name}}"
+    author: Jason Tools
+    description: A guest was created, cloned, restored or turned into a template.
+    references: ["Migrated from jt-proxmox 4.x rule 131217"]
+  sigma_id: jt-proxmox-131217
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.task
+      event.type: start
+      event.action: [qmcreate, vzcreate, qmclone, vzclone, qmrestore, vzrestore, qmtemplate, vztemplate]
+  tags: [jt.rule.131217, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: guest {{orchestrator.resource.id}} migrated ({{event.action}}) by {{user.name}}"
+    author: Jason Tools
+    description: A guest was migrated, including the receiving end of a remote migration (qmtunnel / vzmtunnel; PSA-2026-00039-1 was a QEMU command-line injection through it).
+    references: ["Migrated from jt-proxmox 4.x rule 131218"]
+  sigma_id: jt-proxmox-131218
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.task
+      event.type: start
+      event.action: [qmigrate, vzmigrate, hamigrate, qmremote, vzremote, qmtunnel, vzmtunnel]
+  tags: [jt.rule.131218, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: {{event.action}} {{orchestrator.resource.id}} by {{user.name}}"
+    author: Jason Tools
+    description: A file was pushed into a guest, an image copied, downloaded or deleted, a package installed, or a container image pulled from a registry (PSA-2026-00046-1, a malicious OCI image ran commands as root on the host before pve-container 6.1.14).
+    references: ["Migrated from jt-proxmox 4.x rule 131219"]
+  sigma_id: jt-proxmox-131219
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.task
+      event.type: start
+      event.action: [push_file, imgcopy, download, aptinstall, ociregistrypull, imgdel]
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1105], name: [Ingress Tool Transfer]}
+  tags: [jt.rule.131219, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: storage {{orchestrator.resource.id}} wiped or removed ({{event.action}}) by {{user.name}} on {{service.node.name}}"
+    author: Jason Tools
+    description: A disk was wiped, or a ZFS, LVM, LVM-thin or directory storage removed.
+    references: ["Migrated from jt-proxmox 4.x rule 131225"]
+  sigma_id: jt-proxmox-131225
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.task
+      event.type: start
+      event.action: [wipedisk, zfsremove, lvmremove, lvmthinremove, dirremove]
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1485, T1561], name: [Data Destruction, Disk Wipe]}
+  tags: [jt.rule.131225, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: Ceph pool or file system {{orchestrator.resource.id}} destroyed by {{user.name}}"
+    author: Jason Tools
+    description: A Ceph pool or CephFS file system was destroyed, with all data in it.
+    references: ["Migrated from jt-proxmox 4.x rule 131226"]
+  sigma_id: jt-proxmox-131226
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.task
+      event.type: start
+      event.action: [cephdestroypool, cephdestroyfs]
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1485], name: [Data Destruction]}
+  tags: [jt.rule.131226, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: Ceph daemon {{orchestrator.resource.id}} destroyed ({{event.action}}) by {{user.name}}"
+    author: Jason Tools
+    description: A Ceph OSD, monitor, manager or metadata server was destroyed.
+    references: ["Migrated from jt-proxmox 4.x rule 131227"]
+  sigma_id: jt-proxmox-131227
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.task
+      event.type: start
+      event.action: [cephdestroyosd, cephdestroymon, cephdestroymgr, cephdestroymds]
+  tags: [jt.rule.131227, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: backups pruned on {{orchestrator.resource.id}} by {{user.name}}"
+    author: Jason Tools
+    description: Backups were pruned by hand with a retention given in the call; a short one removes every older restore point.
+    references: ["Migrated from jt-proxmox 4.x rule 131228"]
+  sigma_id: jt-proxmox-131228
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.task
+      event.type: start
+      event.action: prunebackups
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1490], name: [Inhibit System Recovery]}
+  tags: [jt.rule.131228, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: {{event.action}} on {{service.node.name}} by {{user.name}}"
+    author: Jason Tools
+    description: A cluster was created on this node, or this node joined one; from then on every member's root trusts every other member.
+    references: ["Migrated from jt-proxmox 4.x rule 131229"]
+  sigma_id: jt-proxmox-131229
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.task
+      event.type: start
+      event.action: [clustercreate, clusterjoin]
+  tags: [jt.rule.131229, jt.pack.jt-proxmox]
+
+# A task that ended in anything but OK ("WARNINGS: n" is a success). Console sessions end with an
+# error whenever the browser goes away (4.x 131221, level 2), and a failed backup job is 131222.
+- metadata:
+    title: "Proxmox VE: task {{event.action}} {{orchestrator.resource.id}} failed: {{event.reason}}"
+    author: Jason Tools
+    description: A Proxmox VE task ended with an error.
+    references: ["Migrated from jt-proxmox 4.x rule 131220"]
+  sigma_id: jt-proxmox-131220
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection and not console and not backup
+    selection:
+      event.dataset: proxmox.task
+      event.type: end
+      event.outcome: failure
+    console:
+      event.action: [vncproxy, vncshell, termproxy, spiceproxy, spiceshell]
+    backup:
+      event.action: vzdump
+  tags: [jt.rule.131220, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: backup job ended with errors on {{service.node.name}}: {{event.reason}}"
+    author: Jason Tools
+    description: A vzdump backup job ended with errors; at least one guest has no new backup.
+    references: ["Migrated from jt-proxmox 4.x rule 131222"]
+  sigma_id: jt-proxmox-131222
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.task
+      event.type: end
+      event.outcome: failure
+      event.action: vzdump
+  tags: [jt.rule.131222, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: backup of guest {{orchestrator.resource.id}} failed"
+    author: Jason Tools
+    description: vzdump reported that the backup of one guest failed.
+    references: ["Migrated from jt-proxmox 4.x rule 131224"]
+  sigma_id: jt-proxmox-131224
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.backup
+      event.action: backup-failed
+  tags: [jt.rule.131224, jt.pack.jt-proxmox]

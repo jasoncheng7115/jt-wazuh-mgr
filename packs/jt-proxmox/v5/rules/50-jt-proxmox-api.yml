@@ -1,0 +1,302 @@
+# --- REST API (pveproxy access log, sent by the agent group as jt-pveproxy) ----------------------
+# The decoder classifies each request into event.action (see decoders/60-jt-proxmox-api.yml); a
+# change counts when the answer was a success (event.outcome success = 2xx).
+
+- metadata:
+    title: "Proxmox VE: failed login to the web interface or API from {{source.ip}}"
+    author: Jason Tools
+    description: A login ticket request was refused (401). Six from one address within five minutes is the monitor 131267.
+    references: ["Migrated from jt-proxmox 4.x rule 131266"]
+  sigma_id: jt-proxmox-131266
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: login
+      http.response.status_code: 401
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+  tags: [jt.rule.131266, jt.pack.jt-proxmox]
+
+# 4.x 131268 (first login from a public address, level 5) used first-time-seen, which 5.x does not
+# have; every public login is this rule now.
+- metadata:
+    title: "Proxmox VE: login to the web interface or API from the public address {{source.ip}}"
+    author: Jason Tools
+    description: A login ticket was issued to a client with a public address (the agent group drops private ones). The web interface renews its ticket with the same request every few minutes.
+    references: ["Migrated from jt-proxmox 4.x rules 131269 and 131268"]
+  sigma_id: jt-proxmox-131269
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection and not internal
+    selection:
+      event.dataset: proxmox.api
+      event.action: login
+      event.outcome: success
+    internal:
+      source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]
+  mitre:
+    tactic: {id: [TA0001], name: [Initial Access]}
+    technique: {id: [T1078], name: [Valid Accounts]}
+  tags: [jt.rule.131269, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE API: users, permissions or realms changed ({{http.request.method}} {{url.path}}) by {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: A user, group, role, permission, realm, second factor or password was changed through the API.
+    references: ["Migrated from jt-proxmox 4.x rule 131260"]
+  sigma_id: jt-proxmox-131260
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: access-change
+      event.outcome: success
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.131260, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE API: an API token was created or changed ({{http.request.method}} {{url.path}}) by {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: An API token was created, changed or deleted; a token is a credential that does not need the password or the second factor.
+    references: ["Migrated from jt-proxmox 4.x rule 131261"]
+  sigma_id: jt-proxmox-131261
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: api-token-change
+      event.outcome: success
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+    subtechnique: {id: [T1098.001], name: [Additional Cloud Credentials]}
+  tags: [jt.rule.131261, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE API: a second factor was removed ({{url.path}}) by {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: A second factor of an account was deleted (DELETE /access/tfa/{userid}/{id}); the account can then log in with the password alone.
+    references: ["Migrated from jt-proxmox 4.x rule 131276"]
+  sigma_id: jt-proxmox-131276
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: second-factor-delete
+      event.outcome: success
+  mitre:
+    tactic: {id: [TA0006, TA0005, TA0003], name: [Credential Access, Defense Evasion, Persistence]}
+    technique: {id: [T1556], name: [Modify Authentication Process]}
+    subtechnique: {id: [T1556.006], name: [Multi-Factor Authentication]}
+  tags: [jt.rule.131276, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE API: guest deletion requested ({{url.path}}) by {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: A virtual machine or container deletion was accepted by the API.
+    references: ["Migrated from jt-proxmox 4.x rule 131262"]
+  sigma_id: jt-proxmox-131262
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: guest-delete
+      event.outcome: success
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1485], name: [Data Destruction]}
+  tags: [jt.rule.131262, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE API: firewall configuration changed ({{http.request.method}} {{url.path}}) by {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: A firewall rule, group, alias, IP set or option of the datacenter, a node or a guest was changed.
+    references: ["Migrated from jt-proxmox 4.x rule 131263"]
+  sigma_id: jt-proxmox-131263
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: firewall-change
+      event.outcome: success
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.004], name: [Disable or Modify System Firewall]}
+  tags: [jt.rule.131263, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE API: datacenter firewall options changed (this is where it is switched off) by {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: The datacenter firewall options, where the firewall is switched on and off for the whole cluster, were changed (the request body is not logged).
+    references: ["Migrated from jt-proxmox 4.x rule 131277"]
+  sigma_id: jt-proxmox-131277
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: firewall-options-change
+      event.outcome: success
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.004], name: [Disable or Modify System Firewall]}
+  tags: [jt.rule.131277, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE API: file uploaded to storage ({{url.path}}) by {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: A file (ISO, template, image) was uploaded to a storage or downloaded into it from a URL.
+    references: ["Migrated from jt-proxmox 4.x rule 131264"]
+  sigma_id: jt-proxmox-131264
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: storage-upload
+      event.outcome: success
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1105], name: [Ingress Tool Transfer]}
+  tags: [jt.rule.131264, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE API: cluster configuration changed ({{http.request.method}} {{url.path}}) by {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: Backup jobs, HA, replication, SDN, cluster options, ACME, notifications, mappings, metrics, storage definitions or node DNS, hosts, time, certificates, subscription or repositories were changed.
+    references: ["Migrated from jt-proxmox 4.x rule 131265"]
+  sigma_id: jt-proxmox-131265
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: cluster-config-change
+      event.outcome: success
+  tags: [jt.rule.131265, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE API: a backup job was deleted ({{url.path}}) by {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: A scheduled backup job was deleted; the guests it covered get no new backups.
+    references: ["Migrated from jt-proxmox 4.x rule 131272"]
+  sigma_id: jt-proxmox-131272
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: backup-job-delete
+      event.outcome: success
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1490], name: [Inhibit System Recovery]}
+  tags: [jt.rule.131272, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE API: a backup was deleted ({{url.path}}) by {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: A backup volume was deleted from a storage.
+    references: ["Migrated from jt-proxmox 4.x rule 131271"]
+  sigma_id: jt-proxmox-131271
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: backup-delete
+      event.outcome: success
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1490], name: [Inhibit System Recovery]}
+  tags: [jt.rule.131271, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE API: command or file sent into a guest through its agent ({{url.path}}) by {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: A command was run, or a file written, inside a guest as its root or SYSTEM through the QEMU guest agent (CVE-2024-21545 used agent/exec to read host files).
+    references: ["Migrated from jt-proxmox 4.x rule 131273"]
+  sigma_id: jt-proxmox-131273
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: guest-agent-exec
+      event.outcome: success
+  mitre:
+    tactic: {id: [TA0002], name: [Execution]}
+    technique: {id: [T1651], name: [Cloud Administration Command]}
+  tags: [jt.rule.131273, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE API: a guest OS password was set through the guest agent ({{url.path}}) by {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: The password of an account inside a guest was set through the QEMU guest agent.
+    references: ["Migrated from jt-proxmox 4.x rule 131274"]
+  sigma_id: jt-proxmox-131274
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.api
+      event.action: guest-password-set
+      event.outcome: success
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.131274, jt.pack.jt-proxmox]

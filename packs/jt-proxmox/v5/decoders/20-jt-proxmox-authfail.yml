@@ -1,0 +1,49 @@
+# Failed logins as pvedaemon logs them (PVE/API2/AccessControl.pm, API2/OpenId.pm):
+#   authentication failure; rhost=::ffff:192.0.2.200 user=alice@pve msg=Authentication failure
+#   authentication failure; rhost=::ffff:192.0.2.200 user=alice@pve msg=failed 2nd factor
+#   authentication failure; rhost=::ffff:192.0.2.200 user=alice@pve msg=failed 2nd factor: TOTP limit reached, locked
+#   openid authentication failure; rhost=::ffff:192.0.2.200 msg=invalid code
+# Wazuh 5.x ships no Proxmox content, so this replaces the 4.x built-in pvedaemon decoder too.
+# Field use: source.ip (the rhost, ::ffff: removed), user.name (the account as typed),
+# event.reason (msg), event.action login-failure, second-factor-failure or second-factor-lockout.
+# The address comes first and cannot be moved by the account name. The account name is what the
+# client typed and may hold spaces, so an account name that contains " msg=failed 2nd factor ..."
+# could fake the second-factor classes: a msg that itself contains " msg=" is never classified
+# as a second-factor event (it stays an ordinary failure).
+name: decoder/jt-proxmox-authfail/0
+enabled: true
+metadata:
+  title: Proxmox VE failed logins
+  author: Jason Tools
+  description: Failed logins, wrong second factors and second-factor lockouts from pvedaemon.
+  references:
+    - https://git.proxmox.com/?p=pve-access-control.git
+parents:
+  - decoder/jt-syslog/0
+check: "$process.name == 'pvedaemon' AND regex_match($message, '^(openid )?authentication failure; rhost=[^ ]+ ')"
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: proxmox
+      - event.dataset: proxmox.auth
+      - observer.vendor: Proxmox
+      - observer.product: Proxmox VE
+      - event.action: login-failure
+      - event.category: array_append(authentication)
+      - event.outcome: failure
+      - source.address: "regex_extract($message, '^(?:openid )?authentication failure; rhost=(?:::ffff:)?([^ ]+) ')"
+      - event.reason: "regex_extract($message, '^(?:openid )?authentication failure; rhost=[^ ]+ (?:user=[^ ]+ )?msg=(.*)$')"
+  - check: "regex_match($message, '^authentication failure; rhost=[^ ]+ user=[^ ]+ msg=')"
+    map:
+      - user.name: "regex_extract($message, '^authentication failure; rhost=[^ ]+ user=([^ ]+) msg=')"
+      - related.user: array_append($user.name)
+  - check: "exists($event.reason) AND regex_match($event.reason, '^failed 2nd factor($|[^:])') AND regex_not_match($event.reason, ' msg=')"
+    map:
+      - event.action: second-factor-failure
+  - check: "exists($event.reason) AND regex_match($event.reason, '^failed (2nd factor: TOTP|1nd factor: TFA) limit reached') AND regex_not_match($event.reason, ' msg=')"
+    map:
+      - event.action: second-factor-lockout
+  - check: "exists($source.address) AND (is_ipv4($source.address) OR is_ipv6($source.address))"
+    map:
+      - source.ip: $source.address
+      - related.ip: array_append($source.address)

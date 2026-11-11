@@ -4,6 +4,26 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.33.2 (2026-11-11)
+
+- **Every drop-down uses the site's own list.** The browser's native pop-up is replaced by a list in the
+  style of the agent filters (dark and light themes, a check mark on the current choice). The `<select>`
+  stays in place, so values, layout and change handlers are unchanged; mouse, touch and keyboard (arrows,
+  Enter, Escape, first letter) all open and drive the new list, including drop-downs created later.
+- **One menu open at a time.** Opening the language, theme, export, filter or any drop-down menu closes
+  the others (the language menu stayed open when the theme menu was opened).
+- **CDB lists show their entry count.** Counted from the list files on the manager's disk (the Wazuh API
+  has no count, and `/lists` returns every entry), cached by size and modification time, and filled in
+  after the table is shown, so a million-entry list does not slow the tab down.
+- Four buttons gained the icon they were missing (Import in "Import all dashboards", Go to Node
+  Management, a group file's View, a Close); a test now flags text buttons without an icon.
+- **Wazuh 5.x (beta) groundwork.** The agent list works on 5.x (its API refuses two 4.x-only fields; the
+  request is retried without them). Rule packs for 5.x run in the indexer's Content Manager as Sigma rules
+  plus a detector and alerting monitors; the backend (`/api/packs5`: catalogue, status, install, remove)
+  and seven ported packs (fail2ban, zenarmor, librenms, proxmox, pbs, synology, adguard) ship in this
+  release, tested against Wazuh 5.0.0-rc2. The Rule Packs tab for 5.x follows in a later release.
+  `install.sh` now fetches `lib/pack5.py` and `packs5-base/`.
+
 ## v1.33.1 (2026-11-09)
 
 - **jt-modsecurity 1.2: exclusions for common applications.** A new web-server file,

@@ -1,0 +1,42 @@
+# A login with a user name that does not exist in the configured back end (built-in database, LDAP,
+# Active Directory, RADIUS; app/Providers/LegacyUserProvider.php):
+#   Auth Error (mysql): No user () [admin] from 192.0.2.10
+# The only failed login LibreNMS writes to a file (a wrong password for an existing user goes to its
+# database only). The typed name is whatever the client sent, brackets included, so the address is
+# read from the end of the line (the last " from <x>") and the name is everything between the first
+# "[" after "No user (...)" and that point. The address is Laravel's Request::ip(): before 26.7 it
+# follows a client's X-Forwarded-For unless APP_TRUSTED_PROXIES is set, good to count, not to block.
+#   user.name       the name that was typed
+#   source.address  the client address as logged; source.ip when it is an address
+#   event.provider  the authentication back end (mysql, ldap, active_directory, radius, ...)
+name: decoder/jt-librenms-auth/0
+enabled: true
+metadata:
+  title: LibreNMS unknown-user login
+  author: Jason Tools
+  description: The unknown-user login line of librenms.log (any version) into user, source and outcome fields.
+  references:
+    - https://github.com/librenms/librenms/blob/master/app/Providers/LegacyUserProvider.php
+parents:
+  - decoder/jt-librenms-log/0
+  - decoder/jt-librenms-legacy/0
+check: "regex_match($message, '^Auth Error [(][^)]*[)]: No user [(][^)]*[)] [[].*[]] from [^ ]+$')"
+normalize:
+  - map:
+      - event.provider: "regex_extract($message, '^Auth Error [(]([^)]*)[)]')"
+      - user.name: "regex_extract($message, '^Auth Error [(][^)]*[)]: No user [(][^)]*[)] [[](.*)[]] from [^ ]+$')"
+      - source.address: "regex_extract($message, ' from ([^ ]+)$')"
+      - event.action: authentication-failure
+      - event.reason: unknown user name
+      - event.outcome: failure
+      - event.category: array_append(authentication)
+      - event.type: array_append(start)
+  - check: "exists($source.address) AND (is_ipv4($source.address) OR is_ipv6($source.address))"
+    map:
+      - source.ip: $source.address
+      - related.ip: array_append($source.address)
+  - check: exists($user.name)
+    map:
+      - related.user: array_append($user.name)
+  - map:
+      - _tmp: delete()

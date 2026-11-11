@@ -1,0 +1,182 @@
+# Zenarmor (OPNsense) reporting records streamed by syslog:
+#   2026-10-11T11:35:16+08:00 fw1.example.com zenarmor[63078]: daemon=zenarmor, index=alert, data={...}
+# index is conn, dns, tls, http, sip or alert. The program name is matched as a prefix, so
+# zenarmorngfw (the vendor's Splunk guide) decodes too. The vendor guide's "prematch zenarmor"
+# never matched on 4.x; the program name is what identifies these lines.
+#
+# Trusted fields are read from the parsed JSON (data=...), never by searching the line for the
+# first "key": the JSON carries client-controlled text (DNS query names, DHCP device names, TLS
+# server names), and only the parser knows where a value starts and ends.
+#
+# Field use (WCS):
+#   event.dataset        zenarmor.<index>
+#   event.action         blocked | allowed (is_blocked 1 | 0)
+#   source.ip/port       the client (ip_src_saddr, ip_src_port)
+#   destination.ip/port  the server (ip_dst_saddr, ip_dst_port)
+#   destination.address  dst_hostname as logged (on a DNS record or DNS block: the DNS server)
+#   destination.domain   the name the record is about, lower case (4.x zenarmor.domain):
+#                          alert  alertinfo.match.dst_hostname, the name Zenarmor matched
+#                          dns    query
+#                          other  dst_hostname, when it is a name and not an address
+#   dns.question.*       query, qtype, qclass of a dns record; dns.header_flags RD / RA / AA / TC
+#   tls.client.server_name  server_name of a tls record
+#   rule.category        the category the record is about (4.x zenarmor.category): alert
+#                          alertinfo.signature, tls/http category, conn/dns security_tags, and
+#                          for an unblocked dns record domain_categories
+#   rule.id              alertinfo.sid of an alert record
+#   event.reason         the alert record's message ("Botnet DGA Domains access")
+#   network.transport / network.protocol   transport_proto / app_proto, lower case
+# The threat classification (tags zenarmor.*) is added by decoder/jt-zenarmor-classify/0.
+name: decoder/jt-zenarmor/0
+enabled: true
+metadata:
+  title: Zenarmor reporting records
+  author: Jason Tools
+  description: Zenarmor NGFW records (conn, dns, tls, http, sip, alert) streamed from OPNsense by syslog, JSON body mapped to WCS fields.
+  references:
+    - https://www.zenarmor.com/docs/guides/integrating-zenarmor-with-wazuh
+parents:
+  - decoder/jt-syslog/0
+check: "regex_match($process.name, '^zenarmor[A-Za-z0-9_]*$') AND regex_match($message, '^daemon=[A-Za-z0-9_]+, index=[a-z]+, data=[{]')"
+normalize:
+  - map:
+      - _tmp.zidx: "regex_extract($message, '^daemon=[A-Za-z0-9_]+, index=([a-z]+), data=')"
+      - _tmp.zjson: "regex_extract($message, '^daemon=[A-Za-z0-9_]+, index=[a-z]+, data=([{].*)$')"
+  - map:
+      - _tmp.zd: parse_json($_tmp.zjson)
+  - check: exists($_tmp.zd)
+    map:
+      - event.kind: event
+      - event.module: zenarmor
+      - event.dataset: "concat('zenarmor.', $_tmp.zidx)"
+      - event.category: array_append(network)
+      - observer.vendor: Sunny Valley Networks
+      - observer.product: Zenarmor
+      - observer.type: firewall
+      - observer.hostname: $host.hostname
+  - check: "$_tmp.zidx == 'alert'"
+    map:
+      - event.kind: alert
+
+  # Addresses and ports (numbers in the JSON, but accept a quoted number too)
+  - check: "is_ipv4($_tmp.zd.ip_src_saddr) OR is_ipv6($_tmp.zd.ip_src_saddr)"
+    map:
+      - source.ip: $_tmp.zd.ip_src_saddr
+      - related.ip: array_append($_tmp.zd.ip_src_saddr)
+  - check: "is_ipv4($_tmp.zd.ip_dst_saddr) OR is_ipv6($_tmp.zd.ip_dst_saddr)"
+    map:
+      - destination.ip: $_tmp.zd.ip_dst_saddr
+      - related.ip: array_append($_tmp.zd.ip_dst_saddr)
+  - check: is_number($_tmp.zd.ip_src_port)
+    map:
+      - source.port: $_tmp.zd.ip_src_port
+  - check: is_string($_tmp.zd.ip_src_port)
+    map:
+      - source.port: parse_long($_tmp.zd.ip_src_port)
+  - check: is_number($_tmp.zd.ip_dst_port)
+    map:
+      - destination.port: $_tmp.zd.ip_dst_port
+  - check: is_string($_tmp.zd.ip_dst_port)
+    map:
+      - destination.port: parse_long($_tmp.zd.ip_dst_port)
+  - check: is_string($_tmp.zd.transport_proto)
+    map:
+      - network.transport: downcase($_tmp.zd.transport_proto)
+  - check: "is_string($_tmp.zd.app_proto) AND regex_match($_tmp.zd.app_proto, '.')"
+    map:
+      - network.protocol: downcase($_tmp.zd.app_proto)
+  - check: "is_string($_tmp.zd.dst_hostname) AND regex_match($_tmp.zd.dst_hostname, '.')"
+    map:
+      - destination.address: $_tmp.zd.dst_hostname
+
+  # Zenarmor's decision (is_blocked as a number, or a quoted number)
+  - check: is_number($_tmp.zd.is_blocked)
+    map:
+      - _tmp.zblk: to_string($_tmp.zd.is_blocked)
+  - check: is_string($_tmp.zd.is_blocked)
+    map:
+      - _tmp.zblk: $_tmp.zd.is_blocked
+  - check: "$_tmp.zblk == '1'"
+    map:
+      - event.action: blocked
+      - event.type: array_append(denied)
+  - check: "$_tmp.zblk == '0'"
+    map:
+      - event.action: allowed
+      - event.type: array_append(allowed)
+
+  # The name the record is about
+  - check: "$_tmp.zidx == 'alert'"
+    map:
+      - _tmp.zname: $_tmp.zd.alertinfo.match.dst_hostname
+      - event.reason: $_tmp.zd.message
+  - check: "$_tmp.zidx == 'alert' AND is_string($_tmp.zd.alertinfo.sid)"
+    map:
+      - rule.id: $_tmp.zd.alertinfo.sid
+  - check: "$_tmp.zidx == 'dns'"
+    map:
+      - _tmp.zname: $_tmp.zd.query
+      - dns.type: query
+      - dns.question.type: $_tmp.zd.qtype
+      - dns.question.class: $_tmp.zd.qclass
+  - check: "$_tmp.zidx != 'alert' AND $_tmp.zidx != 'dns'"
+    map:
+      - _tmp.zname: $_tmp.zd.dst_hostname
+  - check: "$_tmp.zidx == 'tls' AND is_string($_tmp.zd.server_name)"
+    map:
+      - tls.client.server_name: $_tmp.zd.server_name
+  - check: "is_string($_tmp.zname) AND regex_match($_tmp.zname, '^[^ /]+$') AND NOT is_ipv4($_tmp.zname) AND NOT is_ipv6($_tmp.zname)"
+    map:
+      - destination.domain: downcase($_tmp.zname)
+  - check: "$_tmp.zidx == 'dns' AND exists($destination.domain)"
+    map:
+      - dns.question.name: $destination.domain
+
+  # DNS header bits (numbers in the JSON)
+  - check: "$_tmp.zidx == 'dns' AND is_number($_tmp.zd.is_RD)"
+    map:
+      - _tmp.zrd: to_string($_tmp.zd.is_RD)
+  - check: "$_tmp.zidx == 'dns' AND is_string($_tmp.zd.is_RD)"
+    map:
+      - _tmp.zrd: $_tmp.zd.is_RD
+  - check: "$_tmp.zrd == '1'"
+    map:
+      - dns.header_flags: array_append(RD)
+  - check: "$_tmp.zidx == 'dns' AND int_equal($_tmp.zd.is_RA, 1)"
+    map:
+      - dns.header_flags: array_append(RA)
+  - check: "$_tmp.zidx == 'dns' AND int_equal($_tmp.zd.is_AA, 1)"
+    map:
+      - dns.header_flags: array_append(AA)
+  - check: "$_tmp.zidx == 'dns' AND int_equal($_tmp.zd.is_TC, 1)"
+    map:
+      - dns.header_flags: array_append(TC)
+
+  # Category lists as text, for rule.category and the classification decoder
+  - check: is_array($_tmp.zd.security_tags)
+    map:
+      - _tmp.zst: "join($_tmp.zd.security_tags, '|')"
+  - check: is_array($_tmp.zd.domain_categories)
+    map:
+      - _tmp.zdc: "join($_tmp.zd.domain_categories, '|')"
+  - check: is_string($_tmp.zd.category)
+    map:
+      - _tmp.zcat: $_tmp.zd.category
+  - check: "$_tmp.zidx == 'alert' AND is_array($_tmp.zd.alertinfo.signature)"
+    map:
+      - _tmp.zsig: "join($_tmp.zd.alertinfo.signature, '|')"
+  - check: "$_tmp.zidx == 'alert' AND is_array($_tmp.zd.alertinfo.category)"
+    map:
+      - _tmp.zacat: "join($_tmp.zd.alertinfo.category, '|')"
+  - check: "$_tmp.zidx == 'alert' AND regex_match($_tmp.zsig, '.')"
+    map:
+      - rule.category: $_tmp.zd.alertinfo.signature
+  - check: "$_tmp.zidx != 'alert' AND regex_match($_tmp.zcat, '.')"
+    map:
+      - rule.category: array_append($_tmp.zcat)
+  - check: "$_tmp.zidx != 'alert' AND NOT exists($rule.category) AND regex_match($_tmp.zst, '.')"
+    map:
+      - rule.category: $_tmp.zd.security_tags
+  - check: "$_tmp.zidx == 'dns' AND NOT exists($rule.category) AND regex_match($_tmp.zdc, '.')"
+    map:
+      - rule.category: $_tmp.zd.domain_categories

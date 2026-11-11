@@ -1,0 +1,173 @@
+# Threat classification of a Zenarmor record, as tags the Sigma rules and monitors match.
+# This is where the 4.x rule regexes live now: Sigma matches case-sensitively and the indexer's
+# |re never matched on rc2, so the case-insensitive family regexes run here (RE2) and the rules
+# read the result. Every list is joined with '|' and wrapped in '|' so a word boundary is
+# "[^a-z0-9_]" on both sides (RE2 has no lookahead and the engine arguments avoid backslashes).
+#
+# Exclusive families of security_tags, in the 4.x precedence (one tag per record):
+#   zenarmor.st-malware > st-phishing > st-dns-tunnel > st-potentially-dangerous > st-evasion >
+#   st-weak > st-malformed-dns > st-parked
+# plus zenarmor.st-c2 (command and control, ransomware, Botnet but not "Botnet DGA").
+# The web category of a tls/http record: zenarmor.cat-malware > cat-phishing >
+#   cat-potentially-dangerous, and zenarmor.cat-evasion (Hacking, Proxy, Anonymizer, Tor, VPN).
+# A dns record: zenarmor.dns-threat when security_tags or domain_categories hold a malware,
+#   phishing or DNS tunnel category (4.x 130821), zenarmor.dns-c2 for command and control or tunnel.
+# Names (destination.domain): zenarmor.name-oast, name-mining, name-tunnel, name-stager,
+#   name-icloud-relay, name-tor-check; zenarmor.allowlisted (KVDB jt-zenarmor-domain-allow).
+# Sources: zenarmor.listed-resolver (KVDB jt-zenarmor-resolvers: an address, or a prefix
+#   ending in a dot such as 192.0.2.).
+# DNS lookups of threat names (blocked malware/phishing, or unblocked dns-threat):
+#   zenarmor.resolver-query  PTR/NS/SOA, Recursion Desired 0, or a listed resolver
+#   zenarmor.client-query    otherwise; also zenarmor.threat-block
+# zenarmor.threat-block is also set on the alert record of a blocked malware or phishing
+# connection (port other than 53). The monitors count these tags (4.x groups
+# zenarmor_client_query, zenarmor_resolver_query, zenarmor_threat_block).
+name: decoder/jt-zenarmor-classify/0
+enabled: true
+metadata:
+  title: Zenarmor threat classification
+  author: Jason Tools
+  description: Classifies Zenarmor categories, names and DNS lookups into tags for the jt-zenarmor rules and monitors.
+  references:
+    - https://www.zenarmor.com/docs/network-security-tutorials/what-is-web-filtering
+    - https://github.com/SigmaHQ/sigma/blob/master/rules/network/dns/net_dns_external_service_interaction_domains.yml
+    - https://github.com/SigmaHQ/sigma/blob/master/rules/network/zeek/zeek_dns_mining_pools.yml
+parents:
+  - decoder/jt-zenarmor/0
+check: exists($_tmp.zd)
+normalize:
+  - check: exists($_tmp.zst)
+    map:
+      - _tmp.zstp: "concat('|', $_tmp.zst, '|')"
+  - check: exists($_tmp.zdc)
+    map:
+      - _tmp.zdcp: "concat('|', $_tmp.zdc, '|')"
+  - check: exists($_tmp.zcat)
+    map:
+      - _tmp.zcatp: "concat('|', $_tmp.zcat, '|')"
+  - check: exists($_tmp.zsig)
+    map:
+      - _tmp.zsigp: "concat('|', $_tmp.zsig, '|')"
+
+  # --- security_tags: one family per record ---------------------------------------------------
+  - check: "regex_match($_tmp.zstp, '(?i)(malware|virus|botnet|c&c|command.?and.?control|ransomware|trojan|spyware|keylogger|compromised|[^a-z0-9_]worm[^a-z0-9_])')"
+    map:
+      - _tmp.zfam: malware
+  - check: "NOT exists($_tmp.zfam) AND regex_match($_tmp.zstp, '(?i)(phishing|crypto.?mining|scam|fraud|spam)')"
+    map:
+      - _tmp.zfam: phishing
+  - check: "NOT exists($_tmp.zfam) AND regex_match($_tmp.zstp, '(?i)dns.?tunnel')"
+    map:
+      - _tmp.zfam: dns-tunnel
+  - check: "NOT exists($_tmp.zfam) AND regex_match($_tmp.zstp, '(?i)potentially.?dangerous')"
+    map:
+      - _tmp.zfam: potentially-dangerous
+  - check: "NOT exists($_tmp.zfam) AND regex_match($_tmp.zstp, '(?i)(hacking|proxy|anonymizer|[^a-z0-9_](tor|vpn|doh)[^a-z0-9_]|suspicious|dns.?over.?https)')"
+    map:
+      - _tmp.zfam: evasion
+  - check: "NOT exists($_tmp.zfam) AND regex_match($_tmp.zstp, '(?i)(dynamic.?dns|newly.?registered|newly.?recovered|firstly.?seen)')"
+    map:
+      - _tmp.zfam: weak
+  - check: "NOT exists($_tmp.zfam) AND regex_match($_tmp.zstp, '(?i)malformed.?dns')"
+    map:
+      - _tmp.zfam: malformed-dns
+  - check: "NOT exists($_tmp.zfam) AND regex_match($_tmp.zstp, '(?i)parked')"
+    map:
+      - _tmp.zfam: parked
+  - check: exists($_tmp.zfam)
+    map:
+      - _tmp.ztag: "concat('zenarmor.st-', $_tmp.zfam)"
+      - tags: array_append($_tmp.ztag)
+  - check: "regex_match($_tmp.zstp, '(?i)(c&c|command.?and.?control|[^a-z0-9_]c2[^a-z0-9_]|ransomware|[^a-z0-9_]botnet([^a-z0-9_ ]| +([^d ]|d[^g]|dg[^a])))')"
+    map:
+      - tags: array_append(zenarmor.st-c2)
+
+  # --- the web category of a tls or http record -------------------------------------------------
+  - check: "regex_match($_tmp.zcatp, '(?i)(malware|virus|botnet|c&c|command.?and.?control|ransomware|trojan|spyware|keylogger|compromised|[^a-z0-9_]worm[^a-z0-9_])')"
+    map:
+      - _tmp.zcfam: malware
+  - check: "NOT exists($_tmp.zcfam) AND regex_match($_tmp.zcatp, '(?i)(phishing|crypto.?mining|scam|fraud|spam)')"
+    map:
+      - _tmp.zcfam: phishing
+  - check: "NOT exists($_tmp.zcfam) AND regex_match($_tmp.zcatp, '(?i)potentially.?dangerous')"
+    map:
+      - _tmp.zcfam: potentially-dangerous
+  - check: exists($_tmp.zcfam)
+    map:
+      - _tmp.ztag: "concat('zenarmor.cat-', $_tmp.zcfam)"
+      - tags: array_append($_tmp.ztag)
+  - check: "regex_match($_tmp.zcatp, '(?i)(hacking|proxy|anonymizer|[^a-z0-9_](tor|vpn)[^a-z0-9_])')"
+    map:
+      - tags: array_append(zenarmor.cat-evasion)
+
+  # --- a dns record: the category in either array (domain_categories since Zenarmor 1.17.4) ----
+  - check: "$_tmp.zidx == 'dns' AND (regex_match($_tmp.zstp, '(?i)(malware|virus|botnet|c&c|command.?and.?control|ransomware|trojan|spyware|keylogger|compromised|[^a-z0-9_]worm[^a-z0-9_]|phishing|crypto.?mining|scam|fraud|spam|dns.?tunnel)') OR regex_match($_tmp.zdcp, '(?i)(malware|virus|botnet|c&c|command.?and.?control|ransomware|trojan|spyware|keylogger|compromised|[^a-z0-9_]worm[^a-z0-9_]|phishing|crypto.?mining|scam|fraud|spam|dns.?tunnel)'))"
+    map:
+      - tags: array_append(zenarmor.dns-threat)
+  - check: "$_tmp.zidx == 'dns' AND (regex_match($_tmp.zstp, '(?i)(c&c|command.?and.?control|[^a-z0-9_]c2[^a-z0-9_]|ransomware|[^a-z0-9_]botnet([^a-z0-9_ ]| +([^d ]|d[^g]|dg[^a]))|dns.?tunnel)') OR regex_match($_tmp.zdcp, '(?i)(c&c|command.?and.?control|[^a-z0-9_]c2[^a-z0-9_]|ransomware|[^a-z0-9_]botnet([^a-z0-9_ ]| +([^d ]|d[^g]|dg[^a]))|dns.?tunnel)'))"
+    map:
+      - tags: array_append(zenarmor.dns-c2)
+
+  # --- application control: a Remote Access or Proxy application blocked (4.x 130875) ---------
+  - check: "$_tmp.zidx == 'alert' AND regex_match($_tmp.zacat, '(?i)application.?category') AND regex_match($_tmp.zsigp, '(?i)[^a-z0-9_](remote.?access|proxy)[^a-z0-9_]')"
+    map:
+      - tags: array_append(zenarmor.app-remote-access-or-proxy)
+
+  # --- names that betray a tool (4.x 130840/130841, 130866/130874, 130868, 130870) ------------
+  - check: exists($destination.domain)
+    map:
+      - _tmp.zdn: "concat('.', $destination.domain)"
+  - check: "regex_match($_tmp.zdn, '[.](oast[.](pro|live|site|online|fun|me)|interact[.]sh|interactsh[.]com|oastify[.]com|burpcollaborator[.]net|canarytokens[.]com|dnslog[.](cn|ink)|ceye[.]io|requestbin[.]net|dnshook[.]site|digimg[.]store|gobygo[.]net|instances[.]httpworkbench[.]com|p8[.]lol|log[.]javaweb[.]org|dns[.]su18[.]org|log[.]dnslog[.](pp[.]ua|qzz[.]io)|log[.]dnslogs[.]dpdns[.]org|log[.]nat[.]cloudns[.]ph|ddns[.](1433|bypass|xn--gg8h)[.]eu[.]org)$') AND $destination.domain != 'polling.oastify.com'"
+    map:
+      - tags: array_append(zenarmor.name-oast)
+  - check: "regex_match($_tmp.zdn, '[.](supportxmr[.]com|minexmr[.](com|org)|nanopool[.]org|hashvault[.]pro|c3pool[.]com|moneroocean[.]stream|2miners[.]com|f2pool[.]com|herominers[.]com|xmrpool[.](eu|net|com)|minergate[.]com|monerohash[.]com|moneropool[.](com|ru)|monero[.]farm|dwarfpool[.]com|unmineable[.]com|nicehash[.]com|crypto-pool[.]fr|xmr[.]pt|miner[.]rocks|cryptoknight[.]cc|coinfoundry[.]org|semipool[.]com|fairhash[.]org|xmrget[.]com|xmrminerpro[.]com|moriaxmr[.]com|hashanywhere[.]com|monerominers[.]net|cryptonotepool[.]org|hashcity[.]org|litecoinpool[.]org)$')"
+    map:
+      - tags: array_append(zenarmor.name-mining)
+  - check: "regex_match($_tmp.zdn, '[.](trycloudflare[.]com|ngrok(-free)?[.](io|app|dev)|ngrok-agent[.]com|loca[.]lt|serveo[.]net|lhr[.]life|localhost[.]run|pinggy[.](io|link)|portmap[.](io|host)|ply[.]gg|tor2web[.](org|io|com|fi|xyz)|onion[.](ws|ly|pet|to|link|city|cab|sh|top|rip|plus|si|lt|pw|direct|dog|glass|guide|ink|it|lu|mn|network|nu|pt|casa|ca|gq)|t2w[.]pw|hiddenservice[.]net|torlink[.]co|onion)$')"
+    map:
+      - tags: array_append(zenarmor.name-tunnel)
+  - check: "$_tmp.zidx == 'dns' AND regex_match($destination.domain, '(^aaa[.]stage[.]|[.]stage[.]123456[.])')"
+    map:
+      - tags: array_append(zenarmor.name-stager)
+  - check: "regex_match($destination.domain, '^mask(-[a-z0-9]+)?[.]icloud[.]com$')"
+    map:
+      - tags: array_append(zenarmor.name-icloud-relay)
+  - check: "$destination.domain == 'check.torproject.org'"
+    map:
+      - tags: array_append(zenarmor.name-tor-check)
+  - check: "kvdb_match($destination.domain, 'jt-zenarmor-domain-allow')"
+    map:
+      - tags: array_append(zenarmor.allowlisted)
+
+  # --- a listed forwarding resolver: the address, or a prefix ending in a dot -----------------
+  - check: is_ipv4($source.ip)
+    map:
+      - _tmp.zp3: "regex_extract($source.ip, '^([0-9]+[.][0-9]+[.][0-9]+[.])')"
+      - _tmp.zp2: "regex_extract($source.ip, '^([0-9]+[.][0-9]+[.])')"
+      - _tmp.zp1: "regex_extract($source.ip, '^([0-9]+[.])')"
+  - check: "kvdb_match($source.ip, 'jt-zenarmor-resolvers') OR kvdb_match($_tmp.zp3, 'jt-zenarmor-resolvers') OR kvdb_match($_tmp.zp2, 'jt-zenarmor-resolvers') OR kvdb_match($_tmp.zp1, 'jt-zenarmor-resolvers')"
+    map:
+      - tags: array_append(zenarmor.listed-resolver)
+      - _tmp.zlisted: 'yes'
+
+  # --- DNS lookups of threat names: resolver style or client style ----------------------------
+  - check: "$_tmp.zidx == 'dns' AND $event.action == 'blocked' AND ($_tmp.zfam == 'malware' OR $_tmp.zfam == 'phishing')"
+    map:
+      - _tmp.zlookup: 'yes'
+  - check: "$_tmp.zidx == 'dns' AND $event.action == 'allowed' AND array_contains($tags, 'zenarmor.dns-threat')"
+    map:
+      - _tmp.zlookup: 'yes'
+  - check: "$_tmp.zlookup == 'yes' AND (regex_match($_tmp.zd.qtype, '^(PTR|NS|SOA)$') OR $_tmp.zrd == '0' OR $_tmp.zlisted == 'yes')"
+    map:
+      - tags: array_append(zenarmor.resolver-query)
+      - _tmp.zlookup: resolver
+  - check: "$_tmp.zlookup == 'yes'"
+    map:
+      - tags: array_append(zenarmor.client-query)
+      - tags: array_append(zenarmor.threat-block)
+  - check: "$_tmp.zidx == 'alert' AND $event.action == 'blocked' AND NOT int_equal($destination.port, 53) AND ($_tmp.zfam == 'malware' OR $_tmp.zfam == 'phishing')"
+    map:
+      - tags: array_append(zenarmor.threat-block)
+
+  - map:
+      - _tmp: delete()

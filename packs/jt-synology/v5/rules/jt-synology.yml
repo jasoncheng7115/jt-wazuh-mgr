@@ -1,0 +1,1111 @@
+# jt-synology rules for Wazuh 5.x (beta; Sigma, evaluated by the indexer). Each rule carries the tag
+# jt.rule.<id> of the 4.x rule it replaces. The decoder (decoders/30-jt-synology.yml) classifies every DSM
+# line into event.action with the case-insensitive and look-ahead patterns of the 4.x rules (Sigma here
+# has no case-insensitive regex, and |re never matched message on rc2); these rules add the address and
+# account logic. 4.x rules below level 3 are not ported: on 5.x every decoded event is indexed anyway.
+# Not ported: 132033 (first login of a pair, if_fts: no first-time-seen on 5.x), 132015 (level 0).
+# The frequency rules 132024-132026, 132046, 132052, 132053 and 132055 are monitors (monitors/);
+# 132030, 132031, 132037-132039 (a success after failures) are not ported, see PORTING.md.
+# Levels: 4.x 3 -> informational, 4-6 -> low, 7-9 -> medium, 10-13 -> high.
+
+# -- sign-ins (4.x 132010-132019, 132033-132036) -----------------------------------------------------
+
+- metadata:
+    title: "Synology DSM: built-in administrator {{user.name}} signed in to {{network.application}} from {{source.ip}}"
+    author: Jason Tools
+    description: "A built-in administrator name (admin, administrator, root, also DOMAIN\\Administrator) signed in from a private address. Accounts in the KVDB jt-synology-service-accounts are left out."
+    references: ["Migrated from jt-synology 4.x rule 132018"]
+  sigma_id: jt-synology-132018
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-synology}
+  detection:
+    condition: login and private and builtin and not service
+    login: {event.action: [signed-in, logged-in]}
+    builtin: {user.roles: builtin-administrator}
+    service: {user.roles: service-account}
+    private: {source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]}
+  mitre:
+    tactic: {id: [TA0001, TA0003, TA0004, TA0005], name: [Initial Access, Persistence, Privilege Escalation, Defense Evasion]}
+    technique: {id: [T1078], name: [Valid Accounts]}
+    subtechnique: {id: [T1078.001], name: [Default Accounts]}
+  tags: [jt.rule.132018, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: administrator {{user.name}} signed in to {{network.application}} from {{source.ip}}"
+    author: Jason Tools
+    description: "An account listed in the KVDB jt-synology-admin-accounts signed in from a private address."
+    references: ["Migrated from jt-synology 4.x rule 132016"]
+  sigma_id: jt-synology-132016
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-synology}
+  detection:
+    condition: login and private and listed and not builtin and not service
+    login: {event.action: [signed-in, logged-in]}
+    listed: {user.roles: administrator}
+    builtin: {user.roles: builtin-administrator}
+    service: {user.roles: service-account}
+    private: {source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]}
+  mitre:
+    tactic: {id: [TA0001, TA0003, TA0004, TA0005], name: [Initial Access, Persistence, Privilege Escalation, Defense Evasion]}
+    technique: {id: [T1078], name: [Valid Accounts]}
+    subtechnique: {id: [T1078.003], name: [Local Accounts]}
+  tags: [jt.rule.132016, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: {{user.name}} logged in to {{network.application}} from outside address {{source.ip}}"
+    author: Jason Tools
+    description: "An ordinary account signed in, logged in or opened a shared folder from an address outside the private ranges."
+    references: ["Migrated from jt-synology 4.x rule 132017"]
+  sigma_id: jt-synology-132017
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: login and not private and not builtin and not listed
+    login: {event.action: [signed-in, logged-in, share-accessed]}
+    listed: {user.roles: administrator}
+    builtin: {user.roles: builtin-administrator}
+    private: {source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]}
+  mitre:
+    tactic: {id: [TA0001, TA0003, TA0004, TA0005], name: [Initial Access, Persistence, Privilege Escalation, Defense Evasion]}
+    technique: {id: [T1078], name: [Valid Accounts]}
+  tags: [jt.rule.132017, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: built-in administrator {{user.name}} logged in to {{network.application}} from outside address {{source.ip}}"
+    author: Jason Tools
+    description: "A built-in administrator name signed in from an address outside the private ranges."
+    references: ["Migrated from jt-synology 4.x rule 132019"]
+  sigma_id: jt-synology-132019
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: login and builtin and not private
+    login: {event.action: [signed-in, logged-in, share-accessed]}
+    builtin: {user.roles: builtin-administrator}
+    private: {source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]}
+  mitre:
+    tactic: {id: [TA0001, TA0003, TA0004, TA0005], name: [Initial Access, Persistence, Privilege Escalation, Defense Evasion]}
+    technique: {id: [T1078], name: [Valid Accounts]}
+    subtechnique: {id: [T1078.001], name: [Default Accounts]}
+  tags: [jt.rule.132019, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: administrator {{user.name}} logged in to {{network.application}} from outside address {{source.ip}}"
+    author: Jason Tools
+    description: "An account listed in the KVDB jt-synology-admin-accounts signed in from an address outside the private ranges."
+    references: ["Migrated from jt-synology 4.x rule 132036"]
+  sigma_id: jt-synology-132036
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: login and listed and not builtin and not private
+    login: {event.action: [signed-in, logged-in, share-accessed]}
+    listed: {user.roles: administrator}
+    builtin: {user.roles: builtin-administrator}
+    private: {source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]}
+  mitre:
+    tactic: {id: [TA0001, TA0003, TA0004, TA0005], name: [Initial Access, Persistence, Privilege Escalation, Defense Evasion]}
+    technique: {id: [T1078], name: [Valid Accounts]}
+    subtechnique: {id: [T1078.003], name: [Local Accounts]}
+  tags: [jt.rule.132036, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: administrator {{user.name}} logged in to a shell via {{network.application}} from {{source.ip}}"
+    author: Jason Tools
+    description: "DSM allows SSH and Telnet only to administrators. On 4.x this was raised once per account, address and service (first time seen); 5.x has no first-time-seen state, so every internal shell login is a finding."
+    references: ["Migrated from jt-synology 4.x rule 132034"]
+  sigma_id: jt-synology-132034
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: shell and private
+    shell: {event.action: shell-logged-in}
+    private: {source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]}
+  mitre:
+    tactic: {id: [TA0008], name: [Lateral Movement]}
+    technique: {id: [T1021], name: [Remote Services]}
+    subtechnique: {id: [T1021.004], name: [SSH]}
+  tags: [jt.rule.132034, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: administrator {{user.name}} logged in to a shell via {{network.application}} from outside address {{source.ip}}"
+    author: Jason Tools
+    description: "An SSH or Telnet login to the NAS from an address outside the private ranges."
+    references: ["Migrated from jt-synology 4.x rule 132035"]
+  sigma_id: jt-synology-132035
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: shell and not private
+    shell: {event.action: shell-logged-in}
+    private: {source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10"]}
+  mitre:
+    tactic: {id: [TA0008], name: [Lateral Movement]}
+    technique: {id: [T1021], name: [Remote Services]}
+    subtechnique: {id: [T1021.004], name: [SSH]}
+  tags: [jt.rule.132035, jt.pack.jt-synology]
+
+# -- failures, auto block, account protection (4.x 132020-132029) ------------------------------------
+
+- metadata:
+    title: "Synology DSM: failed login to {{network.application}} as {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: "A failed sign-in or login, or a login DSM rejected. The brute force monitors 132024-132026 count these findings."
+    references: ["Migrated from jt-synology 4.x rule 132020"]
+  sigma_id: jt-synology-132020
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: login-failed}
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+    subtechnique: {id: [T1110.001], name: [Password Guessing]}
+  tags: [jt.rule.132020, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: {{source.ip}} could not connect via {{network.application}}: {{event.reason}}"
+    author: Jason Tools
+    description: "DSM refused a client before it named an account (for example SMB1 or NTLMv1 only); not a password guess."
+    references: ["Migrated from jt-synology 4.x rule 132021"]
+  sigma_id: jt-synology-132021
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: connect-refused}
+  tags: [jt.rule.132021, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: {{source.ip}} tried SMB as {{user.name}} with NTLMv1, which the NAS refuses"
+    author: Jason Tools
+    description: "An old client or a network scanner offering only NTLMv1; not counted as a password guess."
+    references: ["Migrated from jt-synology 4.x rule 132022"]
+  sigma_id: jt-synology-132022
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: ntlmv1-refused}
+  tags: [jt.rule.132022, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: {{user.name}} from {{source.ip}} failed the second sign-in factor"
+    author: Jason Tools
+    description: "The password was right and the second factor (OTP, approve sign-in, hardware key) failed."
+    references: ["Migrated from jt-synology 4.x rule 132023"]
+  sigma_id: jt-synology-132023
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: second-factor-failed}
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+  tags: [jt.rule.132023, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM auto block: {{source.ip}} was blocked after repeated failed logins (internal address)"
+    author: Jason Tools
+    description: "DSM auto block blocked an internal address (Control Panel, Security, Protection). Check that host."
+    references: ["Migrated from jt-synology 4.x rule 132027"]
+  sigma_id: jt-synology-132027
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: blocked and internal
+    blocked: {event.action: host-blocked}
+    internal: {source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "fc00::/7", "fe80::/10"]}
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+  tags: [jt.rule.132027, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM auto block: {{source.ip}} was blocked after repeated failed logins (external address)"
+    author: Jason Tools
+    description: "DSM auto block blocked an outside address after repeated failed logins."
+    references: ["Migrated from jt-synology 4.x rule 132028"]
+  sigma_id: jt-synology-132028
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: blocked and not internal
+    blocked: {event.action: host-blocked}
+    internal: {source.ip|cidr: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "fc00::/7", "fe80::/10"]}
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+  tags: [jt.rule.132028, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM account protection: {{user.name}} was blocked after failed logins from untrusted clients"
+    author: Jason Tools
+    description: "Account Protection locked an account (System catalogue 12A00101)."
+    references: ["Migrated from jt-synology 4.x rule 132029"]
+  sigma_id: jt-synology-132029
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: account-blocked}
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+  tags: [jt.rule.132029, jt.pack.jt-synology]
+
+# -- Hyper Backup, recovery points (4.x 132040-132049, 132054-132058) --------------------------------
+
+- metadata:
+    title: "Synology Hyper Backup: task {{process.title}} failed: {{message}}"
+    author: Jason Tools
+    description: "A backup task or an integrity check failed; the data it protects has no fresh copy."
+    references: ["Migrated from jt-synology 4.x rule 132042"]
+  sigma_id: jt-synology-132042
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: backup-failed}
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1490], name: [Inhibit System Recovery]}
+  tags: [jt.rule.132042, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology Hyper Backup: task {{process.title}} only partially completed"
+    author: Jason Tools
+    description: "Some files were not backed up."
+    references: ["Migrated from jt-synology 4.x rule 132043"]
+  sigma_id: jt-synology-132043
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: backup-partial}
+  tags: [jt.rule.132043, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology Hyper Backup: a backup was cancelled, skipped or discarded: {{message}}"
+    author: Jason Tools
+    description: "A backup did not run to the end."
+    references: ["Migrated from jt-synology 4.x rule 132044"]
+  sigma_id: jt-synology-132044
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: backup-cancelled}
+  tags: [jt.rule.132044, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology Hyper Backup: a backup task, destination or its stored data was deleted: {{message}}"
+    author: Jason Tools
+    description: "Deleting backups is what ransomware operators do before encrypting."
+    references: ["Migrated from jt-synology 4.x rule 132045"]
+  sigma_id: jt-synology-132045
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: backup-deleted}
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1490], name: [Inhibit System Recovery]}
+  tags: [jt.rule.132045, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: corrupt backup or data found: {{message}}"
+    author: Jason Tools
+    description: "An integrity check found the backup target broken, destination data was corrupted, a stored version is incomplete, or Btrfs found a checksum mismatch or file system error."
+    references: ["Migrated from jt-synology 4.x rule 132048"]
+  sigma_id: jt-synology-132048
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: backup-data-corrupt}
+  tags: [jt.rule.132048, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: data restored from a snapshot or backup: {{message}}"
+    author: Jason Tools
+    description: "A restore replaces live data with an older version."
+    references: ["Migrated from jt-synology 4.x rule 132049"]
+  sigma_id: jt-synology-132049
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: data-restored}
+  tags: [jt.rule.132049, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: a snapshot was deleted (or deletion was tried) by an account: {{message}}"
+    author: Jason Tools
+    description: "Ransomware on a NAS deletes snapshots before it encrypts. Deletions by retention (\"by retention rules\", \"by [SYSTEM]\") are not findings."
+    references: ["Migrated from jt-synology 4.x rule 132054"]
+  sigma_id: jt-synology-132054
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: snapshot-deleted}
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1490], name: [Inhibit System Recovery]}
+  tags: [jt.rule.132054, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: a snapshot replication was deleted: {{message}}"
+    author: Jason Tools
+    description: "The off-site copy of a shared folder or LUN was removed."
+    references: ["Migrated from jt-synology 4.x rule 132056"]
+  sigma_id: jt-synology-132056
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: replication-deleted}
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1490], name: [Inhibit System Recovery]}
+  tags: [jt.rule.132056, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: a snapshot or a replication failed: {{message}}"
+    author: Jason Tools
+    description: "Recovery points silently stop being made."
+    references: ["Migrated from jt-synology 4.x rule 132057"]
+  sigma_id: jt-synology-132057
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: snapshot-failed}
+  tags: [jt.rule.132057, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: recycle bin emptied: {{message}}"
+    author: Jason Tools
+    description: "Emptying a recycle bin removes the last copy of deleted files."
+    references: ["Migrated from jt-synology 4.x rule 132058"]
+  sigma_id: jt-synology-132058
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: recycle-bin-emptied}
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1490], name: [Inhibit System Recovery]}
+  tags: [jt.rule.132058, jt.pack.jt-synology]
+
+# -- System: accounts, defences, logs (4.x 132059-132069, 132009, 132032) ----------------------------
+
+- metadata:
+    title: "Synology DSM: account change: {{message}}"
+    author: Jason Tools
+    description: "A user, group or account was created, deleted, disabled, enabled or renamed."
+    references: ["Migrated from jt-synology 4.x rule 132060"]
+  sigma_id: jt-synology-132060
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: account-changed}
+  mitre:
+    tactic: {id: [TA0003, TA0004], name: [Persistence, Privilege Escalation]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.132060, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: password changed: {{message}}"
+    author: Jason Tools
+    description: "A password was changed or reset."
+    references: ["Migrated from jt-synology 4.x rule 132061"]
+  sigma_id: jt-synology-132061
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: password-changed}
+  mitre:
+    tactic: {id: [TA0003, TA0004], name: [Persistence, Privilege Escalation]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.132061, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: group membership changed: {{message}}"
+    author: Jason Tools
+    description: "An account was added to or removed from a group."
+    references: ["Migrated from jt-synology 4.x rule 132062"]
+  sigma_id: jt-synology-132062
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: group-membership-changed}
+  mitre:
+    tactic: {id: [TA0003, TA0004], name: [Persistence, Privilege Escalation]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.132062, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: an account was added to the administrators group: {{message}}"
+    author: Jason Tools
+    description: "A new administrator: full control of the NAS and its data."
+    references: ["Migrated from jt-synology 4.x rule 132063"]
+  sigma_id: jt-synology-132063
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: added-to-administrators}
+  mitre:
+    tactic: {id: [TA0003, TA0004], name: [Persistence, Privilege Escalation]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.132063, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: application privileges changed: {{message}}"
+    author: Jason Tools
+    description: "The application privileges of an account changed."
+    references: ["Migrated from jt-synology 4.x rule 132064"]
+  sigma_id: jt-synology-132064
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: app-privilege-changed}
+  mitre:
+    tactic: {id: [TA0003, TA0004], name: [Persistence, Privilege Escalation]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.132064, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: auto block was switched off"
+    author: Jason Tools
+    description: "Auto block is what stops password guessing against the NAS (Synology advice after StealthWorker and eCh0raix)."
+    references: ["Migrated from jt-synology 4.x rule 132059"]
+  sigma_id: jt-synology-132059
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: autoblock-disabled}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.004], name: [Disable or Modify System Firewall]}
+  tags: [jt.rule.132059, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: a log was cleared: {{message}}"
+    author: Jason Tools
+    description: "Clearing a log removes the evidence of what happened before."
+    references: ["Migrated from jt-synology 4.x rule 132066"]
+  sigma_id: jt-synology-132066
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: log-cleared}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1070], name: [Indicator Removal]}
+    subtechnique: {id: [T1070.002], name: [Clear Linux or Mac System Logs]}
+  tags: [jt.rule.132066, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM auto block list changed: {{message}}"
+    author: Jason Tools
+    description: "An address unblocked or blocked by hand, removed from the allow list, or the block list is full (a sustained attack). Expiry is routine and not a finding."
+    references: ["Migrated from jt-synology 4.x rule 132067"]
+  sigma_id: jt-synology-132067
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: autoblock-list-changed}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.004], name: [Disable or Modify System Firewall]}
+  tags: [jt.rule.132067, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: the RESET button was pressed to reset the administrator password (physical access)"
+    author: Jason Tools
+    description: "Someone with physical access reset the administrator password."
+    references: ["Migrated from jt-synology 4.x rule 132068"]
+  sigma_id: jt-synology-132068
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: admin-password-reset-button}
+  mitre:
+    tactic: {id: [TA0003, TA0004], name: [Persistence, Privilege Escalation]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.132068, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: the encryption key vault was reset or disabled: {{message}}"
+    author: Jason Tools
+    description: "The vault that holds the keys of encrypted shared folders was reset or disabled."
+    references: ["Migrated from jt-synology 4.x rule 132069"]
+  sigma_id: jt-synology-132069
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: key-vault-reset}
+  tags: [jt.rule.132069, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: a router port was opened through UPnP: {{message}}"
+    author: Jason Tools
+    description: "DSM opened a port on the router, putting a service on the internet."
+    references: ["Migrated from jt-synology 4.x rule 132078"]
+  sigma_id: jt-synology-132078
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: upnp-port-opened}
+  mitre:
+    tactic: {id: [TA0001, TA0003], name: [Initial Access, Persistence]}
+    technique: {id: [T1133], name: [External Remote Services]}
+  tags: [jt.rule.132078, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: system clock or time synchronisation changed: {{message}}"
+    author: Jason Tools
+    description: "A changed clock breaks the timeline and one-time passwords."
+    references: ["Migrated from jt-synology 4.x rule 132009"]
+  sigma_id: jt-synology-132009
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: clock-changed}
+  tags: [jt.rule.132009, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: DSM found a malware pattern in the start-up script rc.local and disabled it"
+    author: Jason Tools
+    description: "DSM renamed rc.local to rc.local.bak because it contained a malware pattern."
+    references: ["Migrated from jt-synology 4.x rule 132032"]
+  sigma_id: jt-synology-132032
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: startup-script-malware}
+  mitre:
+    tactic: {id: [TA0003, TA0004], name: [Persistence, Privilege Escalation]}
+    technique: {id: [T1037], name: [Boot or Logon Initialization Scripts]}
+    subtechnique: {id: [T1037.004], name: [RC Scripts]}
+  tags: [jt.rule.132032, jt.pack.jt-synology]
+
+# -- System: storage, hardware, power (4.x 132070-132085) --------------------------------------------
+
+- metadata:
+    title: "Synology DSM: storage degraded, redundancy lost: {{message}}"
+    author: Jason Tools
+    description: "A volume, storage pool, SSD cache or LUN is degraded; one more failure loses data."
+    references: ["Migrated from jt-synology 4.x rule 132070"]
+  sigma_id: jt-synology-132070
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: storage-degraded}
+  tags: [jt.rule.132070, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: storage crashed: {{message}}"
+    author: Jason Tools
+    description: "A volume, storage pool, SSD cache or LUN crashed."
+    references: ["Migrated from jt-synology 4.x rule 132071"]
+  sigma_id: jt-synology-132071
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: storage-crashed}
+  tags: [jt.rule.132071, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: storage repaired: {{message}}"
+    author: Jason Tools
+    description: "Storage is back to normal."
+    references: ["Migrated from jt-synology 4.x rule 132072"]
+  sigma_id: jt-synology-132072
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: storage-repaired}
+  tags: [jt.rule.132072, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: a drive or other hardware is failing: {{message}}"
+    author: Jason Tools
+    description: "S.M.A.R.T., bad sectors, I/O or read errors, end of lifespan, fans, power supplies, overheating or memory errors."
+    references: ["Migrated from jt-synology 4.x rule 132073"]
+  sigma_id: jt-synology-132073
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: hardware-failing}
+  tags: [jt.rule.132073, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: a volume is running out of space: {{message}}"
+    author: Jason Tools
+    description: "A full volume stops backups, snapshots and services."
+    references: ["Migrated from jt-synology 4.x rule 132075"]
+  sigma_id: jt-synology-132075
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: low-space}
+  tags: [jt.rule.132075, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: a volume or storage pool was deleted: {{message}}"
+    author: Jason Tools
+    description: "All data on it is gone."
+    references: ["Migrated from jt-synology 4.x rule 132076"]
+  sigma_id: jt-synology-132076
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: volume-deleted}
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1485], name: [Data Destruction]}
+  tags: [jt.rule.132076, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: the NAS is shutting down to protect itself (overheating, fan failure or critical event): {{message}}"
+    author: Jason Tools
+    description: "DSM forced a shutdown because of overheating, a fan failure or a critical event."
+    references: ["Migrated from jt-synology 4.x rule 132077"]
+  sigma_id: jt-synology-132077
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: protective-shutdown}
+  tags: [jt.rule.132077, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: running on UPS battery: {{message}}"
+    author: Jason Tools
+    description: "Mains power was lost."
+    references: ["Migrated from jt-synology 4.x rule 132080"]
+  sigma_id: jt-synology-132080
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: on-battery}
+  tags: [jt.rule.132080, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: UPS battery low, the NAS is shutting down or in safe mode: {{message}}"
+    author: Jason Tools
+    description: "The NAS goes down when the battery runs out."
+    references: ["Migrated from jt-synology 4.x rule 132081"]
+  sigma_id: jt-synology-132081
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: ups-low-battery}
+  tags: [jt.rule.132081, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: power restored or UPS connected: {{message}}"
+    author: Jason Tools
+    description: "Power is back or the UPS is connected again."
+    references: ["Migrated from jt-synology 4.x rule 132082"]
+  sigma_id: jt-synology-132082
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: power-restored}
+  tags: [jt.rule.132082, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: UPS disconnected, unreachable or abnormal, the NAS may not be protected from power loss: {{message}}"
+    author: Jason Tools
+    description: "The NAS cannot see its UPS or the UPS reports a fault."
+    references: ["Migrated from jt-synology 4.x rule 132083"]
+  sigma_id: jt-synology-132083
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: ups-abnormal}
+  tags: [jt.rule.132083, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: the NAS was not shut down cleanly: {{message}}"
+    author: Jason Tools
+    description: "An improper or unexpected shutdown or power interruption."
+    references: ["Migrated from jt-synology 4.x rule 132084"]
+  sigma_id: jt-synology-132084
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: unclean-shutdown}
+  tags: [jt.rule.132084, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: the NAS is restarting or shutting down: {{message}}"
+    author: Jason Tools
+    description: "A planned restart or shutdown."
+    references: ["Migrated from jt-synology 4.x rule 132085"]
+  sigma_id: jt-synology-132085
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: restarting}
+  tags: [jt.rule.132085, jt.pack.jt-synology]
+
+# -- System: packages, services, shared folders, Task Scheduler (4.x 132079, 132086-132099) ----------
+
+- metadata:
+    title: "Synology DSM: package installed or removed: {{message}}"
+    author: Jason Tools
+    description: "A package was installed or uninstalled."
+    references: ["Migrated from jt-synology 4.x rule 132086"]
+  sigma_id: jt-synology-132086
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: package-installed-or-removed}
+  mitre:
+    tactic: {id: [TA0003, TA0004], name: [Persistence, Privilege Escalation]}
+    technique: {id: [T1543], name: [Create or Modify System Process]}
+    subtechnique: {id: [T1543.002], name: [Systemd Service]}
+  tags: [jt.rule.132086, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: package or DSM updated: {{message}}"
+    author: Jason Tools
+    description: "A package or DSM was updated."
+    references: ["Migrated from jt-synology 4.x rule 132087"]
+  sigma_id: jt-synology-132087
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: package-updated}
+  tags: [jt.rule.132087, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: package installation or update failed: {{message}}"
+    author: Jason Tools
+    description: "A package could not be installed, updated, repaired or removed."
+    references: ["Migrated from jt-synology 4.x rule 132088"]
+  sigma_id: jt-synology-132088
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: package-failed}
+  tags: [jt.rule.132088, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: a DSM update or security fix failed, known vulnerabilities may stay open: {{message}}"
+    author: Jason Tools
+    description: "Synology fixes critical flaws only in new builds; DSM does not log its version on update, so only the failure is visible."
+    references: ["Migrated from jt-synology 4.x rule 132079"]
+  sigma_id: jt-synology-132079
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: dsm-update-failed}
+  tags: [jt.rule.132079, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: SSH service started: {{message}}"
+    author: Jason Tools
+    description: "SSH was switched on."
+    references: ["Migrated from jt-synology 4.x rule 132090"]
+  sigma_id: jt-synology-132090
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: ssh-started}
+  mitre:
+    tactic: {id: [TA0008], name: [Lateral Movement]}
+    technique: {id: [T1021], name: [Remote Services]}
+    subtechnique: {id: [T1021.004], name: [SSH]}
+  tags: [jt.rule.132090, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: Telnet service started (clear-text logins, CVE-2026-32746): {{message}}"
+    author: Jason Tools
+    description: "Telnet sends passwords in clear text and DSM telnetd had an unauthenticated remote code execution flaw (Synology-SA-26:03); Synology advises disabling Telnet."
+    references: ["Migrated from jt-synology 4.x rule 132089"]
+  sigma_id: jt-synology-132089
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: telnet-started}
+  mitre:
+    tactic: {id: [TA0008], name: [Lateral Movement]}
+    technique: {id: [T1021], name: [Remote Services]}
+  tags: [jt.rule.132089, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: certificate or auto block setting changed: {{message}}"
+    author: Jason Tools
+    description: "A certificate was added, replaced, deleted or made default, or auto block was enabled."
+    references: ["Migrated from jt-synology 4.x rule 132091"]
+  sigma_id: jt-synology-132091
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: certificate-or-autoblock-changed}
+  tags: [jt.rule.132091, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: shared folder created, its access rights set or its recycle bin disabled: {{message}}"
+    author: Jason Tools
+    description: "A shared folder was created, its access rights set, or its recycle bin disabled."
+    references: ["Migrated from jt-synology 4.x rule 132092"]
+  sigma_id: jt-synology-132092
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: shared-folder-changed}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1222], name: [File and Directory Permissions Modification]}
+  tags: [jt.rule.132092, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: a shared folder was deleted: {{message}}"
+    author: Jason Tools
+    description: "A shared folder and its data were deleted."
+    references: ["Migrated from jt-synology 4.x rule 132093"]
+  sigma_id: jt-synology-132093
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: shared-folder-deleted}
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1485], name: [Data Destruction]}
+  tags: [jt.rule.132093, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM Task Scheduler: scheduled task {{process.title}} was created"
+    author: Jason Tools
+    description: "A root task is the usual way to persist on DSM and to launch an encryptor."
+    references: ["Migrated from jt-synology 4.x rule 132097"]
+  sigma_id: jt-synology-132097
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: scheduled-task-created}
+  mitre:
+    tactic: {id: [TA0002, TA0003, TA0004], name: [Execution, Persistence, Privilege Escalation]}
+    technique: {id: [T1053], name: [Scheduled Task/Job]}
+    subtechnique: {id: [T1053.003], name: [Cron]}
+  tags: [jt.rule.132097, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM Task Scheduler: triggered (boot or shutdown) task {{process.title}} was created"
+    author: Jason Tools
+    description: "A triggered task runs at boot or shutdown."
+    references: ["Migrated from jt-synology 4.x rule 132098"]
+  sigma_id: jt-synology-132098
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: triggered-task-created}
+  mitre:
+    tactic: {id: [TA0003, TA0004], name: [Persistence, Privilege Escalation]}
+    technique: {id: [T1037], name: [Boot or Logon Initialization Scripts]}
+  tags: [jt.rule.132098, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM Task Scheduler: {{message}}"
+    author: Jason Tools
+    description: "A task was removed, renamed or failed to run."
+    references: ["Migrated from jt-synology 4.x rule 132099"]
+  sigma_id: jt-synology-132099
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: task-changed}
+  mitre:
+    tactic: {id: [TA0002, TA0003, TA0004], name: [Execution, Persistence, Privilege Escalation]}
+    technique: {id: [T1053], name: [Scheduled Task/Job]}
+    subtechnique: {id: [T1053.003], name: [Cron]}
+  tags: [jt.rule.132099, jt.pack.jt-synology]
+
+- metadata:
+    title: "Synology DSM: Log Center test message received"
+    author: Jason Tools
+    description: "\"Send test log\" in Log Center proves the path end to end."
+    references: ["Migrated from jt-synology 4.x rule 132096"]
+  sigma_id: jt-synology-132096
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-synology}
+  detection:
+    condition: selection
+    selection: {event.action: log-center-test}
+  tags: [jt.rule.132096, jt.pack.jt-synology]

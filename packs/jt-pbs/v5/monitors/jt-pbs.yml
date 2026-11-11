@@ -1,0 +1,123 @@
+# jt-pbs 4.x frequency / correlation rules as Alerting bucket-level monitors (Wazuh 5.x, beta), in the
+# jt-fail2ban format (tools/pack5_dev.py monitors|monrun turns each entry into a monitor):
+#   source      findings (wazuh-findings-v5-*) or events (wazuh-events-v5-*)
+#   match       term filters (a list value is "any of"); findings are picked by the rule's sigma_id
+#   window      look-back; at least 5m because detectors write findings one or two minutes late
+#   group_by    the composite buckets (4.x same_* options)
+#   count       alert when a bucket holds at least this many documents, or
+#   distinct    alert when a bucket holds at least gte different values of field
+#   level       informational | low | medium | high | critical
+# 4.x ignore= (flood control) has no equivalent: a monitor raises its alert on every run while the
+# bucket stays over the threshold. Sequence rules ("A, then B from the same address") become "both kinds
+# of document in one bucket within the window" (distinct over event.action or sigma_id): the order is
+# not checked.
+
+- id: '131805'
+  title: "Proxmox Backup Server: repeated failed logins from one address"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-pbs-131802}
+  window: 5m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 6
+
+- id: '131806'
+  title: "Proxmox Backup Server: one address keeps presenting an invalid API token (a backup client with a stale token?)"
+  level: medium
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-pbs-131804}
+  window: 10m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 10
+
+# 4.x: three failed passwords of one account, then a login of that account, within ten minutes. Ordinary
+# logins are below level 3 (no finding), so this reads the events. The monitor format has one condition:
+# here "a failure and a login of the same account" (distinct event.action >= 2), which also fires after a
+# single failure. See PORTING.md.
+- id: '131809'
+  title: "Proxmox Backup Server: an account logged in after failed logins"
+  level: high
+  source: events
+  match: {wazuh.integration.name: jt-pbs, event.action: [login-failed, login]}
+  window: 10m
+  group_by: [wazuh.agent.name, user.name]
+  distinct: {field: event.action, gte: 2}
+
+# The administrator variant: failures (131802) and an administrator login (131807) are both findings.
+- id: '131823'
+  title: "Proxmox Backup Server: administrator account logged in after failed logins"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: [jt-pbs-131802, jt-pbs-131807]}
+  window: 10m
+  group_by: [wazuh.agent.name, user.name]
+  distinct: {field: wazuh.rule.sigma_id, gte: 2}
+
+- id: '131812'
+  title: "Proxmox Backup Server: a datastore has not been mounted for an hour; its garbage collection schedule cannot run"
+  level: low
+  source: events
+  match: {wazuh.integration.name: jt-pbs, event.action: datastore-not-mounted}
+  window: 60m
+  group_by: [wazuh.agent.name, service.target.name]
+  count: 60
+
+# 4.x: ten in two minutes; monitors look back at least five minutes.
+- id: '131819'
+  title: "Proxmox Backup Server: repeated malformed connections to the API port from one address (probe or scan)"
+  level: low
+  source: events
+  match: {wazuh.integration.name: jt-pbs, event.action: malformed-connection}
+  window: 5m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 10
+
+- id: '131836'
+  title: "Proxmox Backup Server: backups of one group keep failing (three times in a day)"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-pbs-131835}
+  window: 1440m
+  group_by: [wazuh.agent.name, service.target.name]
+  count: 3
+
+- id: '131866'
+  title: "Proxmox Backup Server API: many backups deleted in a few minutes from one address"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-pbs-131865}
+  window: 5m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 10
+
+# 4.x: a login ticket from an address that raised the brute-force alert 131805 in the last ten minutes.
+# Here: failed logins and a login ticket from the same address in ten minutes (the access log has the
+# address, auth.log or syslog the failures; ordinary logins from private addresses are no finding).
+- id: '131877'
+  title: "Proxmox Backup Server: login from an address right after failed logins from it"
+  level: high
+  source: events
+  match: {wazuh.integration.name: jt-pbs, event.action: [login-failed, login-ticket]}
+  window: 10m
+  group_by: [wazuh.agent.name, source.ip]
+  distinct: {field: event.action, gte: 2}
+
+- id: '131880'
+  title: "Proxmox Backup Server API: one address keeps trying to delete backups it may not delete"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-pbs-131879}
+  window: 10m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 5
+
+# Protection changed (131878, 131888), then backups deleted or a deletion refused (131865, 131879) from
+# the same address: two different parts of the API (api-backup-protection, api-backup-delete).
+- id: '131881'
+  title: "Proxmox Backup Server API: backups deleted (or a deletion refused) right after a protection change from the same address"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: [jt-pbs-131878, jt-pbs-131888, jt-pbs-131865, jt-pbs-131879]}
+  window: 10m
+  group_by: [wazuh.agent.name, source.ip]
+  distinct: {field: event.action, gte: 2}

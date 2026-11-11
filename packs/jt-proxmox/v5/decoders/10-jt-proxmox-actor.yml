@@ -1,0 +1,126 @@
+# Proxmox VE lines that start with the acting account, "<user@realm> ...", from pvedaemon and the
+# command-line tools (PVE::Cluster::log_msg and PVE::RESTEnvironment, pve-manager 9.2):
+#   <root@pam> starting task UPID:pve1:003EE313:3389994E:6ACA7D28:vzdump::root@pam:
+#   <root@pam> end task UPID:pve1:003D4E81:303B087E:6AC205F3:vncproxy:132:root@pam: OK
+#   <root@pam> successful auth for user 'alice@pve'          (pvedaemon, PVE/API2/AccessControl.pm)
+#   <root@pam> update VM 159: -hookscript local:snippets/hook.pl   (qemu-server API2/Qemu.pm)
+#   <root@pam> changed password for user 'alice@pve'
+#   <root@pam> adding node pve4 to cluster / deleting node pve4 from cluster
+# Field use:
+#   event.dataset          proxmox.task, proxmox.auth or proxmox.cluster
+#   event.action           the task type (qmdestroy, vncshell, vzdump ...) for tasks; login-success,
+#                          guest-config-update, guest-args-set, guest-hookscript-set, password-change,
+#                          cluster-node-add, cluster-node-remove otherwise
+#   event.type             start / end (tasks)
+#   event.outcome, event.reason   a task's end status (OK and "WARNINGS: n" are a success)
+#   user.name              the task owner (from the UPID) or the acting account
+#   user.target.name       the account whose password changed / that logged in (login: also user.name)
+#   orchestrator.resource.id    the task's object (guest id, disk, pool, daemon) or the guest of an update
+#   orchestrator.resource.name  the node added to or removed from the cluster
+#   service.node.name      the node in the UPID
+# Every value is taken at a fixed position from the start of the line; the UPID fields are
+# colon-separated and cannot hold a colon, so a status text cannot shift them.
+name: decoder/jt-proxmox-actor/0
+enabled: true
+metadata:
+  title: Proxmox VE account messages
+  author: Jason Tools
+  description: Tasks, logins, guest configuration, password and cluster membership messages written by pvedaemon and the Proxmox VE command-line tools.
+  references:
+    - https://git.proxmox.com/?p=pve-manager.git
+    - https://git.proxmox.com/?p=qemu-server.git
+parents:
+  - decoder/jt-syslog/0
+check: "regex_match($process.name, '^(pvedaemon|pvescheduler|pveupdate|pvesh|pct|qm|vzdump|pve-ha-lrm|pve-ha-crm|pvenode|pveceph|pvesr|pvecm|pveum)$') AND regex_match($message, '^<[^> ]+> ')"
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: proxmox
+      - event.dataset: proxmox.cluster
+      - observer.vendor: Proxmox
+      - observer.product: Proxmox VE
+      - user.name: "regex_extract($message, '^<([^> ]+)> ')"
+
+  # Tasks
+  - check: "regex_match($message, '^<[^> ]+> (starting|end) task UPID:[^:]+:[0-9A-Fa-f]+:[0-9A-Fa-f]+:[0-9A-Fa-f]+:[^:]+:[^:]*:[^:]+:')"
+    map:
+      - event.dataset: proxmox.task
+      - _tmp.pve_phase: "regex_extract($message, '^<[^> ]+> (starting|end) task ')"
+      - service.node.name: "regex_extract($message, ' task UPID:([^:]+):')"
+      - event.action: "regex_extract($message, ' task UPID:(?:[^:]+:){4}([^:]+):')"
+      - user.name: "regex_extract($message, ' task UPID:(?:[^:]+:){5}[^:]*:([^:]+):')"
+      - event.category: array_append(process)
+  - check: "regex_match($message, ' task UPID:(?:[^:]+:){5}[^:]+:')"
+    map:
+      - orchestrator.resource.id: "regex_extract($message, ' task UPID:(?:[^:]+:){5}([^:]+):')"
+  - check: "$_tmp.pve_phase == 'starting'"
+    map:
+      - event.type: array_append(start)
+  - check: "$_tmp.pve_phase == 'end'"
+    map:
+      - event.type: array_append(end)
+      - event.reason: "regex_extract($message, ' task UPID:(?:[^:]*:){7} ?(.+)$')"
+  - check: "$_tmp.pve_phase == 'end' AND exists($event.reason)"
+    map:
+      - event.outcome: failure
+  - check: "$_tmp.pve_phase == 'end' AND regex_match($event.reason, '^(OK|WARNINGS: [0-9]+)$')"
+    map:
+      - event.outcome: success
+
+  # Logins (the account's name is validated by then, so it holds no quote or space)
+  - check: "regex_match($message, '^<[^> ]+> successful (openid )?auth for user .[^ ]+.$')"
+    map:
+      - event.dataset: proxmox.auth
+      - event.action: login-success
+      - event.category: array_append(authentication)
+      - event.outcome: success
+      - user.name: "regex_extract($message, ' auth for user .([^ ]+).$')"
+  - check: "regex_match($message, '^<[^> ]+> successful openid auth for user ')"
+    map:
+      - event.reason: openid
+
+  # Guest configuration: "update VM <vmid>: -<option> <value> ..." (options sorted, only
+  # cipassword hidden). A hookscript (a <storage>:snippets/ volume) runs as root on the host at
+  # every start and stop; args passes raw options to QEMU. The parameters are not copied into a
+  # field: the description option can hold whatever a site writes there, passwords included.
+  - check: "regex_match($message, '^<[^> ]+> update VM [0-9]+: ')"
+    map:
+      - event.action: guest-config-update
+      - event.category: array_append(configuration)
+      - event.type: array_append(change)
+      - orchestrator.resource.id: "regex_extract($message, '^<[^> ]+> update VM ([0-9]+): ')"
+      - _tmp.pve_params: "regex_extract($message, '^<[^> ]+> update VM [0-9]+: (.*)$')"
+  - check: "exists($_tmp.pve_params) AND regex_match($_tmp.pve_params, '(^| )-args +-[^ ]')"
+    map:
+      - event.action: guest-args-set
+  - check: "exists($_tmp.pve_params) AND regex_match($_tmp.pve_params, '(^| )-hookscript +[^ :]+:snippets/[^ ]+')"
+    map:
+      - event.action: guest-hookscript-set
+
+  # Passwords (always logged as root@pam, whoever made the change)
+  - check: "regex_match($message, '^<[^> ]+> changed password for user .[^ ]+.$')"
+    map:
+      - event.action: password-change
+      - event.category: array_append(iam)
+      - event.type: array_append(change)
+      - user.target.name: "regex_extract($message, ' changed password for user .([^ ]+).$')"
+
+  # Cluster membership (pve-manager API2/ClusterConfig.pm, on the node that accepted the join)
+  - check: "regex_match($message, '^<[^> ]+> adding node [^ ]+ to cluster')"
+    map:
+      - event.action: cluster-node-add
+      - event.category: array_append(configuration)
+      - orchestrator.resource.type: node
+      - orchestrator.resource.name: "regex_extract($message, ' adding node ([^ ]+) to cluster')"
+  - check: "regex_match($message, '^<[^> ]+> deleting node [^ ]+ from cluster')"
+    map:
+      - event.action: cluster-node-remove
+      - event.category: array_append(configuration)
+      - orchestrator.resource.type: node
+      - orchestrator.resource.name: "regex_extract($message, ' deleting node ([^ ]+) from cluster')"
+
+  - check: exists($user.name)
+    map:
+      - related.user: array_append($user.name)
+  - map:
+      - _tmp: delete()

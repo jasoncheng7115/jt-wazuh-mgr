@@ -1,0 +1,58 @@
+# Disk usage of datastore filesystems, from the "df -P" command every Linux agent runs by default and
+# from the optional command with the alias jt-pbs-datastores (df of every datastore path in
+# /etc/proxmox-backup/datastore.cfg, added to the server's own ossec.conf):
+#   ossec: output: 'df -P': /dev/sdb1   10574932480 6638660736 3936271744      95% /mnt/datastore/store3
+# Only datastore filesystems are kept in this space: mount points under /mnt/datastore/, every line of
+# the jt-pbs-datastores command, and the mount points listed in the KVDB jt-pbs-datastore-mounts. Every
+# other df line is discarded here (the standard space keeps its own copy).
+#   volume.mount_name   the mount point;  volume.device_name  the device or dataset
+#   event.reason        "<n>% full"
+#   event.action        datastore-usage (below 90%), datastore-usage-high (90-97%),
+#                       datastore-usage-critical (98% and more)
+name: decoder/jt-pbs-df/0
+enabled: true
+metadata:
+  title: Proxmox Backup Server datastore disk usage
+  author: Jason Tools
+  description: df output lines of datastore filesystems, classified by how full they are.
+  references:
+    - https://pbs.proxmox.com/docs/storage.html
+parents:
+  - decoder/jt-core/0
+check: "regex_match($event.original, '^ossec: output: .(df -P|jt-pbs-datastores).: ')"
+normalize:
+  - map:
+      - event.kind: metric
+      - event.module: proxmox-backup
+      - event.dataset: pbs.df
+      - observer.vendor: Proxmox
+      - observer.product: Proxmox Backup Server
+      - observer.type: backup
+      - volume.device_name: "regex_extract($event.original, '^ossec: output: .[^:]+.: ([^ ]+) ')"
+      - volume.mount_name: "regex_extract($event.original, ' [0-9]+% (/[^ ]*)$')"
+      - _tmp.pbs_usage: "regex_extract($event.original, ' ([0-9]+)% /[^ ]*$')"
+  - check: "exists($volume.mount_name) AND starts_with($volume.mount_name, '/mnt/datastore/')"
+    map:
+      - _tmp.pbs_ds: datastore
+  - check: "exists($volume.mount_name) AND regex_match($event.original, '^ossec: output: .jt-pbs-datastores.: ')"
+    map:
+      - _tmp.pbs_ds: datastore
+  - check:
+      - volume.mount_name: kvdb_match('jt-pbs-datastore-mounts')
+    map:
+      - _tmp.pbs_ds: datastore
+  - check: "exists($_tmp.pbs_ds) AND exists($_tmp.pbs_usage)"
+    map:
+      - event.reason: "concat($_tmp.pbs_usage, '% full')"
+      - event.action: datastore-usage
+  - check: "exists($_tmp.pbs_ds) AND regex_match($_tmp.pbs_usage, '^9[0-7]$')"
+    map:
+      - event.action: datastore-usage-high
+  - check: "exists($_tmp.pbs_ds) AND regex_match($_tmp.pbs_usage, '^(9[89]|100)$')"
+    map:
+      - event.action: datastore-usage-critical
+  - check: "not_exists($_tmp.pbs_ds)"
+    map:
+      - wazuh.space.event_discarded: discard_events()
+  - map:
+      - _tmp: delete()

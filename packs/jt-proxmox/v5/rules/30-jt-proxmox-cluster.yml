@@ -1,0 +1,246 @@
+# --- high availability ---------------------------------------------------------------------------
+# "freeze" is what a node does to its services while it restarts and recurs daily; "fence" means
+# the cluster decided a node must be reset.
+
+- metadata:
+    title: "Proxmox VE HA: node {{orchestrator.resource.name}} stopped responding ({{service.previous.state}} to unknown)"
+    author: Jason Tools
+    description: The HA manager lost contact with a node. Six times in an hour is the monitor 131234.
+    references: ["Migrated from jt-proxmox 4.x rule 131231"]
+  sigma_id: jt-proxmox-131231
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.ha
+      orchestrator.resource.type: node
+      service.state: unknown
+  tags: [jt.rule.131231, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE HA: {{orchestrator.resource.type}} {{orchestrator.resource.name}} is being fenced"
+    author: Jason Tools
+    description: The cluster decided that a node must be reset (fenced); its HA services move elsewhere.
+    references: ["Migrated from jt-proxmox 4.x rule 131232"]
+  sigma_id: jt-proxmox-131232
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.ha
+      service.state: fence
+  tags: [jt.rule.131232, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE HA: service {{orchestrator.resource.name}} entered state {{service.state}}"
+    author: Jason Tools
+    description: An HA-managed guest went into the error or recovery state.
+    references: ["Migrated from jt-proxmox 4.x rule 131233"]
+  sigma_id: jt-proxmox-131233
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.ha
+      orchestrator.resource.type: service
+      service.state: [error, recovery]
+  tags: [jt.rule.131233, jt.pack.jt-proxmox]
+
+# --- corosync, the cluster file system, the firewall daemon --------------------------------------
+
+- metadata:
+    title: "Proxmox VE: node {{host.hostname}} lost cluster quorum"
+    author: Jason Tools
+    description: corosync reports this node in the non-primary component; it will not provide any services.
+    references: ["Migrated from jt-proxmox 4.x rule 131241"]
+  sigma_id: jt-proxmox-131241
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.corosync
+      message|contains: 'This node is within the non-primary component and will NOT provide any services'
+  tags: [jt.rule.131241, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Corosync: cluster membership changed on {{host.hostname}}"
+    author: Jason Tools
+    description: corosync reported a new list of cluster members.
+    references: ["Migrated from jt-proxmox 4.x rule 131244"]
+  sigma_id: jt-proxmox-131244
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.corosync
+      message|contains: '[QUORUM] Members['
+  tags: [jt.rule.131244, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: the cluster file system on {{host.hostname}} lost its connection to corosync"
+    author: Jason Tools
+    description: pmxcfs lost corosync (corosync stopped, restarted or crashed; CVE-2026-35091 / CVE-2026-35092 were crashes from malformed packets). The other crit lines of the same event are not repeated.
+    references: ["Migrated from jt-proxmox 4.x rule 131245"]
+  sigma_id: jt-proxmox-131245
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.pmxcfs
+      message|contains: '[quorum] crit: quorum_dispatch failed'
+  tags: [jt.rule.131245, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: the firewall service stopped and removed its rules on {{host.hostname}}"
+    author: Jason Tools
+    description: pve-firewall removes every rule it generated when the service stops (a restart after an upgrade logs "server shutdown (restart)" instead); the node runs without its firewall until it starts again.
+    references: ["Migrated from jt-proxmox 4.x rule 131247"]
+  sigma_id: jt-proxmox-131247
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.firewall
+      message|contains: 'clear PVE-generated firewall rules'
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.004], name: [Disable or Modify System Firewall]}
+  tags: [jt.rule.131247, jt.pack.jt-proxmox]
+
+# --- cluster log messages: guest configuration, passwords, cluster membership -------------------
+
+- metadata:
+    title: "Proxmox VE: hookscript set on VM {{orchestrator.resource.id}} by {{user.name}}, it runs as root on the host"
+    author: Jason Tools
+    description: A hookscript runs on the host as root at every start and stop of the guest. The guest's other options are not shown (its description may hold passwords).
+    references: ["Migrated from jt-proxmox 4.x rule 131281"]
+  sigma_id: jt-proxmox-131281
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.cluster
+      event.action: guest-hookscript-set
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1546], name: [Event Triggered Execution]}
+  tags: [jt.rule.131281, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: raw QEMU arguments set on VM {{orchestrator.resource.id}} by {{user.name}}"
+    author: Jason Tools
+    description: The args option passes raw options to QEMU (root@pam only) and can attach host files and devices to the guest.
+    references: ["Migrated from jt-proxmox 4.x rule 131282"]
+  sigma_id: jt-proxmox-131282
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.cluster
+      event.action: guest-args-set
+  tags: [jt.rule.131282, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: the root@pam password was changed"
+    author: Jason Tools
+    description: The superuser's password was changed (logged as root@pam whoever made the change; PSA-2026-00050-1 let users change other users' passwords before libpve-access-control 9.1.2).
+    references: ["Migrated from jt-proxmox 4.x rule 131283"]
+  sigma_id: jt-proxmox-131283
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.cluster
+      event.action: password-change
+      user.target.name: root@pam
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.131283, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: password of {{user.target.name}} was changed"
+    author: Jason Tools
+    description: The password of a Proxmox VE account other than root@pam was changed.
+    references: ["Migrated from jt-proxmox 4.x rule 131284"]
+  sigma_id: jt-proxmox-131284
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection and not root
+    selection:
+      event.dataset: proxmox.cluster
+      event.action: password-change
+    root:
+      user.target.name: root@pam
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.131284, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: node {{orchestrator.resource.name}} was added to the cluster"
+    author: Jason Tools
+    description: A node joined the cluster; its root now trusts and is trusted by every other member.
+    references: ["Migrated from jt-proxmox 4.x rule 131285"]
+  sigma_id: jt-proxmox-131285
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.cluster
+      event.action: cluster-node-add
+  tags: [jt.rule.131285, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: node {{orchestrator.resource.name}} was removed from the cluster"
+    author: Jason Tools
+    description: A node was deleted from the cluster configuration.
+    references: ["Migrated from jt-proxmox 4.x rule 131286"]
+  sigma_id: jt-proxmox-131286
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.cluster
+      event.action: cluster-node-remove
+  tags: [jt.rule.131286, jt.pack.jt-proxmox]

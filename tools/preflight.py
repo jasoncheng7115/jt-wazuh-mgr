@@ -163,8 +163,14 @@ def check_github_mirror():
         if read(src[rel], True) != read(dst[rel], True):
             fail('mirror', '%s differs between the working tree and github/' % rel)
 
-    src = {os.path.relpath(p, ROOT) for p in glob.glob(os.path.join(ROOT, 'packs', '*', '*', '*'))}
-    dst = {os.path.relpath(p, GITHUB) for p in glob.glob(os.path.join(GITHUB, 'packs', '*', '*', '*'))}
+    # every file under packs/, at any depth: the 5.x packs keep theirs in v5/decoders/ and the like,
+    # and a fixed depth both missed those and tripped over the directories at that depth
+    def pack_files(base):
+        return {os.path.relpath(p, base)
+                for p in glob.glob(os.path.join(base, 'packs', '**', '*'), recursive=True)
+                if os.path.isfile(p) and '__pycache__' not in p}
+    src = pack_files(ROOT)
+    dst = pack_files(GITHUB)
     for rel in sorted(src ^ dst):
         fail('mirror', 'packs/ differs: %s' % rel)
     for rel in sorted(src & dst):

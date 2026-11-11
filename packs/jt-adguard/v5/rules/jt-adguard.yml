@@ -1,0 +1,1117 @@
+# jt-adguard rules for Wazuh 5.x (beta; Sigma, evaluated by the indexer). Each one carries the tag
+# jt.rule.<id> of the 4.x rule it replaces and sigma_id jt-adguard-<id>. Generated from one list, keep
+# the style when editing by hand.
+#
+# Not ported as rules (see PORTING.md): 4.x levels below 3 (bases, repeats, probes; every decoded event
+# is indexed anyway), the first-time-seen (fts) rules and the frequency rules, which are Alerting
+# monitors in monitors/jt-adguard.yml, and 130975 (a 5.x rule cannot lower another rule's finding).
+#
+# Sigma rules are independent (no if_sid), so where 4.x let one sibling win over another (levels
+# tried from high to low), the lower one here excludes the higher one's case: one finding per event.
+# The list classes and the name classes the rules read (rule.category, tags jt-adguard.*) are set by
+# the decoder with the 4.x regular expressions, because Sigma here has no case-insensitive or
+# label-length matching. Write (internal or not ipv4), never not (ipv4 and not internal): the
+# negated group compiled to a rule that never matched on rc2.
+# Every rule also requires event.module adguard: the detector reads a whole
+# category index, other integrations' events included.
+# Levels: 4.x 3 -> informational, 4-6 -> low, 7-9 -> medium, 10-13 -> high.
+
+- metadata:
+    title: 'AdGuard: {{source.ip}} looked up {{dns.question.name}}, a domain on threat blocklist {{rule.ruleset}} (blocked)'
+    author: Jason Tools
+    description: A client looked up a domain listed by a threat blocklist (malware, phishing, badware, scam, C2, cryptomining). Every lookup is a finding; the first lookup of a domain by a client is the monitor 130913 (4.x first-time-seen, level 12).
+    references:
+    - Migrated from jt-adguard 4.x rule 130901
+  sigma_id: jt-adguard-130901
+  enabled: true
+  status: experimental
+  level: medium
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and not pattern
+    selection:
+      event.module: adguard
+      event.action: blocked
+      rule.category: threat
+    pattern:
+      tags: jt-adguard.pattern-rule
+  mitre:
+    tactic:
+      id:
+      - TA0011
+      name:
+      - Command and Control
+    technique:
+      id:
+      - T1071
+      name:
+      - Application Layer Protocol
+    subtechnique:
+      id:
+      - T1071.004
+      name:
+      - 'Application Layer Protocol: DNS'
+  tags:
+  - jt.rule.130901
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard: {{source.ip}} looked up {{dns.question.name}}, blocked by a TLD-wide or pattern rule of a threat list ({{rule.name}})'
+    author: Jason Tools
+    description: The threat list blocks the whole TLD or a pattern (for example ||*.top^), not this domain, so the match says little about the domain itself.
+    references:
+    - Migrated from jt-adguard 4.x rule 130903
+  sigma_id: jt-adguard-130903
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      event.action: blocked
+      rule.category: threat
+      tags: jt-adguard.pattern-rule
+  mitre:
+    tactic:
+      id:
+      - TA0011
+      name:
+      - Command and Control
+    technique:
+      id:
+      - T1071
+      name:
+      - Application Layer Protocol
+    subtechnique:
+      id:
+      - T1071.004
+      name:
+      - 'Application Layer Protocol: DNS'
+  tags:
+  - jt.rule.130903
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard: safe browsing blocked {{dns.question.name}}, a malware or phishing domain, for {{source.ip}}'
+    author: Jason Tools
+    description: AdGuard's own safe browsing service (list ID -4) flagged the domain.
+    references:
+    - Migrated from jt-adguard 4.x rule 130915
+  sigma_id: jt-adguard-130915
+  enabled: true
+  status: experimental
+  level: high
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      event.action: blocked
+      rule.id: '-4'
+  mitre:
+    tactic:
+      id:
+      - TA0011
+      - TA0001
+      name:
+      - Command and Control
+      - Initial Access
+    technique:
+      id:
+      - T1071
+      - T1566
+      name:
+      - Application Layer Protocol
+      - Phishing
+    subtechnique:
+      id:
+      - T1071.004
+      name:
+      - 'Application Layer Protocol: DNS'
+  tags:
+  - jt.rule.130915
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard: a DNS query came from public IPv4 address {{source.ip}}, the resolver is reachable from the internet'
+    author: Jason Tools
+    description: 'An open resolver can be used for reflection attacks. IPv4 only: LAN hosts with global IPv6 addresses look exactly like internet clients. 4.x raised this at most once a day (ignore=86400); 5.x rules have no flood control, so every query from a public client is a finding. Threat and safe-browsing blocks from a public client are graded by those rules instead.'
+    references:
+    - Migrated from jt-adguard 4.x rule 130918
+  sigma_id: jt-adguard-130918
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and not internal and not graded
+    selection:
+      event.module: adguard
+      event.action: blocked
+      network.type: ipv4
+    internal:
+      source.ip|cidr:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 127.0.0.0/8
+      - 100.64.0.0/10
+    graded:
+      rule.category:
+      - threat
+      - safe-browsing
+  mitre:
+    tactic:
+      id:
+      - TA0040
+      name:
+      - Impact
+    technique:
+      id:
+      - T1498
+      name:
+      - Network Denial of Service
+    subtechnique:
+      id:
+      - T1498.002
+      name:
+      - 'Network Denial of Service: Reflection Amplification'
+  tags:
+  - jt.rule.130918
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard: {{source.ip}} resolved {{dns.question.name}}, an out-of-band interaction (OAST) callback name'
+    author: Jason Tools
+    description: A lookup of a callback name below an OAST service domain (interactsh, Burp Collaborator, dnslog, canarytokens ...) proves that something on this client processed an injected payload (Log4Shell, SSRF, XXE, template injection), or that a security test ran. The services' own www, polling, app and api hosts are excluded. List after SigmaHQ net_dns_external_service_interaction_domains.
+    references:
+    - Migrated from jt-adguard 4.x rule 130922
+  sigma_id: jt-adguard-130922
+  enabled: true
+  status: experimental
+  level: high
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      event.action: allowed
+      tags: jt-adguard.oast
+  mitre:
+    tactic:
+      id:
+      - TA0001
+      - TA0011
+      name:
+      - Initial Access
+      - Command and Control
+    technique:
+      id:
+      - T1190
+      - T1071
+      name:
+      - Exploit Public-Facing Application
+      - Application Layer Protocol
+    subtechnique:
+      id:
+      - T1071.004
+      name:
+      - 'Application Layer Protocol: DNS'
+  tags:
+  - jt.rule.130922
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard: {{source.ip}} sent a NULL record query for {{dns.question.name}}, the default of DNS tunnelling tools such as iodine'
+    author: Jason Tools
+    description: NULL is the default record type of iodine. 4.x raised it at most every 5 minutes (ignore=300); 5.x has no flood control.
+    references:
+    - Migrated from jt-adguard 4.x rule 130920
+  sigma_id: jt-adguard-130920
+  enabled: true
+  status: experimental
+  level: medium
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and not oast
+    selection:
+      event.module: adguard
+      event.action: allowed
+      dns.question.type: 'NULL'
+    oast:
+      tags: jt-adguard.oast
+  mitre:
+    tactic:
+      id:
+      - TA0011
+      name:
+      - Command and Control
+    technique:
+      id:
+      - T1572
+      - T1071
+      name:
+      - Protocol Tunneling
+      - Application Layer Protocol
+    subtechnique:
+      id:
+      - T1071.004
+      name:
+      - 'Application Layer Protocol: DNS'
+  tags:
+  - jt.rule.130920
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard: {{source.ip}} looked up {{dns.question.name}}, a name with a base64-encoded label'
+    author: Jason Tools
+    description: 'A label ending in base64 padding (==) carries encoded data: possible exfiltration over DNS (SigmaHQ net_dns_susp_b64_queries). 4.x raised it at most every 5 minutes (ignore=300); 5.x has no flood control.'
+    references:
+    - Migrated from jt-adguard 4.x rule 130964
+  sigma_id: jt-adguard-130964
+  enabled: true
+  status: experimental
+  level: medium
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and not oast and not qnull
+    selection:
+      event.module: adguard
+      event.action: allowed
+      dns.question.name|contains: ==.
+    oast:
+      tags: jt-adguard.oast
+    qnull:
+      dns.question.type: 'NULL'
+  mitre:
+    tactic:
+      id:
+      - TA0010
+      - TA0011
+      name:
+      - Exfiltration
+      - Command and Control
+    technique:
+      id:
+      - T1048
+      - T1132
+      name:
+      - Exfiltration Over Alternative Protocol
+      - Data Encoding
+    subtechnique:
+      id:
+      - T1048.003
+      - T1132.001
+      name:
+      - 'Exfiltration Over Alternative Protocol: Exfiltration Over Unencrypted Non-C2 Protocol'
+      - 'Data Encoding: Standard Encoding'
+  tags:
+  - jt.rule.130964
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard: answered a DNS query from public IPv4 address {{source.ip}}, the resolver is reachable from the internet'
+    author: Jason Tools
+    description: An open resolver can be used for reflection attacks. IPv4 only (LAN hosts with global IPv6 addresses look like internet clients). 4.x raised this at most once a day (ignore=86400); 5.x has no flood control.
+    references:
+    - Migrated from jt-adguard 4.x rule 130917
+  sigma_id: jt-adguard-130917
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and not internal and not oast and not qnull and not b64
+    selection:
+      event.module: adguard
+      event.action: allowed
+      network.type: ipv4
+    internal:
+      source.ip|cidr:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 127.0.0.0/8
+      - 100.64.0.0/10
+    oast:
+      tags: jt-adguard.oast
+    qnull:
+      dns.question.type: 'NULL'
+    b64:
+      dns.question.name|contains: ==.
+  mitre:
+    tactic:
+      id:
+      - TA0040
+      name:
+      - Impact
+    technique:
+      id:
+      - T1498
+      name:
+      - Network Denial of Service
+    subtechnique:
+      id:
+      - T1498.002
+      name:
+      - 'Network Denial of Service: Reflection Amplification'
+  tags:
+  - jt.rule.130917
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard: {{source.ip}} asked for a zone transfer ({{dns.question.type}}) of {{dns.question.name}}'
+    author: Jason Tools
+    description: 'A forwarding resolver has no reason to get AXFR or IXFR requests: DNS reconnaissance.'
+    references:
+    - Migrated from jt-adguard 4.x rule 130921
+  sigma_id: jt-adguard-130921
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and not oast and not qnull and not b64 and (internal or not ipv4)
+    selection:
+      event.module: adguard
+      event.action: allowed
+      dns.question.type:
+      - AXFR
+      - IXFR
+    oast:
+      tags: jt-adguard.oast
+    qnull:
+      dns.question.type: 'NULL'
+    b64:
+      dns.question.name|contains: ==.
+    ipv4:
+      network.type: ipv4
+    internal:
+      source.ip|cidr:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 127.0.0.0/8
+      - 100.64.0.0/10
+  mitre:
+    tactic:
+      id:
+      - TA0043
+      name:
+      - Reconnaissance
+    technique:
+      id:
+      - T1590
+      name:
+      - Gather Victim Network Information
+    subtechnique:
+      id:
+      - T1590.002
+      name:
+      - 'Gather Victim Network Information: DNS'
+  tags:
+  - jt.rule.130921
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard: {{source.ip}} looked up {{dns.question.name}}, a cryptocurrency mining pool'
+    author: Jason Tools
+    description: Every lookup of a mining pool (SigmaHQ net_dns_pua_cryptocoin_mining_xmr, extended to whole pool domains). The first lookup of a pool name by a client is the monitor 130924 (4.x first-time-seen, level 10).
+    references:
+    - Migrated from jt-adguard 4.x rule 130923
+  sigma_id: jt-adguard-130923
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and not oast and not qnull and not b64 and (internal or not ipv4) and not xfr
+    selection:
+      event.module: adguard
+      event.action: allowed
+      tags: jt-adguard.mining-pool
+    oast:
+      tags: jt-adguard.oast
+    qnull:
+      dns.question.type: 'NULL'
+    b64:
+      dns.question.name|contains: ==.
+    ipv4:
+      network.type: ipv4
+    internal:
+      source.ip|cidr:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 127.0.0.0/8
+      - 100.64.0.0/10
+    xfr:
+      dns.question.type:
+      - AXFR
+      - IXFR
+  mitre:
+    tactic:
+      id:
+      - TA0040
+      name:
+      - Impact
+    technique:
+      id:
+      - T1496
+      name:
+      - Resource Hijacking
+  tags:
+  - jt.rule.130923
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard: {{source.ip}} sent an ANY query for {{dns.question.name}}'
+    author: Jason Tools
+    description: ANY is used for reconnaissance and reflection attacks (Splunk large_volume_of_dns_any_queries). 4.x raised it at most every 5 minutes (ignore=300); 5.x has no flood control.
+    references:
+    - Migrated from jt-adguard 4.x rule 130925
+  sigma_id: jt-adguard-130925
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and not oast and not qnull and not b64 and (internal or not ipv4) and not xfr and not mining
+    selection:
+      event.module: adguard
+      event.action: allowed
+      dns.question.type: ANY
+    oast:
+      tags: jt-adguard.oast
+    qnull:
+      dns.question.type: 'NULL'
+    b64:
+      dns.question.name|contains: ==.
+    ipv4:
+      network.type: ipv4
+    internal:
+      source.ip|cidr:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 127.0.0.0/8
+      - 100.64.0.0/10
+    xfr:
+      dns.question.type:
+      - AXFR
+      - IXFR
+    mining:
+      tags: jt-adguard.mining-pool
+  mitre:
+    tactic:
+      id:
+      - TA0043
+      - TA0040
+      name:
+      - Reconnaissance
+      - Impact
+    technique:
+      id:
+      - T1590
+      - T1498
+      name:
+      - Gather Victim Network Information
+      - Network Denial of Service
+    subtechnique:
+      id:
+      - T1590.002
+      - T1498.002
+      name:
+      - 'Gather Victim Network Information: DNS'
+      - 'Network Denial of Service: Reflection Amplification'
+  tags:
+  - jt.rule.130925
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard Home: failed login to the web interface from {{source.ip}}'
+    author: Jason Tools
+    description: Wrong user name or password at /control/login.
+    references:
+    - Migrated from jt-adguard 4.x rule 130931
+  sigma_id: jt-adguard-130931
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      event.action: login-failure
+  mitre:
+    tactic:
+      id:
+      - TA0006
+      name:
+      - Credential Access
+    technique:
+      id:
+      - T1110
+      name:
+      - Brute Force
+  tags:
+  - jt.rule.130931
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard Home: web interface login locked out after repeated failures from {{source.ip}}'
+    author: Jason Tools
+    description: The login rate limiter refused a try (5 failures by default, then the address is refused for 15 minutes). 4.x raised it at most every 5 minutes (ignore=300); 5.x has no flood control, every refused try is a finding.
+    references:
+    - Migrated from jt-adguard 4.x rule 130932
+  sigma_id: jt-adguard-130932
+  enabled: true
+  status: experimental
+  level: high
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      event.action: login-locked-out
+  mitre:
+    tactic:
+      id:
+      - TA0006
+      name:
+      - Credential Access
+    technique:
+      id:
+      - T1110
+      name:
+      - Brute Force
+  tags:
+  - jt.rule.130932
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard Home: {{user.name}} logged in to the web interface from public address {{source.ip}}'
+    author: Jason Tools
+    description: Every web user of AdGuard Home controls all DNS filtering. A login from outside the private ranges, every time. IPv6 loopback (::1, a local reverse proxy) is not public (4.x 130943, level 2).
+    references:
+    - Migrated from jt-adguard 4.x rule 130941
+  sigma_id: jt-adguard-130941
+  enabled: true
+  status: experimental
+  level: medium
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and not private
+    selection:
+      event.module: adguard
+      event.action: login-success
+    private:
+      source.ip|cidr:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 127.0.0.0/8
+      - 100.64.0.0/10
+      - fc00::/7
+      - fe80::/10
+      - ::1/128
+  mitre:
+    tactic:
+      id:
+      - TA0001
+      name:
+      - Initial Access
+    technique:
+      id:
+      - T1078
+      - T1133
+      name:
+      - Valid Accounts
+      - External Remote Services
+  tags:
+  - jt.rule.130941
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard Home: {{user.name}} logged in to the web interface from {{source.ip}}'
+    author: Jason Tools
+    description: A successful login from a private address. 4.x reported only the first login of a user from an address (first-time-seen, level 3) and every later one at level 2; 5.x has no first-time-seen, and logins are few, so every private login is an informational finding.
+    references:
+    - Migrated from jt-adguard 4.x rule 130942
+  sigma_id: jt-adguard-130942
+  enabled: true
+  status: experimental
+  level: informational
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and private
+    selection:
+      event.module: adguard
+      event.action: login-success
+    private:
+      source.ip|cidr:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 127.0.0.0/8
+      - 100.64.0.0/10
+      - fc00::/7
+      - fe80::/10
+  mitre:
+    tactic:
+      id:
+      - TA0001
+      name:
+      - Initial Access
+    technique:
+      id:
+      - T1078
+      name:
+      - Valid Accounts
+  tags:
+  - jt.rule.130942
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard Home: the web interface has no users, anyone who reaches it can change DNS filtering'
+    author: Jason Tools
+    description: 'AdGuard Home started without users in its configuration file: authentication is disabled.'
+    references:
+    - Migrated from jt-adguard 4.x rule 130934
+  sigma_id: jt-adguard-130934
+  enabled: true
+  status: experimental
+  level: high
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      message|contains: authentication is disabled
+  mitre:
+    tactic:
+      id:
+      - TA0005
+      name:
+      - Defense Evasion
+    technique:
+      id:
+      - T1562
+      name:
+      - Impair Defenses
+    subtechnique:
+      id:
+      - T1562.001
+      name:
+      - 'Impair Defenses: Disable or Modify Tools'
+  tags:
+  - jt.rule.130934
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard Home: the login rate limiter is disabled, password guessing is not slowed down'
+    author: Jason Tools
+    description: authratelimiter is disabled in the configuration.
+    references:
+    - Migrated from jt-adguard 4.x rule 130935
+  sigma_id: jt-adguard-130935
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      message|contains: authratelimiter is disabled
+  mitre:
+    tactic:
+      id:
+      - TA0005
+      name:
+      - Defense Evasion
+    technique:
+      id:
+      - T1562
+      name:
+      - Impair Defenses
+    subtechnique:
+      id:
+      - T1562.001
+      name:
+      - 'Impair Defenses: Disable or Modify Tools'
+  tags:
+  - jt.rule.130935
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: AdGuard Home started (version {{observer.version}})
+    author: Jason Tools
+    description: The start line, with the version. A vulnerable or outdated version is graded by 130945 / 130946 instead.
+    references:
+    - Migrated from jt-adguard 4.x rule 130936
+  sigma_id: jt-adguard-130936
+  enabled: true
+  status: experimental
+  level: informational
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and not version
+    selection:
+      event.module: adguard
+      message|contains:
+      - starting adguard home
+      - AdGuard Home, version
+    version:
+      tags:
+      - jt-adguard.vulnerable-version
+      - jt-adguard.outdated-version
+  tags:
+  - jt.rule.130936
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard Home started version {{observer.version}}, before v0.107.73: an unauthenticated attacker can use the whole web API (CVE-2026-32136)'
+    author: Jason Tools
+    description: Before v0.107.73 an unauthenticated attacker gets the whole API by upgrading an HTTP/1.1 request to HTTP/2 cleartext (CVE-2026-32136, GHSA-5fg6-wrq4-w5gh). A pre-release counts as the release it precedes. Raise the threshold in the decoder when AdGuard publishes new security fixes.
+    references:
+    - Migrated from jt-adguard 4.x rule 130945
+  sigma_id: jt-adguard-130945
+  enabled: true
+  status: experimental
+  level: high
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      tags: jt-adguard.vulnerable-version
+  mitre:
+    tactic:
+      id:
+      - TA0001
+      name:
+      - Initial Access
+    technique:
+      id:
+      - T1190
+      name:
+      - Exploit Public-Facing Application
+  tags:
+  - jt.rule.130945
+  - jt.pack.jt-adguard
+  - cve.2026-32136
+
+- metadata:
+    title: 'AdGuard Home started version {{observer.version}}, before v0.107.79: later security fixes are missing'
+    author: Jason Tools
+    description: v0.107.73 to v0.107.78 miss CVE-2026-47703 (fixed in v0.107.75), CVE-2026-41448 (v0.107.77) and the DNS-over-QUIC, DoH and DNSCrypt fixes of v0.107.78 and v0.107.79.
+    references:
+    - Migrated from jt-adguard 4.x rule 130946
+  sigma_id: jt-adguard-130946
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      tags: jt-adguard.outdated-version
+  mitre:
+    tactic:
+      id:
+      - TA0001
+      name:
+      - Initial Access
+    technique:
+      id:
+      - T1190
+      name:
+      - Exploit Public-Facing Application
+  tags:
+  - jt.rule.130946
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: AdGuard Home is stopping
+    author: Jason Tools
+    description: The service log says AdGuard Home is stopping.
+    references:
+    - Migrated from jt-adguard 4.x rule 130937
+  sigma_id: jt-adguard-130937
+  enabled: true
+  status: experimental
+  level: informational
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      message|contains: stopping adguard home
+  tags:
+  - jt.rule.130937
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: AdGuard Home refused local file {{file.path}} as a filter list, requested from {{source.ip}} (CVE-2024-36814 attempt)
+    author: Jason Tools
+    description: 'Before v0.107.52 an authenticated user could read any file as root by adding its path as a filter list. Fixed versions refuse paths outside safe_fs_patterns and log the attempt. On a vulnerable version the read succeeds without a trace: 130945.'
+    references:
+    - Migrated from jt-adguard 4.x rule 130947
+  sigma_id: jt-adguard-130947
+  enabled: true
+  status: experimental
+  level: high
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      url.path|startswith: /control/filtering/
+      error.message|contains: does not match safe patterns
+  mitre:
+    tactic:
+      id:
+      - TA0009
+      - TA0007
+      name:
+      - Collection
+      - Discovery
+    technique:
+      id:
+      - T1005
+      - T1083
+      name:
+      - Data from Local System
+      - File and Directory Discovery
+  tags:
+  - jt.rule.130947
+  - jt.pack.jt-adguard
+  - cve.2024-36814
+
+- metadata:
+    title: 'AdGuard Home: filter list {{rule.id}} was removed'
+    author: Jason Tools
+    description: Removing a filter list lowers protection; the configuration file change (130940) follows.
+    references:
+    - Migrated from jt-adguard 4.x rule 130948
+  sigma_id: jt-adguard-130948
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      message|contains: 'filtering: deleted filter id='
+  mitre:
+    tactic:
+      id:
+      - TA0005
+      name:
+      - Defense Evasion
+    technique:
+      id:
+      - T1562
+      name:
+      - Impair Defenses
+    subtechnique:
+      id:
+      - T1562.001
+      name:
+      - 'Impair Defenses: Disable or Modify Tools'
+  tags:
+  - jt.rule.130948
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard Home: the pprof debug server is enabled on {{server.address}}, it serves memory profiles without authentication'
+    author: Jason Tools
+    description: 'http.pprof.enabled starts a profiling server without authentication: any local user or a server-side request forgery can read heap profiles.'
+    references:
+    - Migrated from jt-adguard 4.x rule 130949
+  sigma_id: jt-adguard-130949
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      message|contains: 'pprof: listening addr='
+  tags:
+  - jt.rule.130949
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: AdGuard Home could not update filter list {{url.original}}, its blocking data is getting stale
+    author: Jason Tools
+    description: A list that cannot be downloaded goes stale without notice. 4.x raised it at most once an hour (ignore=3600, an outage makes every list fail at once); 5.x has no flood control.
+    references:
+    - Migrated from jt-adguard 4.x rule 130970
+  sigma_id: jt-adguard-130970
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      log.level: error
+      message|startswith: 'filtering: updating filter url='
+  tags:
+  - jt.rule.130970
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: AdGuard Home started updating itself
+    author: Jason Tools
+    description: The built-in updater started.
+    references:
+    - Migrated from jt-adguard 4.x rule 130972
+  sigma_id: jt-adguard-130972
+  enabled: true
+  status: experimental
+  level: informational
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      message|contains: 'updater: starting update'
+  tags:
+  - jt.rule.130972
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: AdGuard Home could not update itself
+    author: Jason Tools
+    description: The built-in updater failed.
+    references:
+    - Migrated from jt-adguard 4.x rule 130973
+  sigma_id: jt-adguard-130973
+  enabled: true
+  status: experimental
+  level: low
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection
+    selection:
+      event.module: adguard
+      message|contains: 'updater: update failed'
+  tags:
+  - jt.rule.130973
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard Home configuration changed: {{file.path}}'
+    author: Jason Tools
+    description: 'AdGuard Home does not log setting changes (filtering, upstreams, rewrites, users), so its configuration file is watched (agent group adguard). Do not enable report_changes on it: it holds the password hashes of the web users. Reads the events of the standard wazuh-fim integration (detector.yml).'
+    references:
+    - Migrated from jt-adguard 4.x rule 130940
+  sigma_id: jt-adguard-130940
+  enabled: true
+  status: experimental
+  level: medium
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and not deleted
+    selection:
+      file.path|endswith: /AdGuardHome.yaml
+    deleted:
+      event.type: deletion
+  mitre:
+    tactic:
+      id:
+      - TA0005
+      name:
+      - Defense Evasion
+    technique:
+      id:
+      - T1562
+      name:
+      - Impair Defenses
+    subtechnique:
+      id:
+      - T1562.001
+      name:
+      - 'Impair Defenses: Disable or Modify Tools'
+  tags:
+  - jt.rule.130940
+  - jt.pack.jt-adguard
+
+- metadata:
+    title: 'AdGuard Home program file changed: {{file.path}}, check who replaced it (CVE-2024-36586)'
+    author: Jason Tools
+    description: On some installs an unprivileged user can overwrite the AdGuardHome binary, which runs as root. The built-in updater changes it too (4.x lowered a change within 15 minutes of "starting update" to level 3, rule 130975; 5.x cannot, see the 130972 finding next to it). Reads the events of the standard wazuh-fim integration (detector.yml).
+    references:
+    - Migrated from jt-adguard 4.x rule 130974
+  sigma_id: jt-adguard-130974
+  enabled: true
+  status: experimental
+  level: medium
+  logsource:
+    product: jt-adguard
+  detection:
+    condition: selection and not deleted
+    selection:
+      file.path|endswith: /AdGuardHome
+    deleted:
+      event.type: deletion
+  mitre:
+    tactic:
+      id:
+      - TA0004
+      name:
+      - Privilege Escalation
+    technique:
+      id:
+      - T1574
+      - T1068
+      name:
+      - Hijack Execution Flow
+      - Exploitation for Privilege Escalation
+    subtechnique:
+      id:
+      - T1574.010
+      name:
+      - 'Hijack Execution Flow: Services File Permissions Weakness'
+  tags:
+  - jt.rule.130974
+  - jt.pack.jt-adguard
+  - cve.2024-36586

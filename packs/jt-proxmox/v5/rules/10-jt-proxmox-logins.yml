@@ -1,0 +1,85 @@
+# jt-proxmox rules for Wazuh 5.x (Sigma, evaluated by the indexer). Each carries the tag
+# jt.rule.<id> of the 4.x rule it replaces. 4.x rules below level 3 are not ported (on 5.x every
+# decoded event is indexed anyway; a rule only adds a finding). Sigma rules are independent (no
+# if_sid), so where a 4.x child rule replaced its parent, the parent here excludes the child's case.
+# Levels: 3 -> informational, 4-6 -> low, 7-9 -> medium, 10-13 -> high, 14-16 -> critical.
+# Every rule selects on event.dataset (set by this pack's decoders) or on the standard wazuh-fim
+# integration, because the detector reads the whole wazuh-events-v5-system-activity index.
+
+# --- logins (pvedaemon) --------------------------------------------------------------------------
+# 4.x relied on the built-in pvedaemon decoder and rule 87201 for a failed login; Wazuh 5.x ships
+# no Proxmox content, so the pack carries that rule itself (tag jt.rule.87201).
+- metadata:
+    title: "Proxmox VE: failed login for {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: pvedaemon refused a login (wrong password, unknown account or realm, failed OpenID login). Replaces the 4.x built-in rule 87201, which 5.x does not ship.
+    references: ["Migrated from 4.x built-in rule 87201 (jt-proxmox depends on it)"]
+  sigma_id: jt-proxmox-87201
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.auth
+      event.action: login-failure
+  tags: [jt.rule.87201, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: correct password but wrong second factor for {{user.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: The password was right and the second factor was not. The password is the part an attacker already has; CVE-2023-43320 was a TOTP brute force of exactly this step.
+    references: ["Migrated from jt-proxmox 4.x rule 131207"]
+  sigma_id: jt-proxmox-131207
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.auth
+      event.action: second-factor-failure
+  mitre:
+    tactic: {id: [TA0006, TA0001], name: [Credential Access, Initial Access]}
+    technique: {id: [T1110, T1078], name: [Brute Force, Valid Accounts]}
+  tags: [jt.rule.131207, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: {{user.name}} locked out of its second factor after repeated failures"
+    author: Jason Tools
+    description: pve-access-control locked the account after too many wrong second-factor codes (TOTP limit, or the limit across all factors).
+    references: ["Migrated from jt-proxmox 4.x rule 131208"]
+  sigma_id: jt-proxmox-131208
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.auth
+      event.action: second-factor-lockout
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+  tags: [jt.rule.131208, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Proxmox VE: root@pam logged in"
+    author: Jason Tools
+    description: The superuser logged in to the web interface or the API. Other accounts' logins are recorded without a finding (4.x level 2).
+    references: ["Migrated from jt-proxmox 4.x rule 131204"]
+  sigma_id: jt-proxmox-131204
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: proxmox.auth
+      event.action: login-success
+      user.name: root@pam
+  tags: [jt.rule.131204, jt.pack.jt-proxmox]

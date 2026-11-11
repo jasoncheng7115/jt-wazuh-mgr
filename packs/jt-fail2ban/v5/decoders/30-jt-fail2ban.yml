@@ -1,0 +1,131 @@
+# What fail2ban did, from the message left by either header decoder. Field use:
+#   rule.name       the jail (fail2ban's own rule set name)
+#   event.action    ban, unban, restore-ban, increase-ban, repeal-ban, reban, found, ignore,
+#                   already-banned, action-failed, jail-started, jail-stopped, jail-skipped,
+#                   fail2ban-starting, fail2ban-exiting
+#   source.address  whatever fail2ban banned (an address, or a user name / mail address with <F-ID>)
+#   source.ip       the same, only when it is an IPv4 or IPv6 address (::ffff: removed)
+#   log.level       fail2ban's level, when the delivery kept it
+#   event.sequence  the ban number of an Increase Ban (bantime.increment)
+# Everything else stays in message, which the rules match with |contains.
+name: decoder/jt-fail2ban/0
+enabled: true
+metadata:
+  title: fail2ban events
+  author: Jason Tools
+  description: Classifies fail2ban messages (bans, jail state, action errors) into WCS fields.
+  references:
+    - https://github.com/fail2ban/fail2ban/blob/master/fail2ban/server/actions.py
+    - https://github.com/fail2ban/fail2ban/blob/master/fail2ban/server/observer.py
+parents:
+  - decoder/jt-fail2ban-file/0
+  - decoder/jt-fail2ban-syslog/0
+check: exists($message)
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: fail2ban
+      - event.dataset: fail2ban.log
+      - observer.vendor: Fail2ban
+      - observer.product: Fail2ban
+      - observer.type: ips
+
+  # Tickets: [jail] Verb address
+  - check: "regex_match($message, '^[[][^] ]+[]] +(Restore Ban|Repeal Ban|Increase Ban|Ban|Unban|Reban|Found|Ignore) +[^ ]') AND regex_not_match($message, ' Found a match ')"
+    map:
+      - rule.name: "regex_extract($message, '^[[]([^] ]+)[]]')"
+      - _tmp.f2b_verb: "regex_extract($message, '^[[][^] ]+[]] +(Restore Ban|Repeal Ban|Increase Ban|Ban|Unban|Reban|Found|Ignore) ')"
+      - source.address: "regex_extract($message, '^[[][^] ]+[]] +(?:Restore Ban|Repeal Ban|Increase Ban|Ban|Unban|Reban|Found|Ignore) +(?:::ffff:)?([^ ,]+)')"
+  - check: "$_tmp.f2b_verb == 'Ban'"
+    map:
+      - event.action: ban
+      - event.category: array_append(intrusion_detection)
+      - event.type: array_append(denied)
+  - check: "$_tmp.f2b_verb == 'Unban'"
+    map:
+      - event.action: unban
+      - event.category: array_append(intrusion_detection)
+      - event.type: array_append(allowed)
+  - check: "$_tmp.f2b_verb == 'Restore Ban'"
+    map:
+      - event.action: restore-ban
+      - event.category: array_append(intrusion_detection)
+      - event.type: array_append(denied)
+  - check: "$_tmp.f2b_verb == 'Increase Ban'"
+    map:
+      - event.action: increase-ban
+      - _tmp.f2b_count: "regex_extract($message, 'Increase Ban [^ ]+ [(]([0-9]+) # ')"
+      - event.category: array_append(intrusion_detection)
+      - event.type: array_append(denied)
+  - check: "$_tmp.f2b_verb == 'Repeal Ban'"
+    map:
+      - event.action: repeal-ban
+  - check: "$_tmp.f2b_verb == 'Reban'"
+    map:
+      - event.action: reban
+  - check: "$_tmp.f2b_verb == 'Found'"
+    map:
+      - event.action: found
+      - event.category: array_append(intrusion_detection)
+      - event.type: array_append(info)
+  - check: "$_tmp.f2b_verb == 'Ignore'"
+    map:
+      - event.action: ignore
+      - event.category: array_append(intrusion_detection)
+      - event.type: array_append(allowed)
+
+  # Increase Ban x (n # time -> end): n, the ban number, as event.sequence
+  - check: exists($_tmp.f2b_count)
+    map:
+      - event.sequence: parse_long($_tmp.f2b_count)
+
+  # [jail] address already banned
+  - check: "regex_match($message, '^[[][^] ]+[]] +[^ ]+ already banned')"
+    map:
+      - rule.name: "regex_extract($message, '^[[]([^] ]+)[]]')"
+      - source.address: "regex_extract($message, '^[[][^] ]+[]] +(?:::ffff:)?([^ ]+) already banned')"
+      - event.action: already-banned
+      - event.category: array_append(intrusion_detection)
+      - event.type: array_append(info)
+
+  # Failed to execute ban jail 'sshd' action 'nftables' info 'ActionInfo({'ip': '198.51.100.7', ...})': ...
+  - check: "regex_match($message, 'Failed to (execute ban|execute unban|start|stop|flush bans in) jail ')"
+    map:
+      - rule.name: "regex_extract($message, 'jail .([^ ]+). action ')"
+      - event.action: action-failed
+      - event.outcome: failure
+      - error.message: $message
+  - check: "regex_match($message, '.ip.: .(::ffff:)?[0-9A-Fa-f.:]+.')"
+    map:
+      - source.address: "regex_extract($message, '.ip.: .(?:::ffff:)?([0-9A-Fa-f.:]+).')"
+
+  # Jail 'sshd' started / stopped / skipped, because of missing log files.
+  - check: "regex_match($message, '^Jail .[^ ]+. (started|stopped|skipped)')"
+    map:
+      - rule.name: "regex_extract($message, '^Jail .([^ ]+). ')"
+      - _tmp.f2b_state: "regex_extract($message, '^Jail .[^ ]+. (started|stopped|skipped)')"
+  - check: "exists($_tmp.f2b_state)"
+    map:
+      - event.action: "concat('jail-', $_tmp.f2b_state)"
+      - event.category: array_append(process)
+
+  - check: "regex_match($message, '^Starting Fail2ban v[0-9]')"
+    map:
+      - event.action: fail2ban-starting
+      - observer.version: "regex_extract($message, '^Starting Fail2ban v([^ ]+)')"
+      - event.category: array_append(process)
+      - event.type: array_append(start)
+  - check: "regex_match($message, 'Exiting Fail2ban')"
+    map:
+      - event.action: fail2ban-exiting
+      - event.category: array_append(process)
+      - event.type: array_append(end)
+
+  # The banned value is an address: also source.ip
+  - check: "exists($source.address) AND (is_ipv4($source.address) OR is_ipv6($source.address))"
+    map:
+      - source.ip: $source.address
+      - related.ip: array_append($source.address)
+
+  - map:
+      - _tmp: delete()

@@ -1,0 +1,29 @@
+# fail2ban through syslog or the journal; the standard syslog decoder already set host, process
+# and message. Three message shapes:
+#   logtarget = SYSLOG           fail2ban.actions[1234]: NOTICE [sshd] Ban 192.0.2.1
+#   logtarget = SYSTEMD-JOURNAL  fail2ban[1234]: [sshd] Ban 192.0.2.1          (no level)
+#   stdout under systemd         fail2ban-server[1234]: fail2ban.actions        [1234]: NOTICE  [sshd] Ban 192.0.2.1
+# The level, when present, goes to log.level and is taken off the message.
+name: decoder/jt-fail2ban-syslog/0
+enabled: true
+metadata:
+  title: fail2ban through syslog or the journal
+  author: Jason Tools
+  description: fail2ban lines delivered by syslog, the journal or systemd's stdout capture; the message is decoded by decoder/jt-fail2ban/0.
+  references:
+    - https://github.com/fail2ban/fail2ban/blob/master/fail2ban/server/server.py
+parents:
+  - decoder/jt-syslog/0
+check: "regex_match($process.name, '^fail2ban([.][A-Za-z]+|-server|-client)?$')"
+normalize:
+  - check: "regex_match($message, '^fail2ban([.][A-Za-z]+)? *[[][0-9]+[]]: +(CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG) ')"
+    map:
+      - _tmp.f2b_level: "regex_extract($message, '[]]: +([A-Z]+) ')"
+      - message: "regex_extract($message, '[]]: +[A-Z]+ +(.*)$')"
+  - check: "regex_match($message, '^(CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG) ')"
+    map:
+      - _tmp.f2b_level: "regex_extract($message, '^([A-Z]+) ')"
+      - message: "regex_extract($message, '^[A-Z]+ +(.*)$')"
+  - check: exists($_tmp.f2b_level)
+    map:
+      - log.level: downcase($_tmp.f2b_level)

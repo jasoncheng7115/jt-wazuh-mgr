@@ -1,0 +1,195 @@
+# jt-adguard 4.x correlation rules as Alerting bucket-level monitors (Wazuh 5.x, beta).
+# 5.0 rules have no frequency / same_source_ip / if_matched_sid / first-time-seen (fts); the documented
+# replacement is a monitor that counts findings (or events) over a window and raises an alert per
+# group. Format: see packs/jt-fail2ban/v5/monitors/jt-fail2ban.yml (tools/pack5_dev.py monitors).
+#
+# First time seen (4.x <if_fts />, keyed on client address and domain, kept forever on the node's
+# disk) becomes "first in the window": a monitor that groups by agent, client and domain with
+# count 1 over 24 hours. A bucket-level alert stays active while its bucket exists and is not raised
+# again, so a pair alerts once, and again only after it has been quiet for a whole window. Expect one
+# burst after installing (every active pair), then the new pairs, as with 4.x.
+#
+# Monitors over events instead of findings count lines the per-event rules do not raise (4.x level
+# 0 or 2: bypass and other Security-list repeats, tunnels, Tor, Telegram, IP lookups, long labels).
+# They select on the classes the decoder sets (rule.category, tags jt-adguard.*).
+
+# ---- threat lists -------------------------------------------------------------------------------
+- id: '130913'
+  title: "AdGuard: first lookup of a threat-listed domain by a client (blocked)"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-adguard-130901}
+  window: 24h
+  group_by: [wazuh.agent.name, source.ip, dns.question.name]
+  count: 1
+
+- id: '130914'
+  title: "AdGuard: one client looked up three or more different threat-listed domains within 10 minutes, the host is likely compromised"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-adguard-130901}
+  window: 10m
+  group_by: [wazuh.agent.name, source.ip]
+  distinct: {field: dns.question.name, gte: 3}
+
+- id: '130911'
+  title: "AdGuard: one client repeatedly looked up threat-listed domains, the host may be compromised"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-adguard-130901}
+  window: 5m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 5
+
+# ---- DNS filtering bypass lists (relay probes are rule.category bypass-probe, not counted) --------
+- id: '130905'
+  title: "AdGuard: a client tried an encrypted DNS, VPN or proxy endpoint for the first time (blocked)"
+  level: low
+  source: events
+  match: {wazuh.integration.name: jt-adguard, event.action: blocked, rule.category: bypass}
+  window: 24h
+  group_by: [wazuh.agent.name, source.ip, dns.question.name]
+  count: 1
+
+- id: '130912'
+  title: "AdGuard: one client keeps trying to bypass DNS filtering, check what is running on it"
+  level: high
+  source: events
+  match: {wazuh.integration.name: jt-adguard, event.action: blocked, rule.category: bypass}
+  window: 10m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 20
+
+# ---- other Security-group lists: first lookup per client and domain -------------------------------
+- id: '130951'
+  title: "AdGuard: first lookup of a dynamic DNS domain by a client (blocked), often used for command and control"
+  level: low
+  source: events
+  match: {wazuh.integration.name: jt-adguard, event.action: blocked, rule.category: dyndns}
+  window: 24h
+  group_by: [wazuh.agent.name, source.ip, dns.question.name]
+  count: 1
+
+- id: '130953'
+  title: "AdGuard: first DNS rebind protection block of a name for a client, a public name pointed into the local network"
+  level: low
+  source: events
+  match: {wazuh.integration.name: jt-adguard, event.action: blocked, rule.category: rebind}
+  window: 24h
+  group_by: [wazuh.agent.name, source.ip, dns.question.name]
+  count: 1
+
+- id: '130955'
+  title: "AdGuard: first lookup of a domain in a frequently abused TLD by a client (blocked)"
+  level: informational
+  source: events
+  match: {wazuh.integration.name: jt-adguard, event.action: blocked, rule.category: abused-tld}
+  window: 24h
+  group_by: [wazuh.agent.name, source.ip, dns.question.name]
+  count: 1
+
+- id: '130957'
+  title: "AdGuard: first lookup of a newly registered domain by a client (blocked), typical for phishing and malware"
+  level: low
+  source: events
+  match: {wazuh.integration.name: jt-adguard, event.action: blocked, rule.category: nrd}
+  window: 24h
+  group_by: [wazuh.agent.name, source.ip, dns.question.name]
+  count: 1
+
+# ---- volume of ordinary blocks (ads, trackers, other lists) ---------------------------------------
+# 4.x: 100 in 2 minutes. Windows here are at least 5 minutes, so the same rate is 250 in 5 minutes.
+- id: '130910'
+  title: "AdGuard: one client is generating a very high volume of filtered DNS lookups, worth checking the host"
+  level: low
+  source: events
+  match: {wazuh.integration.name: jt-adguard, event.action: blocked, rule.category: other}
+  window: 5m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 250
+
+# ---- allowed queries -------------------------------------------------------------------------------
+- id: '130924'
+  title: "AdGuard: first lookup of a cryptocurrency mining pool by a client, check the host for a miner"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-adguard-130923}
+  window: 24h
+  group_by: [wazuh.agent.name, source.ip, dns.question.name]
+  count: 1
+
+- id: '130959'
+  title: "AdGuard: first lookup of a reverse tunnel name by a client, a tunnel can expose the host or carry command and control"
+  level: low
+  source: events
+  match: {wazuh.integration.name: jt-adguard, event.action: allowed, tags: jt-adguard.reverse-tunnel}
+  window: 24h
+  group_by: [wazuh.agent.name, source.ip, dns.question.name]
+  count: 1
+
+- id: '130961'
+  title: "AdGuard: first lookup of a Tor onion or tor2web name by a client"
+  level: medium
+  source: events
+  match: {wazuh.integration.name: jt-adguard, event.action: allowed, tags: jt-adguard.tor}
+  window: 24h
+  group_by: [wazuh.agent.name, source.ip, dns.question.name]
+  count: 1
+
+- id: '130966'
+  title: "AdGuard: first Telegram Bot API lookup by a client, used by notifier bots and by malware for command and control"
+  level: low
+  source: events
+  match: {wazuh.integration.name: jt-adguard, event.action: allowed, tags: jt-adguard.telegram-bot-api}
+  window: 24h
+  group_by: [wazuh.agent.name, source.ip]
+  count: 1
+
+- id: '130968'
+  title: "AdGuard: first lookup of an external IP address lookup service by a client, a common step after infection"
+  level: informational
+  source: events
+  match: {wazuh.integration.name: jt-adguard, event.action: allowed, tags: jt-adguard.ip-lookup}
+  window: 24h
+  group_by: [wazuh.agent.name, source.ip, dns.question.name]
+  count: 1
+
+- id: '130963'
+  title: "AdGuard: one client looked up ten or more names with very long labels within 5 minutes, possible DNS tunnelling or exfiltration"
+  level: high
+  source: events
+  match: {wazuh.integration.name: jt-adguard, event.action: allowed, tags: jt-adguard.long-label}
+  window: 5m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 10
+
+# ---- web interface logins ---------------------------------------------------------------------------
+- id: '130929'
+  title: "AdGuard Home: repeated failed logins to the web interface from one address, password guessing"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-adguard-130931}
+  window: 5m
+  group_by: [wazuh.agent.name, source.ip]
+  count: 8
+
+# 4.x: a success after three or more failures from the address within 10 minutes. A monitor here has
+# one condition (count or distinct), so this is "failures and a success from one address within 10
+# minutes" (at least one failure): looser than 4.x. See PORTING.md.
+- id: '130939'
+  title: "AdGuard Home: successful login to the web interface from an address that also failed to log in within 10 minutes"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: [jt-adguard-130931, jt-adguard-130941, jt-adguard-130942]}
+  window: 10m
+  group_by: [wazuh.agent.name, source.ip]
+  distinct: {field: event.action, gte: 2}
+
+- id: '130944'
+  title: "AdGuard Home: successful login to the web interface from an address the login rate limiter had locked out"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: [jt-adguard-130932, jt-adguard-130941, jt-adguard-130942]}
+  window: 30m
+  group_by: [wazuh.agent.name, source.ip]
+  distinct: {field: event.action, gte: 2}

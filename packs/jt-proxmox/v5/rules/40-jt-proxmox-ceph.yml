@@ -1,0 +1,139 @@
+# --- Ceph health (cluster log on monitor nodes) --------------------------------------------------
+# Only the start of a check alerts; the ten-minute repeats ("overall HEALTH_WARN", "Health detail",
+# clock checks) stay without a finding (4.x 131256, level 2). Every monitor node writes the whole
+# cluster log, so an event arrives once per monitor node.
+
+- metadata:
+    title: "Ceph health warning: {{message}}"
+    author: Jason Tools
+    description: A Ceph health check started at warning level.
+    references: ["Migrated from jt-proxmox 4.x rule 131251"]
+  sigma_id: jt-proxmox-131251
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection and not 1 of serious_*
+    selection:
+      event.dataset: ceph.cluster
+      event.action: health-check-failed
+      log.level: warning
+    serious_down:
+      event.code: [OSD_DOWN, OSD_HOST_DOWN, MON_DOWN, MGR_DOWN, PG_AVAILABILITY, PG_DEGRADED_FULL, OSD_NEARFULL, POOL_NEARFULL]
+    serious_full:
+      event.code: [OSD_FULL, POOL_FULL, OSD_TOO_MANY_REPAIRS, PG_DAMAGED, OSD_SCRUB_ERRORS]
+  tags: [jt.rule.131251, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Ceph health error: {{message}}"
+    author: Jason Tools
+    description: A Ceph health check started at error level.
+    references: ["Migrated from jt-proxmox 4.x rule 131252"]
+  sigma_id: jt-proxmox-131252
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection and not 1 of serious_*
+    selection:
+      event.dataset: ceph.cluster
+      event.action: health-check-failed
+      log.level: error
+    serious_down:
+      event.code: [OSD_DOWN, OSD_HOST_DOWN, MON_DOWN, MGR_DOWN, PG_AVAILABILITY, PG_DEGRADED_FULL, OSD_NEARFULL, POOL_NEARFULL]
+    serious_full:
+      event.code: [OSD_FULL, POOL_FULL, OSD_TOO_MANY_REPAIRS, PG_DAMAGED, OSD_SCRUB_ERRORS]
+  tags: [jt.rule.131252, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Ceph: a daemon is down or storage is nearly full: {{message}}"
+    author: Jason Tools
+    description: A down OSD, host, monitor or manager, unavailable placement groups, or an OSD or pool nearly full.
+    references: ["Migrated from jt-proxmox 4.x rule 131253"]
+  sigma_id: jt-proxmox-131253
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: ceph.cluster
+      event.action: health-check-failed
+      log.level: [warning, error]
+      event.code: [OSD_DOWN, OSD_HOST_DOWN, MON_DOWN, MGR_DOWN, PG_AVAILABILITY, PG_DEGRADED_FULL, OSD_NEARFULL, POOL_NEARFULL]
+  tags: [jt.rule.131253, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Ceph: storage full or data damaged: {{message}}"
+    author: Jason Tools
+    description: A full OSD or pool, damaged placement groups, scrub errors or too many repairs; writes stop or data is at risk.
+    references: ["Migrated from jt-proxmox 4.x rule 131254"]
+  sigma_id: jt-proxmox-131254
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: ceph.cluster
+      event.action: health-check-failed
+      log.level: [warning, error]
+      event.code: [OSD_FULL, POOL_FULL, OSD_TOO_MANY_REPAIRS, PG_DAMAGED, OSD_SCRUB_ERRORS]
+  tags: [jt.rule.131254, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Ceph health warning changed: {{message}}"
+    author: Jason Tools
+    description: The summary of an ongoing Ceph health warning changed.
+    references: ["Migrated from jt-proxmox 4.x rule 131257"]
+  sigma_id: jt-proxmox-131257
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: ceph.cluster
+      event.action: health-check-update
+      log.level: warning
+  tags: [jt.rule.131257, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Ceph health error changed: {{message}}"
+    author: Jason Tools
+    description: The summary of an ongoing Ceph health error changed.
+    references: ["Migrated from jt-proxmox 4.x rule 131258"]
+  sigma_id: jt-proxmox-131258
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: ceph.cluster
+      event.action: health-check-update
+      log.level: error
+  tags: [jt.rule.131258, jt.pack.jt-proxmox]
+
+- metadata:
+    title: "Ceph health check cleared: {{message}}"
+    author: Jason Tools
+    description: A Ceph health check ended.
+    references: ["Migrated from jt-proxmox 4.x rule 131255"]
+  sigma_id: jt-proxmox-131255
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-proxmox}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: ceph.cluster
+      event.action: health-check-cleared
+  tags: [jt.rule.131255, jt.pack.jt-proxmox]

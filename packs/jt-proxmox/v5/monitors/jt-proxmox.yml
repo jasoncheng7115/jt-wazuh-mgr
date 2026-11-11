@@ -1,0 +1,71 @@
+# jt-proxmox 4.x correlation rules as Alerting bucket-level monitors (Wazuh 5.x, beta).
+# 5.0 has no frequency / same_* / if_matched_* in rules; a monitor counts findings (or events) over a
+# window and raises an alert per group. Format: see packs/jt-fail2ban/v5/monitors/jt-fail2ban.yml.
+# Windows are at least 5m because detectors write findings one or two minutes late.
+
+# Six failed logins for one account within five minutes (4.x: if_matched_sid 87201, same_user).
+- id: '131202'
+  title: "Proxmox VE: repeated failed logins for one account"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-proxmox-87201}
+  window: 5m
+  group_by: [user.name]
+  count: 6
+
+# 4.x: a successful login within 15 minutes after 131202 for the same account. A monitor cannot
+# order events or require six failures and a success together, so this is an approximation: a
+# failed and a successful login for one account within 15 minutes. Ordinary accounts' logins give
+# no finding (4.x level 2), so it reads the events.
+- id: '131206'
+  title: "Proxmox VE: failed and successful logins for one account within 15 minutes (password possibly guessed)"
+  level: medium
+  source: events
+  match: {wazuh.integration.name: jt-proxmox, event.dataset: proxmox.auth, event.action: [login-failure, login-success]}
+  window: 15m
+  group_by: [user.name]
+  distinct: {field: event.action, gte: 2}
+
+# A node dropping out of the cluster six times in an hour (4.x: frequency 6 / 3600 s, same_field).
+- id: '131234'
+  title: "Proxmox VE HA: a node keeps dropping out of the cluster"
+  level: medium
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-proxmox-131231}
+  window: 60m
+  group_by: [orchestrator.resource.name]
+  count: 6
+
+# Corosync link flaps are routine (about 850 in four weeks on one node) and give no finding; a
+# burst of 20 in ten minutes on one host is the alert (4.x 131242 level 2 -> 131243 level 7).
+- id: '131243'
+  title: "Corosync: cluster network links keep going down on one host"
+  level: medium
+  source: events
+  match: {wazuh.integration.name: jt-proxmox, event.dataset: proxmox.corosync, event.action: corosync-link-down}
+  window: 10m
+  group_by: [wazuh.agent.name]
+  count: 20
+
+# Six failed web logins from one address (4.x: two minutes; 5m is the shortest useful window here).
+# The 4.x active response (firewall-drop) hung off this rule; on 5.x that is an "Active Response"
+# monitor created in the dashboard, see PORTING.md.
+- id: '131267'
+  title: "Proxmox VE: repeated failed logins from one address"
+  level: high
+  source: findings
+  match: {wazuh.rule.sigma_id: jt-proxmox-131266}
+  window: 5m
+  group_by: [source.ip]
+  count: 6
+
+# 4.x: a login from a public address within 10 minutes after 131267 for that address. Approximation
+# as for 131206: a failed and a successful login from one public address within 10 minutes.
+- id: '131270'
+  title: "Proxmox VE: failed and successful logins from one public address within 10 minutes"
+  level: medium
+  source: findings
+  match: {wazuh.rule.sigma_id: [jt-proxmox-131266, jt-proxmox-131269]}
+  window: 10m
+  group_by: [source.ip]
+  distinct: {field: wazuh.rule.sigma_id, gte: 2}

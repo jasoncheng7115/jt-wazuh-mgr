@@ -1,0 +1,26 @@
+# Synology DSM 7 in BSD format (RFC 3164), the Log Center default. DSM sends each log category as the
+# syslog program name, so decoder/jt-syslog/0 has already read the header:
+#   Oct 11 11:12:30 nas1 Connection: User [alice] from [192.0.2.10] signed in to [DSM] successfully via [password].
+#   Oct 11 02:00:41 nas1 Hyper_Backup: SYSTEM:<tab>[Network][Daily] Backup task finished successfully.
+#   Oct 11 11:12:30 nas1 System: admin:<tab>Scheduled Task [backup-script] was created.
+# System and Hyper Backup lines are "ACTOR:<tab>EVENT" (syslog-ng csv-parser on ":<tab>" in DSM's
+# syno.d/synolog.conf); the acting account goes to _syno.actor and message keeps only the event text.
+# An acting account never holds blanks, brackets or colons, so "Disk overheat: Disk [2] ..." is not split.
+name: decoder/jt-synology-syslog/0
+enabled: true
+metadata:
+  title: Synology DSM syslog (BSD format)
+  author: Jason Tools
+  description: DSM Connection, System and Hyper Backup lines whose header decoder/jt-syslog/0 read; the event is classified by decoder/jt-synology/0.
+  references:
+    - https://kb.synology.com/en-global/DSM/help/LogCenter/logcenter_server
+parents:
+  - decoder/jt-syslog/0
+check: "$process.name == 'Connection' OR $process.name == 'System' OR $process.name == 'Hyper_Backup'"
+normalize:
+  - map:
+      - _syno.cat: $process.name
+  - check: "regex_match($message, '^[^]:[:space:]]+:[[:space:]]+[^[:space:]]')"
+    map:
+      - _syno.actor: "regex_extract($message, '^([^]:[:space:]]+):[[:space:]]')"
+      - message: "regex_extract($message, '^[^]:[:space:]]+:[[:space:]]+(.*)$')"

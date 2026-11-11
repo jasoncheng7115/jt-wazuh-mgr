@@ -1,0 +1,127 @@
+# pveproxy access log (REST API). The pack's agent group sends /var/log/pveproxy/access.log with
+# out_format "$(timestamp) $(hostname) jt-pveproxy: $(log)", so the line reaches
+# decoder/jt-syslog/0 with process.name jt-pveproxy and only this decoder reads it:
+#   ::ffff:192.0.2.200 - root@pam [11/10/2026:10:36:24 +0800] "PUT /api2/extjs/access/users/x HTTP/1.1" 200 -
+# The agent already drops GET / HEAD and successful login ticket requests from private addresses.
+# pveproxy listens on a dual-stack socket and logs an IPv4 client as ::ffff:a.b.c.d; source.ip is
+# the plain address (an active response would otherwise block an IPv6-mapped address that the
+# client's IPv4 packets never carry).
+# Trusted positions: the address is the first token, the status code the second to last; the
+# request line between them is the client's. The account is pveproxy's authenticated user ("-" for
+# a login request, which is made before the account is known).
+# Field use: source.ip, user.name, http.request.method, url.original, url.path, url.query,
+# http.response.status_code, event.outcome (success for 2xx, failure for 4xx/5xx) and event.action:
+#   login                       POST /access/ticket
+#   api-token-change            POST|PUT|DELETE /access/users/<user>/token[/...]
+#   second-factor-delete        DELETE /access/tfa/<user>/<id>
+#   access-change               POST|PUT|DELETE /access/(users|acl|roles|groups|domains|tfa|password|permissions|openid)...
+#   guest-delete                DELETE /nodes/<node>/(qemu|lxc)/<vmid>
+#   firewall-options-change     PUT /cluster/firewall/options
+#   firewall-change             POST|PUT|DELETE .../firewall[/...]
+#   storage-upload              POST|PUT|DELETE /nodes/<node>/storage/<storage>/(upload|download-url)
+#   backup-job-delete           DELETE /cluster/backup/<id>
+#   cluster-config-change       POST|PUT|DELETE /cluster/(backup|ha|replication|sdn|options|acme|jobs|
+#                               notifications|mapping|metrics), /storage, /nodes/<node>/(dns|hosts|time|
+#                               certificates|subscription|apt/repositories)
+#   backup-delete               DELETE /nodes/<node>/storage/<storage>/content/<storage>:backup/...
+#   guest-agent-exec            POST /nodes/<node>/qemu/<vmid>/agent/(exec|file-write)
+#   guest-password-set          POST /nodes/<node>/qemu/<vmid>/agent/set-user-password
+#   api-change / api-request    any other POST|PUT|DELETE / other method
+# Paths are /api2/json/... or /api2/extjs/...; the first matching class wins.
+name: decoder/jt-proxmox-api/0
+enabled: true
+metadata:
+  title: Proxmox VE REST API access
+  author: Jason Tools
+  description: The pveproxy access log, sent by the pack's agent group under the program name jt-pveproxy.
+  references:
+    - https://pve.proxmox.com/pve-docs/api-viewer/
+parents:
+  - decoder/jt-syslog/0
+check: "$process.name == 'jt-pveproxy' AND regex_match($message, '^[^ ]+ [^ ]+ [^ ]+ [[][^]]*[]] .[A-Z]+ [^ ]+ [^ ]*. [0-9]{3} [^ ]+$')"
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: proxmox
+      - event.dataset: proxmox.api
+      - observer.vendor: Proxmox
+      - observer.product: Proxmox VE
+      - event.category: array_append(web)
+      - source.address: "regex_extract($message, '^(?:::ffff:)?([^ ]+) ')"
+      - _tmp.pve_user: "regex_extract($message, '^[^ ]+ [^ ]+ ([^ ]+) [[]')"
+      - http.request.method: "regex_extract($message, '^[^ ]+ [^ ]+ [^ ]+ [[][^]]*[]] .([A-Z]+) ')"
+      - url.original: "regex_extract($message, '^[^ ]+ [^ ]+ [^ ]+ [[][^]]*[]] .[A-Z]+ ([^ ]+) ')"
+      - _tmp.pve_status: "regex_extract($message, ' ([0-9]{3}) [^ ]+$')"
+  - check: "exists($_tmp.pve_user) AND $_tmp.pve_user != '-'"
+    map:
+      - user.name: $_tmp.pve_user
+      - related.user: array_append($_tmp.pve_user)
+  - check: exists($url.original)
+    map:
+      - url.path: "regex_extract($url.original, '^([^?]*)')"
+  - check: "exists($url.original) AND contains($url.original, '?')"
+    map:
+      - url.query: "regex_extract($url.original, '[?](.*)$')"
+  - check: exists($_tmp.pve_status)
+    map:
+      - http.response.status_code: parse_long($_tmp.pve_status)
+  - check: "exists($_tmp.pve_status) AND regex_match($_tmp.pve_status, '^2')"
+    map:
+      - event.outcome: success
+  - check: "exists($_tmp.pve_status) AND regex_match($_tmp.pve_status, '^[45]')"
+    map:
+      - event.outcome: failure
+  - check: "exists($source.address) AND (is_ipv4($source.address) OR is_ipv6($source.address))"
+    map:
+      - source.ip: $source.address
+      - related.ip: array_append($source.address)
+
+  # What the request did. Each block only runs while event.action is still unset.
+  - check: "$http.request.method == 'POST' AND regex_match($url.path, '^/api2/(json|extjs)/access/ticket$')"
+    map:
+      - event.action: login
+      - event.category: array_append(authentication)
+  - check: "NOT exists($event.action) AND regex_match($http.request.method, '^(POST|PUT|DELETE)$') AND regex_match($url.path, '^/api2/(json|extjs)/access/(users|acl|roles|groups|domains|tfa|password|permissions|openid)') AND regex_match($url.path, '/access/users/[^/]+/token(/|$)')"
+    map:
+      - event.action: api-token-change
+  - check: "NOT exists($event.action) AND $http.request.method == 'DELETE' AND regex_match($url.path, '^/api2/(json|extjs)/access/tfa/[^/]+/[^/]+')"
+    map:
+      - event.action: second-factor-delete
+  - check: "NOT exists($event.action) AND regex_match($http.request.method, '^(POST|PUT|DELETE)$') AND regex_match($url.path, '^/api2/(json|extjs)/access/(users|acl|roles|groups|domains|tfa|password|permissions|openid)')"
+    map:
+      - event.action: access-change
+  - check: "NOT exists($event.action) AND $http.request.method == 'DELETE' AND regex_match($url.path, '^/api2/(json|extjs)/nodes/[^/]+/(qemu|lxc)/[0-9]+$')"
+    map:
+      - event.action: guest-delete
+  - check: "NOT exists($event.action) AND $http.request.method == 'PUT' AND regex_match($url.path, '^/api2/(json|extjs)/cluster/firewall/options$')"
+    map:
+      - event.action: firewall-options-change
+  - check: "NOT exists($event.action) AND regex_match($http.request.method, '^(POST|PUT|DELETE)$') AND regex_match($url.path, '/firewall(/|$)')"
+    map:
+      - event.action: firewall-change
+  - check: "NOT exists($event.action) AND regex_match($http.request.method, '^(POST|PUT|DELETE)$') AND regex_match($url.path, '^/api2/(json|extjs)/nodes/[^/]+/storage/[^/]+/(upload|download-url)')"
+    map:
+      - event.action: storage-upload
+  - check: "NOT exists($event.action) AND $http.request.method == 'DELETE' AND regex_match($url.path, '^/api2/(json|extjs)/cluster/backup/[^/]+')"
+    map:
+      - event.action: backup-job-delete
+  - check: "NOT exists($event.action) AND regex_match($http.request.method, '^(POST|PUT|DELETE)$') AND regex_match($url.path, '^/api2/(json|extjs)/(cluster/(backup|ha|replication|sdn|options|acme|jobs|notifications|mapping|metrics)|storage(/|$)|nodes/[^/]+/(dns|hosts|time|certificates|subscription|apt/repositories))')"
+    map:
+      - event.action: cluster-config-change
+  - check: "NOT exists($event.action) AND $http.request.method == 'DELETE' AND regex_match($url.path, '^/api2/(json|extjs)/nodes/[^/]+/storage/[^/]+/content/[^/]*(:|%3[Aa])backup(/|%2[Ff])')"
+    map:
+      - event.action: backup-delete
+  - check: "NOT exists($event.action) AND $http.request.method == 'POST' AND regex_match($url.path, '^/api2/(json|extjs)/nodes/[^/]+/qemu/[0-9]+/agent/(exec|file-write)$')"
+    map:
+      - event.action: guest-agent-exec
+  - check: "NOT exists($event.action) AND $http.request.method == 'POST' AND regex_match($url.path, '^/api2/(json|extjs)/nodes/[^/]+/qemu/[0-9]+/agent/set-user-password$')"
+    map:
+      - event.action: guest-password-set
+  - check: "NOT exists($event.action) AND regex_match($http.request.method, '^(POST|PUT|DELETE)$')"
+    map:
+      - event.action: api-change
+  - check: "NOT exists($event.action)"
+    map:
+      - event.action: api-request
+  - map:
+      - _tmp: delete()

@@ -1,0 +1,1004 @@
+# jt-librenms rules for Wazuh 5.x, part 2: the web server access log. These lines are decoded by
+# Wazuh's standard apache-http integration (nginx and Apache combined format alike) into
+# http.request.method, url.original / url.path / url.query, http.response.status_code,
+# http.request.referrer and source.ip; this pack has no access-log decoder of its own (detector.yml).
+# The 4.x rules anchored their url pattern at the end ($): those match url.original exactly or
+# url.path with the query string excluded. Sigma here has no working regular expression on these
+# fields (rc2: |re never matches), so "one path segment" is a wildcard pair: '/x/*' and not '/x/*/*'.
+# A negated group that itself contains a negation ("not (a and not b)") never matched on rc2, so
+# such exclusions are written out with De Morgan ("(not a or b)").
+# String comparison is case-sensitive: the SQL injection tokens are listed in their usual spellings.
+#
+# Not ported: 131940, 131941, 131945, 131950, 131959 (level below 3); 131943, 131952, 131982 are
+# monitors; 131947-131949 and 131976 need an ordered pair of events ("A, then B from the same
+# address") that neither Sigma nor a bucket monitor can express in 5.0 (see PORTING.md).
+#
+# 131942 and 131946 were such pairs in 4.x (a login form submission, then the login form again /
+# the home page from the same address within 10 seconds). Here they are single events: the browser
+# loads the page it is redirected to after POST /login with the Referer of that POST, the login
+# page, so "GET /login 200 with a Referer ending in /login" is the form coming back after a
+# submission (a failed login) and "GET / or /2fa 200 with that Referer" is the page a guest is never
+# shown, loaded right after a submission (a login that succeeded). The Referer is client-controlled;
+# a forged one only produces a finding, it hides nothing.
+
+# --- web logins -------------------------------------------------------------------------------
+
+- metadata:
+    title: "LibreNMS: web login failed from {{source.ip}}, the login form came back right after it was submitted"
+    author: Jason Tools
+    description: >-
+      LibreNMS records a wrong password for an existing user only in its database. The access log
+      still shows it: a failed form login is redirected back to the login page, which the browser
+      loads with the login page as Referer. Other Laravel applications behave the same way and match too.
+    references: ["Migrated from jt-librenms 4.x rule 131942"]
+  sigma_id: jt-librenms-131942
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and from_login
+    selection:
+      http.request.method: GET
+      url.original: /login
+      http.response.status_code: 200
+    from_login:
+      http.request.referrer|endswith: /login
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110], name: [Brute Force]}
+  tags: [jt.rule.131942, jt.pack.jt-librenms, jt.auth.failure]
+
+- metadata:
+    title: "LibreNMS: web login succeeded from external address {{source.ip}}"
+    author: Jason Tools
+    description: >-
+      The home page (or the two-factor page, meaning the password was accepted) loaded right after a
+      login form submission, from an address outside the private ranges. The access log names no
+      user. A login from a private address is not reported (4.x level 2).
+    references: ["Migrated from jt-librenms 4.x rule 131946"]
+  sigma_id: jt-librenms-131946
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and from_login and not internal
+    selection:
+      http.request.method: GET
+      url.original: ['/', '/2fa']
+      http.response.status_code: 200
+    from_login:
+      http.request.referrer|endswith: /login
+    internal:
+      source.ip|cidr: &internal ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "100.64.0.0/10", "fc00::/7", "fe80::/10", "::1/128"]
+  mitre:
+    tactic: {id: [TA0001], name: [Initial Access]}
+    technique: {id: [T1078], name: [Valid Accounts]}
+  tags: [jt.rule.131946, jt.pack.jt-librenms, jt.auth.success]
+
+- metadata:
+    title: "LibreNMS (Laravel): request from {{source.ip}} rejected, the form or session expired"
+    author: Jason Tools
+    description: >-
+      419 is Laravel's "page expired": a form posted without a valid CSRF token (an expired session,
+      or a scanner). The request never reached the application.
+    references: ["Migrated from jt-librenms 4.x rule 131944"]
+  sigma_id: jt-librenms-131944
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and not (injection_path and injection)
+    selection:
+      http.response.status_code: 419
+    injection_path:
+      url.original|startswith: &injection_paths ['/api/v0/', '/ajax_output.php', '/graph.php', '/ajax_table.php']
+    injection:
+      url.original|contains: &sqli
+        - 'sleep('
+        - 'SLEEP('
+        - 'Sleep('
+        - 'benchmark('
+        - 'BENCHMARK('
+        - 'information_schema'
+        - 'INFORMATION_SCHEMA'
+        - 'updatexml('
+        - 'UPDATEXML('
+        - 'extractvalue('
+        - 'EXTRACTVALUE('
+        - '%60'
+        - 'if(ascii'
+        - 'IF(ASCII'
+        - 'if(length'
+        - 'IF(LENGTH'
+        - 'if(substr'
+        - 'IF(SUBSTR'
+        - 'substr((select'
+        - 'SUBSTR((SELECT'
+        - 'substr(select'
+        - 'SUBSTR(SELECT'
+        - '=select%20'
+        - '=SELECT%20'
+        - 'select+'
+        - 'SELECT+'
+        - 'Select+'
+        - 'insert%20'
+        - 'INSERT%20'
+        - '%20from%20'
+        - '%20FROM%20'
+        - '%20From%20'
+        - '%20where%20'
+        - '%20WHERE%20'
+        - '%20Where%20'
+        - 'union%20'
+        - 'UNION%20'
+        - 'Union%20'
+        - 'union+'
+        - 'UNION+'
+        - 'Union+'
+        - 'union%0a'
+        - 'UNION%0A'
+        - 'union/\*'
+        - 'UNION/\*'
+        - 'where+'
+        - 'WHERE+'
+        - 'null,null'
+        - 'NULL,NULL'
+        - 'xp_cmdshell'
+        - 'XP_CMDSHELL'
+  tags: [jt.rule.131944, jt.pack.jt-librenms]
+
+# --- REST API (/api/v0, the documented API; /api/v1 is many other applications' path) ----------
+
+- metadata:
+    title: "LibreNMS API: request from {{source.ip}} rejected, the token is missing, invalid or lacks permission"
+    author: Jason Tools
+    description: A request to the LibreNMS REST API answered 401 or 403.
+    references: ["Migrated from jt-librenms 4.x rule 131951"]
+  sigma_id: jt-librenms-131951
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: api and selection and not injection
+    api:
+      - url.path: /api/v0
+      - url.path|startswith: /api/v0/
+    selection:
+      http.response.status_code: [401, 403]
+    injection:
+      url.original|contains: *sqli
+  mitre:
+    tactic: {id: [TA0001], name: [Initial Access]}
+    technique: {id: [T1078], name: [Valid Accounts]}
+  tags: [jt.rule.131951, jt.pack.jt-librenms, jt.auth.failure]
+
+- metadata:
+    title: "LibreNMS API: change request succeeded ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: A request through the LibreNMS REST API that changes something succeeded (the changes below have rules of their own).
+    references: ["Migrated from jt-librenms 4.x rule 131953"]
+  sigma_id: jt-librenms-131953
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-librenms}
+  detection:
+    condition: >-
+      selection and not injection
+      and (not post or not device_add)
+      and (not delete or not dev_one or dev_deeper or query)
+      and (not patch or query or ((not dev_one or dev_deeper) and (not dev_rename or dev_rename_deeper)))
+      and (query or (not rules_any and (not rules_one or rules_deeper)))
+      and (not post or not maint or maint_deeper or query)
+      and (not post or query or (not feed_sink and (not feed_ev or feed_ev_deeper)))
+    selection:
+      http.request.method: [POST, PUT, PATCH, DELETE]
+      url.path|startswith: /api/v0/
+      http.response.status_code: &ok2xx [200, 201, 202, 203, 204, 205, 206, 207, 208, 226]
+    injection:
+      url.original|contains: *sqli
+    query:
+      url.query|exists: true
+    post: {http.request.method: POST}
+    delete: {http.request.method: DELETE}
+    patch: {http.request.method: PATCH}
+    device_add: {url.original: ['/api/v0/devices', '/api/v0/devices/']}
+    dev_one: {url.path: '/api/v0/devices/*'}
+    dev_deeper: {url.path: '/api/v0/devices/*/*'}
+    dev_rename: {url.path: '/api/v0/devices/*/rename/*'}
+    dev_rename_deeper: {url.path: ['/api/v0/devices/*/rename/*/*', '/api/v0/devices/*/*/rename/*']}
+    rules_any: {url.path: ['/api/v0/rules', '/api/v0/rules/', '/api/v0/alert_templates', '/api/v0/alert_templates/']}
+    rules_one: {url.path: ['/api/v0/rules/*', '/api/v0/alert_templates/*']}
+    rules_deeper: {url.path: ['/api/v0/rules/*/?*', '/api/v0/alert_templates/*/?*']}
+    maint: {url.path: ['/api/v0/devices/*/maintenance', '/api/v0/devicegroups/*/maintenance', '/api/v0/locations/*/maintenance']}
+    maint_deeper: {url.path: ['/api/v0/devices/*/*/maintenance', '/api/v0/devicegroups/*/*/maintenance', '/api/v0/locations/*/*/maintenance']}
+    feed_sink: {url.path: /api/v0/syslogsink}
+    feed_ev: {url.path: '/api/v0/devices/*/eventlog'}
+    feed_ev_deeper: {url.path: '/api/v0/devices/*/*/eventlog'}
+  tags: [jt.rule.131953, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS API: device added from {{source.ip}}"
+    author: Jason Tools
+    description: A device was added through the REST API (POST /api/v0/devices).
+    references: ["Migrated from jt-librenms 4.x rule 131954"]
+  sigma_id: jt-librenms-131954
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection
+    selection:
+      http.request.method: POST
+      url.original: ['/api/v0/devices', '/api/v0/devices/']
+      http.response.status_code: *ok2xx
+  tags: [jt.rule.131954, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS API: device deleted ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: A device was deleted through the REST API; its monitoring and history are gone.
+    references: ["Migrated from jt-librenms 4.x rule 131955"]
+  sigma_id: jt-librenms-131955
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and dev_one and not dev_deeper and not query and not injection
+    selection:
+      http.request.method: DELETE
+      http.response.status_code: *ok2xx
+    dev_one: {url.path: '/api/v0/devices/*'}
+    dev_deeper: {url.path: '/api/v0/devices/*/*'}
+    query: {url.query|exists: true}
+    injection: {url.original|contains: *sqli}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+  tags: [jt.rule.131955, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS API: device settings changed ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: A device was renamed or a device field changed through the REST API (PATCH can change the SNMP credentials LibreNMS uses for it).
+    references: ["Migrated from jt-librenms 4.x rule 131956"]
+  sigma_id: jt-librenms-131956
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and ((dev_one and not dev_deeper) or (dev_rename and not dev_rename_deeper)) and not query and not injection
+    selection:
+      http.request.method: PATCH
+      http.response.status_code: *ok2xx
+    dev_one: {url.path: '/api/v0/devices/*'}
+    dev_deeper: {url.path: '/api/v0/devices/*/*'}
+    dev_rename: {url.path: '/api/v0/devices/*/rename/*'}
+    dev_rename_deeper: {url.path: ['/api/v0/devices/*/rename/*/*', '/api/v0/devices/*/*/rename/*']}
+    query: {url.query|exists: true}
+    injection: {url.original|contains: *sqli}
+  tags: [jt.rule.131956, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS API: alert rule or template {{http.request.method}} from {{source.ip}}"
+    author: Jason Tools
+    description: An alert rule or alert template was created, changed or deleted through the REST API.
+    references: ["Migrated from jt-librenms 4.x rule 131957"]
+  sigma_id: jt-librenms-131957
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and (rules_any or (rules_one and not rules_deeper)) and not query and not injection
+    selection:
+      http.request.method: [POST, PUT, PATCH, DELETE]
+      http.response.status_code: *ok2xx
+    rules_any: {url.path: ['/api/v0/rules', '/api/v0/rules/', '/api/v0/alert_templates', '/api/v0/alert_templates/']}
+    rules_one: {url.path: ['/api/v0/rules/*', '/api/v0/alert_templates/*']}
+    rules_deeper: {url.path: ['/api/v0/rules/*/?*', '/api/v0/alert_templates/*/?*']}
+    query: {url.query|exists: true}
+    injection: {url.original|contains: *sqli}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131957, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS API: maintenance mode set, alerts suppressed ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: Maintenance mode suppresses the alerts of a device, device group or location.
+    references: ["Migrated from jt-librenms 4.x rule 131958"]
+  sigma_id: jt-librenms-131958
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and maint and not maint_deeper and not query and not injection
+    selection:
+      http.request.method: POST
+      http.response.status_code: *ok2xx
+    maint: {url.path: ['/api/v0/devices/*/maintenance', '/api/v0/devicegroups/*/maintenance', '/api/v0/locations/*/maintenance']}
+    maint_deeper: {url.path: ['/api/v0/devices/*/*/maintenance', '/api/v0/devicegroups/*/*/maintenance', '/api/v0/locations/*/*/maintenance']}
+    query: {url.query|exists: true}
+    injection: {url.original|contains: *sqli}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131958, jt.pack.jt-librenms]
+
+# --- REST API reads that expose secrets ---------------------------------------------------------
+
+- metadata:
+    title: "LibreNMS: device SNMP credentials read through the API from external address {{source.ip}}"
+    author: Jason Tools
+    description: >-
+      GET /api/v0/devices and /api/v0/devices/<device> return the SNMP community and the v3 passwords
+      in clear text to any token that may view the device. Routine from pollers on the private
+      network; a read from outside is a credential dump.
+    references: ["Migrated from jt-librenms 4.x rule 131990"]
+  sigma_id: jt-librenms-131990
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and (devices or (dev_one and not dev_deeper)) and not internal and not injection
+    selection:
+      http.request.method: GET
+      http.response.status_code: *ok2xx
+    devices: {url.path: ['/api/v0/devices', '/api/v0/devices/']}
+    dev_one: {url.path: '/api/v0/devices/*'}
+    dev_deeper: {url.path: '/api/v0/devices/*/?*'}
+    internal: {source.ip|cidr: *internal}
+    injection: {url.original|contains: *sqli}
+  mitre:
+    tactic: {id: [TA0006, TA0009], name: [Credential Access, Collection]}
+    technique: {id: [T1552, T1602], name: [Unsecured Credentials, Data from Configuration Repository]}
+    subtechnique: {id: [T1602.001], name: ["SNMP (MIB Dump)"]}
+  tags: [jt.rule.131990, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: device configuration backup read through the API ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: >-
+      /api/v0/oxidized/config/<device> and /oxidized/config/search/<text> return the backed-up
+      configuration of a device, secrets included (not the device list Oxidized itself polls). From
+      a private address; from outside it is rule 131992.
+    references: ["Migrated from jt-librenms 4.x rule 131991"]
+  sigma_id: jt-librenms-131991
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and not bare and internal and not injection
+    selection:
+      http.request.method: GET
+      url.path|startswith: /api/v0/oxidized/config/
+      http.response.status_code: *ok2xx
+    bare: {url.path: ['/api/v0/oxidized/config/', '/api/v0/oxidized/config/search/']}
+    internal: {source.ip|cidr: *internal}
+    injection: {url.original|contains: *sqli}
+  mitre:
+    tactic: {id: [TA0009], name: [Collection]}
+    technique: {id: [T1602], name: [Data from Configuration Repository]}
+    subtechnique: {id: [T1602.002], name: [Network Device Configuration Dump]}
+  tags: [jt.rule.131991, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: device configuration backup read through the API from external address {{source.ip}}"
+    author: Jason Tools
+    description: A device's backed-up configuration, secrets included, was read through the API from outside the private ranges.
+    references: ["Migrated from jt-librenms 4.x rule 131992"]
+  sigma_id: jt-librenms-131992
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and not bare and not internal and not injection
+    selection:
+      http.request.method: GET
+      url.path|startswith: /api/v0/oxidized/config/
+      http.response.status_code: *ok2xx
+    bare: {url.path: ['/api/v0/oxidized/config/', '/api/v0/oxidized/config/search/']}
+    internal: {source.ip|cidr: *internal}
+    injection: {url.original|contains: *sqli}
+  mitre:
+    tactic: {id: [TA0009], name: [Collection]}
+    technique: {id: [T1602], name: [Data from Configuration Repository]}
+    subtechnique: {id: [T1602.002], name: [Network Device Configuration Dump]}
+  tags: [jt.rule.131992, jt.pack.jt-librenms]
+
+# --- web interface changes ----------------------------------------------------------------------
+# A status of 2xx or 3xx means the request was accepted; a rejected form also redirects, hence
+# "requested" where only a form post is seen. Laravel forms send PUT and DELETE as POST with a hidden
+# _method field, so those paths accept POST as well. The access log names no user: LibreNMS's own
+# Event Log and Auth Log say who.
+
+- metadata:
+    title: "LibreNMS: user account creation requested from {{source.ip}}"
+    author: Jason Tools
+    description: POST /users from LibreNMS's create-user form (the Referer is that form, so an unrelated sign-up form on another server does not match).
+    references: ["Migrated from jt-librenms 4.x rule 131960"]
+  sigma_id: jt-librenms-131960
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and form
+    selection:
+      http.request.method: POST
+      url.original: /users
+      http.response.status_code: &ok23 [200, 201, 202, 203, 204, 205, 206, 207, 208, 226, 300, 301, 302, 303, 304, 305, 307, 308]
+    form:
+      - http.request.referrer|endswith: /users/create
+      - http.request.referrer|contains: /users/create?
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1136], name: [Create Account]}
+  tags: [jt.rule.131960, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: user account {{url.original}} changed (role, password or details) from {{source.ip}}"
+    author: Jason Tools
+    description: A LibreNMS user account was updated from the web interface.
+    references: ["Migrated from jt-librenms 4.x rule 131961"]
+  sigma_id: jt-librenms-131961
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and one and not deeper and not form and not query
+    selection:
+      http.request.method: [POST, PUT, PATCH]
+      http.response.status_code: *ok23
+    one: {url.path: '/users/*'}
+    deeper: {url.path: '/users/*/*'}
+    form: {url.path: /users/create}
+    query: {url.query|exists: true}
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.131961, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: user account {{url.original}} deleted from {{source.ip}}"
+    author: Jason Tools
+    description: A LibreNMS user account was deleted from the web interface.
+    references: ["Migrated from jt-librenms 4.x rule 131962"]
+  sigma_id: jt-librenms-131962
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and one and not deeper and not form and not query
+    selection:
+      http.request.method: DELETE
+      http.response.status_code: *ok2xx
+    one: {url.path: '/users/*'}
+    deeper: {url.path: '/users/*/*'}
+    form: {url.path: /users/create}
+    query: {url.query|exists: true}
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1531], name: [Account Access Removal]}
+  tags: [jt.rule.131962, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: user permissions changed ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: Devices, device groups, ports or bills were granted to or taken from a LibreNMS user.
+    references: ["Migrated from jt-librenms 4.x rule 131963"]
+  sigma_id: jt-librenms-131963
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and ((kind and not kind_deeper) or (item and not item_deeper)) and not query
+    selection:
+      http.request.method: [POST, DELETE]
+      http.response.status_code: *ok23
+    kind: {url.path: ['/users/*/permissions/device', '/users/*/permissions/device-group', '/users/*/permissions/port', '/users/*/permissions/bill']}
+    kind_deeper: {url.path: ['/users/*/*/permissions/*']}
+    item: {url.path: ['/users/*/permissions/device/*', '/users/*/permissions/device-group/*', '/users/*/permissions/port/*', '/users/*/permissions/bill/*']}
+    item_deeper: {url.path: ['/users/*/*/permissions/*', '/users/*/permissions/*/*/*']}
+    query: {url.query|exists: true}
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.131963, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: role created, changed or deleted ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: A LibreNMS role (a set of permissions) was created, changed or deleted.
+    references: ["Migrated from jt-librenms 4.x rule 131964"]
+  sigma_id: jt-librenms-131964
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and (roles or (one and not deeper)) and not query
+    selection:
+      http.request.method: [POST, PUT, PATCH, DELETE]
+      http.response.status_code: *ok23
+    roles: {url.path: /roles}
+    one: {url.path: '/roles/*'}
+    deeper: {url.path: '/roles/*/*'}
+    query: {url.query|exists: true}
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+  tags: [jt.rule.131964, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: API token created or reset ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: An API token is a credential that does not expire and skips two-factor authentication.
+    references: ["Migrated from jt-librenms 4.x rule 131965"]
+  sigma_id: jt-librenms-131965
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and (create or (reset and not reset_deeper)) and not query
+    selection:
+      http.request.method: POST
+      http.response.status_code: *ok23
+    create: {url.path: /api-access}
+    reset: {url.path: '/api-access/*/reset'}
+    reset_deeper: {url.path: '/api-access/*/*/reset'}
+    query: {url.query|exists: true}
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1098], name: [Account Manipulation]}
+    subtechnique: {id: [T1098.001], name: [Additional Cloud Credentials]}
+  tags: [jt.rule.131965, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: API token enabled, disabled or deleted ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: An existing LibreNMS API token was switched on or off, or deleted.
+    references: ["Migrated from jt-librenms 4.x rule 131966"]
+  sigma_id: jt-librenms-131966
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and one and not deeper and not form and not query
+    selection:
+      http.request.method: [POST, PATCH, DELETE]
+      http.response.status_code: *ok23
+    one: {url.path: '/api-access/*'}
+    deeper: {url.path: '/api-access/*/*'}
+    form: {url.path: /api-access/create}
+    query: {url.query|exists: true}
+  tags: [jt.rule.131966, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: two-factor authentication removed from an account ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: Two-factor authentication was removed from the own account (POST /2fa/remove) or from another user's (DELETE /2fa/<user>).
+    references: ["Migrated from jt-librenms 4.x rule 131967"]
+  sigma_id: jt-librenms-131967
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and (remove or (one and not deeper and not other_route)) and not query
+    selection:
+      http.request.method: [POST, DELETE]
+      http.response.status_code: *ok23
+    remove: {url.path: /2fa/remove}
+    one: {url.path: '/2fa/*'}
+    deeper: {url.path: '/2fa/*/*'}
+    other_route: {url.path: ['/2fa/add', '/2fa/cancel', '/2fa/']}
+    query: {url.query|exists: true}
+  mitre:
+    tactic: {id: [TA0006, TA0005, TA0003], name: [Credential Access, Defense Evasion, Persistence]}
+    technique: {id: [T1556], name: [Modify Authentication Process]}
+    subtechnique: {id: [T1556.006], name: [Multi-Factor Authentication]}
+  tags: [jt.rule.131967, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: two-factor lockout cleared ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: An administrator cleared a user's two-factor lockout.
+    references: ["Migrated from jt-librenms 4.x rule 131968"]
+  sigma_id: jt-librenms-131968
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and unlock and not deeper and not query
+    selection:
+      http.request.method: POST
+      http.response.status_code: *ok23
+    unlock: {url.path: '/2fa/*/unlock'}
+    deeper: {url.path: '/2fa/*/*/unlock'}
+    query: {url.query|exists: true}
+  tags: [jt.rule.131968, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: global setting changed or reset ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: A global LibreNMS setting was changed or reset to its default (authentication settings and program paths have rules of their own).
+    references: ["Migrated from jt-librenms 4.x rule 131969"]
+  sigma_id: jt-librenms-131969
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and one and not deeper and not query and not program and (not auth or authlog)
+    selection:
+      http.request.method: [PUT, DELETE]
+      http.response.status_code: *ok2xx
+    one: {url.path: '/settings/?*'}
+    deeper: {url.path: '/settings/*/*'}
+    query: {url.query|exists: true}
+    auth: &auth_settings
+      url.path|startswith: ['/settings/auth', '/settings/sso.', '/settings/http_auth', '/settings/twofactor', '/settings/allow_unauth', '/settings/public_status', '/settings/api.']
+    authlog: &authlog
+      url.path|startswith: /settings/authlog_
+    program: &program_settings
+      url.path:
+        - /settings/snmpget
+        - /settings/snmpgetnext
+        - /settings/snmpwalk
+        - /settings/snmpbulkwalk
+        - /settings/snmptranslate
+        - /settings/snmptrap
+        - /settings/fping
+        - /settings/fping6
+        - /settings/rrdtool
+        - /settings/ipmitool
+        - /settings/nfdump
+        - /settings/traceroute
+        - /settings/virsh
+        - /settings/email_sendmail_path
+        - /settings/nagios_plugins
+  tags: [jt.rule.131969, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: authentication or access setting changed ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: An authentication, single sign-on, two-factor, API or unauthenticated-access setting was changed or reset.
+    references: ["Migrated from jt-librenms 4.x rule 131970"]
+  sigma_id: jt-librenms-131970
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and one and not deeper and not query and auth and not authlog
+    selection:
+      http.request.method: [PUT, DELETE]
+      http.response.status_code: *ok2xx
+    one: {url.path: '/settings/?*'}
+    deeper: {url.path: '/settings/*/*'}
+    query: {url.query|exists: true}
+    auth: *auth_settings
+    authlog: *authlog
+  mitre:
+    tactic: {id: [TA0006, TA0005, TA0003], name: [Credential Access, Defense Evasion, Persistence]}
+    technique: {id: [T1556], name: [Modify Authentication Process]}
+  tags: [jt.rule.131970, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: the path of a program LibreNMS runs was changed ({{http.request.method}} {{url.original}}) from {{source.ip}}, the first step of known command execution exploits"
+    author: Jason Tools
+    description: >-
+      Pointing a program path setting at a command or an uploaded file is how CVE-2024-51092,
+      CVE-2026-6204 and CVE-2026-84190 turn an administrator session into command execution (the
+      Metasploit module sends PUT /settings/snmpget, then GET /about, which runs it). Paths are set
+      once at installation; a later change is rare. The 4.x follow-up rule 131976 (GET /about from
+      the same address right after) has no 5.0 equivalent.
+    references: ["Migrated from jt-librenms 4.x rule 131975", "https://github.com/advisories/GHSA-x645-6pf9-xwxw"]
+  sigma_id: jt-librenms-131975
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and program and not query
+    selection:
+      http.request.method: [PUT, DELETE]
+      http.response.status_code: *ok2xx
+    program: *program_settings
+    query: {url.query|exists: true}
+  mitre:
+    tactic: {id: [TA0002, TA0001], name: [Execution, Initial Access]}
+    technique: {id: [T1059, T1190], name: [Command and Scripting Interpreter, Exploit Public-Facing Application]}
+    subtechnique: {id: [T1059.004], name: [Unix Shell]}
+  tags: [jt.rule.131975, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: device deletion requested ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: A device was deleted from the web interface; its monitoring and history are gone.
+    references: ["Migrated from jt-librenms 4.x rule 131971"]
+  sigma_id: jt-librenms-131971
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and one and not deeper and not query
+    selection:
+      http.request.method: [POST, DELETE]
+      http.response.status_code: *ok23
+    one: {url.path: '/device/?*'}
+    deeper: {url.path: '/device/*/*'}
+    query: {url.query|exists: true}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+  tags: [jt.rule.131971, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: device addition submitted from {{source.ip}}"
+    author: Jason Tools
+    description: The add-device form of the web interface was submitted.
+    references: ["Migrated from jt-librenms 4.x rule 131972"]
+  sigma_id: jt-librenms-131972
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection
+    selection:
+      http.request.method: POST
+      url.original: ['/addhost', '/addhost/']
+      http.response.status_code: *ok2xx
+  tags: [jt.rule.131972, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: alert rule created, changed, switched on or off, or deleted ({{http.request.method}} {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: An alert rule was changed from the web interface; switching one off silences its alerts.
+    references: ["Migrated from jt-librenms 4.x rule 131973"]
+  sigma_id: jt-librenms-131973
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and (rules or (one and not deeper) or (toggle and not toggle_deeper)) and not query
+    selection:
+      http.request.method: [POST, PUT, PATCH, DELETE]
+      http.response.status_code: *ok2xx
+    rules: {url.path: /alert-rule}
+    one: {url.path: '/alert-rule/?*'}
+    deeper: {url.path: '/alert-rule/*/*'}
+    toggle: {url.path: '/alert-rule/?*/toggle'}
+    toggle_deeper: {url.path: '/alert-rule/*/*/toggle'}
+    query: {url.query|exists: true}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+    subtechnique: {id: [T1562.001], name: [Disable or Modify Tools]}
+  tags: [jt.rule.131973, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: alert transport or template deleted ({{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: An alert transport, transport group or alert template was deleted; alerts that used it are no longer delivered.
+    references: ["Migrated from jt-librenms 4.x rule 131974"]
+  sigma_id: jt-librenms-131974
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and one and not deeper and not query
+    selection:
+      http.request.method: [POST, DELETE]
+      http.response.status_code: *ok2xx
+    one: {url.path: ['/alert/transports/?*', '/alert/transport-groups/?*', '/alert-templates/?*']}
+    deeper: {url.path: ['/alert/transports/*/*', '/alert/transport-groups/*/*', '/alert-templates/*/*']}
+    query: {url.query|exists: true}
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+  tags: [jt.rule.131974, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: alert transport {{url.original}} tested (runs it) from {{source.ip}}"
+    author: Jason Tools
+    description: >-
+      Testing an alert transport runs it. The Signal transport ran the binary path and recipient from
+      its settings (CVE-2026-55182, fixed 26.5.0), saved through /ajax_form.php, whose body the access
+      log does not show; the test is the request that executes them.
+    references: ["Migrated from jt-librenms 4.x rule 131977", "https://github.com/advisories/GHSA-c9fv-cgmm-2wg7"]
+  sigma_id: jt-librenms-131977
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and test and not deeper and not query
+    selection:
+      http.request.method: POST
+      http.response.status_code: *ok2xx
+    test: {url.path: '/alert/transports/?*/test'}
+    deeper: {url.path: '/alert/transports/*/*/test'}
+    query: {url.query|exists: true}
+  tags: [jt.rule.131977, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: device deletion requested on the legacy page (POST {{url.original}}) from {{source.ip}}"
+    author: Jason Tools
+    description: The legacy delete page (POST /delhost), used by the Metasploit modules to remove the device they added.
+    references: ["Migrated from jt-librenms 4.x rule 131978"]
+  sigma_id: jt-librenms-131978
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection
+    selection:
+      http.request.method: POST
+      url.original: ['/delhost', '/delhost/']
+      http.response.status_code: *ok2xx
+  mitre:
+    tactic: {id: [TA0005], name: [Defense Evasion]}
+    technique: {id: [T1562], name: [Impair Defenses]}
+  tags: [jt.rule.131978, jt.pack.jt-librenms]
+
+# --- exploit indicators in the request line -------------------------------------------------------
+
+- metadata:
+    title: "LibreNMS: login credentials passed in the URL from {{source.ip}} (unthrottled GET login, the password is now in the logs)"
+    author: Jason Tools
+    description: >-
+      With auth.allow_get_login on (off by default since CVE-2023-46745 was fixed in 23.11.0) a
+      GET /?username=...&password=... login is not rate limited, and the password is written into
+      every access and proxy log.
+    references: ["Migrated from jt-librenms 4.x rule 131981", "https://github.com/advisories/GHSA-rq42-58qf-v3qx"]
+  sigma_id: jt-librenms-131981
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and user and password
+    selection:
+      http.request.method: GET
+      url.path: ['/', '/login']
+    user:
+      - url.query|startswith: username=
+      - url.query|contains: '&username='
+    password:
+      - url.query|startswith: password=
+      - url.query|contains: '&password='
+  mitre:
+    tactic: {id: [TA0006], name: [Credential Access]}
+    technique: {id: [T1110, T1552], name: [Brute Force, Unsecured Credentials]}
+  tags: [jt.rule.131981, jt.pack.jt-librenms, jt.auth.failure]
+
+- metadata:
+    title: "LibreNMS: SQL injection markers in the request to {{url.path}} from {{source.ip}}"
+    author: Jason Tools
+    description: >-
+      SQL injection markers in a LibreNMS endpoint that takes them in the query string: time-based
+      blind through the API "order" parameter (CVE-2024-32480, fixed 24.4.0), the ajax_output.php
+      "hostname" parameter (CVE-2025-65093, fixed 25.11.0), and the usual UNION / FROM / WHERE forms.
+      A purely boolean-blind payload (AND 1=1) carries no distinctive token and is not matched.
+    references: ["Migrated from jt-librenms 4.x rule 131983", "https://github.com/advisories/GHSA-jh57-j3vq-h438", "https://github.com/advisories/GHSA-6pmj-xjxp-p8g9"]
+  sigma_id: jt-librenms-131983
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-librenms}
+  detection:
+    condition: path and injection and not (collectd and metachar)
+    path:
+      url.original|startswith: *injection_paths
+    injection:
+      url.original|contains: *sqli
+    collectd:
+      url.path: /graph.php
+      url.query|contains: type=device_collectd
+    metachar:
+      url.original|contains: &metachar [';', '|', '%3b', '%3B', '%7c', '%7C', '%60', '`', '$(', '%24%28']
+  mitre:
+    tactic: {id: [TA0001], name: [Initial Access]}
+    technique: {id: [T1190], name: [Exploit Public-Facing Application]}
+  tags: [jt.rule.131983, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: SNMP capture run from the web UI from {{source.ip}}"
+    author: Jason Tools
+    description: An administrator ran an SNMP walk or discovery capture of a device from the web interface (GET /ajax_output.php?id=capture).
+    references: ["Migrated from jt-librenms 4.x rule 131984"]
+  sigma_id: jt-librenms-131984
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and capture and not metachar and not injection
+    selection:
+      url.path: /ajax_output.php
+    capture:
+      - url.query|startswith: id=capture
+      - url.query|contains: '&id=capture'
+    metachar:
+      url.original|contains: *metachar
+    injection:
+      url.original|contains: *sqli
+  tags: [jt.rule.131984, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: shell metacharacters in the SNMP capture request from {{source.ip}} (command injection attempt)"
+    author: Jason Tools
+    description: Shell metacharacters in the parameters of the SNMP capture, the trigger of the addhost community-parameter command execution (CVE-2018-20434) and of direct injection into the capture's own parameters.
+    references: ["Migrated from jt-librenms 4.x rule 131985"]
+  sigma_id: jt-librenms-131985
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection and capture and metachar and not injection
+    selection:
+      url.path: /ajax_output.php
+    capture:
+      - url.query|startswith: id=capture
+      - url.query|contains: '&id=capture'
+    metachar:
+      url.original|contains: *metachar
+    injection:
+      url.original|contains: *sqli
+  mitre:
+    tactic: {id: [TA0001, TA0002], name: [Initial Access, Execution]}
+    technique: {id: [T1190, T1059], name: [Exploit Public-Facing Application, Command and Scripting Interpreter]}
+    subtechnique: {id: [T1059.004], name: [Unix Shell]}
+  tags: [jt.rule.131985, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: shell metacharacters in a collectd graph request from {{source.ip}} (command injection attempt)"
+    author: Jason Tools
+    description: The from/to parameters of a device_collectd graph reached a shell (CVE-2019-10669); a normal collectd graph carries only numbers there.
+    references: ["Migrated from jt-librenms 4.x rule 131986"]
+  sigma_id: jt-librenms-131986
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-librenms}
+  detection:
+    condition: collectd and metachar
+    collectd:
+      url.path: /graph.php
+      url.query|contains: type=device_collectd
+    metachar:
+      url.original|contains: *metachar
+  mitre:
+    tactic: {id: [TA0001, TA0002], name: [Initial Access, Execution]}
+    technique: {id: [T1190, T1059], name: [Exploit Public-Facing Application, Command and Scripting Interpreter]}
+    subtechnique: {id: [T1059.004], name: [Unix Shell]}
+  tags: [jt.rule.131986, jt.pack.jt-librenms]

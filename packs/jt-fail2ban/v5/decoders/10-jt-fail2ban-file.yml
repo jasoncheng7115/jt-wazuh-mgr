@@ -1,0 +1,27 @@
+# fail2ban writing its own file (logtarget = /var/log/fail2ban.log, the default):
+#   2026-08-31 21:20:11,500 fail2ban.actions        [2368444]: NOTICE  [sshd] Ban 203.0.113.45
+# The standard syslog decoder does not take this shape, so the header is read here and the rest of
+# the line goes to message, the same field the syslog shape ends up in.
+name: decoder/jt-fail2ban-file/0
+enabled: true
+metadata:
+  title: fail2ban log file header
+  author: Jason Tools
+  description: Header of fail2ban.log lines (time, module, pid, level); the message is decoded by decoder/jt-fail2ban/0.
+  references:
+    - https://github.com/fail2ban/fail2ban/blob/master/fail2ban/helpers.py
+parents:
+  - decoder/jt-core/0
+check: "regex_match($event.original, '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3} fail2ban([.][A-Za-z]+)? *[[][0-9]+[]]: +(CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG) ')"
+normalize:
+  - map:
+      - process.name: "regex_extract($event.original, '^[^ ]+ [^ ]+ (fail2ban(?:[.][A-Za-z]+)?)')"
+      - _tmp.f2b_pid: "regex_extract($event.original, '[[]([0-9]+)[]]: ')"
+      - _tmp.f2b_level: "regex_extract($event.original, '[]]: +([A-Z]+) ')"
+      - message: "regex_extract($event.original, '[]]: +[A-Z]+ +(.*)$')"
+  - check: exists($_tmp.f2b_pid)
+    map:
+      - process.pid: parse_long($_tmp.f2b_pid)
+  - check: exists($_tmp.f2b_level)
+    map:
+      - log.level: downcase($_tmp.f2b_level)

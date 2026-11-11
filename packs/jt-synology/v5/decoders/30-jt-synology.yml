@@ -1,0 +1,429 @@
+# What happened, from the fields both header decoders leave (_syno.cat, _syno.actor, message).
+#
+# Escaping: in the regex_match / regex_extract arguments below a regex backslash is written twice
+# (\\b is the RE2 word boundary \b); brackets are written [[] and []] to avoid escapes altogether.
+# The engine's helpers are RE2: no look-ahead, so each 4.x "(?!...)" became a regex_not_match.
+#
+# Fields:
+#   event.action      one value per kind of DSM event, named after the 4.x rule that reported it
+#                     (signed-in, logged-in, shell-logged-in, share-accessed, login-failed,
+#                     second-factor-failed, ntlmv1-refused, connect-refused, host-blocked,
+#                     account-blocked, backup-failed, storage-degraded, ...); the Sigma rules match it.
+#   user.name         the account that signed in, failed or was locked; on other System and Hyper
+#                     Backup lines the acting account DSM writes before the message (SYSTEM, admin)
+#   user.roles        builtin-administrator (admin, administrator, root, also DOMAIN\Administrator),
+#                     administrator (KVDB jt-synology-admin-accounts), service-account
+#                     (KVDB jt-synology-service-accounts)
+#   source.ip         the client address (::ffff: taken off an IPv4-mapped address), with
+#   source.domain     the client name DSM writes for SMB (from [pc1(192.0.2.10)])
+#   network.direction internal (10/8, 172.16/12, 192.168/16, 127/8, 100.64/10, 169.254/16,
+#                     fc00::/7, fe80::/10) or inbound, for the brute force monitors
+#   network.application  the DSM service: DSM, SSH, SMB, CIFS(SMB3), WebDAV, HTTPS, FTP, ...
+#   event.reason      the text after "due to" or "because"
+#   file.name         the shared folder opened (share-accessed)
+#   file.path, file.target_path, file.type, event.provider   file transfer logs
+#   process.title     the Hyper Backup or Task Scheduler task
+#   message           the event text without the acting account
+#
+# Injection: an attacker chooses the account name of a failed sign-in, and DSM writes it unfiltered
+# inside "User [...]". The account is therefore read greedily and the rest of the line must be one
+# whole DSM template up to the end of the line, so the address, service and verb always come from
+# the last template DSM wrote, never from text inside the account name. File transfer lines are
+# read the same way from the end (user and address are the last two items).
+name: decoder/jt-synology/0
+enabled: true
+metadata:
+  title: Synology DSM events
+  author: Jason Tools
+  description: 'Classifies DSM sign-ins, auto block, Hyper Backup, storage, power, package, account and file transfer events into WCS fields.'
+  references:
+    - https://kb.synology.com/en-global/DSM/help/DSM/AdminCenter/connection_security_protection
+    - https://www.synology.com/en-global/security/advisory/Synology_SA_26_03
+parents:
+  - decoder/jt-synology-syslog/0
+  - decoder/jt-synology-raw/0
+definitions:
+  connNew: '$_syno.cat == ''Connection'' AND not_exists($event.action)'
+  sysNew: '$_syno.cat == ''System'' AND not_exists($event.action)'
+  hbNew: '$_syno.cat == ''Hyper_Backup'' AND not_exists($event.action)'
+  bothNew: '($_syno.cat == ''System'' OR $_syno.cat == ''Hyper_Backup'') AND not_exists($event.action)'
+check: 'exists($message)'
+normalize:
+  - map:
+      - event.kind: event
+      - event.module: synology
+      - observer.vendor: Synology
+      - observer.product: DSM
+      - observer.type: nas
+      - _syno.m: 'regex_extract($message, ''^(.*?)[.]?$'')'
+  - check: '$_syno.cat == ''Connection'''
+    map:
+      - event.dataset: synology.connection
+  - check: '$_syno.cat == ''System'''
+    map:
+      - event.dataset: synology.system
+  - check: '$_syno.cat == ''Hyper_Backup'''
+    map:
+      - event.dataset: synology.hyper_backup
+  - check: '$_syno.cat == ''file'''
+    map:
+      - event.dataset: synology.file_transfer
+
+  # ---- "User [account] <template>" (Connection; Account Protection also in System) ----------------
+  # Templates from DSM's Connection catalogue (usr/syno/share/synolog/events/auth, 7.2.2 and 7.4.1):
+  # 0001-0005, 0011-0019, 001a, and the System entry 12A00101 (Account Protection).
+  - check: '$_syno.cat == ''Connection'' OR $_syno.cat == ''System'''
+    map:
+      - _syno.tail: 'regex_extract($message, ''^User [[].*[]] ((?:from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] signed in to [[][^]]*[]] successfully via [[][^]]*[]]|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] failed to sign in to [[][^]]*[]] via [[][^]]*[]] (?:due to|because) .*|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] logged (?:[[][^]]*[]] )?in successfully via [[][^]]*[]]|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] failed to log in via [[][^]]*[]](?: (?:due to|because) .*)?|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] was rejected to log in the server via [[][^]]*[]]|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] via [[][^]]*[]] accessed shared folder [[][^]]*[]]|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] has successfully passed the first authentication of (?:2FA|AMFA) via [[][^]]*[]]|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] logged out[^[]* via [[][^]]*[]]|(?:failed to log in|logged in) from [[][0-9A-Fa-f:.]+[]] via [[][^]]*[]]|failed to log in via [[][^]]*[]](?: (?:due to|because) .*)?|was blocked by Account Protection))[.]?$'')'
+  - check: exists($_syno.tail)
+    map:
+      - user.name: 'regex_extract($message, ''^User [[](.*)[]] (?:from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] signed in to [[][^]]*[]] successfully via [[][^]]*[]]|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] failed to sign in to [[][^]]*[]] via [[][^]]*[]] (?:due to|because) .*|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] logged (?:[[][^]]*[]] )?in successfully via [[][^]]*[]]|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] failed to log in via [[][^]]*[]](?: (?:due to|because) .*)?|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] was rejected to log in the server via [[][^]]*[]]|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] via [[][^]]*[]] accessed shared folder [[][^]]*[]]|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] has successfully passed the first authentication of (?:2FA|AMFA) via [[][^]]*[]]|from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] logged out[^[]* via [[][^]]*[]]|(?:failed to log in|logged in) from [[][0-9A-Fa-f:.]+[]] via [[][^]]*[]]|failed to log in via [[][^]]*[]](?: (?:due to|because) .*)?|was blocked by Account Protection)[.]?$'')'
+  # "User [a] from [ip] failed to log in via [S]" also ends in the no-address template "failed to log
+  # in via [S]", which the greedy read prefers: take the address form when it is there.
+  - check: 'exists($_syno.tail) AND regex_match($_syno.tail, ''^failed to log in via '') AND regex_match($message, ''^User [[].*[]] from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] failed to log in via [[][^]]*[]](?: (?:due to|because) .*)?[.]?$'')'
+    map:
+      - _syno.tail: 'regex_extract($message, ''^User [[].*[]] (from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] failed to log in via [[][^]]*[]](?: (?:due to|because) .*)?)[.]?$'')'
+      - user.name: 'regex_extract($message, ''^User [[](.*)[]] from [[](?:[^]()]*[(])?[0-9A-Fa-f:.]+[)]?[]] failed to log in via [[][^]]*[]](?: (?:due to|because) .*)?[.]?$'')'
+  - check: 'exists($_syno.tail)'
+    map:
+      - _syno.ip: 'regex_extract($_syno.tail, ''^from [[](?:[^]()]*[(])?(?:::[fF]{4}:)?([0-9A-Fa-f:.]+)[)]?[]] '')'
+      - source.domain: 'regex_extract($_syno.tail, ''^from [[]([^]()]+)[(]'')'
+      - network.application: 'regex_extract($_syno.tail, ''^from [[][^]]*[]] (?:signed in to|failed to sign in to) [[]([^]]*)[]]'')'
+      - _syno.method: 'regex_extract($_syno.tail, ''^from [[][^]]*[]] (?:signed in to|failed to sign in to) [[][^]]*[]](?: successfully)? via [[]([^]]*)[]]'')'
+      - event.reason: 'regex_extract($_syno.tail, '' (?:due to|because) [[]?(.*?)[]]?[.]?$'')'
+  - check: 'exists($_syno.tail) AND regex_match($_syno.tail, ''^(?:failed to log in|logged in) from '')'
+    map:
+      - _syno.ip: 'regex_extract($_syno.tail, ''^(?:failed to log in|logged in) from [[](?:::[fF]{4}:)?([0-9A-Fa-f:.]+)[]] '')'
+      - network.application: 'regex_extract($_syno.tail, '' via [[]([^]]*)[]]$'')'
+  - check: 'exists($_syno.tail) AND regex_match($_syno.tail, ''^from [[][^]]*[]] (?:logged (?:[[][^]]*[]] )?in successfully|failed to log in|was rejected to log in the server|logged out[^[]*|) ?via [[]'')'
+    map:
+      - network.application: 'regex_extract($_syno.tail, ''^from [[][^]]*[]] (?:logged (?:[[][^]]*[]] )?in successfully |failed to log in |was rejected to log in the server |logged out[^[]* )?via [[]([^]]*)[]]'')'
+  - check: 'exists($_syno.tail) AND regex_match($_syno.tail, ''^failed to log in via '')'
+    map:
+      - network.application: 'regex_extract($_syno.tail, ''^failed to log in via [[]([^]]*)[]]'')'
+  - check: 'exists($_syno.tail) AND regex_match($_syno.tail, '' first authentication of '')'
+    map:
+      - _syno.method: 'regex_extract($_syno.tail, '' via [[]([^]]*)[]]$'')'
+  - check: 'exists($_syno.tail) AND regex_match($_syno.tail, '' accessed shared folder '')'
+    map:
+      - file.name: 'regex_extract($_syno.tail, '' accessed shared folder [[]([^]]*)[]]$'')'
+
+  - check: '$connNew AND regex_match($_syno.tail, ''^(?:from [[][^]]*[]] signed in to |logged in from )'')'
+    map:
+      - event.action: signed-in
+  - check: '$connNew AND regex_match($_syno.tail, ''^from [[][^]]*[]] logged (?:[[][^]]*[]] )?in successfully via '')'
+    map:
+      - event.action: logged-in
+  - check: '$connNew AND regex_match($_syno.tail, ''^(?:from [[][^]]*[]] (?:failed to sign in to |failed to log in via |was rejected to log in )|failed to log in )'')'
+    map:
+      - event.action: login-failed
+  - check: '$connNew AND regex_match($_syno.tail, ''^from [[][^]]*[]] via [[][^]]*[]] accessed shared folder '')'
+    map:
+      - event.action: share-accessed
+  - check: '$connNew AND regex_match($_syno.tail, ''^from [[][^]]*[]] has successfully passed the first authentication '')'
+    map:
+      - event.action: first-factor-passed
+  - check: '$connNew AND regex_match($_syno.tail, ''^from [[][^]]*[]] logged out'')'
+    map:
+      - event.action: logged-out
+  # 12A00101, no trailing period, in both categories
+  - check: '($_syno.cat == ''Connection'' OR $_syno.cat == ''System'') AND not_exists($event.action) AND regex_match($_syno.tail, ''^was blocked by Account Protection'')'
+    map:
+      - event.action: account-blocked
+      - event.category: 'array_append(authentication)'
+      - event.type: 'array_append(denied)'
+
+  # DSM allows SSH and Telnet only to administrators: every shell login is an administrator's.
+  - check: '$event.action == ''logged-in'' AND regex_match($network.application, ''(?i)^(?:SSH|Telnet)$'')'
+    map:
+      - event.action: shell-logged-in
+  # The password was right and the second factor failed; an SMB client that offers only NTLMv1.
+  - check: '$event.action == ''login-failed'' AND regex_match($_syno.method, ''(?i)OTP|2FA|2-?step|authenticator|secure ?sign|passkey|hardware key|approve'')'
+    map:
+      - event.action: second-factor-failed
+  - check: '$event.action == ''login-failed'' AND regex_match($event.reason, ''(?i)NTLMv1'')'
+    map:
+      - event.action: ntlmv1-refused
+
+  - check: '$event.action == ''signed-in'' OR $event.action == ''logged-in'' OR $event.action == ''shell-logged-in'' OR $event.action == ''first-factor-passed'''
+    map:
+      - event.category: 'array_append(authentication)'
+      - event.type: 'array_append(start)'
+      - event.outcome: success
+  - check: '$event.action == ''login-failed'' OR $event.action == ''second-factor-failed'' OR $event.action == ''ntlmv1-refused'''
+    map:
+      - event.category: 'array_append(authentication)'
+      - event.type: 'array_append(start)'
+      - event.outcome: failure
+  - check: '$event.action == ''share-accessed'''
+    map:
+      - event.category: 'array_append(file)'
+      - event.type: 'array_append(access)'
+      - file.type: dir
+  - check: '$event.action == ''logged-out'''
+    map:
+      - event.category: 'array_append(authentication)'
+      - event.type: 'array_append(end)'
+
+  # ---- "Host [address] ..." (auto block 12A00003/4 in either category, 0017 refused clients) -------
+  - check: '($_syno.cat == ''Connection'' OR $_syno.cat == ''System'') AND not_exists($event.action) AND regex_match($_syno.m, ''^Host [[](?:::[fF]{4}:)?[0-9A-Fa-f:.]+[]] (?:was blocked|was unblocked|has been blocked|failed to connect) (?:via|at) [[][^]]*[]]'')'
+    map:
+      - _syno.ip: 'regex_extract($_syno.m, ''^Host [[](?:::[fF]{4}:)?([0-9A-Fa-f:.]+)[]] '')'
+      - _syno.hostverb: 'regex_extract($_syno.m, ''^Host [[][^]]*[]] (was blocked|was unblocked|has been blocked|failed to connect) '')'
+      - network.application: 'regex_extract($_syno.m, ''^Host [[][^]]*[]] [a-z ]+ (?:via|at) [[]([^]]*)[]]'')'
+      - event.reason: 'regex_extract($_syno.m, ''^Host [[][^]]*[]] failed to connect via [[][^]]*[]] (?:due to|because) [[]?(.*?)[]]?$'')'
+  - check: '$_syno.hostverb == ''was blocked'' OR $_syno.hostverb == ''has been blocked'''
+    map:
+      - event.action: host-blocked
+      - event.category: 'array_append(intrusion_detection)'
+      - event.type: 'array_append(denied)'
+  - check: '$_syno.hostverb == ''was unblocked'''
+    map:
+      - event.action: host-unblocked
+  - check: '$_syno.hostverb == ''failed to connect'' AND $_syno.cat == ''Connection'''
+    map:
+      - event.action: connect-refused
+      - event.category: 'array_append(network)'
+      - event.type: 'array_append(denied)'
+      - event.outcome: failure
+
+  # ---- Hyper Backup and System messages ---------------------------------------------------------
+  # Wording: DSM's System catalogue (usr/syno/synosdk/texts/enu/events, 7.2.2-72806 and 7.4.1-90080)
+  # and Hyper Backup's libsynobackup.so. Blocks are in the order 4.x tried its rules (level 0
+  # first, then the highest level), and each one only applies while no action is set, so one line
+  # gets one action, as one 4.x rule.
+  - check: '$hbNew AND regex_match($_syno.m, ''(?i)backup task (?:started|is starting)|integrity check (?:has )?started'')'
+    map:
+      - event.action: backup-started
+  # 4.x 132048
+  - check: '$bothNew AND regex_match($_syno.m, ''(?i)integrity check is finished\\. The backup target is found broken|data stored in backup destination .+? was corrupted|^Backup version [[][^]]*[]] of the stored backup task .+? was incomplete|^Checksum mismatch on file [[]|^File system error was found on volume [[]'')'
+    map:
+      - event.action: backup-data-corrupt
+  # 4.x 132070, 132071, 132077, 132032
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\b(?:storage pool|volume|raid|disk group|ssd cache|lun)[^.]*\\bdegrad'') AND regex_not_match($_syno.m, ''(?i)crash'')'
+    map:
+      - event.action: storage-degraded
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\b(?:storage pool|volume|raid|disk group|ssd cache|lun)[^.]*\\bcrash'')'
+    map:
+      - event.action: storage-crashed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)overheat(?:ing)?[,:][^.]*\\b(?:shutdown system now|shut down the system now)|\\bwas shut down due to overheating\\b|counting down to shutdown due to (?:cpu fan failed|fan failed|the critical event)'')'
+    map:
+      - event.action: protective-shutdown
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\brc\\.local has been renamed? to rc\\.local\\.bak due to contain malware pattern'')'
+    map:
+      - event.action: startup-script-malware
+  # 4.x 132042 (Hyper Backup), 132073, 132081, 132059, 132066, 132068
+  - check: '$hbNew AND regex_match($_syno.m, ''(?i)\\bfail(?:ed|ure|s)?\\b|\\berror\\b|\\bexception\\b|\\baborted\\b'') AND regex_not_match($_syno.m, ''(?i)partially|cancel|skipped|(?:finished|completed) successfully|no error was found|found broken|corrupt'')'
+    map:
+      - event.action: backup-failed
+      - event.outcome: failure
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)(?:S\\.M\\.A\\.R\\.T\\.?|\\bSMART\\b)[^.]*\\b(?:fail\\w*|abnormal|critical|bad)\\b|\\bbad sectors?\\b|\\b(?:drive|disk|hdd|ssd)\\b[^.]*\\b(?:failing|failed|has failed|crashed|critical|abnormal|not responding|defective|has issues|has an I/O error|experienced critical access error|reached (?:its |the )?(?:critical|warning))|\\b(?:read|write) error (?:occurred at|at internal disk)|\\berror occurred while accessing Disk\\b|\\bLifespan of Disk\\b[^.]*\\bbelow the pre-defined value|\\bRetry error occurs on the disk\\b|\\bIronWolf Health\\b[^.]*\\b(?:abnormal|critical|fail\\w*)\\b|\\bout of order\\b|\\bwas overheated\\b|\\btemperature (?:reached the critical limit|exceeded the normal value)|\\bmemory ECC error\\b|\\bredundant power[[][^]]*[]] on [^ ]+ failed'') AND regex_not_match($_syno.m, ''(?i)degrad|crash|has been (?:disabled|suppressed|re-enabled|corrected|resumed)|^Suppression of|was remapped|Advisor|after server retrials|restored to normal|in normal status|has resumed'')'
+    map:
+      - event.action: hardware-failing
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\blow battery\\b|\\bbattery (?:is )?low\\b|\\bsafe mode\\b|\\bsafe shutdown\\b|\\bUPS\\b[^.]*\\b(?:shut ?down|shutting down)\\b|\\b(?:shut ?down|shutting down)\\b[^.]*\\bUPS\\b'') AND regex_not_match($_syno.m, ''(?i)split-brain'')'
+    map:
+      - event.action: ups-low-battery
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^Disabled auto block service$'')'
+    map:
+      - event.action: autoblock-disabled
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^Clear [[][^]]+[]]$|^Log file was cleared$'')'
+    map:
+      - event.action: log-cleared
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^The RESET button has been pressed by a user to reset the administrator password'')'
+    map:
+      - event.action: admin-password-reset-button
+  # 4.x 132045 (both), 132076, 132080, 132089, 132093, 132054, 132056, 132069, 132098
+  - check: '$bothNew AND regex_match($_syno.m, ''(?i)backup task [[][^]]+[]] (?:was|has been) (?:removed|deleted)|\\bBackup destination [[][^]]*[]] deleted$|^Data stored in backup destination [[][^]]*[]] was removed by [[]|^Stored data of backup task [[][^]]*[]] was removed from backup destination [[]'') AND regex_not_match($_syno.m, ''(?i)^(?:Stored version|The backup folder)'')'
+    map:
+      - event.action: backup-deleted
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\b(?:storage pool|volume)\\b[^.]*\\b(?:was|has been) (?:deleted|removed)\\b'') AND regex_not_match($_syno.m, ''(?i)degrad|crash|shared folder'')'
+    map:
+      - event.action: volume-deleted
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\bon battery\\b|\\bpower (?:failure|outage|loss)\\b|\\blost (?:ac|utility|mains) power\\b'') AND regex_not_match($_syno.m, ''(?i)low battery|battery (?:is )?low|safe mode|safe shutdown'')'
+    map:
+      - event.action: on-battery
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^Telnet service was started$|^System successfully (?:started|enabled) [[][^]]*\\btelnet'')'
+    map:
+      - event.action: telnet-started
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^(?:[A-Za-z0-9_ ]+ )?folder [[][^]]+[]] was deleted$'') AND regex_not_match($_syno.m, ''(?i)^Metadata of'')'
+    map:
+      - event.action: shared-folder-deleted
+  - check: '$sysNew AND ((regex_match($_syno.m, ''(?i)^(?:Failed to delete|Deleted) a (?:shared folder snapshot [[][^]]*[]] from share [[][^]]*[]]|snapshot [[][^]]*[]] of iSCSI LUN [[][^]]*[]]) by [[][^]]*[]]$'') AND regex_not_match($_syno.m, ''(?i) by [[]SYSTEM[]]$'')) OR regex_match($_syno.m, ''(?i)^(?:Failed to delete|Deleted) a volume snapshot [[]''))'
+    map:
+      - event.action: snapshot-deleted
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^Deleted a (?:local )?replication of '')'
+    map:
+      - event.action: replication-deleted
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^System successfully reset the Encryption Key Vault|^The Encryption Key Vault was disabled$'')'
+    map:
+      - event.action: key-vault-reset
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^Triggered Task [[][^]]+[]] was created$'')'
+    map:
+      - event.action: triggered-task-created
+  # 4.x 132043 (Hyper Backup), 132075, 132084, 132079, 132057
+  - check: '$hbNew AND regex_match($_syno.m, ''(?i)partially (?:completed|succeeded)'')'
+    map:
+      - event.action: backup-partial
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\blow storage space on\\b|\\bvolume\\b[^.]*\\b(?:almost full|nearly full|running out of|is full|low (?:capacity|space)|insufficient (?:capacity|space))\\b|\\bfile number of [[][^]]+[]] was reaching the limit\\b'') AND regex_not_match($_syno.m, ''(?i)degrad|crash'')'
+    map:
+      - event.action: low-space
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\bimproper(?:ly)? shut ?down|\\bunexpected(?:ly)? (?:shut ?down|power(?:ed)? off|reboot)|\\babnormal(?:ly)? shut ?down|\\bpower interruption'')'
+    map:
+      - event.action: unclean-shutdown
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^Failed to (?:install the DSM Security Fix|check the DSM Security Fix file)\\b|^Failed to update the server$|^System failed to update the server, because of incompatible patch file|^Failed to update DSM to [[]|^Failed to (?:perform the upgrade|upgrade the high-availability cluster|upgrade the passive server)'')'
+    map:
+      - event.action: dsm-update-failed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^Failed to (?:sync [A-Za-z0-9_ ]+ replication from [[]|take a shared folder [[][^]]*[]] snapshot|take a snapshot from (?:iSCSI LUN|remote LUN))'')'
+    map:
+      - event.action: snapshot-failed
+  # 4.x 132060, 132061, 132063 (child of 132062), 132062, 132090, 132078, 132097
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\b(?:user|group|account)s? [[][^]]+[]] (?:was|were|has been|have been) (?:created|deleted|removed|disabled|enabled|renamed)\\b|\\b(?:created|deleted|removed|disabled|enabled|renamed) (?:the )?(?:user|group|account)s? [[]'') AND regex_not_match($_syno.m, ''(?i)password|added to|removed from|privilege|2-step|two-step|2fa|\\botp\\b|locked|protected|disabled because|too many'')'
+    map:
+      - event.action: account-changed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\bpassword\\b[^.]*\\b(?:changed|reset|modified|updated)\\b|\\b(?:changed|reset) (?:the )?password\\b|\\bpassword was set to\\b'')'
+    map:
+      - event.action: password-changed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)added to (?:the )?group [[]?administrators[]]?'')'
+    map:
+      - event.action: added-to-administrators
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\b(?:added to|removed from) (?:the )?group\\b'')'
+    map:
+      - event.action: group-membership-changed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^SSH service was started$|^System successfully (?:started|enabled) [[][^]]*\\bssh'')'
+    map:
+      - event.action: ssh-started
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^System successfully added port-mapping [(]|^System successfully (?:add|added|create|created|enable|enabled) port mapping (?:for port|of service)'')'
+    map:
+      - event.action: upnp-port-opened
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^Scheduled Task [[][^]]+[]] was created$'')'
+    map:
+      - event.action: scheduled-task-created
+  # 4.x 132044 (Hyper Backup), 132064, 132083, 132086, 132088, 132091, 132092, 132067, 132009
+  - check: '$hbNew AND regex_match($_syno.m, ''(?i)\\bcancell?ed\\b|\\bskipped\\b|\\bdiscarded successfully\\b'') AND regex_not_match($_syno.m, ''(?i)partially|integrity check is finished'')'
+    map:
+      - event.action: backup-cancelled
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^The app privilege on app [[]'')'
+    map:
+      - event.action: app-privilege-changed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\bUPS\\b[^.]*\\b(?:plugged out|unplugged|disconnected|removed|lost communication|communication (?:was )?lost)\\b|\\bCan not detect the (?:local|remote) UPS\\b|\\bAbnormal (?:power )?status of the (?:local|remote) UPS\\b|\\bUPS battery status was abnormal\\b|\\bLocal UPS was overloaded\\b|\\bFailed to (?:connect to|get response from) the remote UPS\\b'') AND regex_not_match($_syno.m, ''(?i)low battery|safe mode|safe shutdown|on battery'')'
+    map:
+      - event.action: ups-abnormal
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\bpackage\\b[^.]*\\b(?:installed|uninstalled|removed)\\b|\\b(?:installed|uninstalled|removed) (?:the )?package\\b'') AND regex_not_match($_syno.m, ''(?i)updat|upgrad|fail'')'
+    map:
+      - event.action: package-installed-or-removed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^Failed to (?:install|update|repair|uninstall) package [[]|^Automatically install [[][^]]+[]] failed'')'
+    map:
+      - event.action: package-failed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^Successfully (?:add|replace|delete|recreate|reset) certificate|^Successfully set certificate [[][^]]+[]] as default|^Successfully set [[][^]]+[]] to certificate [[]|^Enabled auto block service$'')'
+    map:
+      - event.action: certificate-or-autoblock-changed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^(?:Access right of the shared folder [[][^]]+[]] was set|Recycle bin of shared folder [[][^]]+[]] was disabled|(?:[A-Za-z0-9_ ]+ )?folder [[][^]]+[]] was created(?: when enabling [[][^]]*[]])?)$'')'
+    map:
+      - event.action: shared-folder-changed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^(?:Delete host IP [[][^]]+[]] from (?:Block|Allow) List|Add host IP [[][^]]+[]] to blocking list by [[][^]]*[]]|Too many IP addresses in auto block list)$'')'
+    map:
+      - event.action: autoblock-list-changed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^Server date/time was changed to [[]|^Network time synchronization is disabled$|^Time zone was changed to [[]'')'
+    map:
+      - event.action: clock-changed
+  # 4.x 132049 (both), 132072, 132082, 132085, 132087, 132058, 132099, 132096
+  - check: '$bothNew AND regex_match($_syno.m, ''(?i)^Restored (?:shared folder|iSCSI LUN) [[][^]]+[]] from snapshot [[]|^Share [[][^]]+[]] was restored$|Restore started to restore version created at|^Local Recovery started to restore version'')'
+    map:
+      - event.action: data-restored
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\b(?:storage pool|volume|raid|disk group)[^.]*\\b(?:repaired|repair (?:is |was |has been )?(?:complete|completed|finished)|(?:back|returned) to (?:normal|healthy)|was in normal status|rebuil[dt] (?:is |was |has been )?(?:complete|completed|finished))'') AND regex_not_match($_syno.m, ''(?i)degrad|crash|fail'')'
+    map:
+      - event.action: storage-repaired
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\bback online\\b|\\bpower (?:was |has been )?restored\\b|\\bAC power of (?:the )?(?:local|remote) UPS was restored\\b|\\bUPS\\b[^.]*\\b(?:was |has been )?(?:plugged in|connected)\\b'') AND regex_not_match($_syno.m, ''(?i)low battery|safe mode|on battery'')'
+    map:
+      - event.action: power-restored
+  - check: '$sysNew AND ((regex_match($_syno.m, ''(?i)^(?:System|Server) start(?:ed)? counting down to (?:reboot|shutdown)'') AND regex_not_match($_syno.m, ''(?i)^(?:System|Server) start(?:ed)? counting down to (?:reboot|shutdown) due to'')) OR regex_match($_syno.m, ''(?i)^System started to shutdown due to auto poweroff time up''))'
+    map:
+      - event.action: restarting
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)\\bpackage\\b[^.]*\\b(?:updated|upgraded)\\b|\\bupdate was complete\\b|\\bDSM\\b[^.]*\\b(?:updated|upgraded)\\b'') AND regex_not_match($_syno.m, ''(?i)fail'')'
+    map:
+      - event.action: package-updated
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^Start to empty (?:all recycle bins|recycle bin of shared folder [[])'')'
+    map:
+      - event.action: recycle-bin-emptied
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)^(?:Scheduled|Triggered) Task [[][^]]+[]] (?:was removed$|was renamed to [[]|failed to run)'')'
+    map:
+      - event.action: task-changed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)test message from Synology Syslog Client'')'
+    map:
+      - event.action: log-center-test
+  # 4.x level 2: recorded, no rule (132041, 132047, 132074)
+  - check: '$hbNew AND regex_match($_syno.m, ''(?i)\\b(?:finished|completed) successfully\\b'') AND regex_not_match($_syno.m, ''(?i)partially|fail|error'')'
+    map:
+      - event.action: backup-succeeded
+      - event.outcome: success
+  - check: '$hbNew AND regex_match($_syno.m, ''(?i)integrity check is finished\\. No error was found|^(?:[[][^]]*[]][[][^]]*[]] )?Data integrity check finished\\.'')'
+    map:
+      - event.action: integrity-check-passed
+  - check: '$sysNew AND regex_match($_syno.m, ''(?i)(?:S\\.M\\.A\\.R\\.T\\.?|\\bSMART\\b)[^.]*\\b(?:test|check)\\b'') AND regex_not_match($_syno.m, ''(?i)fail|abnormal|critical|warning|\\bbad\\b|error|storage pool|volume'')'
+    map:
+      - event.action: drive-test
+
+  # Hyper Backup and Task Scheduler task names
+  - check: '$_syno.cat == ''Hyper_Backup'' AND regex_match($message, ''^[[][^]]*[]][[][^]]*[]]'')'
+    map:
+      - process.title: 'regex_extract($message, ''^[[][^]]*[]][[]([^]]*)[]]'')'
+  - check: 'not_exists($process.title) AND regex_match($message, ''(?i)backup task [[][^]]+[]] (?:was|has been)'')'
+    map:
+      - process.title: 'regex_extract($message, ''(?i)backup task [[]([^]]+)[]] (?:was|has been)'')'
+  - check: 'not_exists($process.title) AND regex_match($message, ''(?:Scheduled|Triggered) Task [[]'')'
+    map:
+      - process.title: 'regex_extract($message, ''(?:Scheduled|Triggered) Task [[]([^]]+)[]]'')'
+
+  # ---- File transfer logs: Event: action, Path: p[ -> new], File/Folder: f, Size: s, User: u, IP: a --
+  - check: '$_syno.cat == ''file'' AND regex_match($message, ''^Event:[ ][A-Za-z0-9_]+, Path:[ ].*, File/Folder:[ ](?:File|Folder), Size:[ ][^,]*, User:[ ][^,]*, IP:[ ](?:::[fF]{4}:)?[0-9A-Fa-f:.]+$'')'
+    map:
+      - event.action: 'regex_extract($message, ''^Event:[ ]([A-Za-z0-9_]+),'')'
+      - _syno.path: 'regex_extract($message, ''^Event:[ ][A-Za-z0-9_]+, Path:[ ](.*), File/Folder:[ ](?:File|Folder), Size:[ ][^,]*, User:[ ][^,]*, IP:[ ][^,]*$'')'
+      - _syno.object: 'regex_extract($message, '', File/Folder:[ ](File|Folder), Size:[ ][^,]*, User:[ ][^,]*, IP:[ ][^,]*$'')'
+      - user.name: 'regex_extract($message, '', User:[ ]([^,]*), IP:[ ][^,]*$'')'
+      - _syno.ip: 'regex_extract($message, '', IP:[ ](?:::[fF]{4}:)?([0-9A-Fa-f:.]+)$'')'
+      - event.category: 'array_append(file)'
+  - check: 'exists($_syno.path) AND regex_match($_syno.path, '' -> '')'
+    map:
+      - file.path: 'regex_extract($_syno.path, ''^(.*) -> '')'
+      - file.target_path: 'regex_extract($_syno.path, '' -> (.*)$'')'
+  - check: 'exists($_syno.path) AND not_exists($file.path)'
+    map:
+      - file.path: '$_syno.path'
+  - check: '$_syno.object == ''File'''
+    map:
+      - file.type: file
+  - check: '$_syno.object == ''Folder'''
+    map:
+      - file.type: dir
+  - check: '$_syno.cat == ''file'' AND exists($event.action)'
+    map:
+      - event.action: 'downcase($event.action)'
+
+  # ---- Addresses, accounts --------------------------------------------------------------------
+  - check: 'exists($_syno.ip) AND (is_ipv4($_syno.ip) OR is_ipv6($_syno.ip))'
+    map:
+      - source.ip: '$_syno.ip'
+      - source.address: '$_syno.ip'
+      - related.ip: 'array_append($_syno.ip)'
+      - network.direction: inbound
+  - check: 'exists($source.ip) AND (NOT is_public_ip($_syno.ip) OR ip_cidr_match($_syno.ip, ''100.64.0.0'', ''10'') OR ip_cidr_match($_syno.ip, ''169.254.0.0'', ''16''))'
+    map:
+      - network.direction: internal
+  - check: 'exists($_syno.tail) AND regex_match($user.name, ''(?i)^(?:[^\\\\]+\\\\)?(?:admin|administrator|root)$'')'
+    map:
+      - user.roles: 'array_append(builtin-administrator)'
+  - check:
+      - user.name: 'kvdb_match(''jt-synology-admin-accounts'')'
+    map:
+      - user.roles: 'array_append(administrator)'
+  - check:
+      - user.name: 'kvdb_match(''jt-synology-service-accounts'')'
+    map:
+      - user.roles: 'array_append(service-account)'
+  - check: 'not_exists($user.name) AND exists($_syno.actor)'
+    map:
+      - user.name: '$_syno.actor'
+  - check: 'exists($user.name)'
+    map:
+      - related.user: 'array_append($user.name)'

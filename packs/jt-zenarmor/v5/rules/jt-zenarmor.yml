@@ -1,0 +1,554 @@
+# jt-zenarmor rules for Wazuh 5.x (Sigma, evaluated by the indexer; beta). Each one carries the tag
+# jt.rule.<id> of the 4.x rule it replaces. 4.x rules below level 3 are not ported: on 5.x every
+# decoded event is indexed anyway, and a rule only adds a finding. The frequency rules (130830 to
+# 130835, 130860) are Alerting monitors (monitors/jt-zenarmor.yml).
+#
+# The decoders do the classification the 4.x rules did with case-insensitive pcre2 (Sigma here is
+# case-sensitive and |re does not work on rc2): the rules match tags zenarmor.* (see
+# decoders/20-jt-zenarmor-classify.yml). 4.x tried sibling rules in a fixed order (higher level
+# first) and the first match won; Sigma rules are independent, so every rule below excludes the
+# cases a 4.x rule tried before it, and an event gives one finding, as before.
+#
+# Levels: 4.x 3 -> informational, 4-6 -> low, 7-9 -> medium, 10-13 -> high.
+
+# --- unblocked threats: the connection was established ----------------------------------------
+
+- metadata:
+    title: "Zenarmor: malicious connection was not blocked - {{rule.category}} from {{source.ip}} to {{destination.domain}} {{destination.ip}}"
+    author: Jason Tools
+    description: A connection whose security tags are malware, botnet, command and control, ransomware or similar was allowed and established. The DNS flow record of an unblocked lookup is left to the dns record.
+    references: ["Migrated from jt-zenarmor 4.x rule 130801"]
+  sigma_id: jt-zenarmor-130801
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: threat and allowed and not dns and not dnsflow
+    threat: {tags: zenarmor.st-malware}
+    allowed: {event.action: allowed}
+    dns: {event.dataset: zenarmor.dns}
+    dnsflow: {event.dataset: zenarmor.conn, destination.port: 53}
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1071], name: [Application Layer Protocol]}
+  tags: [jt.rule.130801, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: phishing or fraud connection was not blocked - {{rule.category}} from {{source.ip}} to {{destination.domain}} {{destination.ip}}"
+    author: Jason Tools
+    description: A connection whose security tags are phishing, fraud, scam, spam or crypto mining (and no malware tag) was allowed.
+    references: ["Migrated from jt-zenarmor 4.x rule 130803"]
+  sigma_id: jt-zenarmor-130803
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: threat and allowed and not dns and not dnsflow
+    threat: {tags: zenarmor.st-phishing}
+    allowed: {event.action: allowed}
+    dns: {event.dataset: zenarmor.dns}
+    dnsflow: {event.dataset: zenarmor.conn, destination.port: 53}
+  mitre:
+    tactic: {id: [TA0001], name: [Initial Access]}
+    technique: {id: [T1566], name: [Phishing]}
+    subtechnique: {id: [T1566.002], name: [Spearphishing Link]}
+  tags: [jt.rule.130803, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: session with a malicious site was not blocked - {{rule.category}} from {{source.ip}} to {{destination.domain}} {{destination.ip}} ({{event.dataset}})"
+    author: Jason Tools
+    description: A TLS or web session to a site Zenarmor categorises as malware (the record's web category; these records carry no security tags) was allowed.
+    references: ["Migrated from jt-zenarmor 4.x rule 130851"]
+  sigma_id: jt-zenarmor-130851
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: threat and allowed
+    threat: {tags: zenarmor.cat-malware}
+    allowed: {event.action: allowed}
+  mitre:
+    tactic: {id: [TA0011, TA0001], name: [Command and Control, Initial Access]}
+    technique: {id: [T1071, T1189], name: [Application Layer Protocol, Drive-by Compromise]}
+    subtechnique: {id: [T1071.001], name: [Web Protocols]}
+  tags: [jt.rule.130851, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: session with a phishing or fraud site was not blocked - {{rule.category}} from {{source.ip}} to {{destination.domain}} {{destination.ip}} ({{event.dataset}})"
+    author: Jason Tools
+    description: A TLS or web session to a site Zenarmor categorises as phishing, fraud, scam, spam or crypto mining was allowed.
+    references: ["Migrated from jt-zenarmor 4.x rule 130852"]
+  sigma_id: jt-zenarmor-130852
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: threat and allowed
+    threat: {tags: zenarmor.cat-phishing}
+    allowed: {event.action: allowed}
+  mitre:
+    tactic: {id: [TA0001], name: [Initial Access]}
+    technique: {id: [T1566], name: [Phishing]}
+    subtechnique: {id: [T1566.002], name: [Spearphishing Link]}
+  tags: [jt.rule.130852, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: session with a potentially dangerous site was not blocked - from {{source.ip}} to {{destination.domain}} {{destination.ip}} ({{event.dataset}})"
+    author: Jason Tools
+    description: A TLS or web session to a site in the Potentially Dangerous category was allowed.
+    references: ["Migrated from jt-zenarmor 4.x rule 130853"]
+  sigma_id: jt-zenarmor-130853
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: threat and allowed and not toolname
+    threat: {tags: zenarmor.cat-potentially-dangerous}
+    allowed: {event.action: allowed}
+    toolname: {tags: [zenarmor.name-oast, zenarmor.name-mining]}
+  mitre:
+    tactic: {id: [TA0001], name: [Initial Access]}
+    technique: {id: [T1189], name: [Drive-by Compromise]}
+  tags: [jt.rule.130853, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: connection to a potentially dangerous site was not blocked - from {{source.ip}} to {{destination.domain}} {{destination.ip}}:{{destination.port}}"
+    author: Jason Tools
+    description: A connection whose security tags say Potentially Dangerous Sites was allowed. The DNS flow (port 53) is left to the dns record.
+    references: ["Migrated from jt-zenarmor 4.x rule 130854"]
+  sigma_id: jt-zenarmor-130854
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: threat and allowed and not port53
+    threat: {tags: zenarmor.st-potentially-dangerous}
+    allowed: {event.action: allowed}
+    port53: {destination.port: 53}
+  mitre:
+    tactic: {id: [TA0001], name: [Initial Access]}
+    technique: {id: [T1189], name: [Drive-by Compromise]}
+  tags: [jt.rule.130854, jt.pack.jt-zenarmor]
+
+# --- blocked connections, graded from the alert record (one per block) ------------------------
+
+- metadata:
+    title: "Zenarmor: malicious connection blocked - {{rule.category}} from {{source.ip}} to {{destination.domain}} {{destination.ip}}:{{destination.port}}"
+    author: Jason Tools
+    description: Zenarmor blocked a connection to a malware-category destination (its alert record). The conn, tls and dns records of the same block, and the alert records of blocked lookups (port 53), do not raise a finding.
+    references: ["Migrated from jt-zenarmor 4.x rule 130802"]
+  sigma_id: jt-zenarmor-130802
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: alert and blocked and threat and not port53 and not c2 and not mining
+    alert: {event.dataset: zenarmor.alert}
+    blocked: {event.action: blocked}
+    threat: {tags: zenarmor.st-malware}
+    port53: {destination.port: 53}
+    c2: {tags: zenarmor.st-c2}
+    mining: {tags: zenarmor.name-mining}
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1071], name: [Application Layer Protocol]}
+  tags: [jt.rule.130802, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: connection to a command-and-control server blocked, check the host - {{rule.category}} from {{source.ip}} to {{destination.domain}} {{destination.ip}}:{{destination.port}}"
+    author: Jason Tools
+    description: The host tried to reach a command-and-control, ransomware or botnet server and was stopped; something on it is calling its controller.
+    references: ["Migrated from jt-zenarmor 4.x rule 130820"]
+  sigma_id: jt-zenarmor-130820
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: alert and blocked and threat and c2 and not port53
+    alert: {event.dataset: zenarmor.alert}
+    blocked: {event.action: blocked}
+    threat: {tags: zenarmor.st-malware}
+    c2: {tags: zenarmor.st-c2}
+    port53: {destination.port: 53}
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1071], name: [Application Layer Protocol]}
+  tags: [jt.rule.130820, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: phishing or fraud connection blocked - {{rule.category}} from {{source.ip}} to {{destination.domain}} {{destination.ip}}:{{destination.port}}"
+    author: Jason Tools
+    description: Zenarmor blocked a connection to a phishing, fraud, scam, spam or crypto-mining destination (its alert record).
+    references: ["Migrated from jt-zenarmor 4.x rule 130804"]
+  sigma_id: jt-zenarmor-130804
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: alert and blocked and threat and not port53 and not mining
+    alert: {event.dataset: zenarmor.alert}
+    blocked: {event.action: blocked}
+    threat: {tags: zenarmor.st-phishing}
+    port53: {destination.port: 53}
+    mining: {tags: zenarmor.name-mining}
+  mitre:
+    tactic: {id: [TA0001], name: [Initial Access]}
+    technique: {id: [T1566], name: [Phishing]}
+    subtechnique: {id: [T1566.002], name: [Spearphishing Link]}
+  tags: [jt.rule.130804, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: DNS tunnelling blocked, a program on or behind the host is carrying data over DNS - {{destination.domain}} from {{source.ip}} to {{destination.ip}}"
+    author: Jason Tools
+    description: Zenarmor's own DNS Tunneling verdict (a premium category), from its alert record, whether a client or a resolver relaying the tunnel sent it.
+    references: ["Migrated from jt-zenarmor 4.x rule 130861"]
+  sigma_id: jt-zenarmor-130861
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: alert and threat
+    alert: {event.dataset: zenarmor.alert}
+    threat: {tags: zenarmor.st-dns-tunnel}
+  mitre:
+    tactic: {id: [TA0011, TA0010], name: [Command and Control, Exfiltration]}
+    technique: {id: [T1572, T1071, T1048], name: [Protocol Tunneling, Application Layer Protocol, Exfiltration Over Alternative Protocol]}
+    subtechnique: {id: [T1071.004, T1048.003], name: [DNS, Exfiltration Over Unencrypted Non-C2 Protocol]}
+  tags: [jt.rule.130861, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: potentially dangerous site blocked - from {{source.ip}} to {{destination.domain}} {{destination.ip}}:{{destination.port}}"
+    author: Jason Tools
+    description: Zenarmor blocked a connection to a Potentially Dangerous site (its alert record). Blocked lookups (port 53) do not raise a finding.
+    references: ["Migrated from jt-zenarmor 4.x rule 130855"]
+  sigma_id: jt-zenarmor-130855
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: alert and blocked and threat and not port53 and not mining
+    alert: {event.dataset: zenarmor.alert}
+    blocked: {event.action: blocked}
+    threat: {tags: zenarmor.st-potentially-dangerous}
+    port53: {destination.port: 53}
+    mining: {tags: zenarmor.name-mining}
+  mitre:
+    tactic: {id: [TA0001], name: [Initial Access]}
+    technique: {id: [T1189], name: [Drive-by Compromise]}
+  tags: [jt.rule.130855, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: connection to a dynamic-DNS, newly registered or first-seen site blocked by policy - {{rule.category}} from {{source.ip}} to {{destination.domain}} {{destination.ip}}:{{destination.port}}"
+    author: Jason Tools
+    description: Information that the policy did its job, for connections only; blocked lookups of these categories (mostly resolvers) do not raise a finding.
+    references: ["Migrated from jt-zenarmor 4.x rule 130857"]
+  sigma_id: jt-zenarmor-130857
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: alert and blocked and threat and not port53 and not mining
+    alert: {event.dataset: zenarmor.alert}
+    blocked: {event.action: blocked}
+    threat: {tags: zenarmor.st-weak}
+    port53: {destination.port: 53}
+    mining: {tags: zenarmor.name-mining}
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1568], name: [Dynamic Resolution]}
+  tags: [jt.rule.130857, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: {{rule.category}} application blocked by policy - from {{source.ip}} to {{destination.domain}} {{destination.ip}}:{{destination.port}}"
+    author: Jason Tools
+    description: Application control blocked a Remote Access or Proxy application; someone tried to run one.
+    references: ["Migrated from jt-zenarmor 4.x rule 130875"]
+  sigma_id: jt-zenarmor-130875
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: alert and app
+    alert: {event.dataset: zenarmor.alert}
+    app: {tags: zenarmor.app-remote-access-or-proxy}
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1219, T1090], name: [Remote Access Software, Proxy]}
+  tags: [jt.rule.130875, jt.pack.jt-zenarmor]
+
+# --- blocked lookups of command-and-control names (dns record) --------------------------------
+
+- metadata:
+    title: "Zenarmor: lookup of a command-and-control domain blocked - {{rule.category}} {{dns.question.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: A client-style lookup (Recursion Desired, not PTR/NS/SOA, source not a listed resolver) of a command-and-control name was blocked. 4.x lowered this when the source had sent a resolver-style lookup in the 15 minutes before (130848); 5.x has no per-event correlation, so a recognised resolver's forwarded lookup raises this too.
+    references: ["Migrated from jt-zenarmor 4.x rule 130819"]
+  sigma_id: jt-zenarmor-130819
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: dns and blocked and threat and c2 and client and rd
+    dns: {event.dataset: zenarmor.dns}
+    blocked: {event.action: blocked}
+    threat: {tags: zenarmor.st-malware}
+    c2: {tags: zenarmor.st-c2}
+    client: {tags: zenarmor.client-query}
+    rd: {dns.header_flags: RD}
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1071], name: [Application Layer Protocol]}
+    subtechnique: {id: [T1071.004], name: [DNS]}
+  tags: [jt.rule.130819, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: a command-and-control domain was resolved, not blocked, check the host - {{rule.category}} {{dns.question.name}} from {{source.ip}}"
+    author: Jason Tools
+    description: A client-style lookup of a command-and-control or DNS-tunnel name was answered; the controller is reachable. 4.x lowered this to level 4 when the source had sent a resolver-style lookup in the 15 minutes before (130865); 5.x has no per-event correlation.
+    references: ["Migrated from jt-zenarmor 4.x rule 130864"]
+  sigma_id: jt-zenarmor-130864
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: dns and allowed and threat and c2 and client and rd and not toolname and not evasion
+    dns: {event.dataset: zenarmor.dns}
+    allowed: {event.action: allowed}
+    threat: {tags: zenarmor.dns-threat}
+    c2: {tags: zenarmor.dns-c2}
+    client: {tags: zenarmor.client-query}
+    rd: {dns.header_flags: RD}
+    toolname: {tags: [zenarmor.name-oast, zenarmor.name-mining, zenarmor.name-tunnel, zenarmor.name-stager]}
+    evasion: {tags: zenarmor.st-evasion}
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1071], name: [Application Layer Protocol]}
+    subtechnique: {id: [T1071.004], name: [DNS]}
+  tags: [jt.rule.130864, jt.pack.jt-zenarmor]
+
+# --- proxy, anonymizer, VPN, DNS over HTTPS -----------------------------------------------------
+
+- metadata:
+    title: "Zenarmor: suspicious or evasive connection - {{rule.category}} from {{source.ip}} to {{destination.domain}} {{destination.ip}}"
+    author: Jason Tools
+    description: A record whose security tags are an evasion category (Hacking, Proxy, Anonymizer, Tor, VPN, Suspicious, DNS over HTTPS) and was not blocked. iCloud Private Relay, the Tor Project check page and names in the KVDB jt-zenarmor-domain-allow are left alone.
+    references: ["Migrated from jt-zenarmor 4.x rule 130805"]
+  sigma_id: jt-zenarmor-130805
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: evasion and not blocked and not known and not toolname
+    evasion: {tags: zenarmor.st-evasion}
+    blocked: {event.action: blocked}
+    known: {tags: [zenarmor.name-icloud-relay, zenarmor.name-tor-check, zenarmor.allowlisted]}
+    toolname:
+      event.dataset: [zenarmor.dns, zenarmor.tls, zenarmor.http]
+      event.action: allowed
+      tags: [zenarmor.name-oast, zenarmor.name-mining, zenarmor.name-stager]
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1090], name: [Proxy]}
+    subtechnique: {id: [T1090.003], name: [Multi-hop Proxy]}
+  tags: [jt.rule.130805, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: connection in an evasion category - {{rule.category}} from {{source.ip}} to {{destination.domain}} {{destination.ip}}"
+    author: Jason Tools
+    description: A TLS or web session whose web category is Hacking, Proxy, Anonymizer, Tor or VPN and was not blocked. iCloud Private Relay, the Tor Project check page and names in jt-zenarmor-domain-allow are left alone; an allowed DNS over HTTPS session is not matched.
+    references: ["Migrated from jt-zenarmor 4.x rule 130806"]
+  sigma_id: jt-zenarmor-130806
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: evasion and not blocked and not known and not stronger and not toolname
+    evasion: {tags: zenarmor.cat-evasion}
+    blocked: {event.action: blocked}
+    known: {tags: [zenarmor.name-icloud-relay, zenarmor.name-tor-check, zenarmor.allowlisted]}
+    stronger: {tags: [zenarmor.cat-malware, zenarmor.cat-phishing, zenarmor.cat-potentially-dangerous]}
+    toolname:
+      event.dataset: [zenarmor.dns, zenarmor.tls, zenarmor.http]
+      event.action: allowed
+      tags: [zenarmor.name-oast, zenarmor.name-mining]
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1090], name: [Proxy]}
+    subtechnique: {id: [T1090.003], name: [Multi-hop Proxy]}
+  tags: [jt.rule.130806, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: evasion-category connection blocked by policy - {{rule.category}} from {{source.ip}} to {{destination.domain}}"
+    author: Jason Tools
+    description: The policy blocked a proxy, VPN, Tor, DNS over HTTPS or similar destination (its alert record, one per block); the conn and tls records of the block do not raise a finding.
+    references: ["Migrated from jt-zenarmor 4.x rule 130828"]
+  sigma_id: jt-zenarmor-130828
+  enabled: true
+  status: experimental
+  level: informational
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: alert and blocked and evasion and not known
+    alert: {event.dataset: zenarmor.alert}
+    blocked: {event.action: blocked}
+    evasion: {tags: zenarmor.st-evasion}
+    known: {tags: [zenarmor.name-icloud-relay, zenarmor.name-tor-check, zenarmor.allowlisted]}
+  tags: [jt.rule.130828, jt.pack.jt-zenarmor]
+
+# --- names that betray a tool -----------------------------------------------------------------
+# Matched on destination.domain whatever Zenarmor's category is (suffix lists in the classification
+# decoder, ideas of SigmaHQ net_dns_external_service_interaction_domains, net_dns_pua_cryptocoin_mining_xmr,
+# zeek_dns_mining_pools, zeek_dns_torproxy and net_dns_mal_cobaltstrike, DRL 1.1).
+
+- metadata:
+    title: "Zenarmor: out-of-band testing domain resolved or contacted (not blocked), a host processed an injected payload: {{destination.domain}} ({{event.dataset}}) from {{source.ip}}"
+    author: Jason Tools
+    description: interactsh, Burp Collaborator, canarytokens and similar services hand out a unique name per payload; a lookup or session means some host processed an injected payload (log4j-style lookups, SSRF, a mail header) or opened a canary. A lookup through a resolver counts too.
+    references: ["Migrated from jt-zenarmor 4.x rule 130841"]
+  sigma_id: jt-zenarmor-130841
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: record and allowed and name and not stronger
+    record: {event.dataset: [zenarmor.dns, zenarmor.tls, zenarmor.http]}
+    allowed: {event.action: allowed}
+    name: {tags: zenarmor.name-oast}
+    stronger: {tags: [zenarmor.cat-malware, zenarmor.cat-phishing]}
+  mitre:
+    tactic: {id: [TA0001, TA0043], name: [Initial Access, Reconnaissance]}
+    technique: {id: [T1190, T1595], name: [Exploit Public-Facing Application, Active Scanning]}
+    subtechnique: {id: [T1595.002], name: [Vulnerability Scanning]}
+  tags: [jt.rule.130841, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: out-of-band testing domain looked up (blocked), a host processed an injected payload: {{destination.domain}} from {{source.ip}}"
+    author: Jason Tools
+    description: The alert record of a blocked lookup of an out-of-band testing name; through a resolver it is still meaningful, a host behind it did the processing.
+    references: ["Migrated from jt-zenarmor 4.x rule 130840"]
+  sigma_id: jt-zenarmor-130840
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: alert and blocked and port53 and family and name
+    alert: {event.dataset: zenarmor.alert}
+    blocked: {event.action: blocked}
+    port53: {destination.port: 53}
+    family: {tags: [zenarmor.st-malware, zenarmor.st-phishing, zenarmor.st-potentially-dangerous, zenarmor.st-weak]}
+    name: {tags: zenarmor.name-oast}
+  mitre:
+    tactic: {id: [TA0001, TA0043], name: [Initial Access, Reconnaissance]}
+    technique: {id: [T1190, T1595], name: [Exploit Public-Facing Application, Active Scanning]}
+    subtechnique: {id: [T1595.002], name: [Vulnerability Scanning]}
+  tags: [jt.rule.130840, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: crypto-mining pool resolved or contacted (not blocked), a host may run a miner: {{destination.domain}} ({{event.dataset}}) from {{source.ip}}"
+    author: Jason Tools
+    description: A lookup or session to a known crypto-mining pool was allowed. Zenarmor has no mining category, so the name decides.
+    references: ["Migrated from jt-zenarmor 4.x rule 130866"]
+  sigma_id: jt-zenarmor-130866
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: record and allowed and name and not stronger
+    record: {event.dataset: [zenarmor.dns, zenarmor.tls, zenarmor.http]}
+    allowed: {event.action: allowed}
+    name: {tags: zenarmor.name-mining}
+    stronger: {tags: [zenarmor.cat-malware, zenarmor.cat-phishing]}
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1496], name: [Resource Hijacking]}
+  tags: [jt.rule.130866, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: crypto-mining pool blocked, the host may still run a miner: {{destination.domain}} from {{source.ip}}"
+    author: Jason Tools
+    description: The alert record of a blocked connection or lookup to a crypto-mining pool; blocking the pool does not stop the miner.
+    references: ["Migrated from jt-zenarmor 4.x rule 130874"]
+  sigma_id: jt-zenarmor-130874
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: alert and blocked and family and name and (port53 or not c2 or not malware)
+    alert: {event.dataset: zenarmor.alert}
+    blocked: {event.action: blocked}
+    family: {tags: [zenarmor.st-malware, zenarmor.st-phishing, zenarmor.st-potentially-dangerous, zenarmor.st-weak]}
+    name: {tags: zenarmor.name-mining}
+    c2: {tags: zenarmor.st-c2}
+    malware: {tags: zenarmor.st-malware}
+    port53: {destination.port: 53}
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1496], name: [Resource Hijacking]}
+  tags: [jt.rule.130874, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: tunnelling service or Tor gateway resolved or contacted (not blocked): {{destination.domain}} ({{event.dataset}}) from {{source.ip}}"
+    author: Jason Tools
+    description: Reverse-tunnel services (Cloudflare quick tunnels, ngrok, localtunnel, serveo, pinggy, playit, portmap) and Tor web gateways or .onion names - an internal service published to the internet, malware or a phishing kit behind a quick tunnel, or Tor through a gateway. Developers use these too; a fixed name can go in jt-zenarmor-domain-allow.
+    references: ["Migrated from jt-zenarmor 4.x rule 130868"]
+  sigma_id: jt-zenarmor-130868
+  enabled: true
+  status: experimental
+  level: low
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: record and allowed and name and not allowlisted and not stronger and not stronger_tag and not toolname
+    record: {event.dataset: [zenarmor.dns, zenarmor.tls, zenarmor.http]}
+    allowed: {event.action: allowed}
+    name: {tags: zenarmor.name-tunnel}
+    allowlisted: {tags: zenarmor.allowlisted}
+    stronger: {tags: [zenarmor.cat-malware, zenarmor.cat-phishing, zenarmor.cat-potentially-dangerous, zenarmor.cat-evasion]}
+    stronger_tag: {tags: zenarmor.st-evasion}
+    toolname: {tags: [zenarmor.name-oast, zenarmor.name-mining, zenarmor.name-stager]}
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1572, T1090], name: [Protocol Tunneling, Proxy]}
+    subtechnique: {id: [T1090.003], name: [Multi-hop Proxy]}
+  tags: [jt.rule.130868, jt.pack.jt-zenarmor]
+
+- metadata:
+    title: "Zenarmor: lookup in the shape of Cobalt Strike's DNS stager, check the host: {{dns.question.name}} {{dns.question.type}} from {{source.ip}}"
+    author: Jason Tools
+    description: Cobalt Strike's default DNS stager names (aaa.stage.*, *.stage.123456.*); a changed profile does not use them.
+    references: ["Migrated from jt-zenarmor 4.x rule 130870"]
+  sigma_id: jt-zenarmor-130870
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-zenarmor}
+  detection:
+    condition: dns and allowed and name
+    dns: {event.dataset: zenarmor.dns}
+    allowed: {event.action: allowed}
+    name: {tags: zenarmor.name-stager}
+  mitre:
+    tactic: {id: [TA0011], name: [Command and Control]}
+    technique: {id: [T1071], name: [Application Layer Protocol]}
+    subtechnique: {id: [T1071.004], name: [DNS]}
+  tags: [jt.rule.130870, jt.pack.jt-zenarmor]

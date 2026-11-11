@@ -115,6 +115,7 @@ SERVER_FEATURES = {
     'rule_packs':        {'removed_in': 5, 'what': 'rule packs, which install XML rules and CDB lists'},
     'analysisd_reload':  {'removed_in': 5, 'what': 'the analysisd ruleset reload endpoint'},
     'group_config_api':  {'added_in': 5, 'what': 'the /groups/{id}/configuration endpoint'},
+    'rule_packs_v5':     {'added_in': 5, 'what': 'Wazuh 5.x rule packs (beta), which live in the indexer'},
 }
 
 UNKNOWN_SERVER_VERSION = '0.0.0'
@@ -142,7 +143,8 @@ DASHBOARD_CONF = '/etc/wazuh-dashboard/opensearch_dashboards.yml'
 
 # The Wazuh root CA, which signs the dashboard's certificate: on the dashboard
 # host itself, or the copy every manager has for filebeat.
-DASHBOARD_CA_FILES = ('/etc/wazuh-dashboard/certs/root-ca.pem', '/etc/filebeat/certs/root-ca.pem')
+DASHBOARD_CA_FILES = ('/etc/wazuh-dashboard/certs/root-ca.pem', '/etc/filebeat/certs/root-ca.pem',
+                      '/etc/wazuh-manager/certs/root-ca.pem', '/etc/wazuh-indexer/certs/root-ca.pem')
 # The index pattern the Wazuh app creates (wazuh-dashboard-plugins saved-objects.js);
 # every pack dashboard references it by this id.
 WAZUH_ALERTS_PATTERN = 'wazuh-alerts-*'
@@ -150,6 +152,8 @@ WAZUH_ALERTS_PATTERN = 'wazuh-alerts-*'
 # The rule-pack catalogue shipped with the tool. Module level so the test suite
 # can point it at a scratch catalogue holding two versions of one pack.
 PACKS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'packs')
+# Root and syslog-header decoders shared by every pack on Wazuh 5.x (integration jt-base).
+PACKS5_BASE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'packs5-base')
 
 
 def configure_session_cookie(app, tls: bool) -> None:
@@ -1395,6 +1399,32 @@ HTML_TEMPLATE = '''
             .toast-container { left: 12px; right: 12px; top: 12px; }
             .toast { max-width: none; }
         }
+
+        /* Single-choice drop-downs use the site's own list (jtSelect below), in the style of the
+           agent filters (.multi-select). The native <select> stays in place for value, layout and
+           change handlers; only its arrow and the opened list are ours. */
+        select:not([multiple]) {
+            -webkit-appearance: none; -moz-appearance: none; appearance: none; cursor: pointer;
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b95a5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>") !important;
+            background-repeat: no-repeat !important; background-position: right 9px center !important;
+            background-size: 12px 12px !important; padding-right: 28px !important;
+        }
+        select:not([multiple])::-ms-expand { display: none; }
+        select:disabled { cursor: not-allowed; opacity: 0.6; }
+        .jt-select-panel { position: fixed; z-index: 10060; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; max-height: 300px; overflow-y: auto; overflow-x: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.4); padding: 4px 0; min-width: 120px; max-width: min(560px, calc(100vw - 16px)); }
+        .jt-select-option { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px; line-height: 20px; white-space: nowrap; color: var(--text); }
+        .jt-select-option span { overflow: hidden; text-overflow: ellipsis; }
+        .jt-select-option .icon { width: 13px; height: 13px; flex: 0 0 13px; visibility: hidden; color: var(--accent); }
+        .jt-select-option.selected { color: var(--accent); font-weight: 600; }
+        .jt-select-option.selected .icon { visibility: visible; }
+        .jt-select-option.active { background: var(--surface); }
+        .jt-select-option.disabled { opacity: 0.45; cursor: default; }
+        .jt-select-group { padding: 6px 12px 2px; font-size: 11px; color: var(--text-muted); letter-spacing: 0.03em; }
+        html[data-theme="light"] select:not([multiple]) {
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2357606a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>") !important;
+        }
+        html[data-theme="light"] .jt-select-panel { background: #f9fafb; border-color: #c9d1d9; box-shadow: 0 8px 24px rgba(36,41,47,0.16); }
+        html[data-theme="light"] .jt-select-option.active { background: #e9edf2; }
     </style>
 </head>
 <body>
@@ -1768,6 +1798,7 @@ HTML_TEMPLATE = '''
                         <thead><tr>
                             <th style="width:280px;">List</th>
                             <th>Path</th>
+                            <th style="width:110px;text-align:right;">Entries</th>
                             <th style="width:70px;">Type</th>
                             <th style="width:170px;">Actions</th>
                         </tr></thead>
@@ -2494,10 +2525,23 @@ HTML_TEMPLATE = '''
             document.querySelectorAll('.multi-select-btn').forEach(b => b.classList.remove('active'));
 
             if (!isOpen) {
+                document.dispatchEvent(new CustomEvent('jtwz-menu-open', { detail: dropdown }));
                 dropdown.classList.add('show');
                 btn.classList.add('active');
             }
         }
+
+        // One menu open at a time across the page (language, theme, filters, export, drop-downs).
+        document.addEventListener('jtwz-menu-open', (e) => {
+            document.querySelectorAll('.multi-select-dropdown.show').forEach(d => {
+                if (d !== e.detail) {
+                    d.classList.remove('show');
+                    if (d.previousElementSibling) d.previousElementSibling.classList.remove('active');
+                }
+            });
+            const ex = document.getElementById('exportMenu');
+            if (ex && ex !== e.detail) ex.classList.remove('show');
+        });
 
         function getFilterValues(filterId) {
             const dropdown = document.getElementById(filterId + 'Dropdown');
@@ -4141,7 +4185,7 @@ HTML_TEMPLATE = '''
                     ${html}
                 </div>
             `;
-            const footer = hasWpkError ? '<button class="btn" style="background:var(--solid-fd7e14);color:#fff;" onclick="closeModal();showNodeManagement();">Go to Node Management</button>' : '';
+            const footer = hasWpkError ? '<button class="btn" style="background:var(--solid-fd7e14);color:#fff;" onclick="closeModal();showNodeManagement();"><svg class="icon"><use href="#icon-server"/></svg>Go to Node Management</button>' : '';
             showModal('Upgrade Failed', body, footer);
         }
 
@@ -6947,17 +6991,17 @@ HTML_TEMPLATE = '''
         async function loadCdbLists() {
             const tbody = document.getElementById('cdbBody');
             const status = document.getElementById('cdbStatus');
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;"><div class="loading"><div class="spinner"></div>Loading lists...</div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:30px;"><div class="loading"><div class="spinner"></div>Loading lists...</div></td></tr>';
             const data = await api('/lists');
             if (!data || data.error) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--danger);padding:30px;">' + escapeHtml((data && data.error) || 'Failed to load lists') + '</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--danger);padding:30px;">' + escapeHtml((data && data.error) || 'Failed to load lists') + '</td></tr>';
                 return;
             }
             cdbListsData = data.lists || [];
             cdbListsLoaded = true;
             status.textContent = cdbListsData.length + ' lists';
             if (!cdbListsData.length) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:30px;">No CDB lists found.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:30px;">No CDB lists found.</td></tr>';
                 return;
             }
             tbody.innerHTML = cdbListsData.map(l => {
@@ -6965,11 +7009,24 @@ HTML_TEMPLATE = '''
                 return '<tr>' +
                     '<td><a class="rule-id-link" onclick="editCdbList(\\'' + escapeHtml(name) + '\\')">' + escapeHtml(name) + '</a></td>' +
                     '<td style="color:var(--text-muted);">' + escapeHtml(l.relative_dirname || '') + '</td>' +
+                    '<td class="cdb-count" data-list="' + escapeHtml(name) + '" style="text-align:right;color:var(--text-muted);font-variant-numeric:tabular-nums;">…</td>' +
                     '<td><span class="rule-type-badge ' + (l.is_custom ? 'custom' : 'builtin') + '">' + (l.is_custom ? 'Custom' : 'Built-in') + '</span></td>' +
                     '<td><button class="btn btn-sm" onclick="editCdbList(\\'' + escapeHtml(name) + '\\')"><svg class="icon"><use href="#icon-edit"/></svg>Edit</button>' +
                     '<button class="btn btn-sm btn-danger" style="margin-left:6px;" onclick="deleteCdbList(\\'' + escapeHtml(name) + '\\')"><svg class="icon"><use href="#icon-trash"/></svg>Delete</button></td>' +
                     '</tr>';
             }).join('');
+            loadCdbCounts();
+        }
+
+        // Entry counts come from a separate request so the table never waits for them: the
+        // server counts lines on disk (a list can hold a million entries) and caches by size and mtime.
+        async function loadCdbCounts() {
+            const data = await api('/lists/counts');
+            const counts = (data && data.counts) || {};
+            document.querySelectorAll('#cdbBody td.cdb-count').forEach(td => {
+                const n = counts[td.dataset.list];
+                td.textContent = (typeof n === 'number') ? n.toLocaleString() : '—';
+            });
         }
 
         async function editCdbList(filename) {
@@ -7623,7 +7680,7 @@ HTML_TEMPLATE = '''
                 '<p style="color:var(--text-muted);font-size:12px;">A dashboard user such as admin: the Wazuh API account does not work there. The password is used for this request only and is not stored.</p>' +
                 '<div id="dashResult"></div>';
             showModal('Import all dashboards', body,
-                '<button class="btn btn-primary" id="dashImportBtn" onclick="submitAllPackDashboards()">Import</button>' +
+                '<button class="btn btn-primary" id="dashImportBtn" onclick="submitAllPackDashboards()"><svg class="icon"><use href="#icon-upload"/></svg>Import</button>' +
                 '<button class="btn" onclick="dashImportStop = true; closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', false);
         }
 
@@ -8135,7 +8192,7 @@ HTML_TEMPLATE = '''
                     const fn = f.filename || '';
                     return '<tr><td style="padding:6px 10px;font-family:monospace;">' + escapeHtml(fn) + '</td>' +
                         '<td style="padding:6px 10px;color:var(--text-muted);font-family:monospace;font-size:11px;">' + escapeHtml(f.hash || '') + '</td>' +
-                        '<td style="padding:6px 10px;"><button class="btn btn-sm" onclick="showGroupFileContent(\\'' + escapeHtml(groupName) + '\\', \\'' + escapeHtml(fn) + '\\')">View</button></td></tr>';
+                        '<td style="padding:6px 10px;"><button class="btn btn-sm" onclick="showGroupFileContent(\\'' + escapeHtml(groupName) + '\\', \\'' + escapeHtml(fn) + '\\')"><svg class="icon"><use href="#icon-eye"/></svg>View</button></td></tr>';
                 }).join('') + '</tbody></table></div>';
         }
 
@@ -8260,7 +8317,7 @@ HTML_TEMPLATE = '''
                 '<thead><tr><th style="text-align:left;padding:6px 10px;">File</th>' +
                 '<th style="text-align:left;padding:6px 10px;">Error</th></tr></thead><tbody>' +
                 rows + '</tbody></table></div>',
-                '<button class="btn" onclick="closeModal()">Close</button>', true);
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
         }
 
         // Search the full XML body of every rule via the server (the table filter
@@ -8453,6 +8510,9 @@ HTML_TEMPLATE = '''
         // Export functions
         function toggleExportMenu() {
             const menu = document.getElementById('exportMenu');
+            if (!menu.classList.contains('show')) {
+                document.dispatchEvent(new CustomEvent('jtwz-menu-open', { detail: menu }));
+            }
             menu.classList.toggle('show');
         }
 
@@ -8607,6 +8667,188 @@ HTML_TEMPLATE = '''
                 }
             } catch (e) { /* ignore */ }
         }, 10000);
+
+        // jtSelect: every single-choice <select> opens the site's own list instead of the browser's.
+        // The <select> itself stays (value, layout, inline onchange/onfocus, programmatic .value);
+        // we only take over pointer and keyboard opening, and fire input/change like a native pick.
+        // The list is rebuilt from the options each time it opens, so translated labels, dynamic
+        // options and values set from code are always current.
+        (function () {
+            let panel = null, cur = null, opts = [], active = -1, watch = 0;
+            const CHECK = '<svg class="icon"><use href="#icon-check"/></svg>';
+
+            function usable(sel) { return sel && !sel.multiple && !sel.disabled && sel.size <= 1; }
+
+            function close(refocus) {
+                if (!panel) return;
+                panel.remove();
+                if (cur) { cur.removeAttribute('aria-expanded'); if (refocus) cur.focus(); }
+                panel = null; cur = null; opts = []; active = -1;
+                clearInterval(watch);
+            }
+
+            function setActive(i) {
+                if (!panel || !opts.length) return;
+                i = Math.max(0, Math.min(opts.length - 1, i));
+                if (opts[active]) opts[active].el.classList.remove('active');
+                active = i;
+                opts[i].el.classList.add('active');
+                opts[i].el.scrollIntoView({ block: 'nearest' });
+            }
+
+            function step(from, dir) {
+                let i = from;
+                for (let n = 0; n < opts.length; n++) {
+                    i += dir;
+                    if (i < 0 || i >= opts.length) return from;
+                    if (!opts[i].opt.disabled) return i;
+                }
+                return from;
+            }
+
+            function choose(sel, idx) {
+                if (idx < 0 || !sel.options[idx] || sel.options[idx].disabled) return;
+                if (sel.selectedIndex !== idx) {
+                    sel.selectedIndex = idx;
+                    sel.dispatchEvent(new Event('input', { bubbles: true }));
+                    sel.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            }
+
+            function place() {
+                if (!panel || !cur) return;
+                const r = cur.getBoundingClientRect();
+                panel.style.minWidth = Math.max(r.width, 120) + 'px';
+                const h = panel.offsetHeight, w = panel.offsetWidth;
+                const below = window.innerHeight - r.bottom - 8, above = r.top - 8;
+                const top = (h <= below || below >= above) ? r.bottom + 4 : Math.max(8, r.top - 4 - h);
+                panel.style.top = top + 'px';
+                panel.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+            }
+
+            function open(sel) {
+                close(false);
+                document.dispatchEvent(new CustomEvent('jtwz-menu-open', { detail: 'jt-select' }));
+                cur = sel;
+                panel = document.createElement('div');
+                panel.className = 'jt-select-panel';
+                panel.setAttribute('role', 'listbox');
+                Array.prototype.forEach.call(sel.children, function (node) {
+                    const add = function (opt) {
+                        const el = document.createElement('div');
+                        el.className = 'jt-select-option' + (opt.selected ? ' selected' : '') + (opt.disabled ? ' disabled' : '');
+                        el.setAttribute('role', 'option');
+                        el.setAttribute('aria-selected', opt.selected ? 'true' : 'false');
+                        el.innerHTML = CHECK;
+                        const t = document.createElement('span');
+                        t.textContent = opt.textContent;
+                        el.appendChild(t);
+                        el.dataset.index = String(opts.length);
+                        opts.push({ el: el, opt: opt });
+                        panel.appendChild(el);
+                    };
+                    if (node.tagName === 'OPTGROUP') {
+                        const g = document.createElement('div');
+                        g.className = 'jt-select-group';
+                        g.textContent = node.label;
+                        panel.appendChild(g);
+                        Array.prototype.forEach.call(node.children, add);
+                    } else if (node.tagName === 'OPTION') {
+                        add(node);
+                    }
+                });
+                panel.addEventListener('mousedown', function (e) {
+                    e.preventDefault();
+                    const it = e.target.closest('.jt-select-option');
+                    if (!it || it.classList.contains('disabled')) return;
+                    const s = cur;
+                    const o = opts[Number(it.dataset.index)].opt;
+                    close(true);
+                    choose(s, o.index);
+                });
+                panel.addEventListener('mousemove', function (e) {
+                    const it = e.target.closest('.jt-select-option');
+                    if (it && !it.classList.contains('disabled')) setActive(Number(it.dataset.index));
+                });
+                document.body.appendChild(panel);
+                sel.setAttribute('aria-expanded', 'true');
+                place();
+                const selIdx = opts.findIndex(function (o) { return o.opt.selected; });
+                setActive(selIdx >= 0 ? selIdx : step(-1, 1));
+                // the list follows its <select>: close if the select is re-rendered away
+                watch = setInterval(function () { if (cur && !document.body.contains(cur)) close(false); }, 400);
+            }
+
+            document.addEventListener('jtwz-menu-open', function (e) { if (e.detail !== 'jt-select') close(false); });
+
+            document.addEventListener('mousedown', function (e) {
+                const sel = e.target.closest ? e.target.closest('select') : null;
+                if (sel && usable(sel) && e.button === 0) {
+                    e.preventDefault();
+                    if (cur === sel) { close(true); return; }
+                    sel.focus();
+                    open(sel);
+                    return;
+                }
+                if (panel && !panel.contains(e.target)) close(false);
+            }, true);
+
+            // touch: stop the platform picker and show ours
+            document.addEventListener('touchend', function (e) {
+                const sel = e.target.closest ? e.target.closest('select') : null;
+                if (!sel || !usable(sel)) return;
+                e.preventDefault();
+                if (cur === sel) { close(true); return; }
+                sel.focus();
+                open(sel);
+            }, { capture: true, passive: false });
+
+            document.addEventListener('keydown', function (e) {
+                const sel = e.target;
+                if (!sel || sel.tagName !== 'SELECT' || !usable(sel)) return;
+                const k = e.key;
+                if (panel && cur === sel) {
+                    if (k === 'ArrowDown') { e.preventDefault(); setActive(step(active, 1)); }
+                    else if (k === 'ArrowUp') { e.preventDefault(); setActive(step(active, -1)); }
+                    else if (k === 'PageDown') { e.preventDefault(); setActive(Math.min(opts.length - 1, active + 8)); }
+                    else if (k === 'PageUp') { e.preventDefault(); setActive(Math.max(0, active - 8)); }
+                    else if (k === 'Home') { e.preventDefault(); setActive(step(-1, 1)); }
+                    else if (k === 'End') { e.preventDefault(); setActive(step(opts.length, -1)); }
+                    else if (k === 'Enter' || k === ' ') {
+                        e.preventDefault();
+                        const o = opts[active] ? opts[active].opt : null;
+                        close(true);
+                        if (o) choose(sel, o.index);
+                    }
+                    else if (k === 'Escape') { e.preventDefault(); close(true); }
+                    else if (k === 'Tab') { close(false); }
+                    else if (k.length === 1) {
+                        const c = k.toLowerCase();
+                        for (let n = 1; n <= opts.length; n++) {
+                            const i = (active + n) % opts.length;
+                            if (!opts[i].opt.disabled && opts[i].opt.textContent.trim().toLowerCase().startsWith(c)) { setActive(i); break; }
+                        }
+                    }
+                    return;
+                }
+                if (k === 'Enter' || k === ' ' || k === 'F4' || (e.altKey && (k === 'ArrowDown' || k === 'ArrowUp'))) {
+                    e.preventDefault();
+                    open(sel);
+                } else if (k === 'ArrowDown' || k === 'ArrowUp') {
+                    // closed: move the choice like Windows does (macOS would pop up the native menu)
+                    e.preventDefault();
+                    opts = Array.prototype.map.call(sel.options, function (o) { return { opt: o }; });
+                    const i = step(sel.selectedIndex, k === 'ArrowDown' ? 1 : -1);
+                    opts = [];
+                    choose(sel, i);
+                }
+            }, true);
+
+            window.addEventListener('resize', function () { close(false); });
+            document.addEventListener('scroll', function (e) {
+                if (panel && !panel.contains(e.target)) close(false);
+            }, true);
+        })();
     </script>
 </body>
 </html>
@@ -8977,6 +9219,7 @@ _I18N_SCRIPT = r"""
       'Import': '匯入',
       'FAILED': '失敗',
       'Import all dashboards': '匯入所有看板',
+      'Entries': '項目數',
       'Open the dashboard list': '開啟看板清單',
       'No installed pack has a dashboard': '已安裝的套件都沒有看板',
       'A dashboard user such as admin: the Wazuh API account does not work there. The password is used for this request only and is not stored.': '請使用 dashboard 的使用者（例如 admin）：Wazuh API 帳號在那裡無法使用。密碼只用於這次請求，不會被儲存。',
@@ -9814,6 +10057,7 @@ _I18N_SCRIPT = r"""
       'Import': 'インポート',
       'FAILED': '失敗',
       'Import all dashboards': 'すべてのダッシュボードをインポート',
+      'Entries': '件数',
       'Open the dashboard list': 'ダッシュボードの一覧を開く',
       'No installed pack has a dashboard': 'ダッシュボードのあるインストール済みパックがありません',
       'A dashboard user such as admin: the Wazuh API account does not work there. The password is used for this request only and is not stored.': 'admin などのダッシュボードのユーザーを使います（Wazuh API のアカウントは使えません）。パスワードはこのリクエストにのみ使い、保存しません。',
@@ -10819,6 +11063,9 @@ _I18N_SCRIPT = r"""
   // Escape or a click elsewhere closes.
   function wireMenu(wrap, btn, menu) {
     function open() {
+      // only one menu on the page is open at a time: the buttons stop the click from
+      // reaching the document, so the other menus' outside-click handlers never see it
+      document.dispatchEvent(new CustomEvent('jtwz-menu-open', { detail: menu }));
       menu.hidden = false;
       btn.setAttribute('aria-expanded', 'true');
       var cur = menu.querySelector('[aria-checked="true"]');
@@ -10828,6 +11075,7 @@ _I18N_SCRIPT = r"""
       menu.hidden = true;
       btn.setAttribute('aria-expanded', 'false');
     }
+    document.addEventListener('jtwz-menu-open', function (e) { if (e.detail !== menu) close(); });
     btn.onclick = function (e) { e.stopPropagation(); if (menu.hidden) open(); else close(); };
     menu.addEventListener('keydown', function (e) {
       var items = Array.prototype.slice.call(menu.querySelectorAll('button'));
@@ -11115,6 +11363,11 @@ class WazuhAPISession:
         if group:
             params['group'] = group
         result = self.request('GET', '/agents', params=params)
+        if 'data' not in result and 'select field' in str(result.get('detail', '')):
+            # Wazuh 5.x refuses node_name and group_config_status in select ("Not a valid select
+            # field"), and the whole request with them: ask again without.
+            params['select'] = 'id,name,ip,status,os.platform,os.name,os.version,version,group'
+            result = self.request('GET', '/agents', params=params)
         items = result.get('data', {}).get('affected_items', [])
         # Flatten the response
         agents = []
@@ -16078,6 +16331,137 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             ids.extend(r.get('id') for r in root.iter('rule'))
         return ids
 
+
+    # --- Rule packs on Wazuh 5.x (beta) --------------------------------------------------------
+    # On 5.x the ruleset is indexer content (Content Manager API) and detection runs in Security
+    # Analytics; lib/pack5.py does the work. The catalogue can be looked at from any server (the packs
+    # tab switches between 4.x and 5.x packs); installing needs a 5.x server and an indexer account,
+    # whose password is used for the request and never stored.
+
+    def _indexer_from_body(body):
+        from urllib.parse import urlsplit
+        from . import pack5
+        url = (body.get('url') or '').strip()
+        parts = urlsplit(url)
+        if parts.scheme not in ('https', 'http') or not parts.hostname or parts.username \
+                or parts.password or parts.query or parts.fragment or parts.path not in ('', '/'):
+            raise pack5.Pack5Error('The indexer address must look like https://host:9200')
+        if not body.get('username') or not body.get('password'):
+            raise pack5.Pack5Error('Enter the user name and password of an indexer administrator')
+        verify = (_dashboard_ca() or True) if body.get('verify_tls', True) is not False else False
+        return pack5.Indexer('%s://%s' % (parts.scheme, parts.netloc), body['username'], body['password'], verify)
+
+    def _pack5_known(pack_id):
+        pdir = _pack_dir(pack_id)          # validates the id (PACK_ID_PATTERN) and that the pack exists
+        return bool(pdir) and os.path.isfile(os.path.join(pdir, 'v5', 'integration.yml'))
+
+    @app.route('/api/packs5', methods=['GET'])
+    @login_required
+    def packs5_catalog():
+        from . import pack5
+        major = server_major(current_server_version())
+        api_sess = session.get('api_session') or {}
+        try:
+            packs = pack5.catalog(PACKS_DIR)
+        except (OSError, ValueError) as e:
+            return jsonify({'error': 'Could not read the 5.x packs: %s' % e}), 500
+        return jsonify({'packs': packs, 'beta': True, 'server_version': current_server_version(),
+                        'server_major': major, 'can_install': major >= 5,
+                        'default_indexer_url': 'https://%s:9200' % (api_sess.get('host') or 'localhost'),
+                        'ca': _dashboard_ca()})
+
+    @app.route('/api/packs5/<pack_id>/notes', methods=['GET'])
+    @login_required
+    def packs5_notes(pack_id):
+        if not _pack5_known(pack_id):
+            return jsonify({'error': 'Unknown pack'}), 404
+        path = os.path.join(PACKS_DIR, pack_id, 'v5', 'PORTING.md')
+        if not os.path.isfile(path):
+            return jsonify({'notes': ''})
+        with open(path, encoding='utf-8') as fh:
+            return jsonify({'notes': fh.read(200000)})
+
+    @app.route('/api/packs5/status', methods=['POST'])
+    @login_required
+    @require_capability('rule_packs_v5')
+    def packs5_status():
+        from . import pack5
+        try:
+            ix = _indexer_from_body(request.get_json(silent=True) or {})
+            return jsonify({'status': pack5.status(ix, PACKS_DIR)})
+        except pack5.Pack5Error as e:
+            return jsonify({'error': str(e)}), 400
+        except http_requests.exceptions.SSLError:
+            return jsonify({'error': 'The indexer certificate could not be verified with the Wazuh root CA (%s)'
+                                     % (_dashboard_ca() or 'not found on this host')}), 400
+        except http_requests.exceptions.RequestException as e:
+            return jsonify({'error': 'Could not reach the indexer: %s' % e.__class__.__name__}), 502
+
+    def _pack5_agent_group(pack_id):
+        """Create the pack's agent group on the 5.x server and upload its agent.conf; files other than
+        agent.conf cannot be sent through the 5.x API and are listed for the person to copy."""
+        manifest = _read_manifest(pack_id) or {}
+        group = manifest.get('agent_group') or {}
+        if not group.get('name'):
+            return []
+        api = get_api_session()
+        steps = []
+        r = api.request('POST', '/groups', data={'group_id': group['name']})
+        if r.get('error') and 'already exists' not in json.dumps(r):
+            steps.append('agent group %s: %s' % (group['name'], r.get('detail') or r.get('message') or r.get('error')))
+        conf = os.path.join(PACKS_DIR, pack_id, 'agent', group.get('config') or 'agent.conf')
+        if os.path.isfile(conf):
+            with open(conf, encoding='utf-8') as fh:
+                ok, detail = api.request_raw('PUT', '/groups/%s/configuration' % group['name'], fh.read(),
+                                             content_type='application/xml')
+            steps.append('agent group %s: %s' % (group['name'], 'configuration uploaded' if ok else detail))
+        extra = [f for f in group.get('files') or []]
+        if extra:
+            steps.append('agent group %s: copy by hand to /etc/wazuh-manager/shared/%s/: %s'
+                         % (group['name'], group['name'], ', '.join(extra)))
+        return steps
+
+    @app.route('/api/packs5/<pack_id>/install', methods=['POST'])
+    @login_required
+    @require_capability('rule_packs_v5')
+    def packs5_install(pack_id):
+        from . import pack5
+        if not _pack5_known(pack_id):
+            return jsonify({'error': 'Unknown pack or no Wazuh 5.x content'}), 404
+        user = (session.get('api_session') or {}).get('username', 'unknown')
+        try:
+            ix = _indexer_from_body(request.get_json(silent=True) or {})
+            version = (_read_manifest(pack_id) or {}).get('version', '')
+            steps = pack5.install(ix, PACKS_DIR, PACKS5_BASE_DIR, pack_id, version)
+            steps += _pack5_agent_group(pack_id)
+        except pack5.Pack5Error as e:
+            logger.warning("5.x pack %s install failed for '%s': %s", pack_id, user, e)
+            return jsonify({'error': str(e)}), 400
+        except http_requests.exceptions.SSLError:
+            return jsonify({'error': 'The indexer certificate could not be verified with the Wazuh root CA (%s)'
+                                     % (_dashboard_ca() or 'not found on this host')}), 400
+        except http_requests.exceptions.RequestException as e:
+            return jsonify({'error': 'Could not reach the indexer: %s' % e.__class__.__name__}), 502
+        logger.info("5.x pack %s installed by '%s'", pack_id, user)
+        return jsonify({'message': 'Installed %s (Wazuh 5.x beta).' % pack_id, 'steps': steps})
+
+    @app.route('/api/packs5/<pack_id>/remove', methods=['POST'])
+    @login_required
+    @require_capability('rule_packs_v5')
+    def packs5_remove(pack_id):
+        from . import pack5
+        if not _pack5_known(pack_id):
+            return jsonify({'error': 'Unknown pack or no Wazuh 5.x content'}), 404
+        user = (session.get('api_session') or {}).get('username', 'unknown')
+        try:
+            steps = pack5.remove(_indexer_from_body(request.get_json(silent=True) or {}), PACKS_DIR, pack_id)
+        except pack5.Pack5Error as e:
+            return jsonify({'error': str(e)}), 400
+        except http_requests.exceptions.RequestException as e:
+            return jsonify({'error': 'Could not reach the indexer: %s' % e.__class__.__name__}), 502
+        logger.info("5.x pack %s removed by '%s'", pack_id, user)
+        return jsonify({'message': 'Removed %s.' % pack_id, 'steps': steps})
+
     @app.route('/api/packs', methods=['GET'])
     @login_required
     @require_capability('rule_packs')
@@ -18015,6 +18399,63 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             return jsonify({'lists': items, 'total': len(items)})
         except Exception as e:
             logger.error(f"CDB LISTS ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    _CDB_COUNT_CACHE = {}
+
+    def _count_lines(path):
+        """Lines in a file, read in 1 MB chunks (a malware hash list is ~100 MB)."""
+        n, last = 0, b'\n'
+        with open(path, 'rb') as fh:
+            while True:
+                chunk = fh.read(1 << 20)
+                if not chunk:
+                    break
+                n += chunk.count(b'\n')
+                last = chunk[-1:]
+        return n + (0 if last == b'\n' else 1)
+
+    @app.route('/api/lists/counts', methods=['GET'])
+    @login_required
+    @require_capability('cdb_lists')
+    def get_cdb_list_counts():
+        """Entry (line) count of every CDB list, read from the manager's disk.
+
+        The Wazuh API has no count: /lists returns every entry, which is what this
+        tab avoids. Counting is local and cached by (size, mtime). Lists whose file is
+        not on this host (the tool runs elsewhere), symlinks, and paths outside the
+        Wazuh directory are reported as null.
+        """
+        try:
+            api = get_api_session()
+            result = api.request('GET', '/lists/files', params={'limit': 1000})
+            failure = _api_failure(result)
+            if failure:
+                return jsonify({'error': 'Wazuh API: ' + failure}), 502
+            base = os.path.realpath(_wazuh_path())
+            counts = {}
+            for item in result.get('data', {}).get('affected_items') or []:
+                name = item.get('filename') or ''
+                rel = item.get('relative_dirname') or ''
+                if not _cdb_filename_ok(name) or not re.match(r'^[A-Za-z0-9._/-]+$', rel) or '..' in rel:
+                    continue
+                path = os.path.join(base, rel, name)
+                try:
+                    if os.path.islink(path) or not os.path.realpath(path).startswith(base + os.sep):
+                        counts[name] = None
+                        continue
+                    st = os.stat(path)
+                    key = (st.st_size, st.st_mtime_ns)
+                    hit = _CDB_COUNT_CACHE.get(path)
+                    if not hit or hit[0] != key:
+                        hit = (key, _count_lines(path))
+                        _CDB_COUNT_CACHE[path] = hit
+                    counts[name] = hit[1]
+                except OSError:
+                    counts[name] = None
+            return jsonify({'counts': counts})
+        except Exception as e:
+            logger.error(f"CDB COUNTS ERROR: {e}")
             return jsonify({'error': str(e)}), 500
 
     def _cdb_filename_ok(name: str) -> bool:

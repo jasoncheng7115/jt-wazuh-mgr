@@ -753,6 +753,8 @@ class TestCapabilityGuardedRoutes(WebUITestCase):
         for rule in self.app.url_map.iter_rules():
             if not any(rule.rule.startswith(p) for p in removed_paths):
                 continue
+            if rule.rule.startswith('/api/packs5'):
+                continue        # the 5.x packs: these exist only on 5.x (added_in 5)
             for method in sorted(rule.methods - {'HEAD', 'OPTIONS'}):
                 path = concrete_path(rule)
                 resp = getattr(self.client, method.lower())(path, json={})

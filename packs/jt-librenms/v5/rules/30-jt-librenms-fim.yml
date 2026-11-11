@@ -1,0 +1,54 @@
+# jt-librenms rules for Wazuh 5.x, part 3: file integrity on the LibreNMS host. The events are
+# decoded by Wazuh's standard wazuh-fim integration (file.path, file.extension, event.action
+# created / modified / deleted) and indexed in wazuh-events-v5-system-activity (detector.yml). The
+# agent group (4.x agent/agent.conf, unchanged) tracks only *.php under /opt/librenms/html and the
+# two secrets files, with report_changes off so no secret is copied into an event.
+
+- metadata:
+    title: "LibreNMS: a new PHP file appeared in the web root - {{file.path}}"
+    author: Jason Tools
+    description: >-
+      A PHP file was added under /opt/librenms/html. Upstream added none to html/ in six months of
+      releases, so this is a web shell or a dropped page, not an update artefact.
+    references: ["Migrated from jt-librenms 4.x rule 131994"]
+  sigma_id: jt-librenms-131994
+  enabled: true
+  status: experimental
+  level: high
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: wazuh.fim
+      event.action: created
+      file.path|startswith: /opt/librenms/html/
+      file.path|endswith: .php
+  mitre:
+    tactic: {id: [TA0003], name: [Persistence]}
+    technique: {id: [T1505], name: [Server Software Component]}
+    subtechnique: {id: [T1505.003], name: [Web Shell]}
+  tags: [jt.rule.131994, jt.pack.jt-librenms]
+
+- metadata:
+    title: "LibreNMS: a secret or configuration file changed - {{file.path}}"
+    author: Jason Tools
+    description: >-
+      .env holds APP_KEY and the database password, config.php can override any setting. Rare outside
+      an administrator's deliberate edit.
+    references: ["Migrated from jt-librenms 4.x rule 131995"]
+  sigma_id: jt-librenms-131995
+  enabled: true
+  status: experimental
+  level: medium
+  logsource: {product: jt-librenms}
+  detection:
+    condition: selection
+    selection:
+      event.dataset: wazuh.fim
+      event.action: modified
+      file.path: [/opt/librenms/.env, /opt/librenms/config.php]
+  mitre:
+    tactic: {id: [TA0040], name: [Impact]}
+    technique: {id: [T1565], name: [Data Manipulation]}
+    subtechnique: {id: [T1565.001], name: [Stored Data Manipulation]}
+  tags: [jt.rule.131995, jt.pack.jt-librenms]

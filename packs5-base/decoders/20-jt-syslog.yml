@@ -1,0 +1,30 @@
+# Syslog header: host, program, pid and the message, for the pack decoders that hang under it.
+#   Oct 11 10:00:00 host1 sshd[1234]: message              (RFC 3164)
+#   Oct 11 10:00:00 host1 sshd: message
+#   2026-10-11T10:00:00.123+08:00 host1 sshd[1234]: message (RFC 3339 time, rsyslog's high precision)
+#   <134>Oct 11 10:00:00 host1 sshd[1234]: message           (priority kept)
+name: decoder/jt-syslog/0
+enabled: true
+metadata:
+  title: jt-wazuh-mgr syslog header
+  author: Jason Tools
+  description: Reads the syslog header (time, host, program, pid) and leaves the rest in message.
+  references:
+    - https://www.rfc-editor.org/rfc/rfc3164
+parents:
+  - decoder/jt-core/0
+parse|event.original:
+  - "<?_tmp.pri/between/</\\>><event.start/%b %d %T> <host.hostname> <_tmp.tag/alphanumeric/-._>[<process.pid>]: <message>"
+  - "<?_tmp.pri/between/</\\>><event.start/%b %d %T> <host.hostname> <_tmp.tag/alphanumeric/-._>: <message>"
+  - "<?_tmp.pri/between/</\\>><event.start/ISO8601Z> <host.hostname> <_tmp.tag/alphanumeric/-._>[<process.pid>]: <message>"
+  - "<?_tmp.pri/between/</\\>><event.start/ISO8601Z> <host.hostname> <_tmp.tag/alphanumeric/-._>: <message>"
+  - "<?_tmp.pri/between/</\\>><event.start/2026-10-11T10:00:00.123456+08:00> <host.hostname> <_tmp.tag/alphanumeric/-._>[<process.pid>]: <message>"
+  - "<?_tmp.pri/between/</\\>><event.start/2026-10-11T10:00:00.123456+08:00> <host.hostname> <_tmp.tag/alphanumeric/-._>: <message>"
+normalize:
+  - map:
+      - event.kind: event
+      - process.name: $_tmp.tag
+      - related.hosts: array_append($host.hostname)
+  - check: exists($_tmp.pri)
+    map:
+      - log.syslog.priority: parse_long($_tmp.pri)

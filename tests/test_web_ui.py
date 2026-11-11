@@ -4082,3 +4082,150 @@ class TestMalwareHashUpdater(unittest.TestCase):
             self.assertFalse(line.startswith('#'), 'CDB lists have no comments: %r' % line)
             self.assertRegex(line, r'^[^:#\s]+:\S')
             self.assertNotRegex(line, r'^[0-9a-f]{64}:', 'a shipped key must never be a real hash')
+
+
+class TestAgentListOn5x(unittest.TestCase):
+    """Wazuh 5.x refuses node_name and group_config_status in GET /agents?select=... and, with them,
+    the whole request (400 "Not a valid select field"), which left the agent list empty."""
+
+    def session(self, replies):
+        s = web_ui.WazuhAPISession('127.0.0.1', 1, 'u', 'p')
+        s.token = 't'
+        calls = []
+
+        def request(method, endpoint, data=None, params=None):
+            calls.append(dict(params or {}))
+            return replies[len(calls) - 1]
+        s.request = request
+        return s, calls
+
+    ITEM = {'id': '001', 'name': 'a1', 'ip': '192.0.2.10', 'status': 'active', 'version': 'Wazuh v5.0.0',
+            'os': {'name': 'Ubuntu', 'version': '24.04'}, 'group': ['default', 'fail2ban']}
+
+    def test_4x_asks_once_with_every_field(self):
+        item = dict(self.ITEM, node_name='master', group_config_status='synced')
+        s, calls = self.session([{'data': {'affected_items': [item]}}])
+        agents = s.get_agents()
+        self.assertEqual(len(calls), 1)
+        self.assertIn('group_config_status', calls[0]['select'])
+        self.assertEqual((agents[0]['node_name'], agents[0]['synced']), ('master', 'synced'))
+
+    def test_5x_refusal_is_retried_without_the_removed_fields(self):
+        refusal = {'title': 'Bad Request', 'detail': 'Not a valid select field: Allowed select fields: '
+                   'dateAdd, group, id, ip, name, status, version. Fields: group_config_status'}
+        s, calls = self.session([refusal, {'data': {'affected_items': [self.ITEM]}}])
+        agents = s.get_agents(group='fail2ban')
+        self.assertEqual(len(calls), 2)
+        self.assertNotIn('node_name', calls[1]['select'])
+        self.assertNotIn('group_config_status', calls[1]['select'])
+        self.assertEqual(calls[1]['group'], 'fail2ban')
+        self.assertEqual(agents[0]['name'], 'a1')
+        self.assertEqual(agents[0]['group'], 'default,fail2ban')
+        self.assertEqual(agents[0]['version'], 'v5.0.0')
+
+    def test_other_errors_are_not_retried(self):
+        s, calls = self.session([{'error': 'Connection refused'}])
+        self.assertEqual(s.get_agents(), [])
+        self.assertEqual(len(calls), 1)
+
+
+class TestCdbListCounts(WebUITestCase):
+    """The CDB tab shows each list's entry count, counted on disk, not through the API."""
+
+    api_reply = {'error': 0, 'data': {'affected_items': [
+        {'filename': 'blacklist', 'relative_dirname': 'etc/lists'},
+        {'filename': 'nonewline', 'relative_dirname': 'etc/lists'},
+        {'filename': 'missing', 'relative_dirname': 'etc/lists'},
+        {'filename': 'linked', 'relative_dirname': 'etc/lists'},
+        {'filename': 'escape', 'relative_dirname': '../outside'},
+    ], 'failed_items': []}}
+
+    def setUp(self):
+        super().setUp()
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        lists = os.path.join(self.tmp, 'etc', 'lists')
+        os.makedirs(lists)
+        with open(os.path.join(lists, 'blacklist'), 'w') as fh:
+            fh.write('a:1\nb:2\nc:3\n')
+        with open(os.path.join(lists, 'nonewline'), 'w') as fh:
+            fh.write('a:1\nb:2')
+        outside = os.path.join(self.tmp, 'secret')
+        with open(outside, 'w') as fh:
+            fh.write('x\n' * 5)
+        os.symlink(outside, os.path.join(lists, 'linked'))
+        self._real_get_config = web_ui.get_config
+        self.addCleanup(setattr, web_ui, 'get_config', self._real_get_config)
+        real_config = self._real_get_config()
+        tmp_path = self.tmp
+
+        class FakeConfig:
+            wazuh_path = tmp_path
+
+            def __getattr__(self, name):
+                return getattr(real_config, name)
+
+        web_ui.get_config = lambda *a, **k: FakeConfig()
+        self.app = web_ui.create_app()
+        self.app.config['TESTING'] = True
+        self.client = self.app.test_client()
+        with self.client.session_transaction() as sess:
+            sess['api_session'] = {'host': 'h', 'port': 1, 'username': 'tester',
+                                   'token': 't', 'session_exp': int(time.time()) + 3600}
+
+    def counts(self):
+        resp = self.client.get('/api/lists/counts')
+        self.assertEqual(resp.status_code, 200)
+        return resp.get_json()['counts']
+
+    def test_lines_are_counted_from_disk(self):
+        c = self.counts()
+        self.assertEqual(c['blacklist'], 3)
+        self.assertEqual(c['nonewline'], 2)
+
+    def test_missing_symlinked_and_escaping_paths_are_not_counted(self):
+        c = self.counts()
+        self.assertIsNone(c['missing'])
+        self.assertIsNone(c['linked'])
+        self.assertNotIn('escape', c)
+
+    def test_only_names_are_asked_from_the_api(self):
+        self.counts()
+        self.assertEqual(self.api_calls[0][1], '/lists/files')
+
+    def test_count_is_cached_until_the_file_changes(self):
+        self.counts()
+        path = os.path.join(self.tmp, 'etc', 'lists', 'blacklist')
+        with open(path, 'a') as fh:
+            fh.write('d:4\n')
+        self.assertEqual(self.counts()['blacklist'], 4)
+
+
+class TestSiteControls(unittest.TestCase):
+    """Buttons carry an icon, drop-downs use the site's list, and one menu is open at a time."""
+
+    def test_every_text_button_has_an_icon(self):
+        # pagination arrows and the login button are text by design
+        allowed = ('btnFirstPage', 'btnPrevPage', 'btnNextPage', 'btnLastPage')
+        bare = [m for m in re.findall(r'<button [^>]*class="btn[^"]*"[^>]*>[^<]{1,40}</button>',
+                                      web_ui.HTML_TEMPLATE)
+                if not any(a in m for a in allowed)]
+        self.assertEqual(bare, [])
+
+    def test_single_choice_selects_use_the_site_list(self):
+        t = web_ui.HTML_TEMPLATE
+        self.assertIn('select:not([multiple])', t)
+        self.assertIn('appearance: none', t)
+        self.assertIn("panel.className = 'jt-select-panel'", t)
+        self.assertIn("e.preventDefault();", t[t.index('// jtSelect'):])
+
+    def test_menus_close_each_other(self):
+        t = web_ui.HTML_TEMPLATE
+        # language and theme menus (i18n engine), filters, export and drop-downs all announce opening
+        self.assertGreaterEqual(t.count("new CustomEvent('jtwz-menu-open'"), 4)
+        self.assertIn("addEventListener('jtwz-menu-open'", t)
+        with open(os.path.join(os.path.dirname(web_ui.__file__), 'i18n_engine.js'), encoding='utf-8') as fh:
+            js = fh.read()
+        self.assertIn("new CustomEvent('jtwz-menu-open'", js)
+        self.assertIn("addEventListener('jtwz-menu-open'", js)
