@@ -4,6 +4,18 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.35.0（2026-11-15）
+
+- **jt-ai-agent 1.4：同一個工作階段內的連續行為。** 先讀帳密（私鑰、雲端與套件庫帳密、`.env`），15 分鐘內再上傳檔案或使用穿隧、
+  檔案分享服務，為 level 13（133745），這是被提示注入的代理外洩資料的樣子；十分鐘內四個以上破壞性指令為 level 12（133746），
+  代表失控的工作階段。另外多認得幾種穿隧服務（localhost.run、serveo、pinggy、bore、localtunnel）。
+- **jt-ai-agent 1.4：盤點稽核沒有涵蓋的地方。** `jt-ai-agent-inventory.py` 在每個 manager 節點每六小時執行，讀 syscollector
+  已經收集的資料（套件、執行中的程序、監聽的連接埠）與檔案完整性資料庫：不在 `ai-agent` 群組的主機上有 AI 程式代理（133751，L8）、
+  在群組裡卻沒有 hook（133752，L7）、沒有 hook 機制的 Aider（133753，L5），以及本機模型服務（Ollama、llama.cpp、vLLM、LM Studio、
+  LocalAI）：正在執行（133754，L3），或在非迴環位址監聽（133755，L8），因為 Ollama 與 llama.cpp 的伺服器預設沒有認證。
+  每項發現只報一次、每週提醒一次，消失時再報一次。它只讀 wazuh-db，不需要連外。
+- 在 `jt-alert-digest.conf` 設 `daily_groups = ai_agent`，每日摘要會多一段 AI 代理統計。
+
 ## v1.34.0（2026-11-15）
 
 - **jt-ai-agent 1.3：支援六種 AI 程式代理。** 除了 Claude Code，hook 現在也稽核 Codex（`/etc/codex/requirements.toml`

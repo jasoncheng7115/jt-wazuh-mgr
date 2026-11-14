@@ -19,6 +19,8 @@
     force push, stopping security or core services); an agent changing its own
     settings (Claude Code, Codex, opencode: permissions, hooks, plugins) or
     starting Codex with its hook trust or sandbox bypassed
+  - level 13 (1.4): reading credentials, then sending data out or opening a tunnel, in the same session
+  - level 12 (1.4): four or more destructive commands within ten minutes in one session
   - level 12 (1.2): clearing history or logs, turning off auditing, SELinux/AppArmor or ufw
   - level 10 (1.2): uploading a local file, file-sharing / tunnel / out-of-band services,
     persistence (cron, systemd, shell start-up files, authorized_keys), accounts and
@@ -84,7 +86,7 @@
   <rule id="133725" level="10">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^Bash$</field>
-    <field name="jt_ai.cmd" type="pcre2">(?i)\b(?:transfer\.sh|pastebin\.com|paste\.ee|0x0\.st|file\.io|termbin\.com|ngrok(?:-free)?\.(?:io|app|dev)|ngrok\s+(?:http|tcp)|webhook\.site|requestbin|pipedream\.net|interact\.sh|oast\.(?:fun|me|pro|site|live|online)|burpcollaborator\.net|trycloudflare\.com|cloudflared\s+tunnel)\b</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)\b(?:transfer\.sh|pastebin\.com|paste\.ee|0x0\.st|file\.io|termbin\.com|ngrok(?:-free)?\.(?:io|app|dev)|ngrok\s+(?:http|tcp)|webhook\.site|requestbin|pipedream\.net|interact\.sh|oast\.(?:fun|me|pro|site|live|online)|burpcollaborator\.net|trycloudflare\.com|cloudflared\s+tunnel|localhost\.run|serveo\.net|pinggy\.(?:io|link)|bore\.pub|loca\.lt|localtunnel)\b</field>
     <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) used a file-sharing, tunnel or out-of-band service</description>
     <mitre>
       <id>T1567</id>
@@ -303,6 +305,7 @@
       <id>T1552.004</id>
       <id>T1552.001</id>
     </mitre>
+    <group>jt_ai_agent_credentials,</group>
   </rule>
 
   <rule id="133715" level="9">
@@ -314,6 +317,7 @@
       <id>T1552.004</id>
       <id>T1552.001</id>
     </mitre>
+    <group>jt_ai_agent_credentials,</group>
   </rule>
 
   <!-- download and run -->
@@ -426,6 +430,34 @@
     <description>AI agent $(jt_ai.agent) session on $(jt_ai.host) started over SSH from a public address $(jt_ai.ssh_from)</description>
   </rule>
 
+  <!--
+    1.4: sequences within one session (jt_ai.session; a line without a session never correlates).
+    Reading credentials, then sending data out or opening a tunnel, is the shape of exfiltration
+    by a prompt-injected agent; each step alone is level 9 or 10.
+  -->
+  <rule id="133745" level="13" timeframe="900">
+    <if_sid>133724,133725</if_sid>
+    <if_matched_group>jt_ai_agent_credentials</if_matched_group>
+    <same_field>jt_ai.session</same_field>
+    <description>[WARN] AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) sent data out after reading credentials in the same session $(jt_ai.session)</description>
+    <mitre>
+      <id>T1041</id>
+      <id>T1552</id>
+    </mitre>
+    <group>jt_ai_agent_exfil,</group>
+  </rule>
+
+  <!-- 1.4: a runaway session: four destructive commands within ten minutes -->
+  <rule id="133746" level="12" frequency="4" timeframe="600">
+    <if_matched_sid>133712</if_matched_sid>
+    <same_field>jt_ai.session</same_field>
+    <description>[WARN] AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) ran four or more destructive commands within ten minutes in session $(jt_ai.session)</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+    <group>jt_ai_agent_destructive,</group>
+  </rule>
+
 </group>
 
 <!--
@@ -453,6 +485,76 @@
       <id>T1562.001</id>
       <id>T1070</id>
     </mitre>
+  </rule>
+
+</group>
+
+<!--
+  1.4: inventory (jt-ai-agent-inventory.py on every manager node, every six hours).
+  The script reads syscollector's packages, processes and listening ports and the
+  file integrity database, and writes the manager's own events (location
+  jt-ai-agent-inventory) that name the host in jt_ai_inv.agent_name. A finding is
+  reported when it appears (change new), once a week while it lasts (reminder),
+  and once more when it is gone (event cleared).
+-->
+<group name="ai_agent,jt_ai_agent,jt_ai_agent_inventory,">
+
+  <rule id="133750" level="0">
+    <decoded_as>json</decoded_as>
+    <location>^jt-ai-agent-inventory$</location>
+    <field name="jt_ai_inv.event">\.+</field>
+    <description>jt-ai-agent: inventory event</description>
+  </rule>
+
+  <rule id="133751" level="8">
+    <if_sid>133750</if_sid>
+    <field name="jt_ai_inv.event">^unaudited$</field>
+    <description>AI coding agent $(jt_ai_inv.tool) found on $(jt_ai_inv.agent_name), which is not in the agent group ai-agent: its actions are not audited ($(jt_ai_inv.evidence))</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="133752" level="7">
+    <if_sid>133750</if_sid>
+    <field name="jt_ai_inv.event">^hook_missing$</field>
+    <description>AI coding agent $(jt_ai_inv.tool) on $(jt_ai_inv.agent_name): the host is in the group ai-agent, but the audit hook is not installed ($(jt_ai_inv.evidence))</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="133753" level="5">
+    <if_sid>133750</if_sid>
+    <field name="jt_ai_inv.event">^no_hook$</field>
+    <description>AI coding agent $(jt_ai_inv.tool) found on $(jt_ai_inv.agent_name); it has no hook mechanism, so its actions cannot be audited ($(jt_ai_inv.evidence))</description>
+  </rule>
+
+  <rule id="133754" level="3">
+    <if_sid>133750</if_sid>
+    <field name="jt_ai_inv.event">^model_server$</field>
+    <description>Local model server $(jt_ai_inv.tool) runs on $(jt_ai_inv.agent_name), listening on the loopback address only ($(jt_ai_inv.evidence))</description>
+  </rule>
+
+  <rule id="133755" level="8">
+    <if_sid>133750</if_sid>
+    <field name="jt_ai_inv.event">^model_exposed$</field>
+    <description>Local model server $(jt_ai_inv.tool) on $(jt_ai_inv.agent_name) listens on the network ($(jt_ai_inv.listen)); it has no authentication by default</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+  </rule>
+
+  <rule id="133756" level="3">
+    <if_sid>133750</if_sid>
+    <field name="jt_ai_inv.event">^cleared$</field>
+    <description>jt-ai-agent inventory: $(jt_ai_inv.was) for $(jt_ai_inv.tool) on $(jt_ai_inv.agent_name) is gone</description>
+  </rule>
+
+  <rule id="133757" level="5">
+    <if_sid>133750</if_sid>
+    <field name="jt_ai_inv.event">^status$</field>
+    <description>jt-ai-agent inventory could not read the agent inventory: $(jt_ai_inv.detail)</description>
   </rule>
 
 </group>

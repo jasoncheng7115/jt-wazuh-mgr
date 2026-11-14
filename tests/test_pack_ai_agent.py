@@ -399,5 +399,99 @@ class TestGeminiCursorCopilot(unittest.TestCase):
             self.assertNotIn(blocking, cursor)
 
 
+INV = os.path.join(ROOT, 'packs', 'jt-ai-agent', 'scripts', 'jt-ai-agent-inventory.py')
+_spec = importlib.util.spec_from_file_location('jt_ai_agent_inventory', INV)
+inv = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(inv)
+
+
+class TestInventory14(unittest.TestCase):
+    """1.4: jt-ai-agent-inventory.py, from syscollector data to findings and events."""
+
+    def data(self, packages=(), processes=(), ports=(), hook=None):
+        return {'packages': list(packages), 'processes': list(processes), 'ports': list(ports), 'hook': hook}
+
+    def agent(self, groups=('default',)):
+        return {'id': '012', 'name': 'build7', 'ip': 'any', 'status': 'active', 'platform': 'ubuntu',
+                'groups': list(groups)}
+
+    def test_unaudited_hook_missing_and_audited(self):
+        d = self.data(packages=[{'name': '@anthropic-ai/claude-code', 'version': '2.1.0', 'format': 'npm'}])
+        f = inv.findings(self.agent(), d)
+        self.assertEqual([(v['event'], v['tool']) for v in f.values()], [('unaudited', 'claude-code')])
+        d['hook'] = False
+        f = inv.findings(self.agent(('default', 'ai-agent')), d)
+        self.assertEqual([v['event'] for v in f.values()], ['hook_missing'])
+        d['hook'] = True
+        self.assertEqual(inv.findings(self.agent(('default', 'ai-agent')), d), {})
+
+    def test_process_matching_is_not_a_substring_search(self):
+        procs = [{'pid': 1, 'name': 'node', 'cmd': '/usr/bin/node', 'argvs': '/usr/local/bin/codex exec x', 'euser': 'dev'},
+                 {'pid': 2, 'name': 'grep', 'cmd': '/usr/bin/grep', 'argvs': 'claude notes.txt', 'euser': 'dev'},
+                 {'pid': 3, 'name': 'vim', 'cmd': '/usr/bin/vim', 'argvs': 'gemini-notes.md', 'euser': 'dev'}]
+        f = inv.findings(self.agent(), self.data(processes=procs))
+        self.assertEqual(sorted(v['tool'] for v in f.values()), ['codex'])
+
+    def test_windows_display_name_and_aider(self):
+        d = self.data(packages=[{'name': 'Cursor (User)', 'version': '2.0.1', 'format': 'win'},
+                                {'name': 'aider-chat', 'version': '0.86.0', 'format': 'pypi'},
+                                {'name': 'cursor-theme-pack', 'version': '1', 'format': 'deb'}])
+        f = inv.findings(self.agent(), d)
+        self.assertEqual(sorted((v['event'], v['tool']) for v in f.values()),
+                         [('no_hook', 'aider'), ('unaudited', 'cursor')])
+
+    def test_model_server_exposure_by_pid_and_name(self):
+        procs = [{'pid': 900, 'name': 'ollama', 'cmd': '/usr/local/bin/ollama', 'argvs': 'serve', 'euser': 'ollama'}]
+        local = [{'protocol': 'tcp', 'local_ip': '127.0.0.1', 'local_port': 11434, 'state': 'listening', 'pid': 900,
+                  'process': 'ollama'}]
+        f = inv.findings(self.agent(), self.data(processes=procs, ports=local))
+        self.assertEqual([v['event'] for v in f.values()], ['model_server'])
+        wide = local + [{'protocol': 'tcp6', 'local_ip': '::', 'local_port': 11434, 'state': 'listening', 'pid': 900,
+                         'process': 'ollama'}]
+        f = inv.findings(self.agent(), self.data(processes=procs, ports=wide))
+        (only,) = f.values()
+        self.assertEqual((only['event'], only['listen']), ('model_exposed', ['tcp6 :::11434']))
+        vllm = [{'pid': 77, 'name': 'python3', 'cmd': '/usr/bin/python3', 'argvs': '-m vllm.entrypoints.openai.api_server',
+                 'euser': 'ai'}]
+        port = [{'protocol': 'tcp', 'local_ip': '0.0.0.0', 'local_port': 8000, 'state': 'listening', 'pid': 77,
+                 'process': 'python3'}]
+        (only,) = inv.findings(self.agent(), self.data(processes=vllm, ports=port)).values()
+        self.assertEqual((only['tool'], only['event']), ('vllm', 'model_exposed'))
+
+    def test_evaluate_reports_once_reminds_weekly_and_clears(self):
+        found = inv.findings(self.agent(), self.data(packages=[{'name': 'codex', 'version': '0.1', 'format': 'brew'}]))
+        now = 1_800_000_000
+        ev, st = inv.evaluate(found, {}, {'012'}, now)
+        self.assertEqual([(e['event'], e['change']) for e in ev], [('unaudited', 'new')])
+        ev, st2 = inv.evaluate(found, st, {'012'}, now + 3600)
+        self.assertEqual(ev, [])
+        ev, st3 = inv.evaluate(found, st2, {'012'}, now + 8 * 86400)
+        self.assertEqual([e['change'] for e in ev], ['reminder'])
+        ev, st4 = inv.evaluate({}, st3, set(), now + 9 * 86400)
+        self.assertEqual((ev, st4), ([], st3), 'an agent not scanned keeps its findings')
+        ev, st5 = inv.evaluate({}, st3, {'012'}, now + 9 * 86400)
+        self.assertEqual([(e['event'], e['was']) for e in ev], [('cleared', 'unaudited')])
+        self.assertEqual(st5, {})
+
+    def test_agents_of_node_and_queries_are_select_only(self):
+        seen = []
+        rows = {'global': [{'id': 0, 'name': 'mgr', 'node_name': 'n1', 'connection_status': 'active'},
+                           {'id': 12, 'name': 'build7', 'node_name': 'n1', 'connection_status': 'active',
+                            'groups': 'default,ai-agent'},
+                           {'id': 13, 'name': 'win', 'node_name': 'n2', 'connection_status': 'active'},
+                           {'id': 14, 'name': 'new', 'node_name': 'n1', 'connection_status': 'never_connected'}]}
+        saved = inv.wdb_query
+        try:
+            inv.wdb_query = lambda path, q: (seen.append(q), rows['global'] if q.startswith('global') else [])[1]
+            agents = inv.agents_of_node('/x', 'n1')
+            self.assertEqual([(a['id'], a['groups']) for a in agents], [('012', ['default', 'ai-agent'])])
+            inv.collect('/x', agents[0])
+        finally:
+            inv.wdb_query = saved
+        for q in seen:
+            self.assertRegex(q, r'^(?:global|agent \d{3}) sql SELECT ')
+            self.assertNotRegex(q.upper(), r'\b(?:INSERT|UPDATE|DELETE|DROP|ATTACH|PRAGMA)\b')
+
+
 if __name__ == '__main__':
     unittest.main()

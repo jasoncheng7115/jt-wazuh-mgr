@@ -4,6 +4,23 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.35.0 (2026-11-15)
+
+- **jt-ai-agent 1.4: sequences within one session.** Reading credentials (private keys, cloud and
+  registry credentials, `.env`) and then uploading a file or using a tunnel or file-sharing service
+  within 15 minutes is level 13 (133745), the shape of exfiltration by a prompt-injected agent; four or
+  more destructive commands within ten minutes is level 12 (133746), a runaway session. More tunnel
+  services are recognised (localhost.run, serveo, pinggy, bore, localtunnel).
+- **jt-ai-agent 1.4: inventory of what the audit does not cover.** `jt-ai-agent-inventory.py` runs every
+  six hours on every manager node and reads what syscollector already collects (packages, running
+  processes, listening ports) and the file integrity database: a coding agent on a host outside the
+  `ai-agent` group (133751, L8), a host in the group without the hook (133752, L7), Aider, which has no
+  hook mechanism (133753, L5), and local model servers (Ollama, llama.cpp, vLLM, LM Studio, LocalAI):
+  running (133754, L3) or listening on a non-loopback address (133755, L8), since Ollama and llama.cpp's
+  server have no authentication by default. Each finding is reported once, reminded weekly and reported
+  again when it is gone. It only reads wazuh-db and needs no Internet access.
+- With `daily_groups = ai_agent` in `jt-alert-digest.conf` the daily summary gets one part for AI agents.
+
 ## v1.34.0 (2026-11-15)
 
 - **jt-ai-agent 1.3: six AI coding agents.** Besides Claude Code, the hook now audits Codex (managed
