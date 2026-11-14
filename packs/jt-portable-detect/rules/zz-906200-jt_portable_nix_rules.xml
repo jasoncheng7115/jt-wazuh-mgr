@@ -80,7 +80,7 @@
     agent's FIM database and in no alert. Only authorized_keys survived, and
     only because another pack's rule for it happened to be evaluated first.
     It also competed with that pack's /tmp webshell rules (jt-zimbra
-    100807/100809) for the same events.
+    100807/100809, now 906214/906215 in this pack) for the same events.
 
     A broad catch-all under a built-in parent cannot be made safe by choosing
     its level. Noise that comes from monitoring a path belongs on the agent,
@@ -152,6 +152,49 @@
       <id>T1564</id>
     </mitre>
     <group>jt_portable_shm,</group>
+  </rule>
+
+  <!--
+    Attacker tooling by file type in a temporary directory (3.6). These two
+    rules were 100807 and 100809 in the jt-zimbra pack until its 3.8. They
+    never had anything to do with Zimbra: they applied to every agent, so a
+    script on a build host showed up on the Zimbra dashboard as a Zimbra
+    alert. The IDs 100807, 100809 and 100810 are retired in jt-zimbra; do not
+    reuse them.
+
+    906214 is a child of 906202 and 906203 rather than their sibling, so every
+    exclusion written for those two (build scratch directories, symbolic
+    links, containerd mounts, site exclusions 906225-906229) applies to it as
+    well; level 0 children are evaluated before it. As 100809 it was a
+    sibling, loaded earlier from 01-, and none of those exclusions reached it.
+    The extension is the evidence: a .py with the execute bit is a program,
+    and the same file at 0644 never reaches this rule.
+
+    906215 does not ask for the execute bit: a servlet container loads jsp,
+    class, jar and war files whatever their mode, so it is its own sibling
+    under 550/554 with its own exclusions listed below.
+
+    Deletions (553) are not this signal: a file that disappears is no tool
+    being dropped, and the built-in 553 records it.
+  -->
+  <rule id="906214" level="12">
+    <if_sid>906202,906203</if_sid>
+    <field name="file" type="pcre2">\.(sh|py|pl|elf|bin)$</field>
+    <description>[HIGH] Executable script or binary in a temporary directory, possible attacker tooling: $(file) process: $(process_name)</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+    <group>attack_tool,jt_portable_tmpexec,</group>
+  </rule>
+
+  <rule id="906215" level="12">
+    <if_sid>550,554</if_sid>
+    <field name="file" type="pcre2">^/(tmp|var/tmp|dev/shm)/.*\.(jsp|jspx|class|jar|war)$</field>
+    <description>[HIGH] Web application artefact in a temporary directory, possible attacker tooling: $(file) process: $(process_name)</description>
+    <mitre>
+      <id>T1105</id>
+    </mitre>
+    <group>attack_tool,</group>
   </rule>
 
 
@@ -565,7 +608,7 @@
     906211, which auditd backs with evidence a file mode cannot fake.
   -->
   <rule id="906232" level="0">
-    <if_sid>906201,906202,906203,906204</if_sid>
+    <if_sid>906201,906202,906203,906204,906215</if_sid>
     <field name="sha256" type="pcre2">^e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855$</field>
     <description>Symlink or unreadable file, not a program that could be executed</description>
   </rule>
@@ -634,13 +677,13 @@
     teach people that level 12 means nothing, which loses more than this gap
     does. Execution is still caught by 906211, which auditd backs.
 
-    This pattern is duplicated as rule 100810 in the jt-zimbra pack, which
-    carries its own temporary-directory rules. The two packs install
-    independently, so neither can rely on the other's rule being present;
-    preflight's build scratch pattern check fails if the copies drift apart.
+    Until jt-zimbra 3.8 this pattern was duplicated there as rule 100810, for
+    its own temporary-directory rules; those rules are 906214 and 906215 here
+    now, so this is the only copy. 906214 is a child of 906202 and gets this
+    exclusion through it; 906215 is listed on its own.
   -->
   <rule id="906234" level="0">
-    <if_sid>906201,906202,906204</if_sid>
+    <if_sid>906201,906202,906204,906215</if_sid>
     <field name="file" type="pcre2">^/(tmp|var/tmp)/(pytest-of-|pytest-|tox-|pip-|virtualenv-|go-build|cargo-|rustc|npm-|yarn--|node-compile-cache|v8-compile-cache|bazel|gradle|maven-|mvn|sbt_|ccache|cmake-|meson-|conan|jenkins|gitlab-runner|actions-runner|buildkite|cabal-|stack-)</field>
     <description>Build or test toolchain scratch directory (normal)</description>
   </rule>
@@ -656,7 +699,7 @@
     the path, which keeps those files out of the FIM database.
   -->
   <rule id="906239" level="0">
-    <if_sid>906201,906202,906204</if_sid>
+    <if_sid>906201,906202,906204,906215</if_sid>
     <field name="file" type="pcre2">^/tmp/containerd-mount[0-9]+/</field>
     <description>Container image layer mounted by containerd in a temporary directory (normal)</description>
   </rule>
@@ -665,7 +708,7 @@
     906225-906229 are left for site-specific exclusions. For example:
 
     <rule id="906225" level="0">
-      <if_sid>906201,906202,906204</if_sid>
+      <if_sid>906201,906202,906204,906215</if_sid>
       <field name="file" type="pcre2">^/tmp/mycompany-deploy-</field>
       <description>Excluded: corporate deployment tool, change request CR-1234</description>
     </rule>

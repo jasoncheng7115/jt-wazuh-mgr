@@ -193,3 +193,20 @@
   <regex type="pcre2">(?:^|\]:)\s*(CRITICAL|ERROR|WARNING|NOTICE|INFO|DEBUG)\s</regex>
   <order>f2b.level</order>
 </decoder>
+
+<!--
+  jt-waf-block (agent/jt-waf-block.py, 1.4): the fail2ban action that blocks an address at the
+  reverse proxy through jt-waf-mgr writes one syslog line per call under its own program name:
+    INFO ban 203.0.113.7 source=mail2/zimbra-webmail: done (HTTP 201)
+    INFO ban 10.0.5.20 skipped: not a public address
+    ERROR ban 203.0.113.7 source=mail2/zimbra-webmail: jt-waf-mgr answered HTTP 409 blocks_off
+-->
+<decoder name="jt-waf-block">
+  <program_name>^jt-waf-block$</program_name>
+</decoder>
+
+<decoder name="jt-waf-block-fields">
+  <parent>jt-waf-block</parent>
+  <regex type="pcre2">^(INFO|ERROR) (ban|unban) ([0-9A-Fa-f.:]+)\s(?:source=(\S+?):\s)?</regex>
+  <order>f2b.level, action, srcip, f2b.source</order>
+</decoder>

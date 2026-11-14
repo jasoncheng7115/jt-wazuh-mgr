@@ -1,0 +1,42 @@
+<!--
+  jt-waf-mgr: audit records of the WAF manager (part of the jt-modsecurity pack; rules 133560-133589)
+  Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+  Rules drafted by the jt-waf-mgr project, reviewed and tested in this pack.
+
+  jt-waf-mgr sends every audit row and every chain anchor to syslog (facility local0 by default) as
+  one JSON object under the program name jt-waf-mgr:
+
+    <syslog header> jt-waf-mgr: {"jt_waf_mgr":{"v":1,"action":"login","actor":"alice","actor_type":"user",
+        "src_ip":"192.0.2.10","result":"ok","node_id":"waf1","ts":"...","audit_id":6,"hash":"..."}}
+    <syslog header> jt-waf-mgr: {"jt_waf_mgr":{"v":1,"kind":"audit_anchor","node_id":"waf1","id":12,"hash":"...","count":12}}
+
+  An agent that reads /var/log/syslog (or journald) on the jt-waf-mgr host already sends these lines;
+  no built-in decoder claims the program name. All fields come from the JSON plugin, under
+  jt_waf_mgr.* (data.jt_waf_mgr.* in the indexer).
+
+  The second decoder copies src_ip and actor into the static srcip and dstuser fields as well, so
+  that the login rules can carry the cross-pack login groups (jt_auth_*) that jt-account-guard reads.
+  JSON escapes a quote inside a value as \", so "src_ip":" and "actor":" cannot be forged from inside
+  another field; the first occurrence is jt-waf-mgr's own key.
+-->
+<decoder name="jt-waf-mgr">
+  <program_name>^jt-waf-mgr$</program_name>
+</decoder>
+
+<decoder name="jt-waf-mgr-json">
+  <parent>jt-waf-mgr</parent>
+  <prematch>^{"jt_waf_mgr":</prematch>
+  <plugin_decoder>JSON_Decoder</plugin_decoder>
+</decoder>
+
+<decoder name="jt-waf-mgr-json">
+  <parent>jt-waf-mgr</parent>
+  <regex type="pcre2">"src_ip":"([0-9A-Fa-f.:]+)"</regex>
+  <order>srcip</order>
+</decoder>
+
+<decoder name="jt-waf-mgr-json">
+  <parent>jt-waf-mgr</parent>
+  <regex type="pcre2">"actor":"((?:[^"\\]|\\.){1,128})"</regex>
+  <order>user</order>
+</decoder>

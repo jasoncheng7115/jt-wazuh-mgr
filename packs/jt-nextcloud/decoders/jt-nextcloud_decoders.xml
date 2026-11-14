@@ -31,8 +31,10 @@
   applied once a child matches. So "Login successful" lines with an address
   get a child of their own (jt-nextcloud-login) that reads the fields the
   rules need with one regex: reqId, level, srcip, user, app, method, url,
-  message, userAgent, version. Their values stay JSON-escaped (\" and
-  \u00f6 as written in the file). Every other line, and a login line
+  message, userAgent, version, and from 1.3 userName when the relay added
+  one (the last group may match nothing, so lines without it decode as
+  before). Their values stay JSON-escaped (\" and \u00f6 as written in the
+  file). Every other line, and a login line
   without an address, goes to the JSON decoder pair below.
 -->
 
@@ -43,8 +45,8 @@
 <decoder name="jt-nextcloud-login">
   <parent>jt-nextcloud</parent>
   <prematch type="pcre2">^jt-nextcloud: \{(?=.*"remoteAddr":"[0-9A-Fa-f.:]+")(?=.*"app":"admin_audit")(?=.*"message":"Login successful: )</prematch>
-  <regex type="pcre2">^(?=.*?"reqId":"([^"]*)")(?=.*?"level":(\d))(?=.*?"remoteAddr":"(?:::[Ff]{4}:)?([0-9A-Fa-f.:]+)")(?=.*?"user":"((?:[^"\\]|\\.)*)")(?=.*?"app":"([^"]*)")(?=.*?"method":"([^"]*)")(?=.*?"url":"((?:[^"\\]|\\.)*)")(?=.*?"message":"((?:[^"\\]|\\.)*)")(?=.*?"userAgent":"((?:[^"\\]|\\.)*)")(?=.*?"version":"([^"]*)")</regex>
-  <order>reqId, level, srcip, user, app, method, url, message, userAgent, version</order>
+  <regex type="pcre2">^(?=.*?"reqId":"([^"]*)")(?=.*?"level":(\d))(?=.*?"remoteAddr":"(?:::[Ff]{4}:)?([0-9A-Fa-f.:]+)")(?=.*?"user":"((?:[^"\\]|\\.)*)")(?=.*?"app":"([^"]*)")(?=.*?"method":"([^"]*)")(?=.*?"url":"((?:[^"\\]|\\.)*)")(?=.*?"message":"((?:[^"\\]|\\.)*)")(?=.*?"userAgent":"((?:[^"\\]|\\.)*)")(?=.*?"version":"([^"]*)")(?:(?=.*?"userName":"((?:[^"\\]|\\.)*)")|)</regex>
+  <order>reqId, level, srcip, user, app, method, url, message, userAgent, version, userName</order>
   <fts>name, user, srcip</fts>
 </decoder>
 

@@ -1,0 +1,285 @@
+<!--
+  jt-waf-mgr: web manager for nginx + ModSecurity v3 + OWASP CRS (part of the jt-modsecurity pack)
+  Rules 133560-133589, drafted by the jt-waf-mgr project. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
+
+  Changes in review (jt-wazuh-mgr, 2026-11-13):
+  - login groups are the packs' own jt_auth_success / jt_auth_failure / jt_auth_lockout, not
+    authentication_success (built-in 17101/17102 hang off it and raise night-time logins to L9);
+    the decoder copies src_ip and actor into srcip and dstuser for them;
+  - field patterns are pcre2;
+  - the brute-force count uses <same_source_ip/>.
+  Note: on a host whose agent reads both /var/log/syslog and /var/log/messages every line arrives
+  twice, which halves the frequency thresholds.
+
+  Fields come from the JSON decoder: jt_waf_mgr.action, .result, .actor, .actor_type, .src_ip,
+  .severity (crit for integrity alerts), .kind (anchors and monitor notices).
+  Integrity alerts (integrity.*) are the reason this pack exists: jt-waf-mgr cannot be trusted to
+  report its own compromise, so a separate system must alert on them.
+-->
+<group name="jt_waf_mgr,">
+
+  <rule id="133560" level="0">
+    <decoded_as>jt-waf-mgr</decoded_as>
+    <description>jt-waf-mgr: audit record</description>
+  </rule>
+
+  <!-- chain anchors: the heartbeat of the audit trail -->
+  <rule id="133561" level="0">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.kind" type="pcre2">^audit_anchor$</field>
+    <description>jt-waf-mgr: audit chain anchor $(jt_waf_mgr.id)</description>
+  </rule>
+
+  <!-- integrity: broken audit chain, changed program files, outside config changes, failed DB check -->
+  <rule id="133562" level="12">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^integrity\.\w+_failed$</field>
+    <description>jt-waf-mgr: integrity check failed ($(jt_waf_mgr.action))</description>
+    <mitre><id>T1565.001</id><id>T1070</id></mitre>
+    <group>integrity,</group>
+  </rule>
+
+  <rule id="133563" level="3">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^integrity\.\w+_failed_recovered$</field>
+    <description>jt-waf-mgr: integrity check recovered ($(jt_waf_mgr.action))</description>
+  </rule>
+
+  <rule id="133564" level="8">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.kind" type="pcre2">^monitor_error$</field>
+    <description>jt-waf-mgr: integrity monitor task failed ($(jt_waf_mgr.task))</description>
+  </rule>
+
+  <!-- sign-in -->
+  <rule id="133565" level="5">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^login\.failed$</field>
+    <description>jt-waf-mgr: failed login for $(jt_waf_mgr.actor) from $(jt_waf_mgr.src_ip)</description>
+    <group>jt_auth_failure,</group>
+  </rule>
+
+  <rule id="133566" level="10" frequency="5" timeframe="300">
+    <if_matched_sid>133565</if_matched_sid>
+    <same_source_ip />
+    <description>jt-waf-mgr: 5 failed logins in 5 minutes from $(jt_waf_mgr.src_ip)</description>
+    <mitre><id>T1110</id></mitre>
+    <group>jt_waf_mgr_bruteforce,</group>
+  </rule>
+
+  <rule id="133567" level="10">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^account\.locked$</field>
+    <description>jt-waf-mgr: account $(jt_waf_mgr.actor) locked after failed logins</description>
+    <group>jt_auth_lockout,</group>
+  </rule>
+
+  <rule id="133568" level="2">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^login$</field>
+    <field name="jt_waf_mgr.result" type="pcre2">^ok$</field>
+    <description>jt-waf-mgr: login $(jt_waf_mgr.actor) from $(jt_waf_mgr.src_ip)</description>
+    <group>jt_auth_success,</group>
+  </rule>
+
+  <!-- second factor and accounts -->
+  <rule id="133569" level="7">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^totp\.disabled$|^user\.reset$|^user\.password_set$</field>
+    <description>jt-waf-mgr: $(jt_waf_mgr.action) by $(jt_waf_mgr.actor)</description>
+  </rule>
+
+  <rule id="133570" level="7">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^user\.created$|^user\.changed$|^user\.disabled$|^sessions\.revoked$</field>
+    <description>jt-waf-mgr: account change $(jt_waf_mgr.action) by $(jt_waf_mgr.actor)</description>
+  </rule>
+
+  <rule id="133571" level="10">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^token\.created$</field>
+    <description>jt-waf-mgr: API token created by $(jt_waf_mgr.actor)</description>
+  </rule>
+
+  <rule id="133572" level="7">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^settings\.changed$</field>
+    <description>jt-waf-mgr: setting changed by $(jt_waf_mgr.actor)</description>
+  </rule>
+
+  <!-- WAF changes: what actually reaches nginx -->
+  <rule id="133573" level="5">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^change\.applied$|^change\.rollback_requested$</field>
+    <description>jt-waf-mgr: WAF configuration changed ($(jt_waf_mgr.action)) by $(jt_waf_mgr.actor)</description>
+  </rule>
+
+  <rule id="133574" level="10">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^change\.apply_failed$</field>
+    <description>jt-waf-mgr: applying a WAF change failed, previous files restored</description>
+  </rule>
+
+  <rule id="133575" level="8">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">[._]denied$</field>
+    <description>jt-waf-mgr: refused $(jt_waf_mgr.action) for $(jt_waf_mgr.actor)</description>
+  </rule>
+
+  <rule id="133576" level="7">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^audit\.purged$</field>
+    <description>jt-waf-mgr: $(jt_waf_mgr.action)</description>
+  </rule>
+
+  <rule id="133578" level="7">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^backup\.failed$</field>
+    <description>jt-waf-mgr: daily database backup failed</description>
+  </rule>
+
+  <!-- nginx / ModSecurity / CRS files changed outside the change workflow -->
+  <rule id="133579" level="10">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^config\.changed$</field>
+    <field name="jt_waf_mgr.cause" type="pcre2">^outside$</field>
+    <description>jt-waf-mgr: WAF / nginx configuration changed outside the change workflow</description>
+    <mitre><id>T1562.001</id></mitre>
+  </rule>
+
+  <!-- a full database backup left the server (password hashes, OTP secrets, audit trail) -->
+  <rule id="133580" level="10">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^backup\.downloaded$</field>
+    <description>jt-waf-mgr: database backup downloaded by $(jt_waf_mgr.actor)</description>
+    <mitre><id>T1005</id></mitre>
+  </rule>
+
+  <!-- wrong one-time codes for a sensitive action (backup download, approving one's own loosening) -->
+  <rule id="133581" level="6">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^auth\.step_up_failed$</field>
+    <description>jt-waf-mgr: wrong one-time code for $(jt_waf_mgr.purpose) by $(jt_waf_mgr.actor)</description>
+  </rule>
+
+  <rule id="133582" level="12" frequency="3" timeframe="600">
+    <if_matched_sid>133581</if_matched_sid>
+    <same_field>jt_waf_mgr.actor</same_field>
+    <description>jt-waf-mgr: repeated wrong one-time codes for a sensitive action (session misuse?)</description>
+    <mitre><id>T1110</id></mitre>
+  </rule>
+
+  <rule id="133583" level="12">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^auth\.step_up_locked$</field>
+    <description>jt-waf-mgr: one-time code checks locked for $(jt_waf_mgr.actor) after repeated failures</description>
+    <mitre><id>T1110</id></mitre>
+  </rule>
+
+  <!-- alerts to follow up (0.4.0): the event analysis or the system found something a person must look at -->
+  <rule id="133584" level="10">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^alert\.created$</field>
+    <field name="jt_waf_mgr.alert_severity" type="pcre2">^warning$</field>
+    <description>jt-waf-mgr: alert to follow up: $(jt_waf_mgr.kind) $(jt_waf_mgr.host) $(jt_waf_mgr.path)</description>
+  </rule>
+
+  <rule id="133585" level="12">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^alert\.created$</field>
+    <field name="jt_waf_mgr.alert_severity" type="pcre2">^critical$</field>
+    <description>jt-waf-mgr: critical alert to follow up: $(jt_waf_mgr.kind) $(jt_waf_mgr.host) $(jt_waf_mgr.path)</description>
+  </rule>
+
+  <rule id="133586" level="3">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^alert\.handled$</field>
+    <description>jt-waf-mgr: alert $(jt_waf_mgr.alert_id) marked handled by $(jt_waf_mgr.actor)</description>
+  </rule>
+
+  <!-- a notification could not be delivered after its retries: the channel may be broken -->
+  <rule id="133587" level="7">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^notify\.failed$</field>
+    <description>jt-waf-mgr: notification to $(jt_waf_mgr.channel) failed: $(jt_waf_mgr.error)</description>
+  </rule>
+
+  <!-- a downloaded CRS release did not verify against the pinned CRS signing key: nothing was installed -->
+  <rule id="133588" level="12">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^crs\.signature_bad$</field>
+    <description>jt-waf-mgr: CRS release $(jt_waf_mgr.version) failed signature verification</description>
+  </rule>
+
+  <!-- a new CRS release is downloaded, verified and waiting for a person to propose and approve it -->
+  <rule id="133589" level="3">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^crs\.staged$</field>
+    <description>jt-waf-mgr: CRS $(jt_waf_mgr.version) is ready to be proposed</description>
+  </rule>
+
+  <!--
+    Temporary IP blocks (jt-waf-mgr 0.4.24, rules 133590-133596 in this pack): a mail host's fail2ban
+    or a person blocks an address at the reverse proxy for a while. The list is an nginx deny list
+    written by jt-waf-mgr; the API refuses private and protected addresses.
+  -->
+  <rule id="133590" level="5">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^block\.add$</field>
+    <description>jt-waf-mgr: $(jt_waf_mgr.ip) blocked at the reverse proxy by $(jt_waf_mgr.source) for $(jt_waf_mgr.ttl) s: $(jt_waf_mgr.reason)</description>
+    <group>jt_waf_mgr_block,</group>
+  </rule>
+
+  <rule id="133591" level="3">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^block\.extend$</field>
+    <description>jt-waf-mgr: block of $(jt_waf_mgr.ip) extended by $(jt_waf_mgr.source)</description>
+    <group>jt_waf_mgr_block,</group>
+  </rule>
+
+  <rule id="133592" level="3">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^block\.remove$</field>
+    <description>jt-waf-mgr: block of $(jt_waf_mgr.ip) lifted by $(jt_waf_mgr.source)$(jt_waf_mgr.actor)</description>
+    <group>jt_waf_mgr_block,</group>
+  </rule>
+
+  <rule id="133593" level="2">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^block\.(?:expired|applied)$</field>
+    <description>jt-waf-mgr: block list $(jt_waf_mgr.action)</description>
+    <group>jt_waf_mgr_block,</group>
+  </rule>
+
+  <!-- refused: a caller asked to block an internal or protected address (misused or broken caller) -->
+  <rule id="133594" level="8">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^block\.refused$</field>
+    <description>jt-waf-mgr: refused to block $(jt_waf_mgr.ip) for $(jt_waf_mgr.source) ($(jt_waf_mgr.reason))</description>
+    <group>jt_waf_mgr_block,</group>
+  </rule>
+
+  <!-- refused for volume: the block list or one caller hit its limit, so new attackers are no longer blocked -->
+  <rule id="133595" level="10">
+    <if_sid>133594</if_sid>
+    <field name="jt_waf_mgr.reason" type="pcre2">^(?:too_many_blocks|too_many_for_token|rate_limited)$</field>
+    <description>jt-waf-mgr: block list limit reached ($(jt_waf_mgr.reason)) for $(jt_waf_mgr.source): new addresses are not being blocked</description>
+    <group>jt_waf_mgr_block,</group>
+  </rule>
+
+  <!-- the list could not be written to nginx: blocks are not in effect -->
+  <rule id="133596" level="12">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.action" type="pcre2">^block\.apply_failed$</field>
+    <description>jt-waf-mgr: the IP block list could not be applied to nginx (previous list kept)</description>
+    <group>jt_waf_mgr_block,</group>
+  </rule>
+
+  <!-- anything at crit that the rules above do not name -->
+  <rule id="133577" level="12">
+    <if_sid>133560</if_sid>
+    <field name="jt_waf_mgr.severity" type="pcre2">^crit$</field>
+    <description>jt-waf-mgr: critical audit record $(jt_waf_mgr.action)</description>
+  </rule>
+
+</group>

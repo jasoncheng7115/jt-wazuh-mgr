@@ -2,9 +2,9 @@
  "id": "jt-ai-agent",
  "name": "AI Coding Agent Audit",
  "name_zh": "AI 程式代理稽核",
- "version": "1.0",
- "summary": "An audit trail of what AI coding agents (Claude Code) do on a host: every shell command, file change, web fetch, MCP call, subagent and session, recorded by a hook before it runs, with secrets in command lines replaced by ***. Graded rules for destructive commands (locally and over SSH), reading private keys and credential files, download-and-run, an agent changing its own permissions and hooks, sessions with all permission prompts off, and tampering with the audit itself.",
- "summary_zh": "AI 程式代理（Claude Code）在主機上做了什麼的稽核記錄：每一個 shell 指令、檔案變更、網頁讀取、MCP 呼叫、子代理與工作階段，都在執行前由 hook 記下，指令裡的密碼與 token 先換成 ***。分級規則涵蓋：破壞性指令（本機與經 SSH）、讀取私鑰與帳密檔、下載後直接執行、代理修改自己的權限與 hook、關閉所有權限確認的工作階段，以及竄改稽核本身。",
+ "version": "1.3",
+ "summary": "An audit trail of what AI coding agents (Claude Code, Codex, opencode, Gemini CLI, Cursor and GitHub Copilot) do on a host: every shell command, file change, web fetch, MCP call, subagent and session, recorded by a hook (managed hooks or system settings for each agent; opencode: a plugin) before it runs (Cursor: right after), with secrets in command lines replaced by ***. Graded rules for destructive commands (locally and over SSH), reading private keys and credential files, download-and-run, an agent changing its own permissions and hooks, sessions with all permission prompts off, and tampering with the audit itself.",
+ "summary_zh": "AI 程式代理（Claude Code、Codex、opencode、Gemini CLI、Cursor、GitHub Copilot）在主機上做了什麼的稽核記錄：每一個 shell 指令、檔案變更、網頁讀取、MCP 呼叫、子代理與工作階段，都在執行前由 hook 記下（各代理用受管理的 hooks 或系統設定，opencode 用外掛；Cursor 是執行後立即記下），指令裡的密碼與 token 先換成 ***。分級規則涵蓋：破壞性指令（本機與經 SSH）、讀取私鑰與帳密檔、下載後直接執行、代理修改自己的權限與 hook、關閉所有權限確認的工作階段，以及竄改稽核本身。",
  "rule_id_range": "133700-133799",
  "author": "Jason Tools",
  "license": "AGPL-3.0-or-later",
@@ -22,7 +22,10 @@
   "Make it mandatory through the managed settings (/etc/claude-code/managed-settings.json): hooks there cannot be turned off by users, also not with disableAllHooks. A user's own ~/.claude/settings.json works for one user but that user can remove it.",
   "The log is writable by every local user (mode 0622) so that agents running as ordinary users can write to it. A local user can therefore append forged lines; what Wazuh has already read stays in Wazuh. Changes to the hook and the managed settings are reported by file integrity (133722, 133723).",
   "Rules match the plain, common forms of risky commands; a command can always be written so that a pattern misses it. The level-3 record of every command is the part that cannot be avoided as long as the hook runs.",
-  "Other agents (Codex, Cursor, opencode, Aider ...) are not covered by the hook; any tool that writes the same JSON line to the log is read the same way."
+  "Agents without a hook (Aider, Windsurf, Cline, Continue, local models run directly ...) are not covered; any tool that writes the same JSON line to the log is read the same way.",
+  "1.1: Codex and opencode. The hook takes --agent codex|opencode and maps their tool names to Claude Code's (Codex apply_patch becomes Edit, or Write when it only adds files, with the patched paths and never the patch text; opencode's bash/read/write/edit become Bash/Read/Write/Edit), so the same rules cover all three and jt_ai.agent says which one it was; the original name is kept in jt_ai.tool_raw. Codex calls it as a managed hook from /etc/codex/requirements.toml, opencode through the pack's plugin in /etc/opencode/plugins/. Changing Codex or opencode settings and plugins counts as an agent changing its own settings (133713/133714, which also catch codex started with --dangerously-bypass-hook-trust or --dangerously-bypass-approvals-and-sandbox), and /etc/codex and the opencode plugin are part of the audit's tamper rules and file integrity. Codex's hosted web search does not reach PreToolUse, so it is not recorded.",
+  "1.2: who and where (real_user from sudo, login_user, ssh_from, the git repo and branch), permission requests (133736), failed calls (133737), session ends, MCP server and tool split out (mcp_server, mcp_tool), credentials removed from a command flagged (133735). New behaviour rules: uploading a local file with curl or wget (133724), file-sharing, tunnel and out-of-band services (133725), raw sockets (133726), cloud, registry and other agents' credentials (133727, 133728), .env files (133729, L5), persistence by cron, systemd, shell start-up files or authorized_keys (133730, 133731), clearing history or logs and turning off auditing or a security control (133732, L12), accounts and privileges (133733, 133740), --no-verify (133734), a session driven over SSH from a public address (133738). Permission requests and failures go to a level 0 rule first, so they never fire the detection rules a second time. macOS support (Darwin block in the agent group).",
+  "1.3: Gemini CLI, Cursor and GitHub Copilot. The hook takes --agent gemini|cursor|copilot and maps their payloads and tool names to Claude Code's (Gemini run_shell_command/read_file/write_file/replace become Bash/Read/Write/Edit, MCP tools mcp_<server>_<tool> become mcp__<server>__<tool>; Cursor Shell becomes Bash and MCP:<tool> an mcp__ name; Copilot bash/view/create/edit become Bash/Read/Write/Edit). Gemini CLI: hooks in the system settings /etc/gemini-cli/settings.json (macOS /Library/Application Support/GeminiCli/), which override user and project settings. Cursor: enterprise hooks /etc/cursor/hooks.json (macOS /Library/Application Support/Cursor/hooks.json); Cursor's before-hooks are permission hooks that block the call on a wrong answer, so the pack uses postToolUse and postToolUseFailure: every Cursor call is one PostToolUse line written right after it ran, and a refused or failed call carries failed and error, so the detection rules also see refused attempts. Copilot (Copilot CLI, and VS Code agent mode when it uses the Copilot harness): policy hooks /etc/github-copilot/policy.d/jt-ai-agent.json; Copilot denies a preToolUse call when the hook fails, so the command ends with exit 0, and for these three agents the hook always prints {} (no decision). VS Code's deprecated Local harness reads no system-wide hooks and is not covered. The user's email that Cursor reports is kept as jt_ai.account. New: changing Gemini, Cursor, Copilot or repository hook settings counts as the agent changing its own settings (133713/133714, which also catch gemini --yolo, copilot --allow-all-tools and cursor-agent --force), VS Code settings changed by an agent (133741, L6: auto-approve can be turned on there, CVE-2025-53773) or the auto-approve key touched from a shell (133742, L8), the Gemini, Copilot and Cursor login files count as credentials (133727/133728), and Cursor's Delete tool counts as a file change."
  ],
  "notes_zh": [
   "記錄的內容：誰（作業系統帳號、工作階段 ID、子代理）、在哪裡（主機、工作目錄、權限模式）、做了什麼（工具；shell 指令記錄指令內容，最多 2,000 字元；檔案工具記錄路徑；網頁工具記錄網址）。不記錄檔案內容、指令輸出與提示詞。",
@@ -32,7 +35,10 @@
   "要強制啟用就放在 managed settings（/etc/claude-code/managed-settings.json）：那裡的 hook 使用者關不掉，disableAllHooks 也關不掉。放在使用者自己的 ~/.claude/settings.json 只對那個使用者有效，而且他自己可以拿掉。",
   "記錄檔對所有本機帳號開放寫入（權限 0622），讓以一般帳號執行的代理也能寫。所以本機帳號可以附加偽造的行；已被 Wazuh 讀走的內容會留在 Wazuh。hook 與 managed settings 的變更由檔案完整性回報（133722、133723）。",
   "規則比對的是高風險指令最常見的寫法，指令總有辦法改寫成比對不到的形式。只要 hook 有在跑，每一個指令的 level 3 記錄是避不開的那一層。",
-  "其他代理（Codex、Cursor、opencode、Aider……）不在 hook 的範圍內；任何工具只要把同樣格式的 JSON 寫進這個記錄檔，就會以同樣方式讀取。"
+  "沒有 hook 機制的代理（Aider、Windsurf、Cline、Continue、直接執行的本機模型……）不在範圍內；任何工具只要把同樣格式的 JSON 寫進這個記錄檔，就會以同樣方式讀取。",
+  "1.1：支援 Codex 與 opencode。hook 加上 --agent codex|opencode，把它們的工具名稱對應成 Claude Code 的名稱：Codex 的 apply_patch 變成 Edit（只新增檔案時是 Write），只記被修改的路徑、不記補丁內容；opencode 的 bash／read／write／edit 變成 Bash／Read／Write／Edit。所以同一組規則涵蓋三種代理，jt_ai.agent 標出是哪一個，原本的名稱保留在 jt_ai.tool_raw。Codex 由 /etc/codex/requirements.toml 的受管理 hooks 呼叫，opencode 經套件的外掛（/etc/opencode/plugins/）呼叫。修改 Codex 或 opencode 的設定與外掛視為「代理修改自己的設定」（133713／133714，也會抓到以 --dangerously-bypass-hook-trust 或 --dangerously-bypass-approvals-and-sandbox 啟動 codex），/etc/codex 與 opencode 外掛也納入竄改規則與檔案完整性監控。Codex 由伺服器端執行的網頁搜尋不經過 PreToolUse，所以不會被記錄。",
+  "1.2：記錄背後的人與專案（sudo 前的使用者 real_user、login_user、SSH 來源 ssh_from、git 專案與分支）、權限請求（133736）、失敗的呼叫（133737）、工作階段結束，MCP 拆成伺服器與工具（mcp_server、mcp_tool），指令中被移除的帳密會標記（133735）。新的行為規則：用 curl／wget 上傳本機檔案（133724）、檔案分享／穿隧／帶外服務（133725）、原始 socket（133726）、雲端／套件庫／其他代理的帳密（133727、133728）、.env（133729，L5）、以 cron、systemd、shell 啟動檔或 authorized_keys 持久化（133730、133731）、清除歷史或記錄、關閉稽核或安全控制（133732，L12）、帳號與權限（133733、133740）、--no-verify（133734）、從公網 SSH 驅動的工作階段（133738）。權限請求與失敗先由 level 0 規則接走，不會再觸發一次偵測規則。支援 macOS（agent 群組的 Darwin 區段）。",
+  "1.3：支援 Gemini CLI、Cursor、GitHub Copilot。hook 加上 --agent gemini|cursor|copilot，把它們的事件格式與工具名稱對應成 Claude Code 的（Gemini 的 run_shell_command／read_file／write_file／replace 變成 Bash／Read／Write／Edit，MCP 工具 mcp_<伺服器>_<工具> 變成 mcp__<伺服器>__<工具>；Cursor 的 Shell 變成 Bash、MCP:<工具> 變成 mcp__ 名稱；Copilot 的 bash／view／create／edit 變成 Bash／Read／Write／Edit）。Gemini CLI：hook 放在系統設定 /etc/gemini-cli/settings.json（macOS 為 /Library/Application Support/GeminiCli/），系統設定會蓋過使用者與專案設定。Cursor：企業 hook /etc/cursor/hooks.json（macOS 為 /Library/Application Support/Cursor/hooks.json）；Cursor 的「執行前」hook 都是權限 hook，回答格式不對就會擋下呼叫，所以套件用 postToolUse 與 postToolUseFailure：每一個 Cursor 呼叫在執行後立即記成一筆 PostToolUse，被拒絕或失敗的帶 failed 與 error，偵測規則一樣看得到被拒絕的嘗試。Copilot（Copilot CLI，以及使用 Copilot harness 的 VS Code 代理模式）：政策 hook /etc/github-copilot/policy.d/jt-ai-agent.json；hook 失敗時 Copilot 會拒絕 preToolUse 的呼叫，所以指令最後加上 exit 0，而且這三種代理 hook 一律輸出 {}（不做決定）。VS Code 已淘汰的 Local harness 不讀系統層的 hook，不在範圍內。Cursor 回報的使用者電子郵件記在 jt_ai.account。新增：修改 Gemini、Cursor、Copilot 或專案 hook 的設定視為「代理修改自己的設定」（133713／133714，也會抓 gemini --yolo、copilot --allow-all-tools、cursor-agent --force），代理修改 VS Code 設定（133741，L6：那裡可以開啟自動核准，CVE-2025-53773）或從 shell 動到自動核准設定（133742，L8），Gemini、Copilot、Cursor 的登入檔視為帳密（133727／133728），Cursor 的 Delete 工具算檔案變更。"
  ],
  "files": [
   {
@@ -45,7 +51,7 @@
    "type": "rule",
    "name": "zz-133700-jt_ai_agent_rules.xml",
    "dest": "etc/rules/zz-133700-jt_ai_agent_rules.xml",
-   "sha256": "1834f915e41d3d64cbe60ee79ec54d538f9982846ed63c569dc6dfcbb7b14233"
+   "sha256": "39ab940b5e3c62810faee98263dd8c0594471f698b237af821fa07ec77084a8d"
   }
  ],
  "setup": [
@@ -88,10 +94,78 @@
    "body_zh": "建立 /etc/claude-code/managed-settings.json（root、0644），內容如下。檔案已經存在時，把這兩項加進它的 \"hooks\"，不要整份取代。這個檔案裡的 hook 對所有使用者生效，使用者或專案的設定都關不掉。\n\n{\n  \"hooks\": {\n    \"PreToolUse\": [{\"matcher\": \"*\", \"hooks\": [{\"type\": \"command\", \"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py\", \"timeout\": 5}]}],\n    \"SessionStart\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py\", \"timeout\": 5}]}]\n  }\n}\n\n新的工作階段就會套用；執行中的工作階段可能要重新開始。只想對一個使用者啟用時，同一段可以放在該使用者的 ~/.claude/settings.json（他自己可以拿掉）。",
    "verify": "Start Claude Code, run any command, then tail -2 /var/log/jt-ai-agent/actions.log shows a SessionStart and a PreToolUse line; the manager shows 133705 and 133702.",
    "verify_zh": "啟動 Claude Code、執行任一指令後，tail -2 /var/log/jt-ai-agent/actions.log 看得到 SessionStart 與 PreToolUse 兩行；manager 上出現 133705 與 133702。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "1.1",
+   "title": "Codex: enable the hook for every user (managed hooks)",
+   "title_zh": "Codex：對所有使用者啟用 hook（受管理的 hooks）",
+   "body": "Codex (0.160 or later, hooks are a stable feature) runs the same hook. Put it in Codex's system requirements file, /etc/codex/requirements.toml (root, 0644): managed hooks there need no trust review and users cannot turn them off, while their own hooks keep working. If the file already has a [features] or [hooks] table, merge these keys into it instead of appending. Codex reads the file when a session starts.",
+   "body_zh": "Codex（0.160 以後，hooks 是穩定功能）執行同一支 hook。放在 Codex 的系統要求檔 /etc/codex/requirements.toml（root、0644）：這裡的受管理 hooks 不需要信任確認、使用者關不掉，使用者自己的 hooks 照常運作。檔案已經有 [features] 或 [hooks] 區段時，把這些鍵合併進去，不要再附加一份。Codex 在工作階段開始時讀這個檔。",
+   "code": "cat >> /etc/codex/requirements.toml <<'EOF'\n[features]\nhooks = true\n\n[hooks]\nmanaged_dir = \"/usr/local/lib/jt-ai-agent\"\n\n[[hooks.PreToolUse]]\nmatcher = \".*\"\n[[hooks.PreToolUse.hooks]]\ntype = \"command\"\ncommand = \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent codex\"\ntimeout = 5\n\n[[hooks.SessionStart]]\n[[hooks.SessionStart.hooks]]\ntype = \"command\"\ncommand = \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent codex\"\ntimeout = 5\nEOF\nchmod 0644 /etc/codex/requirements.toml",
+   "verify": "Start Codex and run any command: tail -2 /var/log/jt-ai-agent/actions.log shows a SessionStart and a PreToolUse line with \"agent\":\"codex\"; the manager shows 133705 and 133702.",
+   "verify_zh": "啟動 Codex、執行任一指令後，tail -2 /var/log/jt-ai-agent/actions.log 看得到帶 \"agent\":\"codex\" 的 SessionStart 與 PreToolUse 兩行；manager 上出現 133705 與 133702。"
+  },
+  {
+   "platform": "linux",
+   "required": false,
+   "since": "1.1",
+   "title": "opencode: install the plugin for every user",
+   "title_zh": "opencode：為所有使用者安裝外掛",
+   "body": "opencode loads plugins from its system directory /etc/opencode/plugins/ for every user on the host (~/.config/opencode/plugins/ for one user). The pack's plugin works with opencode 2.x and 1.x: before every tool call and when a session is created it hands the call to the same hook (--agent opencode), without waiting for it and without changing anything. Restart opencode (or an opencode serve service) to load it.",
+   "body_zh": "opencode 會載入系統目錄 /etc/opencode/plugins/ 裡的外掛，對主機上所有使用者生效（只給一個使用者用則放 ~/.config/opencode/plugins/）。套件的外掛支援 opencode 2.x 與 1.x：每次工具呼叫前與建立工作階段時，把資料交給同一支 hook（--agent opencode），不等待結果、不改變任何東西。重新啟動 opencode（或 opencode serve 的服務）後生效。",
+   "file": "agent/jt-ai-agent-opencode.js",
+   "code": "install -D -m 0644 /var/ossec/etc/shared/jt-ai-agent-opencode.js /etc/opencode/plugins/jt-ai-agent.js",
+   "verify": "Run any command in opencode: tail -1 /var/log/jt-ai-agent/actions.log shows a PreToolUse line with \"agent\":\"opencode\"; the manager shows 133702.",
+   "verify_zh": "在 opencode 執行任一指令後，tail -1 /var/log/jt-ai-agent/actions.log 看得到帶 \"agent\":\"opencode\" 的 PreToolUse 一行；manager 上出現 133702。"
+  },
+  {
+   "platform": "all",
+   "required": false,
+   "since": "1.2",
+   "title": "1.2: also send permission requests, failures and session ends",
+   "title_zh": "1.2：一併送出權限請求、失敗與工作階段結束",
+   "body": "1.2 adds four hook events to the same hook: PermissionRequest (the agent asks to be allowed a call), PostToolUseFailure for Claude Code (PostToolUse for Codex and opencode; the hook only writes a line when the call failed and never reads its output), SubagentStart and SessionEnd. Add them next to PreToolUse and SessionStart:\n- Claude Code managed settings: \"PermissionRequest\" and \"PostToolUseFailure\" with \"matcher\": \"*\", \"SubagentStart\" and \"SessionEnd\" without a matcher, each running the same command;\n- Codex /etc/codex/requirements.toml: [[hooks.PermissionRequest]] and [[hooks.PostToolUse]] with matcher \".*\", [[hooks.SubagentStart]] and [[hooks.SessionEnd]], each running the hook with --agent codex;\n- opencode: install the 1.2 plugin (it reports failed calls and permission requests itself).\nOn macOS the Claude Code file is /Library/Application Support/ClaudeCode/managed-settings.json and opencode's system plugins are in /Library/Application Support/opencode/plugins/; rotate the log with newsyslog (/etc/newsyslog.d/jt-ai-agent.conf: \"/var/log/jt-ai-agent/actions.log 622 8 5000 * J\"). The agent group has a Darwin block for the log and the file integrity of these paths.",
+   "body_zh": "1.2 在同一支 hook 加上四種事件：PermissionRequest（代理要求允許一次呼叫）、Claude Code 的 PostToolUseFailure（Codex、opencode 用 PostToolUse；hook 只在呼叫失敗時寫一行，且不讀輸出）、SubagentStart、SessionEnd。把它們加在 PreToolUse、SessionStart 旁邊：\n- Claude Code 受管理設定：\"PermissionRequest\"、\"PostToolUseFailure\" 加 \"matcher\": \"*\"，\"SubagentStart\"、\"SessionEnd\" 不加 matcher，都執行同一個指令；\n- Codex /etc/codex/requirements.toml：[[hooks.PermissionRequest]]、[[hooks.PostToolUse]] 加 matcher \".*\"，以及 [[hooks.SubagentStart]]、[[hooks.SessionEnd]]，都執行帶 --agent codex 的 hook；\n- opencode：安裝 1.2 的外掛（它自己回報失敗與權限請求）。\nmacOS 上 Claude Code 的檔案是 /Library/Application Support/ClaudeCode/managed-settings.json，opencode 的系統外掛在 /Library/Application Support/opencode/plugins/；記錄輪替用 newsyslog（/etc/newsyslog.d/jt-ai-agent.conf：\"/var/log/jt-ai-agent/actions.log 622 8 5000 * J\"）。agent 群組有 Darwin 區段收記錄並監控這些路徑的完整性。",
+   "verify": "Deny a permission prompt in Claude Code: the log shows a PermissionRequest line and the manager shows 133736; a failing command shows 133737.",
+   "verify_zh": "在 Claude Code 拒絕一次權限確認：記錄出現 PermissionRequest，manager 出現 133736；失敗的指令出現 133737。"
+  },
+  {
+   "platform": "all",
+   "required": false,
+   "since": "1.3",
+   "title": "1.3: Gemini CLI, Cursor and GitHub Copilot",
+   "title_zh": "1.3：Gemini CLI、Cursor、GitHub Copilot",
+   "body": "The same hook, installed in each agent's system-wide configuration (root, 0644; merge into an existing file instead of replacing it). Each runs for every user on the host.\n\nGemini CLI: /etc/gemini-cli/settings.json (macOS: /Library/Application Support/GeminiCli/settings.json). System settings override user and project settings.\n{\n  \"hooksConfig\": {\"enabled\": true},\n  \"hooks\": {\n    \"BeforeTool\":   [{\"matcher\": \"*\", \"hooks\": [{\"name\": \"jt-ai-agent\", \"type\": \"command\", \"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent gemini\", \"timeout\": 5000}]}],\n    \"AfterTool\":    [{\"matcher\": \"*\", \"hooks\": [{\"name\": \"jt-ai-agent\", \"type\": \"command\", \"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent gemini\", \"timeout\": 5000}]}],\n    \"SessionStart\": [{\"hooks\": [{\"name\": \"jt-ai-agent\", \"type\": \"command\", \"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent gemini\", \"timeout\": 5000}]}],\n    \"SessionEnd\":   [{\"hooks\": [{\"name\": \"jt-ai-agent\", \"type\": \"command\", \"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent gemini\", \"timeout\": 5000}]}],\n    \"Notification\": [{\"hooks\": [{\"name\": \"jt-ai-agent\", \"type\": \"command\", \"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent gemini\", \"timeout\": 5000}]}]\n  }\n}\n\nCursor: /etc/cursor/hooks.json (macOS: /Library/Application Support/Cursor/hooks.json). Only after-the-fact events: Cursor's before-hooks block a call when the answer is not what they expect.\n{\"version\": 1, \"hooks\": {\n  \"sessionStart\":       [{\"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent cursor\", \"timeout\": 5}],\n  \"sessionEnd\":         [{\"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent cursor\", \"timeout\": 5}],\n  \"postToolUse\":        [{\"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent cursor\", \"timeout\": 5}],\n  \"postToolUseFailure\": [{\"command\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent cursor\", \"timeout\": 5}]\n}}\n\nGitHub Copilot (Copilot CLI; VS Code agent mode on the Copilot harness): /etc/github-copilot/policy.d/jt-ai-agent.json (same path on macOS). One entry per event, each passing its name; the trailing exit 0 matters, Copilot denies a preToolUse call when the hook fails.\n{\"version\": 1, \"hooks\": {\n  \"preToolUse\": [{\"type\": \"command\", \"bash\": \"/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent copilot --event preToolUse 2>/dev/null; exit 0\", \"timeoutSec\": 5}],\n  ... the same for sessionStart, sessionEnd, postToolUseFailure, subagentStart and permissionRequest\n}}\n\nStart new sessions afterwards (running ones keep their old configuration).",
+   "body_zh": "同一支 hook，放在各代理的系統層設定（root，0644；檔案已存在時合併進去，不要整個取代），對主機上所有使用者生效。\n\nGemini CLI：/etc/gemini-cli/settings.json（macOS：/Library/Application Support/GeminiCli/settings.json）。系統設定會蓋過使用者與專案設定。內容同英文版。\n\nCursor：/etc/cursor/hooks.json（macOS：/Library/Application Support/Cursor/hooks.json）。只用「執行後」的事件：Cursor 的「執行前」hook 回答格式不符時會擋下呼叫。內容同英文版。\n\nGitHub Copilot（Copilot CLI；使用 Copilot harness 的 VS Code 代理模式）：/etc/github-copilot/policy.d/jt-ai-agent.json（macOS 路徑相同）。每個事件一筆，各自帶事件名稱；最後的 exit 0 不能省，hook 失敗時 Copilot 會拒絕 preToolUse 的呼叫。內容同英文版。\n\n之後開新的工作階段（執行中的仍用舊設定）。",
+   "verify": "Start a session in the agent and run one harmless command: a line with \"agent\":\"gemini\" (or cursor, copilot) appears in /var/log/jt-ai-agent/actions.log and as rule 133702 or 133705 in Wazuh.",
+   "verify_zh": "在該代理開一個工作階段、執行一個無害的指令：/var/log/jt-ai-agent/actions.log 出現 \"agent\":\"gemini\"（或 cursor、copilot）的一行，Wazuh 出現規則 133702 或 133705。"
   }
  ],
  "dashboard": {
   "fields": [
+   {
+    "field": "data.jt_ai.agent",
+    "title": "AI agent",
+    "title_zh": "AI 代理"
+   },
+   {
+    "field": "data.jt_ai.event",
+    "title": "Event",
+    "title_zh": "事件"
+   },
+   {
+    "field": "data.jt_ai.tool",
+    "title": "Tool",
+    "title_zh": "工具"
+   },
+   {
+    "field": "data.jt_ai.cmd",
+    "title": "Shell commands",
+    "title_zh": "Shell 指令",
+    "size": 15
+   },
    {
     "field": "data.jt_ai.host",
     "title": "Host",
@@ -111,16 +185,50 @@
     "field": "data.jt_ai.remote",
     "title": "SSH destination",
     "title_zh": "SSH 目的地"
+   },
+   {
+    "field": "data.jt_ai.repo",
+    "title": "Project",
+    "title_zh": "專案"
+   },
+   {
+    "field": "data.jt_ai.real_user",
+    "title": "Person (sudo)",
+    "title_zh": "背後的人（sudo）"
+   },
+   {
+    "field": "data.jt_ai.mcp_server",
+    "title": "MCP servers",
+    "title_zh": "MCP 伺服器"
+   },
+   {
+    "field": "data.jt_ai.account",
+    "title": "Account (Cursor)",
+    "title_zh": "帳號（Cursor）"
    }
-  ]
+  ],
+  "columns": [
+   "data.jt_ai.agent",
+   "data.jt_ai.host",
+   "data.jt_ai.user",
+   "data.jt_ai.tool",
+   "data.jt_ai.cmd",
+   "data.jt_ai.path"
+  ],
+  "rules_by": {
+   "field": "data.jt_ai.agent",
+   "title": "AI agent",
+   "title_zh": "AI 代理"
+  }
  },
  "agent_group": {
   "name": "ai-agent",
   "config": "agent.conf",
   "files": [
    "jt-ai-agent-hook.py",
-   "jt-ai-agent.logrotate"
+   "jt-ai-agent.logrotate",
+   "jt-ai-agent-opencode.js"
   ],
-  "description": "Collects the AI coding agent audit log with the pack's prefix, watches the hook and the managed Claude Code settings, and delivers the hook and its logrotate file"
+  "description": "Collects the AI coding agent audit log with the pack's prefix, watches the hook, the opencode plugin and the managed settings of Claude Code, Codex, Gemini CLI, Cursor and Copilot, and delivers the hook, the opencode plugin and the logrotate file"
  }
 }

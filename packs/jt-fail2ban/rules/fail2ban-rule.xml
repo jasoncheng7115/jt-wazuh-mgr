@@ -721,4 +721,37 @@
     <description>fail2ban liveness check reported an error</description>
   </rule>
 
+  <!--
+    jt-waf-block (1.4): fail2ban asking jt-waf-mgr to block the address at the reverse proxy.
+    A failed call means the attacker is NOT blocked where it matters (the proxy), even if the
+    local action worked.
+  -->
+  <rule id="131074" level="0">
+    <decoded_as>jt-waf-block</decoded_as>
+    <description>jt-waf-block: fail2ban action at the reverse proxy</description>
+  </rule>
+
+  <rule id="131075" level="3">
+    <if_sid>131074</if_sid>
+    <action>ban</action>
+    <match>: done (HTTP </match>
+    <description>fail2ban blocked $(srcip) at the reverse proxy through jt-waf-mgr ($(f2b.source))</description>
+  </rule>
+
+  <rule id="131076" level="2">
+    <if_sid>131074</if_sid>
+    <field name="f2b.level" type="pcre2">^INFO$</field>
+    <description>jt-waf-block: $(action) $(srcip) ($(f2b.source))</description>
+  </rule>
+
+  <rule id="131077" level="10">
+    <if_sid>131074</if_sid>
+    <field name="f2b.level" type="pcre2">^ERROR$</field>
+    <description>[WARN] fail2ban could not block $(srcip) at the reverse proxy through jt-waf-mgr: the address is NOT blocked there</description>
+    <options>alert_by_email</options>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+  </rule>
+
 </group>

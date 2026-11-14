@@ -2,7 +2,7 @@
   "id": "jt-nextcloud",
   "name": "Nextcloud Detection Suite",
   "name_zh": "Nextcloud 偵測套組",
-  "version": "1.2.5",
+  "version": "1.3",
   "summary": "Failed logins and brute force per address (also for Nextcloud 35, which logs client failures only in the audit log), second-factor failures, administrator logins, logins from public and new addresses, impersonation, administrator rights, security apps switched off, risky apps, occ commands that weaken protection, public links, ransomware-like renames, mass deletions, antivirus detections and changes of the configuration files, from the Nextcloud log, the audit log and file integrity monitoring, with the client address decoded as srcip.",
   "summary_zh": "從 Nextcloud 記錄、稽核記錄與檔案完整性監控偵測：依來源位址計算的登入失敗與暴力破解（含 Nextcloud 35，其用戶端登入失敗只寫在稽核記錄）、第二因素驗證失敗、管理者登入、來自公開位址與新位址的登入、以他人身分操作、管理者權限、關閉安全 App、高風險 App、削弱防護的 occ 指令、公開連結、類勒索軟體的大量更名、大量刪除、防毒偵測與設定檔變更，並把來源位址解成 srcip。",
   "rule_id_range": "131700-131799",
@@ -25,7 +25,8 @@
     "The audit log grows by one line per login, share, deletion and file access; Nextcloud rotates it at log_rotate_size (100 MB by default). The log.condition entries of the setup make Nextcloud write the admin_audit lines and the brute-force protection messages (131722-131725) at the default loglevel 2 without raising the level of everything else.",
     "An access log that starts with the client address followed by the virtual host name (Apache \"%a %v ...\"): Wazuh's built-in web decoder takes the host name as srcip, so the built-in rule 31151 (level 10, many 400 errors from one address) fires on all traffic combined and no address can be blocked. Rule 131779 recognises entry points only under a directory whose name starts with nextcloud; for an installation elsewhere the built-in rule 550 (level 7) reports the change.",
     "Account names for notifications (1.2.3): with an LDAP directory, Nextcloud's id for a directory user is the entry's UUID, and that is what the alerts name. jt-nextcloud-names.py, run daily on each manager node, writes the names of the accounts whose id is not their name to etc/jt-packs/jt-alert-digest-names.d/nextcloud, which jt-alert-digest 1.14 and later reads to show \"Alice Chen (3094106c...)\" in every channel. It uses the OCS provisioning API (the user list, a page at a time, then each user's display name and e-mail address) with an administrator's app password from a root-only file, never logged. The file is written in full and renamed into place; a failed run keeps the previous file, and so does an answer with fewer than half the names of the previous file (--force writes it). A failure raises 131783 (level 5), three days without a successful run 131784 (level 7). Without etc/jt-packs/jt-nextcloud.conf the script does nothing. A user's display name is under that user's control, so the digest cleans and escapes it like any alert text.",
-    "1.2.5: the alerts reach the Wazuh dashboard. Every audit line (and some lines of nextcloud.log) carries the object \"data\":{\"app\":...}; Wazuh decodes it as data.data, which the Wazuh alerts index template maps as a keyword, so the indexer refused every such alert (\"failed to parse field [data.data]\"): on one manager 22,779 in a week, all of them from the Nextcloud host. They were in alerts.json and the mail, never in the dashboard. Changing the index (a pipeline, a template) would work but touches Wazuh's own indices, so the pack does not: an rsyslog relay on the Nextcloud host copies the two logs to /var/log/jt-nextcloud/ with that key renamed to \"context\" (a plain text replacement of ,\"data\":{ that cannot match inside a JSON string), and the agent group reads the copies. No rule used data.data. If rsyslog stops, a cron check writes one line into the copy: rule 131786, level 10, mailed. Alerts refused before 1.2.5 are not re-sent."
+    "1.2.5: the alerts reach the Wazuh dashboard. Every audit line (and some lines of nextcloud.log) carries the object \"data\":{\"app\":...}; Wazuh decodes it as data.data, which the Wazuh alerts index template maps as a keyword, so the indexer refused every such alert (\"failed to parse field [data.data]\"): on one manager 22,779 in a week, all of them from the Nextcloud host. They were in alerts.json and the mail, never in the dashboard. Changing the index (a pipeline, a template) would work but touches Wazuh's own indices, so the pack does not: an rsyslog relay on the Nextcloud host copies the two logs to /var/log/jt-nextcloud/ with that key renamed to \"context\" (a plain text replacement of ,\"data\":{ that cannot match inside a JSON string), and the agent group reads the copies. No rule used data.data. If rsyslog stops, a cron check writes one line into the copy: rule 131786, level 10, mailed. Alerts refused before 1.2.5 are not re-sent.",
+    "1.3: user names. On an LDAP directory the ids are UUIDs; the relay adds each user's display name (occ user:list on the Nextcloud host, agent/jt-nextcloud-relay-names.py) as userName, decoded as data.userName and shown on the dashboard next to the id. Separate from the notification names of 1.2.3 (which need an app password); either works without the other."
   ],
   "notes_zh": [
     "本套件透過 agent 群組 nextcloud 讀取 Nextcloud 自己的記錄（nextcloud.log）與 admin_audit 稽核記錄；群組會在每一行前面加上前綴，交給本套件的解碼器處理。解碼器保留所有 JSON 欄位，並另外把 remoteAddr 解成 srcip，這是 Wazuh 內建 json 解碼器做不到的。替內建 json 解碼器加子解碼器也不可行：4.14.7 實測，只要它有一個子解碼器，manager 上其他所有 JSON 來源（Suricata、雲端整合）的欄位就全部消失。不經這個群組收進來的行，仍由內建規則 88200-88216 處理。",
@@ -46,7 +47,8 @@
     "稽核記錄每次登入、分享、刪除與檔案存取都會多一行；Nextcloud 會在達到 log_rotate_size（預設 100 MB）時輪替。部署說明中的 log.condition 項目讓 Nextcloud 在預設 loglevel 2 下也寫入 admin_audit 與暴力破解防護的訊息（131722-131725），而不必提高其他所有訊息的等級。",
     "存取記錄若以來源位址開頭、接著是虛擬主機名稱（Apache \"%a %v ...\"）：Wazuh 內建的網頁解碼器會把主機名稱當成 srcip，內建規則 31151（level 10，同一位址大量 400 錯誤）會把全部流量合在一起計算，也無法封鎖任何位址。規則 131779 只認得名稱以 nextcloud 開頭的目錄底下的進入點；安裝在其他位置時，由內建規則 550（level 7）回報變更。",
     "通知中的帳號名稱（1.2.3）：接 LDAP 目錄時，Nextcloud 給目錄使用者的 ID 是目錄項目的 UUID，告警寫的就是它。jt-nextcloud-names.py 每天在每個 manager 節點執行一次，把 ID 與名稱不同的帳號名稱寫入 etc/jt-packs/jt-alert-digest-names.d/nextcloud，jt-alert-digest 1.14 以後會讀取它，在每個管道顯示「王小明 (3094106c…)」。它使用 OCS provisioning API（使用者清單分頁讀取，再讀每個使用者的顯示名稱與電子郵件），以管理員的應用程式密碼登入；密碼讀自只有 root 可讀的檔案，不會出現在任何記錄中。檔案完整寫好後才改名就位；執行失敗時保留原本的檔案，回應的名稱數不到原檔一半時也保留（--force 才會寫入）。失敗觸發 131783（level 5），三天沒有成功執行則是 131784（level 7）。沒有 etc/jt-packs/jt-nextcloud.conf 時腳本什麼都不做。顯示名稱由使用者自己設定，所以摘要會像其他告警文字一樣清理並跳脫它。",
-    "1.2.5：告警會進 Wazuh Dashboard。Nextcloud 稽核記錄的每一行（以及 nextcloud.log 的部分行）都帶 \"data\":{\"app\":...} 物件；Wazuh 解成 data.data，而 Wazuh 告警索引範本把 data.data 定義為 keyword，所以 indexer 拒收每一筆這類告警（「failed to parse field [data.data]」）：一台 manager 一週 22,779 筆，全部來自 Nextcloud 主機。這些告警在 alerts.json 與通知信裡，Dashboard 卻沒有。改索引（處理流程、範本）也能解決，但會動到 Wazuh 自己的索引，所以本套件不這樣做，而是在 Nextcloud 主機以 rsyslog 轉存：把兩個記錄複製到 /var/log/jt-nextcloud/，只把這個鍵改名為 \"context\"（純文字取代 ,\"data\":{，不可能比對到 JSON 字串內的文字），群組改讀副本。沒有任何規則用到 data.data。rsyslog 停止時，cron 檢查會在副本寫入一行：規則 131786，level 10，會寄信。1.2.5 之前被拒收的告警不會補送。"
+    "1.2.5：告警會進 Wazuh Dashboard。Nextcloud 稽核記錄的每一行（以及 nextcloud.log 的部分行）都帶 \"data\":{\"app\":...} 物件；Wazuh 解成 data.data，而 Wazuh 告警索引範本把 data.data 定義為 keyword，所以 indexer 拒收每一筆這類告警（「failed to parse field [data.data]」）：一台 manager 一週 22,779 筆，全部來自 Nextcloud 主機。這些告警在 alerts.json 與通知信裡，Dashboard 卻沒有。改索引（處理流程、範本）也能解決，但會動到 Wazuh 自己的索引，所以本套件不這樣做，而是在 Nextcloud 主機以 rsyslog 轉存：把兩個記錄複製到 /var/log/jt-nextcloud/，只把這個鍵改名為 \"context\"（純文字取代 ,\"data\":{，不可能比對到 JSON 字串內的文字），群組改讀副本。沒有任何規則用到 data.data。rsyslog 停止時，cron 檢查會在副本寫入一行：規則 131786，level 10，會寄信。1.2.5 之前被拒收的告警不會補送。",
+    "1.3：使用者名稱。接 LDAP 時 ID 是 UUID；轉存會加上每位使用者的顯示名稱（在 Nextcloud 主機上執行 occ user:list，agent/jt-nextcloud-relay-names.py）為 userName，解碼為 data.userName，在看板上與 ID 並列。與 1.2.3 的通知名稱（需要應用程式密碼）各自獨立，兩者可以只用其一。"
   ],
   "author": "Jason Tools",
   "license": "AGPL-3.0-or-later",
@@ -63,7 +65,7 @@
       "type": "decoder",
       "name": "jt-nextcloud_decoders.xml",
       "dest": "etc/decoders/jt-nextcloud_decoders.xml",
-      "sha256": "46df66df1d748b4f93713f4125c5017d9ca042324ed9f2f845cbf5dd1430b40b"
+      "sha256": "8e10f67631fbda3b6b1b14e0b8d44713601404a0b4dee8d6f6b73d18ef95ed9b"
     },
     {
       "type": "rule",
@@ -88,9 +90,10 @@
     "files": [
       "jt-nextcloud-relay.conf",
       "jt-nextcloud-relay.logrotate",
-      "jt-nextcloud-relay-check.sh"
+      "jt-nextcloud-relay-check.sh",
+      "jt-nextcloud-relay-names.py"
     ],
-    "description": "Nextcloud log and admin_audit log, read from the copies the pack's rsyslog relay writes to /var/log/jt-nextcloud/ (the JSON key data renamed to context, which the Wazuh alerts index would reject) and sent with the prefix the pack decoder reads; the relay files themselves; the data directory left out of file integrity monitoring; the config directory and the web root entry points watched in real time without content diffs"
+    "description": "Nextcloud log and admin_audit log, read from the copies the pack's rsyslog relay writes to /var/log/jt-nextcloud/ (the JSON key data renamed to context, which the Wazuh alerts index would reject, and from 1.3 each user's display name added as userName) and sent with the prefix the pack decoder reads; the relay files themselves; the data directory left out of file integrity monitoring; the config directory and the web root entry points watched in real time without content diffs"
   },
   "setup": [
     {
@@ -138,6 +141,19 @@
       "code": "D=/var/ossec/etc/shared   # or the directory you copied the pack's agent/ files to\ninstall -m 644 $D/jt-nextcloud-relay.conf /etc/rsyslog.d/60-jt-nextcloud.conf\ninstall -m 644 $D/jt-nextcloud-relay.logrotate /etc/logrotate.d/jt-nextcloud\ninstall -m 755 $D/jt-nextcloud-relay-check.sh /usr/local/sbin/jt-nextcloud-relay-check\necho '*/15 * * * * root /usr/local/sbin/jt-nextcloud-relay-check' > /etc/cron.d/jt-nextcloud-relay\nrsyslogd -N1 && systemctl restart rsyslog\nls -l /var/log/jt-nextcloud/",
       "verify": "The copies grow with the originals: wc -l /var/www/nextcloud/data/audit.log /var/log/jt-nextcloud/audit.log gives the same count, and grep -c ',\"data\":{' /var/log/jt-nextcloud/audit.log gives 0. After the group update, Nextcloud alerts appear in the dashboard and the filebeat log of the manager has no new \"failed to parse field [data.data]\".",
       "verify_zh": "副本與原檔同步增長：wc -l /var/www/nextcloud/data/audit.log /var/log/jt-nextcloud/audit.log 行數相同，grep -c ',\"data\":{' /var/log/jt-nextcloud/audit.log 為 0。群組更新後，Nextcloud 的告警會出現在 Dashboard，manager 的 filebeat 記錄不再出現新的「failed to parse field [data.data]」。"
+    },
+    {
+      "platform": "linux",
+      "required": false,
+      "since": "1.3",
+      "title": "User names next to the ids (recommended for LDAP)",
+      "title_zh": "在 ID 旁顯示使用者名稱（接 LDAP 時建議）",
+      "body": "On an LDAP directory every Nextcloud user id is a UUID. From 1.3 the relay adds the user's display name as userName next to user, and the dashboard shows both (data.dstuser and data.userName). The names come from Nextcloud itself (occ user:list, run as the owner of config.php): no app password and no network access. On the Nextcloud host, as root:\n1. Install the names script and run it once: rsyslog will not start the relay's lookup table while /etc/jt-nextcloud/names.json is missing.\n2. Schedule it every 30 minutes; it rewrites the table and reloads rsyslog only when a name changes.\n3. Install the 1.3 relay (it reads the table) and restart rsyslog.\nA different Nextcloud directory: add --nextcloud DIR to the commands. Names keep their letters, CJK included; quotes, backslashes and control characters are dropped. Ids whose name equals the id (local accounts) are left as they are.",
+      "body_zh": "接 LDAP 時，Nextcloud 每個使用者的 ID 都是 UUID。1.3 起轉存會在 user 後面加上使用者的顯示名稱 userName，看板同時顯示兩者（data.dstuser 與 data.userName）。名稱來自 Nextcloud 本身（以 config.php 的擁有者執行 occ user:list），不需要應用程式密碼，也不需要網路。在 Nextcloud 主機上以 root 執行：\n1. 安裝名稱程式並先執行一次：/etc/jt-nextcloud/names.json 不存在時，rsyslog 不會啟動轉存的查表。\n2. 排程每 30 分鐘執行；只有名稱改變時才重寫名稱表並讓 rsyslog 重新載入。\n3. 安裝 1.3 的轉存設定（會讀名稱表）並重新啟動 rsyslog。\nNextcloud 不在預設目錄：指令加上 --nextcloud 目錄。名稱保留文字（含中文），引號、反斜線與控制字元會被拿掉。名稱與 ID 相同的帳號（本機帳號）維持原樣。",
+      "file": "agent/jt-nextcloud-relay-names.py",
+      "code": "D=/var/ossec/etc/shared   # or the directory you copied the pack's agent/ files to\ninstall -m 755 $D/jt-nextcloud-relay-names.py /usr/local/sbin/jt-nextcloud-relay-names\n/usr/local/sbin/jt-nextcloud-relay-names --no-reload && /usr/local/sbin/jt-nextcloud-relay-names --list\necho '*/30 * * * * root /usr/local/sbin/jt-nextcloud-relay-names' > /etc/cron.d/jt-nextcloud-relay-names\ninstall -m 644 $D/jt-nextcloud-relay.conf /etc/rsyslog.d/60-jt-nextcloud.conf\nrsyslogd -N1 && systemctl restart rsyslog",
+      "verify": "Log in to Nextcloud with a directory account: the line in /var/log/jt-nextcloud/nextcloud.log carries \"userName\":\"<name>\" after the id, and the alert has data.userName.",
+      "verify_zh": "以目錄帳號登入 Nextcloud：/var/log/jt-nextcloud/nextcloud.log 的該行在 ID 後面有 \"userName\":\"<名稱>\"，告警帶有 data.userName。"
     },
     {
       "platform": "linux",
@@ -241,5 +257,19 @@
       "body": "The same trigger, but the address is dropped on the reverse proxy in front of Nextcloud, which needs a Wazuh agent: choose that agent. This is the only place a client address can be blocked when Nextcloud is behind a proxy, and it requires trusted_proxies and forwarded_for_headers in Nextcloud, or srcip is the proxy itself. If yet another layer sits in front (a CDN), the proxy sees the CDN's addresses and the block has to happen there. Risks as for the direct case, and the block covers every site the proxy serves, not only Nextcloud.",
       "body_zh": "觸發條件相同，但封鎖在 Nextcloud 前面的反向 proxy 上執行，該 proxy 需要有 Wazuh agent：請選擇那台 agent。Nextcloud 在 proxy 之後時，只有這裡能封鎖來源位址；而且 Nextcloud 必須設定 trusted_proxies 與 forwarded_for_headers，否則 srcip 就是 proxy 本身。若前面還有一層（CDN），proxy 看到的是 CDN 的位址，封鎖必須在那一層做。風險與直接連線的情況相同，而且封鎖會擋掉這台 proxy 服務的所有網站，不只是 Nextcloud。"
     }
-  ]
+  ],
+  "dashboard": {
+    "fields": [
+      {
+        "field": "data.userName",
+        "title": "Top names",
+        "title_zh": "名稱排行"
+      }
+    ],
+    "columns": [
+      "data.dstuser",
+      "data.userName",
+      "data.srcip"
+    ]
+  }
 }

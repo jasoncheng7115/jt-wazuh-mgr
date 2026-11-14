@@ -2188,7 +2188,7 @@ class TestPackUpdate(PackFixture):
         self.assertEqual(self.client.get('/api/packs/no-such-pack/update').status_code, 404)
 
 
-class TestPackActiveResponse(PackFixture):
+class PackArFixture(PackFixture):
     """Active response a pack offers: opt-in, on every node, reversible.
 
     Blocking is the one thing a pack can do that hurts when a rule is wrong,
@@ -2300,6 +2300,10 @@ class TestPackActiveResponse(PackFixture):
     def two_nodes(self):
         self.nodes = [{'name': 'node01', 'type': 'master', 'ip': '127.0.0.1'},
                       {'name': 'node02', 'type': 'worker', 'ip': '192.0.2.2'}]
+
+
+class TestPackActiveResponse(PackArFixture):
+    """The pack dialog's switch for each response (fixture in PackArFixture)."""
 
     def test_installing_the_pack_enables_nothing(self):
         self.install()
@@ -2473,6 +2477,86 @@ class TestPackActiveResponse(PackFixture):
         self.assertEqual(r.get_json()['ar_removed_on'], ['node01'])
         self.assertEqual(self.conf(), before)
 
+
+class TestActiveResponseOverview(PackArFixture):
+    """v1.34.0: one view of every active response on every node, not only a pack's own.
+
+    A site's hand-written response (a YARA scan, an extra firewall-drop) was
+    invisible in the tool. The overview must show it next to the pack-managed
+    ones, flag what cannot work, and list recent runs and still-open blocks.
+    """
+
+    SITE = ('<ossec_config>\n  <command>\n    <name>jt-yara</name>\n    <executable>jt-yara.sh</executable>\n'
+            '    <timeout_allowed>no</timeout_allowed>\n  </command>\n'
+            '  <active-response>\n    <command>jt-yara</command>\n    <location>local</location>\n'
+            '    <rules_id>990001,554</rules_id>\n  </active-response>\n'
+            '  <active-response>\n    <command>host-deny</command>\n    <location>all</location>\n'
+            '    <rules_id>990001</rules_id>\n    <timeout>300</timeout>\n  </active-response>\n'
+            '  <active-response>\n    <disabled>no</disabled>\n    <ca_store>etc/wpk_root.pem</ca_store>\n'
+            '  </active-response>\n</ossec_config>\n')
+
+    def alerts(self, *events):
+        d = os.path.join(self.tmp, 'logs', 'alerts')
+        os.makedirs(d, exist_ok=True)
+        with io.open(os.path.join(d, 'alerts.json'), 'w', encoding='utf-8') as fh:
+            for e in events:
+                fh.write(json.dumps(e) + '\n')
+
+    def ar_alert(self, rule_id, command, ip, minutes_ago, program='active-response/bin/firewall-drop'):
+        from datetime import datetime, timedelta, timezone
+        ts = (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).strftime('%Y-%m-%dT%H:%M:%S.000+0000')
+        return {'timestamp': ts, 'rule': {'id': rule_id, 'level': 3, 'description': 'ar', 'groups': ['ossec', 'active_response']},
+                'agent': {'id': '005', 'name': 'web1'},
+                'data': {'command': command, 'parameters': {'program': program,
+                         'alert': {'rule': {'id': '990001'}, 'data': {'srcip': ip}}}}}
+
+    def overview(self):
+        r = self.client.get('/api/active-response/overview')
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        return r.get_json()
+
+    def test_site_and_pack_responses_are_listed_with_their_problems(self):
+        self.install()
+        self.assertEqual(self.switch('block-brute', True).status_code, 200)
+        with io.open(os.path.join(self.tmp, 'etc/ossec.conf'), 'a', encoding='utf-8') as fh:
+            fh.write(self.SITE)
+        data = self.overview()
+        rs = data['nodes'][0]['responses']
+        self.assertEqual(len(rs), 3, 'the agent-side settings block is not a response')
+        pack = [r for r in rs if r['managed_by']]
+        self.assertEqual([(r['managed_by']['pack'], r['managed_by']['id']) for r in pack], [('jt-artest', 'block-brute')])
+        self.assertEqual(pack[0]['problems'], [])
+        yara = next(r for r in rs if r['command'] == 'jt-yara')
+        self.assertIsNone(yara['managed_by'])
+        self.assertTrue(any('554' in p for p in yara['problems']), yara['problems'])
+        deny = next(r for r in rs if r['command'] == 'host-deny')
+        self.assertTrue(any('not defined' in p for p in deny['problems']), deny['problems'])
+        names = [c['name'] for c in data['nodes'][0]['commands']]
+        self.assertEqual(names, ['firewall-drop', 'jt-yara'], 'a commented-out command counts as defined')
+
+    def test_recent_runs_and_open_blocks_come_from_the_alerts(self):
+        self.install()
+        self.assertEqual(self.switch('block-brute', True).status_code, 200)
+        self.alerts(self.ar_alert('651', 'add', '198.51.100.7', 5),          # still blocked (600 s)
+                    self.ar_alert('651', 'add', '198.51.100.8', 8),
+                    self.ar_alert('652', 'delete', '198.51.100.8', 2),       # lifted
+                    self.ar_alert('651', 'add', '198.51.100.9', 30),         # expired after 600 s
+                    {'timestamp': '2020-01-01T00:00:00.000+0000', 'rule': {'id': '651', 'groups': ['active_response']}},
+                    {'timestamp': '2026-01-01T00:00:00.000+0000', 'rule': {'id': '5710', 'groups': ['sshd']}})
+        data = self.overview()
+        self.assertEqual(len(data['history']), 4, data['history'])
+        self.assertEqual(data['history'][0]['srcip'], '198.51.100.8', 'newest first')
+        self.assertEqual([b['srcip'] for b in data['blocks']], ['198.51.100.7'])
+        self.assertTrue(data['blocks'][0]['expires'])
+
+    def test_a_node_that_cannot_be_read_is_reported_not_dropped(self):
+        self.install()
+        self.two_nodes()
+        self.peer_readable = False
+        data = self.overview()
+        names = {n['name']: n for n in data['nodes']}
+        self.assertIn('node02', names)
+        self.assertTrue(names['node02']['error'])
 
 class TestPackDeployment(PackFixture):
     """The deployment guide and the 'already there, no record' state (1.10.0)."""

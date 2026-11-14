@@ -26,6 +26,8 @@ case that names a built-in rule or field older rulesets lack; pack_gate.py
 skips it on older managers. on_older (optional, {"wazuh_below": "4.14",
 "expect_rule", "expect_level"}) is the result an older manager gives instead,
 for instance a compatibility twin of a rule; pack_gate.py judges by it there.
+expect_fields (optional, {"field": "value" or null}) checks logtest's decoded fields; null
+means the field must not be decoded.
 expect_rule "none" means no rule above level 0 may match. repeat sends the
 line that many times in one logtest session (for frequency rules) and judges
 the last event; "before" lines (or a "log" holding several lines) run first
@@ -197,13 +199,13 @@ def logtest(name, lines, location=None):
     for ev in events:
         phase3 = ev.split('**Phase 3: Completed filtering (rules).')
         if len(phase3) < 2:
-            results.append(('none', 0, ''))
+            results.append(('none', 0, '', phase3[0]))
             continue
         rid = re.search(r"\tid: '(\d+)'", phase3[1])
         lvl = re.search(r"\tlevel: '(\d+)'", phase3[1])
         desc = re.search(r"\tdescription: '(.*)'", phase3[1])
         results.append((rid.group(1) if rid else 'none', int(lvl.group(1)) if lvl else 0,
-                        desc.group(1) if desc else ''))
+                        desc.group(1) if desc else '', phase3[0]))
     return results
 
 
@@ -350,7 +352,9 @@ def test(pack):
         else:
             lines = list(before) + [case['log']] * int(case.get('repeat', 1))
             results = logtest(name, lines, case.get('location'))
-        got_rule, got_level, desc = results[-1] if results else ('none', 0, '')
+        got = results[-1] if results else ('none', 0, '')
+        got_rule, got_level, desc = got[:3]
+        decoded = got[3] if len(got) > 3 else None
         want_rule, want_level = str(case['expect_rule']), case.get('expect_level')
         if want_rule == 'none':
             ok = got_level == 0
@@ -362,6 +366,14 @@ def test(pack):
         if missing:
             ok = False
             desc = 'missing in description: %s | %s' % (missing, desc)
+        # expect_fields: decoded fields from logtest's phase 2, {"field": "value"}, or null for
+        # "must not be decoded". Only for plain logtest cases (fim and located cases have no phase 2).
+        for field, want in (case.get('expect_fields') or {}).items():
+            m = re.search(r"\t%s: '(.*)'" % re.escape(field), decoded or '') if decoded is not None else None
+            have = m.group(1) if m else None
+            if decoded is None or have != want:
+                ok = False
+                desc = 'field %s: want %r, decoded %r | %s' % (field, want, have, desc)
         failed += not ok
         print('%s %2d  want %-7s L%-3s got %-7s L%-3s %s'
               % ('ok  ' if ok else 'FAIL', i, want_rule, want_level if want_level is not None else '-',

@@ -228,6 +228,60 @@
    "expect_rule": "133693",
    "expect_level": 3,
    "note": "updated again"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/peer.rs:102] update_pk 123456789 [::ffff:10.0.0.168]:56535 b\"00000000-0000-4000-8000-000000000001\" b\"t\\xee\\xa2\" jt_host=office-pc-01",
+   "location": "/var/log/jt-rustdesk/hbbs.log",
+   "expect_rule": "133606",
+   "expect_level": 2,
+   "expect_fields": {
+    "rustdesk.hostname": "office-pc-01",
+    "rustdesk.id": "123456789",
+    "srcip": "10.0.0.168"
+   },
+   "note": "1.1 relay: a named ID gets the host name appended at the end of the line"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/rendezvous_server.rs:597] IP change of 123456789 from [::ffff:10.0.0.168]:56535 to [::ffff:10.0.0.170]:56536 jt_host=office-pc-01",
+   "location": "/var/log/jt-rustdesk/hbbs.log",
+   "expect_rule": "133606",
+   "expect_level": 2,
+   "expect_fields": {
+    "rustdesk.hostname": "office-pc-01",
+    "srcip": "10.0.0.170"
+   },
+   "note": "1.1 relay: the address-change line carries the name too"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/peer.rs:102] update_pk 123456789 [::ffff:10.0.0.168]:56535 b\"00000000-0000-4000-8000-000000000001\" b\"x jt_host=forged-name y\" jt_host=real-name",
+   "location": "/var/log/jt-rustdesk/hbbs.log",
+   "expect_rule": "133606",
+   "expect_level": 2,
+   "expect_fields": {
+    "rustdesk.hostname": "real-name"
+   },
+   "note": "a client shaping its key bytes into jt_host= cannot win: only the relay's suffix at the end is read"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/peer.rs:102] update_pk 123456789 [::ffff:10.0.0.168]:56535 b\"00000000-0000-4000-8000-000000000001\" b\"x jt_host=forged-name\"",
+   "location": "/var/log/jt-rustdesk/hbbs.log",
+   "expect_rule": "133606",
+   "expect_level": 2,
+   "expect_fields": {
+    "rustdesk.hostname": null
+   },
+   "note": "a forged jt_host= inside the key bytes (not at the very end, the closing quote follows) is not decoded"
+  },
+  {
+   "log": "[2026-11-03 20:15:01.123456 +08:00] INFO [src/peer.rs:102] update_pk 123456789 [::ffff:10.0.0.168]:56535 b\"00000000-0000-4000-8000-000000000001\" b\"t\\xee\\xa2\"",
+   "location": "/var/log/jt-rustdesk/hbbs.log",
+   "expect_rule": "133606",
+   "expect_level": 2,
+   "expect_fields": {
+    "rustdesk.hostname": null,
+    "rustdesk.id": "123456789"
+   },
+   "note": "an ID without a name: copied unchanged, no host name field"
   }
  ]
 }

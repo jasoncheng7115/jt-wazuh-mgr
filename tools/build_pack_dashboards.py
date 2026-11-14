@@ -45,6 +45,8 @@ Optional manifest section, all keys optional:
       "fields": [{"field": "data.attack_category", "title": "Attack category",
                   "title_zh": "攻擊類別", "size": 10}, ...],
       "columns": ["data.attack_category", ...],   # extra saved-search columns
+      "rules_by": {"field": "data.jt_ai.agent", "title": "AI agent", "title_zh": "AI 代理"},
+                                                  # "Top rules" with one more column (Vega table)
       "srcip": true|false, "dstuser": true|false  # override the detection
     }
 """
@@ -429,6 +431,78 @@ class Builder:
                                                {'colIndex': 3, 'width': 70}]}})
         self.panels.append((vid, 'visualization', 32, 16))
 
+    def vega_rule_table(self, field, label):
+        """The "Top rules" table with one more column, a field that exists only in data.*
+        (manifest dashboard.rules_by). A standard table aggregating on a field the index
+        pattern does not know yet fails to render, so this is a Vega table: rule x value
+        rows (the value "-" when an alert lacks the field), sorted by alerts."""
+        rows = 30
+        spec = {
+            '$schema': 'https://vega.github.io/schema/vega-lite/v5.json',
+            'data': {
+                'url': {
+                    'index': INDEX_PATTERN_ID,
+                    'body': {
+                        'size': 0,
+                        'query': {'bool': {
+                            'must': ['%dashboard_context-must_clause%',
+                                     {'range': {TIME_FIELD: {'%timefilter%': True}}},
+                                     {'query_string': {'query': self.query, 'analyze_wildcard': True}}],
+                            'filter': ['%dashboard_context-filter_clause%'],
+                            'must_not': ['%dashboard_context-must_not_clause%']}},
+                        'aggs': {'r': {'terms': {'field': 'rule.id', 'size': 50}, 'aggs': {
+                            'v': {'terms': {'field': field, 'size': 5, 'missing': '-'}},
+                            'd': {'terms': {'field': 'rule.description', 'size': 1}},
+                            'l': {'max': {'field': 'rule.level'}}}}},
+                    },
+                },
+                'format': {'property': 'aggregations.r.buckets'},
+            },
+            'config': {'kibana': {'hideWarnings': True}, 'view': {'stroke': None}},
+            'width': 'container',
+            'transform': [
+                {'flatten': ['v.buckets'], 'as': ['vb']},
+                {'calculate': 'datum.key', 'as': 'rule'},
+                {'calculate': 'datum.vb.key', 'as': 'value'},
+                {'calculate': 'datum.vb.doc_count', 'as': 'alerts'},
+                {'calculate': "length(datum.d.buckets) ? datum.d.buckets[0].key : ''", 'as': 'desc'},
+                {'calculate': 'datum.l.value', 'as': 'level'},
+                {'window': [{'op': 'row_number', 'as': 'row'}],
+                 'sort': [{'field': 'alerts', 'order': 'descending'}, {'field': 'rule', 'order': 'ascending'}]},
+                {'filter': 'datum.row <= %d' % rows},
+            ],
+            'encoding': {
+                'y': {'field': 'row', 'type': 'ordinal', 'axis': None},
+            },
+            # column x positions; the header row (row 0) uses the same ones
+            'layer': [
+                {'data': {'values': [{'row': 0, 'c1': T('Rule', '規則'), 'c2': T('Level', '等級'), 'c3': label,
+                                      'c4': T('Alerts', '告警'), 'c5': T('Description', '說明')}]},
+                 'transform': [], 'layer': [
+                     {'mark': {'type': 'text', 'align': align, 'x': x, 'fontWeight': 'bold', 'color': '#69707D'},
+                      'encoding': {'text': {'field': col}}}
+                     for col, x, align in (('c1', 0, 'left'), ('c2', 95, 'right'), ('c3', 115, 'left'),
+                                           ('c4', 300, 'right'), ('c5', 320, 'left'))]},
+                {'mark': {'type': 'text', 'align': 'left', 'x': 0, 'fontWeight': 'bold', 'color': '#006BB4'},
+                 'encoding': {'text': {'field': 'rule'}}},
+                {'mark': {'type': 'text', 'align': 'right', 'x': 95},
+                 'encoding': {'text': {'field': 'level'},
+                              'color': {'condition': {'test': 'datum.level >= 12', 'value': '#BD271E'},
+                                        'value': '#343741'}}},
+                {'mark': {'type': 'text', 'align': 'left', 'x': 115, 'limit': 170},
+                 'encoding': {'text': {'field': 'value'}}},
+                {'mark': {'type': 'text', 'align': 'right', 'x': 300},
+                 'encoding': {'text': {'field': 'alerts', 'format': ','}}},
+                {'mark': {'type': 'text', 'align': 'left', 'x': 320, 'limit': {'expr': 'width - 320'}, 'tooltip': True},
+                 'encoding': {'text': {'field': 'desc'}, 'tooltip': [{'field': 'desc', 'title': 'rule.description'}]}},
+            ],
+        }
+        vid = self.vis('rules', T('Top rules', '觸發最多的規則'), {
+            'aggs': [], 'type': 'vega',
+            'params': {'spec': json.dumps(spec, ensure_ascii=False, indent=2, sort_keys=True)}},
+            uses_index=False)
+        self.panels.append((vid, 'visualization', 32, 16))
+
     def top_terms(self, part, field, title, size=20, w=24, h=16, column=None):
         vid = self.vis(part, title, {
             'type': 'table',
@@ -436,6 +510,65 @@ class Builder:
             'params': TABLE_PARAMS},
             ui_state={'vis': {'columnsWidth': [{'colIndex': 1, 'width': 110}]}})
         self.panels.append((vid, 'visualization', w, h))
+
+    def geo_map(self):
+        """Where the public source addresses are: Wazuh's ingest pipeline geolocates data.srcip into
+        GeoLocation (country, city, a geo_point). Private addresses have no location and are left out.
+        A Vega map, not a coordinate map (tile_map): OSD 2.19's Vega panels bring their own Leaflet,
+        and with one on the same dashboard a tile_map loads its data but never draws a point (tested
+        in OSD 2.19.6: the same tile_map alone on a dashboard draws). The base tiles come from the
+        OpenSearch maps service; without Internet access the circles still draw on a blank background,
+        and the country table next to it needs no tiles at all."""
+        spec = {
+            '$schema': 'https://vega.github.io/schema/vega/v5.json',
+            'config': {'kibana': {'type': 'map', 'latitude': 25, 'longitude': 15, 'zoom': 2, 'minZoom': 1,
+                                  'maxZoom': 10, 'zoomControl': True, 'scrollWheelZoom': False,
+                                  'delayRepaint': True, 'hideWarnings': True}},
+            'data': [{
+                'name': 'points',
+                'url': {
+                    'index': INDEX_PATTERN_ID,
+                    'body': {
+                        'size': 0,
+                        'query': {'bool': {
+                            'must': ['%dashboard_context-must_clause%',
+                                     {'range': {TIME_FIELD: {'%timefilter%': True}}},
+                                     {'query_string': {'query': self.query, 'analyze_wildcard': True}}],
+                            'filter': ['%dashboard_context-filter_clause%'],
+                            'must_not': ['%dashboard_context-must_not_clause%']}},
+                        'aggs': {'cells': {
+                            'geohash_grid': {'field': 'GeoLocation.location', 'precision': 2, 'size': 2000},
+                            'aggs': {'centre': {'geo_centroid': {'field': 'GeoLocation.location'}},
+                                     'country': {'terms': {'field': 'GeoLocation.country_name', 'size': 1}}}}},
+                    },
+                },
+                'format': {'property': 'aggregations.cells.buckets'},
+                'transform': [
+                    {'type': 'geopoint', 'projection': 'projection',
+                     'fields': ['centre.location.lon', 'centre.location.lat']},
+                    {'type': 'formula', 'as': 'place',
+                     'expr': "length(datum.country.buckets) ? datum.country.buckets[0].key : ''"}],
+            }],
+            'scales': [{'name': 'size', 'type': 'sqrt', 'domain': {'data': 'points', 'field': 'doc_count'},
+                        'range': [40, 1600]},
+                       {'name': 'colour', 'type': 'sequential', 'scheme': 'orangered',
+                        'domain': {'data': 'points', 'field': 'doc_count'}}],
+            'marks': [{
+                'type': 'symbol', 'from': {'data': 'points'},
+                'encode': {'update': {
+                    'x': {'field': 'x'}, 'y': {'field': 'y'},
+                    'size': {'scale': 'size', 'field': 'doc_count'},
+                    'fill': {'scale': 'colour', 'field': 'doc_count'}, 'fillOpacity': {'value': 0.75},
+                    'stroke': {'value': '#7f2704'}, 'strokeWidth': {'value': 1},
+                    'tooltip': {'signal': "{'%s': datum.place, '%s': datum.doc_count}"
+                                          % (T('Country', '國家'), T('Alerts', '告警'))}}},
+            }],
+        }
+        vid = self.vis('geo-map', T('Source locations', '來源位置地圖'), {
+            'aggs': [], 'type': 'vega',
+            'params': {'spec': json.dumps(spec, ensure_ascii=False, indent=2, sort_keys=True)}},
+            uses_index=False)
+        self.panels.append((vid, 'visualization', 48, 22))
 
     def vega_terms(self, part, field, title, size=10):
         spec = {
@@ -529,12 +662,21 @@ class Builder:
         self.metric()
         self.levels()
         self.timeline()
-        self.top_rules()
+        opts = self.m.get('dashboard') or {}
+        if opts.get('rules_by'):
+            by = opts['rules_by']
+            by = {'field': by} if isinstance(by, str) else by
+            self.vega_rule_table(by['field'], bilingual(by.get('title') or by['field'], by.get('title_zh') or ''))
+        else:
+            self.top_rules()
         self.top_terms('agents', 'agent.name', T('Top agents', '告警最多的代理程式'), w=16,
                        column=T('Agent', '代理程式'))
         if self.srcip:
             self.top_terms('srcip', 'data.srcip', T('Top source addresses', '來源位址排行'),
                            column=T('Source address (data.srcip)', '來源位址'))
+            self.top_terms('country', 'GeoLocation.country_name', T('Top source countries', '來源國家排行'),
+                           column=T('Country', '國家'))
+            self.geo_map()
         if self.dstuser:
             self.top_terms('dstuser', 'data.dstuser', T('Top accounts', '帳號排行'),
                            column=T('Account (data.dstuser)', '帳號'))

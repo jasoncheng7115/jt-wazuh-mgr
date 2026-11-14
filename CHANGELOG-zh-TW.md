@@ -4,6 +4,39 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.34.0（2026-11-15）
+
+- **jt-ai-agent 1.3：支援六種 AI 程式代理。** 除了 Claude Code，hook 現在也稽核 Codex（`/etc/codex/requirements.toml`
+  的受管理 hooks）、opencode（系統外掛）、Gemini CLI（系統設定 `/etc/gemini-cli/settings.json`）、Cursor（企業 hook
+  `/etc/cursor/hooks.json`）與 GitHub Copilot（政策 hook `/etc/github-copilot/policy.d/`，適用 Copilot CLI 與使用 Copilot
+  harness 的 VS Code 代理模式），Linux 與 macOS 都可用。各代理的工具名稱都對應成 Claude Code 的名稱，所以同一組規則涵蓋全部，
+  `jt_ai.agent` 標出是哪一個。Cursor 的「執行前」hook 回答不符預期時會擋下呼叫，所以 Cursor 改在每次呼叫後立即記錄（被拒絕的也記）；
+  hook 失敗時 Copilot 會拒絕呼叫，所以它的指令一律以 `exit 0` 結尾。hook 仍然永遠不會擋下任何動作。
+- **jt-ai-agent：更多行為與背景資訊。** 每一行都記下代理背後的人（sudo 前的使用者、登入帳號、SSH 來源）與它所在的 git 專案與分支；
+  權限請求、失敗的呼叫、子代理啟動與工作階段結束都會記錄；MCP 呼叫拆成伺服器與工具。新規則：用 curl 或 wget 上傳本機檔案、
+  檔案分享與穿隧服務、原始 socket、雲端與套件庫帳密及其他代理的登入檔、`.env` 檔、持久化（cron、systemd、shell 啟動檔、
+  authorized_keys）、清除歷史或記錄與關閉稽核或安全控制（L12）、帳號與權限、`--no-verify`、從公網經 SSH 驅動的工作階段、
+  代理修改 VS Code 設定或其自動核准設定（CVE-2025-53773），以及以關閉確認的方式啟動 Gemini、Copilot 或 Cursor。沙箱案例 137 個。
+- **jt-ai-agent 看板：** 最新告警表格直接以欄位顯示代理、主機、使用者、工具、指令與路徑，另有事件、工具、指令、專案、MCP 伺服器
+  與 sudo 背後的人的統計，以及以代理為欄位的「觸發最多的規則」表格。
+- **來源位置地圖。** 告警帶有來源位址的 25 個套件，看板多了公網來源位址的分布地圖（Wazuh 的 GeoLocation；用 Vega 地圖，
+  才能和其他 Vega 面板放在同一個看板上）與來源國家排行。
+- **主動回應總覽**（「節點」分頁的「主動回應」）：列出每個節點設定的所有指令與主動回應（套件的與站台自己的），以及發現的問題
+  （節點沒有定義的指令、未載入的規則、永遠不會觸發的回應、無法還原的指令卻設了 timeout、腳本不存在）、變更後是否還沒重新啟動、
+  最近 1 到 168 小時的執行記錄，以及仍在封鎖中的位址。
+- **jt-fail2ban 1.4：在反向代理封鎖。** `jt-waf-block` 是給 jt-waf-mgr 所管理的代理後方服務用的選用 fail2ban 動作：封鎖會送到
+  jt-waf-mgr 的暫時 IP 封鎖 API，寫進代理的 nginx 拒絕清單，也就是攻擊流量真正抵達的地方。私有位址與文件用位址永遠不送出；
+  API 權杖從只有 root 可讀的檔案讀取。規則 131074-131077 回報封鎖、解除與失敗。
+- **jt-modsecurity 1.3：** jt-waf-mgr 稽核記錄的解碼器與規則（133560-133596）：完整性檢查失敗、未經其變更流程的修改、
+  登入失敗與帳號鎖定、API 權杖、被拒絕或失敗的操作、簽章驗證失敗的 Core Rule Set 版本，以及它的暫時 IP 封鎖。
+- **jt-nextcloud 1.3：** LDAP 帳號的 UUID 旁邊顯示使用者名稱（轉存程式加上每個使用者的顯示名稱，在 Nextcloud 主機上以
+  `occ user:list` 讀取）。
+- **jt-rustdesk 1.1：** RustDesk ID 旁邊顯示主機名稱（來自名稱檔或 hbbs 的備註欄；只讀行尾，用戶端無法注入名稱）。
+- **jt-zimbra 3.8／jt-portable-detect 3.6：** 暫存目錄裡出現可執行檔的規則（100807、100809、100810）原本對所有 agent 生效，
+  本來就不該放在 Zimbra 套件裡，現在改為 jt-portable-detect 的 906215、906214、906234。更新 jt-zimbra 之前先安裝
+  jt-portable-detect 3.6。
+- 套件沙箱可以檢查解碼出來的欄位（`expect_fields`）。
+
 ## v1.33.2（2026-11-11）
 
 - **所有下拉清單改用本站自己的清單。** 瀏覽器原生的選單換成和代理程式篩選器同一套樣式（深色與淺色主題，

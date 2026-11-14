@@ -1,6 +1,11 @@
 <!--
-  jt-ai-agent: what AI coding agents do on a host (Claude Code, via the hook
-  jt-ai-agent-hook.py; one line per tool call, see the decoder).
+  jt-ai-agent: what AI coding agents do on a host (Claude Code, Codex, Gemini
+  CLI, Cursor and GitHub Copilot via the hook jt-ai-agent-hook.py, opencode via
+  the plugin jt-ai-agent-opencode.js that calls the same hook; one line per tool
+  call, see the decoder). Tool names are normalised to Claude Code's, so the
+  rules below cover all of them; jt_ai.agent says which one it was. Cursor's
+  calls are recorded after they ran or were refused (event PostToolUse, with
+  failed when refused); the others before they run (PreToolUse).
   Rule range 133700-133799. Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
 
   The point is an audit trail you can search ("which session ran what, where,
@@ -8,12 +13,18 @@
   and session start is stored at level 3. Reads and searches stay at level 2
   (not stored). Above that, by evidence:
   - level 12: an agent tampers with this audit (its log, its hook, the managed
-    Claude Code settings, disableAllHooks); a destructive command sent to
+    Claude Code / Codex settings, the opencode plugin, disableAllHooks); a destructive command sent to
     another host over SSH
   - level 10: destructive commands (filesystem, disk, VM, database, firewall,
-    force push, stopping security or core services); an agent changing Claude
-    Code settings (its own permissions and hooks)
-  - level 9: an agent reading private keys or credential files
+    force push, stopping security or core services); an agent changing its own
+    settings (Claude Code, Codex, opencode: permissions, hooks, plugins) or
+    starting Codex with its hook trust or sandbox bypassed
+  - level 12 (1.2): clearing history or logs, turning off auditing, SELinux/AppArmor or ufw
+  - level 10 (1.2): uploading a local file, file-sharing / tunnel / out-of-band services,
+    persistence (cron, systemd, shell start-up files, authorized_keys), accounts and
+    privileges (useradd, sudo groups, setuid, setcap, sudoers)
+  - level 9: an agent reading private keys or credential files (1.2: also cloud and package
+    registry credentials, other agents' auth files, process environments, raw sockets)
   - level 8: download-and-run (curl | sh); a session started with all
     permission prompts off (bypassPermissions)
   - level 4: SSH / SCP / rsync to another host; a shell command run with all
@@ -34,11 +45,170 @@
     <description>AI agent audit messages</description>
   </rule>
 
+  <!--
+    1.2: requests and failures are not executions. PermissionRequest (the agent asked the
+    user to allow a call) and PostToolUseFailure carry the same tool and command as the
+    call itself, so a level 0 rule takes them first and keeps them away from the detection
+    rules below; its children record them quietly.
+  -->
+  <rule id="133739" level="0">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.event" type="pcre2">^(?:PermissionRequest|PostToolUseFailure)$</field>
+    <description>AI agent permission request or failed call</description>
+  </rule>
+
+  <rule id="133736" level="3">
+    <if_sid>133739</if_sid>
+    <field name="jt_ai.event" type="pcre2">^PermissionRequest$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) asked for permission to use $(jt_ai.tool)</description>
+  </rule>
+
+  <rule id="133737" level="2">
+    <if_sid>133739</if_sid>
+    <field name="jt_ai.event" type="pcre2">^PostToolUseFailure$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)): $(jt_ai.tool) failed</description>
+  </rule>
+
+  <!-- 1.2: data leaving the host -->
+  <rule id="133724" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)(?:^|[\s;\x26|(`'"])(?:curl|wget)\b[^;\x26|\n]*?(?:\s(?:-F|--form)\s+\S*=@|\s(?:-d|--data(?:-binary|-raw|-urlencode)?)\s+["']?@|\s(?:-T|--upload-file)\s|--post-file[=\s])</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) uploaded a local file with curl or wget</description>
+    <mitre>
+      <id>T1048</id>
+    </mitre>
+    <group>jt_ai_agent_exfil,</group>
+  </rule>
+
+  <rule id="133725" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)\b(?:transfer\.sh|pastebin\.com|paste\.ee|0x0\.st|file\.io|termbin\.com|ngrok(?:-free)?\.(?:io|app|dev)|ngrok\s+(?:http|tcp)|webhook\.site|requestbin|pipedream\.net|interact\.sh|oast\.(?:fun|me|pro|site|live|online)|burpcollaborator\.net|trycloudflare\.com|cloudflared\s+tunnel)\b</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) used a file-sharing, tunnel or out-of-band service</description>
+    <mitre>
+      <id>T1567</id>
+    </mitre>
+    <group>jt_ai_agent_exfil,</group>
+  </rule>
+
+  <rule id="133726" level="6">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)(?:(?:^|[\s;\x26|(`'"])(?:nc|ncat|netcat|socat)\s[^;\x26|\n]*(?:\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9-]+\.[a-z]{2,})|/dev/(?:tcp|udp)/(?!127\.|localhost))</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) opened a raw network connection (nc, socat, /dev/tcp)</description>
+    <mitre>
+      <id>T1095</id>
+    </mitre>
+    <group>jt_ai_agent_exfil,</group>
+  </rule>
+
+  <!-- 1.2: credentials beyond private keys (133711/133715) -->
+  <rule id="133727" level="9">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Read$</field>
+    <field name="jt_ai.path" type="pcre2">(?i)(?:/\.config/gcloud/|/\.azure/|/\.npmrc$|/\.pypirc$|/\.my\.cnf$|/\.vault-token$|/\.terraform\.d/credentials|/\.config/gh/hosts\.yml$|/\.codex/auth\.json$|/opencode/auth\.json$|/proc/(?:\d+|self)/environ$|/\.config/rclone/rclone\.conf$|/\.s3cfg$|/\.gemini/oauth_creds\.json$|/\.config/github-copilot/(?:hosts|apps)\.json$|/\.config/cursor/auth\.json$)</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) read a credential file: $(jt_ai.path)</description>
+    <mitre>
+      <id>T1552.001</id>
+    </mitre>
+    <group>jt_ai_agent_credentials,</group>
+  </rule>
+
+  <rule id="133728" level="9">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)(?:(?:^|[\s;\x26|(`'"])(?:cat|less|more|head|tail|base64|xxd|strings|cp|tar|zip)\s[^;\x26|\n]*?(?:/\.config/gcloud/|/\.azure/|\.npmrc\b|\.pypirc\b|\.my\.cnf\b|\.vault-token\b|/\.config/gh/hosts\.yml|/\.codex/auth\.json|/opencode/auth\.json|/proc/(?:\d+|self|\*)/environ|rclone\.conf\b|\.s3cfg\b|/\.gemini/oauth_creds\.json|/github-copilot/(?:hosts|apps)\.json|/\.config/cursor/auth\.json)|(?:^|[\s;\x26|(`'"])(?:env|printenv|set)\s*\|\s*(?:curl|wget|nc|base64))</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) read or sent credentials or the environment from a shell command</description>
+    <mitre>
+      <id>T1552.001</id>
+    </mitre>
+    <group>jt_ai_agent_credentials,</group>
+  </rule>
+
+  <rule id="133729" level="5">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Read$</field>
+    <field name="jt_ai.path" type="pcre2">/\.env(?:\.[A-Za-z0-9_.-]+)?$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) read an environment file with secrets: $(jt_ai.path)</description>
+    <group>jt_ai_agent_credentials,</group>
+  </rule>
+
+  <!-- 1.2: staying on the host -->
+  <rule id="133730" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)(?:(?:^|[\s;\x26|(`'"])crontab\s+(?!-l\b)(?:-e\b|-(?=\s|$)|-u\s+\S+\s+(?!-l\b)|[^-\s])|\x3e\x3e?\s*["']?(?:/etc/cron|/var/spool/cron/|/etc/systemd/system/|[^\s;\x26|]*/\.config/systemd/user/|[^\s;\x26|]*\.(?:bashrc|bash_profile|zshrc|zprofile|profile)\b|[^\s;\x26|]*authorized_keys\b|/etc/profile\.d/|/etc/rc\.local)|systemctl\s+(?:--user\s+)?enable\b|(?:^|[\s;\x26|])at\s+(?:now|midnight|noon|\d)|tee\s+(?:-a\s+)?["']?(?:/etc/cron|/etc/systemd/system/|[^\s;\x26|]*authorized_keys\b|[^\s;\x26|]*\.(?:bashrc|profile|zshrc)\b))</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) set up persistence (cron, systemd, shell start-up file or authorized_keys)</description>
+    <mitre>
+      <id>T1053.003</id>
+      <id>T1543.002</id>
+    </mitre>
+    <group>jt_ai_agent_persistence,</group>
+  </rule>
+
+  <rule id="133731" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit)$</field>
+    <field name="jt_ai.path" type="pcre2">(?:^/etc/cron|^/var/spool/cron/|^/etc/systemd/system/|/\.config/systemd/user/|/\.(?:bashrc|bash_profile|zshrc|zprofile|profile)$|/authorized_keys$|^/etc/profile\.d/|^/etc/rc\.local$)</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) changed a persistence location: $(jt_ai.path)</description>
+    <mitre>
+      <id>T1053.003</id>
+      <id>T1543.002</id>
+    </mitre>
+    <group>jt_ai_agent_persistence,</group>
+  </rule>
+
+  <!-- 1.2: covering tracks (stopping services and flushing firewalls are 133712) -->
+  <rule id="133732" level="12">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)(?:\bhistory\s+-[cw]\b|unset\s+HISTFILE\b|HISTFILE=/dev/null|HISTSIZE=0\b|\bauditctl\s+(?:-D\b|-e\s*0\b)|journalctl\s+[^;\x26|\n]*--(?:vacuum|rotate)|(?:^|[\s;\x26|(`'"])(?:rm|truncate|shred|unlink)\s[^;\x26|\n]*/var/log/(?!jt-ai-agent)|(?:^|[\s;\x26|])\d?\x3e\x3e?\s*["']?/var/log/(?!jt-ai-agent)|setenforce\s+0\b|\baa-(?:disable|teardown|complain)\b|ufw\s+disable\b)</field>
+    <description>[WARN] AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) cleared history or logs, or turned off auditing or a security control</description>
+    <mitre>
+      <id>T1070</id>
+      <id>T1562.001</id>
+    </mitre>
+    <group>jt_ai_agent_evasion,</group>
+  </rule>
+
+  <!-- 1.2: more privilege -->
+  <rule id="133733" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)(?:chmod\s+(?:-\w+\s+)*(?:[ugoa]*\+[rwx]*s|[2-7][0-7]{3})\s|\bsetcap\s|(?:^|[\s;\x26|(`'"])(?:useradd|adduser)\s|usermod\s+[^;\x26|\n]*-a?G\s*\S*\b(?:sudo|wheel|docker|adm|root|lxd|disk)\b|\x3e\x3e?\s*["']?/etc/(?:sudoers|passwd|group)\b|tee\s+(?:-a\s+)?["']?/etc/(?:sudoers|passwd)|\bvisudo\b|(?:^|[\s;\x26|])passwd\s+root\b)</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) changed accounts or privileges (users, sudo, setuid, capabilities)</description>
+    <mitre>
+      <id>T1548</id>
+      <id>T1136.001</id>
+    </mitre>
+    <group>jt_ai_agent_privilege,</group>
+  </rule>
+
+  <rule id="133740" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit)$</field>
+    <field name="jt_ai.path" type="pcre2">^/etc/(?:sudoers(?:\.d/.*)?|passwd|group|shadow)$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) edited $(jt_ai.path)</description>
+    <mitre>
+      <id>T1548</id>
+    </mitre>
+    <group>jt_ai_agent_privilege,</group>
+  </rule>
+
+  <!-- 1.2: skipping repository safeguards (force push is 133712) -->
+  <rule id="133734" level="6">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">\bgit\s+(?:commit|push|merge|rebase)\b[^;\x26|\n]*\s--no-verify\b</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) skipped the repository hooks (--no-verify)</description>
+  </rule>
+
   <!-- tampering with the audit itself -->
   <rule id="133720" level="12">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^Bash$</field>
-    <field name="jt_ai.cmd" type="pcre2">(?i)\bdisableAllHooks\b|(?:\b(?:rm|truncate|shred|mv|cp|chattr|chmod|chown|unlink|ln|tee|install)\b|\bsed\s+-i)[^;\x26|\n]*(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/)|(?:^|\s)[0-9]?\x3e{1,2}\s*["']?(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/)</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)\bdisableAllHooks\b|(?:\b(?:rm|truncate|shred|mv|cp|chattr|chmod|chown|unlink|ln|tee|install)\b|\bsed\s+-i)[^;\x26|\n]*(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))|(?:^|\s)[0-9]?\x3e{1,2}\s*["']?(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))</field>
     <description>[WARN] AI agent ($(jt_ai.user) on $(jt_ai.host)) changed the agent audit log, its hook or the managed settings</description>
     <mitre>
       <id>T1562.001</id>
@@ -48,8 +218,8 @@
 
   <rule id="133721" level="12">
     <if_sid>133700</if_sid>
-    <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit|NotebookEdit)$</field>
-    <field name="jt_ai.path" type="pcre2">^(?:/etc/claude-code/|/var/log/jt-ai-agent/|/usr/local/lib/jt-ai-agent/)</field>
+    <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit|NotebookEdit|Delete)$</field>
+    <field name="jt_ai.path" type="pcre2">^(?:/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/var/log/jt-ai-agent/|/usr/local/lib/jt-ai-agent/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))</field>
     <description>[WARN] AI agent ($(jt_ai.user) on $(jt_ai.host)) edited $(jt_ai.path): the agent audit or the managed settings</description>
     <mitre>
       <id>T1562.001</id>
@@ -85,8 +255,29 @@
   <rule id="133713" level="10">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit|NotebookEdit)$</field>
-    <field name="jt_ai.path" type="pcre2">/\.claude/settings(?:\.local)?\.json$</field>
-    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) changed Claude Code settings $(jt_ai.path) (permissions and hooks)</description>
+    <field name="jt_ai.path" type="pcre2">/\.claude/settings(?:\.local)?\.json$|/\.codex/(?:config\.toml|hooks\.json|requirements\.toml)$|/(?:\.config/opencode|\.opencode)/(?:opencode\.jsonc?$|plugins?/)|/opencode\.jsonc?$|/\.gemini/settings\.json$|/\.cursor/(?:hooks|cli-config|permissions|mcp)\.json$|/\.copilot/(?:settings\.json$|config\.json$|hooks/)|/\.github/hooks/[^/]+\.json$|/\.github/copilot/settings(?:\.local)?\.json$</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) changed its own settings $(jt_ai.path) (permissions, hooks or plugins)</description>
+    <mitre>
+      <id>T1548</id>
+    </mitre>
+  </rule>
+
+  <!-- 1.3: VS Code settings can switch off Copilot's confirmations (chat.tools.autoApprove; CVE-2025-53773) -->
+  <rule id="133741" level="6">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit)$</field>
+    <field name="jt_ai.path" type="pcre2">/\.vscode/settings\.json$|/Code(?: - Insiders)?/User/settings\.json$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) changed VS Code settings $(jt_ai.path) (auto-approve could be turned on there)</description>
+    <mitre>
+      <id>T1548</id>
+    </mitre>
+  </rule>
+
+  <rule id="133742" level="8">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">chat\.tools\.(?:global\.)?autoApprove|chat\.tools\.terminal\.autoApprove</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) touched VS Code's auto-approve setting from a shell command</description>
     <mitre>
       <id>T1548</id>
     </mitre>
@@ -95,8 +286,8 @@
   <rule id="133714" level="10">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^Bash$</field>
-    <field name="jt_ai.cmd" type="pcre2">(?:\b(?:sed\s+-i|tee|mv|cp|jq|python3?|perl)\b|\x3e)[^;\x26|\n]*\.claude/settings(?:\.local)?\.json</field>
-    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) changed Claude Code settings from a shell command (permissions and hooks)</description>
+    <field name="jt_ai.cmd" type="pcre2">(?:\b(?:sed\s+-i|tee|mv|cp|jq|python3?|perl)\b|\x3e)[^;\x26|\n]*(?:\.claude/settings(?:\.local)?\.json|\.codex/(?:config\.toml|hooks\.json)|(?:\.config/opencode|\.opencode)/(?:opencode\.jsonc?|plugins?/)|opencode\.jsonc?\b|\.gemini/settings\.json|\.cursor/(?:hooks|cli-config|permissions)\.json|\.copilot/(?:settings\.json|config\.json|hooks/)|\.github/hooks/)|\bcodex\s+[^;\x26|\n]*--dangerously-bypass-(?:hook-trust|approvals-and-sandbox)\b|\bgemini\s+(?:[^;\x26|\n]*\s)?(?:--yolo|-y|--approval-mode[= ]yolo)(?=$|\s)|\bcopilot\s+[^;\x26|\n]*--(?:allow-all-tools|allow-all|yolo)\b|\bcursor-agent\s+[^;\x26|\n]*--(?:force|yolo)\b</field>
+    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) changed agent settings or turned off its safeguards from a shell command (permissions, hooks, plugins)</description>
     <mitre>
       <id>T1548</id>
     </mitre>
@@ -152,7 +343,7 @@
   <rule id="133702" level="3">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^Bash$</field>
-    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) ran a shell command in $(jt_ai.cwd)</description>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) ran a shell command in $(jt_ai.cwd)</description>
     <group>jt_ai_agent_command,</group>
   </rule>
 
@@ -165,14 +356,14 @@
 
   <rule id="133704" level="3">
     <if_sid>133700</if_sid>
-    <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit|NotebookEdit)$</field>
+    <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit|NotebookEdit|Delete)$</field>
     <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) changed $(jt_ai.path)</description>
   </rule>
 
   <rule id="133705" level="3">
     <if_sid>133700</if_sid>
     <field name="jt_ai.event" type="pcre2">^SessionStart$</field>
-    <description>AI agent session $(jt_ai.session) started ($(jt_ai.source)) by $(jt_ai.user) on $(jt_ai.host) in $(jt_ai.cwd), mode $(jt_ai.mode)</description>
+    <description>AI agent $(jt_ai.agent) session $(jt_ai.session) started ($(jt_ai.source)) by $(jt_ai.user) on $(jt_ai.host) in $(jt_ai.cwd), mode $(jt_ai.mode)</description>
   </rule>
 
   <rule id="133710" level="8">
@@ -202,10 +393,37 @@
     <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) started a subagent ($(jt_ai.task_subagent_type)): $(jt_ai.task_description)</description>
   </rule>
 
+  <!-- 1.3: readable records for subagent starts and session ends (still not stored) -->
+  <rule id="133743" level="2">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.event" type="pcre2">^SubagentStart$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) started subagent $(jt_ai.subagent) in session $(jt_ai.session)</description>
+  </rule>
+
+  <rule id="133744" level="2">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.event" type="pcre2">^SessionEnd$</field>
+    <description>AI agent $(jt_ai.agent) session $(jt_ai.session) on $(jt_ai.host) ended ($(jt_ai.reason))</description>
+  </rule>
+
   <rule id="133701" level="2">
     <if_sid>133700</if_sid>
     <field name="jt_ai.event" type="pcre2">\S</field>
     <description>AI agent ($(jt_ai.user) on $(jt_ai.host)): $(jt_ai.tool) $(jt_ai.path)$(jt_ai.pattern)</description>
+  </rule>
+
+  <!-- 1.2: a credential in a command line (already replaced with *** in the record) -->
+  <rule id="133735" level="4">
+    <if_sid>133702</if_sid>
+    <field name="jt_ai.redacted" type="pcre2">^true$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) ran a command with a password or token in it (removed from the record)</description>
+  </rule>
+
+  <!-- 1.2: a session driven over SSH from a public address -->
+  <rule id="133738" level="6">
+    <if_sid>133705</if_sid>
+    <field name="jt_ai.ssh_from" type="pcre2">^(?!(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|127\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|::1$|f[cd]|fe80))</field>
+    <description>AI agent $(jt_ai.agent) session on $(jt_ai.host) started over SSH from a public address $(jt_ai.ssh_from)</description>
   </rule>
 
 </group>
@@ -220,8 +438,8 @@
 
   <rule id="133722" level="10">
     <if_sid>550,554</if_sid>
-    <field name="file" type="pcre2">^/etc/claude-code/|^/usr/local/lib/jt-ai-agent/</field>
-    <description>AI agent audit: $(file) was added or changed (the hook or the managed Claude Code settings)</description>
+    <field name="file" type="pcre2">^/etc/claude-code/|^/etc/codex/|^/etc/opencode/plugins/jt-ai-agent|^/etc/cursor/hooks\.json|^/etc/gemini-cli/|^/etc/github-copilot/policy\.d/|^/usr/local/lib/jt-ai-agent/|^/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/)</field>
+    <description>AI agent audit: $(file) was added or changed (the hook, the opencode plugin or the managed agent settings)</description>
     <mitre>
       <id>T1562.001</id>
     </mitre>
@@ -229,8 +447,8 @@
 
   <rule id="133723" level="12">
     <if_sid>553</if_sid>
-    <field name="file" type="pcre2">^/etc/claude-code/|^/usr/local/lib/jt-ai-agent/</field>
-    <description>[WARN] AI agent audit: $(file) was deleted (the hook or the managed Claude Code settings)</description>
+    <field name="file" type="pcre2">^/etc/claude-code/|^/etc/codex/|^/etc/opencode/plugins/jt-ai-agent|^/etc/cursor/hooks\.json|^/etc/gemini-cli/|^/etc/github-copilot/policy\.d/|^/usr/local/lib/jt-ai-agent/|^/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/)</field>
+    <description>[WARN] AI agent audit: $(file) was deleted (the hook, the opencode plugin or the managed agent settings)</description>
     <mitre>
       <id>T1562.001</id>
       <id>T1070</id>

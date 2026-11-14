@@ -1676,6 +1676,7 @@ HTML_TEMPLATE = '''
         <div class="panel" id="nodes-panel">
             <div class="toolbar">
                 <button class="btn" style="background:var(--solid-607d8b);color:#fff;" onclick="showNodeConfigDiff()" title="Compare each node's ossec.conf against the master"><svg class="icon"><use href="#icon-file-code"/></svg>Config Diff</button>
+                <button class="btn" style="background:var(--solid-00897b);color:#fff;" onclick="showActiveResponseOverview()" title="Every active response on every node: settings, problems, recent runs, open blocks"><svg class="icon"><use href="#icon-bell"/></svg>Active Response</button>
                 <button class="btn btn-primary" onclick="refreshNodes()"><svg class="icon"><use href="#icon-refresh"/></svg>Refresh</button>
             </div>
             <div class="table-container">
@@ -7286,6 +7287,111 @@ HTML_TEMPLATE = '''
             body.innerHTML = html;
         }
 
+        // ---------- Active response overview ----------
+        let arOverview = null;
+
+        async function showActiveResponseOverview(hours) {
+            hours = hours || 24;
+            showModal('Active response overview', '<div class="loading"><div class="spinner"></div>Reading every node...</div>',
+                '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
+            const data = await api('/active-response/overview?hours=' + hours);
+            const body = document.getElementById('modalBody');
+            if (!body) return;
+            if (!data || data.error) {
+                body.innerHTML = '<div class="alert alert-error">' + escapeHtml((data && data.error) || 'Failed to read the active response settings') + '</div>';
+                return;
+            }
+            arOverview = data;
+            body.innerHTML = renderArOverview(data);
+        }
+
+        function arTime(iso) {
+            if (!iso) return '-';
+            const d = new Date(iso);
+            return isNaN(d) ? escapeHtml(iso) : escapeHtml(d.toLocaleString());
+        }
+
+        function renderArOverview(data) {
+            let html = '';
+            let problems = 0, total = 0;
+            for (const n of data.nodes) {
+                for (const r of (n.responses || [])) { total++; if ((r.problems || []).length) problems++; }
+            }
+            html += '<div class="alert ' + (problems ? 'alert-error' : 'alert-success') + '">' +
+                total + ' active response(s) on ' + data.nodes.length + ' node(s); ' + problems + ' with a problem</div>';
+            // definitions per node
+            html += '<h4 class="pack-h">Settings on each node</h4>';
+            for (const n of data.nodes) {
+                html += '<div style="background:var(--sunken);padding:10px 12px;border-radius:4px;margin-bottom:10px;">' +
+                    '<div style="color:var(--accent);margin-bottom:6px;"><strong>' + escapeHtml(n.name) + '</strong>' +
+                    (n.local ? ' <span class="badge">this node</span>' : '') + '</div>';
+                if (n.error) {
+                    html += '<div class="alert alert-error">Could not read this node: ' + escapeHtml(n.error) + '</div></div>';
+                    continue;
+                }
+                if (n.restart_pending) {
+                    html += '<div class="alert alert-warning">ossec.conf changed after analysisd started: active response changes take effect only after a manager restart.</div>';
+                }
+                const rs = n.responses || [];
+                if (!rs.length) {
+                    html += '<div style="color:var(--text-muted);font-size:12px;">No active response is configured.</div>';
+                } else {
+                    html += '<table class="data-table" style="width:100%;font-size:12px;"><thead><tr>' +
+                        '<th>Command</th><th>Where</th><th>Triggered by</th><th>Timeout</th><th>Managed by</th><th>Status</th></tr></thead><tbody>';
+                    for (const r of rs) {
+                        const trig = [];
+                        if (r.rules_id.length) trig.push('rules ' + r.rules_id.join(', '));
+                        if (r.rules_group) trig.push('group ' + r.rules_group);
+                        if (r.level) trig.push('level >= ' + r.level);
+                        const where = r.location + (r.agent_id ? ' (' + r.agent_id + ')' : '');
+                        const managed = r.managed_by ? 'pack ' + r.managed_by.pack + ' / ' + r.managed_by.id : 'site (line ' + r.line + ')';
+                        let status;
+                        if (r.disabled) status = '<span style="color:var(--text-muted);">disabled</span>';
+                        else if ((r.problems || []).length) status = '<span style="color:var(--danger);">' + r.problems.map(escapeHtml).join('<br>') + '</span>';
+                        else status = '<span style="color:var(--success);">No problem</span>';
+                        html += '<tr><td><code>' + escapeHtml(r.command) + '</code></td><td>' + escapeHtml(where) + '</td><td>' +
+                            escapeHtml(trig.join('; ') || '-') + '</td><td>' + (r.timeout ? r.timeout + ' s' : 'none') + '</td><td>' +
+                            escapeHtml(managed) + '</td><td>' + status + '</td></tr>';
+                    }
+                    html += '</tbody></table>';
+                }
+                const cmds = n.commands || [];
+                if (cmds.length) {
+                    html += '<div style="color:var(--text-muted);font-size:12px;margin-top:6px;">Commands defined: ' +
+                        cmds.map(c => '<code>' + escapeHtml(c.name) + '</code>' + (c.timeout_allowed ? '' : ' (no timeout)')).join(', ') + '</div>';
+                }
+                html += '</div>';
+            }
+            // open blocks
+            html += '<h4 class="pack-h">Still blocked</h4>';
+            const blocks = data.blocks || [];
+            if (!blocks.length) {
+                html += '<div style="color:var(--text-muted);font-size:12px;margin-bottom:10px;">No address is blocked by an active response right now (as far as the alerts on this node show).</div>';
+            } else {
+                html += '<table class="data-table" style="width:100%;font-size:12px;"><thead><tr><th>Address</th><th>Agent</th><th>By</th><th>Since</th><th>Until</th><th>Trigger rule</th></tr></thead><tbody>' +
+                    blocks.map(b => '<tr><td><code>' + escapeHtml(b.srcip) + '</code></td><td>' + escapeHtml(b.agent) + '</td><td>' +
+                        escapeHtml(b.program) + '</td><td>' + arTime(b.time) + '</td><td>' + (b.expires ? arTime(b.expires) : 'no timeout') +
+                        '</td><td>' + escapeHtml(b.trigger_rule || '-') + '</td></tr>').join('') + '</tbody></table>';
+            }
+            // history
+            const hist = data.history || [];
+            html += '<h4 class="pack-h">Recent runs</h4><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:12px;color:var(--text-muted);">' +
+                '<span>Last ' + data.hours + ' hours, ' + hist.length + ' run(s); ' + escapeHtml(data.history_scope) + '.</span>' +
+                '<span style="margin-left:auto;">Show</span>' +
+                [24, 72, 168].map(h => '<button class="btn btn-sm" onclick="showActiveResponseOverview(' + h + ')"' + (h === data.hours ? ' disabled' : '') + '><svg class="icon"><use href="#icon-refresh"/></svg>' + h + ' h</button>').join('') + '</div>';
+            if (data.history_error) html += '<div class="alert alert-error">' + escapeHtml(data.history_error) + '</div>';
+            if (!hist.length) {
+                html += '<div style="color:var(--text-muted);font-size:12px;">No active response ran in this period.</div>';
+            } else {
+                html += '<div style="max-height:320px;overflow:auto;"><table class="data-table" style="width:100%;font-size:12px;"><thead><tr><th>Time</th><th>Agent</th><th>Action</th><th>Program</th><th>Address</th><th>Trigger rule</th><th>Rule</th></tr></thead><tbody>' +
+                    hist.slice(0, 500).map(e => '<tr><td>' + arTime(e.time) + '</td><td>' + escapeHtml(e.agent) + '</td><td>' + escapeHtml(e.action) +
+                        '</td><td>' + escapeHtml(e.program) + '</td><td>' + (e.srcip ? '<code>' + escapeHtml(e.srcip) + '</code>' : '-') + '</td><td>' +
+                        escapeHtml(e.trigger_rule || '-') + '</td><td title="' + escapeHtml(e.description) + '">' + escapeHtml(e.rule_id) + '</td></tr>').join('') +
+                    '</tbody></table></div>';
+            }
+            return html;
+        }
+
         // ---------- Rule packs ----------
         let packsData = [];
 
@@ -9721,7 +9827,37 @@ _I18N_SCRIPT = r"""
       'Theme': '主題',
       'Dark': '深色',
       'Light': '淺色',
-      'Follow system': '跟隨系統'
+      'Follow system': '跟隨系統',
+      'Active response overview': '主動回應總覽',
+      'Reading every node...': '正在讀取每個節點...',
+      'Failed to read the active response settings': '無法讀取主動回應設定',
+      'Settings on each node': '各節點的設定',
+      'this node': '本節點',
+      'ossec.conf changed after analysisd started: active response changes take effect only after a manager restart.': 'ossec.conf 在 analysisd 啟動後被修改過：主動回應的變更要重新啟動 Manager 才會生效。',
+      'No active response is configured.': '沒有設定任何主動回應。',
+      'Where': '執行位置',
+      'Triggered by': '觸發條件',
+      'Timeout': '封鎖時間',
+      'Managed by': '管理者',
+      'disabled': '已停用',
+      'Commands defined:': '已定義的指令：',
+      'Still blocked': '仍在封鎖中',
+      'No address is blocked by an active response right now (as far as the alerts on this node show).': '目前沒有位址被主動回應封鎖中（以本節點的告警為準）。',
+      'Address': '位址',
+      'By': '執行程式',
+      'Since': '開始',
+      'Until': '到期',
+      'Trigger rule': '觸發規則',
+      'no timeout': '不會自動解除',
+      'Recent runs': '最近的執行記錄',
+      'Show': '顯示',
+      'No active response ran in this period.': '這段期間沒有執行任何主動回應。',
+      'Action': '動作',
+      'Program': '程式',
+      'Rule': '規則',
+      'none': '無',
+      'No problem': '正常',
+      'Every active response on every node: settings, problems, recent runs, open blocks': '每個節點上的所有主動回應：設定、問題、最近的執行、仍在封鎖的位址'
     },
     'ja': {
       // --- App / header / nav ---
@@ -10544,13 +10680,53 @@ _I18N_SCRIPT = r"""
       'Theme': 'テーマ',
       'Dark': 'ダーク',
       'Light': 'ライト',
-      'Follow system': 'システムに合わせる'
+      'Follow system': 'システムに合わせる',
+      'Active response overview': 'アクティブレスポンスの概要',
+      'Reading every node...': 'すべてのノードを読み込み中...',
+      'Failed to read the active response settings': 'アクティブレスポンスの設定を読み取れませんでした',
+      'Settings on each node': '各ノードの設定',
+      'this node': 'このノード',
+      'ossec.conf changed after analysisd started: active response changes take effect only after a manager restart.': 'analysisd の起動後に ossec.conf が変更されています：アクティブレスポンスの変更はマネージャーを再起動すると反映されます。',
+      'No active response is configured.': 'アクティブレスポンスは設定されていません。',
+      'Where': '実行場所',
+      'Triggered by': 'トリガー',
+      'Timeout': 'ブロック時間',
+      'Managed by': '管理元',
+      'disabled': '無効',
+      'Commands defined:': '定義済みのコマンド：',
+      'Still blocked': 'ブロック中',
+      'No address is blocked by an active response right now (as far as the alerts on this node show).': '現在アクティブレスポンスでブロックされているアドレスはありません（このノードのアラートによる）。',
+      'Address': 'アドレス',
+      'By': 'プログラム',
+      'Since': '開始',
+      'Until': '期限',
+      'Trigger rule': 'トリガールール',
+      'no timeout': '自動解除なし',
+      'Recent runs': '最近の実行',
+      'Show': '表示',
+      'No active response ran in this period.': 'この期間にアクティブレスポンスは実行されていません。',
+      'Action': '操作',
+      'Program': 'プログラム',
+      'Rule': 'ルール',
+      'none': 'なし',
+      'No problem': '問題なし',
+      'Every active response on every node: settings, problems, recent runs, open blocks': 'すべてのノードのアクティブレスポンス：設定、問題、最近の実行、ブロック中のアドレス'
     }
   };
 
   // Patterns for interpolated strings: [regex, function(match)->translated]
   var I18N_PATTERNS = {
     'zh-TW': [
+      [/^(\d+) active response\(s\) on (\d+) node\(s\); (\d+) with a problem$/, function (m) { return m[2] + ' 個節點上共有 ' + m[1] + ' 項主動回應，其中 ' + m[3] + ' 項有問題'; }],
+      [/^Could not read this node: (.+)$/, function (m) { return '無法讀取這個節點：' + m[1]; }],
+      [/^Last (\d+) hours, (\d+) run\(s\); alerts of this manager node only\.$/, function (m) { return '最近 ' + m[1] + ' 小時，共 ' + m[2] + ' 次；只含本 Manager 節點的告警。'; }],
+      [/^site \(line (\d+)\)$/, function (m) { return '站台自訂（第 ' + m[1] + ' 行）'; }],
+      [/^rules ([0-9, ]+)$/, function (m) { return '規則 ' + m[1]; }],
+      [/^rules ([0-9, ]+); group (\S+)$/, function (m) { return '規則 ' + m[1] + '；群組 ' + m[2]; }],
+      [/^group (\S+)$/, function (m) { return '群組 ' + m[1]; }],
+      [/^level >= (\d+)$/, function (m) { return '等級 >= ' + m[1]; }],
+      [/^pack (\S+) \/ (\S+)$/, function (m) { return '套件 ' + m[1] + ' / ' + m[2]; }],
+      [/^\(no timeout\)$/, function () { return '（無法設定封鎖時間）'; }],
       [/^Response enabled on (.+)\. It takes effect when the manager restarts on each of them\.$/, function (m) { return '已在 ' + m[1] + ' 啟用回應。各節點的 Manager 重新啟動後才會生效。'; }],
       [/^Response disabled on (.+)\. It takes effect when the manager restarts on each of them\.$/, function (m) { return '已在 ' + m[1] + ' 停用回應。各節點的 Manager 重新啟動後才會生效。'; }],
       [/^timeout must be between (\d+) and (\d+) seconds$/, function (m) { return '封鎖時間必須介於 ' + m[1] + ' 到 ' + m[2] + ' 秒之間'; }],
@@ -10728,6 +10904,16 @@ _I18N_SCRIPT = r"""
       [/^never_connected \((\d+)\)$/, function (m) { return '從未連線 (' + m[1] + ')'; }]
     ],
     'ja': [
+      [/^(\d+) active response\(s\) on (\d+) node\(s\); (\d+) with a problem$/, function (m) { return m[2] + ' ノードに ' + m[1] + ' 件のアクティブレスポンス、うち ' + m[3] + ' 件に問題あり'; }],
+      [/^Could not read this node: (.+)$/, function (m) { return 'このノードを読み取れません：' + m[1]; }],
+      [/^Last (\d+) hours, (\d+) run\(s\); alerts of this manager node only\.$/, function (m) { return '直近 ' + m[1] + ' 時間、' + m[2] + ' 回；このマネージャーノードのアラートのみ。'; }],
+      [/^site \(line (\d+)\)$/, function (m) { return 'サイト独自（' + m[1] + ' 行目）'; }],
+      [/^rules ([0-9, ]+)$/, function (m) { return 'ルール ' + m[1]; }],
+      [/^rules ([0-9, ]+); group (\S+)$/, function (m) { return 'ルール ' + m[1] + '；グループ ' + m[2]; }],
+      [/^group (\S+)$/, function (m) { return 'グループ ' + m[1]; }],
+      [/^level >= (\d+)$/, function (m) { return 'レベル >= ' + m[1]; }],
+      [/^pack (\S+) \/ (\S+)$/, function (m) { return 'パック ' + m[1] + ' / ' + m[2]; }],
+      [/^\(no timeout\)$/, function () { return '（ブロック時間を設定できない）'; }],
       [/^Response enabled on (.+)\. It takes effect when the manager restarts on each of them\.$/, function (m) { return m[1] + ' でレスポンスを有効にしました。各ノードでマネージャーを再起動すると反映されます。'; }],
       [/^Response disabled on (.+)\. It takes effect when the manager restarts on each of them\.$/, function (m) { return m[1] + ' でレスポンスを無効にしました。各ノードでマネージャーを再起動すると反映されます。'; }],
       [/^timeout must be between (\d+) and (\d+) seconds$/, function (m) { return 'ブロック時間は ' + m[1] + ' から ' + m[2] + ' 秒の間で指定してください'; }],
@@ -17984,6 +18170,216 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                             'message': message})
         except Exception as e:
             logger.error(f"PACK AR ERROR: {e}")
+            return jsonify({'error': str(e)}), 500
+
+    # ---------- Active response overview (v1.34.0) ----------
+    # Every <command> and <active-response> on every node, which pack manages
+    # which, what is broken, what fired lately and what is still blocked. The
+    # pack dialog only shows a pack's own responses; a site's own (a YARA scan,
+    # a hand-written firewall-drop) were invisible in the tool.
+
+    AR_MARK_RE = re.compile(r'<!-- jt-wazuh-mgr active-response (?P<pack>[a-z0-9-]+)/(?P<ar>[a-z0-9-]+) begin -->'
+                            r'.*?<!-- jt-wazuh-mgr active-response (?P=pack)/(?P=ar) end -->', re.S)
+    AR_BLOCK_RULES = {'651': 'firewall-drop', '652': 'firewall-drop', '653': 'host-deny', '654': 'host-deny',
+                      '655': 'route-null', '656': 'route-null'}
+    AR_HISTORY_MAX = 2000
+
+    def _xml_value(inner, tag):
+        m = re.search(r'<%s>\s*(.*?)\s*</%s>' % (tag, tag), inner, re.S)
+        return m.group(1).strip() if m else None
+
+    def _parse_ar_config(content):
+        """Commands and responses in one ossec.conf, with the pack that manages each response.
+
+        Text-based, like the rest of the ossec.conf handling: the file has several
+        <ossec_config> roots and is not one XML document. Comments are blanked
+        (same length, so positions stay valid) before the elements are read.
+        """
+        marks = [(m.start(), m.end(), m.group('pack'), m.group('ar')) for m in AR_MARK_RE.finditer(content)]
+        bare = re.sub(r'<!--.*?-->', lambda m: ' ' * len(m.group(0)), content, flags=re.S)
+        commands = {}
+        for m in re.finditer(r'<command>(.*?)</command>', bare, re.S):
+            inner = m.group(1)
+            name = _xml_value(inner, 'name')
+            if not name:
+                continue
+            commands[name] = {'name': name, 'executable': _xml_value(inner, 'executable') or '',
+                              'timeout_allowed': (_xml_value(inner, 'timeout_allowed') or '').lower() == 'yes',
+                              'extra_args': _xml_value(inner, 'extra_args') or ''}
+        responses = []
+        for m in re.finditer(r'<active-response>(.*?)</active-response>', bare, re.S):
+            inner = m.group(1)
+            command = _xml_value(inner, 'command')
+            if not command:
+                continue        # the agent-side settings block (disabled, ca_store, ...)
+            managed = next(({'pack': pk, 'id': ar} for a, b, pk, ar in marks if a <= m.start() < b), None)
+            rules = [r.strip() for r in (_xml_value(inner, 'rules_id') or '').split(',') if r.strip()]
+            timeout = _xml_value(inner, 'timeout')
+            responses.append({
+                'command': command, 'location': (_xml_value(inner, 'location') or '').lower(),
+                'agent_id': _xml_value(inner, 'agent_id') or '', 'rules_id': rules,
+                'rules_group': _xml_value(inner, 'rules_group') or '', 'level': _xml_value(inner, 'level') or '',
+                'timeout': int(timeout) if timeout and timeout.isdigit() else None,
+                'disabled': (_xml_value(inner, 'disabled') or '').lower() == 'yes',
+                'managed_by': managed, 'line': content.count('\n', 0, m.start()) + 1})
+        return commands, responses
+
+    def _ar_problems(resp, commands, missing_rules, local, wazuh_path):
+        problems = []
+        if resp['disabled']:
+            return problems
+        cmd = commands.get(resp['command'])
+        if not cmd:
+            problems.append('command %s is not defined on this node' % resp['command'])
+        if not (resp['rules_id'] or resp['rules_group'] or resp['level']):
+            problems.append('no rules_id, rules_group or level: it never fires')
+        gone = [r for r in resp['rules_id'] if r in missing_rules]
+        if gone:
+            problems.append('rules not loaded: %s' % ', '.join(gone))
+        if resp['location'] == 'defined-agent' and not resp['agent_id']:
+            problems.append('location defined-agent without agent_id')
+        if resp['location'] not in ('local', 'server', 'defined-agent', 'all'):
+            problems.append('unknown location %r' % resp['location'])
+        if cmd and resp['timeout'] and not cmd['timeout_allowed']:
+            problems.append('timeout set, but command %s does not allow one (never undone)' % resp['command'])
+        if (local and cmd and resp['location'] == 'server' and cmd['executable']
+                and not os.path.exists(os.path.join(wazuh_path, 'active-response', 'bin', cmd['executable']))):
+            problems.append('%s is not in active-response/bin on this manager' % cmd['executable'])
+        return problems
+
+    def _alert_files(hours):
+        """Today's alerts.json, plus yesterday's archive when the window reaches back into it."""
+        base = os.path.join(_wazuh_path(), 'logs', 'alerts')
+        files = []
+        now = datetime.now()
+        since = now - timedelta(hours=hours)
+        if since.date() < now.date():
+            y = since
+            gz = os.path.join(base, y.strftime('%Y'), y.strftime('%b'), 'ossec-alerts-%s.json.gz' % y.strftime('%d'))
+            if os.path.exists(gz):
+                files.append(gz)
+        current = os.path.join(base, 'alerts.json')
+        if os.path.exists(current):
+            files.append(current)
+        return files
+
+    def _read_ar_events(hours):
+        """Active response alerts (group active_response) on this manager in the last `hours`."""
+        import gzip
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        events = []
+        for path in _alert_files(hours):
+            opener = gzip.open if path.endswith('.gz') else open
+            with opener(path, 'rt', encoding='utf-8', errors='replace') as fh:
+                for line in fh:
+                    if '"active_response"' not in line:
+                        continue
+                    try:
+                        a = json.loads(line)
+                    except ValueError:
+                        continue
+                    rule = a.get('rule') or {}
+                    if 'active_response' not in (rule.get('groups') or []):
+                        continue
+                    try:
+                        ts = datetime.strptime(a.get('timestamp', '')[:19] + a.get('timestamp', '')[-5:],
+                                               '%Y-%m-%dT%H:%M:%S%z')
+                    except ValueError:
+                        continue
+                    if ts < cutoff:
+                        continue
+                    data = a.get('data') or {}
+                    params = data.get('parameters') if isinstance(data.get('parameters'), dict) else {}
+                    trigger = params.get('alert') if isinstance(params.get('alert'), dict) else {}
+                    tdata = trigger.get('data') if isinstance(trigger.get('data'), dict) else {}
+                    srcip = tdata.get('srcip') or data.get('srcip') or ''
+                    program = params.get('program') or AR_BLOCK_RULES.get(str(rule.get('id')), '')
+                    events.append({
+                        'time': ts.isoformat(), 'agent_id': (a.get('agent') or {}).get('id', ''),
+                        'agent': (a.get('agent') or {}).get('name', ''), 'rule_id': str(rule.get('id', '')),
+                        'description': str(rule.get('description', ''))[:200],
+                        'action': data.get('command') or ('delete' if str(rule.get('id')) in ('652', '654', '656') else 'add'),
+                        'program': os.path.basename(str(program)) if program else '',
+                        'srcip': '' if srcip in (None, 'null') else str(srcip)[:64],
+                        'trigger_rule': str(((trigger.get('rule') or {}) if isinstance(trigger.get('rule'), dict) else {}).get('id', '')),
+                    })
+        events.sort(key=lambda e: e['time'])
+        return events[-AR_HISTORY_MAX:]
+
+    def _active_blocks(events, timeouts):
+        """(agent, program, address) whose last event is an add with no later delete and not yet expired."""
+        last = {}
+        for e in events:
+            if not e['srcip']:
+                continue
+            last[(e['agent_id'], e['program'], e['srcip'])] = e
+        now = datetime.now(timezone.utc)
+        out = []
+        for (agent_id, program, ip), e in last.items():
+            if e['action'] != 'add':
+                continue
+            start = datetime.fromisoformat(e['time'])
+            timeout = timeouts.get(program)
+            expires = start + timedelta(seconds=timeout) if timeout else None
+            if expires and expires < now:
+                continue
+            out.append({**e, 'expires': expires.isoformat() if expires else None})
+        return sorted(out, key=lambda e: e['time'], reverse=True)
+
+    @app.route('/api/active-response/overview', methods=['GET'])
+    @login_required
+    @require_capability('rule_packs')
+    def get_active_response_overview():
+        """Every command and response on every node, their problems, recent runs and open blocks."""
+        try:
+            hours = min(max(int(request.args.get('hours', 24)), 1), 168)
+        except (TypeError, ValueError):
+            hours = 24
+        try:
+            api = get_api_session()
+            nodes = _node_configs(api)
+            parsed, all_rules = [], set()
+            for node in nodes:
+                if node['content'] is None:
+                    parsed.append((node, {}, []))
+                    continue
+                commands, responses = _parse_ar_config(node['content'])
+                parsed.append((node, commands, responses))
+                for r in responses:
+                    all_rules.update(r['rules_id'])
+            missing = set(_missing_rules(api, sorted(all_rules)) or []) if all_rules else set()
+            wazuh_path = _wazuh_path()
+            nodes_out, timeouts = [], {}
+            for node, commands, responses in parsed:
+                for r in responses:
+                    r['problems'] = _ar_problems(r, commands, missing, node['local'], wazuh_path)
+                    cmd = commands.get(r['command'])
+                    if cmd and r['timeout'] and not r['disabled']:
+                        exe = os.path.basename(cmd['executable'] or r['command'])
+                        timeouts[exe] = max(timeouts.get(exe, 0), r['timeout'])
+                restart = None
+                if node['local'] and node['content'] is not None:
+                    started = _analysisd_started(api, node)
+                    conf = os.path.join(wazuh_path, 'etc', 'ossec.conf')
+                    changed = datetime.fromtimestamp(os.path.getmtime(conf), timezone.utc)
+                    if started and changed > started:
+                        restart = {'config_changed': changed.isoformat(), 'analysisd_started': started.isoformat()}
+                nodes_out.append({'name': node['name'], 'local': node['local'], 'error': node['error'],
+                                  'via': node['via'], 'commands': sorted(commands.values(), key=lambda c: c['name']),
+                                  'responses': responses, 'restart_pending': restart})
+            history_error = None
+            try:
+                events = _read_ar_events(hours)
+            except OSError as e:
+                events, history_error = [], str(e)
+            return jsonify({
+                'nodes': nodes_out, 'hours': hours,
+                'history': list(reversed(events)), 'history_scope': 'alerts of this manager node only',
+                'history_error': history_error,
+                'blocks': _active_blocks(events, timeouts),
+            })
+        except Exception as e:
+            logger.error(f"AR OVERVIEW ERROR: {e}")
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/nodes/config-diff', methods=['GET'])

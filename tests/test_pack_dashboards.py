@@ -300,20 +300,23 @@ class TestPackDashboards(unittest.TestCase):
             if vis.get('type') == 'vega':
                 spec = json.loads(vis['params']['spec'])
 
-                def walk(node):
+                GEO_AGGS = ('geohash_grid', 'geotile_grid', 'geo_centroid', 'geo_bounds')
+
+                def walk(node, agg=None):
                     if isinstance(node, dict):
                         if isinstance(node.get('field'), str):
-                            yield node['field']
+                            yield node['field'], agg
                         if isinstance(node.get('range'), dict):
-                            yield from node['range']
-                        for value in node.values():
-                            yield from walk(value)
+                            for f in node['range']:
+                                yield f, agg
+                        for key, value in node.items():
+                            yield from walk(value, key)
                     elif isinstance(node, list):
                         for value in node:
-                            yield from walk(value)
+                            yield from walk(value, agg)
                 for src in vega_sources(spec):
-                    for field in walk(src['url']['body']['aggs']):
-                        yield o['id'], field, 'vega'
+                    for field, agg in walk(src['url']['body']['aggs']):
+                        yield o['id'], field, 'vega-geo' if agg in GEO_AGGS else 'vega'
                     for clause in src['url']['body']['query']['bool']['must']:
                         if isinstance(clause, dict) and 'range' in clause:
                             for f in clause['range']:
@@ -327,6 +330,10 @@ class TestPackDashboards(unittest.TestCase):
         for m, _, objects in self.packs:
             for oid, field, where in self._fields_used(objects):
                 with self.subTest(pack=m['id'], object=oid, field=field):
+                    if where == 'vega-geo':
+                        # geo aggregations take exactly the geo_point fields field_kind refuses
+                        self.assertEqual(self.fields.get(field), 'geo_point')
+                        continue
                     kind = self.builder.field_kind(field, self.fields)
                     if where == 'agg':
                         # a standard visualization needs the field in the index
@@ -377,8 +384,8 @@ class TestPackDashboards(unittest.TestCase):
                         self.assertTrue(o['attributes']['title'].startswith(m['id'] + ' · '))
 
     def test_the_optional_manifest_section_is_well_formed(self):
-        allowed = {'fields', 'columns', 'srcip', 'dstuser'}
-        for m, _, _ in self.packs:
+        allowed = {'fields', 'columns', 'srcip', 'dstuser', 'rules_by'}
+        for m, _, objects in self.packs:
             opts = m.get('dashboard')
             if opts is None:
                 continue
@@ -392,6 +399,13 @@ class TestPackDashboards(unittest.TestCase):
                         self.assertTrue(item.get('title_zh'), 'a title needs title_zh too')
                 for c in opts.get('columns', []):
                     self.builder.field_kind(c, self.fields)
+                by = opts.get('rules_by')
+                if by is not None:
+                    by = {'field': by} if isinstance(by, str) else by
+                    self.assertTrue(set(by) <= {'field', 'title', 'title_zh'})
+                    self.builder.field_kind(by['field'], self.fields)
+                    rules = next(o for o in objects if o['id'] == 'jt-pack-%s-rules' % m['id'])
+                    self.assertIn(by['field'], rules['attributes']['visState'])
 
     def test_the_count_cards_filter_the_dashboard_on_click(self):
         """2026-11-01, owner: "it should be clickable, to filter"; 2026-11-06: one card per

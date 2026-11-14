@@ -334,11 +334,11 @@ def check_packs():
 # can rely on the other's rules being present, and the duplication is the price
 # of that. What is not acceptable is the duplication drifting apart silently,
 # which is what this check exists to prevent.
-SHARED_PATTERNS = (
-    ('build scratch directories',
-     (('jt-portable-detect', 'zz-906200-jt_portable_nix_rules.xml', '906234'),
-      ('jt-zimbra', '01-zimbra_fim_rules.xml', '100810'))),
-)
+#
+# Empty since jt-zimbra 3.8: its temporary-directory rules, with the build
+# scratch exclusion 100810 that had to match jt-portable-detect 906234, moved
+# into jt-portable-detect. Add a pair here if two packs ever share a pattern.
+SHARED_PATTERNS = ()
 
 
 def check_shared_patterns():

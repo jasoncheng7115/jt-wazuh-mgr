@@ -4,6 +4,55 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.34.0 (2026-11-15)
+
+- **jt-ai-agent 1.3: six AI coding agents.** Besides Claude Code, the hook now audits Codex (managed
+  hooks in `/etc/codex/requirements.toml`), opencode (a system plugin), Gemini CLI (system settings
+  `/etc/gemini-cli/settings.json`), Cursor (enterprise hooks `/etc/cursor/hooks.json`) and GitHub Copilot
+  (policy hooks `/etc/github-copilot/policy.d/`, for Copilot CLI and VS Code agent mode on the Copilot
+  harness), on Linux and macOS. Their tool names are mapped to Claude Code's, so one rule set covers them
+  all and `jt_ai.agent` says which agent it was. Cursor's "before" hooks block a call when the answer is
+  not what they expect, so Cursor is recorded right after each call, refused ones included; Copilot
+  denies a call when a hook fails, so its command always ends in `exit 0`. The hook still never blocks.
+- **jt-ai-agent: more behaviour and more context.** Each line now says who is behind the agent (the
+  user before sudo, the login user, the SSH source) and which git project and branch it works in;
+  permission requests, failed calls, subagent starts and session ends are recorded; MCP calls are split
+  into server and tool. New rules: uploading a local file with curl or wget, file-sharing and tunnel
+  services, raw sockets, cloud and package-registry credentials and other agents' login files, `.env`
+  files, persistence (cron, systemd, shell start-up files, authorized_keys), clearing history or logs
+  and turning off auditing or a security control (L12), accounts and privileges, `--no-verify`, a
+  session driven over SSH from a public address, an agent changing VS Code settings or its auto-approve
+  key (CVE-2025-53773), and starting Gemini, Copilot or Cursor with confirmations off. 137 sandbox cases.
+- **jt-ai-agent dashboard:** the latest-alerts table shows agent, host, user, tool, command and path as
+  columns, and there are statistics for the event, tool, command, project, MCP server and the person
+  behind sudo, and a "top rules" table with the agent as a column.
+- **Source location maps.** The dashboards of the 25 packs whose alerts carry a source address gain a
+  map of where the public addresses come from (Wazuh's GeoLocation, a Vega map so that it draws next to
+  the other Vega panels) and a table of the top source countries.
+- **Active response overview** (Nodes tab, "Active Response"): every command and active response
+  configured on each node (packs' and the site's own) with the problems found (a command the node does
+  not define, rules that are not loaded, a response that can never fire, a timeout on a command that
+  cannot be undone, a missing script), whether a restart is still pending after a change, the runs of
+  the last 1 to 168 hours and the addresses still blocked.
+- **jt-fail2ban 1.4: block at the reverse proxy.** `jt-waf-block`, an optional fail2ban action for
+  services behind a proxy managed by jt-waf-mgr: the ban goes to jt-waf-mgr's temporary IP block API and
+  lands on the proxy's nginx deny list, where the attacker's traffic actually arrives. Private and
+  documentation addresses are never sent; the API token is read from a root-only file. Rules
+  131074-131077 report blocks, lifted blocks and failures.
+- **jt-modsecurity 1.3:** decoder and rules for the audit records of jt-waf-mgr (133560-133596):
+  integrity failures, changes outside its workflow, failed logins and locked accounts, API tokens,
+  refused or failed actions, a Core Rule Set release that fails its signature check, and its temporary
+  IP blocks.
+- **jt-nextcloud 1.3:** user names next to the UUIDs of LDAP accounts (the relay adds each user's display
+  name, read with `occ user:list` on the Nextcloud host).
+- **jt-rustdesk 1.1:** host names next to RustDesk IDs (from a names file or the hbbs note column, read
+  from the end of the line only so that a client cannot inject one).
+- **jt-zimbra 3.8 / jt-portable-detect 3.6:** the executable-file-in-a-temporary-directory rules
+  (100807, 100809, 100810) applied to every agent and never belonged in a Zimbra pack; they are now
+  906215, 906214 and 906234 in jt-portable-detect. Install jt-portable-detect 3.6 before updating
+  jt-zimbra.
+- The pack sandbox can check decoded fields (`expect_fields`).
+
 ## v1.33.2 (2026-11-11)
 
 - **Every drop-down uses the site's own list.** The browser's native pop-up is replaced by a list in the

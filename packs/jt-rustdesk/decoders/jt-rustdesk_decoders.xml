@@ -50,6 +50,17 @@
   <order>srcip, rustdesk.reason</order>
 </decoder>
 
+<!--
+  jt-rustdesk 1.1: the log relay (agent/jt-rustdesk-relay.conf) appends " jt_host=<name>"
+  to a line whose RustDesk ID is in the names table. Only the very end of the line is
+  read: an update_pk line ends with the client's own key bytes, which a client could
+  shape into " jt_host=..." itself, but the relay's suffix always comes after them.
+-->
+<decoder name="jt-rustdesk-fields">
+  <parent>jt-rustdesk</parent>
+  <regex type="pcre2"> jt_host=([A-Za-z0-9._-]{1,63})$</regex>
+  <order>rustdesk.hostname</order>
+</decoder>
 <decoder name="jt-rustdesk-fields">
   <parent>jt-rustdesk</parent>
   <regex type="pcre2">^\[[^\]]+\] \w+ \[[^\]]+\] update_pk (\S+) \[((?!::ffff:)[0-9A-Fa-f]*:[0-9A-Fa-f:]+)\]:\d+</regex>
