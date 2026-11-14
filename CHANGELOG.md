@@ -4,6 +4,14 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.35.1 (2026-11-15)
+
+- **jt-ai-agent 1.4.1: inventory fixes from the first production run.** Listening ports were never matched
+  to their process (wazuh-db names the column `PID` in `sys_ports`), so a model server on the network was
+  reported as local; a Proxmox host lists the processes of its unprivileged LXC containers as its own, and
+  those (users 100000 and up) are now skipped; Ollama's own `llama-server` runner is no longer reported as
+  a separate llama.cpp server; vLLM's engine process (`VLLM::EngineCore`) is recognised.
+
 ## v1.35.0 (2026-11-15)
 
 - **jt-ai-agent 1.4: sequences within one session.** Reading credentials (private keys, cloud and

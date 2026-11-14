@@ -458,6 +458,24 @@ class TestInventory14(unittest.TestCase):
         (only,) = inv.findings(self.agent(), self.data(processes=vllm, ports=port)).values()
         self.assertEqual((only['tool'], only['event']), ('vllm', 'model_exposed'))
 
+    def test_production_shapes_from_a_gpu_host_and_a_proxmox_host(self):
+        """1.0.1: shapes seen on the first production run."""
+        procs = [{'pid': '4052', 'name': 'ollama', 'cmd': '/bin/ollama', 'argvs': 'serve', 'euser': 'root'},
+                 {'pid': '3717175', 'name': 'llama-server', 'cmd': '/usr/lib/ollama/llama-server',
+                  'argvs': '--model x --port 35233 --host 127.0.0.1', 'euser': 'root'},
+                 {'pid': '804302', 'name': 'VLLM::EngineCore', 'cmd': 'VLLM::EngineCore', 'euser': 'root'},
+                 {'pid': '397329', 'name': 'opencode', 'cmd': '/opt/opencode/2.0.32/opencode', 'euser': '101000'}]
+        ports = [{'protocol': 'tcp', 'local_ip': '127.0.0.1', 'local_port': 35233, 'state': 'listening',
+                  'PID': 3717175, 'process': 'llama-server'},
+                 {'protocol': 'tcp6', 'local_ip': '::', 'local_port': 46845, 'state': 'listening', 'PID': 804302,
+                  'process': 'VLLM::EngineCor'},
+                 {'protocol': 'tcp', 'local_ip': '0.0.0.0', 'local_port': 11434, 'state': 'listening', 'PID': 37634,
+                  'process': 'python3'}]
+        f = inv.findings(self.agent(), self.data(processes=procs, ports=ports))
+        got = sorted((v['tool'], v['event'], tuple(v.get('listen', ()))) for v in f.values())
+        self.assertEqual(got, [('ollama', 'model_server', ()), ('vllm', 'model_exposed', ('tcp6 :::46845',))],
+                         'container processes and Ollama\'s own runner are not findings; PID is upper case in sys_ports')
+
     def test_evaluate_reports_once_reminds_weekly_and_clears(self):
         found = inv.findings(self.agent(), self.data(packages=[{'name': 'codex', 'version': '0.1', 'format': 'brew'}]))
         now = 1_800_000_000

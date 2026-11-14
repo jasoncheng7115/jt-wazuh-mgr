@@ -4,6 +4,12 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.35.1（2026-11-15）
+
+- **jt-ai-agent 1.4.1：依正式機第一次執行修正盤點。** 監聽的連接埠一直對不到程序（wazuh-db 在 `sys_ports` 把欄位叫 `PID`），
+  所以在網路上開放的模型服務被當成只在本機；Proxmox 主機會把非特權 LXC 容器的程序當成自己的列出，這些（使用者 100000 以上）
+  現在略過；Ollama 自己的 `llama-server` 不再另外報成 llama.cpp 伺服器；認得 vLLM 的引擎程序（`VLLM::EngineCore`）。
+
 ## v1.35.0（2026-11-15）
 
 - **jt-ai-agent 1.4：同一個工作階段內的連續行為。** 先讀帳密（私鑰、雲端與套件庫帳密、`.env`），15 分鐘內再上傳檔案或使用穿隧、

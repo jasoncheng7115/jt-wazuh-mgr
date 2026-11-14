@@ -48,7 +48,7 @@ import struct
 import sys
 import time
 
-VERSION = '1.0'
+VERSION = '1.0.1'
 PROG = 'jt-ai-agent-inventory'
 LOCATION = 'jt-ai-agent-inventory'
 GROUP = 'ai-agent'
@@ -56,6 +56,8 @@ HOOK = '/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py'
 REMIND_DAYS = 7
 
 # tool -> (package names, case-insensitive exact; process regex on name, cmd and arguments)
+# A process whose executable matches EXCLUDE[tool] belongs to something else (Ollama runs its
+# own llama-server under /usr/lib/ollama/).
 CODING_AGENTS = {
     'claude-code': ({'@anthropic-ai/claude-code', 'claude-code'}, r'(?:^|/)claude(?:\s|$)'),
     'codex': ({'@openai/codex', 'codex'}, r'(?:^|/)codex(?:\s|$)'),
@@ -70,10 +72,14 @@ NO_HOOK = {
 MODEL_SERVERS = {
     'ollama': ({'ollama'}, r'(?:^|/)ollama(?:\s|$)'),
     'llama.cpp': ({'llama.cpp', 'llama-cpp'}, r'(?:^|/)llama-server(?:\s|$)'),
-    'vllm': ({'vllm'}, r'\bvllm(?:\s+serve|\.entrypoints)'),
+    'vllm': ({'vllm'}, r'\bvllm(?:\s+serve|\.entrypoints)|^VLLM::'),
     'lm-studio': ({'lm studio', 'lm-studio'}, r'(?:^|/)lms(?:\s|$)|LM Studio'),
     'localai': ({'localai'}, r'(?:^|/)local-ai(?:\s|$)'),
 }
+EXCLUDE = {'llama.cpp': r'/ollama/'}
+# Unprivileged LXC containers map their users to 100000 and up: on a Proxmox host those
+# processes are the containers', which are agents (or not) of their own.
+CONTAINER_UID = 100000
 # SQL prefilter (LIKE); the exact matching is done here
 PKG_LIKE = ('claude', 'codex', 'opencode', 'gemini', 'cursor', 'copilot', 'aider', 'ollama', 'llama',
             'vllm', 'lm studio', 'lm-studio', 'localai')
@@ -181,11 +187,20 @@ def proc_text(p):
     return ' '.join(str(x) for x in (p.get('name') or '', p.get('cmd') or '', argv or '') if x)
 
 
+def pid_of(row):
+    """wazuh-db names the column PID in sys_ports and pid in sys_processes."""
+    for key in ('pid', 'PID'):
+        if row.get(key) is not None:
+            return row[key]
+    return None
+
+
 def match_tools(table, data):
     """{tool: {'evidence': [...], 'pids': set()}} for the tools of one table."""
     found = {}
     for tool, (pkgs, proc) in table.items():
         rx = re.compile(proc, re.I)
+        skip = re.compile(EXCLUDE[tool]) if tool in EXCLUDE else None
         ev, pids = [], set()
         for p in data['packages']:
             name = str(p.get('name') or '').strip()
@@ -194,11 +209,16 @@ def match_tools(table, data):
                 ev.append('package %s %s' % (name[:60], str(p.get('version') or '')[:30]))
         for p in data['processes']:
             text = proc_text(p)
+            user = str(p.get('euser') or '')
+            if user.isdigit() and int(user) >= CONTAINER_UID:
+                continue
+            if skip and skip.search(str(p.get('cmd') or '')):
+                continue
             if rx.search(text):
-                ev.append('process %s (pid %s, %s)' % (str(p.get('name') or '')[:30], p.get('pid'),
-                                                    str(p.get('euser') or '?')[:32]))
-                if p.get('pid') is not None:
-                    pids.add(str(p.get('pid')))
+                pid = pid_of(p)
+                ev.append('process %s (pid %s, %s)' % (str(p.get('name') or '')[:30], pid, user[:32] or '?'))
+                if pid is not None:
+                    pids.add(str(pid))
         if ev:
             found[tool] = {'evidence': sorted(set(ev))[:5], 'pids': pids}
     return found
@@ -208,7 +228,7 @@ def exposed_ports(data, pids, tool):
     """Non-loopback listening sockets of a model server's processes."""
     out = []
     for p in data['ports']:
-        own = str(p.get('pid')) in pids or tool.split('.')[0] in str(p.get('process') or '').lower()
+        own = str(pid_of(p)) in pids or tool.split('.')[0] in str(p.get('process') or '').lower()
         if not own:
             continue
         ip = str(p.get('local_ip') or '')
