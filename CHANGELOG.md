@@ -4,6 +4,23 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.36.0 (2026-11-15)
+
+- **jt-ai-agent 1.5: browser automation.** Claude Code and the other agents drive browsers through MCP
+  servers (Claude in Chrome, Playwright MCP, Chrome DevTools MCP, Puppeteer MCP). The hook now records
+  the action (navigate, click, type, fill, screenshot, read, evaluate, upload, network, console, tabs),
+  the address, the tab and the element; what was typed or filled in and the JavaScript only by length.
+  Rules: JavaScript in a page and reading the browser's network requests or cookies (L6), a password or
+  one-time-code field (L5), a local file uploaded through the browser (L8, and the end of the
+  credentials-then-upload sequence at L13), an internal or administration page opened (L4) followed by
+  JavaScript or a password in the same session (L8).
+- **jt-ai-agent 1.5: more behaviour.** An agent changing its own MCP servers (L8), reading a browser's
+  cookies or saved passwords (L10), network scanners (L6), cryptocurrency miners (L10), CI/CD pipeline
+  changes (L5), screen capture or clipboard reads from a shell (L5), a new git remote or a push to an
+  address given on the command line (L6); the Wazuh agent's own configuration counts as the audit
+  itself (L12), and an agent starting Claude Code with all permission prompts off is caught like the
+  other agents. The dashboard counts browser actions.
+
 ## v1.35.2 (2026-11-15)
 
 - **jt-rustdesk 1.1.1: the name relay starts on Ubuntu.** As shipped in 1.1 it did not: rsyslog's AppArmor

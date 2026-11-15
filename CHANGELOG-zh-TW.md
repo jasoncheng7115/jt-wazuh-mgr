@@ -4,6 +4,17 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.36.0（2026-11-15）
+
+- **jt-ai-agent 1.5：瀏覽器自動化。** Claude Code 與其他代理會透過 MCP 伺服器操作瀏覽器（Claude in Chrome、Playwright MCP、
+  Chrome DevTools MCP、Puppeteer MCP）。hook 現在記下動作（導覽、點擊、輸入、填表、截圖、讀頁面、執行 JS、上傳、網路請求、主控台、
+  分頁）、網址、分頁與元素；輸入或填寫的文字與 JavaScript 只記長度。規則：在頁面執行 JavaScript 與讀取瀏覽器的網路請求或 cookie
+  （L6）、在密碼或一次性驗證碼欄位輸入（L5）、經瀏覽器上傳本機檔案（L8，也是「先讀帳密再上傳」的結尾，L13）、開啟內部或管理頁面
+  （L4）之後在同一工作階段執行 JavaScript 或輸入密碼（L8）。
+- **jt-ai-agent 1.5：更多行為。** 代理修改自己的 MCP 伺服器（L8）、讀取瀏覽器的 cookie 或已存密碼（L10）、網路掃描（L6）、
+  挖礦程式（L10）、修改 CI/CD 流程（L5）、從 shell 截圖或讀剪貼簿（L5）、新增 git 遠端或推送到指令列上的位址（L6）；Wazuh agent
+  自己的設定視為稽核本身（L12），代理以關閉所有權限確認的方式啟動 Claude Code 也和其他代理一樣會被抓到。看板多了瀏覽器動作統計。
+
 ## v1.35.2（2026-11-15）
 
 - **jt-rustdesk 1.1.1：名稱轉存在 Ubuntu 上能啟動了。** 1.1 附的版本起不來：rsyslog 的 AppArmor 不讓它讀 `/etc/jt-rustdesk/`

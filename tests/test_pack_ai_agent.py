@@ -511,5 +511,37 @@ class TestInventory14(unittest.TestCase):
             self.assertNotRegex(q.upper(), r'\b(?:INSERT|UPDATE|DELETE|DROP|ATTACH|PRAGMA)\b')
 
 
+class TestBrowser15(unittest.TestCase):
+    """1.5: browser automation through MCP: the action is recorded, never what was typed or run."""
+
+    def rec(self, tool, ti):
+        return hook.record({'hook_event_name': 'PreToolUse', 'tool_name': tool, 'tool_input': ti})
+
+    def test_actions_and_no_content(self):
+        cases = [
+            ('mcp__claude-in-chrome__computer', {'action': 'screenshot', 'tabId': 3}, 'screenshot'),
+            ('mcp__claude-in-chrome__computer', {'action': 'left_click', 'coordinate': [1, 2]}, 'click'),
+            ('mcp__claude-in-chrome__computer', {'action': 'type', 'text': 'S3cretTyped'}, 'type'),
+            ('mcp__claude-in-chrome__javascript_tool', {'action': 'javascript_exec', 'text': 'S3cretCode()'}, 'evaluate'),
+            ('mcp__playwright__browser_type', {'element': 'Password', 'ref': 'e1', 'text': 'S3cretPw'}, 'type'),
+            ('mcp__playwright__browser_fill_form', {'fields': [{'name': 'Password', 'type': 'textbox', 'ref': 'e2',
+                                                              'value': 'S3cretFill'}]}, 'fill'),
+            ('mcp__chrome-devtools__evaluate_script', {'function': '() => S3cretFn'}, 'evaluate'),
+            ('mcp__puppeteer__puppeteer_navigate', {'url': 'https://example.org/'}, 'navigate'),
+            ('mcp__playwright__browser_network_requests', {}, 'network'),
+            ('mcp__playwright__browser_file_upload', {'paths': ['/tmp/a.pdf']}, 'upload'),
+        ]
+        for tool, ti, action in cases:
+            with self.subTest(tool=tool, action=action):
+                r = self.rec(tool, ti)
+                self.assertEqual(r.get('browser_action'), action)
+                self.assertNotIn('S3cret', json.dumps(r))
+        r = self.rec('mcp__playwright__browser_type', {'element': 'Password', 'ref': 'e1', 'text': 'S3cretPw'})
+        self.assertEqual((r['text_len'], r.get('browser_secret')), (8, True))
+        r = self.rec('mcp__claude-in-chrome__javascript_tool', {'action': 'javascript_exec', 'text': 'S3cretCode()'})
+        self.assertEqual(r['js_len'], 12)
+        self.assertNotIn('browser_action', self.rec('mcp__docs__search', {'query': 'x'}))
+
+
 if __name__ == '__main__':
     unittest.main()

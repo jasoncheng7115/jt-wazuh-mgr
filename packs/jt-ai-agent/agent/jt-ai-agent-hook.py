@@ -143,6 +143,31 @@ COPILOT_TOOLS = {'bash': 'Bash', 'powershell': 'Bash', 'view': 'Read', 'create':
 COPILOT_EVENTS = {'sessionStart': 'SessionStart', 'sessionEnd': 'SessionEnd', 'preToolUse': 'PreToolUse',
                   'postToolUse': 'PostToolUse', 'postToolUseFailure': 'PostToolUseFailure',
                   'subagentStart': 'SubagentStart', 'permissionRequest': 'PermissionRequest'}
+# 1.5: browser automation through MCP (Claude in Chrome, Playwright MCP, Chrome DevTools MCP,
+# Puppeteer MCP and the like). The action, address, tab and element are recorded; what is
+# typed, filled in or run as JavaScript only by its length.
+BROWSER_SERVER = re.compile(r'(?i)chrome|playwright|puppeteer|browser|devtools|selenium|stagehand')
+BROWSER_TOOL_ACTIONS = [
+    (r'javascript|evaluate|run_code|execute_script|(?:^|[_-])eval', 'evaluate'),
+    (r'upload', 'upload'),
+    (r'network|cookie', 'network'),
+    (r'console', 'console'),
+    (r'screenshot|gif', 'screenshot'),
+    (r'navigate|new_page|goto|open_url|tabs_create', 'navigate'),
+    (r'fill|form_input|(?:^|[_-])form', 'fill'),
+    (r'(?:^|[_-])type', 'type'),
+    (r'press_key|(?:^|[_-])key', 'key'),
+    (r'click|hover|drag|select', 'click'),
+    (r'snapshot|read_page|page_text|(?:^|[_-])find|extract|content', 'read'),
+    (r'tab', 'tabs'),
+    (r'dialog', 'dialog'),
+    (r'close', 'close'),
+]
+# Claude in Chrome's computer tool carries the action in its input
+COMPUTER_ACTIONS = {'screenshot': 'screenshot', 'zoom': 'screenshot', 'type': 'type', 'key': 'key',
+                    'wait': 'wait'}
+SECRET_FIELD = re.compile(r'(?i)pass(?:word|wd)?\b|\bpwd|密碼|\botp\b|2fa|one.?time|\btoken|secret|\bpin\b|'
+                          r'api.?key|credential|驗證碼')
 URL_IN_TEXT = re.compile(r'https?://[^\s\'"<>)]+')
 PATCH_FILE = re.compile(r'^\*\*\* (Add|Update|Delete) File: (.+)$|^\*\*\* Move to: (.+)$', re.M)
 
@@ -294,6 +319,68 @@ def failed(response):
     if isinstance(status, str) and status.lower() in FAILURE_HINTS:
         return True
     return bool(response.get('error'))
+
+
+def browser_detail(rec, server, name, ti):
+    """What a browser automation call did, without what was typed or run (1.5)."""
+    low = (name or '').lower()
+    action = None
+    if low == 'computer' or low.endswith('_computer'):
+        act = str(ti.get('action') or '').lower()
+        action = COMPUTER_ACTIONS.get(act) or ('scroll' if 'scroll' in act else 'click' if act else None)
+    if not action:
+        for pattern, act in BROWSER_TOOL_ACTIONS:
+            if re.search(pattern, low):
+                action = act
+                break
+    rec['browser_action'] = action or 'other'
+    for key in ('url', 'href'):
+        if isinstance(ti.get(key), str) and ti[key]:
+            rec['url'] = short(ti[key], 1000)
+            break
+    tab = ti.get('tabId', ti.get('tab_id', ti.get('pageId')))
+    if isinstance(tab, (int, str)) and str(tab):
+        rec['tab'] = str(tab)[:32]
+    labels = []
+    for key in ('element', 'selector', 'query', 'name', 'label', 'uid', 'ref'):
+        if isinstance(ti.get(key), str) and ti[key]:
+            labels.append(ti[key])
+            if key in ('element', 'selector', 'query', 'name', 'label'):
+                rec['element'] = short(ti[key], 120)
+                break
+    fields = ti.get('fields') or ti.get('elements')
+    filled = 0
+    if isinstance(fields, list):
+        names = []
+        for f in fields[:30]:
+            if isinstance(f, dict):
+                names.append(str(f.get('name') or f.get('label') or f.get('ref') or f.get('uid') or '?')[:40])
+                labels.append(str(f.get('name') or '') + ' ' + str(f.get('type') or ''))
+                if isinstance(f.get('value'), str):
+                    filled += len(f['value'])
+        rec['fields'] = len(fields)
+        if names:
+            rec['element'] = short(', '.join(names), 200)
+    for key in ('text', 'value', 'values'):
+        val = ti.get(key)
+        if isinstance(val, str):
+            filled += len(val)
+        elif isinstance(val, list):
+            filled += sum(len(v) for v in val if isinstance(v, str))
+    if action == 'evaluate':
+        code = next((ti[k] for k in ('function', 'script', 'code', 'expression', 'text') if isinstance(ti.get(k), str)), '')
+        rec['js_len'] = len(code)
+    elif filled:
+        rec['text_len'] = filled
+    if action in ('type', 'fill') and any(SECRET_FIELD.search(x) for x in labels if x):
+        rec['browser_secret'] = True
+    if action == 'upload':
+        paths = ti.get('paths') or ti.get('files') or ([ti.get('filePath') or ti.get('path') or ti.get('file')])
+        paths = [x for x in (paths if isinstance(paths, list) else [paths]) if isinstance(x, str) and x]
+        if paths:
+            rec['path'] = short(paths[0], 1000)
+            if len(paths) > 1:
+                rec['paths'] = short(','.join(paths[:20]), 1000)
 
 
 def as_dict(value):
@@ -470,6 +557,11 @@ def record(event, agent='claude-code'):
             rec['mcp_server'] = parts[1][:MAX_SHORT]
             rec['mcp_tool'] = '__'.join(parts[2:])[:MAX_SHORT]
     if not isinstance(ti, dict) or not ti:
+        if rec.get('mcp_server') and BROWSER_SERVER.search(rec['mcp_server']):
+            browser_detail(rec, rec['mcp_server'], rec.get('mcp_tool'), {})
+        return rec
+    if rec.get('mcp_server') and BROWSER_SERVER.search(rec['mcp_server']):
+        browser_detail(rec, rec['mcp_server'], rec.get('mcp_tool'), ti)
         return rec
     if tool == 'Bash':
         command = str(ti.get('command', ''))

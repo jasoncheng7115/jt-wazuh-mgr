@@ -20,6 +20,10 @@
     settings (Claude Code, Codex, opencode: permissions, hooks, plugins) or
     starting Codex with its hook trust or sandbox bypassed
   - level 13 (1.4): reading credentials, then sending data out or opening a tunnel, in the same session
+  - 1.5: browser automation through MCP (JavaScript in a page L6, network requests or cookies L6,
+    a password field L5, a local file uploaded L8, an admin page then JavaScript or a password L8),
+    MCP servers changed (L8), browser cookies and saved passwords read (L10), network scanners (L6), miners (L10), CI/CD pipelines (L5),
+    the screen and the clipboard (L5), new git remotes (L6), the Wazuh agent's own configuration
   - level 12 (1.4): four or more destructive commands within ten minutes in one session
   - level 12 (1.2): clearing history or logs, turning off auditing, SELinux/AppArmor or ufw
   - level 10 (1.2): uploading a local file, file-sharing / tunnel / out-of-band services,
@@ -210,7 +214,7 @@
   <rule id="133720" level="12">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^Bash$</field>
-    <field name="jt_ai.cmd" type="pcre2">(?i)\bdisableAllHooks\b|(?:\b(?:rm|truncate|shred|mv|cp|chattr|chmod|chown|unlink|ln|tee|install)\b|\bsed\s+-i)[^;\x26|\n]*(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))|(?:^|\s)[0-9]?\x3e{1,2}\s*["']?(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)\bdisableAllHooks\b|(?:\b(?:rm|truncate|shred|mv|cp|chattr|chmod|chown|unlink|ln|tee|install)\b|\bsed\s+-i)[^;\x26|\n]*(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/var/ossec/etc/|/Library/Ossec/etc/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))|(?:^|\s)[0-9]?\x3e{1,2}\s*["']?(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/var/ossec/etc/|/Library/Ossec/etc/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))</field>
     <description>[WARN] AI agent ($(jt_ai.user) on $(jt_ai.host)) changed the agent audit log, its hook or the managed settings</description>
     <mitre>
       <id>T1562.001</id>
@@ -221,7 +225,7 @@
   <rule id="133721" level="12">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit|NotebookEdit|Delete)$</field>
-    <field name="jt_ai.path" type="pcre2">^(?:/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/var/log/jt-ai-agent/|/usr/local/lib/jt-ai-agent/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))</field>
+    <field name="jt_ai.path" type="pcre2">^(?:/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/var/ossec/etc/|/Library/Ossec/etc/|/var/log/jt-ai-agent/|/usr/local/lib/jt-ai-agent/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))</field>
     <description>[WARN] AI agent ($(jt_ai.user) on $(jt_ai.host)) edited $(jt_ai.path): the agent audit or the managed settings</description>
     <mitre>
       <id>T1562.001</id>
@@ -288,7 +292,7 @@
   <rule id="133714" level="10">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^Bash$</field>
-    <field name="jt_ai.cmd" type="pcre2">(?:\b(?:sed\s+-i|tee|mv|cp|jq|python3?|perl)\b|\x3e)[^;\x26|\n]*(?:\.claude/settings(?:\.local)?\.json|\.codex/(?:config\.toml|hooks\.json)|(?:\.config/opencode|\.opencode)/(?:opencode\.jsonc?|plugins?/)|opencode\.jsonc?\b|\.gemini/settings\.json|\.cursor/(?:hooks|cli-config|permissions)\.json|\.copilot/(?:settings\.json|config\.json|hooks/)|\.github/hooks/)|\bcodex\s+[^;\x26|\n]*--dangerously-bypass-(?:hook-trust|approvals-and-sandbox)\b|\bgemini\s+(?:[^;\x26|\n]*\s)?(?:--yolo|-y|--approval-mode[= ]yolo)(?=$|\s)|\bcopilot\s+[^;\x26|\n]*--(?:allow-all-tools|allow-all|yolo)\b|\bcursor-agent\s+[^;\x26|\n]*--(?:force|yolo)\b</field>
+    <field name="jt_ai.cmd" type="pcre2">(?:\b(?:sed\s+-i|tee|mv|cp|jq|python3?|perl)\b|\x3e)[^;\x26|\n]*(?:\.claude/settings(?:\.local)?\.json|\.codex/(?:config\.toml|hooks\.json)|(?:\.config/opencode|\.opencode)/(?:opencode\.jsonc?|plugins?/)|opencode\.jsonc?\b|\.gemini/settings\.json|\.cursor/(?:hooks|cli-config|permissions)\.json|\.copilot/(?:settings\.json|config\.json|hooks/)|\.github/hooks/)|\bcodex\s+[^;\x26|\n]*--dangerously-bypass-(?:hook-trust|approvals-and-sandbox)\b|\bgemini\s+(?:[^;\x26|\n]*\s)?(?:--yolo|-y|--approval-mode[= ]yolo)(?=$|\s)|\bcopilot\s+[^;\x26|\n]*--(?:allow-all-tools|allow-all|yolo)\b|\bcursor-agent\s+[^;\x26|\n]*--(?:force|yolo)\b|\bclaude\s+[^;\x26|\n]*(?:--(?:allow-)?dangerously-skip-permissions|--permission-mode[= ]bypassPermissions)\b</field>
     <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) changed agent settings or turned off its safeguards from a shell command (permissions, hooks, plugins)</description>
     <mitre>
       <id>T1548</id>
@@ -435,18 +439,6 @@
     Reading credentials, then sending data out or opening a tunnel, is the shape of exfiltration
     by a prompt-injected agent; each step alone is level 9 or 10.
   -->
-  <rule id="133745" level="13" timeframe="900">
-    <if_sid>133724,133725</if_sid>
-    <if_matched_group>jt_ai_agent_credentials</if_matched_group>
-    <same_field>jt_ai.session</same_field>
-    <description>[WARN] AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) sent data out after reading credentials in the same session $(jt_ai.session)</description>
-    <mitre>
-      <id>T1041</id>
-      <id>T1552</id>
-    </mitre>
-    <group>jt_ai_agent_exfil,</group>
-  </rule>
-
   <!-- 1.4: a runaway session: four destructive commands within ten minutes -->
   <rule id="133746" level="12" frequency="4" timeframe="600">
     <if_matched_sid>133712</if_matched_sid>
@@ -456,6 +448,187 @@
       <id>T1485</id>
     </mitre>
     <group>jt_ai_agent_destructive,</group>
+  </rule>
+
+  <!--
+    1.5: browser automation through MCP (Claude in Chrome, Playwright MCP, Chrome DevTools MCP,
+    Puppeteer MCP ...). The hook records the action (navigate, click, type, fill, screenshot,
+    read, evaluate, upload, network, console, tabs), the address, the tab and the element; text
+    typed or filled in and JavaScript are recorded only by their length (text_len, js_len).
+    Children of 133707 (any MCP call); a browser call with an action is at least level 3.
+    Loopback addresses (an agent testing the app it is building) do not count as internal pages.
+  -->
+  <rule id="133759" level="8">
+    <if_sid>133707</if_sid>
+    <field name="jt_ai.browser_action" type="pcre2">^upload$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) uploaded a local file through the browser: $(jt_ai.path)</description>
+    <mitre>
+      <id>T1567</id>
+    </mitre>
+    <group>jt_ai_agent_exfil,jt_ai_agent_browser,</group>
+  </rule>
+
+  <rule id="133748" level="6">
+    <if_sid>133707</if_sid>
+    <field name="jt_ai.browser_action" type="pcre2">^evaluate$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) ran JavaScript ($(jt_ai.js_len) characters) in a browser page: it runs with the page's login and can read its cookies and content</description>
+    <mitre>
+      <id>T1059.007</id>
+    </mitre>
+    <group>jt_ai_agent_browser,</group>
+  </rule>
+
+  <rule id="133749" level="6">
+    <if_sid>133707</if_sid>
+    <field name="jt_ai.browser_action" type="pcre2">^network$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) read the browser's network requests or cookies (they can carry session tokens)</description>
+    <mitre>
+      <id>T1539</id>
+    </mitre>
+    <group>jt_ai_agent_browser,</group>
+  </rule>
+
+  <rule id="133758" level="5">
+    <if_sid>133707</if_sid>
+    <field name="jt_ai.browser_secret" type="pcre2">^true$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) typed into a password or one-time-code field in the browser ($(jt_ai.element))</description>
+    <mitre>
+      <id>T1078</id>
+    </mitre>
+    <group>jt_ai_agent_browser,</group>
+  </rule>
+
+  <rule id="133760" level="4">
+    <if_sid>133707</if_sid>
+    <field name="jt_ai.browser_action" type="pcre2">^navigate$</field>
+    <field name="jt_ai.url" type="pcre2">(?i)^https?://(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|[^/?#]+\.(?:local|lan|internal|home\.arpa)\b)|^https?://[^/?#]+:(?:8006|8007|8443|9443|10000|5601|9200|15672|2083|2087)\b|^https?://[^?#]*/(?:admin\b|app/wazuh|realms/master|wp-admin|phpmyadmin|manage\b)</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) opened an internal or administration page in the browser: $(jt_ai.url)</description>
+    <group>jt_ai_agent_browser,</group>
+  </rule>
+
+  <rule id="133747" level="3">
+    <if_sid>133707</if_sid>
+    <field name="jt_ai.browser_action" type="pcre2">\S</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) browser $(jt_ai.browser_action) $(jt_ai.url)$(jt_ai.element)</description>
+    <group>jt_ai_agent_browser,</group>
+  </rule>
+
+  <!-- 1.5: JavaScript or a password typed into a page soon after the agent opened an internal or admin page -->
+  <rule id="133761" level="8" timeframe="900">
+    <if_sid>133748,133758</if_sid>
+    <if_matched_sid>133760</if_matched_sid>
+    <same_field>jt_ai.session</same_field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) ran JavaScript or typed a password in the browser after opening an internal or administration page in session $(jt_ai.session)</description>
+    <mitre>
+      <id>T1078</id>
+      <id>T1059.007</id>
+    </mitre>
+    <group>jt_ai_agent_browser,</group>
+  </rule>
+
+  <!-- 1.5: an agent adding MCP servers gives itself new tools -->
+  <rule id="133762" level="8">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?:^|[\s;\x26|(`'"])(?:claude|codex|gemini|copilot|cursor-agent|opencode)\s+mcp\s+(?:add|add-json|add-from-claude-desktop|remove|install)\b</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) changed its MCP servers from a shell command (new tools for the agent)</description>
+    <mitre>
+      <id>T1548</id>
+    </mitre>
+  </rule>
+
+  <rule id="133763" level="8">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit)$</field>
+    <field name="jt_ai.path" type="pcre2">/\.mcp\.json$|/\.claude\.json$|/claude_desktop_config\.json$|/\.cursor/mcp\.json$|/\.vscode/mcp\.json$|/\.copilot/mcp-config\.json$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) edited an MCP server configuration: $(jt_ai.path)</description>
+    <mitre>
+      <id>T1548</id>
+    </mitre>
+  </rule>
+
+
+  <!-- 1.5: a browser's cookies and saved passwords -->
+  <rule id="133765" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Read$</field>
+    <field name="jt_ai.path" type="pcre2">(?i)/(?:google-chrome|chromium|bravesoftware/brave-browser|microsoft-edge|google/chrome|microsoft edge)/[^/]+/(?:cookies|login data|web data)$|/(?:\.mozilla/firefox|firefox/profiles)/[^/]+/(?:cookies\.sqlite|logins\.json|key4\.db)$|/library/keychains/</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) read a browser's cookies or saved passwords, or a keychain: $(jt_ai.path)</description>
+    <mitre>
+      <id>T1555.003</id>
+      <id>T1539</id>
+    </mitre>
+    <group>jt_ai_agent_credentials,</group>
+  </rule>
+
+
+
+  <!-- 1.5: reconnaissance and mining -->
+  <rule id="133768" level="6">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?:^|[\s;\x26|(`'"])(?:sudo\s+)?(?:nmap|masscan|zmap|rustscan|naabu|unicornscan)\s</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) ran a network scanner</description>
+    <mitre>
+      <id>T1046</id>
+    </mitre>
+  </rule>
+
+  <rule id="133769" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)\b(?:xmrig|minerd|cpuminer|ethminer|nbminer|lolminer|phoenixminer)\b|stratum\+(?:tcp|ssl)://</field>
+    <description>[WARN] AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) ran a cryptocurrency miner</description>
+    <mitre>
+      <id>T1496</id>
+    </mitre>
+  </rule>
+
+  <!-- 1.5: build pipelines run with the repository's secrets -->
+  <rule id="133770" level="5">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit|Delete)$</field>
+    <field name="jt_ai.path" type="pcre2">/\.github/workflows/[^/]+\.ya?ml$|/\.gitlab-ci\.yml$|/Jenkinsfile$|/\.circleci/config\.yml$|/azure-pipelines\.yml$|/\.drone\.yml$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) changed a CI/CD pipeline: $(jt_ai.path)</description>
+    <mitre>
+      <id>T1195.002</id>
+    </mitre>
+  </rule>
+
+  <!-- 1.5: the screen and the clipboard -->
+  <rule id="133771" level="5">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?:^|[\s;\x26|(`'"])(?:screencapture|scrot|gnome-screenshot|grim|maim|spectacle|xwd|pbpaste|wl-paste)\b|(?:^|[\s;\x26|(`'"])(?:xclip|xsel)\s[^;\x26|\n]*\s-o\b|\bimport\s+-window\s+root\b</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) captured the screen or read the clipboard from a shell command</description>
+    <mitre>
+      <id>T1113</id>
+      <id>T1115</id>
+    </mitre>
+  </rule>
+
+  <!-- 1.5: code sent to a new place -->
+  <rule id="133772" level="6">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">\bgit\s+remote\s+(?:add|set-url)\s|\bgit\s+push\s+(?:-\S+\s+)*(?:https?://|git@|ssh://)</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) added a git remote or pushed to an address given on the command line</description>
+    <mitre>
+      <id>T1567.001</id>
+    </mitre>
+  </rule>
+
+  <!-- 1.4/1.5: credentials, then data out (after 133759, which it names) -->
+  <rule id="133745" level="13" timeframe="900">
+    <if_sid>133724,133725,133759</if_sid>
+    <if_matched_group>jt_ai_agent_credentials</if_matched_group>
+    <same_field>jt_ai.session</same_field>
+    <description>[WARN] AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) sent data out after reading credentials in the same session $(jt_ai.session)</description>
+    <mitre>
+      <id>T1041</id>
+      <id>T1552</id>
+    </mitre>
+    <group>jt_ai_agent_exfil,</group>
   </rule>
 
 </group>
