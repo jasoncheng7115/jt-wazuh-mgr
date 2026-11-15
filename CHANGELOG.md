@@ -4,6 +4,11 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.36.3 (2026-11-15)
+
+- Traditional Chinese wording: 點擊 (mainland usage) is now 點選 throughout the interface, the pack
+  dashboards' hints and the changelog.
+
 ## v1.36.2 (2026-11-15)
 
 - Pack dashboards: the sortable Vega tables now look like the dashboard's own data tables (its font,

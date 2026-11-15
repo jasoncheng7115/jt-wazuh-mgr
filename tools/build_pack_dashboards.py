@@ -357,7 +357,7 @@ class Builder:
                                   # as large as the card allows: by height, and by width for long numbers
                                   'fontSize': {'signal': 'max(18, min(height * 0.5, width * 1.6 / max(3, length(datum.num))))'},
                                   'fontWeight': {'value': 'bold'}, 'cursor': {'value': 'pointer'},
-                                  'tooltip': {'value': T('Click to filter the dashboard', '點擊以篩選看板')}},
+                                  'tooltip': {'value': T('Click to filter the dashboard', '點選以篩選看板')}},
                         'hover': {'opacity': {'value': 0.75}}, 'update': {'opacity': {'value': 1}}}},
                     {'name': 'lbl', 'type': 'text', 'from': {'data': 'lv'}, 'encode': {
                         'enter': {'x': {'signal': 'width / 2'}, 'y': {'signal': 'height * 0.62'},
@@ -459,7 +459,7 @@ class Builder:
                 'align': {'field': 'align'},
                 'text': {'signal': "datum.label + (datum.key === sortField ? (sortDesc ? ' \u25bc' : ' \u25b2') : '')"},
                 'fontWeight': {'value': 'bold'}, 'fill': {'value': '#1A1C21'}, 'cursor': {'value': 'pointer'},
-                'tooltip': {'value': T('Click to sort', '點擊以排序')}}}},
+                'tooltip': {'value': T('Click to sort', '點選以排序')}}}},
             {'type': 'rule', 'encode': {'update': {
                 'x': {'value': 0}, 'x2': {'signal': 'width'}, 'y': {'value': head_h}, 'y2': {'value': head_h},
                 'stroke': {'value': '#343741'}, 'strokeWidth': {'value': 2}}}},
@@ -486,7 +486,7 @@ class Builder:
                 name = 'jtCell_' + re.sub(r'[^A-Za-z0-9]', '', c['key'])
                 enc.update({'fill': {'value': '#006BB4'}, 'cursor': {'value': 'pointer'},
                             'tooltip': {'signal': "'%s' + ': ' + datum.%s" % (
-                                T('Click to filter', '點擊以篩選'), c['key'])}})
+                                T('Click to filter', '點選以篩選'), c['key'])}})
                 flt = "{'match_phrase': {%s: datum.%s}}" % (json.dumps(c['filter']), c['key'])
                 signals.append({'name': name + 'Filter', 'value': None, 'on': [{
                     'events': '@%s:click' % name,
