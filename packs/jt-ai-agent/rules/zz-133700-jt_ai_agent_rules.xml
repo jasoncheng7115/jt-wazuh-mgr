@@ -214,8 +214,26 @@
   <rule id="133720" level="12">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^Bash$</field>
-    <field name="jt_ai.cmd" type="pcre2">(?i)\bdisableAllHooks\b|(?:\b(?:rm|truncate|shred|mv|cp|chattr|chmod|chown|unlink|ln|tee|install)\b|\bsed\s+-i)[^;\x26|\n]*(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/var/ossec/etc/|/Library/Ossec/etc/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))|(?:^|\s)[0-9]?\x3e{1,2}\s*["']?(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/var/ossec/etc/|/Library/Ossec/etc/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)\bdisableAllHooks\b|(?:\b(?:rm|truncate|shred|mv|cp|chattr|chmod|chown|unlink|ln|tee|install)\b|\bsed\s+-i)[^;\x26|\n]*(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))|(?:^|\s)[0-9]?\x3e{1,2}\s*["']?(?:/var/log/jt-ai-agent|/usr/local/lib/jt-ai-agent|/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))</field>
     <description>[WARN] AI agent ($(jt_ai.user) on $(jt_ai.host)) changed the agent audit log, its hook or the managed settings</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>jt_ai_agent_tamper,</group>
+  </rule>
+
+  <!--
+    1.5.1: a shell command changing this host's Wazuh agent configuration. Not part of 133720
+    (level 12): there a mention of /var/ossec/etc anywhere in a command matched, so writing
+    documentation or administering a manager over SSH raised level 12 alerts. Here only the
+    three files that matter, and not in a heredoc (text being written) or a command run on
+    another host over ssh. The Edit / Write tools on these files stay 133721.
+  -->
+  <rule id="133773" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">^(?![\s\S]*(?:\bssh\s|\x3c\x3c))[\s\S]*(?:(?:\b(?:sed\s+-i|tee|mv|cp|rm|truncate|install|chattr|chmod|chown)\b)[^;\x26|\n]*|\x3e{1,2}\s*["']?)(?:/var/ossec|/Library/Ossec)/etc/(?:ossec\.conf|local_internal_options\.conf|client\.keys)\b</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) changed the Wazuh agent configuration on this host from a shell command</description>
     <mitre>
       <id>T1562.001</id>
     </mitre>

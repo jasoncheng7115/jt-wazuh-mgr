@@ -4,6 +4,13 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.36.4（2026-11-16）
+
+- jt-ai-agent 1.5.1：規則 133720（L12，竄改稽核）只要 shell 指令裡出現 `/var/ossec/etc` 就命中，所以代理用 heredoc 寫文件、
+  在那裡建立其他檔案，或經 SSH 管理 manager，都會出現 L12（正式機第一天就遇到）。現在只有在本機以 shell 修改
+  `ossec.conf`、`local_internal_options.conf`、`client.keys` 才算，改為規則 133773（L10），heredoc 與經 ssh 的指令不算；
+  以 Edit／Write 工具改這些檔案仍是 133721（L12）。
+
 ## v1.36.3（2026-11-15）
 
 - 繁體中文用語：介面、套件看板的提示與更新記錄中的「點擊」（中國用語）全部改為「點選」。

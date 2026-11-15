@@ -4,6 +4,15 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.36.4 (2026-11-16)
+
+- jt-ai-agent 1.5.1: rule 133720 (level 12, tampering with the audit) matched any shell command that
+  mentioned `/var/ossec/etc`, so an agent writing documentation in a heredoc, creating another file there
+  or administering a manager over SSH raised a level 12 alert (seen in production on the first day).
+  Shell changes to this host's `ossec.conf`, `local_internal_options.conf` or `client.keys` are now
+  rule 133773 (level 10), outside heredocs and not over ssh; the Edit and Write tools on those files stay
+  133721 (level 12).
+
 ## v1.36.3 (2026-11-15)
 
 - Traditional Chinese wording: 點擊 (mainland usage) is now 點選 throughout the interface, the pack
