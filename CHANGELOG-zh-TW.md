@@ -4,6 +4,12 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.35.2（2026-11-15）
+
+- **jt-rustdesk 1.1.1：名稱轉存在 Ubuntu 上能啟動了。** 1.1 附的版本起不來：rsyslog 的 AppArmor 不讓它讀 `/etc/jt-rustdesk/`
+  底下的名稱表（改放 `/etc/rsyslog.d/jt-rustdesk-names.json`）、沒有載入 `imfile`（轉存設定檔現在自己載入），而且副本要求 root
+  擁有者，以 `syslog` 帳號執行的 rsyslog 設不了。部署步驟在 rsyslog 設定檢查印出錯誤時會停下。
+
 ## v1.35.1（2026-11-15）
 
 - **jt-ai-agent 1.4.1：依正式機第一次執行修正盤點。** 監聽的連接埠一直對不到程序（wazuh-db 在 `sys_ports` 把欄位叫 `PID`），

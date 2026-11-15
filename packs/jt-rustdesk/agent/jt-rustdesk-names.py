@@ -4,7 +4,7 @@
 Copyright Jason Tools Co., Ltd. / AGPL-3.0-or-later
 
 The open-source RustDesk server only knows a device by its ID. This builds the
-rsyslog lookup table (/etc/jt-rustdesk/names.json) that jt-rustdesk-relay.conf
+rsyslog lookup table (/etc/rsyslog.d/jt-rustdesk-names.json) that jt-rustdesk-relay.conf
 uses to append " jt_host=<name>" to hbbs.log lines, from two sources:
 
   1. /etc/jt-rustdesk/names, one "ID: name" per line (# starts a comment); it wins.
@@ -29,7 +29,7 @@ import sys
 import tempfile
 
 NAMES = '/etc/jt-rustdesk/names'
-TABLE = '/etc/jt-rustdesk/names.json'
+TABLE = '/etc/rsyslog.d/jt-rustdesk-names.json'   # 1.1.1: readable under rsyslogd's AppArmor profile
 DB = '/var/lib/rustdesk-server/db_v2.sqlite3'
 ID_RE = re.compile(r'^[A-Za-z0-9_-]{6,32}$')     # must match the relay's re_extract
 

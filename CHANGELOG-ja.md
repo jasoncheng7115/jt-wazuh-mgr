@@ -4,6 +4,13 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.35.2（2026-11-15）
+
+- **jt-rustdesk 1.1.1：名前の中継が Ubuntu で起動するようになりました。** 1.1 の版は起動しませんでした。rsyslog の AppArmor
+  プロファイルが `/etc/jt-rustdesk/` の参照表を拒否していたため `/etc/rsyslog.d/jt-rustdesk-names.json` に移し、`imfile` が
+  読み込まれていなかったため中継ファイル自身で読み込み、`syslog` ユーザーで動く rsyslog には設定できない root 所有者の指定を
+  やめました。設定手順は rsyslog の設定チェックがエラーを出したところで止まります。
+
 ## v1.35.1（2026-11-15）
 
 - **jt-ai-agent 1.4.1：本番での初回実行を受けた棚卸しの修正。** 待ち受けポートがプロセスと一度も対応付けられていませんでした

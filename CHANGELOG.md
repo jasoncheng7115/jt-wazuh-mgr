@@ -4,6 +4,14 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.35.2 (2026-11-15)
+
+- **jt-rustdesk 1.1.1: the name relay starts on Ubuntu.** As shipped in 1.1 it did not: rsyslog's AppArmor
+  profile refused the lookup table under `/etc/jt-rustdesk/` (it is now
+  `/etc/rsyslog.d/jt-rustdesk-names.json`), `imfile` was not loaded (the relay file loads it now), and the
+  copy asked for a root owner, which rsyslog running as `syslog` cannot set. The setup step stops when
+  rsyslog's configuration check prints an error.
+
 ## v1.35.1 (2026-11-15)
 
 - **jt-ai-agent 1.4.1: inventory fixes from the first production run.** Listening ports were never matched
