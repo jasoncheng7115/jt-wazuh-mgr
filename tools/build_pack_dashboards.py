@@ -431,77 +431,125 @@ class Builder:
                                                {'colIndex': 3, 'width': 70}]}})
         self.panels.append((vid, 'visualization', 32, 16))
 
-    def vega_rule_table(self, field, label):
-        """The "Top rules" table with one more column, a field that exists only in data.*
-        (manifest dashboard.rules_by). A standard table aggregating on a field the index
-        pattern does not know yet fails to render, so this is a Vega table: rule x value
-        rows (the value "-" when an alert lacks the field), sorted by alerts."""
-        rows = 30
+    def vega_table(self, part, title, aggs, prop, transforms, columns, default_sort, w, h):
+        """A table drawn in Vega for fields that exist only in data.*: a standard table on a field
+        the index pattern does not know yet shows an error, this one shows an empty table.
+        A click on a column header sorts by it (again: the other way round, an arrow shows
+        which), and a click on a cell of a filter column adds that value as a dashboard filter
+        through opensearchDashboardsAddFilter, which Vega-Lite cannot call (2026-11-15, owner:
+        the first Vega tables could do neither). columns: dicts with key, label, x, align,
+        optional right (x counts from the right edge), filter (a field), number (format with
+        separators), limit (pixels or a Vega expression) and colour (a Vega expression)."""
+        row_h = 20
+        signals = [
+            # one signal holds both, so the toggle never depends on the order signals update in
+            {'name': 'sortBy', 'value': {'field': default_sort, 'desc': True},
+             'on': [{'events': '@jtHead:click',
+                     'update': '{field: datum.key, desc: datum.key === sortBy.field ? !sortBy.desc : datum.num}'}]},
+            {'name': 'sortField', 'update': 'sortBy.field'},
+            {'name': 'sortDesc', 'update': 'sortBy.desc'},
+        ]
+        marks = [
+            {'name': 'jtHead', 'type': 'text', 'from': {'data': 'head'}, 'encode': {'update': {
+                'x': {'signal': 'datum.right ? width - datum.x : datum.x'}, 'y': {'value': row_h * 0.7},
+                'align': {'field': 'align'},
+                'text': {'signal': "datum.label + (datum.key === sortField ? (sortDesc ? ' \u25bc' : ' \u25b2') : '')"},
+                'fontWeight': {'value': 'bold'}, 'fill': {'value': '#69707D'}, 'cursor': {'value': 'pointer'},
+                'tooltip': {'value': T('Click to sort', '點擊以排序')}}}},
+            {'type': 'rule', 'encode': {'update': {
+                'x': {'value': 0}, 'x2': {'signal': 'width'}, 'y': {'value': row_h}, 'y2': {'value': row_h},
+                'stroke': {'value': '#D3DAE6'}}}},
+        ]
+        for c in columns:
+            x = {'signal': 'width - %d' % c['x']} if c.get('right') else {'value': c['x']}
+            enc = {'x': x, 'y': {'signal': '(datum.row + 0.7) * %d + %d' % (row_h, row_h)},
+                   'align': {'value': c.get('align', 'left')},
+                   'text': ({'signal': "format(datum.%s, ',')" % c['key']} if c.get('number') else {'field': c['key']})}
+            if c.get('limit') is not None:
+                enc['limit'] = {'signal': c['limit']} if isinstance(c['limit'], str) else {'value': c['limit']}
+            if c.get('filter'):
+                name = 'jtCell_' + re.sub(r'[^A-Za-z0-9]', '', c['key'])
+                enc.update({'fill': {'value': '#006BB4'}, 'cursor': {'value': 'pointer'},
+                            'tooltip': {'signal': "'%s' + ': ' + datum.%s" % (
+                                T('Click to filter', '點擊以篩選'), c['key'])}})
+                flt = "{'match_phrase': {%s: datum.%s}}" % (json.dumps(c['filter']), c['key'])
+                signals.append({'name': name + 'Filter', 'value': None, 'on': [{
+                    'events': '@%s:click' % name,
+                    'update': "datum.%s === '-' ? null : opensearchDashboardsAddFilter(%s, %s, %s + ': ' + datum.%s)" % (
+                        c['key'], flt, json.dumps(INDEX_PATTERN_ID), json.dumps(c['filter']), c['key'])}]})
+                mark = {'name': name}
+            else:
+                mark = {}
+                if c.get('colour'):
+                    enc['fill'] = {'signal': c['colour']}
+                if c.get('tooltip'):
+                    enc['tooltip'] = {'field': c['key']}
+            mark.update({'type': 'text', 'from': {'data': 'rows'}, 'encode': {'update': enc}})
+            marks.append(mark)
         spec = {
-            '$schema': 'https://vega.github.io/schema/vega-lite/v5.json',
-            'data': {
-                'url': {
-                    'index': INDEX_PATTERN_ID,
-                    'body': {
-                        'size': 0,
-                        'query': {'bool': {
-                            'must': ['%dashboard_context-must_clause%',
-                                     {'range': {TIME_FIELD: {'%timefilter%': True}}},
-                                     {'query_string': {'query': self.query, 'analyze_wildcard': True}}],
-                            'filter': ['%dashboard_context-filter_clause%'],
-                            'must_not': ['%dashboard_context-must_not_clause%']}},
-                        'aggs': {'r': {'terms': {'field': 'rule.id', 'size': 50}, 'aggs': {
-                            'v': {'terms': {'field': field, 'size': 5, 'missing': '-'}},
-                            'd': {'terms': {'field': 'rule.description', 'size': 1}},
-                            'l': {'max': {'field': 'rule.level'}}}}},
-                    },
-                },
-                'format': {'property': 'aggregations.r.buckets'},
-            },
-            'config': {'kibana': {'hideWarnings': True}, 'view': {'stroke': None}},
-            'width': 'container',
-            'transform': [
-                {'flatten': ['v.buckets'], 'as': ['vb']},
-                {'calculate': 'datum.key', 'as': 'rule'},
-                {'calculate': 'datum.vb.key', 'as': 'value'},
-                {'calculate': 'datum.vb.doc_count', 'as': 'alerts'},
-                {'calculate': "length(datum.d.buckets) ? datum.d.buckets[0].key : ''", 'as': 'desc'},
-                {'calculate': 'datum.l.value', 'as': 'level'},
-                {'window': [{'op': 'row_number', 'as': 'row'}],
-                 'sort': [{'field': 'alerts', 'order': 'descending'}, {'field': 'rule', 'order': 'ascending'}]},
-                {'filter': 'datum.row <= %d' % rows},
+            '$schema': 'https://vega.github.io/schema/vega/v5.json',
+            # fit: the panel's size becomes width and height (none leaves them 0)
+            'autosize': {'type': 'fit', 'contains': 'padding'},
+            'padding': {'left': 4, 'right': 4, 'top': 2, 'bottom': 2},
+            'config': {'kibana': {'hideWarnings': True}, 'text': {'fontSize': 12, 'baseline': 'middle'}},
+            'signals': signals,
+            'data': [
+                {'name': 'src', 'url': {'index': INDEX_PATTERN_ID, 'body': {
+                    'size': 0,
+                    'query': {'bool': {
+                        'must': ['%dashboard_context-must_clause%',
+                                 {'range': {TIME_FIELD: {'%timefilter%': True}}},
+                                 {'query_string': {'query': self.query, 'analyze_wildcard': True}}],
+                        'filter': ['%dashboard_context-filter_clause%'],
+                        'must_not': ['%dashboard_context-must_not_clause%']}},
+                    'aggs': aggs}},
+                 'format': {'property': prop}, 'transform': transforms},
+                {'name': 'rows', 'source': 'src', 'transform': [
+                    # the window numbers rows in its own sort order, so the sort goes here
+                    {'type': 'window', 'ops': ['row_number'], 'as': ['row0'],
+                     'sort': {'field': {'signal': 'sortField'},
+                              'order': {'signal': "sortDesc ? 'descending' : 'ascending'"}}},
+                    {'type': 'formula', 'as': 'row', 'expr': 'datum.row0 - 1'},
+                    {'type': 'filter', 'expr': 'datum.row < floor((height - %d) / %d)' % (row_h, row_h)}]},
+                # num: what the first click on this header does (numbers start high, text A-Z)
+                {'name': 'head', 'values': [{'key': c['key'], 'label': c['label'], 'x': c['x'], 'right': bool(c.get('right')),
+                                             'align': c.get('align', 'left'), 'num': bool(c.get('number') or c.get('numeric'))}
+                                            for c in columns]},
             ],
-            'encoding': {
-                'y': {'field': 'row', 'type': 'ordinal', 'axis': None},
-            },
-            # column x positions; the header row (row 0) uses the same ones
-            'layer': [
-                {'data': {'values': [{'row': 0, 'c1': T('Rule', '規則'), 'c2': T('Level', '等級'), 'c3': label,
-                                      'c4': T('Alerts', '告警'), 'c5': T('Description', '說明')}]},
-                 'transform': [], 'layer': [
-                     {'mark': {'type': 'text', 'align': align, 'x': x, 'fontWeight': 'bold', 'color': '#69707D'},
-                      'encoding': {'text': {'field': col}}}
-                     for col, x, align in (('c1', 0, 'left'), ('c2', 95, 'right'), ('c3', 115, 'left'),
-                                           ('c4', 300, 'right'), ('c5', 320, 'left'))]},
-                {'mark': {'type': 'text', 'align': 'left', 'x': 0, 'fontWeight': 'bold', 'color': '#006BB4'},
-                 'encoding': {'text': {'field': 'rule'}}},
-                {'mark': {'type': 'text', 'align': 'right', 'x': 95},
-                 'encoding': {'text': {'field': 'level'},
-                              'color': {'condition': {'test': 'datum.level >= 12', 'value': '#BD271E'},
-                                        'value': '#343741'}}},
-                {'mark': {'type': 'text', 'align': 'left', 'x': 115, 'limit': 170},
-                 'encoding': {'text': {'field': 'value'}}},
-                {'mark': {'type': 'text', 'align': 'right', 'x': 300},
-                 'encoding': {'text': {'field': 'alerts', 'format': ','}}},
-                {'mark': {'type': 'text', 'align': 'left', 'x': 320, 'limit': {'expr': 'width - 320'}, 'tooltip': True},
-                 'encoding': {'text': {'field': 'desc'}, 'tooltip': [{'field': 'desc', 'title': 'rule.description'}]}},
-            ],
+            'marks': marks,
         }
-        vid = self.vis('rules', T('Top rules', '觸發最多的規則'), {
+        vid = self.vis(part, title, {
             'aggs': [], 'type': 'vega',
             'params': {'spec': json.dumps(spec, ensure_ascii=False, indent=2, sort_keys=True)}},
             uses_index=False)
-        self.panels.append((vid, 'visualization', 32, 16))
+        self.panels.append((vid, 'visualization', w, h))
+
+    def vega_rule_table(self, field, label):
+        """The "Top rules" table with one more column, a field that exists only in data.*
+        (manifest dashboard.rules_by): rule x value rows (the value "-" when an alert lacks
+        the field). Sortable, and a click on a rule or a value filters the dashboard."""
+        aggs = {'r': {'terms': {'field': 'rule.id', 'size': 50}, 'aggs': {
+            'v': {'terms': {'field': field, 'size': 5, 'missing': '-'}},
+            'd': {'terms': {'field': 'rule.description', 'size': 1}},
+            'l': {'max': {'field': 'rule.level'}}}}}
+        transforms = [
+            {'type': 'flatten', 'fields': ['v.buckets'], 'as': ['vb']},
+            {'type': 'formula', 'as': 'rule', 'expr': 'datum.key'},
+            {'type': 'formula', 'as': 'value', 'expr': 'datum.vb.key'},
+            {'type': 'formula', 'as': 'alerts', 'expr': 'datum.vb.doc_count'},
+            {'type': 'formula', 'as': 'desc', 'expr': "length(datum.d.buckets) ? datum.d.buckets[0].key : ''"},
+            {'type': 'formula', 'as': 'level', 'expr': 'datum.l.value'},
+        ]
+        columns = [
+            {'key': 'rule', 'label': T('Rule', '規則'), 'x': 0, 'filter': 'rule.id'},
+            {'key': 'level', 'label': T('Level', '等級'), 'x': 95, 'align': 'right', 'numeric': True,
+             'colour': "datum.level >= 12 ? '#BD271E' : '#343741'"},
+            {'key': 'value', 'label': label, 'x': 115, 'limit': 170, 'filter': field},
+            {'key': 'alerts', 'label': T('Alerts', '告警'), 'x': 345, 'align': 'right', 'number': True},
+            {'key': 'desc', 'label': T('Description', '說明'), 'x': 365, 'limit': 'width - 365', 'tooltip': True},
+        ]
+        self.vega_table('rules', T('Top rules', '觸發最多的規則'), aggs, 'aggregations.r.buckets', transforms,
+                        columns, 'alerts', 32, 16)
 
     def top_terms(self, part, field, title, size=20, w=24, h=16, column=None):
         vid = self.vis(part, title, {
@@ -571,39 +619,16 @@ class Builder:
         self.panels.append((vid, 'visualization', 48, 22))
 
     def vega_terms(self, part, field, title, size=10):
-        spec = {
-            '$schema': 'https://vega.github.io/schema/vega-lite/v5.json',
-            'data': {
-                'url': {
-                    'index': INDEX_PATTERN_ID,
-                    'body': {
-                        'size': 0,
-                        'query': {'bool': {
-                            'must': ['%dashboard_context-must_clause%',
-                                     {'range': {TIME_FIELD: {'%timefilter%': True}}},
-                                     {'query_string': {'query': self.query, 'analyze_wildcard': True}}],
-                            'filter': ['%dashboard_context-filter_clause%'],
-                            'must_not': ['%dashboard_context-must_not_clause%']}},
-                        'aggs': {'top': {'terms': {'field': field, 'size': size}}},
-                    },
-                },
-                'format': {'property': 'aggregations.top.buckets'},
-            },
-            # An empty result (no such alert yet) is not a problem; without this
-            # Vega-Lite prints "Infinite extent" warnings over the empty chart.
-            # Errors are still shown.
-            'config': {'kibana': {'hideWarnings': True}, 'axisY': {'labelLimit': 260}},
-            'mark': {'type': 'bar', 'tooltip': True, 'color': '#6092C0'},
-            'encoding': {
-                'y': {'field': 'key', 'type': 'nominal', 'sort': '-x', 'title': field},
-                'x': {'field': 'doc_count', 'type': 'quantitative', 'title': T('Alerts', '告警')},
-            },
-        }
-        vid = self.vis(part, title, {
-            'aggs': [], 'type': 'vega',
-            'params': {'spec': json.dumps(spec, ensure_ascii=False, indent=2, sort_keys=True)}},
-            uses_index=False)
-        self.panels.append((vid, 'visualization', 24, 14))
+        """Top values of a field that exists only in data.*: a sortable Vega table, a click on
+        a value filters the dashboard."""
+        aggs = {'top': {'terms': {'field': field, 'size': max(size, 20)}}}
+        transforms = [{'type': 'formula', 'as': 'value', 'expr': 'datum.key'},
+                      {'type': 'formula', 'as': 'alerts', 'expr': 'datum.doc_count'}]
+        columns = [{'key': 'value', 'label': '%s (%s)' % (title, field), 'x': 0, 'limit': 'width - 90',
+                    'filter': field},
+                   {'key': 'alerts', 'label': T('Alerts', '告警'), 'x': 0, 'right': True, 'align': 'right',
+                    'number': True}]
+        self.vega_table(part, title, aggs, 'aggregations.top.buckets', transforms, columns, 'alerts', 24, 14)
 
     def search(self):
         columns = ['rule.id', 'rule.level', 'rule.description', 'agent.name']

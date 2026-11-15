@@ -4,6 +4,18 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.36.1 (2026-11-15)
+
+- **Pack dashboards: the tables for pack-specific fields sort and filter.** "Top rules" with the extra
+  column (jt-ai-agent) and every table on a field under `data.*` were Vega views that could neither sort
+  nor filter. They now sort by any column when its header is clicked (again: the other way round, an
+  arrow shows which), and a click on a rule or a value adds it as a dashboard filter. They stay Vega,
+  because a standard table on a field that no alert has carried yet shows an error instead of an empty
+  table. Verified in OpenSearch Dashboards 2.19.6.
+- jt-ai-agent dashboard: clearer field names (the account running the agent, the original user before
+  sudo, the Cursor login), and the latest-alerts table no longer shows `data.jt_ai.host` (the agent name
+  is the host; the field is still in the expanded alert).
+
 ## v1.36.0 (2026-11-15)
 
 - **jt-ai-agent 1.5: browser automation.** Claude Code and the other agents drive browsers through MCP
