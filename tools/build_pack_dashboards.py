@@ -440,7 +440,11 @@ class Builder:
         the first Vega tables could do neither). columns: dicts with key, label, x, align,
         optional right (x counts from the right edge), filter (a field), number (format with
         separators), limit (pixels or a Vega expression) and colour (a Vega expression)."""
-        row_h = 20
+        # looks like OSD's own data table (2026-11-15, owner: the first version looked cramped):
+        # EUI font and colours, 14 px text, 34 px rows with a rule under each, a bold header
+        # over a dark rule, the row under the pointer shaded
+        row_h, head_h = 34, 38
+        font = 'Inter UI, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif'
         signals = [
             # one signal holds both, so the toggle never depends on the order signals update in
             {'name': 'sortBy', 'value': {'field': default_sort, 'desc': True},
@@ -451,18 +455,29 @@ class Builder:
         ]
         marks = [
             {'name': 'jtHead', 'type': 'text', 'from': {'data': 'head'}, 'encode': {'update': {
-                'x': {'signal': 'datum.right ? width - datum.x : datum.x'}, 'y': {'value': row_h * 0.7},
+                'x': {'signal': 'datum.right ? width - datum.x : datum.x'}, 'y': {'value': head_h / 2},
                 'align': {'field': 'align'},
                 'text': {'signal': "datum.label + (datum.key === sortField ? (sortDesc ? ' \u25bc' : ' \u25b2') : '')"},
-                'fontWeight': {'value': 'bold'}, 'fill': {'value': '#69707D'}, 'cursor': {'value': 'pointer'},
+                'fontWeight': {'value': 'bold'}, 'fill': {'value': '#1A1C21'}, 'cursor': {'value': 'pointer'},
                 'tooltip': {'value': T('Click to sort', '點擊以排序')}}}},
             {'type': 'rule', 'encode': {'update': {
-                'x': {'value': 0}, 'x2': {'signal': 'width'}, 'y': {'value': row_h}, 'y2': {'value': row_h},
+                'x': {'value': 0}, 'x2': {'signal': 'width'}, 'y': {'value': head_h}, 'y2': {'value': head_h},
+                'stroke': {'value': '#343741'}, 'strokeWidth': {'value': 2}}}},
+            # a band per row: the rule under it and the shade under the pointer
+            {'type': 'rect', 'from': {'data': 'rows'}, 'encode': {
+                'update': {'x': {'value': 0}, 'x2': {'signal': 'width'},
+                           'y': {'signal': 'datum.row * %d + %d' % (row_h, head_h)}, 'height': {'value': row_h},
+                           'fill': {'value': '#FFFFFF'}, 'fillOpacity': {'value': 0}},
+                'hover': {'fill': {'value': '#F5F7FA'}, 'fillOpacity': {'value': 1}}}},
+            {'type': 'rule', 'from': {'data': 'rows'}, 'encode': {'update': {
+                'x': {'value': 0}, 'x2': {'signal': 'width'},
+                'y': {'signal': '(datum.row + 1) * %d + %d' % (row_h, head_h)},
+                'y2': {'signal': '(datum.row + 1) * %d + %d' % (row_h, head_h)},
                 'stroke': {'value': '#D3DAE6'}}}},
         ]
         for c in columns:
             x = {'signal': 'width - %d' % c['x']} if c.get('right') else {'value': c['x']}
-            enc = {'x': x, 'y': {'signal': '(datum.row + 0.7) * %d + %d' % (row_h, row_h)},
+            enc = {'x': x, 'y': {'signal': '(datum.row + 0.5) * %d + %d' % (row_h, head_h)},
                    'align': {'value': c.get('align', 'left')},
                    'text': ({'signal': "format(datum.%s, ',')" % c['key']} if c.get('number') else {'field': c['key']})}
             if c.get('limit') is not None:
@@ -490,8 +505,9 @@ class Builder:
             '$schema': 'https://vega.github.io/schema/vega/v5.json',
             # fit: the panel's size becomes width and height (none leaves them 0)
             'autosize': {'type': 'fit', 'contains': 'padding'},
-            'padding': {'left': 4, 'right': 4, 'top': 2, 'bottom': 2},
-            'config': {'kibana': {'hideWarnings': True}, 'text': {'fontSize': 12, 'baseline': 'middle'}},
+            'padding': {'left': 8, 'right': 8, 'top': 4, 'bottom': 4},
+            'config': {'kibana': {'hideWarnings': True},
+                       'text': {'fontSize': 14, 'baseline': 'middle', 'font': font, 'fill': '#343741'}},
             'signals': signals,
             'data': [
                 {'name': 'src', 'url': {'index': INDEX_PATTERN_ID, 'body': {
@@ -510,7 +526,7 @@ class Builder:
                      'sort': {'field': {'signal': 'sortField'},
                               'order': {'signal': "sortDesc ? 'descending' : 'ascending'"}}},
                     {'type': 'formula', 'as': 'row', 'expr': 'datum.row0 - 1'},
-                    {'type': 'filter', 'expr': 'datum.row < floor((height - %d) / %d)' % (row_h, row_h)}]},
+                    {'type': 'filter', 'expr': 'datum.row < floor((height - %d) / %d)' % (head_h, row_h)}]},
                 # num: what the first click on this header does (numbers start high, text A-Z)
                 {'name': 'head', 'values': [{'key': c['key'], 'label': c['label'], 'x': c['x'], 'right': bool(c.get('right')),
                                              'align': c.get('align', 'left'), 'num': bool(c.get('number') or c.get('numeric'))}
@@ -542,11 +558,11 @@ class Builder:
         ]
         columns = [
             {'key': 'rule', 'label': T('Rule', '規則'), 'x': 0, 'filter': 'rule.id'},
-            {'key': 'level', 'label': T('Level', '等級'), 'x': 95, 'align': 'right', 'numeric': True,
+            {'key': 'level', 'label': T('Level', '等級'), 'x': 135, 'align': 'right', 'numeric': True,
              'colour': "datum.level >= 12 ? '#BD271E' : '#343741'"},
-            {'key': 'value', 'label': label, 'x': 115, 'limit': 170, 'filter': field},
-            {'key': 'alerts', 'label': T('Alerts', '告警'), 'x': 345, 'align': 'right', 'number': True},
-            {'key': 'desc', 'label': T('Description', '說明'), 'x': 365, 'limit': 'width - 365', 'tooltip': True},
+            {'key': 'value', 'label': label, 'x': 160, 'limit': 170, 'filter': field},
+            {'key': 'alerts', 'label': T('Alerts', '告警'), 'x': 410, 'align': 'right', 'number': True},
+            {'key': 'desc', 'label': T('Description', '說明'), 'x': 435, 'limit': 'width - 435', 'tooltip': True},
         ]
         self.vega_table('rules', T('Top rules', '觸發最多的規則'), aggs, 'aggregations.r.buckets', transforms,
                         columns, 'alerts', 32, 16)

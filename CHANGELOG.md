@@ -4,6 +4,12 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.36.2 (2026-11-15)
+
+- Pack dashboards: the sortable Vega tables now look like the dashboard's own data tables (its font,
+  14 px text, 34 px rows with a line under each, a bold header over a dark line, the row under the
+  pointer shaded).
+
 ## v1.36.1 (2026-11-15)
 
 - **Pack dashboards: the tables for pack-specific fields sort and filter.** "Top rules" with the extra
