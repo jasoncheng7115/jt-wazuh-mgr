@@ -23,6 +23,14 @@ Findings:
   model_server  a local model server is running
   model_exposed a local model server listens on a non-loopback address; Ollama and
                 llama.cpp's server have no authentication by default
+  silent        (1.1) the host is in the group and has the hook, and the agent was
+                started within the last SILENT_HOURS (process start time), but this node
+                has had no audit line from that agent on that host since it started: the
+                hook is turned off for it (Gemini CLI's /hooks disable, which a user who
+                runs only Gemini can do unseen) or the agent was never configured. Every
+                such agent (Gemini CLI, Claude Code, Codex) writes a session-start line when
+                it starts, so one that stays silent is the signal; a long-running idle server
+                (opencode serve) or the Cursor app is not judged. Read incrementally from this node's alerts.json (rotated days included).
 
 Each finding is reported when it appears, reminded once a week while it lasts,
 and reported once more when it is gone. Processes are a snapshot (syscollector
@@ -48,12 +56,18 @@ import struct
 import sys
 import time
 
-VERSION = '1.0.1'
+VERSION = '1.1'
 PROG = 'jt-ai-agent-inventory'
 LOCATION = 'jt-ai-agent-inventory'
 GROUP = 'ai-agent'
 HOOK = '/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py'
 REMIND_DAYS = 7
+SILENT_HOURS = 24
+SILENT_GRACE = 15 * 60          # time for the session-start line to reach the manager
+# Agents whose hook writes a session-start line the moment the program starts. The Cursor app
+# and an opencode window that has not been sent a message yet are legitimately silent.
+SILENT_TOOLS = ('gemini', 'claude-code', 'codex')
+ALERTS_FIRST_READ = 512 << 20     # the first run reads at most the last 512 MB of alerts.json
 
 # tool -> (package names, case-insensitive exact; process regex on name, cmd and arguments)
 # A process whose executable matches EXCLUDE[tool] belongs to something else (Ollama runs its
@@ -163,7 +177,7 @@ def collect(wdb, agent):
     data = {'packages': [], 'processes': [], 'ports': [], 'hook': None}
     data['packages'] = wdb_query(wdb, "agent %03d sql SELECT name, version, format FROM sys_programs WHERE %s"
                                  % (aid, likes('name', PKG_LIKE)))
-    data['processes'] = wdb_query(wdb, "agent %03d sql SELECT pid, name, cmd, argvs, euser FROM sys_processes "
+    data['processes'] = wdb_query(wdb, "agent %03d sql SELECT pid, name, cmd, argvs, euser, start_time FROM sys_processes "
                                   "WHERE %s OR %s OR %s" % (aid, likes('name', PROC_LIKE), likes('cmd', PROC_LIKE),
                                                             likes('argvs', PROC_LIKE)))
     data['ports'] = wdb_query(wdb, "agent %03d sql SELECT protocol, local_ip, local_port, state, pid, process "
@@ -201,7 +215,7 @@ def match_tools(table, data):
     for tool, (pkgs, proc) in table.items():
         rx = re.compile(proc, re.I)
         skip = re.compile(EXCLUDE[tool]) if tool in EXCLUDE else None
-        ev, pids = [], set()
+        ev, pids, starts = [], set(), []
         for p in data['packages']:
             name = str(p.get('name') or '').strip()
             # Windows installs show as "Cursor (User)"; the rest are exact package names
@@ -219,8 +233,13 @@ def match_tools(table, data):
                 ev.append('process %s (pid %s, %s)' % (str(p.get('name') or '')[:30], pid, user[:32] or '?'))
                 if pid is not None:
                     pids.add(str(pid))
+                try:
+                    if not re.search(r'\bserve\b', text):  # a long-running server can sit idle
+                        starts.append(int(p.get('start_time')))
+                except (TypeError, ValueError):
+                    pass
         if ev:
-            found[tool] = {'evidence': sorted(set(ev))[:5], 'pids': pids}
+            found[tool] = {'evidence': sorted(set(ev))[:5], 'pids': pids, 'starts': starts}
     return found
 
 
@@ -242,7 +261,7 @@ def exposed_ports(data, pids, tool):
     return sorted(set(out))[:5]
 
 
-def findings(agent, data):
+def findings(agent, data, seen=None, now=None, since=None):
     out = {}
     audited = GROUP in agent['groups']
     for tool, f in match_tools(CODING_AGENTS, data).items():
@@ -251,6 +270,18 @@ def findings(agent, data):
         elif data['hook'] is False:
             out['%s:%s:hook_missing' % (agent['id'], tool)] = {'event': 'hook_missing', 'tool': tool,
                                                                'evidence': f['evidence']}
+        elif seen is not None and since is not None and tool in SILENT_TOOLS:
+            last = seen.get('%s|%s' % (agent['name'], tool), 0)
+            # started after the alerts were read without gaps, long enough ago to have
+            # logged its session start, and nothing heard from it since
+            quiet = [t for t in f['starts'] if max(since, now - SILENT_HOURS * 3600) <= t <= now - SILENT_GRACE
+                     and last < t - 60]
+            if quiet:
+                ev = [e for e in f['evidence'] if e.startswith('process ')]
+                ev.append('started %s, last audit line: %s' % (
+                    time.strftime('%Y-%m-%d %H:%M', time.localtime(max(quiet))),
+                    time.strftime('%Y-%m-%d %H:%M', time.localtime(last)) if last else 'none seen'))
+                out['%s:%s:silent' % (agent['id'], tool)] = {'event': 'silent', 'tool': tool, 'evidence': ev}
     for tool, f in match_tools(NO_HOOK, data).items():
         out['%s:%s:no_hook' % (agent['id'], tool)] = {'event': 'no_hook', 'tool': tool, 'evidence': f['evidence']}
     for tool, f in match_tools(MODEL_SERVERS, data).items():
@@ -268,6 +299,101 @@ def findings(agent, data):
 
 
 # ---------------------------------------------------------------- state and events
+
+def _alert_lines(path, start, gz=False):
+    """(offset after the line, line) for every complete line from byte start on."""
+    import gzip
+    with (gzip.open if gz else open)(path, 'rb') as fh:
+        if gz:
+            left = start
+            while left > 0:
+                chunk = fh.read(min(left, 1 << 20))
+                if not chunk:
+                    return
+                left -= len(chunk)
+        else:
+            fh.seek(start)
+        pos = start
+        for raw in fh:
+            if not raw.endswith(b'\n'):
+                return                                # still being written
+            pos += len(raw)
+            yield pos, raw
+
+
+# Wazuh writes compact JSON; spaces are allowed anyway
+AGENT_FIELD = re.compile(rb'"jt_ai"\s*:\s*\{[^\n]*?"agent"\s*:\s*"([a-z-]+)"')
+NAME_FIELD = re.compile(rb'"agent"\s*:\s*\{\s*"id"\s*:\s*"\d+"\s*,\s*"name"\s*:\s*"([^"]+)"')
+TS_FIELD = re.compile(rb'^\{\s*"timestamp"\s*:\s*"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)')
+
+
+def note_line(raw, seen):
+    """Remember when an agent's audit line from a host was last seen (any jt-ai-agent alert)."""
+    if b'"jt_ai"' not in raw:
+        return
+    a, n, t = AGENT_FIELD.search(raw), NAME_FIELD.search(raw), TS_FIELD.search(raw)
+    if not (a and n and t):
+        return
+    try:
+        ts = int(time.mktime(time.strptime(t.group(1).decode(), '%Y-%m-%dT%H:%M:%S')))
+    except ValueError:
+        return
+    key = '%s|%s' % (n.group(1).decode('utf-8', 'replace'), a.group(1).decode())
+    if ts > seen.get(key, 0):
+        seen[key] = ts
+
+
+def scan_alerts(wazuh, pos, seen, now):
+    """Read this node's alerts.json from where the last run stopped and update seen
+    {agent name|tool: epoch}. pos is {'inode', 'offset', 'day', 'since'}; since is when the
+    reading became gapless (first run, or a rotated day that could not be read, restart it).
+    Returns (new pos, since): the alerts were read without gaps from since on."""
+    path = os.path.join(wazuh, 'logs', 'alerts', 'alerts.json')
+    st = os.stat(path)
+    pos = pos or {}
+    since = pos.get('since', now)
+    if not pos:
+        offset = max(0, st.st_size - ALERTS_FIRST_READ)
+        if offset:
+            with open(path, 'rb') as fh:             # start on a whole line
+                fh.seek(offset)
+                offset += len(fh.readline())
+        since = now
+    elif pos.get('inode') != st.st_ino:
+        # rotated at midnight: finish the old day from its hard link, or from its .gz
+        finished = False
+        try:
+            day = time.strptime(pos.get('day', ''), '%Y-%m-%d')
+            base = os.path.join(wazuh, 'logs', 'alerts', time.strftime('%Y', day), time.strftime('%b', day),
+                                'ossec-alerts-%s.json' % time.strftime('%d', day))
+        except ValueError:
+            base = None
+        for cand, gz in (((base, False), (base + '.gz', True)) if base else ()):
+            try:
+                if not gz and os.stat(cand).st_ino != pos.get('inode'):
+                    continue
+                for _, raw in _alert_lines(cand, pos.get('offset', 0), gz):
+                    note_line(raw, seen)
+                finished = True
+                break
+            except OSError:
+                continue
+        if not finished:
+            since = now
+        offset = 0
+    elif pos.get('offset', 0) > st.st_size:            # truncated
+        offset, since = 0, now
+    else:
+        offset = pos.get('offset', 0)
+    end = offset
+    for end, raw in _alert_lines(path, offset):
+        note_line(raw, seen)
+    for key in [k for k, v in seen.items() if now - v > 30 * 86400]:
+        del seen[key]
+    new = {'inode': st.st_ino, 'offset': end, 'since': since,
+           'day': time.strftime('%Y-%m-%d', time.localtime(st.st_mtime))}
+    return new, since
+
 
 def load_state(path):
     try:
@@ -355,6 +481,13 @@ def main(argv=None):
             except OSError:
                 pass
         return 2
+    state = load_state(state_path)
+    seen = dict(state.get('seen') or {})
+    try:
+        alerts_pos, since = scan_alerts(wazuh, state.get('alerts'), seen, now)
+    except OSError as exc:
+        log('cannot read alerts.json: %s' % exc)
+        alerts_pos, since = state.get('alerts'), None
     found, scanned, errors = {}, set(), 0
     for agent in agents:
         try:
@@ -364,13 +497,12 @@ def main(argv=None):
             log('agent %s: %s' % (agent['id'], exc))
             continue
         scanned.add(agent['id'])
-        found.update(findings(agent, data))
+        found.update(findings(agent, data, seen, now, since))
     if args.list:
         for key, f in sorted(found.items()):
             print('%s %-22s %-13s %-12s %s %s' % (f['agent_id'], f['agent_name'][:22], f['event'], f['tool'],
                                                  '; '.join(f['evidence']), ', '.join(f.get('listen', []))))
         return 0
-    state = load_state(state_path)
     events, new_state = evaluate(found, state.get('findings') or {}, scanned, now)
     if agents and not scanned:
         events.append({'event': 'status', 'state': 'wdb_error', 'detail': 'no agent inventory could be read'})
@@ -381,7 +513,8 @@ def main(argv=None):
             log('cannot write to the analysisd queue: %s' % exc)
             return 2
     if not args.dry_run:
-        save_state(state_path, {'version': VERSION, 'findings': new_state, 'run': now})
+        save_state(state_path, {'version': VERSION, 'findings': new_state, 'run': now, 'seen': seen,
+                                'alerts': alerts_pos})
     log('%d agents, %d scanned, %d findings, %d events, %d errors'
         % (len(agents), len(scanned), len(found), len(events), errors))
     return 0

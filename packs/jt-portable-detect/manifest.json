@@ -2,7 +2,7 @@
   "id": "jt-portable-detect",
   "name": "Portable Executable Detection",
   "name_zh": "可攜式程式偵測",
-  "version": "3.6",
+  "version": "3.6.1",
   "summary": "Detects portable/no-install executables being dropped and run on Windows, Linux and macOS.",
   "summary_zh": "偵測免安裝執行檔在 Windows、Linux、macOS 上的落地與執行。",
   "rule_id_range": "906100-906299",
@@ -29,7 +29,8 @@
     "3.5 去除的雜訊，每一項都綁在作業系統或工具自己產生的形狀上：containerd 的暫時映像掛載 /tmp/containerd-mount<數字>（906239，群組的檔案監控也一併忽略；一台 Docker 主機一天 202 筆 level 10）、Windows Update 暫存 Defender 特徵碼增量包與 Windows Installer 快取 MSI（內建 92217 底下的 906136、906137；10 天約 60 筆 level 6）。Linux 上 906213 把動態載入器也當成直譯器：/lib64/ld-linux-x86-64.so.2 /tmp/tool 能執行沒有執行權限的檔案。",
     "906130-906135 讀取定期盤點腳本產出的 NDJSON（使用者資料夾內執行檔的簽章狀態）。套件不附這支腳本；沒有站台自己的盤點腳本時，這幾條規則不會觸發。",
     "3.5.1：906235（瀏覽器自動化執行環境與自我更新 CLI 在自己版本目錄中執行，level 3）改從 audit 原始記錄讀 exe=\"...\"，不再用 audit.exe。4.14 之前的 auditd 解碼器會在第一個點把 audit.exe 截斷（/root/），這條規則從不成立，這些程式停在 906210（level 10）。exe 由核心寫入；含引號的參數會被 auditd 轉成十六進位，無法偽造這段文字。",
-    "3.6：規則 906214（/tmp、/var/tmp、/dev/shm 中具執行權限的 sh、py、pl、elf、bin，L12，是 906202 與 906203 的子規則，所以那兩條的排除都適用）與 906215（同位置的 jsp、jspx、class、jar、war，L12），原本是 jt-zimbra 的 100809 與 100807，對所有 agent 生效。只裝本套件時，/tmp 中可執行的腳本從 906202 的 L10 變成 L12。"
+    "3.6：規則 906214（/tmp、/var/tmp、/dev/shm 中具執行權限的 sh、py、pl、elf、bin，L12，是 906202 與 906203 的子規則，所以那兩條的排除都適用）與 906215（同位置的 jsp、jspx、class、jar、war，L12），原本是 jt-zimbra 的 100809 與 100807，對所有 agent 生效。只裝本套件時，/tmp 中可執行的腳本從 906202 的 L10 變成 L12。",
+    "3.6.1：只改規則檔中文註解的用語，規則沒有變動。"
   ],
   "author": "Jason Tools",
   "license": "AGPL-3.0-or-later",
@@ -41,7 +42,7 @@
       "type": "rule",
       "name": "zz-906100-jt_portable_rules.xml",
       "dest": "etc/rules/zz-906100-jt_portable_rules.xml",
-      "sha256": "b15a152c69cfa6f4bc27b671704bcbc67ec10c0a60b0c097c672f6fe46ad0be7"
+      "sha256": "25afa611fbb5db3e88057e0299daedab5d9efcdf47d1941c7b2e6d01818257cf"
     },
     {
       "type": "rule",
@@ -89,7 +90,8 @@
     "Noise removed in 3.5, each tied to a shape the operating system or tool generates: containerd's temporary image mounts /tmp/containerd-mount<digits> (906239, and ignored by the group's file monitoring; 202 level 10 alerts in one day on one Docker host), Windows Update staging Defender signature deltas and Windows Installer caching an MSI under rule 92217 (906136, 906137; about 60 level 6 alerts in ten days). On Linux the dynamic loader counts as an interpreter for 906213: /lib64/ld-linux-x86-64.so.2 /tmp/tool runs a file without its execute bit.",
     "Rules 906130-906135 read the NDJSON of a periodic inventory script (signature status of executables in user folders). The pack does not ship that script; without one of your own these rules stay silent.",
     "3.5.1: 906235 (browser automation runtimes and self-updating CLIs in their own versioned directory, level 3) reads exe=\"...\" from the raw audit record instead of audit.exe. Before 4.14 the auditd decoder cut audit.exe at the first dot (/root/), so the rule never applied and those programs stayed at 906210 (level 10). The kernel writes exe; an argument containing a quote is hex-encoded by auditd, so it cannot fake the text.",
-    "3.6: rules 906214 (an executable sh, py, pl, elf or bin file in /tmp, /var/tmp or /dev/shm, L12, a child of 906202 and 906203 so their exclusions apply) and 906215 (jsp, jspx, class, jar or war there, L12), until now 100809 and 100807 in jt-zimbra, which applied them to every agent. With this pack alone, an executable script in /tmp now reports at L12 instead of 906202's L10."
+    "3.6: rules 906214 (an executable sh, py, pl, elf or bin file in /tmp, /var/tmp or /dev/shm, L12, a child of 906202 and 906203 so their exclusions apply) and 906215 (jsp, jspx, class, jar or war there, L12), until now 100809 and 100807 in jt-zimbra, which applied them to every agent. With this pack alone, an executable script in /tmp now reports at L12 instead of 906202's L10.",
+    "3.6.1: wording in the rule file's Chinese comments only; no rule changed."
   ],
   "agent_group": {
     "name": "portable-detect",

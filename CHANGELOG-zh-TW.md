@@ -4,6 +4,14 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.37.2（2026-11-16）
+
+- jt-ai-agent 1.5.3（盤點腳本 1.1）：只用 Gemini CLI 又把 hook 關掉的人原本抓不到，因為 hook 的檢查要等受稽核的工作階段
+  開始才會執行。盤點腳本現在從 manager 節點的告警記住每台主機上每種代理最後一次出現的時間；主機在群組裡、hook 也在，
+  Gemini CLI、Claude Code 或 Codex 的程序在 24 小時內啟動，啟動後卻一行記錄都沒有，就是規則 133776（L7）。常駐但閒置的
+  服務（opencode serve）與 Cursor 程式不列入判斷。部署說明的 Gemini 步驟不再寫成系統設定會蓋過一切。
+- 規則檔中文註解的用語（jt-portable-detect 3.6.1、jt-zimbra 3.8.1，規則沒有變動）；用語測試改為讀套件內所有文字檔，註解也算。
+
 ## v1.37.1（2026-11-16）
 
 - jt-ai-agent 1.5.3：Gemini CLI 會把使用者與專案設定裡的 `hooksConfig.disabled` 併入系統設定的清單，使用者可以用

@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -658,6 +659,101 @@ class TestGeminiHookOff153(unittest.TestCase):
         r = hook.record({'hook_event_name': 'PreToolUse', 'tool_name': 'Bash', 'tool_input': {'command': 'ls'},
                          'cwd': self.proj})
         self.assertNotIn('gemini_hook_off', r)
+
+
+class TestInventorySilent153(unittest.TestCase):
+    """1.5.3: an audited agent that is running but sends nothing (hook turned off)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.tmp, 'logs', 'alerts'))
+        self.path = os.path.join(self.tmp, 'logs', 'alerts', 'alerts.json')
+        open(self.path, 'w').close()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def alert(self, when, host, agent):
+        ts = time.strftime('%Y-%m-%dT%H:%M:%S.000+0800', time.localtime(when))
+        return json.dumps({'timestamp': ts, 'rule': {'id': '133702'}, 'agent': {'id': '012', 'name': host},
+                           'data': {'jt_ai': {'v': '1', 'host': host, 'agent': agent}},
+                           'full_log': 'jt-ai-agent: {"jt_ai":{"agent":"%s"}}' % agent}) + '\n'
+
+    def write(self, *lines):
+        with open(self.path, 'a') as fh:
+            fh.writelines(lines)
+
+    def running(self, start, tool_proc='gemini'):
+        return {'packages': [], 'ports': [], 'hook': True,
+                'processes': [{'pid': 7, 'name': 'node', 'cmd': '/usr/bin/node', 'argvs': '/usr/bin/%s' % tool_proc,
+                               'euser': 'dev', 'start_time': start}]}
+
+    def agent(self):
+        return {'id': '012', 'name': 'build7', 'ip': 'any', 'groups': ['default', 'ai-agent']}
+
+    def test_incremental_reading_and_partial_lines(self):
+        now = int(time.time())
+        self.write(self.alert(now - 100, 'build7', 'gemini'), '{"timestamp":"2026-11-16T10:00:00", "partial')
+        seen = {}
+        pos, since = inv.scan_alerts(self.tmp, None, seen, now)
+        self.assertEqual(since, now)                       # the first run vouches only from now on
+        self.assertEqual(list(seen), ['build7|gemini'])
+        self.assertLess(pos['offset'], os.path.getsize(self.path))   # stops before the partial line
+        self.write(' line"}\n', self.alert(now - 50, 'build7', 'claude-code'))
+        pos, _ = inv.scan_alerts(self.tmp, pos, seen, now)
+        self.assertEqual(sorted(seen), ['build7|claude-code', 'build7|gemini'])
+        self.assertEqual(pos['offset'], os.path.getsize(self.path))
+
+    def test_silent_when_started_and_never_heard_from(self):
+        now = int(time.time())
+        a, since = self.agent(), now - 48 * 3600
+        d = self.running(now - 3600)
+        f = inv.findings(a, d, {}, now, since)
+        self.assertEqual([(v['event'], v['tool']) for v in f.values()], [('silent', 'gemini')])
+        self.assertIn('none seen', ' '.join(f['012:gemini:silent']['evidence']))
+        # heard from after it started: fine
+        self.assertEqual(inv.findings(a, d, {'build7|gemini': now - 3000}, now, since), {})
+        # heard from only before it started: silent
+        self.assertIn('012:gemini:silent', inv.findings(a, d, {'build7|gemini': now - 7200}, now, since))
+        # started a minute ago: give the session-start line time to arrive
+        self.assertEqual(inv.findings(a, self.running(now - 60), {}, now, since), {})
+        # started before the alerts were read without gaps, or more than a day ago: not judged
+        self.assertEqual(inv.findings(a, d, {}, now, now - 1800), {})
+        self.assertEqual(inv.findings(a, self.running(now - 30 * 3600), {}, now, since), {})
+        # a long-running server (opencode serve) sits idle legitimately
+        srv = self.running(now - 3600, 'opencode serve --port 4096')
+        self.assertEqual(inv.findings(a, srv, {}, now, since), {})
+        # agents that only log once they are used (the Cursor app) are not judged
+        self.assertEqual(inv.findings(a, self.running(now - 3600, 'cursor'), {}, now, since), {})
+        # an installed package alone (no process) is not "started"
+        pkg = {'packages': [{'name': '@google/gemini-cli', 'version': '1', 'format': 'npm'}], 'processes': [],
+               'ports': [], 'hook': True}
+        self.assertEqual(inv.findings(a, pkg, {}, now, since), {})
+        # no alerts reading: nothing judged
+        self.assertEqual(inv.findings(a, d, {}, now, None), {})
+
+    def test_rotation_reads_the_rest_of_the_old_day(self):
+        now = int(time.time())
+        self.write(self.alert(now - 300, 'build7', 'codex'))
+        seen = {}
+        pos, _ = inv.scan_alerts(self.tmp, None, seen, now)
+        pos['since'] = now - 30 * 3600
+        self.write(self.alert(now - 200, 'build7', 'gemini'))      # after the last read, before midnight
+        day = time.strptime(pos['day'], '%Y-%m-%d')
+        d = os.path.join(self.tmp, 'logs', 'alerts', time.strftime('%Y', day), time.strftime('%b', day))
+        os.makedirs(d)
+        os.link(self.path, os.path.join(d, 'ossec-alerts-%s.json' % time.strftime('%d', day)))
+        os.unlink(self.path)
+        with open(self.path, 'w') as fh:
+            fh.write(self.alert(now - 10, 'build7', 'opencode'))
+        pos2, since = inv.scan_alerts(self.tmp, pos, seen, now)
+        self.assertEqual(since, now - 30 * 3600)
+        self.assertEqual(sorted(seen), ['build7|codex', 'build7|gemini', 'build7|opencode'])
+        # the old day gone: not covered any more
+        shutil.rmtree(os.path.join(self.tmp, 'logs', 'alerts', time.strftime('%Y', day)))
+        pos2['inode'] = -1
+        _, since = inv.scan_alerts(self.tmp, pos2, seen, now)
+        self.assertEqual(since, now)
 
 
 if __name__ == '__main__':

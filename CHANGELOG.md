@@ -4,6 +4,17 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.37.2 (2026-11-16)
+
+- jt-ai-agent 1.5.3 (inventory 1.1): a person who uses only Gemini CLI and turns its hook off was not
+  noticed, since the hook check runs when an audited session starts. The inventory now remembers, from the
+  manager node's alerts, when each agent was last heard from on each host; a Gemini CLI, Claude Code or Codex
+  process started in the last 24 hours on a host in the group, with the hook installed, that has sent nothing
+  since it started is rule 133776 (level 7). Long-running idle servers (opencode serve) and the Cursor app are
+  not judged. The setup guide's Gemini step no longer says that system settings override everything.
+- Traditional Chinese wording in rule-file comments (jt-portable-detect 3.6.1, jt-zimbra 3.8.1, no rule
+  changed); the wording test now reads every text file in the packs, comments included.
+
 ## v1.37.1 (2026-11-16)
 
 - jt-ai-agent 1.5.3: Gemini CLI merges `hooksConfig.disabled` from the user's and the project's settings into

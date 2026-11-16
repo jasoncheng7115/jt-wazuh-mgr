@@ -2,7 +2,7 @@
   "id": "jt-zimbra",
   "name": "Zimbra Detection Suite",
   "name_zh": "Zimbra 偵測套組",
-  "version": "3.8",
+  "version": "3.8.1",
   "summary": "FIM, web, authentication, account-takeover, administrative-change, SOAP, MTA and host-noise rules for Zimbra mail servers, with the decoders they need.",
   "summary_zh": "針對 Zimbra 郵件伺服器的檔案完整性、Web、認證、帳號接管、管理變更、SOAP、MTA 與主機雜訊規則，並附上所需的解碼器。",
   "rule_id_range": [
@@ -73,7 +73,8 @@
     "3.4: a site rule that names 100936-100942 in if_sid, if_matched_sid or overwrite no longer loads (analysisd warns that the signature was not found and drops it). jt-linux-integrity already keeps dpkg-new and other transient names, .wants links and snap units quiet, so such a site rule can often simply be deleted.",
     "zimbra_additional_logging adds only the \"account not found\" line in 10.1.20. That line prints the typed name as it was sent (String.format, not Zimbra's escaping), so a client may be able to put a line break in it and start a line of its own in audit.log. This was not tested on a live server; until it is, the block-zimbra-bruteforce active response should stay off on servers with the setting.",
     "The agent-side filter for the SMTP AUTH tokens is an <ignore> on the /var/log/zimbra.log localfile and needs agent 4.6 or later; it matches lines such as \"zmpost: url=... returned buffer->data=...<authToken>...\". Zimbra's rsyslog file sends auth.* to /var/log/zimbra.log; with auth.info the debug lines are not written at all. Zimbra may rewrite that file on upgrade.",
-    "3.7: unusual outgoing mail (133360-133368). Every message amavis marks {RelayedOutbound} from a local origin (ORIGINATING) is recorded at level 3 with sender, first recipient and size. One account sending 20 outgoing messages within 10 minutes is level 10, a second burst within 10 minutes level 12; one message to 20 or more recipients level 8, 50 or more level 10; a message of 10 MB or more level 5, three from one account within 10 minutes level 10 (data carried out by mail). On the host that hands mail to the internet (Zimbra itself or a Postfix gateway in front of it), 20 outgoing messages bounced by outside servers within 10 minutes is level 10, typical of spam sent to a harvested list. The thresholds suit an organisation sending tens of outside messages a day; raise them with overwrite=\"yes\" copies. The amavis decoder now also reads the after-queue origin ORIGINATING_POST (written by Zimbra 10 for mail submitted through the after-queue content filter); before 3.7 such lines had no action, flow or origin, so 100946/100948 did not see blocked outgoing viruses and spam in them, and 100945 would have reported a local infected message as inbound (level 7 instead of 12)."
+    "3.7: unusual outgoing mail (133360-133368). Every message amavis marks {RelayedOutbound} from a local origin (ORIGINATING) is recorded at level 3 with sender, first recipient and size. One account sending 20 outgoing messages within 10 minutes is level 10, a second burst within 10 minutes level 12; one message to 20 or more recipients level 8, 50 or more level 10; a message of 10 MB or more level 5, three from one account within 10 minutes level 10 (data carried out by mail). On the host that hands mail to the internet (Zimbra itself or a Postfix gateway in front of it), 20 outgoing messages bounced by outside servers within 10 minutes is level 10, typical of spam sent to a harvested list. The thresholds suit an organisation sending tens of outside messages a day; raise them with overwrite=\"yes\" copies. The amavis decoder now also reads the after-queue origin ORIGINATING_POST (written by Zimbra 10 for mail submitted through the after-queue content filter); before 3.7 such lines had no action, flow or origin, so 100946/100948 did not see blocked outgoing viruses and spam in them, and 100945 would have reported a local infected message as inbound (level 7 instead of 12).",
+    "3.8.1: wording in a rule file's Chinese comment only; no rule changed."
   ],
   "notes_zh": [
     "zimbra-webfiles 是原廠檔案基線。隨附的版本產生自 Zimbra 10.1.20（FOSS 與 NETWORK 版聯集），是起點而非自行產生的替代品。",
@@ -130,7 +131,8 @@
     "3.4：在 if_sid、if_matched_sid 或 overwrite 中指名 100936-100942 的站台規則將不再載入（analysisd 會警告找不到該規則並略過它）。jt-linux-integrity 已經讓 dpkg-new 等暫存檔名、.wants 連結與 snap 單元保持安靜，所以這類站台規則常常可以直接刪除。",
     "zimbra_additional_logging 在 10.1.20 只會多寫「account not found」這一行。那一行會把輸入的名稱原樣印出（String.format，沒有經過 Zimbra 的跳脫），用戶端可能可以在名稱裡放換行，在 audit.log 寫出自己的一行。尚未在實機上驗證；在驗證之前，開著這個設定的伺服器不應啟用 block-zimbra-bruteforce 主動回應。",
     "agent 端過濾 SMTP AUTH 權杖的方式，是 /var/log/zimbra.log 這個 localfile 上的 <ignore>，需要 4.6 以後的 agent；它比對的是「zmpost: url=... returned buffer->data=...<authToken>...」這類記錄。Zimbra 的 rsyslog 設定把 auth.* 寫進 /var/log/zimbra.log；改成 auth.info 後，這些 debug 記錄根本不會寫出。Zimbra 升級時可能改寫這個檔。",
-    "3.7：異常的對外寄信（133360-133368）。amavis 標成 {RelayedOutbound}、而且來自本地（ORIGINATING）的每一封信，都以 level 3 記錄寄件人、第一個收件人與大小。同一帳號 10 分鐘內寄出 20 封外寄信為 level 10，10 分鐘內再一輪為 level 12；一封信 20 個以上收件人為 level 8，50 個以上為 level 10；10 MB 以上的外寄信為 level 5，同一帳號 10 分鐘內三封為 level 10（以郵件帶出資料）。負責把信送上網際網路的主機（Zimbra 本身或前面的 Postfix 閘道）10 分鐘內被外部伺服器退回 20 封為 level 10，這是寄給蒐集來的名單的垃圾信常見的樣子。門檻適合每天寄出數十封外寄信的單位；要調高請用 overwrite=\"yes\" 的副本。 amavis 解碼器現在也認得 after-queue 的來源標記 ORIGINATING_POST（Zimbra 10 對經過 after-queue 內容過濾的信會這樣寫）；3.7 以前這種行解不出動作、流向與來源，所以 100946／100948 看不到其中被攔下的外寄病毒與垃圾信，100945 還會把本地送出的中毒信當成外來信（level 7 而不是 12）。"
+    "3.7：異常的對外寄信（133360-133368）。amavis 標成 {RelayedOutbound}、而且來自本地（ORIGINATING）的每一封信，都以 level 3 記錄寄件人、第一個收件人與大小。同一帳號 10 分鐘內寄出 20 封外寄信為 level 10，10 分鐘內再一輪為 level 12；一封信 20 個以上收件人為 level 8，50 個以上為 level 10；10 MB 以上的外寄信為 level 5，同一帳號 10 分鐘內三封為 level 10（以郵件帶出資料）。負責把信送上網際網路的主機（Zimbra 本身或前面的 Postfix 閘道）10 分鐘內被外部伺服器退回 20 封為 level 10，這是寄給蒐集來的名單的垃圾信常見的樣子。門檻適合每天寄出數十封外寄信的單位；要調高請用 overwrite=\"yes\" 的副本。 amavis 解碼器現在也認得 after-queue 的來源標記 ORIGINATING_POST（Zimbra 10 對經過 after-queue 內容過濾的信會這樣寫）；3.7 以前這種行解不出動作、流向與來源，所以 100946／100948 看不到其中被攔下的外寄病毒與垃圾信，100945 還會把本地送出的中毒信當成外來信（level 7 而不是 12）。",
+    "3.8.1：只改規則檔中文註解的用語，規則沒有變動。"
   ],
   "files": [
     {
@@ -179,7 +181,7 @@
       "type": "rule",
       "name": "05-zimbra_state_rules.xml",
       "dest": "etc/rules/05-zimbra_state_rules.xml",
-      "sha256": "fc6ccd17d344b8bb8bdfedd35439c9da38cf7d337c3b238cb6a8d3acf35bc828"
+      "sha256": "8ff2b227ae486817103a9c6c3aa3c13f559dd9a53b984e69eb2896eeb5c224cd"
     },
     {
       "type": "rule",

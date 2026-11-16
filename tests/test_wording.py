@@ -1,4 +1,5 @@
-"""Taiwan wording in the Traditional Chinese text we ship (owner: 點擊 2026-11-15, 前綴 2026-11-16).
+"""Taiwan wording in the Traditional Chinese text we ship (owner: 點擊 2026-11-15, 前綴 2026-11-16):
+the packs (every text file, comments included), the interface dictionary and the zh-TW documents.
 
 用戶端 (client) is the Taiwan term and stays; 用戶 on its own (user) is mainland usage.
 A line that quotes a replaced term on purpose says 中國用語 and is skipped.
@@ -18,8 +19,14 @@ TERMS = {
 PATTERN = re.compile('|'.join(TERMS))
 
 
+TEXT = ('.json', '.ndjson', '.xml', '.conf', '.py', '.sh', '.ps1', '.js', '.yml', '.yaml', '.toml', '.md', '.txt')
+
+
 def shipped_files():
-    files = glob.glob(os.path.join(ROOT, 'packs', '*', 'manifest.json'))
+    # every text file in the packs, comments included (2026-11-16: three 前綴 hid in rule comments)
+    files = [f for base in ('packs', 'packs5-base')
+             for f in glob.glob(os.path.join(ROOT, base, '**', '*'), recursive=True)
+             if f.endswith(TEXT) and os.path.isfile(f)]
     files.append(os.path.join(ROOT, 'lib', 'i18n_engine.js'))
     for base in (ROOT, os.path.join(ROOT, 'github')):
         files += glob.glob(os.path.join(base, '*-zh-TW.md'))
