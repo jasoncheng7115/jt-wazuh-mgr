@@ -8,10 +8,12 @@ change a call, and it must not write secrets into a log that goes to Wazuh.
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HOOK = os.path.join(ROOT, 'packs', 'jt-ai-agent', 'agent', 'jt-ai-agent-hook.py')
@@ -541,6 +543,64 @@ class TestBrowser15(unittest.TestCase):
         r = self.rec('mcp__claude-in-chrome__javascript_tool', {'action': 'javascript_exec', 'text': 'S3cretCode()'})
         self.assertEqual(r['js_len'], 12)
         self.assertNotIn('browser_action', self.rec('mcp__docs__search', {'query': 'x'}))
+
+
+class TestOpencodeMcp152(unittest.TestCase):
+    """1.5.2: opencode names an MCP tool <server>_<tool>; the server names come from its config."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.env = mock.patch.dict(os.environ, {'HOME': self.tmp}, clear=False)
+        self.env.start()
+        os.environ.pop('XDG_CONFIG_HOME', None)
+        os.environ.pop('OPENCODE_CONFIG', None)
+        conf = os.path.join(self.tmp, '.config', 'opencode')
+        os.makedirs(conf)
+        with open(os.path.join(conf, 'opencode.jsonc'), 'w') as fh:
+            fh.write('{\n // servers\n "mcp": {"pve": {"url": "http://10.0.0.1//sse"}, "jt-ipam": {},'
+                     ' "zimbra_mail1": {}, "zimbra": {},},\n}')
+        self.pw = mock.patch.object(hook.pwd, 'getpwuid', side_effect=KeyError)
+        self.pw.start()
+
+    def tearDown(self):
+        self.pw.stop()
+        self.env.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def rec(self, tool, ti=None, cwd='/nonexistent/project'):
+        return hook.record({'hook_event_name': 'PreToolUse', 'tool_name': tool, 'tool_input': ti or {'a': 1},
+                            'cwd': cwd}, 'opencode')
+
+    def test_server_prefix(self):
+        r = self.rec('pve_get_cluster_nodes')
+        self.assertEqual((r['tool'], r['mcp_server'], r['mcp_tool'], r['tool_raw']),
+                         ('mcp__pve__get_cluster_nodes', 'pve', 'get_cluster_nodes', 'pve_get_cluster_nodes'))
+        self.assertEqual(self.rec('jt-ipam_search')['mcp_server'], 'jt-ipam')
+        # the longest server name wins over a shorter one that also prefixes the tool
+        self.assertEqual(self.rec('zimbra_mail1_send')['mcp_server'], 'zimbra_mail1')
+        self.assertEqual(self.rec('zimbra_quota')['mcp_server'], 'zimbra')
+
+    def test_builtin_and_unknown_tools_unchanged(self):
+        self.assertEqual(self.rec('bash', {'command': 'ls'})['tool'], 'Bash')
+        r = self.rec('other_tool')
+        self.assertEqual(r['tool'], 'other_tool')
+        self.assertNotIn('mcp_server', r)
+        self.assertNotIn('mcp_server', self.rec('pve'))
+
+    def test_project_config_and_other_agents(self):
+        proj = os.path.join(self.tmp, 'work', 'sub')
+        os.makedirs(proj)
+        with open(os.path.join(self.tmp, 'work', 'opencode.json'), 'w') as fh:
+            json.dump({'mcp': {'docs': {}}}, fh)
+        self.assertEqual(self.rec('docs_search', cwd=proj)['mcp_server'], 'docs')
+        r = hook.record({'hook_event_name': 'PreToolUse', 'tool_name': 'pve_get_cluster_nodes',
+                         'tool_input': {'a': 1}}, 'claude-code')
+        self.assertNotIn('mcp_server', r)
+
+    def test_code_mode_records_length_only(self):
+        r = self.rec('execute', {'code': 'await pve.secret_S3cret()'})
+        self.assertEqual((r['tool'], r['tool_raw'], r['js_len']), ('CodeMode', 'execute', 25))
+        self.assertNotIn('S3cret', json.dumps(r))
 
 
 if __name__ == '__main__':

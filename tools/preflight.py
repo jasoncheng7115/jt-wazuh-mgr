@@ -802,6 +802,34 @@ def _version_tuple(v):
 REPO_FIRST_RELEASE = (1, 4, 0)
 
 
+def check_sbom(version):
+    """Every release ships an SBOM (owner, 2026-11-16: "every version must produce an SBOM"):
+    sbom.cdx.json in the tree and in github/, for this version, and not stale."""
+    import importlib.util
+    path = os.path.join(ROOT, 'tools', 'make_sbom.py')
+    if not os.path.exists(path):
+        fail('sbom', 'tools/make_sbom.py is missing')
+        return
+    spec = importlib.util.spec_from_file_location('make_sbom', path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    for rel in ('sbom.cdx.json', 'github/sbom.cdx.json'):
+        full = os.path.join(ROOT, rel)
+        if not os.path.exists(full):
+            fail('sbom', '%s is missing: run tools/make_sbom.py' % rel)
+            continue
+        try:
+            bom = json.loads(read(full))
+        except ValueError as e:
+            fail('sbom', '%s is not JSON: %s' % (rel, e))
+            continue
+        if (bom.get('metadata') or {}).get('component', {}).get('version') != version:
+            fail('sbom', '%s is for another version: run tools/make_sbom.py' % rel)
+    if os.path.isdir(os.path.join(ROOT, 'offline_packages')):
+        if read(os.path.join(ROOT, 'sbom.cdx.json')) != mod.render():
+            fail('sbom', 'sbom.cdx.json is stale: run tools/make_sbom.py')
+
+
 def check_release_tags(version):
     """Every shipped release should be reachable by tag.
 
@@ -868,6 +896,7 @@ def main():
             ('icon set present and referenced', check_icons),
             ('AGPL source offer in the interface', check_agpl_source_offer),
             ('documented counts match reality', check_documented_counts),
+            ('SBOM for this version (sbom.cdx.json)', lambda: check_sbom(version)),
             ('every released version is tagged', lambda: check_release_tags(version)),
             ('translations link to each other', check_translations_link_each_other),
             ('patterns duplicated across packs agree', check_shared_patterns),

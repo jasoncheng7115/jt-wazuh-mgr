@@ -122,7 +122,10 @@ OPENCODE_TOOLS = {'bash': 'Bash', 'shell': 'Bash', 'read': 'Read', 'write': 'Wri
                   'multiedit': 'MultiEdit', 'patch': 'Edit', 'apply_patch': 'Edit', 'webfetch': 'WebFetch',
                   'websearch': 'WebSearch', 'task': 'Task', 'glob': 'Glob', 'grep': 'Grep', 'list': 'LS',
                   'ls': 'LS', 'todowrite': 'TodoWrite', 'todoread': 'TodoRead', 'skill': 'Skill',
-                  'subagent': 'Task'}
+                  'subagent': 'Task',
+                  # 2.x Code Mode: JavaScript that calls the MCP tools and makes HTTP requests; each
+                  # tool it calls comes through the plugin again as <server>_<tool> (1.5.2)
+                  'execute': 'CodeMode'}
 CODEX_TOOLS = {'shell': 'Bash', 'exec_command': 'Bash', 'local_shell': 'Bash', 'spawn_agent': 'Task'}
 GEMINI_TOOLS = {'run_shell_command': 'Bash', 'read_file': 'Read', 'read_many_files': 'Read',
                 'write_file': 'Write', 'replace': 'Edit', 'glob': 'Glob', 'grep_search': 'Grep',
@@ -400,6 +403,101 @@ def mcp_name(server, tool):
     return 'mcp__%s__%s' % (server or 'unknown', tool)
 
 
+def strip_jsonc(text):
+    """JSON with comments and trailing commas (opencode.jsonc) -> JSON. Strings are copied as
+    they are, so an address such as http://x in a value is not taken for a comment."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == '\\' else 1
+            out.append(text[i:j + 1])
+            i = j + 1
+        elif text.startswith('//', i):
+            j = text.find('\n', i)
+            i = n if j < 0 else j
+        elif text.startswith('/*', i):
+            j = text.find('*/', i + 2)
+            i = n if j < 0 else j + 2
+        elif ch == ',':
+            j = i + 1
+            while j < n and text[j] in ' \t\r\n':
+                j += 1
+            if j < n and text[j] in '}]':
+                i += 1
+            else:
+                out.append(ch)
+                i += 1
+        else:
+            out.append(ch)
+            i += 1
+    return ''.join(out)
+
+
+def opencode_config_files(cwd):
+    """Where opencode reads its configuration: the managed directory, the user's, the file named
+    by OPENCODE_CONFIG and the project's (from the working directory up)."""
+    names = ('opencode.json', 'opencode.jsonc', 'config.json')
+    dirs = ['/etc/opencode', '/Library/Application Support/opencode']
+    homes = []
+    for h in (os.environ.get('HOME'), ):
+        if h:
+            homes.append(h)
+    try:
+        homes.append(pwd.getpwuid(os.geteuid()).pw_dir)
+    except (KeyError, OSError):
+        pass
+    xdg = os.environ.get('XDG_CONFIG_HOME')
+    if xdg:
+        dirs.append(os.path.join(xdg, 'opencode'))
+    dirs += [os.path.join(h, '.config', 'opencode') for h in homes]
+    files = [os.path.join(d, n) for d in dirs for n in names]
+    if os.environ.get('OPENCODE_CONFIG'):
+        files.append(os.environ['OPENCODE_CONFIG'])
+    d = cwd if isinstance(cwd, str) and cwd.startswith('/') else None
+    for _ in range(30):
+        if not d:
+            break
+        files += [os.path.join(d, 'opencode.json'), os.path.join(d, 'opencode.jsonc'),
+                  os.path.join(d, '.opencode', 'opencode.json'), os.path.join(d, '.opencode', 'opencode.jsonc')]
+        parent = os.path.dirname(d)
+        d = None if parent == d else parent
+    seen, out = set(), []
+    for f in files:
+        if f not in seen:
+            seen.add(f)
+            out.append(f)
+    return out
+
+
+def opencode_mcp(tool, cwd):
+    """opencode names an MCP tool <server>_<tool> (both with characters other than letters, digits,
+    _ and - replaced by _), not mcp__<server>__<tool> (1.5.2: dev3's calls were not seen as MCP).
+    The server names come from the mcp section of opencode's configuration files; the longest
+    one that prefixes the tool wins. Returns (server, tool) or None."""
+    servers = set()
+    for f in opencode_config_files(cwd):
+        try:
+            if os.path.getsize(f) > 1 << 20:
+                continue
+            with open(f, encoding='utf-8', errors='replace') as fh:
+                conf = json.loads(strip_jsonc(fh.read()))
+        except (OSError, ValueError):
+            continue
+        mcp = conf.get('mcp') if isinstance(conf, dict) else None
+        if isinstance(mcp, dict):
+            servers.update(k for k in mcp if isinstance(k, str) and k)
+    best = None
+    for name in servers:
+        clean = re.sub(r'[^A-Za-z0-9_-]', '_', name)
+        if tool.startswith(clean + '_') and len(tool) > len(clean) + 1:
+            if best is None or len(clean) > len(best[2]):
+                best = (name, tool[len(clean) + 1:], clean)
+    return best[:2] if best else None
+
+
 def normalise(event, agent, event_name=None):
     """Turn a Gemini CLI, Cursor or Copilot payload into Claude Code's shape (1.3). The fields
     kept are the ones record() reads; prompts, file contents and tool output are dropped here."""
@@ -537,6 +635,10 @@ def record(event, agent='claude-code'):
         canon = tool
         if agent == 'opencode':
             canon = OPENCODE_TOOLS.get(tool.lower(), tool)
+            if canon == tool and not tool.startswith('mcp__'):
+                found = opencode_mcp(tool, event.get('cwd'))
+                if found:
+                    canon = mcp_name(*found)
         elif agent == 'codex':
             canon = CODEX_TOOLS.get(tool, tool)
         elif agent == 'gemini':
@@ -592,7 +694,9 @@ def record(event, agent='claude-code'):
         for key in ('pattern', 'glob', 'query', 'url'):
             if ti.get(key):
                 rec[key] = short(ti[key], 1000 if key == 'url' else MAX_SHORT)
-        if not any(k in rec for k in ('path', 'pattern', 'glob', 'query', 'url')):
+        if tool == 'CodeMode' and isinstance(ti.get('code'), str):
+            rec['js_len'] = len(ti['code'])       # the script itself is never written
+        elif not any(k in rec for k in ('path', 'pattern', 'glob', 'query', 'url')):
             rec['input_keys'] = ','.join(sorted(ti)[:20])
     return rec
 

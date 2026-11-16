@@ -60,6 +60,12 @@
 - 防止記錄注入的記錄消毒
 - 管理操作的操作記錄與稽核軌跡
 
+## 軟體物料清單（SBOM）
+
+每個版本的最上層都附 `sbom.cdx.json`（CycloneDX 1.5）：jt-wazuh-mgr 建置與測試時用的 Python 套件版本（離線安裝的 wheel，附
+SHA-256）、介面從 cdnjs 載入的瀏覽器函式庫與其 SRI 雜湊，以及 jt-container-vuln 套件執行的 Trivy 映像（以摘要值鎖定）。線上安裝會在
+安裝當下依 `requirements.txt` 解析版本，可能裝到較新的版本。`tools/make_sbom.py` 會重新產生這個檔案，檔案過期時測試會失敗。
+
 ## 免責聲明
 
 本軟體以「現狀」提供，不附帶任何形式的保證。

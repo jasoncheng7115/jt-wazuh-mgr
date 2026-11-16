@@ -410,7 +410,21 @@
   <rule id="133707" level="3">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^mcp__</field>
-    <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) called MCP tool $(jt_ai.tool)</description>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) called MCP tool $(jt_ai.tool)</description>
+  </rule>
+
+  <!--
+    1.5.2: opencode 2.x Code Mode. The agent writes JavaScript that calls MCP tools and makes HTTP
+    requests in a confined runtime; the hook records the script's length only. Each MCP tool the
+    script calls is recorded again as its own line (133707).
+  -->
+  <rule id="133774" level="3">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^CodeMode$</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) ran a Code Mode script ($(jt_ai.js_len) characters) that can call MCP tools and make HTTP requests</description>
+    <mitre>
+      <id>T1059.007</id>
+    </mitre>
   </rule>
 
   <rule id="133708" level="3">

@@ -393,7 +393,8 @@ class TestPackDashboards(unittest.TestCase):
                 self.assertTrue(set(opts) <= allowed, sorted(set(opts) - allowed))
                 for item in opts.get('fields', []):
                     item = {'field': item} if isinstance(item, str) else item
-                    self.assertTrue(set(item) <= {'field', 'title', 'title_zh', 'size'})
+                    self.assertTrue(set(item) <= {'field', 'title', 'title_zh', 'size', 'chart'})
+                    self.assertIn(item.get('chart', 'bar'), ('bar', 'pie'))
                     self.builder.field_kind(item['field'], self.fields)
                     if 'title' in item:
                         self.assertTrue(item.get('title_zh'), 'a title needs title_zh too')
@@ -453,3 +454,44 @@ class TestPackDashboards(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestCharts(unittest.TestCase):
+    """2026-11-16: a chart beside a table, and table columns that can be dragged wider."""
+
+    def test_charted_fields_sit_beside_their_tables(self):
+        b = load_builder()
+        for pid in ('jt-ai-agent',):
+            text = b.build(pid, b.template_fields(), 'en')
+            objs = [json.loads(x) for x in text.splitlines()]
+            dash = objs[-1]
+            panels = json.loads(dash['attributes']['panelsJSON'])
+            refs = {r['name']: r['id'] for r in dash['references']}
+            pos = {refs[p['panelRefName']]: p['gridData'] for p in panels}
+            for field in ('data-jt-ai-agent', 'data-jt-ai-tool', 'data-jt-ai-mcp-server'):
+                with self.subTest(field=field):
+                    t = pos['jt-pack-%s-field-%s' % (pid, field)]
+                    c = pos['jt-pack-%s-field-%s-chart' % (pid, field)]
+                    self.assertEqual((t['x'], c['x'], t['y']), (0, 24, c['y']))
+            a, c = pos['jt-pack-%s-agents' % pid], pos['jt-pack-%s-agents-chart' % pid]
+            self.assertEqual((a['x'], c['x'], a['y']), (0, 24, c['y']))
+            # no two panels overlap
+            cells = set()
+            for p in panels:
+                g = p['gridData']
+                for x in range(g['x'], g['x'] + g['w']):
+                    for y in range(g['y'], g['y'] + g['h']):
+                        self.assertNotIn((x, y), cells)
+                        cells.add((x, y))
+
+    def test_vega_tables_have_column_grips(self):
+        b = load_builder()
+        objs = [json.loads(x) for x in b.build('jt-ai-agent', b.template_fields(), 'en').splitlines()]
+        rules = next(o for o in objs if o['id'] == 'jt-pack-jt-ai-agent-rules')
+        spec = json.loads(json.loads(rules['attributes']['visState'])['params']['spec'])
+        names = {s['name'] for s in spec['signals']}
+        self.assertTrue({'colW', 'colE', 'colS', 'jtDrag'} <= names)
+        self.assertIn('jtGrip', {m.get('name') for m in spec['marks']})
+        grips = next(d for d in spec['data'] if d['name'] == 'grips')['values']
+        self.assertEqual(len(grips), 4)          # five columns, four borders
+

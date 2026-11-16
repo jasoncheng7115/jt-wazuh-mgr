@@ -66,6 +66,15 @@ including:
 - Log sanitization to prevent log injection
 - Operation logging / audit trail for administrative actions
 
+## Software Bill of Materials
+
+Every release carries `sbom.cdx.json` (CycloneDX 1.5) at the top of the tree: the Python packages at the
+versions jt-wazuh-mgr is built and tested with (the offline install's wheels, with their SHA-256), the
+browser library the interface loads from cdnjs with its subresource-integrity hashes, and the Trivy image
+the jt-container-vuln pack runs, pinned by digest. An online install resolves `requirements.txt` when it
+runs and may install newer versions. `tools/make_sbom.py` regenerates the file; the tests fail when it is
+stale.
+
 ## Disclaimer
 
 This software is provided "as is", without warranty of any kind. Before

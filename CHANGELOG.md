@@ -4,6 +4,23 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.37.0 (2026-11-16)
+
+- Pack dashboards: a chart beside the tables (2026-11-16, owner: "too few charts, mostly tables"). Every
+  pack's "Top agents" table has a bar chart beside it, and a pack's manifest can ask for one beside any
+  field table (`"chart": "bar"` or `"pie"`, a donut with a legend); jt-ai-agent has them for AI agents,
+  events, tools, hosts, accounts, SSH destinations and MCP servers. A click on a bar, slice or legend entry
+  adds that value as a dashboard filter. "Top rules" spans the full width.
+- The sortable Vega tables can have their columns dragged wider or narrower by the grips between the
+  headers. Vega keeps no state, so the widths return to the defaults when the panel draws again.
+- jt-ai-agent 1.5.2: opencode's MCP calls are recognised (opencode names them `<server>_<tool>`; the hook
+  reads the server names from opencode's configuration and records `mcp__<server>__<tool>`), opencode 2.x
+  Code Mode scripts are recorded by length only (rule 133774), and the description in "Top rules" is the
+  one for that row's AI agent.
+- An SBOM: `sbom.cdx.json` (CycloneDX 1.5) at the top of the tree lists the Python packages at the
+  tested versions with their hashes, CodeMirror from cdnjs with its SRI hashes and the Trivy image of
+  jt-container-vuln; `tools/make_sbom.py` regenerates it and a test fails when it is stale.
+
 ## v1.36.4 (2026-11-16)
 
 - jt-ai-agent 1.5.1: rule 133720 (level 12, tampering with the audit) matched any shell command that

@@ -4,6 +4,17 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.37.0（2026-11-16）
+
+- 套件看板：表格旁加上圖（2026-11-16，使用者：「圖太少了，大都是統計的表格」）。每個套件的「告警最多的代理程式」旁多一張長條圖，
+  套件的 manifest 也可以替任一欄位表格加圖（`"chart": "bar"`，或 `"pie"`＝附圖例的環圈圖）；jt-ai-agent 替 AI 代理、事件、工具、
+  主機、帳號、SSH 目的地、MCP 伺服器都加了。點選長條、扇形或圖例項目會把該值加成看板篩選。「觸發最多的規則」改為整列寬。
+- 可排序的 Vega 表格可以拖曳表頭之間的把手調整欄寬。Vega 不保存狀態，面板重新繪製時欄寬會回到預設。
+- jt-ai-agent 1.5.2：認得 opencode 的 MCP 呼叫（opencode 的名稱是 `伺服器_工具`；hook 從 opencode 的設定讀出伺服器名稱，記成
+  `mcp__伺服器__工具`）；opencode 2.x 的 Code Mode 腳本只記長度（規則 133774）；「觸發最多的規則」的說明改為該列 AI 代理的那一句。
+- 軟體物料清單：最上層的 `sbom.cdx.json`（CycloneDX 1.5）列出測試過的 Python 套件版本與雜湊、從 cdnjs 載入的 CodeMirror 與其 SRI
+  雜湊、jt-container-vuln 的 Trivy 映像；`tools/make_sbom.py` 重新產生，檔案過期時測試會失敗。
+
 ## v1.36.4（2026-11-16）
 
 - jt-ai-agent 1.5.1：規則 133720（L12，竄改稽核）只要 shell 指令裡出現 `/var/ossec/etc` 就命中，所以代理用 heredoc 寫文件、

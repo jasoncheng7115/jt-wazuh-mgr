@@ -429,22 +429,46 @@ class Builder:
             # without one share the rest, so the description gets the room.
             ui_state={'vis': {'columnsWidth': [{'colIndex': 0, 'width': 90}, {'colIndex': 2, 'width': 100},
                                                {'colIndex': 3, 'width': 70}]}})
-        self.panels.append((vid, 'visualization', 32, 16))
+        self.panels.append((vid, 'visualization', 48, 16))
 
     def vega_table(self, part, title, aggs, prop, transforms, columns, default_sort, w, h):
         """A table drawn in Vega for fields that exist only in data.*: a standard table on a field
         the index pattern does not know yet shows an error, this one shows an empty table.
         A click on a column header sorts by it (again: the other way round, an arrow shows
-        which), and a click on a cell of a filter column adds that value as a dashboard filter
+        which), a click on a cell of a filter column adds that value as a dashboard filter
         through opensearchDashboardsAddFilter, which Vega-Lite cannot call (2026-11-15, owner:
-        the first Vega tables could do neither). columns: dicts with key, label, x, align,
-        optional right (x counts from the right edge), filter (a field), number (format with
-        separators), limit (pixels or a Vega expression) and colour (a Vega expression)."""
+        the first Vega tables could do neither), and the grips between the headers drag a column
+        wider or narrower (2026-11-16, owner). Vega keeps no state, so the widths go back to the
+        defaults when the panel draws again (reload, time range, refresh).
+        columns: dicts with key, label, w (the starting width; exactly one column has none and
+        takes what is left), align, filter (a field), number (format with separators), numeric
+        (sort high to low first), colour (a Vega expression) and tooltip."""
         # looks like OSD's own data table (2026-11-15, owner: the first version looked cramped):
         # EUI font and colours, 14 px text, 34 px rows with a rule under each, a bold header
-        # over a dark rule, the row under the pointer shaded
-        row_h, head_h = 34, 38
+        # over a dark rule, the row under the pointer shaded. SVG: the canvas renderer repaints only
+        # the old bounds of a text, and a text that a drag made shorter left letters behind
+        row_h, head_h, pad_l, pad_r, min_w = 34, 38, 12, 10, 30
         font = 'Inter UI, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif'
+        n = len(columns)
+        fills = [i for i, c in enumerate(columns) if c.get('w') is None]
+        assert len(fills) == 1, 'one column fills the rest'
+        f = fills[0]
+        # colW: the widths (the filling column 0); colE: the widths in effect; colS: where each starts
+        dx = '(x() - jtDrag.x0)'
+        drag = []
+        for i in range(n):
+            if i == f:
+                drag.append('0')
+                continue
+            e = 'jtDrag.w[%d]' % i
+            e += ' + (jtDrag.k === %d ? %s : 0)' % (i, dx)
+            if i - 1 == f:
+                e += ' - (jtDrag.k === %d ? %s : 0)' % (i - 1, dx)
+            drag.append('max(%d, %s)' % (min_w, e))
+        others = ' + '.join('colW[%d]' % i for i in range(n) if i != f) or '0'
+        eff = ['max(40, width - (%s))' % others if i == f else 'colW[%d]' % i for i in range(n)]
+        starts = ['0'] + ['colE[%d]' % i for i in range(n - 1)]
+        starts = [' + '.join(starts[:i + 1]) for i in range(n)]
         signals = [
             # one signal holds both, so the toggle never depends on the order signals update in
             {'name': 'sortBy', 'value': {'field': default_sort, 'desc': True},
@@ -452,11 +476,30 @@ class Builder:
                      'update': '{field: datum.key, desc: datum.key === sortBy.field ? !sortBy.desc : datum.num}'}]},
             {'name': 'sortField', 'update': 'sortBy.field'},
             {'name': 'sortDesc', 'update': 'sortBy.desc'},
+            {'name': 'jtDrag', 'value': None, 'on': [
+                {'events': '@jtGrip:mousedown', 'update': '{k: datum.k, x0: x(), w: colW}'},
+                {'events': 'window:mouseup', 'update': 'null'}]},
+            {'name': 'colW', 'value': [c.get('w') or 0 for c in columns], 'on': [
+                {'events': '[@jtGrip:mousedown, window:mouseup] > window:mousemove!',
+                 'update': 'jtDrag ? [%s] : colW' % ', '.join(drag)}]},
+            {'name': 'colE', 'update': '[%s]' % ', '.join(eff)},
+            {'name': 'colS', 'update': '[%s]' % ', '.join(starts)},
         ]
+
+        def text_x(i, c):
+            if c.get('align') == 'right':
+                return 'colS[%d] + colE[%d] - %d' % (i, i, 0 if i == n - 1 else pad_r)
+            return 'colS[%d] + %d' % (i, 0 if i == 0 else pad_l)
+
+        def text_limit(i):
+            return 'max(10, colE[%d] - %d)' % (i, (0 if i == 0 else pad_l) + 8)
+
         marks = [
             {'name': 'jtHead', 'type': 'text', 'from': {'data': 'head'}, 'encode': {'update': {
-                'x': {'signal': 'datum.right ? width - datum.x : datum.x'}, 'y': {'value': head_h / 2},
+                'x': {'signal': 'datum.right ? colS[datum.i] + colE[datum.i] - datum.pr : colS[datum.i] + datum.pl'},
+                'y': {'value': head_h / 2},
                 'align': {'field': 'align'},
+                'limit': {'signal': 'max(10, colE[datum.i] - datum.pl - 8)'},
                 'text': {'signal': "datum.label + (datum.key === sortField ? (sortDesc ? ' \u25bc' : ' \u25b2') : '')"},
                 'fontWeight': {'value': 'bold'}, 'fill': {'value': '#1A1C21'}, 'cursor': {'value': 'pointer'},
                 'tooltip': {'value': T('Click to sort', '點選以排序')}}}},
@@ -474,14 +517,26 @@ class Builder:
                 'y': {'signal': '(datum.row + 1) * %d + %d' % (row_h, head_h)},
                 'y2': {'signal': '(datum.row + 1) * %d + %d' % (row_h, head_h)},
                 'stroke': {'value': '#D3DAE6'}}}},
+            # the grips: a faint line between two headers, darker under the pointer or while dragged
+            {'type': 'rule', 'from': {'data': 'grips'}, 'interactive': False, 'encode': {'update': {
+                'x': {'signal': 'colS[datum.k + 1]'}, 'x2': {'signal': 'colS[datum.k + 1]'},
+                'y': {'value': 10}, 'y2': {'value': head_h - 10},
+                'stroke': {'signal': "jtDrag && jtDrag.k === datum.k ? '#006BB4' : '#C6CCD6'"},
+                'strokeWidth': {'signal': 'jtDrag && jtDrag.k === datum.k ? 2 : 1'}}}},
+            {'name': 'jtGrip', 'type': 'rect', 'from': {'data': 'grips'}, 'encode': {
+                'update': {'x': {'signal': 'colS[datum.k + 1] - 5'}, 'width': {'value': 10},
+                           'y': {'value': 0}, 'height': {'value': head_h},
+                           'fill': {'value': '#006BB4'}, 'fillOpacity': {'value': 0},
+                           'cursor': {'value': 'col-resize'},
+                           'tooltip': {'value': T('Drag to change the column width', '拖曳以調整欄寬')}},
+                'hover': {'fillOpacity': {'value': 0.15}}}},
         ]
-        for c in columns:
-            x = {'signal': 'width - %d' % c['x']} if c.get('right') else {'value': c['x']}
-            enc = {'x': x, 'y': {'signal': '(datum.row + 0.5) * %d + %d' % (row_h, head_h)},
+        for i, c in enumerate(columns):
+            enc = {'x': {'signal': text_x(i, c)}, 'y': {'signal': '(datum.row + 0.5) * %d + %d' % (row_h, head_h)},
                    'align': {'value': c.get('align', 'left')},
                    'text': ({'signal': "format(datum.%s, ',')" % c['key']} if c.get('number') else {'field': c['key']})}
-            if c.get('limit') is not None:
-                enc['limit'] = {'signal': c['limit']} if isinstance(c['limit'], str) else {'value': c['limit']}
+            if c.get('align', 'left') == 'left':
+                enc['limit'] = {'signal': text_limit(i)}
             if c.get('filter'):
                 name = 'jtCell_' + re.sub(r'[^A-Za-z0-9]', '', c['key'])
                 enc.update({'fill': {'value': '#006BB4'}, 'cursor': {'value': 'pointer'},
@@ -506,7 +561,7 @@ class Builder:
             # fit: the panel's size becomes width and height (none leaves them 0)
             'autosize': {'type': 'fit', 'contains': 'padding'},
             'padding': {'left': 8, 'right': 8, 'top': 4, 'bottom': 4},
-            'config': {'kibana': {'hideWarnings': True},
+            'config': {'kibana': {'hideWarnings': True, 'renderer': 'svg'},
                        'text': {'fontSize': 14, 'baseline': 'middle', 'font': font, 'fill': '#343741'}},
             'signals': signals,
             'data': [
@@ -528,9 +583,12 @@ class Builder:
                     {'type': 'formula', 'as': 'row', 'expr': 'datum.row0 - 1'},
                     {'type': 'filter', 'expr': 'datum.row < floor((height - %d) / %d)' % (head_h, row_h)}]},
                 # num: what the first click on this header does (numbers start high, text A-Z)
-                {'name': 'head', 'values': [{'key': c['key'], 'label': c['label'], 'x': c['x'], 'right': bool(c.get('right')),
+                {'name': 'head', 'values': [{'key': c['key'], 'label': c['label'], 'i': i,
+                                             'right': c.get('align') == 'right',
+                                             'pl': 0 if i == 0 else pad_l, 'pr': 0 if i == n - 1 else pad_r,
                                              'align': c.get('align', 'left'), 'num': bool(c.get('number') or c.get('numeric'))}
-                                            for c in columns]},
+                                            for i, c in enumerate(columns)]},
+                {'name': 'grips', 'values': [{'k': k} for k in range(n - 1)]},
             ],
             'marks': marks,
         }
@@ -545,27 +603,28 @@ class Builder:
         (manifest dashboard.rules_by): rule x value rows (the value "-" when an alert lacks
         the field). Sortable, and a click on a rule or a value filters the dashboard."""
         aggs = {'r': {'terms': {'field': 'rule.id', 'size': 50}, 'aggs': {
-            'v': {'terms': {'field': field, 'size': 5, 'missing': '-'}},
-            'd': {'terms': {'field': 'rule.description', 'size': 1}},
+            # the description per value: it names the agent, host or user the row is about
+            'v': {'terms': {'field': field, 'size': 5, 'missing': '-'}, 'aggs': {
+                'd': {'terms': {'field': 'rule.description', 'size': 1}}}},
             'l': {'max': {'field': 'rule.level'}}}}}
         transforms = [
             {'type': 'flatten', 'fields': ['v.buckets'], 'as': ['vb']},
             {'type': 'formula', 'as': 'rule', 'expr': 'datum.key'},
             {'type': 'formula', 'as': 'value', 'expr': 'datum.vb.key'},
             {'type': 'formula', 'as': 'alerts', 'expr': 'datum.vb.doc_count'},
-            {'type': 'formula', 'as': 'desc', 'expr': "length(datum.d.buckets) ? datum.d.buckets[0].key : ''"},
+            {'type': 'formula', 'as': 'desc', 'expr': "length(datum.vb.d.buckets) ? datum.vb.d.buckets[0].key : ''"},
             {'type': 'formula', 'as': 'level', 'expr': 'datum.l.value'},
         ]
         columns = [
-            {'key': 'rule', 'label': T('Rule', '規則'), 'x': 0, 'filter': 'rule.id'},
-            {'key': 'level', 'label': T('Level', '等級'), 'x': 135, 'align': 'right', 'numeric': True,
+            {'key': 'rule', 'label': T('Rule', '規則'), 'w': 100, 'filter': 'rule.id'},
+            {'key': 'level', 'label': T('Level', '等級'), 'w': 60, 'align': 'right', 'numeric': True,
              'colour': "datum.level >= 12 ? '#BD271E' : '#343741'"},
-            {'key': 'value', 'label': label, 'x': 160, 'limit': 170, 'filter': field},
-            {'key': 'alerts', 'label': T('Alerts', '告警'), 'x': 410, 'align': 'right', 'number': True},
-            {'key': 'desc', 'label': T('Description', '說明'), 'x': 435, 'limit': 'width - 435', 'tooltip': True},
+            {'key': 'value', 'label': label, 'w': 170, 'filter': field},
+            {'key': 'alerts', 'label': T('Alerts', '告警'), 'w': 90, 'align': 'right', 'number': True},
+            {'key': 'desc', 'label': T('Description', '說明'), 'tooltip': True},
         ]
         self.vega_table('rules', T('Top rules', '觸發最多的規則'), aggs, 'aggregations.r.buckets', transforms,
-                        columns, 'alerts', 32, 16)
+                        columns, 'alerts', 48, 16)
 
     def top_terms(self, part, field, title, size=20, w=24, h=16, column=None):
         vid = self.vis(part, title, {
@@ -640,11 +699,107 @@ class Builder:
         aggs = {'top': {'terms': {'field': field, 'size': max(size, 20)}}}
         transforms = [{'type': 'formula', 'as': 'value', 'expr': 'datum.key'},
                       {'type': 'formula', 'as': 'alerts', 'expr': 'datum.doc_count'}]
-        columns = [{'key': 'value', 'label': '%s (%s)' % (title, field), 'x': 0, 'limit': 'width - 90',
-                    'filter': field},
-                   {'key': 'alerts', 'label': T('Alerts', '告警'), 'x': 0, 'right': True, 'align': 'right',
-                    'number': True}]
+        columns = [{'key': 'value', 'label': '%s (%s)' % (title, field), 'filter': field},
+                   {'key': 'alerts', 'label': T('Alerts', '告警'), 'w': 90, 'align': 'right', 'number': True}]
         self.vega_table(part, title, aggs, 'aggregations.top.buckets', transforms, columns, 'alerts', 24, 14)
+
+    def vega_query(self, aggs):
+        """The data source of a Vega panel: the pack's alerts under the dashboard's time range,
+        query and filters, summed up by aggs."""
+        return {'index': INDEX_PATTERN_ID, 'body': {
+            'size': 0,
+            'query': {'bool': {
+                'must': ['%dashboard_context-must_clause%',
+                         {'range': {TIME_FIELD: {'%timefilter%': True}}},
+                         {'query_string': {'query': self.query, 'analyze_wildcard': True}}],
+                'filter': ['%dashboard_context-filter_clause%'],
+                'must_not': ['%dashboard_context-must_not_clause%']}},
+            'aggs': aggs}}
+
+    def vega_chart(self, part, field, title, kind='bar', size=10, w=24, h=14):
+        """A chart beside a table (2026-11-16, owner: "too few charts, mostly tables"): the top
+        values of a field as horizontal bars, or as a donut with a legend (kind pie) when there
+        are only a few. Vega, so it also works on fields that exist only in data.*; a click on a
+        bar, slice or legend entry adds the value as a dashboard filter."""
+        font = 'Inter UI, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif'
+        palette = ['#54B399', '#6092C0', '#D36086', '#9170B8', '#CA8EAE', '#D6BF57', '#B9A888',
+                   '#DA8B45', '#AA6556', '#E7664C']
+        flt = "{'match_phrase': {%s: datum.key}}" % json.dumps(field)
+        add = 'opensearchDashboardsAddFilter(%s, %s, %s + \': \' + datum.key)' % (
+            flt, json.dumps(INDEX_PATTERN_ID), json.dumps(field))
+        tip = {'signal': "{'%s': datum.key, '%s': format(datum.doc_count, ',')}" % (
+            title.replace("'", ''), T('Alerts', '告警'))}
+        data = [{'name': 'top', 'url': self.vega_query({'top': {'terms': {'field': field, 'size': size}}}),
+                 'format': {'property': 'aggregations.top.buckets'},
+                 'transform': [{'type': 'window', 'ops': ['row_number'], 'as': ['rank'],
+                                'sort': {'field': 'doc_count', 'order': 'descending'}}]}]
+        signals = [{'name': 'jtPick', 'value': None,
+                    'on': [{'events': '@jtBar:click, @jtLabel:click, @jtSlice:click, @jtKey:click',
+                            'update': add}]}]
+        if kind == 'pie':
+            data[0]['transform'].append({'type': 'pie', 'field': 'doc_count', 'sort': False})
+            signals += [{'name': 'legendW', 'update': 'min(260, width * 0.45)'},
+                        {'name': 'radius', 'update': 'max(20, min((width - legendW) / 2, height / 2) - 6)'},
+                        {'name': 'legendTop', 'update': "max(0, height / 2 - length(data('top')) * 13)"}]
+            scales = [{'name': 'colour', 'type': 'ordinal', 'domain': {'data': 'top', 'field': 'key',
+                       'sort': {'field': 'doc_count', 'op': 'max', 'order': 'descending'}}, 'range': palette}]
+            marks = [
+                {'name': 'jtSlice', 'type': 'arc', 'from': {'data': 'top'}, 'encode': {
+                    'update': {'x': {'signal': '(width - legendW) / 2'}, 'y': {'signal': 'height / 2'},
+                               'startAngle': {'field': 'startAngle'}, 'endAngle': {'field': 'endAngle'},
+                               'innerRadius': {'signal': 'radius * 0.55'}, 'outerRadius': {'signal': 'radius'},
+                               'padAngle': {'value': 0.01}, 'fill': {'scale': 'colour', 'field': 'key'},
+                               'cursor': {'value': 'pointer'}, 'tooltip': tip, 'fillOpacity': {'value': 1}},
+                    'hover': {'fillOpacity': {'value': 0.8}}}},
+                {'type': 'rect', 'from': {'data': 'top'}, 'encode': {'update': {
+                    'x': {'signal': 'width - legendW'}, 'width': {'value': 12},
+                    'y': {'signal': 'legendTop + (datum.rank - 1) * 26 + 7'},
+                    'height': {'value': 12}, 'fill': {'scale': 'colour', 'field': 'key'}}}},
+                {'name': 'jtKey', 'type': 'text', 'from': {'data': 'top'}, 'encode': {'update': {
+                    'x': {'signal': 'width - legendW + 20'},
+                    'y': {'signal': 'legendTop + (datum.rank - 1) * 26 + 13'},
+                    'text': {'signal': "datum.key + '  ' + format(datum.doc_count, ',')"},
+                    'limit': {'signal': 'legendW - 24'}, 'baseline': {'value': 'middle'},
+                    'cursor': {'value': 'pointer'}, 'tooltip': tip}}},
+            ]
+        else:
+            signals += [{'name': 'labelW', 'update': 'min(220, width * 0.3)'},
+                        # rows as high as the table's beside it, under a gap where its header is
+                        {'name': 'barH', 'update': 'min(34, (height - 34) / max(1, length(data(\'top\'))))'}]
+            scales = [{'name': 'len', 'type': 'linear', 'domain': {'data': 'top', 'field': 'doc_count'},
+                       'range': [0, {'signal': 'width - labelW - 70'}], 'nice': False, 'zero': True}]
+            row = '34 + (datum.rank - 1) * barH'
+            marks = [
+                {'name': 'jtLabel', 'type': 'text', 'from': {'data': 'top'}, 'encode': {'update': {
+                    'x': {'signal': 'labelW - 8'}, 'y': {'signal': '%s + barH / 2' % row}, 'align': {'value': 'right'},
+                    'baseline': {'value': 'middle'}, 'text': {'field': 'key'}, 'limit': {'signal': 'labelW - 8'},
+                    'fill': {'value': '#006BB4'}, 'cursor': {'value': 'pointer'}, 'tooltip': tip}}},
+                {'name': 'jtBar', 'type': 'rect', 'from': {'data': 'top'}, 'encode': {
+                    'update': {'x': {'signal': 'labelW'}, 'width': {'signal': "max(1, scale('len', datum.doc_count))"},
+                               'y': {'signal': '%s + barH * 0.18' % row}, 'height': {'signal': 'barH * 0.64'},
+                               'fill': {'value': '#6092C0'}, 'cursor': {'value': 'pointer'}, 'tooltip': tip},
+                    'hover': {'fill': {'value': '#006BB4'}}}},
+                {'type': 'text', 'from': {'data': 'top'}, 'encode': {'update': {
+                    'x': {'signal': "labelW + max(1, scale('len', datum.doc_count)) + 6"},
+                    'y': {'signal': '%s + barH / 2' % row}, 'baseline': {'value': 'middle'},
+                    'text': {'signal': "format(datum.doc_count, ',')"}, 'fill': {'value': '#69707D'}}}},
+            ]
+        spec = {
+            '$schema': 'https://vega.github.io/schema/vega/v5.json',
+            'autosize': {'type': 'fit', 'contains': 'padding'},
+            'padding': {'left': 8, 'right': 8, 'top': 8, 'bottom': 8},
+            'config': {'kibana': {'hideWarnings': True},
+                       'text': {'fontSize': 13, 'font': font, 'fill': '#343741'}},
+            'signals': signals, 'data': data, 'scales': scales, 'marks': marks,
+        }
+        vid = self.vis(part, title, {
+            'aggs': [], 'type': 'vega',
+            'params': {'spec': json.dumps(spec, ensure_ascii=False, indent=2, sort_keys=True)}},
+            uses_index=False)
+        self.panels.append((vid, 'visualization', w, h))
+
+    def newrow(self):
+        self.panels.append((None, 'break', 0, 0))
 
     def search(self):
         columns = ['rule.id', 'rule.level', 'rule.description', 'agent.name']
@@ -668,7 +823,12 @@ class Builder:
     def dashboard(self):
         panels, refs = [], []
         x = y = row_h = 0
-        for i, (oid, otype, w, h) in enumerate(self.panels):
+        for oid, otype, w, h in self.panels:
+            if otype == 'break':
+                if x:
+                    x, y, row_h = 0, y + row_h, 0
+                continue
+            i = len(panels)
             if x + w > 48:
                 x, y, row_h = 0, y + row_h, 0
             # the dashboard title names the pack; the panel shows the short title
@@ -710,8 +870,11 @@ class Builder:
             self.vega_rule_table(by['field'], bilingual(by.get('title') or by['field'], by.get('title_zh') or ''))
         else:
             self.top_rules()
-        self.top_terms('agents', 'agent.name', T('Top agents', '告警最多的代理程式'), w=16,
+        self.newrow()
+        self.top_terms('agents', 'agent.name', T('Top agents', '告警最多的代理程式'), h=14,
                        column=T('Agent', '代理程式'))
+        self.vega_chart('agents-chart', 'agent.name', T('Top agents', '告警最多的代理程式'))
+        self.newrow()
         if self.srcip:
             self.top_terms('srcip', 'data.srcip', T('Top source addresses', '來源位址排行'),
                            column=T('Source address (data.srcip)', '來源位址'))
@@ -721,15 +884,23 @@ class Builder:
         if self.dstuser:
             self.top_terms('dstuser', 'data.dstuser', T('Top accounts', '帳號排行'),
                            column=T('Account (data.dstuser)', '帳號'))
-        for item in self.extra:
+        # fields with a chart (manifest "chart": "bar" or "pie") come first, each table with its
+        # chart on one row; the others follow two tables to a row
+        extra = [i for i in self.extra if i.get('chart')] + [i for i in self.extra if not i.get('chart')]
+        for item in extra:
             field = item['field']
             title = bilingual(item.get('title') or field, item.get('title_zh') or '')
             part = 'field-' + re.sub(r'[^a-z0-9]+', '-', field.lower()).strip('-')
+            if item.get('chart'):
+                self.newrow()
             if item['kind'] == 'static':
                 self.top_terms(part, field, title, size=int(item.get('size', 20)),
-                               column='%s (%s)' % (title, field))
+                               column='%s (%s)' % (title, field), h=14 if item.get('chart') else 16)
             else:
                 self.vega_terms(part, field, title, size=int(item.get('size', 10)))
+            if item.get('chart'):
+                self.vega_chart(part + '-chart', field, title, kind=item['chart'])
+                self.newrow()
         self.search()
         objects = self.objects + [self.dashboard()]
         return ''.join(json.dumps(o, ensure_ascii=False, sort_keys=True, separators=(',', ':')) + '\n'
