@@ -4,6 +4,12 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.37.3 (2026-11-16)
+
+- jt-ai-agent 1.5.4: v1.37.2 shipped rule 133776 and the inventory 1.1 under the version number 1.5.3, which
+  v1.37.1 had already used for different content, so a manager with 1.5.3 installed was not offered the update.
+  The same content is now 1.5.4.
+
 ## v1.37.2 (2026-11-16)
 
 - jt-ai-agent 1.5.3 (inventory 1.1): a person who uses only Gemini CLI and turns its hook off was not
