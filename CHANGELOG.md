@@ -4,6 +4,17 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.37.1 (2026-11-16)
+
+- jt-ai-agent 1.5.3: Gemini CLI merges `hooksConfig.disabled` from the user's and the project's settings into
+  the system list, so a user can turn the audit hook off with `/hooks disable`. At every audited session start
+  the hook now reads those two files and reports which one turns it off (rule 133775, level 10); nothing else
+  from the file is recorded, since it can hold MCP servers' tokens. The setup guide now says that GitHub does not
+  document whether VS Code's agent mode reads `policy.d` and how to check it.
+- Traditional Chinese wording: 前綴 is now 前置字串 (text) or 前置碼 (address prefixes) in every pack's notes and
+  setup steps and the documents; a new test keeps mainland terms out of the shipped Chinese text.
+- A comment in the jt-ai-agent hook no longer names an internal host.
+
 ## v1.37.0 (2026-11-16)
 
 - Pack dashboards: a chart beside the tables (2026-11-16, owner: "too few charts, mostly tables"). Every

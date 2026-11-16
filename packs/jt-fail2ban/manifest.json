@@ -35,7 +35,7 @@
     "fail2ban 或某個 jail 消失：「Exiting Fail2ban」（level 5）、jail 停止（level 3）或因設定錯誤被略過（level 10）、啟動失敗（level 10，例如 Ubuntu 24.04 第一版 fail2ban 在 Python 3.12 上的「No module named 'asynchat'」），以及 systemd 看到的 fail2ban.service：結束碼 255（systemd 不會重啟，level 10）、其他失敗（level 6）、達到重啟上限（level 10）、已停止（level 5）。重開機與升級也會讓它停止；若是重啟，幾秒內會接著出現「Starting Fail2ban」（level 2）。",
     "jail 失明：過濾器錯誤太多而停擺或放棄某個記錄檔（level 10）、無法開啟記錄檔（level 7，每小時一次）或記錄檔不見（level 5）、因時間戳記無法辨識而丟掉失敗事件（level 7）、記錄時間與時鐘相差太多（level 3）。另外：封鎖位址是對記錄中的主機名稱做 DNS 查詢得來的，掌控該名稱的人就能左右封鎖對象（usedns = warn 是預設值；level 5，每小時一次）、封鎖資料庫損壞（level 5）、無法解除的封鎖（level 5），以及白名單位址十分鐘內失敗十次，fail2ban 永遠不會封鎖它（level 5，每小時一次）。",
     "其他任何 ERROR 或 CRITICAL 行為 level 5（131060）。未達封鎖門檻的失敗（「Found」）維持 level 0 不告警；還原、清除、延長封鎖與白名單命中記在 level 2，供關聯使用。",
-    "srcip 只放真正的位址（會去掉 ::ffff: 前綴），所以 CIDR 規則、關聯與主動回應不會拿到其他東西。fail2ban 封鎖的對象一律放在 f2b.id：使用 <F-ID> 的過濾器封鎖的是使用者名稱或郵件位址，而 1.2 會把 observer 的 Found 行解成帶逗號的「198.51.100.7,」。",
+    "srcip 只放真正的位址（會去掉 ::ffff: 前置字串），所以 CIDR 規則、關聯與主動回應不會拿到其他東西。fail2ban 封鎖的對象一律放在 f2b.id：使用 <F-ID> 的過濾器封鎖的是使用者名稱或郵件位址，而 1.2 會把 observer 的 Found 行解成帶逗號的「198.51.100.7,」。",
     "選用的存活檢查（部署步驟）：agent 每小時執行 fail2ban-client status，這是發現 fail2ban 無聲死掉的唯一辦法。它能回答服務是否在跑、有沒有 jail；但被正規表示式卡住的過濾執行緒（GHSA-33wh-ccjc-p397、GHSA-c2mg-2r7g-c3wp）照樣會回應，所以這也無法證明 jail 正常運作。",
     "套件看不到的：管理者的 unbanip 與封鎖到期的記錄完全一樣，用戶端指令只在 DEBUG 等級才記錄；mail-whois 遠端執行程式碼漏洞（CVE-2021-32749，0.10.7 與 0.11.3 修正；Ubuntu 20.04 只能透過 ESM）在 fail2ban 記錄裡不留痕跡。journal 目標不帶等級名稱，所以「封鎖無效」規則在那裡無法運作。0.11 中 23 個字元以上的模組名稱（fail2ban.filterpyinotify）會讓 Wazuh 前置解碼器丟掉程式名稱，這少數幾行不會解碼。",
     "沒有清單、沒有站台資料：每條規則照原樣就能用。依 fail2ban 0.11.1（Ubuntu 20.04）、0.11.2、1.0.x、1.1.x 的訊息格式測試，格式取自原始碼（git tag 1.1.1，每條規則的註解寫有檔案與行號）。參考站台兩台郵件伺服器 41 天內只有三次封鎖，全是安裝測試；等級是依對外的主機設定的。",

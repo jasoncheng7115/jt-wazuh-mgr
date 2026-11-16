@@ -73,10 +73,10 @@
       "title": "Choose the home countries and fill the list",
       "title_zh": "設定本國並產生清單",
       "body": "The shipped list holds Taiwan's IPv4 prefixes. To use other countries, write their ISO codes to etc/jt-packs/jt-rustdesk.conf and run the script once; it downloads APNIC's delegated statistics (about 4 MB, at most once a day). For countries outside Asia-Pacific give another registry's delegated-*-extended-latest file with --url. The script refuses a result with fewer than half the prefixes of the last good one and keeps the old list.",
-      "body_zh": "套件內附台灣的 IPv4 前綴。要改成其他國家，把 ISO 代碼寫進 etc/jt-packs/jt-rustdesk.conf，執行一次腳本；它會下載 APNIC 的 delegated 統計檔（約 4 MB，每天最多一次）。亞太以外的國家，用 --url 指定其他註冊管理機構的 delegated-*-extended-latest 檔。結果的前綴數少於上次的一半時，腳本會拒絕並保留舊清單。",
+      "body_zh": "套件內附台灣的 IPv4 前置碼。要改成其他國家，把 ISO 代碼寫進 etc/jt-packs/jt-rustdesk.conf，執行一次腳本；它會下載 APNIC 的 delegated 統計檔（約 4 MB，每天最多一次）。亞太以外的國家，用 --url 指定其他註冊管理機構的 delegated-*-extended-latest 檔。結果的前置碼數少於上次的一半時，腳本會拒絕並保留舊清單。",
       "code": "printf 'countries = TW, JP\\n' > /var/ossec/etc/jt-packs/jt-rustdesk.conf\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-rustdesk-geo.py --wazuh-path /var/ossec --check\n/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-rustdesk-geo.py --wazuh-path /var/ossec --force",
       "verify": "--check prints the number of prefixes; after the run the list has changed and the log says \"ruleset reload: ok\".",
-      "verify_zh": "--check 會印出前綴數；執行後清單有更新，記錄顯示「ruleset reload: ok」。"
+      "verify_zh": "--check 會印出前置碼數；執行後清單有更新，記錄顯示「ruleset reload: ok」。"
     },
     {
       "platform": "manager",
@@ -148,7 +148,7 @@
   "notes_zh": [
     "讀 RustDesk 伺服器自己的記錄檔（hbbs.log、hbbr.log）。預設等級下會記錄：因缺少金鑰被拒的中繼請求（含位址）、用戶端註冊與換位址（含 ID 與位址）、每個中繼連線一行（不含位址）、服務啟停與錯誤。連到電腦本身的連線與登入發生在用戶端，不會經過伺服器。",
     "沒有伺服器金鑰的中繼請求：私有位址 level 3（通常是用戶端金鑰設錯）、公開位址 level 5，同一位址 10 分鐘 10 次 level 10。",
-    "註冊與換位址：私有位址 level 2；本國公開位址 level 3；本國以外 level 7，15 分鐘 5 次 level 10；真正的 IPv6 位址 level 3（清單只含 IPv4）。本國是一份 IPv4 前綴的 CDB 清單（address_match_key），由 jt-rustdesk-geo.py 依 etc/jt-packs/jt-rustdesk.conf 的國家（預設台灣）從 APNIC delegated 統計檔產生；套件內附台灣的清單（9,027 個前綴）。小於 /24 的區塊以所在的 /24 表示。",
+    "註冊與換位址：私有位址 level 2；本國公開位址 level 3；本國以外 level 7，15 分鐘 5 次 level 10；真正的 IPv6 位址 level 3（清單只含 IPv4）。本國是一份 IPv4 前置碼的 CDB 清單（address_match_key），由 jt-rustdesk-geo.py 依 etc/jt-packs/jt-rustdesk.conf 的國家（預設台灣）從 APNIC delegated 統計檔產生；套件內附台灣的清單（9,027 個前置碼）。小於 /24 的區塊以所在的 /24 表示。",
     "中繼連線：每個 level 2，10 分鐘 30 個 level 8。撰寫本套件的那台伺服器，一個月正常使用約 129 個中繼連線。",
     "更新套件時保留清單（keep），因為安裝後由腳本維護。",
     "1.1：主機名稱。開源版伺服器只記錄 ID；rsyslog 轉存依 /etc/jt-rustdesk/names 或 hbbs 的 note 欄位（agent/jt-rustdesk-names.py）在行尾加上名稱，解碼為 rustdesk.hostname 並顯示在看板上。只讀取行尾，所以用戶端無法透過自己的金鑰位元組偽造名稱。沒有名稱的 ID 照常運作。",

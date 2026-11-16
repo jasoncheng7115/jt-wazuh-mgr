@@ -474,7 +474,7 @@ def opencode_config_files(cwd):
 
 def opencode_mcp(tool, cwd):
     """opencode names an MCP tool <server>_<tool> (both with characters other than letters, digits,
-    _ and - replaced by _), not mcp__<server>__<tool> (1.5.2: dev3's calls were not seen as MCP).
+    _ and - replaced by _), not mcp__<server>__<tool> (before 1.5.2 such calls were not seen as MCP).
     The server names come from the mcp section of opencode's configuration files; the longest
     one that prefixes the tool wins. Returns (server, tool) or None."""
     servers = set()
@@ -605,6 +605,64 @@ def normalise(event, agent, event_name=None):
     return event
 
 
+GEMINI_HOOK_NAMES = ('jt-ai-agent',)
+
+
+def gemini_hook_off(cwd):
+    """Is our hook turned off in a Gemini CLI settings file the user controls (1.5.3)? Gemini merges
+    hooksConfig.disabled from the user (~/.gemini/settings.json) and the project
+    (<project>/.gemini/settings.json) into the system list (merge strategy UNION), so a user can
+    switch off a hook the administrator put in the system settings, with /hooks disable or by hand.
+    Checked when any audited session starts; returns ["user:<path>: disabled", ...]. Only these two
+    keys are read: nothing else from the file is recorded (it can hold MCP servers' tokens)."""
+    files = []
+    homes = []
+    for h in (os.environ.get('HOME'),):
+        if h:
+            homes.append(h)
+    try:
+        homes.append(pwd.getpwuid(os.geteuid()).pw_dir)
+    except (KeyError, OSError):
+        pass
+    for h in homes:
+        files.append(('user', os.path.join(h, '.gemini', 'settings.json')))
+    d = cwd if isinstance(cwd, str) and cwd.startswith('/') else None
+    for _ in range(30):
+        if not d:
+            break
+        files.append(('project', os.path.join(d, '.gemini', 'settings.json')))
+        parent = os.path.dirname(d)
+        d = None if parent == d else parent
+    found, seen = [], set()
+    for scope, path in files:
+        if path in seen or (scope == 'project' and any(path == f for s, f in files if s == 'user')):
+            continue
+        seen.add(path)
+        try:
+            if os.path.getsize(path) > 1 << 20:
+                continue
+            with open(path, encoding='utf-8', errors='replace') as fh:
+                conf = json.loads(strip_jsonc(fh.read()))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(conf, dict):
+            continue
+        how = []
+        for section in ('hooksConfig', 'hooks'):          # hooks.disabled: Gemini CLI before hooksConfig
+            sec = conf.get(section)
+            if not isinstance(sec, dict):
+                continue
+            if section == 'hooksConfig' and sec.get('enabled') is False:
+                how.append('hooks off')
+            disabled = sec.get('disabled')
+            if isinstance(disabled, list) and any(
+                    isinstance(x, str) and (x in GEMINI_HOOK_NAMES or 'jt-ai-agent-hook' in x) for x in disabled):
+                how.append('jt-ai-agent disabled')
+        if how:
+            found.append('%s:%s: %s' % (scope, path, ', '.join(sorted(set(how)))))
+    return found
+
+
 def record(event, agent='claude-code'):
     rec = {'v': 1, 'ts': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'host': socket.gethostname()}
     uid = os.getuid()
@@ -621,6 +679,10 @@ def record(event, agent='claude-code'):
             rec[dst] = value[:MAX_SHORT]
     rec['agent'] = agent
     who_and_where(rec, event.get('cwd'))
+    if rec.get('event') == 'SessionStart':
+        off = gemini_hook_off(event.get('cwd'))
+        if off:
+            rec['gemini_hook_off'] = short('; '.join(off), 1000)
     after_only = agent == 'cursor'          # Cursor: every call is recorded after it ran (or was refused)
     if rec.get('event') in ('PostToolUseFailure', 'PostToolUse') and not after_only:
         rec['event'] = 'PostToolUseFailure'

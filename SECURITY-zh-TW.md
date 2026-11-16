@@ -41,7 +41,7 @@
   Dashboard 的憑證，否則產生自簽憑證；正式環境請改用瀏覽器信任的憑證。
 - **認證委派給 Wazuh API** —— 使用者以 Wazuh API 的帳號登入，
   取得的 JWT 放在 session cookie 裡；該 cookie 有簽章但未加密，因此設為 HttpOnly、
-  SameSite=Lax，並在 HTTPS 下加上 Secure 與 `__Host-` 前綴：瀏覽器會把 cookie
+  SameSite=Lax，並在 HTTPS 下加上 Secure 與 `__Host-` 前置字串：瀏覽器會把 cookie
   送往同一主機的每個 port，而 Dashboard 通常就在同一台主機。Web UI 模式下，
   Wazuh 的密碼不會被寫進 `config.yaml`。
 - **暴力破解防護：** 同一 IP 連續登入失敗會觸發暫時鎖定

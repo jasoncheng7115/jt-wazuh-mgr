@@ -603,5 +603,62 @@ class TestOpencodeMcp152(unittest.TestCase):
         self.assertNotIn('S3cret', json.dumps(r))
 
 
+class TestGeminiHookOff153(unittest.TestCase):
+    """1.5.3: a user or project Gemini setting that turns the audit hook off is reported at session start."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.env = mock.patch.dict(os.environ, {'HOME': self.tmp}, clear=False)
+        self.env.start()
+        self.pw = mock.patch.object(hook.pwd, 'getpwuid', side_effect=KeyError)
+        self.pw.start()
+        self.proj = os.path.join(self.tmp, 'work', 'app')
+        os.makedirs(self.proj)
+
+    def tearDown(self):
+        self.pw.stop()
+        self.env.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def settings(self, where, text):
+        d = os.path.join(where, '.gemini')
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, 'settings.json'), 'w') as fh:
+            fh.write(text)
+
+    def start(self, agent='claude-code'):
+        return hook.record({'hook_event_name': 'SessionStart', 'source': 'startup', 'cwd': self.proj}, agent)
+
+    def test_nothing_when_not_disabled(self):
+        self.settings(self.tmp, '{"mcpServers": {"x": {"env": {"TOKEN": "S3cret"}}}}')
+        r = self.start()
+        self.assertNotIn('gemini_hook_off', r)
+        self.assertNotIn('S3cret', json.dumps(r))
+
+    def test_user_disabled_list(self):
+        self.settings(self.tmp, '{\n // mine\n "hooksConfig": {"disabled": ["jt-ai-agent"]},'
+                                ' "mcpServers": {"x": {"env": {"TOKEN": "S3cret"}}},\n}')
+        r = self.start()
+        self.assertIn('user:', r['gemini_hook_off'])
+        self.assertIn('jt-ai-agent disabled', r['gemini_hook_off'])
+        self.assertNotIn('S3cret', json.dumps(r))
+
+    def test_project_and_hooks_off(self):
+        self.settings(os.path.join(self.tmp, 'work'), '{"hooksConfig": {"enabled": false}}')
+        r = self.start('gemini')
+        self.assertIn('project:%s' % os.path.join(self.tmp, 'work', '.gemini', 'settings.json'), r['gemini_hook_off'])
+        self.assertIn('hooks off', r['gemini_hook_off'])
+
+    def test_by_command_and_old_key(self):
+        self.settings(self.tmp, '{"hooks": {"disabled": ["/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py --agent gemini"]}}')
+        self.assertIn('jt-ai-agent disabled', self.start()['gemini_hook_off'])
+
+    def test_only_at_session_start(self):
+        self.settings(self.tmp, '{"hooksConfig": {"disabled": ["jt-ai-agent"]}}')
+        r = hook.record({'hook_event_name': 'PreToolUse', 'tool_name': 'Bash', 'tool_input': {'command': 'ls'},
+                         'cwd': self.proj})
+        self.assertNotIn('gemini_hook_off', r)
+
+
 if __name__ == '__main__':
     unittest.main()

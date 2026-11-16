@@ -386,6 +386,23 @@
     <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) changed $(jt_ai.path)</description>
   </rule>
 
+  <!--
+    1.5.3: Gemini CLI merges hooksConfig.disabled from the user's and the project's settings into
+    the system list, so a user can turn off the audit hook the administrator installed (with
+    /hooks disable, or by editing ~/.gemini/settings.json or <project>/.gemini/settings.json).
+    The hook checks those two files whenever an audited session starts (any agent) and names the
+    file and the setting; nothing else from the file is recorded.
+  -->
+  <rule id="133775" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.gemini_hook_off" type="pcre2">\S</field>
+    <description>AI agent audit: Gemini CLI's audit hook is turned off for $(jt_ai.user) on $(jt_ai.host): $(jt_ai.gemini_hook_off)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>jt_ai_agent_tamper,</group>
+  </rule>
+
   <rule id="133705" level="3">
     <if_sid>133700</if_sid>
     <field name="jt_ai.event" type="pcre2">^SessionStart$</field>
