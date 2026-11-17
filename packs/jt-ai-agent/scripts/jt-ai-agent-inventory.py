@@ -56,11 +56,13 @@ import struct
 import sys
 import time
 
-VERSION = '1.1'
+VERSION = '1.2'
 PROG = 'jt-ai-agent-inventory'
 LOCATION = 'jt-ai-agent-inventory'
 GROUP = 'ai-agent'
 HOOK = '/usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py'
+# 1.2: the Windows hook (beta); the Windows agent stores paths with backslashes, in lower case
+HOOK_WINDOWS = r'c:\program files\jt-ai-agent\jt-ai-agent-hook.ps1'
 REMIND_DAYS = 7
 SILENT_HOURS = 24
 SILENT_GRACE = 15 * 60          # time for the session-start line to reach the manager
@@ -184,7 +186,9 @@ def collect(wdb, agent):
                               "FROM sys_ports WHERE state = 'listening' OR protocol LIKE 'udp%%'" % aid)
     for column in ('file', 'full_path'):
         try:
-            rows = wdb_query(wdb, "agent %03d sql SELECT %s FROM fim_entry WHERE %s = '%s'" % (aid, column, column, HOOK))
+            hook = HOOK_WINDOWS if agent.get('platform') == 'windows' else HOOK
+            rows = wdb_query(wdb, "agent %03d sql SELECT %s FROM fim_entry WHERE %s = '%s' COLLATE NOCASE"
+                             % (aid, column, column, hook))
         except OSError:
             continue
         data['hook'] = bool(rows)

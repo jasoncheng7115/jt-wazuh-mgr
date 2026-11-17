@@ -5,8 +5,10 @@ properties matter more than anything it records: it must never block or
 change a call, and it must not write secrets into a log that goes to Wazuh.
 """
 
+import hashlib
 import importlib.util
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -754,6 +756,261 @@ class TestInventorySilent153(unittest.TestCase):
         pos2['inode'] = -1
         _, since = inv.scan_alerts(self.tmp, pos2, seen, now)
         self.assertEqual(since, now)
+
+
+class TestPrompts16(unittest.TestCase):
+    """1.6: prompts, off unless the server turns them on."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.log = os.path.join(self.tmp, 'actions.log')
+        self.plog = os.path.join(self.tmp, 'prompts.log')
+        self.conf = os.path.join(self.tmp, 'config')
+        for f in (self.log, self.plog):
+            open(f, 'w').close()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def run_hook(self, payload, mode=None, args=('--agent', 'claude-code')):
+        if mode is not None:
+            with open(self.conf, 'w') as fh:
+                fh.write('# x\nprompts = %s\n' % mode)
+        env = dict(os.environ, JT_AI_AGENT_LOG=self.log, JT_AI_AGENT_PROMPT_LOG=self.plog,
+                   JT_AI_AGENT_CONFIG=self.conf, HOME=self.tmp)
+        r = subprocess.run([sys.executable, HOOK] + list(args), input=json.dumps(payload), capture_output=True,
+                           text=True, env=env)
+        lines = [json.loads(x) for x in open(self.log).read().splitlines()]
+        plines = [json.loads(x) for x in open(self.plog).read().splitlines()]
+        return r, lines, plines
+
+    P = {'hook_event_name': 'UserPromptSubmit', 'session_id': 's1', 'cwd': '/tmp',
+         'prompt': 'deploy with DB_PASSWORD=S3cretPw please'}
+
+    def test_off_by_default_and_when_off(self):
+        for mode in (None, 'off', 'garbage'):
+            with self.subTest(mode=mode):
+                if mode is None and os.path.exists(self.conf):
+                    os.unlink(self.conf)
+                r, lines, plines = self.run_hook(self.P, mode)
+                self.assertEqual((r.returncode, r.stdout, lines, plines), (0, '', [], []))
+
+    def test_local_keeps_the_text_on_the_host_only(self):
+        r, lines, plines = self.run_hook(self.P, 'local')
+        self.assertEqual(r.stdout, '')                       # Claude Code: stdout would become context
+        j = lines[0]['jt_ai']
+        self.assertEqual((j['event'], j['prompt_len'], j['prompt_redacted'], j['prompt_stored']),
+                         ('UserPromptSubmit', len(self.P['prompt']), True, True))
+        self.assertNotIn('prompt', j)
+        self.assertNotIn('S3cret', json.dumps(lines) + json.dumps(plines))
+        self.assertIn('DB_PASSWORD=***', plines[0]['jt_ai_prompt']['prompt'])
+        self.assertEqual(plines[0]['jt_ai_prompt']['prompt_sha'], j['prompt_sha'])
+
+    def test_wazuh_sends_the_beginning(self):
+        long = dict(self.P, prompt='x' * 5000)
+        _, lines, plines = self.run_hook(long, 'wazuh')
+        j = lines[0]['jt_ai']
+        self.assertEqual(len(j['prompt']), 2003)
+        self.assertEqual(len(plines[0]['jt_ai_prompt']['prompt']), 5000)
+
+    def test_gemini_and_copilot_shapes(self):
+        r, lines, _ = self.run_hook({'hook_event_name': 'BeforeAgent', 'session_id': 'g', 'cwd': '/tmp',
+                                     'prompt': 'hello'}, 'local', ('--agent', 'gemini'))
+        self.assertEqual(r.stdout.strip(), '{}')
+        self.assertEqual((lines[0]['jt_ai']['event'], lines[0]['jt_ai']['agent']), ('UserPromptSubmit', 'gemini'))
+        r, lines, _ = self.run_hook({'sessionId': 'c', 'cwd': '/tmp', 'timestamp': 1, 'prompt': 'hi'}, 'local',
+                                    ('--agent', 'copilot', '--event', 'userPromptSubmitted'))
+        self.assertEqual(lines[-1]['jt_ai']['event'], 'UserPromptSubmit')
+        self.assertEqual(lines[-1]['jt_ai']['prompt_len'], 2)
+
+    def test_no_prompt_log_still_records_the_line(self):
+        os.unlink(self.plog)
+        with open(self.conf, 'w') as fh:
+            fh.write('prompts = local\n')
+        env = dict(os.environ, JT_AI_AGENT_LOG=self.log, JT_AI_AGENT_PROMPT_LOG=self.plog,
+                   JT_AI_AGENT_CONFIG=self.conf, HOME=self.tmp)
+        subprocess.run([sys.executable, HOOK], input=json.dumps(self.P), capture_output=True, text=True, env=env)
+        j = json.loads(open(self.log).read().splitlines()[0])['jt_ai']
+        self.assertFalse(j['prompt_stored'])
+
+    def test_parse_config(self):
+        self.assertEqual(hook.parse_config('prompts = LOCAL # x\nprompts = off\n'), {'prompts': 'local'})
+        self.assertEqual(hook.parse_config('prompts = all\nother = 1\n'), {})
+
+    def test_sync_config_copies_and_reports_changes(self):
+        shared = os.path.join(self.tmp, 'shared.conf')
+        with mock.patch.object(hook, 'CONFIG_SHARED', (shared,)), mock.patch.object(hook, 'CONFIG_LOCAL', self.conf), \
+                mock.patch.object(hook, 'LOG', self.log):
+            hook.sync_config()                                    # nothing delivered yet: nothing happens
+            self.assertFalse(os.path.exists(self.conf))
+            with open(shared, 'w') as fh:
+                fh.write('# from the manager\nprompts = local\n')
+            hook.sync_config()
+            self.assertEqual(hook.parse_config(open(self.conf).read()), {'prompts': 'local'})
+            self.assertEqual(oct(os.stat(self.conf).st_mode & 0o777), '0o644')
+            hook.sync_config()                                    # unchanged: no second line
+            with open(shared, 'w') as fh:
+                fh.write('prompts = off\n')
+            hook.sync_config()
+        lines = [json.loads(x)['jt_ai'] for x in open(self.log).read().splitlines()]
+        self.assertEqual([(x['event'], x['prompts'], x['previous']) for x in lines],
+                         [('AuditConfig', 'local', 'none'), ('AuditConfig', 'off', 'local')])
+
+
+AGENT_DIR = os.path.join(ROOT, 'packs', 'jt-ai-agent', 'agent')
+PWSH_IMAGE = 'mcr.microsoft.com/powershell:latest'
+
+
+def _ps1(name):
+    with open(os.path.join(AGENT_DIR, name), 'rb') as fh:
+        return fh.read()
+
+
+def _ps_map(text, key):
+    """The 'k' = 'v' pairs of one entry of a PowerShell hashtable literal ('copilot' = @{ ... })."""
+    i = re.search(r"'%s'\s*=\s*@\{" % re.escape(key), text).start() if key else 0
+    start = text.index('@{', i) + 2
+    body = text[start:text.index('}', start)]
+    return dict(re.findall(r"'([^']+)'\s*=\s*'([^']+)'", body))
+
+
+class TestWindowsBeta16(unittest.TestCase):
+    """1.6: the Windows PowerShell hook and installer (BETA)."""
+
+    def test_scripts_are_ascii_with_crlf(self):
+        # Windows PowerShell 5.1 reads a script without a byte-order mark as the ANSI code page:
+        # anything but ASCII would be read differently on a Chinese or Japanese Windows
+        for name in ('jt-ai-agent-hook.ps1', 'jt-ai-agent-install.ps1'):
+            data = _ps1(name)
+            data.decode('ascii')
+            self.assertNotIn(b'\n', data.replace(b'\r\n', b''), name)
+
+    def test_marked_beta(self):
+        for name in ('jt-ai-agent-hook.ps1', 'jt-ai-agent-install.ps1'):
+            self.assertIn(b'BETA', _ps1(name)[:1500], name)
+        self.assertIn(b"$rec['hook'] = 'ps1-beta'", _ps1('jt-ai-agent-hook.ps1'))
+        m = json.load(open(os.path.join(ROOT, 'packs', 'jt-ai-agent', 'manifest.json'), encoding='utf-8'))
+        win = [s for s in m['setup'] if s['platform'] == 'windows']
+        self.assertTrue(win)
+        for s in win:
+            self.assertIn('(beta)', s['title'])
+            self.assertIn('（beta）', s['title_zh'])
+            self.assertTrue(s['body'].startswith('BETA'))
+            self.assertTrue(s['body_zh'].startswith('BETA'))
+        self.assertTrue(any('BETA' in n and 'Windows' in n for n in m['notes']))
+        self.assertTrue(any('BETA' in n and 'Windows' in n for n in m['notes_zh']))
+        for f in ('jt-ai-agent-hook.ps1', 'jt-ai-agent-install.ps1'):
+            self.assertIn(f, m['agent_group']['files'])
+
+    def test_redact_block_is_generated_from_the_python_hook(self):
+        spec = importlib.util.spec_from_file_location('gen_ps1_redact', os.path.join(ROOT, 'tools', 'gen_ps1_redact.py'))
+        gen = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gen)
+        text = _ps1('jt-ai-agent-hook.ps1').decode('ascii').replace('\r\n', '\n')
+        i, j = text.index(gen.BEGIN), text.index(gen.END) + len(gen.END)
+        self.assertEqual(text[i:j], gen.block(), 'run tools/gen_ps1_redact.py --write')
+        # .NET regexes are case-sensitive unless told otherwise
+        for rx, _ in hook.REDACT:
+            if rx.flags & re.I:
+                self.assertTrue(rx.pattern.startswith('(?i)') or '(?i)' in rx.pattern, rx.pattern)
+
+    def test_tool_and_event_maps_match_the_python_hook(self):
+        text = _ps1('jt-ai-agent-hook.ps1').decode('ascii')
+        for agent, py in (('codex', hook.CODEX_TOOLS), ('gemini', hook.GEMINI_TOOLS),
+                          ('copilot', hook.COPILOT_TOOLS)):
+            self.assertEqual(_ps_map(text, agent), py, agent)
+        cursor = {k: v for k, v in hook.CURSOR_TOOLS.items() if k != v or k == 'Delete'}
+        self.assertEqual(_ps_map(text, 'cursor'), cursor)
+        gem = text[text.index('$GeminiEvents'):]
+        self.assertEqual(_ps_map(gem, ''), hook.GEMINI_EVENTS)
+
+    def test_installer_hooks_every_prompt_event(self):
+        inst = _ps1('jt-ai-agent-install.ps1').decode('ascii')
+        for ev in ("'UserPromptSubmit'", "'BeforeAgent'", "'userPromptSubmitted'"):
+            self.assertIn(ev, inst)
+        # Cursor's prompt hook can block the prompt; its before-hooks are permission hooks
+        cursor = inst[inst.index('== Cursor'):inst.index('== GitHub Copilot')]
+        self.assertNotRegex(cursor, r"'before\w+'")
+        self.assertIn("; exit 0", inst)          # Copilot denies preToolUse when a hook fails
+        self.assertIn('-TestRoot', inst)
+
+    def test_inventory_looks_for_the_windows_hook_on_windows(self):
+        seen = []
+        saved = inv.wdb_query
+        try:
+            inv.wdb_query = lambda path, q: (seen.append(q), [])[1]
+            inv.collect('/x', {'id': '044', 'platform': 'windows'})
+            inv.collect('/x', {'id': '045', 'platform': 'ubuntu'})
+        finally:
+            inv.wdb_query = saved
+        fim = [q for q in seen if 'fim_entry' in q]
+        self.assertTrue(any(inv.HOOK_WINDOWS in q and q.startswith('agent 044') for q in fim))
+        self.assertTrue(any(inv.HOOK in q and q.startswith('agent 045') for q in fim))
+        self.assertTrue(all('COLLATE NOCASE' in q for q in fim))
+
+    def test_agent_conf_collects_the_windows_log(self):
+        conf = open(os.path.join(AGENT_DIR, 'agent.conf'), encoding='utf-8').read()
+        win = conf[conf.index('os="Windows"'):]
+        win = win[:win.index('</agent_config>')]
+        self.assertIn(r'C:\ProgramData\jt-ai-agent\actions.log', win)
+        self.assertIn('jt-ai-agent: $(log)', win)
+        self.assertIn(r'C:\Program Files\jt-ai-agent', win)
+
+    @unittest.skipUnless(shutil.which('docker') and subprocess.run(
+        ['docker', 'image', 'inspect', PWSH_IMAGE], capture_output=True).returncode == 0,
+        'PowerShell container image not present')
+    def test_hook_in_powershell(self):
+        """Runs the hook in PowerShell 7 (Linux container) on the same inputs as the Python hook."""
+        tmp = tempfile.mkdtemp()
+        try:
+            shutil.copy(os.path.join(AGENT_DIR, 'jt-ai-agent-hook.ps1'), tmp)
+            for name in ('actions.log', 'prompts.log'):    # the installer creates them; the hook only appends
+                open(os.path.join(tmp, name), 'w').close()
+            inputs = [
+                ('claude-code', '', {'hook_event_name': 'PreToolUse', 'session_id': 's', 'cwd': 'C:\\w', 'tool_name': 'PowerShell',
+                                     'tool_input': {'command': 'git push https://u:ghp_abcdefghijklmnopqrstuvwx@h/r'}}),
+                ('codex', '', {'hook_event_name': 'PreToolUse', 'session_id': 's', 'tool_name': 'shell',
+                               'tool_input': {'command': ['powershell', '-c', 'dir']}}),
+                ('gemini', '', {'hook_event_name': 'BeforeTool', 'session_id': 's', 'tool_name': 'read_file',
+                                'tool_input': {'file_path': 'C:\\Users\\a\\notes.txt'}}),
+                ('cursor', '', {'hook_event_name': 'postToolUse', 'conversation_id': 'u', 'tool_name': 'Shell',
+                                'tool_input': {'command': 'dir'}}),
+                ('copilot', 'preToolUse', {'timestamp': 1, 'cwd': 'C:\\w', 'toolName': 'powershell',
+                                           'toolArgs': json.dumps({'command': 'dir'})}),
+                ('claude-code', '', {'hook_event_name': 'UserPromptSubmit', 'session_id': 's',
+                                     'prompt': '\u4e2d\u6587 DB_PASSWORD=hunter2'}),
+            ]
+            script = ["$env:JT_AI_AGENT_LOG = '/w/actions.log'; $env:JT_AI_AGENT_PROMPT_LOG = '/w/prompts.log'",
+                      "$env:JT_AI_AGENT_CONFIG = '/w/config'; Set-Content /w/config 'prompts = wazuh'"]
+            for n, (agent, event, data) in enumerate(inputs):
+                with open(os.path.join(tmp, 'in%d.json' % n), 'w', encoding='utf-8') as fh:
+                    json.dump(data, fh, ensure_ascii=False)
+                ev = (' -Event ' + event) if event else ''
+                script.append("Get-Content -Raw -Encoding utf8 /w/in%d.json | pwsh -NoProfile -File /w/jt-ai-agent-hook.ps1 -Agent %s%s | Out-Null"
+                              % (n, agent, ev))
+            with open(os.path.join(tmp, 'run.ps1'), 'w') as fh:
+                fh.write('\n'.join(script) + '\n')
+            r = subprocess.run(['docker', 'run', '--rm', '--network', 'none', '-v', '%s:/w' % tmp, PWSH_IMAGE,
+                                'pwsh', '-NoProfile', '-File', '/w/run.ps1'], capture_output=True, text=True, timeout=300)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            with open(os.path.join(tmp, 'actions.log'), encoding='utf-8') as fh:
+                lines = [json.loads(x)['jt_ai'] for x in fh if x.strip()]
+            self.assertEqual(len(lines), len(inputs))
+            for rec in lines:
+                self.assertEqual((rec['platform'], rec['hook']), ('windows', 'ps1-beta'))
+            self.assertEqual([r_.get('tool') for r_ in lines[:5]], ['Bash', 'Bash', 'Read', 'Bash', 'Bash'])
+            self.assertNotIn('ghp_', lines[0]['cmd'])
+            self.assertTrue(lines[0].get('redacted'))
+            self.assertEqual(lines[2]['path'], 'C:/Users/a/notes.txt')
+            self.assertEqual(lines[5]['event'], 'UserPromptSubmit')
+            self.assertEqual(lines[5]['prompt'], '\u4e2d\u6587 DB_PASSWORD=***')
+            # same length and hash as the Python hook gives
+            prompt = '\u4e2d\u6587 DB_PASSWORD=hunter2'
+            self.assertEqual(lines[5]['prompt_len'], len(prompt))
+            self.assertEqual(lines[5]['prompt_sha'],
+                             hashlib.sha256(hook.redact(prompt).encode('utf-8')).hexdigest()[:16])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == '__main__':

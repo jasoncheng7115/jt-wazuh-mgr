@@ -7586,6 +7586,21 @@ HTML_TEMPLATE = '''
                 renderPackSetup(packId, d.setup) + '</div>';
         }
 
+        async function savePackSettings(packId) {
+            const values = {};
+            document.querySelectorAll('select.pack-setting').forEach(e => { values[e.getAttribute('data-key')] = e.value; });
+            const out = document.getElementById('packSettingsStatus');
+            if (out) out.textContent = 'Saving...';
+            const r = await api('/packs/' + encodeURIComponent(packId) + '/settings', 'POST', {values: values});
+            if (!r || r.error) {
+                if (out) out.textContent = '';
+                showToast((r && r.error) || 'Failed to save settings', 'error');
+                return;
+            }
+            if (out) out.textContent = r.message || '';
+            showToast(r.message || 'Settings saved.', 'success');
+        }
+
         async function showPackDetail(packId) {
             showModal('Pack Details', '<div class="loading"><div class="spinner"></div>Loading...</div>',
                 '<button class="btn" onclick="closeModal()"><svg class="icon"><use href="#icon-xmark"/></svg>Close</button>', true);
@@ -7625,6 +7640,28 @@ HTML_TEMPLATE = '''
                     html += '<div class="pack-meta" style="margin-bottom:10px;"><span>Installed version</span> <code>' +
                         escapeHtml(d.installed_version || '') + '</code> &nbsp; <span>Up to date</span>' + when + '</div>';
                 }
+            }
+
+            const st = d.settings;
+            if (st && (st.items || []).length) {
+                html += '<div class="pack-settings" style="margin:10px 0;padding:10px 12px;border:1px solid var(--border);border-radius:8px;">' +
+                    '<div style="font-weight:600;margin-bottom:6px;">Settings</div>';
+                for (const it of st.items) {
+                    const titles = packLang(it.choice_titles, it.choice_titles_zh) || {};
+                    const opts = (it.choices || []).map(c => '<option value="' + escapeHtml(c) + '"' + (c === it.value ? ' selected' : '') + '>' +
+                        escapeHtml((titles && titles[c]) || c) + '</option>').join('');
+                    html += '<div style="margin:6px 0;"><label style="display:block;margin-bottom:4px;">' + escapeHtml(packLang(it.title, it.title_zh) || it.key) + '</label>' +
+                        '<select class="form-control pack-setting" data-key="' + escapeHtml(it.key) + '"' + (st.editable ? '' : ' disabled') + '>' + opts + '</select>' +
+                        (it.help ? '<div class="pack-meta" style="margin-top:4px;">' + escapeHtml(packLang(it.help, it.help_zh)) + '</div>' : '') + '</div>';
+                }
+                html += '<div class="pack-meta">' + '<span>Stored in</span> <code>' + escapeHtml(st.file || '') + '</code></div>';
+                if (st.editable) {
+                    html += '<div style="margin-top:8px;"><button class="btn btn-sm btn-primary" onclick="savePackSettings(\\'' + escapeHtml(packId) + '\\')"><svg class="icon"><use href="#icon-check"/></svg><span>Save settings</span></button>' +
+                        ' <span id="packSettingsStatus" class="pack-meta"></span></div>';
+                } else {
+                    html += '<div class="pack-meta">Install the pack to change its settings.</div>';
+                }
+                html += '</div>';
             }
 
             const pres = d.presence || {};
@@ -9325,6 +9362,16 @@ _I18N_SCRIPT = r"""
       'Import': '匯入',
       'FAILED': '失敗',
       'Import all dashboards': '匯入所有看板',
+      'Stored in': '存放於',
+      'Save settings': '儲存設定',
+      'Install the pack to change its settings.': '安裝套件後才能變更設定。',
+      'Failed to save settings': '儲存設定失敗',
+      'Settings saved.': '設定已儲存。',
+      'Settings saved. The manager sends them to the hosts of the group within a few minutes.': '設定已儲存。manager 會在幾分鐘內送到群組內的主機。',
+      'Nothing changed.': '沒有變更。',
+      'This pack has no settings': '這個套件沒有可調整的設定',
+      'values must be an object': 'values 必須是物件',
+      'Unknown setting': '未知的設定',
       'Entries': '項目數',
       'Open the dashboard list': '開啟看板清單',
       'No installed pack has a dashboard': '已安裝的套件都沒有看板',
@@ -10193,6 +10240,16 @@ _I18N_SCRIPT = r"""
       'Import': 'インポート',
       'FAILED': '失敗',
       'Import all dashboards': 'すべてのダッシュボードをインポート',
+      'Stored in': '保存先',
+      'Save settings': '設定を保存',
+      'Install the pack to change its settings.': '設定を変更するにはパックをインストールしてください。',
+      'Failed to save settings': '設定の保存に失敗しました',
+      'Settings saved.': '設定を保存しました。',
+      'Settings saved. The manager sends them to the hosts of the group within a few minutes.': '設定を保存しました。マネージャーが数分以内にグループのホストへ送信します。',
+      'Nothing changed.': '変更はありません。',
+      'This pack has no settings': 'このパックには設定項目がありません',
+      'values must be an object': 'values はオブジェクトである必要があります',
+      'Unknown setting': '不明な設定です',
       'Entries': '件数',
       'Open the dashboard list': 'ダッシュボードの一覧を開く',
       'No installed pack has a dashboard': 'ダッシュボードのあるインストール済みパックがありません',
@@ -10717,6 +10774,7 @@ _I18N_SCRIPT = r"""
   // Patterns for interpolated strings: [regex, function(match)->translated]
   var I18N_PATTERNS = {
     'zh-TW': [
+      [/^Not an allowed value for (\S+)$/, function (m) { return m[1] + ' 不接受這個值'; }],
       [/^(\d+) active response\(s\) on (\d+) node\(s\); (\d+) with a problem$/, function (m) { return m[2] + ' 個節點上共有 ' + m[1] + ' 項主動回應，其中 ' + m[3] + ' 項有問題'; }],
       [/^Could not read this node: (.+)$/, function (m) { return '無法讀取這個節點：' + m[1]; }],
       [/^Last (\d+) hours, (\d+) run\(s\); alerts of this manager node only\.$/, function (m) { return '最近 ' + m[1] + ' 小時，共 ' + m[2] + ' 次；只含本 Manager 節點的告警。'; }],
@@ -10904,6 +10962,7 @@ _I18N_SCRIPT = r"""
       [/^never_connected \((\d+)\)$/, function (m) { return '從未連線 (' + m[1] + ')'; }]
     ],
     'ja': [
+      [/^Not an allowed value for (\S+)$/, function (m) { return m[1] + ' にはこの値を使用できません'; }],
       [/^(\d+) active response\(s\) on (\d+) node\(s\); (\d+) with a problem$/, function (m) { return m[2] + ' ノードに ' + m[1] + ' 件のアクティブレスポンス、うち ' + m[3] + ' 件に問題あり'; }],
       [/^Could not read this node: (.+)$/, function (m) { return 'このノードを読み取れません：' + m[1]; }],
       [/^Last (\d+) hours, (\d+) run\(s\); alerts of this manager node only\.$/, function (m) { return '直近 ' + m[1] + ' 時間、' + m[2] + ' 回；このマネージャーノードのアラートのみ。'; }],
@@ -16698,6 +16757,125 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
             logger.error(f"PACK LIST ERROR: {e}")
             return jsonify({'error': str(e)}), 500
 
+    SETTING_KEY_RE = re.compile(r'^[a-z][a-z0-9_]{0,40}$')
+
+    def _pack_settings_path(manifest):
+        """Where a pack's site settings live: a file in its agent group, which the manager
+        delivers to every host of the group (manifest "settings", 1.37.4)."""
+        spec = manifest.get('settings') or {}
+        group = (manifest.get('agent_group') or {}).get('name', '')
+        fname = str(spec.get('file') or '')
+        if not spec or not re.match(r'^[A-Za-z0-9_-]{1,64}$', group) or not re.match(r'^[A-Za-z0-9._-]{1,64}$', fname):
+            return None
+        return os.path.join(_wazuh_path(), 'etc', 'shared', group, fname)
+
+    def _settings_values(text):
+        values = {}
+        for line in (text or '').splitlines():
+            line = line.split('#', 1)[0].strip()
+            if '=' in line:
+                k, v = (x.strip() for x in line.split('=', 1))
+                if SETTING_KEY_RE.match(k.lower()):
+                    values.setdefault(k.lower(), v.lower())
+        return values
+
+    def _pack_settings_info(pack_id, manifest, state):
+        spec = manifest.get('settings') or {}
+        path = _pack_settings_path(manifest)
+        if not path:
+            return None
+        text = None
+        try:
+            with open(path, encoding='utf-8', errors='replace') as fh:
+                text = fh.read(65536)
+        except OSError:
+            pass
+        values = _settings_values(text)
+        items = []
+        for it in spec.get('items') or []:
+            item = dict(it)
+            item['value'] = values.get(it.get('key'), it.get('default'))
+            items.append(item)
+        rel = os.path.relpath(path, _wazuh_path())
+        return {'file': rel, 'items': items, 'editable': bool(state) and os.path.isdir(os.path.dirname(path))}
+
+    @app.route('/api/packs/<pack_id>/settings', methods=['POST'])
+    @login_required
+    @require_capability('rule_packs')
+    def set_pack_settings(pack_id):
+        """Change a pack's site settings (manifest "settings"): rewrite the key = value lines of
+        the settings file in the pack's agent group, keeping its comments. The manager sends the
+        file to every host of the group; the cluster copies it to the workers."""
+        import shutil
+        manifest = _read_manifest(pack_id)
+        if not manifest:
+            return jsonify({'error': 'Unknown pack'}), 404
+        spec = manifest.get('settings') or {}
+        path = _pack_settings_path(manifest)
+        if not path:
+            return jsonify({'error': 'This pack has no settings'}), 400
+        if not _installed_state(pack_id):
+            return jsonify({'error': 'The pack is not installed'}), 400
+        if not os.path.isdir(os.path.dirname(path)):
+            return jsonify({'error': 'The agent group %s does not exist' % os.path.basename(os.path.dirname(path))}), 400
+        data = request.get_json(silent=True) or {}
+        values = data.get('values')
+        if not isinstance(values, dict) or not values:
+            return jsonify({'error': 'values must be an object'}), 400
+        allowed = {it.get('key'): it.get('choices') or [] for it in spec.get('items') or []}
+        for k, v in values.items():
+            if k not in allowed:
+                return jsonify({'error': 'Unknown setting'}), 400
+            if not isinstance(v, str) or v not in allowed[k]:
+                return jsonify({'error': 'Not an allowed value for %s' % k}), 400
+        try:
+            with open(path, encoding='utf-8', errors='replace') as fh:
+                text = fh.read(65536)
+        except OSError:
+            src = os.path.join(_pack_dir(pack_id), 'agent', str(spec.get('file')))
+            try:
+                with open(src, encoding='utf-8', errors='replace') as fh:
+                    text = fh.read(65536)
+            except OSError:
+                text = ''
+        before = _settings_values(text)
+        lines = text.splitlines()
+        for k, v in values.items():
+            rx = re.compile(r'^\s*' + re.escape(k) + r'\s*=', re.I)
+            hit = False
+            for i, line in enumerate(lines):
+                if rx.match(line):
+                    lines[i] = '%s = %s' % (k, v)
+                    hit = True
+            if not hit:
+                lines.append('%s = %s' % (k, v))
+        new = '\n'.join(lines) + '\n'
+        changed = {k: [before.get(k), v] for k, v in values.items() if before.get(k) != v}
+        if new != text:
+            tmp = path + '.jtwm-new'
+            try:
+                with open(tmp, 'w', encoding='utf-8') as fh:
+                    fh.write(new)
+                os.chmod(tmp, 0o660)
+                try:
+                    shutil.chown(tmp, 'wazuh', 'wazuh')
+                except Exception:
+                    pass
+                os.replace(tmp, path)
+            except OSError as e:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+                return jsonify({'error': 'Could not write the settings: %s' % e}), 500
+        if changed:
+            logger.info(f"PACK SETTINGS: user={get_current_user()} pack={sanitize_for_log(pack_id)} "
+                        f"changes={sanitize_for_log(json.dumps(changed))}")
+        return jsonify({'changed': changed, 'file': os.path.relpath(path, _wazuh_path()),
+                        'settings': _pack_settings_info(pack_id, manifest, _installed_state(pack_id)),
+                        'message': 'Settings saved. The manager sends them to the hosts of the group '
+                                   'within a few minutes.' if changed else 'Nothing changed.'})
+
     @app.route('/api/packs/<pack_id>', methods=['GET'])
     @login_required
     @require_capability('rule_packs')
@@ -16742,6 +16920,7 @@ def create_app(max_login_attempts: int = 3, lockout_minutes: int = 30) -> 'Flask
                 'presence': _pack_presence(manifest),
                 'setup': manifest.get('setup') or [],
                 'dashboard': _pack_dashboard_info(pack_id),
+                'settings': _pack_settings_info(pack_id, manifest, state),
                 'agent_files': sorted(
                     f for f in (os.listdir(os.path.join(pdir, 'agent'))
                                 if os.path.isdir(os.path.join(pdir, 'agent')) else [])

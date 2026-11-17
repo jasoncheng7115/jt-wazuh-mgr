@@ -4,6 +4,22 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.0（2026-11-17）
+
+- **jt-ai-agent 1.6：可以記錄使用者的提示，預設不記錄，由伺服器端決定開或關。** 新的套件設定「prompts」（off／local／wazuh）
+  放在 agent 群組的 `jt-ai-agent.conf`：`local` 只把提示（已去除密碼）留在主機上，Wazuh 只收到長度與雜湊；`wazuh` 另外送出前
+  2,000 字。root 的排程（macOS 是 launchd，Windows 是排程工作）把設定複製給使用者的 hook，每次變更都會記錄。支援 Claude Code、
+  Codex、Gemini CLI 與 Copilot；Cursor 的提示 hook 可能擋下提示，所以不加。規則 133777（一則提示，L3）、133778（提示裡貼了密碼或
+  token，L8）、133779（設定變了，L5）。
+- **jt-wazuh-mgr 的套件設定：** 套件可以在 manifest 宣告設定；套件視窗會列出，按「儲存設定」就改寫 manager 上 agent 群組裡的檔案
+  （保留註解、檢查選項、寫入記錄），再由 manager 送到群組的主機。`POST /api/packs/<id>/settings`。
+- **jt-ai-agent 支援 Windows（BETA）：** PowerShell hook（`jt-ai-agent-hook.ps1`，只需要 Windows PowerShell 5.1）與安裝程式
+  （`jt-ai-agent-install.ps1`，可用 `-TestRoot` 先試），支援 Claude Code、Codex、Gemini CLI、Cursor 與 Copilot；記錄檔使用者只能附加。
+  已在 Windows 11 以各代理文件記載的 hook 輸入實測，還沒在 Windows 上真正的代理工作階段裡執行過。新規則 133780-133783（竄改稽核、
+  清除事件記錄或關閉 Defender／防火牆／備份、常駐、帳號）；133712、133715 與 133721-133723 也看 Windows 的指令與路徑；盤點在
+  Windows 主機上找 Windows 版 hook。記錄行帶 `platform`（Python hook 也是），看板上有分布圖。
+- **套件發版關卡大幅縮短**（83 分鐘 → 53 分鐘，實測時機器上還有其他工作在跑）：升級與叢集 master 比對自己和全新安裝那台的規則集（每個規則、解碼器、清單檔與 ossec.conf 的 ruleset 設定），相同就沿用它的重放結果，只重放檔案不同的套件；worker 仍完整重放，並與全新安裝同時進行；logtest 執行緒依 CPU 數分配。
+
 ## v1.37.3（2026-11-16）
 
 - jt-ai-agent 1.5.4：v1.37.2 把規則 133776 與盤點腳本 1.1 放在 1.5.3 這個版號下，但 v1.37.1 的 1.5.3 內容不同，

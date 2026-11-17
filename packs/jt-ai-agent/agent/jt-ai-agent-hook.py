@@ -38,8 +38,8 @@ with the patched paths and never the patch text.
 
 It records who (OS user, session, subagent), where (host, working directory,
 permission mode) and what (tool; for shell commands the command line, for file
-tools the path, for web tools the address) - never file contents, command
-output or prompts. Secrets in command lines are replaced with *** before
+tools the path, for web tools the address) - never file contents or command
+output, and prompts only when the server turns that on (1.6, below). Secrets in command lines are replaced with *** before
 anything is written: passwords and tokens in variables, options, URLs and
 headers, private key blocks and the well-known token formats. A command is
 kept to 2,000 characters.
@@ -62,8 +62,24 @@ Codex: the same two hooks in /etc/codex/requirements.toml (managed hooks, with
 --agent codex). opencode: /etc/opencode/plugins/jt-ai-agent.js. The pack's
 setup guide has both.
 
-JT_AI_AGENT_LOG overrides the log path (tests).
+Prompts (1.6, off unless the server turns them on): the user's prompt arrives as
+UserPromptSubmit (Claude Code, Codex), BeforeAgent (Gemini CLI) or userPromptSubmitted
+(Copilot). The setting "prompts" in jt-ai-agent.conf, which the Wazuh manager delivers to
+every host of the agent group, decides what happens:
+  off     nothing is written (the default)
+  local   the prompt, with secrets replaced by ***, goes to /var/log/jt-ai-agent/prompts.log
+          on this host only (root can read it, the Wazuh agent does not collect it); the
+          audit log gets its length and a hash
+  wazuh   as local, and the audit log also carries the first 2,000 characters
+Cursor (its prompt hook blocks the prompt when the answer is not what it expects) and
+opencode are not covered. The delivered file is readable by root only, so a root cron job
+runs this hook with --sync-config every five minutes to copy the setting to
+/etc/jt-ai-agent/config, where every user's hook can read it, and records the change.
+
+JT_AI_AGENT_LOG, JT_AI_AGENT_PROMPT_LOG and JT_AI_AGENT_CONFIG override the paths (tests).
 """
+
+import hashlib
 
 import json
 import os
@@ -75,6 +91,13 @@ import sys
 import time
 
 LOG = os.environ.get('JT_AI_AGENT_LOG', '/var/log/jt-ai-agent/actions.log')
+PROMPT_LOG = os.environ.get('JT_AI_AGENT_PROMPT_LOG', '/var/log/jt-ai-agent/prompts.log')
+# the setting as the manager delivers it (root only) and the copy every user can read
+CONFIG_SHARED = ('/var/ossec/etc/shared/jt-ai-agent.conf', '/Library/Ossec/etc/shared/jt-ai-agent.conf')
+CONFIG_LOCAL = os.environ.get('JT_AI_AGENT_CONFIG', '/etc/jt-ai-agent/config')
+PROMPT_MODES = ('off', 'local', 'wazuh')
+MAX_PROMPT_WAZUH = 2000
+MAX_PROMPT_LOCAL = 100000
 MAX_CMD = 2000
 MAX_SHORT = 300
 
@@ -133,7 +156,7 @@ GEMINI_TOOLS = {'run_shell_command': 'Bash', 'read_file': 'Read', 'read_many_fil
                 'google_web_search': 'WebSearch', 'write_todos': 'TodoWrite', 'ask_user': 'AskUserQuestion',
                 'activate_skill': 'Skill'}
 GEMINI_EVENTS = {'BeforeTool': 'PreToolUse', 'AfterTool': 'PostToolUse', 'SessionStart': 'SessionStart',
-                 'SessionEnd': 'SessionEnd'}
+                 'SessionEnd': 'SessionEnd', 'BeforeAgent': 'UserPromptSubmit'}
 CURSOR_TOOLS = {'Shell': 'Bash', 'Terminal': 'Bash', 'Read': 'Read', 'Write': 'Write', 'Edit': 'Edit',
                 'StrReplace': 'Edit', 'Delete': 'Delete', 'Grep': 'Grep', 'Glob': 'Glob', 'LS': 'LS',
                 'Task': 'Task', 'WebFetch': 'WebFetch', 'WebSearch': 'WebSearch'}
@@ -145,7 +168,8 @@ COPILOT_TOOLS = {'bash': 'Bash', 'powershell': 'Bash', 'view': 'Read', 'create':
                  'update_todo': 'TodoWrite', 'ask_user': 'AskUserQuestion'}
 COPILOT_EVENTS = {'sessionStart': 'SessionStart', 'sessionEnd': 'SessionEnd', 'preToolUse': 'PreToolUse',
                   'postToolUse': 'PostToolUse', 'postToolUseFailure': 'PostToolUseFailure',
-                  'subagentStart': 'SubagentStart', 'permissionRequest': 'PermissionRequest'}
+                  'subagentStart': 'SubagentStart', 'permissionRequest': 'PermissionRequest',
+                  'userPromptSubmitted': 'UserPromptSubmit'}
 # 1.5: browser automation through MCP (Claude in Chrome, Playwright MCP, Chrome DevTools MCP,
 # Puppeteer MCP and the like). The action, address, tab and element are recorded; what is
 # typed, filled in or run as JavaScript only by its length.
@@ -503,7 +527,7 @@ def normalise(event, agent, event_name=None):
     kept are the ones record() reads; prompts, file contents and tool output are dropped here."""
     if agent == 'gemini':
         name = event.get('hook_event_name')
-        out = {k: event.get(k) for k in ('session_id', 'cwd', 'source', 'reason')}
+        out = {k: event.get(k) for k in ('session_id', 'cwd', 'source', 'reason', 'prompt')}
         if name == 'Notification':
             if event.get('notification_type') != 'ToolPermission':
                 return None
@@ -587,7 +611,8 @@ def normalise(event, agent, event_name=None):
         out = {'hook_event_name': name, 'cwd': event.get('cwd'),
                'session_id': event.get('sessionId') or event.get('session_id'),
                'source': event.get('source'), 'reason': event.get('reason'),
-               'agent_type': event.get('agentName') or event.get('agent_type')}
+               'agent_type': event.get('agentName') or event.get('agent_type'),
+               'prompt': event.get('prompt')}
         tool = event.get('toolName') or event.get('tool_name')
         if isinstance(tool, str):
             out['tool_name'] = tool
@@ -603,6 +628,102 @@ def normalise(event, agent, event_name=None):
             out['error'] = err
         return out
     return event
+
+
+def parse_config(text):
+    """key = value lines; only known keys and values count (1.6)."""
+    conf = {}
+    for line in text.splitlines():
+        line = line.split('#', 1)[0].strip()
+        if '=' not in line:
+            continue
+        key, value = (x.strip().lower() for x in line.split('=', 1))
+        if key == 'prompts' and value in PROMPT_MODES:
+            conf.setdefault('prompts', value)        # the first one counts, as jt-wazuh-mgr shows it
+    return conf
+
+
+def load_config():
+    """The setting the manager delivered (readable by root) or the published copy."""
+    paths = ([CONFIG_LOCAL] if 'JT_AI_AGENT_CONFIG' in os.environ
+             else list(CONFIG_SHARED) + [CONFIG_LOCAL])
+    for path in paths:
+        try:
+            with open(path, encoding='utf-8', errors='replace') as fh:
+                return parse_config(fh.read(64 * 1024))
+        except OSError:
+            continue
+    return {}
+
+
+def prompt_mode():
+    return load_config().get('prompts', 'off')
+
+
+def prompt_record(rec, prompt, mode):
+    """Length, hash and (wazuh) the beginning of the prompt for the audit line; the whole
+    prompt, secrets removed, for the host's own prompts.log (local and wazuh)."""
+    text = redact(prompt)
+    rec['prompt_len'] = len(prompt)
+    rec['prompt_sha'] = hashlib.sha256(text.encode('utf-8', 'replace')).hexdigest()[:16]
+    if text != prompt:
+        rec['prompt_redacted'] = True
+    if mode == 'wazuh':
+        rec['prompt'] = text if len(text) <= MAX_PROMPT_WAZUH else text[:MAX_PROMPT_WAZUH] + '...'
+    keep = {k: rec[k] for k in ('ts', 'host', 'user', 'agent', 'session', 'cwd', 'prompt_sha') if k in rec}
+    keep['prompt'] = text[:MAX_PROMPT_LOCAL]
+    try:
+        fd = os.open(PROMPT_LOG, os.O_WRONLY | os.O_APPEND)
+    except OSError:
+        rec['prompt_stored'] = False
+        return
+    try:
+        os.write(fd, (json.dumps({'jt_ai_prompt': keep}, ensure_ascii=False, separators=(',', ':')) + '\n')
+                 .encode('utf-8'))
+        rec['prompt_stored'] = True
+    finally:
+        os.close(fd)
+
+
+def sync_config():
+    """Root, from cron: copy the delivered setting to CONFIG_LOCAL for the users' hooks and
+    record a change in the audit log (rule 133779)."""
+    source = None
+    for path in CONFIG_SHARED:
+        try:
+            with open(path, encoding='utf-8', errors='replace') as fh:
+                source = parse_config(fh.read(64 * 1024))
+            break
+        except OSError:
+            continue
+    if source is None:
+        return
+    new = source.get('prompts', 'off')
+    try:
+        with open(CONFIG_LOCAL, encoding='utf-8', errors='replace') as fh:
+            old = parse_config(fh.read(64 * 1024)).get('prompts', 'off')
+        existed = True
+    except OSError:
+        old, existed = 'none', False
+    body = ('# jt-ai-agent settings, copied from the Wazuh manager by "jt-ai-agent-hook.py --sync-config".\n'
+            '# Change them on the manager (agent group ai-agent, file jt-ai-agent.conf), not here.\n'
+            'prompts = %s\n' % new)
+    if existed and old == new:
+        return
+    os.makedirs(os.path.dirname(CONFIG_LOCAL), mode=0o755, exist_ok=True)
+    tmp = CONFIG_LOCAL + '.new'
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        fh.write(body)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, CONFIG_LOCAL)
+    rec = {'v': 1, 'ts': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'host': socket.gethostname(),
+           'user': 'root', 'event': 'AuditConfig', 'agent': 'jt-ai-agent', 'platform': PLATFORM, 'prompts': new,
+           'previous': old}
+    fd = os.open(LOG, os.O_WRONLY | os.O_APPEND)
+    try:
+        os.write(fd, (json.dumps({'jt_ai': rec}, separators=(',', ':')) + '\n').encode('utf-8'))
+    finally:
+        os.close(fd)
 
 
 GEMINI_HOOK_NAMES = ('jt-ai-agent',)
@@ -663,6 +784,10 @@ def gemini_hook_off(cwd):
     return found
 
 
+# 1.6: which hook wrote the line (the Windows hook writes "windows")
+PLATFORM = 'macos' if sys.platform == 'darwin' else sys.platform
+
+
 def record(event, agent='claude-code'):
     rec = {'v': 1, 'ts': time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'host': socket.gethostname()}
     uid = os.getuid()
@@ -678,6 +803,7 @@ def record(event, agent='claude-code'):
         if isinstance(value, str) and value:
             rec[dst] = value[:MAX_SHORT]
     rec['agent'] = agent
+    rec['platform'] = PLATFORM
     who_and_where(rec, event.get('cwd'))
     if rec.get('event') == 'SessionStart':
         off = gemini_hook_off(event.get('cwd'))
@@ -776,6 +902,12 @@ def options(args):
 
 
 def main():
+    if '--sync-config' in sys.argv[1:]:
+        try:
+            sync_config()
+        except Exception:
+            pass
+        return
     agent, event_name = options(sys.argv[1:])
     try:
         write(agent, event_name)
@@ -802,7 +934,15 @@ def write(agent, event_name):
     if (event.get('hook_event_name') == 'PostToolUse' and agent != 'cursor'
             and not failed(event.get('tool_response'))):
         return
-    line = json.dumps({'jt_ai': record(event, agent)}, ensure_ascii=False, separators=(',', ':')) + '\n'
+    prompt = event.get('prompt') if event.get('hook_event_name') == 'UserPromptSubmit' else None
+    if event.get('hook_event_name') == 'UserPromptSubmit':
+        mode = prompt_mode()
+        if mode == 'off' or not isinstance(prompt, str):
+            return                                  # prompts are not recorded unless turned on
+    rec = record(event, agent)
+    if prompt is not None:
+        prompt_record(rec, prompt, mode)
+    line = json.dumps({'jt_ai': rec}, ensure_ascii=False, separators=(',', ':')) + '\n'
     fd = os.open(LOG, os.O_WRONLY | os.O_APPEND)
     try:
         os.write(fd, line.encode('utf-8'))

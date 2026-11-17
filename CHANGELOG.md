@@ -4,6 +4,26 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.0 (2026-11-17)
+
+- **jt-ai-agent 1.6: users' prompts can be recorded, off unless the server turns it on.** The new pack setting
+  "prompts" (off / local / wazuh) lives in the agent group's `jt-ai-agent.conf`; `local` keeps the prompt, secrets
+  removed, on the host only (Wazuh gets its length and a hash), `wazuh` also sends the first 2,000 characters.
+  A root cron job (launchd on macOS, a scheduled task on Windows) copies the setting for the users' hooks and records
+  each change. Claude Code, Codex, Gemini CLI and Copilot; Cursor's prompt hook can block prompts and is left out.
+  Rules 133777 (a prompt, L3), 133778 (a password or token pasted into a prompt, L8), 133779 (setting changed, L5).
+- **Pack settings in jt-wazuh-mgr:** a pack can declare settings in its manifest; the pack window shows them and
+  "Save settings" rewrites the agent group's file on the manager (comments kept, choices checked, logged), and the
+  manager delivers it to the group. `POST /api/packs/<id>/settings`.
+- **jt-ai-agent on Windows (BETA):** a PowerShell hook (`jt-ai-agent-hook.ps1`, Windows PowerShell 5.1 only) and an
+  installer (`jt-ai-agent-install.ps1`, `-TestRoot` to try it out) for Claude Code, Codex, Gemini CLI, Cursor and
+  Copilot. The log is append-only for users. Tested on Windows 11 with each agent's documented hook input, not yet
+  inside real agent sessions on Windows. New rules 133780-133783 (tampering, event logs / Defender / firewall /
+  backups turned off, persistence, accounts); 133712, 133715 and 133721-133723 also read Windows commands and paths;
+  the inventory looks for the Windows hook on Windows hosts. Lines carry `platform` (the Python hook too), shown on
+  the dashboard.
+- **Pack release gate much faster** (83 → 53 minutes, measured while other jobs shared the machine): the upgrade and the cluster master compare their ruleset with the fresh install's (every rule, decoder and list file, and ossec.conf's ruleset section) and take its replay where they are the same, replaying only the packs whose files differ; the worker replays in full alongside the fresh install, and the logtest threads follow the CPUs.
+
 ## v1.37.3 (2026-11-16)
 
 - jt-ai-agent 1.5.4: v1.37.2 shipped rule 133776 and the inventory 1.1 under the version number 1.5.3, which

@@ -243,7 +243,7 @@
   <rule id="133721" level="12">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^(?:Write|Edit|MultiEdit|NotebookEdit|Delete)$</field>
-    <field name="jt_ai.path" type="pcre2">^(?:/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/var/ossec/etc/|/Library/Ossec/etc/|/var/log/jt-ai-agent/|/usr/local/lib/jt-ai-agent/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))</field>
+    <field name="jt_ai.path" type="pcre2">^(?:/etc/claude-code/|/etc/codex/|/etc/opencode/plugins/jt-ai-agent|/etc/cursor/hooks\.json|/etc/gemini-cli/|/etc/github-copilot/policy\.d/|/var/ossec/etc/|/Library/Ossec/etc/|/var/log/jt-ai-agent/|/usr/local/lib/jt-ai-agent/|/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/))|(?i:^[a-z]:/(?:program files/(?:jt-ai-agent|claudecode)/|programdata/(?:jt-ai-agent/|openai/codex/|gemini-cli/|cursor/hooks\.json$|github/copilot/policy\.d/)|program files(?: \(x86\))?/ossec-agent/(?:ossec\.conf|local_internal_options\.conf|client\.keys|shared/)))</field>
     <description>[WARN] AI agent ($(jt_ai.user) on $(jt_ai.host)) edited $(jt_ai.path): the agent audit or the managed settings</description>
     <mitre>
       <id>T1562.001</id>
@@ -252,10 +252,65 @@
   </rule>
 
   <!-- destructive commands -->
+  <!--
+    1.6 (Windows, BETA): the PowerShell hook (jt-ai-agent-hook.ps1) records the same lines, with
+    "platform":"windows"; Claude Code's PowerShell tool and Copilot's powershell tool count as
+    Bash, and paths of Read / Write / Edit use forward slashes (C:/Users/...), so the rules above
+    that look at paths apply as they are. These look at Windows command lines.
+  -->
+  <rule id="133780" level="12">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)(?:^|[\s;\x26|(`'"])(?:remove-item|ri|del|erase|rd|rmdir|move-item|move|copy-item|copy|set-content|add-content|clear-content|out-file|new-item|rename-item|ren|icacls|takeown|cacls|attrib)\s[^;\x26|\n]*(?:program\s?files[\\/](?:jt-ai-agent|claudecode)\b|programdata[\\/](?:jt-ai-agent|openai[\\/]codex|gemini-cli|cursor[\\/]hooks\.json|github[\\/]copilot[\\/]policy\.d)|ossec-agent[\\/](?:ossec\.conf|local_internal_options\.conf|client\.keys|shared[\\/]))|\d?\x3e{1,2}\s*["']?[a-z]:[\\/](?:program\s?files[\\/](?:jt-ai-agent|claudecode)\b|programdata[\\/](?:jt-ai-agent|openai[\\/]codex|gemini-cli|cursor[\\/]hooks\.json|github[\\/]copilot[\\/]policy\.d))|\b(?:unregister-scheduledtask|disable-scheduledtask)\b[^;\x26|\n]*jt-ai-agent|\bschtasks(?:\.exe)?\s[^;\x26|\n]*/(?:delete|change)\b[^;\x26|\n]*jt-ai-agent</field>
+    <description>[WARN] AI agent ($(jt_ai.user) on $(jt_ai.host)) changed the agent audit log, its hook, its scheduled task or the managed settings on Windows</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>jt_ai_agent_tamper,jt_ai_agent_windows,</group>
+  </rule>
+
+  <rule id="133781" level="12">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)\bwevtutil(?:\.exe)?\s+(?:cl|clear-log)\s|\bwevtutil(?:\.exe)?\s+(?:sl|set-log)\s[^;\x26|\n]*/e:false\b|\b(?:clear-eventlog|remove-eventlog)\b|\bset-mppreference\b[^;\x26|\n]*\s-disable\w+\s+(?:\$true|1)\b|\badd-mppreference\b[^;\x26|\n]*\s-exclusion(?:path|process|extension)\b|\bauditpol(?:\.exe)?\s[^;\x26|\n]*/(?:clear|remove)\b|\bauditpol(?:\.exe)?\s+/set\b[^;\x26|\n]*/(?:success|failure):disable\b|\bclear-history\b|\b(?:remove-item|del|clear-content)\b[^;\x26|\n]*(?:historysavepath|consolehost_history\.txt)|\bnetsh(?:\.exe)?\s+advfirewall\s+set\s+\w+\s+state\s+off\b|\bset-netfirewallprofile\b[^;\x26|\n]*-enabled\s+(?:\$false|false|0)\b|\bvssadmin(?:\.exe)?\s+delete\s+shadows\b|\bwmic(?:\.exe)?\s+shadowcopy\s+delete\b|\bwbadmin(?:\.exe)?\s+delete\s+(?:catalog|systemstatebackup|backup)\b|\bbcdedit(?:\.exe)?\s[^;\x26|\n]*recoveryenabled\s+no\b</field>
+    <description>[WARN] AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) cleared event logs or history, or turned off Defender, auditing, the firewall or backups on Windows</description>
+    <mitre>
+      <id>T1070.001</id>
+      <id>T1562.001</id>
+      <id>T1490</id>
+    </mitre>
+    <group>jt_ai_agent_tamper,jt_ai_agent_windows,</group>
+  </rule>
+
+  <rule id="133782" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)\bschtasks(?:\.exe)?\s[^;\x26|\n]*/create\b|\bregister-scheduledtask\b|\bnew-service\b|(?:^|[\s;\x26|(`'"])sc(?:\.exe)?\s+create\s|\breg(?:\.exe)?\s+add\s[^;\x26|\n]*\\(?:currentversion\\(?:run|runonce|winlogon)|image file execution options)\b|\b(?:new|set)-itemproperty\b[^;\x26|\n]*\\currentversion\\(?:run|runonce|winlogon)\b|(?:copy-item|copy|move-item|move|new-item|set-content|out-file|\x3e{1,2})[^;\x26|\n]*start menu[\\/]programs[\\/]startup\b|\b(?:set-wmiinstance|new-ciminstance)\b[^;\x26|\n]*__eventfilter|\bregister-wmievent\b|(?:add-content|set-content|out-file|\x3e{1,2})\s*[^;\x26|\n]*\$profile\b</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) set up persistence on Windows (scheduled task, service, Run key, Startup folder, WMI or PowerShell profile)</description>
+    <mitre>
+      <id>T1053.005</id>
+      <id>T1543.003</id>
+      <id>T1547.001</id>
+    </mitre>
+    <group>jt_ai_agent_windows,</group>
+  </rule>
+
+  <rule id="133783" level="10">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.tool" type="pcre2">^Bash$</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)\bnet1?(?:\.exe)?\s+user\s+[^;\x26|\n]*\s/add\b|\bnet1?(?:\.exe)?\s+localgroup\s+[^;\x26|\n]*\s/add\b|\bnew-localuser\b|\badd-localgroupmember\b|\breg(?:\.exe)?\s+add\s[^;\x26|\n]*\\policies\\system\b[^;\x26|\n]*\benablelua\b</field>
+    <description>AI agent $(jt_ai.agent) ($(jt_ai.user) on $(jt_ai.host)) changed accounts or privileges on Windows (local users, groups, UAC)</description>
+    <mitre>
+      <id>T1136.001</id>
+      <id>T1098</id>
+    </mitre>
+    <group>jt_ai_agent_windows,</group>
+  </rule>
+
   <rule id="133712" level="10">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^Bash$</field>
-    <field name="jt_ai.cmd" type="pcre2">(?i)(?:^|[\s;\x26|(`'"])(?:rm\s+(?:-[a-z]*\s+)*-[a-z]*r[a-z]*\s+(?:-\S+\s+)*["']?(?:/|/\*|~/?|\$HOME/?|/(?:etc|usr|var|boot|root|home|opt|srv|bin|sbin|lib|lib64|var/lib|var/ossec|var/log)/?\*?)["']?(?=$|[\s;\x26|)'"])|mkfs(?:\.\w+)?\s|dd\s[^;\x26|\n]*\bof=/dev/(?!null\b)|wipefs\s|shred\s|(?:pct|qm)\s+destroy\b|(?:zfs|zpool)\s+destroy\b|(?:lv|vg|pv)remove\b|git\s+push\b[^;\x26|\n]*\s(?:--force(?:-with-lease)?|-f)(?=$|\s)|crontab\s+-r\b|iptables\s+-F\b|nft\s+flush\s+ruleset\b|drop\s+(?:database|table|schema)\b|truncate\s+table\b|systemctl\s+(?:stop|disable|mask|kill)\s+[^;\x26|\n]*\b(?:wazuh-(?:manager|agent|indexer|dashboard)|auditd|sshd?|nginx|apache2|httpd|postgresql|mysql|mariadb|zimbra|docker|pve-cluster|pveproxy)\b|wazuh-control\s+stop\b|/var/ossec/bin/wazuh-db(?=$|[\s;\x26|)'"])|docker\s+(?:system\s+prune|volume\s+(?:rm|prune))\b|chmod\s+-R\s+0?777\s+/(?=$|\s))</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)(?:^|[\s;\x26|(`'"])(?:rm\s+(?:-[a-z]*\s+)*-[a-z]*r[a-z]*\s+(?:-\S+\s+)*["']?(?:/|/\*|~/?|\$HOME/?|/(?:etc|usr|var|boot|root|home|opt|srv|bin|sbin|lib|lib64|var/lib|var/ossec|var/log)/?\*?)["']?(?=$|[\s;\x26|)'"])|mkfs(?:\.\w+)?\s|dd\s[^;\x26|\n]*\bof=/dev/(?!null\b)|wipefs\s|shred\s|(?:pct|qm)\s+destroy\b|(?:zfs|zpool)\s+destroy\b|(?:lv|vg|pv)remove\b|git\s+push\b[^;\x26|\n]*\s(?:--force(?:-with-lease)?|-f)(?=$|\s)|crontab\s+-r\b|iptables\s+-F\b|nft\s+flush\s+ruleset\b|drop\s+(?:database|table|schema)\b|truncate\s+table\b|systemctl\s+(?:stop|disable|mask|kill)\s+[^;\x26|\n]*\b(?:wazuh-(?:manager|agent|indexer|dashboard)|auditd|sshd?|nginx|apache2|httpd|postgresql|mysql|mariadb|zimbra|docker|pve-cluster|pveproxy)\b|wazuh-control\s+stop\b|/var/ossec/bin/wazuh-db(?=$|[\s;\x26|)'"])|docker\s+(?:system\s+prune|volume\s+(?:rm|prune))\b|chmod\s+-R\s+0?777\s+/(?=$|\s)|(?:remove-item|ri|rm|del|erase|rd|rmdir)(?=[^;\x26|\n]*\s(?:-r(?:ecurse)?|/s)\b)\s[^;\x26|\n]*?\s["']?[a-z]:[\\/]?(?:\*|windows|users|program\s?files(?:\s\(x86\))?|programdata)?[\\/]?\*?["']?(?=$|[\s;\x26|)'"])|format-volume\b|clear-disk\b|remove-partition\b|format(?:\.com)?\s+[a-z]:|cipher(?:\.exe)?\s+/w:|(?:stop-service|set-service)\s[^;\x26|\n]*\bwazuh(?:svc)?\b|sc(?:\.exe)?\s+(?:stop|delete|config)\s+["']?wazuh(?:svc)?\b|net\s+stop\s+["']?wazuh(?:svc)?\b)</field>
     <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) ran a destructive command in $(jt_ai.cwd)</description>
     <mitre>
       <id>T1485</id>
@@ -333,7 +388,7 @@
   <rule id="133715" level="9">
     <if_sid>133700</if_sid>
     <field name="jt_ai.tool" type="pcre2">^Bash$</field>
-    <field name="jt_ai.cmd" type="pcre2">(?i)(?:^|[\s;\x26|(`'"])(?:cat|less|more|head|tail|base64|xxd|od|strings|cp|tar|zip|gpg)\s[^;\x26|\n]*?(?:/\.ssh/id_[A-Za-z0-9_-]+(?!\.pub)(?=$|[\s'";\x26|)])|/etc/g?shadow\b|/\.aws/credentials\b|/\.git-credentials\b|/\.netrc\b|/\.claude/\.credentials\.json|/client\.keys\b|/authd\.pass\b|\bprivkey\.pem\b)</field>
+    <field name="jt_ai.cmd" type="pcre2">(?i)(?:^|[\s;\x26|(`'"])(?:cat|less|more|head|tail|base64|xxd|od|strings|cp|tar|zip|gpg)\s[^;\x26|\n]*?(?:/\.ssh/id_[A-Za-z0-9_-]+(?!\.pub)(?=$|[\s'";\x26|)])|/etc/g?shadow\b|/\.aws/credentials\b|/\.git-credentials\b|/\.netrc\b|/\.claude/\.credentials\.json|/client\.keys\b|/authd\.pass\b|\bprivkey\.pem\b)|(?:^|[\s;\x26|(`'"])(?:get-content|gc|type|copy-item|copy|cpi)\s[^;\x26|\n]*?[\\/]\.(?:ssh[\\/]id_[A-Za-z0-9_-]+(?!\.pub)(?=$|[\s'";\x26|)])|aws[\\/]credentials\b|git-credentials\b|kube[\\/]config\b|docker[\\/]config\.json\b)</field>
     <description>AI agent ($(jt_ai.user) on $(jt_ai.host)) read or copied a private key or credential file from a shell command</description>
     <mitre>
       <id>T1552.004</id>
@@ -400,6 +455,35 @@
     <mitre>
       <id>T1562.001</id>
     </mitre>
+    <group>jt_ai_agent_tamper,</group>
+  </rule>
+
+  <!--
+    1.6: prompts, only when the server turned them on (setting "prompts" in the agent group's
+    jt-ai-agent.conf; off by default). The audit line carries the length and a hash, and with
+    "wazuh" also the first 2,000 characters; the whole prompt stays in the host's prompts.log.
+  -->
+  <rule id="133778" level="8">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.event" type="pcre2">^UserPromptSubmit$</field>
+    <field name="jt_ai.prompt_redacted" type="pcre2">^true$</field>
+    <description>User $(jt_ai.user) on $(jt_ai.host) put a password or token into a prompt to AI agent $(jt_ai.agent) (removed from the record; it has gone to the AI provider, replace it)</description>
+    <mitre>
+      <id>T1552</id>
+    </mitre>
+  </rule>
+
+  <rule id="133777" level="3">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.event" type="pcre2">^UserPromptSubmit$</field>
+    <description>User $(jt_ai.user) on $(jt_ai.host) sent a prompt to AI agent $(jt_ai.agent) ($(jt_ai.prompt_len) characters) in session $(jt_ai.session)</description>
+  </rule>
+
+  <!-- 1.6: the server changed whether prompts are recorded on this host -->
+  <rule id="133779" level="5">
+    <if_sid>133700</if_sid>
+    <field name="jt_ai.event" type="pcre2">^AuditConfig$</field>
+    <description>AI agent audit on $(jt_ai.host): prompt recording is now $(jt_ai.prompts) (was $(jt_ai.previous))</description>
     <group>jt_ai_agent_tamper,</group>
   </rule>
 
@@ -692,7 +776,7 @@
 
   <rule id="133722" level="10">
     <if_sid>550,554</if_sid>
-    <field name="file" type="pcre2">^/etc/claude-code/|^/etc/codex/|^/etc/opencode/plugins/jt-ai-agent|^/etc/cursor/hooks\.json|^/etc/gemini-cli/|^/etc/github-copilot/policy\.d/|^/usr/local/lib/jt-ai-agent/|^/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/)</field>
+    <field name="file" type="pcre2">^/etc/claude-code/|^/etc/codex/|^/etc/opencode/plugins/jt-ai-agent|^/etc/cursor/hooks\.json|^/etc/gemini-cli/|^/etc/github-copilot/policy\.d/|^/usr/local/lib/jt-ai-agent/|^/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/)|(?i:^[a-z]:\\program files\\(?:jt-ai-agent|claudecode)\\|^[a-z]:\\programdata\\(?:openai\\codex\\|gemini-cli\\|cursor\\hooks\.json$|github\\copilot\\policy\.d\\))</field>
     <description>AI agent audit: $(file) was added or changed (the hook, the opencode plugin or the managed agent settings)</description>
     <mitre>
       <id>T1562.001</id>
@@ -701,7 +785,7 @@
 
   <rule id="133723" level="12">
     <if_sid>553</if_sid>
-    <field name="file" type="pcre2">^/etc/claude-code/|^/etc/codex/|^/etc/opencode/plugins/jt-ai-agent|^/etc/cursor/hooks\.json|^/etc/gemini-cli/|^/etc/github-copilot/policy\.d/|^/usr/local/lib/jt-ai-agent/|^/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/)</field>
+    <field name="file" type="pcre2">^/etc/claude-code/|^/etc/codex/|^/etc/opencode/plugins/jt-ai-agent|^/etc/cursor/hooks\.json|^/etc/gemini-cli/|^/etc/github-copilot/policy\.d/|^/usr/local/lib/jt-ai-agent/|^/Library/Application Support/(?:ClaudeCode/|opencode/plugins/jt-ai-agent|Cursor/hooks\.json|GeminiCli/)|(?i:^[a-z]:\\program files\\(?:jt-ai-agent|claudecode)\\|^[a-z]:\\programdata\\(?:openai\\codex\\|gemini-cli\\|cursor\\hooks\.json$|github\\copilot\\policy\.d\\))</field>
     <description>[WARN] AI agent audit: $(file) was deleted (the hook, the opencode plugin or the managed agent settings)</description>
     <mitre>
       <id>T1562.001</id>

@@ -1267,6 +1267,63 @@ class PackFixture(WebUITestCase):
 
 
 
+
+class TestPackSettings(PackFixture):
+    """1.37.4: a pack's site settings (manifest "settings") in a file of its agent group."""
+
+    CONF = '# comment kept\nprompts = off\n# trailing comment\n'
+
+    def _settings_pack(self):
+        manifest = {
+            'id': 'jt-testset', 'name': 'T', 'name_zh': 'T', 'version': '1.0', 'summary': 's', 'summary_zh': 's',
+            'notes': [], 'notes_zh': [], 'author': 'a', 'license': 'Apache-2.0', 'rule_id_range': '139500-139599',
+            'files': [{'type': 'rule', 'name': 'r.xml', 'dest': 'etc/rules/r.xml'}],
+            'agent_group': {'name': 'testset', 'config': 'agent.conf', 'files': ['testset.conf']},
+            'settings': {'file': 'testset.conf', 'items': [
+                {'key': 'prompts', 'choices': ['off', 'local', 'wazuh'], 'default': 'off',
+                 'title': 'P', 'title_zh': 'P'}]},
+        }
+        TestRulePacks._fake_pack(self, 'jt-testset', manifest, {
+            'rules/r.xml': TestRulePacks.RULE_XML, 'agent/agent.conf': '<agent_config></agent_config>\n',
+            'agent/testset.conf': self.CONF})
+        return os.path.join(self.tmp, 'etc', 'shared', 'testset', 'testset.conf')
+
+    def test_not_installed_shows_but_refuses(self):
+        self._settings_pack()
+        d = self.client.get('/api/packs/jt-testset').get_json()
+        self.assertEqual(d['settings']['items'][0]['value'], 'off')
+        self.assertFalse(d['settings']['editable'])
+        r = self.client.post('/api/packs/jt-testset/settings', json={'values': {'prompts': 'local'}})
+        self.assertEqual(r.status_code, 400)
+
+    def test_change_keeps_comments_and_validates(self):
+        path = self._settings_pack()
+        self.assertEqual(self.client.post('/api/packs/jt-testset/install').status_code, 200)
+        self.assertTrue(os.path.isfile(path))
+        for bad in ({'prompts': 'everything'}, {'other': 'off'}, {'prompts': 1}, 'prompts=local', {}):
+            with self.subTest(bad=bad):
+                r = self.client.post('/api/packs/jt-testset/settings', json={'values': bad})
+                self.assertEqual(r.status_code, 400)
+        r = self.client.post('/api/packs/jt-testset/settings', json={'values': {'prompts': 'local'}})
+        data = r.get_json()
+        self.assertEqual(r.status_code, 200, data)
+        self.assertEqual(data['changed'], {'prompts': ['off', 'local']})
+        with io.open(path, encoding='utf-8') as fh:
+            body = fh.read()
+        self.assertEqual(body, '# comment kept\nprompts = local\n# trailing comment\n')
+        self.assertEqual(oct(os.stat(path).st_mode & 0o777), '0o660')
+        d = self.client.get('/api/packs/jt-testset').get_json()
+        self.assertEqual((d['settings']['items'][0]['value'], d['settings']['editable']), ('local', True))
+        r = self.client.post('/api/packs/jt-testset/settings', json={'values': {'prompts': 'local'}})
+        self.assertEqual(r.get_json()['changed'], {})
+
+    def test_a_pack_without_settings(self):
+        TestRulePacks._fake_pack(self, 'jt-testscript2', dict(TestRulePacks._script_manifest(self), id='jt-testscript2'),
+                        {'rules/r.xml': TestRulePacks.RULE_XML, 'scripts/upd.py': TestRulePacks.SCRIPT_BODY})
+        self.assertEqual(self.client.post('/api/packs/jt-testscript2/settings',
+                                          json={'values': {'prompts': 'off'}}).status_code, 400)
+
+
 class TestRulePacks(PackFixture):
     """Packs write into the manager, so the install path must be all-or-nothing."""
 

@@ -24,13 +24,15 @@ wazuh/wazuh-manager containers and fails (exit 1) on anything wrong:
   upgrade          the packs of --from-tag installed with that release's own
                    tool, then the working tree's tool and packs, every pack
                    updated through POST /api/packs/<id>/update, the same
-                   checks and the replay.
+                   checks; the replay only where the result differs from
+                   fresh-<latest> (see below).
   cluster          a master and a worker; packs installed on the master (the
                    tool declares lists on the worker over the API), then each
                    pack's documented worker steps carried out as written;
                    the worker must load every list without warnings, hold the
-                   scripts and schedules the guides name, and give the same
-                   replay results as the master.
+                   scripts and schedules the guides name, and pass the
+                   whole replay. The master's replay is fresh-<latest>'s
+                   when its ruleset is the same (see below).
   no-cron          a scheduled pack on a manager without /etc/cron.d (the
                    official container image): the install must not report a
                    schedule it did not write.
@@ -38,6 +40,16 @@ wazuh/wazuh-manager containers and fails (exit 1) on anything wrong:
 A case whose line another installed pack is meant to take (a near miss that
 belongs to a neighbouring product) carries "with_all_packs": {"expect_rule",
 "expect_level", "why"}; the gate judges it by those, pack_sandbox ignores them.
+
+A replay costs about 40 minutes of CPU: a case of several lines needs a
+logtest session of its own, and each new session loads the whole ruleset.
+The upgrade and the cluster master therefore compare their ruleset with
+fresh-<latest>'s (md5 of every file in etc/rules, etc/decoders and etc/lists,
+and ossec.conf's <ruleset> section, after the same replay preparation): what
+is identical gives identical results, so they take fresh-<latest>'s replay and
+replay only the packs whose files differ (all of them when ossec.conf or a
+file of no pack differs). The worker always replays in full, alongside the
+others, with the CPU shared out (JT_GATE_LOGTEST_THREADS overrides).
 
 Each scenario runs in its own containers (at most four at once), writes its
 result to temp/pack-gate/<date>/<scenario>.json as soon as it finishes, and a
@@ -69,7 +81,7 @@ OSSEC = '/var/ossec'
 TOOL_DIR = '/opt/jtwm'              # where the tool is unpacked inside a container
 DEFAULT_VERSIONS = ['4.12.0', '4.13.1', '4.14.9']
 NETWORK = 'jtgate-net'
-LOGTEST_THREADS = int(os.environ.get('JT_GATE_LOGTEST_THREADS', '3'))
+LOGTEST_THREADS = int(os.environ.get('JT_GATE_LOGTEST_THREADS', '3'))   # set by cmd_run from the CPUs
 RAW_DIR = None                      # set by run: raw replay output kept for analysis
 CLUSTER_KEY = 'c98b62a9b6169ac5f67dae55ae4a9088'
 PRINT_LOCK = threading.Lock()
@@ -526,6 +538,99 @@ def replay(name, only, fim=True, tag='', list_writer=None):
 
 
 # --------------------------------------------------------------------------
+# Reuse of fresh-<latest>'s replay where the ruleset is the same
+# --------------------------------------------------------------------------
+
+class Reference:
+    """fresh-<latest>'s ruleset fingerprint and replay, for the scenarios that
+    install the same packs on the same version by another route."""
+    def __init__(self):
+        self.fp = None
+        self.replay = None
+        self.fp_ready = threading.Event()
+        self.replay_ready = threading.Event()
+
+    def give_up(self):
+        self.fp_ready.set()
+        self.replay_ready.set()
+
+
+REF = Reference()
+REF_WAIT = 4 * 3600
+
+
+def ruleset_fingerprint(name):
+    """What decides the replay's results: every rule, decoder and list file
+    (the .cdb is built from the text) and ossec.conf's ruleset section."""
+    out = dexec(name, 'sh', '-c', 'cd %s/etc && find rules decoders lists -type f ! -name "*.cdb" '
+                '! -name "*.gatebak" ! -name "*.gatenew" | sort | xargs md5sum' % OSSEC, check=False).stdout
+    files = {}
+    for line in out.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) == 2:
+            files[parts[1].strip()] = parts[0]
+    conf = dexec(name, 'cat', OSSEC + '/etc/ossec.conf', check=False).stdout
+    blocks = []
+    for b in re.findall(r'<ruleset>.*?</ruleset>|<rule_test>.*?</rule_test>|<log_alert_level>\d+</log_alert_level>',
+                        re.sub(r'<!--.*?-->', '', conf, flags=re.S), flags=re.S):
+        lines = [l.strip() for l in b.splitlines() if l.strip()]
+        # the order of <list> declarations does not matter, an update appends them
+        blocks.append('\n'.join([l for l in lines if not l.startswith('<list>')] +
+                                sorted(l for l in lines if l.startswith('<list>'))))
+    return {'files': files, 'conf': sorted(blocks)}
+
+
+def pack_of_files(only):
+    """{path under etc/: pack} from the manifests."""
+    out = {}
+    for path in sorted(glob.glob(os.path.join(ROOT, 'packs', '*', 'manifest.json'))):
+        with open(path, encoding='utf-8') as fh:
+            m = json.load(fh)
+        if only and m['id'] not in only:
+            continue
+        for f in m.get('files') or []:
+            dest = f.get('dest') or ''
+            if dest.startswith('etc/'):
+                out[dest[4:]] = m['id']
+    return out
+
+
+def reuse_plan(name, only, version, latest):
+    """('reuse', [packs to replay here]) when this manager's ruleset is
+    fresh-<latest>'s apart from those packs' files, else ('full', why).
+    Taken before anything else writes to this manager's lists."""
+    if version != latest:
+        return 'full', 'no reference for this version'
+    mine = ruleset_fingerprint(name)
+    if not REF.fp_ready.wait(REF_WAIT) or not REF.fp:
+        return 'full', 'no reference'
+    ref = REF.fp
+    if mine['conf'] != ref['conf']:
+        return 'full', "ossec.conf's ruleset section differs from the reference"
+    differ = sorted(p for p in set(mine['files']) | set(ref['files']) if mine['files'].get(p) != ref['files'].get(p))
+    owners = pack_of_files(only)
+    stray = [p for p in differ if p not in owners]
+    if stray:
+        return 'full', 'files of no pack differ from the reference: %s' % stray[:5]
+    return 'reuse', sorted({owners[p] for p in differ})
+
+
+def replay_by_plan(name, only, plan, fim=True, tag='', list_writer=None):
+    """Carry out reuse_plan's answer. Returns (result, how)."""
+    mode, arg = plan
+    if mode == 'reuse' and REF.replay_ready.wait(REF_WAIT) and REF.replay:
+        result = {k: v for k, v in REF.replay.items() if k not in arg}
+        if arg:
+            own = replay(name, set(arg), fim=fim, tag=tag, list_writer=list_writer)
+            own.pop('_sessions', None)
+            result.update(own)
+        say('%s replay: same ruleset as fresh-<latest>%s' % (tag or name, ', replayed %s' % arg if arg else ''))
+        return result, 'reused from the fresh scenario' + (', replayed %s' % arg if arg else '')
+    why = arg if mode == 'full' else 'the reference replay failed'
+    return replay(name, only, fim=fim, tag=tag, list_writer=list_writer), 'replayed in full (%s)' % why
+
+
+# --------------------------------------------------------------------------
 # Container life cycle
 # --------------------------------------------------------------------------
 
@@ -708,8 +813,9 @@ def install_order(only):
 # Scenarios
 # --------------------------------------------------------------------------
 
-def scenario_fresh(version, only, workdir, keep):
+def scenario_fresh(version, only, workdir, keep, latest=None):
     name = 'jtgate-fresh-' + version.replace('.', '-')
+    is_ref = version == latest
     tgz = os.path.join(workdir, 'tool-cp310.tgz')
     res = {'scenario': 'fresh-' + version, 'image': 'wazuh/wazuh-manager:' + version}
     try:
@@ -729,10 +835,17 @@ def scenario_fresh(version, only, workdir, keep):
         cases = load_cases(only)
         prepare_for_replay(name, cases)
         restart(name)
+        if is_ref:
+            REF.fp = ruleset_fingerprint(name)
+            REF.fp_ready.set()
         res['replay'] = replay(name, only, tag=name)
+        if is_ref:
+            REF.replay = res['replay']
     except Exception as e:
         res['fatal'] = str(e)[-3000:]
     finally:
+        if is_ref:
+            REF.give_up()
         if not keep:
             remove(name)
     return res
@@ -813,7 +926,8 @@ def scenario_upgrade(version, from_tag, only, workdir, keep):
         cases = load_cases(only)
         prepare_for_replay(name, cases)
         restart(name)
-        res['replay'] = replay(name, only, tag=name)
+        res['replay'], res['replay_how'] = replay_by_plan(name, only, reuse_plan(name, only, version, version),
+                                                          tag=name)
     except Exception as e:
         res['fatal'] = str(e)[-3000:]
     finally:
@@ -982,8 +1096,13 @@ def scenario_cluster(version, only, workdir, keep):
         for n in (master, worker):
             prepare_for_replay(n, cases)
             restart(n)
-        res['replay_master'] = replay(master, only, fim=False, tag='cluster master')
+        # The worker replays in full; its test lists are written on the master,
+        # so the master's ruleset is compared first, and what the master must
+        # replay itself (rarely anything) follows the worker's replay.
+        plan = reuse_plan(master, only, version, version)
         res['replay_worker'] = replay(worker, only, fim=False, tag='cluster worker', list_writer=master)
+        res['replay_master'], res['replay_master_how'] = replay_by_plan(master, only, plan, fim=False,
+                                                                         tag='cluster master')
     except Exception as e:
         res['fatal'] = str(e)[-3000:]
     finally:
@@ -1042,13 +1161,15 @@ def summary_md(results, versions, from_tag):
              '| scenario | verdict | replay | notes |', '|---|---|---|---|']
     for r in results:
         fails = failed_items(r)
-        rp = r.get('replay') or r.get('replay_master') or {}
+        rp = r.get('replay') or r.get('replay_worker') or r.get('replay_master') or {}
         rep = '%d/%d' % (sum(v['passed'] for v in rp.values()), sum(v['total'] for v in rp.values())) if rp else '-'
         skipped = sum(v.get('skipped', 0) for v in rp.values()) if rp else 0
         if skipped:
             rep += ' (%d skipped: min_wazuh)' % skipped
+        how = r.get('replay_how') or r.get('replay_master_how')
+        note = fails[0][:120] if fails else (('master: ' if r.get('replay_master_how') else '') + how if how else '')
         lines.append('| %s | %s | %s | %s |' % (r['scenario'], 'PASS' if not fails else 'FAIL (%d)' % len(fails), rep,
-                                               (fails[0][:120] if fails else '')))
+                                               note))
     lines.append('')
     for r in results:
         fails = failed_items(r)
@@ -1125,10 +1246,20 @@ def cmd_run(a):
             json.dump(res, fh, indent=1, default=str)
         say('%s: %s' % (res['scenario'], 'PASS' if not failed_items(res) else 'FAIL (%d)' % len(failed_items(res))))
 
+    latest = versions[-1]
+    if 'fresh' in skip or done('fresh-' + latest):
+        REF.give_up()          # nothing to compare with: every scenario replays
+    if 'JT_GATE_LOGTEST_THREADS' not in os.environ:
+        # the managers replaying side by side share the CPUs: each fresh
+        # version and the cluster worker (the upgrade and the master reuse the
+        # reference unless their ruleset differs)
+        busy = (0 if 'fresh' in skip else len(versions)) + (0 if 'cluster' in skip else 1)
+        global LOGTEST_THREADS
+        LOGTEST_THREADS = max(3, ((os.cpu_count() or 4) - 1) // max(1, busy))
+    say('gate: %d logtest threads per manager' % LOGTEST_THREADS)
     jobs = []
     if 'fresh' not in skip:
-        jobs += [('fresh-' + v, (lambda v=v: scenario_fresh(v, only, workdir, a.keep))) for v in versions]
-    latest = versions[-1]
+        jobs += [('fresh-' + v, (lambda v=v: scenario_fresh(v, only, workdir, a.keep, latest))) for v in versions]
     if 'no-cron' not in skip:
         jobs.append(('no-cron', lambda: scenario_no_cron(latest, workdir, a.keep)))
     if 'upgrade' not in skip:
