@@ -27,7 +27,8 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 }
 if (-not $Source) { $Source = $PSScriptRoot }
 $stamp = Get-Date -Format 'yyyyMMddHHmmss'
-$PF = $env:ProgramFiles; $PD = $env:ProgramData
+# the folders Windows reports, as the hook uses them (not the environment variables)
+$PF = [Environment]::GetFolderPath('ProgramFiles'); $PD = [Environment]::GetFolderPath('CommonApplicationData')
 if ($TestRoot) {
     $PF = Join-Path $TestRoot 'ProgramFiles'; $PD = Join-Path $TestRoot 'ProgramData'
     # the hook and the self-test write to the test directory, too

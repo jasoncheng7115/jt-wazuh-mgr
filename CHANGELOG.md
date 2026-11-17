@@ -4,6 +4,10 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.1 (2026-11-17)
+
+- jt-ai-agent 1.6.1: the installed hooks (/usr/local/lib/jt-ai-agent, C:\Program Files\jt-ai-agent) ignore the JT_AI_AGENT_LOG, JT_AI_AGENT_PROMPT_LOG and JT_AI_AGENT_CONFIG test variables. The hook runs as the user, who could otherwise turn prompt recording off or send the audit elsewhere without anything being logged (reported by a reader of the blog draft). The Windows hook and installer take the ProgramData and Program Files folders from Windows instead of the environment. The macOS step for prompts names the newsyslog file for prompts.log.
+
 ## v1.38.0 (2026-11-17)
 
 - **jt-ai-agent 1.6: users' prompts can be recorded, off unless the server turns it on.** The new pack setting

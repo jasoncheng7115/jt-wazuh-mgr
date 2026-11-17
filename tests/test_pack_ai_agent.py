@@ -1013,5 +1013,39 @@ class TestWindowsBeta16(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+class TestEnvOverrides161(unittest.TestCase):
+    """1.6.1: the installed hook ignores the JT_AI_AGENT_* test variables (the
+    user who runs the agent controls the environment)."""
+
+    def test_installed_python_hook_ignores_the_variables(self):
+        with mock.patch.dict(os.environ, {'JT_AI_AGENT_LOG': '/tmp/elsewhere.log'}):
+            with mock.patch.object(hook, 'INSTALLED', True):
+                self.assertEqual(hook._test_path('JT_AI_AGENT_LOG', '/var/log/x'), '/var/log/x')
+            with mock.patch.object(hook, 'INSTALLED', False):
+                self.assertEqual(hook._test_path('JT_AI_AGENT_LOG', '/var/log/x'), '/tmp/elsewhere.log')
+        self.assertEqual(hook.INSTALL_DIR, '/usr/local/lib/jt-ai-agent')
+        self.assertFalse(hook.INSTALLED)          # the repository copy is not the installed one
+
+    def test_python_hook_reads_the_variables_only_through_test_path(self):
+        src = open(HOOK, encoding='utf-8').read()
+        reads = re.findall(r"os\.environ(?:\.get)?[\[(]'(JT_AI_AGENT_\w+)'", src)
+        self.assertEqual(reads, [], 'read JT_AI_AGENT_* only through _test_path')
+        self.assertIn("CONFIG_OVERRIDDEN = not INSTALLED and 'JT_AI_AGENT_CONFIG' in os.environ", src)
+        self.assertNotIn("'JT_AI_AGENT_CONFIG' in os.environ\n", src.replace(
+            "CONFIG_OVERRIDDEN = not INSTALLED and 'JT_AI_AGENT_CONFIG' in os.environ\n", ''))
+
+    def test_powershell_hook_takes_paths_from_windows(self):
+        src = _ps1('jt-ai-agent-hook.ps1').decode('ascii')
+        for var in ('$env:JT_AI_AGENT_LOG', '$env:JT_AI_AGENT_PROMPT_LOG', '$env:ProgramData', '$env:ProgramFiles',
+                    '${env:ProgramFiles(x86)}'):
+            self.assertNotIn(var, src)
+        self.assertIn("GetFolderPath($name)", src)
+        self.assertIn("if ($Installed) { return $default }", src)
+        self.assertIn("} catch { $Installed = $true }", src)     # unsure: treat as installed
+        inst = _ps1('jt-ai-agent-install.ps1').decode('ascii')
+        self.assertNotIn('$env:ProgramFiles', inst)
+        self.assertNotIn('$env:ProgramData', inst)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -90,11 +90,24 @@ import socket
 import sys
 import time
 
-LOG = os.environ.get('JT_AI_AGENT_LOG', '/var/log/jt-ai-agent/actions.log')
-PROMPT_LOG = os.environ.get('JT_AI_AGENT_PROMPT_LOG', '/var/log/jt-ai-agent/prompts.log')
+# 1.6.1: the JT_AI_AGENT_* variables point the files elsewhere for tests. The
+# installed hook, the one the agents' managed settings run, ignores them: the
+# hook runs as the user, who could otherwise turn prompt recording off or send
+# the audit to a file of their own without anything being logged.
+INSTALL_DIR = '/usr/local/lib/jt-ai-agent'
+INSTALLED = os.path.realpath(os.path.abspath(__file__)).startswith(INSTALL_DIR + '/')
+
+
+def _test_path(name, default):
+    return default if INSTALLED else os.environ.get(name, default)
+
+
+LOG = _test_path('JT_AI_AGENT_LOG', '/var/log/jt-ai-agent/actions.log')
+PROMPT_LOG = _test_path('JT_AI_AGENT_PROMPT_LOG', '/var/log/jt-ai-agent/prompts.log')
 # the setting as the manager delivers it (root only) and the copy every user can read
 CONFIG_SHARED = ('/var/ossec/etc/shared/jt-ai-agent.conf', '/Library/Ossec/etc/shared/jt-ai-agent.conf')
-CONFIG_LOCAL = os.environ.get('JT_AI_AGENT_CONFIG', '/etc/jt-ai-agent/config')
+CONFIG_LOCAL = _test_path('JT_AI_AGENT_CONFIG', '/etc/jt-ai-agent/config')
+CONFIG_OVERRIDDEN = not INSTALLED and 'JT_AI_AGENT_CONFIG' in os.environ
 PROMPT_MODES = ('off', 'local', 'wazuh')
 MAX_PROMPT_WAZUH = 2000
 MAX_PROMPT_LOCAL = 100000
@@ -645,8 +658,7 @@ def parse_config(text):
 
 def load_config():
     """The setting the manager delivered (readable by root) or the published copy."""
-    paths = ([CONFIG_LOCAL] if 'JT_AI_AGENT_CONFIG' in os.environ
-             else list(CONFIG_SHARED) + [CONFIG_LOCAL])
+    paths = [CONFIG_LOCAL] if CONFIG_OVERRIDDEN else list(CONFIG_SHARED) + [CONFIG_LOCAL]
     for path in paths:
         try:
             with open(path, encoding='utf-8', errors='replace') as fh:

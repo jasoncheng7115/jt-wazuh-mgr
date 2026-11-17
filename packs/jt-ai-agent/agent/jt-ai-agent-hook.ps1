@@ -23,20 +23,43 @@
 # the Python hook's patterns. It never blocks or changes anything: it always exits 0, prints nothing,
 # and prints {} for Gemini CLI, Cursor and Copilot, which read the answer as JSON.
 #
-# JT_AI_AGENT_LOG, JT_AI_AGENT_PROMPT_LOG and JT_AI_AGENT_CONFIG override the paths (tests).
+# JT_AI_AGENT_LOG, JT_AI_AGENT_PROMPT_LOG and JT_AI_AGENT_CONFIG override the paths for tests; the
+# installed copy (C:\Program Files\jt-ai-agent) ignores them.
 
 param([string]$Agent = 'claude-code', [string]$Event = '', [switch]$SyncConfig)
 
 $ErrorActionPreference = 'Stop'
 # nothing at this level may fail: an error here would skip the final "exit 0" (Copilot denies a call
 # when the hook fails), so every path has a fallback
-$ProgramDataDir = if ($env:ProgramData) { $env:ProgramData } else { 'C:\ProgramData' }
+# 1.6.1: the paths come from Windows, not from environment variables, which the user (the hook runs
+# as the user) could point elsewhere; the JT_AI_AGENT_* variables (tests) count only when this is not
+# the installed copy that the agents' managed settings run.
+function Get-KnownFolder([string]$name, [string]$fallback) {
+    try { $p = [Environment]::GetFolderPath($name); if ($p) { return $p } } catch { }
+    return $fallback
+}
+$ProgramFilesDir = Get-KnownFolder 'ProgramFiles' 'C:\Program Files'
+$ProgramDataDir = Get-KnownFolder 'CommonApplicationData' 'C:\ProgramData'
+$Installed = $false
+try {
+    $here = [IO.Path]::GetFullPath([IO.Path]::GetDirectoryName($PSCommandPath)).TrimEnd('\')
+    foreach ($d in @(($ProgramFilesDir + '\jt-ai-agent'), 'C:\Program Files\jt-ai-agent')) {
+        if ($here -ieq $d) { $Installed = $true }
+    }
+} catch { $Installed = $true }
+function Get-TestPath([string]$name, [string]$default) {
+    if ($Installed) { return $default }
+    $v = [Environment]::GetEnvironmentVariable($name)
+    if ($v) { return $v }
+    return $default
+}
 $Base = $ProgramDataDir + '\jt-ai-agent'
-$Log = if ($env:JT_AI_AGENT_LOG) { $env:JT_AI_AGENT_LOG } else { $Base + '\actions.log' }
-$PromptLog = if ($env:JT_AI_AGENT_PROMPT_LOG) { $env:JT_AI_AGENT_PROMPT_LOG } else { $Base + '\prompts.log' }
-$ConfigLocal = if ($env:JT_AI_AGENT_CONFIG) { $env:JT_AI_AGENT_CONFIG } else { $Base + '\config' }
+$Log = Get-TestPath 'JT_AI_AGENT_LOG' ($Base + '\actions.log')
+$PromptLog = Get-TestPath 'JT_AI_AGENT_PROMPT_LOG' ($Base + '\prompts.log')
+$ConfigLocal = Get-TestPath 'JT_AI_AGENT_CONFIG' ($Base + '\config')
+$ConfigOverridden = (-not $Installed) -and [bool]$env:JT_AI_AGENT_CONFIG
 $ConfigShared = @()
-foreach ($pf in @(${env:ProgramFiles(x86)}, $env:ProgramFiles, 'C:\Program Files (x86)', 'C:\Program Files')) {
+foreach ($pf in @((Get-KnownFolder 'ProgramFilesX86' ''), $ProgramFilesDir, 'C:\Program Files (x86)', 'C:\Program Files')) {
     if ($pf) { $ConfigShared += ($pf + '\ossec-agent\shared\jt-ai-agent.conf') }
 }
 $Agents = @('claude-code', 'codex', 'gemini', 'cursor', 'copilot')
@@ -149,7 +172,7 @@ function Read-Config([string]$text) {
 }
 
 function Get-PromptMode {
-    $paths = if ($env:JT_AI_AGENT_CONFIG) { @($ConfigLocal) } else { $ConfigShared + @($ConfigLocal) }
+    $paths = if ($ConfigOverridden) { @($ConfigLocal) } else { $ConfigShared + @($ConfigLocal) }
     foreach ($p in $paths) {
         try {
             $c = Read-Config ([IO.File]::ReadAllText($p))

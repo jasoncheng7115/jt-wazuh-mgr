@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.1（2026-11-17）
+
+- jt-ai-agent 1.6.1：正式安裝的 hook（/usr/local/lib/jt-ai-agent、C:\Program Files\jt-ai-agent）不再理會 JT_AI_AGENT_LOG、JT_AI_AGENT_PROMPT_LOG、JT_AI_AGENT_CONFIG 這些測試用環境變數。hook 以使用者身分執行，否則使用者自己設定這些變數，就能讓提示記錄失效或把稽核記錄寫到別處，而且不會留下任何記錄（blog 草稿的讀者回報）。Windows 的 hook 與安裝程式改向 Windows 查詢 ProgramData 與 Program Files 的位置，不讀環境變數。macOS 的提示步驟寫明 prompts.log 的 newsyslog 設定檔。
+
 ## v1.38.0（2026-11-17）
 
 - **jt-ai-agent 1.6：可以記錄使用者的提示，預設不記錄，由伺服器端決定開或關。** 新的套件設定「prompts」（off／local／wazuh）
