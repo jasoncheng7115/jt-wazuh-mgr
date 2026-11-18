@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.5（2026-11-19）
+
+- jt-ai-agent 1.6.4：shred 只有對裝置（/dev/sdb、/dev/nvme0n1；不含 /dev/null、/dev/zero 與 /dev/shm 裡的檔案）才算破壞性指令（133712、133716）。對檔案 `shred -u` 是安全刪除，謹慎的代理處理用完的金鑰與樣本時常這樣做；2026-11-19 另一個專案的代理在反向代理上清理樣本檔時因此觸發兩筆 L12。
+
 ## v1.38.4（2026-11-19）
 
 - jt-zpush 1.3.1：規則 132281（以腳本或攻擊工具連 ActiveSync）與 132282（自稱 iPhone 卻不是 Apple 的 user agent）改為取狀態碼、大小、referer 之後的那個欄位當 user agent。行尾多記 content type 的記錄格式（jt-web 的 jt_combined）原本讓 132282 對每一台真的 iPhone、iPad 觸發（某站台一天約 2,000 筆 L7），132281 則永遠不觸發。

@@ -4,6 +4,10 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.5 (2026-11-19)
+
+- jt-ai-agent 1.6.4: shred counts as a destructive command (133712, 133716) only on a device (/dev/sdb, /dev/nvme0n1; not /dev/null, /dev/zero or files in /dev/shm). `shred -u` of a file is a secure delete, which careful agents do with keys and samples they no longer need; on 2026-11-19 it raised two level 12 alerts for another project's agent cleaning up its samples on the reverse proxy.
+
 ## v1.38.4 (2026-11-19)
 
 - jt-zpush 1.3.1: rules 132281 (ActiveSync from a scripting or attack tool) and 132282 (an "iPhone" without an Apple user agent) take the user agent as the field after the status, size and referer. With a log format that adds the content type as a last quoted field (jt-web's jt_combined), 132282 fired for every real iPhone and iPad (about 2,000 level 7 alerts a day on one site) and 132281 never fired.

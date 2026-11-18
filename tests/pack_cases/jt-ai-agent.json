@@ -1715,9 +1715,9 @@
   {
    "log": "jt-ai-agent: {\"jt_ai\":{\"v\":1,\"ts\":\"2026-11-18T19:24:34+0800\",\"host\":\"devbox\",\"user\":\"root\",\"event\":\"PreToolUse\",\"session\":\"s-r1\",\"cwd\":\"/opt/proj\",\"tool\":\"Bash\",\"agent\":\"claude-code\",\"cmd\":\"ssh -o BatchMode=yes root@10.0.5.20 'systemctl start app.service' ; shred -u /opt/proj/secret.key\",\"cmd_len\":97,\"remote\":\"10.0.5.20\",\"remote_cmd\":\"systemctl start app.service\"}}",
    "location": "/var/log/jt-ai-agent/actions.log",
-   "expect_rule": "133712",
-   "expect_level": 10,
-   "note": "1.6.3: shred after the ssh command runs here, not on the remote host"
+   "expect_rule": "133703",
+   "expect_level": 4,
+   "note": "1.6.4: shred -u of a file is a secure delete, not destruction; the line is an SSH connection"
   },
   {
    "log": "jt-ai-agent: {\"jt_ai\":{\"v\":1,\"ts\":\"2026-11-18T19:24:34+0800\",\"host\":\"devbox\",\"user\":\"root\",\"event\":\"PreToolUse\",\"session\":\"s-r1\",\"cwd\":\"/opt/proj\",\"tool\":\"Bash\",\"agent\":\"claude-code\",\"cmd\":\"ssh admin@10.0.5.20 bash -s <<'EOF'\\nrm -rf /srv\\nEOF\",\"cmd_len\":51,\"remote\":\"10.0.5.20\",\"remote_cmd\":\"bash -s <<EOF rm -rf /srv EOF\"}}",
@@ -1725,6 +1725,34 @@
    "expect_rule": "133716",
    "expect_level": 12,
    "note": "1.6.3: a heredoc sent over ssh is a remote command"
+  },
+  {
+   "log": "jt-ai-agent: {\"jt_ai\":{\"v\":1,\"ts\":\"2026-11-19T01:30:00+0800\",\"host\":\"devbox\",\"user\":\"root\",\"event\":\"PreToolUse\",\"session\":\"s-sh1\",\"cwd\":\"/opt/proj\",\"tool\":\"Bash\",\"agent\":\"claude-code\",\"cmd\":\"shred -u /root/sample.jsonl\",\"cmd_len\":27}}",
+   "location": "/var/log/jt-ai-agent/actions.log",
+   "expect_rule": "133702",
+   "expect_level": 3,
+   "note": "1.6.4: secure delete of a file is not destructive"
+  },
+  {
+   "log": "jt-ai-agent: {\"jt_ai\":{\"v\":1,\"ts\":\"2026-11-19T01:30:00+0800\",\"host\":\"devbox\",\"user\":\"root\",\"event\":\"PreToolUse\",\"session\":\"s-sh1\",\"cwd\":\"/opt/proj\",\"tool\":\"Bash\",\"agent\":\"claude-code\",\"cmd\":\"shred -n 1 -z /dev/sdb\",\"cmd_len\":22}}",
+   "location": "/var/log/jt-ai-agent/actions.log",
+   "expect_rule": "133712",
+   "expect_level": 10,
+   "note": "1.6.4: shred of a block device"
+  },
+  {
+   "log": "jt-ai-agent: {\"jt_ai\":{\"v\":1,\"ts\":\"2026-11-19T01:30:00+0800\",\"host\":\"devbox\",\"user\":\"root\",\"event\":\"PreToolUse\",\"session\":\"s-sh1\",\"cwd\":\"/opt/proj\",\"tool\":\"Bash\",\"agent\":\"claude-code\",\"cmd\":\"ssh root@10.0.5.20 'shred -n 3 /dev/nvme0n1'\",\"cmd_len\":44,\"remote\":\"10.0.5.20\",\"remote_cmd\":\"shred -n 3 /dev/nvme0n1\"}}",
+   "location": "/var/log/jt-ai-agent/actions.log",
+   "expect_rule": "133716",
+   "expect_level": 12,
+   "note": "1.6.4: shred of a device sent over ssh"
+  },
+  {
+   "log": "jt-ai-agent: {\"jt_ai\":{\"v\":1,\"ts\":\"2026-11-19T01:30:00+0800\",\"host\":\"devbox\",\"user\":\"root\",\"event\":\"PreToolUse\",\"session\":\"s-sh1\",\"cwd\":\"/opt/proj\",\"tool\":\"Bash\",\"agent\":\"claude-code\",\"cmd\":\"shred -u /dev/shm/token\",\"cmd_len\":23}}",
+   "location": "/var/log/jt-ai-agent/actions.log",
+   "expect_rule": "133702",
+   "expect_level": 3,
+   "note": "1.6.4: /dev/shm files are files, not devices"
   }
  ],
  "sequences": [

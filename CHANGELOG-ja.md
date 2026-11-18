@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.5（2026-11-19）
+
+- jt-ai-agent 1.6.4：shred を破壊的コマンド（133712、133716）とみなすのはデバイス（/dev/sdb、/dev/nvme0n1。/dev/null、/dev/zero、/dev/shm 内のファイルは除く）に対してだけにしました。ファイルへの `shred -u` は安全な削除で、慎重なエージェントが不要になった鍵やサンプルに使います。
+
 ## v1.38.4（2026-11-19）
 
 - jt-zpush 1.3.1：ルール 132281（スクリプトや攻撃ツールからの ActiveSync）と 132282（Apple 以外のユーザーエージェントで iPhone を名乗る）は、ステータス・サイズ・referer の後のフィールドをユーザーエージェントとして扱います。末尾に content type を記録する形式（jt-web の jt_combined）では、132282 が本物の iPhone・iPad すべてで発火し（あるサイトで 1 日約 2,000 件の L7）、132281 は発火しませんでした。
