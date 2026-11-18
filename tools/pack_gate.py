@@ -882,7 +882,7 @@ def scenario_no_cron(version, workdir, keep):
 def scenario_upgrade(version, from_tag, only, workdir, keep):
     name = 'jtgate-upgrade'
     res = {'scenario': 'upgrade', 'from': from_tag, 'image': 'wazuh/wazuh-manager:' + version}
-    old_tree = tempfile.mkdtemp(prefix='jtgate-old-')
+    old_tree = tempfile.mkdtemp(prefix='jtgate-old-', dir=workdir)   # not /tmp: its .py files raise FIM alerts there
     try:
         raw = subprocess.run(['git', '-C', os.path.join(ROOT, 'github'), 'archive', '--format=tar', from_tag,
                               'lib', 'packs', 'wazuh_agent_mgr.py'], capture_output=True, check=True).stdout

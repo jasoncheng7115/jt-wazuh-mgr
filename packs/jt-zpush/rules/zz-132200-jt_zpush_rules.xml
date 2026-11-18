@@ -984,11 +984,14 @@
     for iOS sends Outlook). Measured on nine days of two hosts: 16,756
     iPhone and iPad POSTs, all from Apple user agents.
   -->
+  <!-- 1.3.1: the user agent is the field after the status, size and referer, wherever the line
+       ends: a log format that adds the content type as a last quoted field (jt-web's jt_combined)
+       made 132282 fire for every iPhone and iPad and 132281 never fire. -->
   <rule id="132281" level="8">
     <if_sid>31100</if_sid>
     <protocol type="pcre2">^POST$</protocol>
     <url type="pcre2">(?i)^/(?:Microsoft-Server-ActiveSync|autodiscover/autodiscover\.xml)</url>
-    <match type="pcre2">\x22 \x22(?i:(?:python|curl/|wget/|go-http-client/|libwww-perl/|lwp-|ruby|axios/|node-fetch/|sqlmap/|nikto|masscan/|zgrab|nuclei|hydra|medusa|ncrack)|[^\x22]*(?:windowspowershell/|powershell/|nmap scripting engine|\(hydra\)))[^\x22]*\x22\]?\s*$</match>
+    <match type="pcre2">HTTP/[0-9.]+\x22 [0-9]{3} \S+ \x22[^\x22]*\x22 \x22(?i:(?:python|curl/|wget/|go-http-client/|libwww-perl/|lwp-|ruby|axios/|node-fetch/|sqlmap/|nikto|masscan/|zgrab|nuclei|hydra|medusa|ncrack)|[^\x22]*(?:windowspowershell/|powershell/|nmap scripting engine|\(hydra\)))[^\x22]*\x22(?: \x22[^\x22]*\x22)?\]?\s*$</match>
     <description>ActiveSync or autodiscover request from a scripting or attack tool from $(srcip) (HTTP $(id))</description>
     <mitre>
       <id>T1114.002</id>
@@ -1000,7 +1003,7 @@
     <if_sid>31100</if_sid>
     <protocol type="pcre2">^POST$</protocol>
     <url type="pcre2">(?i)^/Microsoft-Server-ActiveSync\?(?:.*\x26)?DeviceType=iP(?:hone|ad|od)(?:\x26|$)</url>
-    <match type="pcre2">\x22 \x22(?!Apple-|iOS/|iPadOS/)[^\x22]*\x22\]?\s*$</match>
+    <match type="pcre2">HTTP/[0-9.]+\x22 [0-9]{3} \S+ \x22[^\x22]*\x22 \x22(?!Apple-|iOS/|iPadOS/)[^\x22]*\x22(?: \x22[^\x22]*\x22)?\]?\s*$</match>
     <description>ActiveSync request claiming to be an Apple device without an Apple user agent from $(srcip) (spoofed device type, HTTP $(id))</description>
     <mitre>
       <id>T1114.002</id>

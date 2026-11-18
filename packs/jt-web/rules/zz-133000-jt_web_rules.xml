@@ -225,4 +225,41 @@
     <group>jt_web_ar,</group>
   </rule>
 
+  <!-- 1.2: nginx worker crashes. A memory-corruption bug being exploited (nginx 1.30.7 / 1.31.9 fixed
+       ten on 2026-11-18, among them HTTP/2 flow control, alias with try_files, the mail proxy) most
+       often shows as a worker that dies on a signal. The built-in rules leave the error-log line at
+       31300 (level 0) and the kernel's segfault line at 1010 (level 5). Signal 9 (killed, e.g. by
+       the OOM killer) is not a crash of nginx itself. -->
+  <rule id="133060" level="10">
+    <if_sid>31300</if_sid>
+    <regex type="pcre2">worker process \d+ exited on signal (?:4|6|7|8|11)\b</regex>
+    <description>jt-web: an nginx worker process crashed (exited on a signal); a crash can be an exploit of a memory-corruption bug</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1499.004</id>
+    </mitre>
+    <group>jt_web_crash,</group>
+  </rule>
+
+  <rule id="133061" level="12" frequency="3" timeframe="600">
+    <if_matched_sid>133060</if_matched_sid>
+    <same_location />
+    <description>[WARN] jt-web: nginx worker processes crashed three times or more within ten minutes: possible exploitation, check the access log of that moment and update nginx</description>
+    <mitre>
+      <id>T1190</id>
+    </mitre>
+    <group>jt_web_crash,</group>
+  </rule>
+
+  <rule id="133062" level="10">
+    <if_sid>1010</if_sid>
+    <regex type="pcre2">\snginx\[\d+\]: segfault at </regex>
+    <description>jt-web: the kernel reports a segmentation fault in nginx; a crash can be an exploit of a memory-corruption bug</description>
+    <mitre>
+      <id>T1190</id>
+      <id>T1499.004</id>
+    </mitre>
+    <group>jt_web_crash,</group>
+  </rule>
+
 </group>

@@ -4,6 +4,12 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.4（2026-11-19）
+
+- jt-zpush 1.3.1：規則 132281（以腳本或攻擊工具連 ActiveSync）與 132282（自稱 iPhone 卻不是 Apple 的 user agent）改為取狀態碼、大小、referer 之後的那個欄位當 user agent。行尾多記 content type 的記錄格式（jt-web 的 jt_combined）原本讓 132282 對每一台真的 iPhone、iPad 觸發（某站台一天約 2,000 筆 L7），132281 則永遠不觸發。
+- jt-web 1.2：nginx worker 當掉。錯誤記錄的「worker process N exited on signal 11」原本停在內建 31300（L0），核心的 segfault 記錄只有 1010（L5），而 worker 當掉正是記憶體損毀漏洞被攻擊時最常見的跡象（nginx 1.30.7／1.31.9 於 2026-11-18 修了十個漏洞）。新增 133060（L10）、133061（10 分鐘內 3 次，L12）、133062（核心記錄 nginx segfault，L10）。
+- 套件發版關卡：舊版工具改解到報告目錄裡，不再放 /tmp（那裡的 Python 檔會觸發檔案完整性告警）。
+
 ## v1.38.3（2026-11-18）
 
 - jt-ai-agent 1.6.3：hook 另外記下 ssh 送到遠端執行的那段指令（jt_ai.remote_cmd，已遮蔽密碼），規則 133716（把破壞性指令送到其他主機，L12）只看那一段。像 `ssh host 'systemctl start x'; shred -u key` 這種在本機刪除檔案的指令，現在是 133712（L10），不再被當成送到遠端（2026-11-18 另一個專案的代理在反向代理上啟動服務後順手刪掉金鑰檔時觸發）。

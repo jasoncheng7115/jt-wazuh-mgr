@@ -4,6 +4,12 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.4 (2026-11-19)
+
+- jt-zpush 1.3.1: rules 132281 (ActiveSync from a scripting or attack tool) and 132282 (an "iPhone" without an Apple user agent) take the user agent as the field after the status, size and referer. With a log format that adds the content type as a last quoted field (jt-web's jt_combined), 132282 fired for every real iPhone and iPad (about 2,000 level 7 alerts a day on one site) and 132281 never fired.
+- jt-web 1.2: nginx worker crashes. The error-log line "worker process N exited on signal 11" stayed at built-in 31300 (level 0) and the kernel segfault line at 1010 (level 5); a crashing worker is the most common sign of a memory-corruption bug being exploited (nginx 1.30.7 / 1.31.9 fixed ten on 2026-11-18). New rules 133060 (level 10), 133061 (three within ten minutes, level 12), 133062 (kernel segfault in nginx, level 10).
+- Pack gate: the old release's tree is unpacked under the report directory instead of /tmp, where its Python files raised file integrity alerts.
+
 ## v1.38.3 (2026-11-18)
 
 - jt-ai-agent 1.6.3: the hook records what ssh runs on the other host (jt_ai.remote_cmd, secrets removed), and rule 133716 (a destructive command sent to another host, L12) looks only at that part. A line such as `ssh host 'systemctl start x'; shred -u key` shreds a local file and is now 133712 (L10) instead of a remote destructive command (seen on 2026-11-18 when another project's agent tidied up a key after starting a service on the reverse proxy).

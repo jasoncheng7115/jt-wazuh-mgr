@@ -328,6 +328,46 @@
    "location": "/var/ossec/logs/active-responses.log",
    "expect_rule": "none",
    "note": "repeat while blocked: quiet"
+  },
+  {
+   "log": "2026/11/19 00:30:00 [alert] 1234#1234: worker process 5678 exited on signal 11 (core dumped)",
+   "location": "/var/log/nginx/error.log",
+   "expect_rule": "133060",
+   "expect_level": 10,
+   "note": "1.2: nginx worker crashed on SIGSEGV"
+  },
+  {
+   "log": "2026/11/19 00:30:00 [alert] 1234#1234: worker process 5679 exited on signal 6",
+   "location": "/var/log/nginx/error.log",
+   "expect_rule": "133060",
+   "expect_level": 10,
+   "note": "1.2: abort"
+  },
+  {
+   "log": "2026/11/19 00:30:00 [alert] 1234#1234: worker process 5680 exited on signal 9",
+   "location": "/var/log/nginx/error.log",
+   "expect_rule": "none",
+   "note": "1.2: signal 9 is a kill (OOM killer), not a crash of nginx"
+  },
+  {
+   "log": "2026/11/19 00:30:00 [notice] 1234#1234: worker process 5681 exited with code 0",
+   "location": "/var/log/nginx/error.log",
+   "expect_rule": "none",
+   "note": "1.2: a normal exit after reload"
+  },
+  {
+   "log": "Nov 19 00:30:00 web1 kernel: [123.456] nginx[5678]: segfault at 0 ip 000055d1c0a1b2c3 sp 00007ffd error 4 in nginx[55d1c0a00000+100000]",
+   "location": "/var/log/syslog",
+   "expect_rule": "133062",
+   "expect_level": 10,
+   "note": "1.2: kernel segfault line for nginx"
+  },
+  {
+   "log": "Nov 19 00:30:00 web1 kernel: [123.456] php-fpm8.3[5678]: segfault at 0 ip 000055d1c0a1b2c3 sp 00007ffd error 4 in php-fpm8.3[55d1c0a00000+100000]",
+   "location": "/var/log/syslog",
+   "expect_rule": "1010",
+   "expect_level": 5,
+   "note": "1.2: other programs stay with the built-in rule"
   }
  ],
  "sandbox_packs": [
@@ -335,5 +375,18 @@
   "jt-nextcloud",
   "jt-librenms",
   "jt-odoo"
+ ],
+ "sequences": [
+  {
+   "before": [
+    "2026/11/19 00:30:00 [alert] 1234#1234: worker process 5701 exited on signal 11 (core dumped)",
+    "2026/11/19 00:30:00 [alert] 1234#1234: worker process 5702 exited on signal 11 (core dumped)"
+   ],
+   "log": "2026/11/19 00:30:00 [alert] 1234#1234: worker process 5703 exited on signal 11 (core dumped)",
+   "location": "/var/log/nginx/error.log",
+   "expect_rule": "133061",
+   "expect_level": 12,
+   "note": "1.2: three crashes within ten minutes"
+  }
  ]
 }
