@@ -319,9 +319,13 @@
     <group>jt_ai_agent_destructive,</group>
   </rule>
 
+  <!-- 1.6.3: the destructive part must be in what ssh runs over there (jt_ai.remote_cmd, the same
+       pattern as 133712), not elsewhere on the line: "ssh host 'ls'; shred -u key" is a local
+       command and stays 133712. A hook before 1.6.3 sends no remote_cmd: 133712 only. -->
   <rule id="133716" level="12">
     <if_sid>133712</if_sid>
     <field name="jt_ai.remote" type="pcre2">\S</field>
+    <field name="jt_ai.remote_cmd" type="pcre2">(?i)(?:^|[\s;\x26|(`'"])(?:rm\s+(?:-[a-z]*\s+)*-[a-z]*r[a-z]*\s+(?:-\S+\s+)*["']?(?:/|/\*|~/?|\$HOME/?|/(?:etc|usr|var|boot|root|home|opt|srv|bin|sbin|lib|lib64|var/lib|var/ossec|var/log)/?\*?)["']?(?=$|[\s;\x26|)'"])|mkfs(?:\.\w+)?\s|dd\s[^;\x26|\n]*\bof=/dev/(?!null\b)|wipefs\s|shred\s|(?:pct|qm)\s+destroy\b|(?:zfs|zpool)\s+destroy\b|(?:lv|vg|pv)remove\b|git\s+push\b[^;\x26|\n]*\s(?:--force(?:-with-lease)?|-f)(?=$|\s)|crontab\s+-r\b|iptables\s+-F\b|nft\s+flush\s+ruleset\b|drop\s+(?:database|table|schema)\b|truncate\s+table\b|systemctl\s+(?:stop|disable|mask|kill)\s+[^;\x26|\n]*\b(?:wazuh-(?:manager|agent|indexer|dashboard)|auditd|sshd?|nginx|apache2|httpd|postgresql|mysql|mariadb|zimbra|docker|pve-cluster|pveproxy)\b|wazuh-control\s+stop\b|/var/ossec/bin/wazuh-db(?=$|[\s;\x26|)'"])|docker\s+(?:system\s+prune|volume\s+(?:rm|prune))\b|chmod\s+-R\s+0?777\s+/(?=$|\s)|(?:remove-item|ri|rm|del|erase|rd|rmdir)(?=[^;\x26|\n]*\s(?:-r(?:ecurse)?|/s)\b)\s[^;\x26|\n]*?\s["']?[a-z]:[\\/]?(?:\*|windows|users|program\s?files(?:\s\(x86\))?|programdata)?[\\/]?\*?["']?(?=$|[\s;\x26|)'"])|format-volume\b|clear-disk\b|remove-partition\b|format(?:\.com)?\s+[a-z]:|cipher(?:\.exe)?\s+/w:|(?:stop-service|set-service)\s[^;\x26|\n]*\bwazuh(?:svc)?\b|sc(?:\.exe)?\s+(?:stop|delete|config)\s+["']?wazuh(?:svc)?\b|net\s+stop\s+["']?wazuh(?:svc)?\b)</field>
     <description>[WARN] AI agent ($(jt_ai.user) on $(jt_ai.host)) sent a destructive command to $(jt_ai.remote)</description>
     <mitre>
       <id>T1485</id>

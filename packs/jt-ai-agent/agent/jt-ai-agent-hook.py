@@ -269,6 +269,41 @@ def remote_hosts(command):
     return ','.join(out[:5])
 
 
+SHELL_SEPARATORS = (';', '&&', '||', '|', '&')
+
+
+def remote_commands(command):
+    """1.6.3: the command lines ssh runs on the other host (best effort), so a rule can tell a
+    destructive command sent there from one run here on the same line (ssh h 'ls'; shred -u f)."""
+    try:
+        words = shlex.split(command, comments=False, posix=True)
+    except ValueError:
+        return ''
+    out = []
+    i = 0
+    while i < len(words):
+        if os.path.basename(words[i]) in ('ssh', 'autossh'):
+            i += 1
+            while i < len(words):
+                w = words[i]
+                if w.startswith('$') or (w.startswith('-') and len(w) > 1):
+                    if w.startswith('-') and w[-1] in SSH_ARG_OPTS and len(w) == 2:
+                        i += 1
+                    i += 1
+                    continue
+                if HOST.match(w):
+                    j = i + 1
+                    while j < len(words) and words[j] not in SHELL_SEPARATORS:
+                        j += 1
+                    if j > i + 1:
+                        out.append(' '.join(words[i + 1:j]))
+                    i = j
+                break
+        i += 1
+    text = redact(' ; '.join(out))
+    return text if len(text) <= MAX_CMD else text[:MAX_CMD] + '...'
+
+
 def patch_summary(ti, rec):
     """Codex apply_patch: the files it touches, never the patch text. Edit, or Write when it only adds."""
     text = ti.get('command') if isinstance(ti.get('command'), str) else ti.get('input')
@@ -877,6 +912,9 @@ def record(event, agent='claude-code'):
         hosts = remote_hosts(command)
         if hosts:
             rec['remote'] = hosts
+            sent = remote_commands(command)
+            if sent:
+                rec['remote_cmd'] = sent
     elif tool == 'Agent' or tool == 'Task':
         for key, out in (('subagent_type', 'subagent_type'), ('subagentType', 'subagent_type'), ('agent', 'subagent_type'),
                          ('description', 'description'), ('model', 'model')):

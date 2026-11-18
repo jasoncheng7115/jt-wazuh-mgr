@@ -4,6 +4,10 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.3 (2026-11-18)
+
+- jt-ai-agent 1.6.3: the hook records what ssh runs on the other host (jt_ai.remote_cmd, secrets removed), and rule 133716 (a destructive command sent to another host, L12) looks only at that part. A line such as `ssh host 'systemctl start x'; shred -u key` shreds a local file and is now 133712 (L10) instead of a remote destructive command (seen on 2026-11-18 when another project's agent tidied up a key after starting a service on the reverse proxy).
+
 ## v1.38.2 (2026-11-18)
 
 - jt-ai-agent 1.6.2 (Windows, BETA): the installer takes -Agents (set up only the named agents, e.g. -Agents copilot) and -Prompts off|local|wazuh (the prompt setting on a host the Wazuh manager does not deliver it to); new jt-ai-agent-uninstall.ps1 (takes only the jt-ai-agent hooks out of each agent's settings, keeps backups and, unless -RemoveLogs, the logs) and jt-ai-agent-check.ps1 (a report of what is installed and recorded). The setup guide notes that VS Code's GitHub Copilot loads the same machine-wide policy hooks as Copilot CLI and the VS Code enterprise policies that go with them.

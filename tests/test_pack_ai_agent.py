@@ -1054,5 +1054,41 @@ class TestEnvOverrides161(unittest.TestCase):
         self.assertNotIn('$env:ProgramData', inst)
 
 
+class TestRemoteCommands163(unittest.TestCase):
+    """1.6.3: what ssh runs over there is recorded apart from the rest of the line."""
+
+    def test_remote_part_only(self):
+        cases = [
+            ("ssh -i $K -o BatchMode=yes root@10.0.5.20 'touch /x; systemctl start y' ; shred -u /opt/k",
+             'touch /x; systemctl start y'),
+            ("ssh root@host 'rm -rf /var/lib/x'", 'rm -rf /var/lib/x'),
+            ('ssh -p 2222 admin@host rm -rf /', 'rm -rf /'),
+            ("ssh host bash -s <<'EOF'\nrm -rf /srv\nEOF", 'bash -s <<EOF rm -rf /srv EOF'),
+            ('ssh host', ''),
+            ("scp a host:/tmp/ && ssh host 'ls' | grep x", 'ls'),
+            ('ls; rm -rf /tmp/x', ''),
+        ]
+        for cmd, want in cases:
+            self.assertEqual(hook.remote_commands(cmd), want, cmd)
+
+    def test_remote_command_is_redacted_and_recorded(self):
+        rec = hook.record({'hook_event_name': 'PreToolUse', 'tool_name': 'Bash',
+                           'tool_input': {'command': "ssh host 'mysql -pS3cretPw -e drop database x'; ls"}})
+        self.assertEqual(rec['remote'], 'host')
+        self.assertNotIn('S3cretPw', rec['remote_cmd'])
+        self.assertIn('drop database', rec['remote_cmd'])
+        rec = hook.record({'hook_event_name': 'PreToolUse', 'tool_name': 'Bash',
+                           'tool_input': {'command': 'ssh host'}})
+        self.assertNotIn('remote_cmd', rec)
+
+    def test_rule_133716_uses_the_destructive_pattern_of_133712(self):
+        xml = open(os.path.join(ROOT, 'packs', 'jt-ai-agent', 'rules', 'zz-133700-jt_ai_agent_rules.xml'),
+                   encoding='utf-8').read()
+        local = re.search(r'<rule id="133712".*?<field name="jt_ai.cmd" type="pcre2">(.*?)</field>', xml, re.S).group(1)
+        remote = re.search(r'<rule id="133716".*?<field name="jt_ai.remote_cmd" type="pcre2">(.*?)</field>',
+                           xml, re.S).group(1)
+        self.assertEqual(local, remote, 'change 133712 and 133716 together')
+
+
 if __name__ == '__main__':
     unittest.main()

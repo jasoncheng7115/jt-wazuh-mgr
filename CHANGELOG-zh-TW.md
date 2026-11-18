@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.3（2026-11-18）
+
+- jt-ai-agent 1.6.3：hook 另外記下 ssh 送到遠端執行的那段指令（jt_ai.remote_cmd，已遮蔽密碼），規則 133716（把破壞性指令送到其他主機，L12）只看那一段。像 `ssh host 'systemctl start x'; shred -u key` 這種在本機刪除檔案的指令，現在是 133712（L10），不再被當成送到遠端（2026-11-18 另一個專案的代理在反向代理上啟動服務後順手刪掉金鑰檔時觸發）。
+
 ## v1.38.2（2026-11-18）
 
 - jt-ai-agent 1.6.2（Windows，BETA）：安裝程式新增 -Agents（只設定指定的代理，例如 -Agents copilot）與 -Prompts off|local|wazuh（在 Wazuh manager 沒有派送設定的主機上直接設定提示記錄）；新增 jt-ai-agent-uninstall.ps1（只從各代理的設定移除 jt-ai-agent 的 hook，留下備份；記錄檔除非加 -RemoveLogs 否則保留）與 jt-ai-agent-check.ps1（安裝與記錄狀況的報告）。部署說明補上：VS Code 的 GitHub Copilot 會載入與 Copilot CLI 相同的全系統政策 hook，以及可搭配的 VS Code 企業政策。

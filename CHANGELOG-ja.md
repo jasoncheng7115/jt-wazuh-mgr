@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.3（2026-11-18）
+
+- jt-ai-agent 1.6.3：フックが ssh でリモート側に実行させる部分を別に記録し（jt_ai.remote_cmd、秘密情報は除去）、ルール 133716（他ホストへの破壊的コマンド、L12）はその部分だけを見るようにしました。`ssh host 'systemctl start x'; shred -u key` のようにローカルでファイルを消す行は 133712（L10）になり、リモートへの破壊的コマンドとは扱いません。
+
 ## v1.38.2（2026-11-18）
 
 - jt-ai-agent 1.6.2（Windows、BETA）：インストーラーに -Agents（指定したエージェントだけを設定。例：-Agents copilot）と -Prompts off|local|wazuh（Wazuh マネージャーが設定を配布しないホストでのプロンプト設定）を追加。jt-ai-agent-uninstall.ps1（各エージェントの設定から jt-ai-agent のフックだけを外し、バックアップを残す。ログは -RemoveLogs を付けない限り保持）と jt-ai-agent-check.ps1（導入と記録の状況のレポート）を追加。VS Code の GitHub Copilot が Copilot CLI と同じマシン全体のポリシーフックを読み込むこと、併用できる VS Code のエンタープライズポリシーを手順に追記。
