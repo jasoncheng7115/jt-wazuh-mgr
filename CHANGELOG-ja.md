@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.2（2026-11-18）
+
+- jt-ai-agent 1.6.2（Windows、BETA）：インストーラーに -Agents（指定したエージェントだけを設定。例：-Agents copilot）と -Prompts off|local|wazuh（Wazuh マネージャーが設定を配布しないホストでのプロンプト設定）を追加。jt-ai-agent-uninstall.ps1（各エージェントの設定から jt-ai-agent のフックだけを外し、バックアップを残す。ログは -RemoveLogs を付けない限り保持）と jt-ai-agent-check.ps1（導入と記録の状況のレポート）を追加。VS Code の GitHub Copilot が Copilot CLI と同じマシン全体のポリシーフックを読み込むこと、併用できる VS Code のエンタープライズポリシーを手順に追記。
+
 ## v1.38.1（2026-11-17）
 
 - jt-ai-agent 1.6.1：正式にインストールされたフック（/usr/local/lib/jt-ai-agent、C:\Program Files\jt-ai-agent）は、テスト用の環境変数 JT_AI_AGENT_LOG、JT_AI_AGENT_PROMPT_LOG、JT_AI_AGENT_CONFIG を無視します。フックはユーザー権限で動くため、これらを設定されるとプロンプトの記録を無効にしたり監査ログを別の場所に書かせたりでき、しかも何も記録に残りませんでした（ブログ草稿の読者からの指摘）。Windows のフックとインストーラーは ProgramData と Program Files の場所を環境変数ではなく Windows から取得します。macOS のプロンプト手順に prompts.log の newsyslog 設定ファイルを明記しました。

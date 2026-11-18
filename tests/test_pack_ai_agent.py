@@ -880,13 +880,15 @@ class TestWindowsBeta16(unittest.TestCase):
     def test_scripts_are_ascii_with_crlf(self):
         # Windows PowerShell 5.1 reads a script without a byte-order mark as the ANSI code page:
         # anything but ASCII would be read differently on a Chinese or Japanese Windows
-        for name in ('jt-ai-agent-hook.ps1', 'jt-ai-agent-install.ps1'):
+        for name in ('jt-ai-agent-hook.ps1', 'jt-ai-agent-install.ps1', 'jt-ai-agent-uninstall.ps1',
+                     'jt-ai-agent-check.ps1'):
             data = _ps1(name)
             data.decode('ascii')
             self.assertNotIn(b'\n', data.replace(b'\r\n', b''), name)
 
     def test_marked_beta(self):
-        for name in ('jt-ai-agent-hook.ps1', 'jt-ai-agent-install.ps1'):
+        for name in ('jt-ai-agent-hook.ps1', 'jt-ai-agent-install.ps1', 'jt-ai-agent-uninstall.ps1',
+                     'jt-ai-agent-check.ps1'):
             self.assertIn(b'BETA', _ps1(name)[:1500], name)
         self.assertIn(b"$rec['hook'] = 'ps1-beta'", _ps1('jt-ai-agent-hook.ps1'))
         m = json.load(open(os.path.join(ROOT, 'packs', 'jt-ai-agent', 'manifest.json'), encoding='utf-8'))
@@ -899,7 +901,7 @@ class TestWindowsBeta16(unittest.TestCase):
             self.assertTrue(s['body_zh'].startswith('BETA'))
         self.assertTrue(any('BETA' in n and 'Windows' in n for n in m['notes']))
         self.assertTrue(any('BETA' in n and 'Windows' in n for n in m['notes_zh']))
-        for f in ('jt-ai-agent-hook.ps1', 'jt-ai-agent-install.ps1'):
+        for f in ('jt-ai-agent-hook.ps1', 'jt-ai-agent-install.ps1', 'jt-ai-agent-uninstall.ps1', 'jt-ai-agent-check.ps1'):
             self.assertIn(f, m['agent_group']['files'])
 
     def test_redact_block_is_generated_from_the_python_hook(self):
@@ -933,6 +935,11 @@ class TestWindowsBeta16(unittest.TestCase):
         self.assertNotRegex(cursor, r"'before\w+'")
         self.assertIn("; exit 0", inst)          # Copilot denies preToolUse when a hook fails
         self.assertIn('-TestRoot', inst)
+        self.assertIn('[string]$Agents', inst)
+        self.assertIn("[ValidateSet('', 'off', 'local', 'wazuh')][string]$Prompts", inst)
+        un = _ps1('jt-ai-agent-uninstall.ps1').decode('ascii')
+        self.assertIn('jt-ai-agent-hook\\.ps1', un)           # only our own entries are taken out
+        self.assertIn('[switch]$RemoveLogs', un)
 
     def test_inventory_looks_for_the_windows_hook_on_windows(self):
         seen = []

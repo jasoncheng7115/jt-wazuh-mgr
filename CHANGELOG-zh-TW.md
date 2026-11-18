@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.2（2026-11-18）
+
+- jt-ai-agent 1.6.2（Windows，BETA）：安裝程式新增 -Agents（只設定指定的代理，例如 -Agents copilot）與 -Prompts off|local|wazuh（在 Wazuh manager 沒有派送設定的主機上直接設定提示記錄）；新增 jt-ai-agent-uninstall.ps1（只從各代理的設定移除 jt-ai-agent 的 hook，留下備份；記錄檔除非加 -RemoveLogs 否則保留）與 jt-ai-agent-check.ps1（安裝與記錄狀況的報告）。部署說明補上：VS Code 的 GitHub Copilot 會載入與 Copilot CLI 相同的全系統政策 hook，以及可搭配的 VS Code 企業政策。
+
 ## v1.38.1（2026-11-17）
 
 - jt-ai-agent 1.6.1：正式安裝的 hook（/usr/local/lib/jt-ai-agent、C:\Program Files\jt-ai-agent）不再理會 JT_AI_AGENT_LOG、JT_AI_AGENT_PROMPT_LOG、JT_AI_AGENT_CONFIG 這些測試用環境變數。hook 以使用者身分執行，否則使用者自己設定這些變數，就能讓提示記錄失效或把稽核記錄寫到別處，而且不會留下任何記錄（blog 草稿的讀者回報）。Windows 的 hook 與安裝程式改向 Windows 查詢 ProgramData 與 Program Files 的位置，不讀環境變數。macOS 的提示步驟寫明 prompts.log 的 newsyslog 設定檔。

@@ -18,7 +18,11 @@
 
 # -TestRoot <dir>: write everything under <dir>\ProgramFiles and <dir>\ProgramData instead, and do not register
 # the scheduled task (to try the script out without touching the host's agents).
-param([string]$Source = '', [string]$TestRoot = '')
+# -Agents claude-code,codex,gemini,cursor,copilot: set up only these agents (default all of them).
+# -Prompts off|local|wazuh: the prompt setting on a host the Wazuh manager does not deliver it to (a
+# setting delivered by the manager, in the agent group ai-agent, takes precedence).
+param([string]$Source = '', [string]$TestRoot = '', [string]$Agents = 'claude-code,codex,gemini,cursor,copilot',
+      [ValidateSet('', 'off', 'local', 'wazuh')][string]$Prompts = '')
 
 $ErrorActionPreference = 'Stop'
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -26,6 +30,10 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     Write-Host 'Run this in an elevated PowerShell (as administrator).'; exit 1
 }
 if (-not $Source) { $Source = $PSScriptRoot }
+$Want = @($Agents.Split(',') | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
+$Unknown = @($Want | Where-Object { @('claude-code', 'codex', 'gemini', 'cursor', 'copilot') -notcontains $_ })
+if ($Unknown.Count) { Write-Host "Unknown agent(s): $($Unknown -join ', '). Use claude-code, codex, gemini, cursor, copilot."; exit 1 }
+function Test-Want([string]$agent) { return $Want -contains $agent }
 $stamp = Get-Date -Format 'yyyyMMddHHmmss'
 # the folders Windows reports, as the hook uses them (not the environment variables)
 $PF = [Environment]::GetFolderPath('ProgramFiles'); $PD = [Environment]::GetFolderPath('CommonApplicationData')
@@ -108,79 +116,97 @@ foreach ($name in @('actions.log', 'prompts.log')) {
     if (-not (Test-Path -LiteralPath $f)) { [IO.File]::WriteAllText($f, '', $Utf8) }
     & icacls.exe $f /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F' '*S-1-5-32-545:(AD,S,RA)' | Out-Null
 }
+if ($Prompts) {
+    # read by every user's hook; the scheduled task replaces it only when the manager delivers a setting
+    $cf = Join-Path $LogDir 'config'
+    $body = "# jt-ai-agent settings, written by jt-ai-agent-install.ps1 -Prompts. A setting the Wazuh manager`r`n" +
+            "# delivers (agent group ai-agent, file jt-ai-agent.conf) takes precedence.`r`nprompts = $Prompts`r`n"
+    [IO.File]::WriteAllText($cf, $body, $Utf8)
+    Write-Host "   prompts = $Prompts ($cf)"
+}
 
 Write-Host '== Claude Code: C:\Program Files\ClaudeCode\managed-settings.json'
-$p = Join-Path $PF 'ClaudeCode\managed-settings.json'
-$d = Read-Json $p
-if ($null -ne $d) {
-    if (-not $d.Contains('hooks')) { $d['hooks'] = [ordered]@{} }
-    $c = Cmd 'claude-code'
-    foreach ($ev in @(@('PreToolUse', '*'), @('SessionStart', ''), @('PermissionRequest', '*'), @('PostToolUseFailure', '*'),
-                      @('SubagentStart', ''), @('SessionEnd', ''), @('UserPromptSubmit', ''))) {
-        Add-Hook $d['hooks'] $ev[0] ([ordered]@{ hooks = @([ordered]@{ type = 'command'; command = $c; timeout = 10 }) }) $c $ev[1]
+if (-not (Test-Want 'claude-code')) { Write-Host '   skipped (-Agents)' } else {
+    $p = Join-Path $PF 'ClaudeCode\managed-settings.json'
+    $d = Read-Json $p
+    if ($null -ne $d) {
+        if (-not $d.Contains('hooks')) { $d['hooks'] = [ordered]@{} }
+        $c = Cmd 'claude-code'
+        foreach ($ev in @(@('PreToolUse', '*'), @('SessionStart', ''), @('PermissionRequest', '*'), @('PostToolUseFailure', '*'),
+                          @('SubagentStart', ''), @('SessionEnd', ''), @('UserPromptSubmit', ''))) {
+            Add-Hook $d['hooks'] $ev[0] ([ordered]@{ hooks = @([ordered]@{ type = 'command'; command = $c; timeout = 10 }) }) $c $ev[1]
+        }
+        Save-File $p ($d | ConvertTo-Json -Depth 20) 'claude-code'
     }
-    Save-File $p ($d | ConvertTo-Json -Depth 20) 'claude-code'
 }
 
 Write-Host '== Codex: C:\ProgramData\OpenAI\Codex\requirements.toml'
-$p = Join-Path $PD 'OpenAI\Codex\requirements.toml'
-$c = (Cmd 'codex').Replace("'", "''")
-$lines = @('# >>> jt-ai-agent managed hooks (every Codex user on this host; users cannot turn these off)',
-           '[features]', 'hooks = true', '', '[hooks]', "windows_managed_dir = '$HookDir'")
-foreach ($ev in @('PreToolUse', 'SessionStart', 'PermissionRequest', 'PostToolUse', 'SubagentStart', 'SessionEnd', 'UserPromptSubmit')) {
-    $lines += @('', "[[hooks.$ev]]")
-    if (@('PreToolUse', 'PermissionRequest', 'PostToolUse') -contains $ev) { $lines += 'matcher = ".*"' }
-    $lines += @("[[hooks.$ev.hooks]]", 'type = "command"', "command = '$c'", "command_windows = '$c'", 'timeout = 10')
-}
-$lines += '# <<< jt-ai-agent'
-$block = ($lines -join "`r`n") + "`r`n"
-$old = if (Test-Path -LiteralPath $p) { [IO.File]::ReadAllText($p) } else { '' }
-if ($old -match '(?s)# >>> jt-ai-agent.*?# <<< jt-ai-agent\r?\n?') {
-    Save-File $p ([regex]::Replace($old, '(?s)# >>> jt-ai-agent.*?# <<< jt-ai-agent\r?\n?', [Text.RegularExpressions.MatchEvaluator] { param($m) $block })) 'codex'
-} elseif (-not $old.Trim()) {
-    Save-File $p $block 'codex'
-} elseif ($old -match '(?m)^\s*\[(features|hooks)\]') {
-    Write-Host "   WARNING: $p already has [features] or [hooks]; add the jt-ai-agent hooks by hand"
-} else {
-    Save-File $p ($old.TrimEnd() + "`r`n`r`n" + $block) 'codex'
+if (-not (Test-Want 'codex')) { Write-Host '   skipped (-Agents)' } else {
+    $p = Join-Path $PD 'OpenAI\Codex\requirements.toml'
+    $c = (Cmd 'codex').Replace("'", "''")
+    $lines = @('# >>> jt-ai-agent managed hooks (every Codex user on this host; users cannot turn these off)',
+               '[features]', 'hooks = true', '', '[hooks]', "windows_managed_dir = '$HookDir'")
+    foreach ($ev in @('PreToolUse', 'SessionStart', 'PermissionRequest', 'PostToolUse', 'SubagentStart', 'SessionEnd', 'UserPromptSubmit')) {
+        $lines += @('', "[[hooks.$ev]]")
+        if (@('PreToolUse', 'PermissionRequest', 'PostToolUse') -contains $ev) { $lines += 'matcher = ".*"' }
+        $lines += @("[[hooks.$ev.hooks]]", 'type = "command"', "command = '$c'", "command_windows = '$c'", 'timeout = 10')
+    }
+    $lines += '# <<< jt-ai-agent'
+    $block = ($lines -join "`r`n") + "`r`n"
+    $old = if (Test-Path -LiteralPath $p) { [IO.File]::ReadAllText($p) } else { '' }
+    if ($old -match '(?s)# >>> jt-ai-agent.*?# <<< jt-ai-agent\r?\n?') {
+        Save-File $p ([regex]::Replace($old, '(?s)# >>> jt-ai-agent.*?# <<< jt-ai-agent\r?\n?', [Text.RegularExpressions.MatchEvaluator] { param($m) $block })) 'codex'
+    } elseif (-not $old.Trim()) {
+        Save-File $p $block 'codex'
+    } elseif ($old -match '(?m)^\s*\[(features|hooks)\]') {
+        Write-Host "   WARNING: $p already has [features] or [hooks]; add the jt-ai-agent hooks by hand"
+    } else {
+        Save-File $p ($old.TrimEnd() + "`r`n`r`n" + $block) 'codex'
+    }
 }
 
 Write-Host '== Gemini CLI: C:\ProgramData\gemini-cli\settings.json'
-$p = Join-Path $PD 'gemini-cli\settings.json'
-$d = Read-Json $p
-if ($null -ne $d) {
-    if (-not $d.Contains('hooksConfig')) { $d['hooksConfig'] = [ordered]@{} }
-    $d['hooksConfig']['enabled'] = $true
-    if ($d['hooksConfig'].Contains('disabled')) { $d['hooksConfig']['disabled'] = @(@($d['hooksConfig']['disabled']) | Where-Object { $_ -ne 'jt-ai-agent' }) }
-    if (-not $d.Contains('hooks')) { $d['hooks'] = [ordered]@{} }
-    $c = Cmd 'gemini'
-    foreach ($ev in @(@('BeforeTool', '*'), @('AfterTool', '*'), @('SessionStart', ''), @('SessionEnd', ''), @('Notification', ''), @('BeforeAgent', ''))) {
-        Add-Hook $d['hooks'] $ev[0] ([ordered]@{ hooks = @([ordered]@{ name = 'jt-ai-agent'; type = 'command'; command = $c; timeout = 10000 }) }) $c $ev[1]
+if (-not (Test-Want 'gemini')) { Write-Host '   skipped (-Agents)' } else {
+    $p = Join-Path $PD 'gemini-cli\settings.json'
+    $d = Read-Json $p
+    if ($null -ne $d) {
+        if (-not $d.Contains('hooksConfig')) { $d['hooksConfig'] = [ordered]@{} }
+        $d['hooksConfig']['enabled'] = $true
+        if ($d['hooksConfig'].Contains('disabled')) { $d['hooksConfig']['disabled'] = @(@($d['hooksConfig']['disabled']) | Where-Object { $_ -ne 'jt-ai-agent' }) }
+        if (-not $d.Contains('hooks')) { $d['hooks'] = [ordered]@{} }
+        $c = Cmd 'gemini'
+        foreach ($ev in @(@('BeforeTool', '*'), @('AfterTool', '*'), @('SessionStart', ''), @('SessionEnd', ''), @('Notification', ''), @('BeforeAgent', ''))) {
+            Add-Hook $d['hooks'] $ev[0] ([ordered]@{ hooks = @([ordered]@{ name = 'jt-ai-agent'; type = 'command'; command = $c; timeout = 10000 }) }) $c $ev[1]
+        }
+        Save-File $p ($d | ConvertTo-Json -Depth 20) 'gemini'
     }
-    Save-File $p ($d | ConvertTo-Json -Depth 20) 'gemini'
 }
 
 Write-Host '== Cursor: C:\ProgramData\Cursor\hooks.json (after-the-fact events only: its before-hooks can block)'
-$p = Join-Path $PD 'Cursor\hooks.json'
-$d = Read-Json $p
-if ($null -ne $d) {
-    if (-not $d.Contains('version')) { $d['version'] = 1 }
-    if (-not $d.Contains('hooks')) { $d['hooks'] = [ordered]@{} }
-    $c = Cmd 'cursor'
-    foreach ($ev in @('sessionStart', 'sessionEnd', 'postToolUse', 'postToolUseFailure')) {
-        Add-Hook $d['hooks'] $ev ([ordered]@{ command = $c; timeout = 10 }) $c
+if (-not (Test-Want 'cursor')) { Write-Host '   skipped (-Agents)' } else {
+    $p = Join-Path $PD 'Cursor\hooks.json'
+    $d = Read-Json $p
+    if ($null -ne $d) {
+        if (-not $d.Contains('version')) { $d['version'] = 1 }
+        if (-not $d.Contains('hooks')) { $d['hooks'] = [ordered]@{} }
+        $c = Cmd 'cursor'
+        foreach ($ev in @('sessionStart', 'sessionEnd', 'postToolUse', 'postToolUseFailure')) {
+            Add-Hook $d['hooks'] $ev ([ordered]@{ command = $c; timeout = 10 }) $c
+        }
+        Save-File $p ($d | ConvertTo-Json -Depth 20) 'cursor'
     }
-    Save-File $p ($d | ConvertTo-Json -Depth 20) 'cursor'
 }
 
 Write-Host '== GitHub Copilot: C:\ProgramData\GitHub\Copilot\policy.d\jt-ai-agent.json'
-$p = Join-Path $PD 'GitHub\Copilot\policy.d\jt-ai-agent.json'
-$hooks = [ordered]@{}
-foreach ($ev in @('sessionStart', 'sessionEnd', 'preToolUse', 'postToolUseFailure', 'subagentStart', 'permissionRequest', 'userPromptSubmitted')) {
-    # exit 0 matters: Copilot denies a preToolUse call when a hook fails
-    $hooks[$ev] = @([ordered]@{ type = 'command'; timeoutSec = 10; powershell = ((Cmd 'copilot' $ev) + '; exit 0') })
+if (-not (Test-Want 'copilot')) { Write-Host '   skipped (-Agents)' } else {
+    $p = Join-Path $PD 'GitHub\Copilot\policy.d\jt-ai-agent.json'
+    $hooks = [ordered]@{}
+    foreach ($ev in @('sessionStart', 'sessionEnd', 'preToolUse', 'postToolUseFailure', 'subagentStart', 'permissionRequest', 'userPromptSubmitted')) {
+        # exit 0 matters: Copilot denies a preToolUse call when a hook fails
+        $hooks[$ev] = @([ordered]@{ type = 'command'; timeoutSec = 10; powershell = ((Cmd 'copilot' $ev) + '; exit 0') })
+    }
+    Save-File $p ([ordered]@{ version = 1; hooks = $hooks } | ConvertTo-Json -Depth 20) 'copilot'
 }
-Save-File $p ([ordered]@{ version = 1; hooks = $hooks } | ConvertTo-Json -Depth 20) 'copilot'
 
 Write-Host '== scheduled task jt-ai-agent-config (SYSTEM): the server setting for prompts, every 5 minutes'
 if ($TestRoot) { Write-Host '   skipped (-TestRoot)' } else {
@@ -197,5 +223,5 @@ Write-Host '== self-test'
 '{"hook_event_name":"SessionStart","session_id":"jt-install-test","cwd":"C:\\","source":"startup"}' |
     & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $Hook -Agent claude-code
 Get-Content -LiteralPath (Join-Path $LogDir 'actions.log') -Tail 1
-Write-Host "== $env:COMPUTERNAME done (BETA). New Claude Code / Codex / Gemini CLI / Cursor / Copilot sessions are audited (restart running ones)."
+Write-Host "== $env:COMPUTERNAME done (BETA). New sessions of $($Want -join ', ') are audited (restart running ones)."
 exit 0

@@ -4,6 +4,10 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.2 (2026-11-18)
+
+- jt-ai-agent 1.6.2 (Windows, BETA): the installer takes -Agents (set up only the named agents, e.g. -Agents copilot) and -Prompts off|local|wazuh (the prompt setting on a host the Wazuh manager does not deliver it to); new jt-ai-agent-uninstall.ps1 (takes only the jt-ai-agent hooks out of each agent's settings, keeps backups and, unless -RemoveLogs, the logs) and jt-ai-agent-check.ps1 (a report of what is installed and recorded). The setup guide notes that VS Code's GitHub Copilot loads the same machine-wide policy hooks as Copilot CLI and the VS Code enterprise policies that go with them.
+
 ## v1.38.1 (2026-11-17)
 
 - jt-ai-agent 1.6.1: the installed hooks (/usr/local/lib/jt-ai-agent, C:\Program Files\jt-ai-agent) ignore the JT_AI_AGENT_LOG, JT_AI_AGENT_PROMPT_LOG and JT_AI_AGENT_CONFIG test variables. The hook runs as the user, who could otherwise turn prompt recording off or send the audit elsewhere without anything being logged (reported by a reader of the blog draft). The Windows hook and installer take the ProgramData and Program Files folders from Windows instead of the environment. The macOS step for prompts names the newsyslog file for prompts.log.
