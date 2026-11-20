@@ -2,7 +2,7 @@
   "id": "jt-web",
   "name": "Web Access Logs: Probes and Exposure",
   "name_zh": "網頁存取記錄：探測與外洩",
-  "version": "1.2",
+  "version": "1.2.1",
   "summary": "Adds what Wazuh's built-in web rules leave out: requests for sensitive files and exploit endpoints, whether one was answered with real content, vulnerability scanners, and quiet internal monitoring; plus an agent group that reads every web log, not only access.log. Optional active responses block an attacking address in nginx or at Cloudflare.",
   "summary_zh": "補上 Wazuh 內建網頁規則沒有的部分：敏感檔案與漏洞端點的探測、是否真的回應了內容、弱點掃描工具，並讓內部監控不再吵；另附一個讀取所有網頁記錄（而不只是 access.log）的 agent 群組。選用的主動回應可以在 nginx 或 Cloudflare 封鎖攻擊來源位址。",
   "rule_id_range": "133000-133099",
@@ -27,7 +27,8 @@
     "The agent group web reads every access and error log under /var/log/apache2, /var/log/httpd and /var/log/nginx. The default agent configuration reads only access.log and error.log, so sites with their own log files were never analysed. A file also listed elsewhere is read once. JSON access logs in the same directories are read too and decoded by the built-in json decoder; this pack's rules apply to the combined format only.",
     "jt-nginx-deny details: the script is copied into active-response/bin, not linked, because /var/ossec/etc/shared changes whenever the group's files change and a program that runs as root must not. A location that answers with return (a redirect) answers before access checks and is not blocked; proxied and static content is. Settings (paths, ipv6_prefix 64 to block a /64, reloading through systemctl) go in /var/ossec/etc/jt-nginx-deny.conf. The hourly --expire in the setup commands removes entries older than a week, for when an agent restart made execd forget a timer.",
     "jt-cloudflare-block runs with /usr/bin/python3: the Python bundled with Wazuh has no CA certificates. It refuses a token file that anyone but root can read, and never writes the token to a log or message. Its proxy setting takes an http(s)://host:port URL without credentials.",
-    "1.2: nginx worker crashes. The built-in rules leave \"worker process N exited on signal 11\" in nginx's error log at 31300 (level 0) and the kernel's segfault line at 1010 (level 5), yet a crashing worker is the most common sign of a memory-corruption bug being exploited (nginx 1.30.7 / 1.31.9 fixed ten vulnerabilities on 2026-11-18). Rules 133060 (a worker exited on signal 4, 6, 7, 8 or 11, level 10), 133061 (three within ten minutes on one host, level 12) and 133062 (the kernel reports a segfault in nginx, level 10). Signal 9 (a kill, for example by the OOM killer) is not counted."
+    "1.2: nginx worker crashes. The built-in rules leave \"worker process N exited on signal 11\" in nginx's error log at 31300 (level 0) and the kernel's segfault line at 1010 (level 5), yet a crashing worker is the most common sign of a memory-corruption bug being exploited (nginx 1.30.7 / 1.31.9 fixed ten vulnerabilities on 2026-11-18). Rules 133060 (a worker exited on signal 4, 6, 7, 8 or 11, level 10), 133061 (three within ten minutes on one host, level 12) and 133062 (the kernel reports a segfault in nginx, level 10). Signal 9 (a kill, for example by the OOM killer) is not counted.",
+    "1.2.1: rule 133030 (a vulnerability scanner) looks for the tool's name in the user agent only. It matched any quoted field, so a WebDAV upload of a blog page named \"...-openvas-9.html\" read as a scanner."
   ],
   "notes_zh": [
     "攻擊特徵仍然用 Wazuh 自己的規則：SQL injection、XSS、目錄穿越、過長網址、Shellshock 與大量 4xx/5xx 是 31100-31170 與 31500-31540，隨規則集維護。本套件補上它們沒有的部分，需要那些規則讀得懂的 combined 記錄格式。",
@@ -41,14 +42,15 @@
     "agent 群組 web 讀取 /var/log/apache2、/var/log/httpd、/var/log/nginx 底下所有存取與錯誤記錄。agent 預設只讀 access.log 與 error.log，所以有自己記錄檔的網站從來沒被分析過。同一個檔案在別處也有列出時只讀一次。同目錄下的 JSON 存取記錄也會被讀取並由內建 json 解碼器解析；本套件的規則只適用 combined 格式。",
     "jt-nginx-deny 的細節：腳本是複製到 active-response/bin，而不是用連結，因為群組檔案每次變動 /var/ossec/etc/shared 都會跟著變，而以 root 執行的程式不應如此。以 return 回應的 location（轉址）會在存取檢查前就回應，不會被擋；代理與靜態內容都會被擋。設定（路徑、ipv6_prefix 設 64 以封鎖整個 /64、改用 systemctl 重新載入）寫在 /var/ossec/etc/jt-nginx-deny.conf。部署指令中每小時一次的 --expire 會移除超過一週的項目，用於 agent 重啟讓 execd 忘了計時的情況。",
     "jt-cloudflare-block 以 /usr/bin/python3 執行：Wazuh 內附的 Python 沒有 CA 憑證。root 以外的人讀得到的 token 檔它會拒絕使用，token 也絕不會寫進記錄或訊息。proxy 設定接受 http(s)://主機:連接埠 形式的網址，不含帳密。",
-    "1.2：nginx worker 當掉。內建規則讓錯誤記錄裡的「worker process N exited on signal 11」停在 31300（L0），核心的 segfault 記錄只有 1010（L5），但 worker 當掉正是記憶體損毀漏洞被攻擊時最常見的跡象（nginx 1.30.7／1.31.9 於 2026-11-18 修了十個漏洞）。新增 133060（worker 因 signal 4、6、7、8、11 結束，L10）、133061（同一台 10 分鐘內 3 次，L12）、133062（核心記錄 nginx segfault，L10）。signal 9（被砍掉，例如 OOM）不算。"
+    "1.2：nginx worker 當掉。內建規則讓錯誤記錄裡的「worker process N exited on signal 11」停在 31300（L0），核心的 segfault 記錄只有 1010（L5），但 worker 當掉正是記憶體損毀漏洞被攻擊時最常見的跡象（nginx 1.30.7／1.31.9 於 2026-11-18 修了十個漏洞）。新增 133060（worker 因 signal 4、6、7、8、11 結束，L10）、133061（同一台 10 分鐘內 3 次，L12）、133062（核心記錄 nginx segfault，L10）。signal 9（被砍掉，例如 OOM）不算。",
+    "1.2.1：規則 133030（漏洞掃描工具）只在 user agent 欄位找工具名稱。原本比對任何一個引號欄位，所以用 WebDAV 上傳檔名含「openvas」的部落格頁面也被當成掃描器。"
   ],
   "files": [
     {
       "type": "rule",
       "name": "zz-133000-jt_web_rules.xml",
       "dest": "etc/rules/zz-133000-jt_web_rules.xml",
-      "sha256": "f787d88045b84b4acdc4b1c25099ca4f307f6455cfc2bfb1d02ea8c28bbee03d"
+      "sha256": "71313577a7fd68f08653e76f6b0025a282d942e1f2470909704e9bdd2cd80939"
     }
   ],
   "agent_group": {

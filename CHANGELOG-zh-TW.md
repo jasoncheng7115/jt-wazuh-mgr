@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.6（2026-11-20）
+
+- jt-web 1.2.1：規則 133030（漏洞掃描工具）只在 user agent 欄位（狀態碼、大小、referer 之後的那一欄）找工具名稱。原本比對任何一個引號欄位，所以用 WebDAV 上傳檔名含「openvas」的部落格頁面也被當成掃描器。
+
 ## v1.38.5（2026-11-19）
 
 - jt-ai-agent 1.6.4：shred 只有對裝置（/dev/sdb、/dev/nvme0n1；不含 /dev/null、/dev/zero 與 /dev/shm 裡的檔案）才算破壞性指令（133712、133716）。對檔案 `shred -u` 是安全刪除，謹慎的代理處理用完的金鑰與樣本時常這樣做；2026-11-19 另一個專案的代理在反向代理上清理樣本檔時因此觸發兩筆 L12。

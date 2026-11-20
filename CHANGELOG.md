@@ -4,6 +4,10 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.6 (2026-11-20)
+
+- jt-web 1.2.1: rule 133030 (a vulnerability scanner) looks for the tool's name in the user agent only (the field after the status, sizes and referer). It matched any quoted field, so a WebDAV upload of a blog page named "...-openvas-9.html" read as a scanner.
+
 ## v1.38.5 (2026-11-19)
 
 - jt-ai-agent 1.6.4: shred counts as a destructive command (133712, 133716) only on a device (/dev/sdb, /dev/nvme0n1; not /dev/null, /dev/zero or files in /dev/shm). `shred -u` of a file is a secure delete, which careful agents do with keys and samples they no longer need; on 2026-11-19 it raised two level 12 alerts for another project's agent cleaning up its samples on the reverse proxy.
