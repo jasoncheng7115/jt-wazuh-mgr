@@ -3651,7 +3651,9 @@ class TestShippedPacks(unittest.TestCase):
             ('61603', {'image': p('proj', 'target', 'debug', 'a.exe'), 'parentImage': 'x'}, ['906172']),
             ('61603', {'image': p('.cargo', 'bin', 'rustup.exe'), 'parentImage': 'x'}, []),
             ('61603', {'image': p('Downloads', 'a.exe'), 'parentImage': 'x', 'originalFileName': 'AnyDesk.exe', 'product': 'AnyDesk'}, ['906175']),
-            ('61603', {'image': p('Downloads', 'a.exe'), 'parentImage': 'x', 'originalFileName': 'WinSCP.exe', 'product': 'AnyDesk'}, ['906140']),
+            # 3.6.2: the high rules no longer read the approved list; 906144 lowers an approved
+            # tool afterwards (the real tree tries 906175 first: tests/pack_cases "win" cases)
+            ('61603', {'image': p('Downloads', 'a.exe'), 'parentImage': 'x', 'originalFileName': 'WinSCP.exe', 'product': 'AnyDesk'}, ['906140', '906144']),
             ('61603', {'image': p('Downloads', 'ngrok.exe'), 'parentImage': 'x'}, ['906176']),
             ('61603', {'image': b.join(['C:', 'Windows', 'SystemTemp', 'x', 't.exe']), 'parentImage': 'x'}, ['906104']),
             ('61603', {'image': p('OneDrive - Corp', 'Desktop', 't.exe'), 'parentImage': 'x'}, ['906100']),

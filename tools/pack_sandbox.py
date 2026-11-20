@@ -365,13 +365,20 @@ SUCCESS, FAILURE = "0x8020000000000000", "0x8010000000000000"
 def xml(spec, rid):
     data = "".join("<Data Name='%s'>%s</Data>" % (k, escape(str(v))) for k, v in (spec.get("data") or {}).items())
     kw = spec.get("keywords") or (FAILURE if spec.get("failure") else SUCCESS)
+    if spec.get("sysmon"):     # Sysmon/Operational: no audit keywords, Level 4 (information)
+        spec = dict({"provider": "Microsoft-Windows-Sysmon", "guid": "{5770385f-c22a-43e0-bf4c-06f5698ffbd9}",
+                     "channel": "Microsoft-Windows-Sysmon/Operational", "level": "4", "version": "5",
+                     "task": spec.get("event_id", "1")}, **spec)
+        kw = spec.get("keywords") or "0x8000000000000000"
     return ("<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System>"
-            "<Provider Name='%s' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>%s</EventID><Version>1</Version>"
-            "<Level>0</Level><Task>12800</Task><Opcode>0</Opcode><Keywords>%s</Keywords>"
+            "<Provider Name='%s' Guid='%s'/><EventID>%s</EventID><Version>%s</Version>"
+            "<Level>%s</Level><Task>%s</Task><Opcode>0</Opcode><Keywords>%s</Keywords>"
             "<TimeCreated SystemTime='2026-11-21T00:00:00.0000000Z'/><EventRecordID>%d</EventRecordID><Correlation/>"
             "<Execution ProcessID='4' ThreadID='8'/><Channel>%s</Channel><Computer>%s</Computer><Security/></System>"
             "<EventData>%s</EventData></Event>") % (
-        escape(spec.get("provider", "Microsoft-Windows-Security-Auditing")), spec.get("event_id", "4663"), kw, rid,
+        escape(spec.get("provider", "Microsoft-Windows-Security-Auditing")),
+        escape(spec.get("guid", "{54849625-5478-4994-a5ba-3e3b0328c30d}")), spec.get("event_id", "4663"),
+        spec.get("version", "1"), spec.get("level", "0"), spec.get("task", "12800"), kw, rid,
         escape(spec.get("channel", "Security")), escape(spec.get("computer", "win-sandbox")), data)
 s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
 s.connect("/var/ossec/queue/sockets/queue")

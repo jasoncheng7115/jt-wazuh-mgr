@@ -231,7 +231,8 @@ class TestSiblingOrder(unittest.TestCase):
     def test_no_pack_child_lowers_an_alerting_pack_parent(self):
         """A child of a lower level replaces its parent's alert. Exclusions (level 0), the
         approval list and the WiX copy (906173) do that on purpose; nothing else may."""
-        allowed = {'906140', '906141', '906142', '906173'}
+        allowed = {'906140', '906141', '906142', '906173',
+                   '906144', '906145'}      # 3.6.2: the approval list after the level 12 tool rules
         levels = {r.id: r.level for r in PACK_RULES}
         for r in PACK_RULES:
             if r.level == 0 or r.id in allowed or r.frequency:

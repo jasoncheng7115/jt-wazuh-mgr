@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.39.1（2026-11-21）
+
+- **jt-portable-detect 3.6.2**：沒有版本資訊的穿隧工具從來沒有以 level 12 告警過。規則 906176（以檔名辨識 ngrok、frp、chisel、cloudflared、ligolo 等）、906179（以檔名辨識遠端控制工具）與 906152（以命令列辨識改名的穿隧工具）用 OriginalFileName 的 `not_match_key` 排除核准的工具，而清單條件遇到不存在的欄位永遠不成立。沒有版本資訊的程式，Sysmon 的 OriginalFileName 是 `-`，Wazuh 視同沒有這個欄位；這類工具大多是沒有版本資訊的 Go 執行檔，所以只停在位置規則（906100／906106，level 6／9）。這六條規則不再讀核准清單，新的 906144／906145 事後把核准的工具降到 level 3。這是用 manager 自己的解碼器重放 Sysmon 事件時發現的；jt-portable-detect 現在有 65 個 Windows 沙箱案例，一週真實 Sysmon 事件的判定與修改前相同。
+
 ## v1.39.0（2026-11-21）
 
 - 新套件 **jt-file-access 1.0**（規則 133800-133899）：誰在什麼時候、用什麼程式讀取、修改或刪除了機密資料夾裡的檔案。Linux 用 auditd 監看（範本 `agent/jt-file-access.rules`，key 為 `jt_file_read`／`jt_file_write`）；Windows 用物件存取稽核（4663、4656、4907），`agent/jt-file-access-sacl.ps1` 會設定資料夾的 SACL 與「檔案系統」稽核子類別，並檢查 agent 是否讓這些事件通過（Wazuh 預設排除 4656 與 4663）。每次存取都是 level 3 告警；下班時間與週末 level 7；網路傳輸工具 level 12；SSH、SFTP、rsync、robocopy 複製 level 10；壓縮程式 level 8；大量讀取（兩分鐘 40 個，下班時間或週末 20 個）level 10／12；大量刪除 level 12；權限變更 level 8；存取被拒與連續被拒；稽核監看被移除或 SACL 被改 level 10。Windows 系統帳號與電腦帳號不告警（測試主機上光是 Windows 更新一天就開啟稽核中的檔案三萬四千次）；備份排程可列入安靜清單。

@@ -1,308 +1,1544 @@
 {
-  "pack": "jt-portable-detect",
-  "note": "Windows rules cannot be replayed by wazuh-logtest (eventchannel); they are tested by tests/test_portable_detect_windows.py and test_web_ui.py. Here: auditd (logtest) and Linux FIM (syscheck queue).",
-  "cases": [
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:1): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"jt-portable-tes\" exe=\"/tmp/jt-portable-test\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:1): argc=1 a0=\"/tmp/jt-portable-test\" type=CWD msg=audit(1791431721.264:1): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:1): item=0 name=\"/tmp/jt-portable-test\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:1): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:1): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "906211",
-      "note": "synthesized from a real log4 record: direct ELF execution under /tmp (the setup verify step)",
-      "expect_level": 12
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:2): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"fc-list\" exe=\"/usr/bin/dash\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:2): argc=3 a0=\"/bin/sh\" a1=\"/tmp/pytest-of-root/pytest-87/test_an_older_build_is_not_mis0/bin/fc-list\" a2=\":lang=zh\" type=CWD msg=audit(1791431721.264:2): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:2): item=0 name=\"/tmp/pytest-of-root/pytest-87/test_an_older_build_is_not_mis0/bin/fc-list\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:2): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:2): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "906237",
-      "note": "real log4 record (cwd sanitized): test fixture run from pytest temp dir, near miss of 906211",
-      "expect_level": 3
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:3): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"xserver-xorg.co\" exe=\"/usr/bin/perl\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:3): argc=3 a0=\"/usr/bin/perl\" a1=\"-w\" a2=\"/tmp/xserver-xorg.config.Ab12Cd\" type=CWD msg=audit(1791431721.264:3): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:3): item=0 name=\"/tmp/xserver-xorg.config.Ab12Cd\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:3): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:3): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "906236",
-      "note": "synthesized: debconf config script run by dpkg-preconfigure",
-      "expect_level": 3
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:4): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"rpm-tmp.Xy12\" exe=\"/usr/bin/bash\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:4): argc=2 a0=\"/bin/sh\" a1=\"/var/tmp/rpm-tmp.Xy12ab\" type=CWD msg=audit(1791431721.264:4): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:4): item=0 name=\"/var/tmp/rpm-tmp.Xy12ab\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:4): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:4): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "none",
-      "note": "synthesized: RPM scriptlet (906231, level 0)"
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:5): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"python3\" exe=\"/usr/bin/python3.12\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:5): argc=2 a0=\"/bin/sh\" a1=\"/tmp/ansible-tmp-1791431721.2-1234/AnsiballZ_setup.py\" type=CWD msg=audit(1791431721.264:5): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:5): item=0 name=\"/tmp/ansible-tmp-1791431721.2-1234/AnsiballZ_setup.py\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:5): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:5): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "none",
-      "note": "synthesized: Ansible module staging dir (906230, level 0)"
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:6): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"tool\" exe=\"/root/tool\" subj=unconfined key=\"jt_portable_exec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:6): argc=2 a0=\"/root/tool\" a1=\"--version\" type=CWD msg=audit(1791431721.264:6): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:6): item=0 name=\"/root/tool\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:6): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:6): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "906210",
-      "note": "synthesized: program run from /root",
-      "expect_level": 10
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:7): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"2.1.280\" exe=\"/root/.local/share/claude/versions/2.1.280\" subj=unconfined key=\"jt_portable_exec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:7): argc=5 a0=\"ugrep\" a1=\"-G\" a2=\"-n\" a3=\"retry\" a4=\"web/static/js/app.js\" type=CWD msg=audit(1791431721.264:7): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:7): item=0 name=\"/root/.local/share/claude/versions/2.1.280\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:7): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:7): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "906235",
-      "note": "real log4 record (args shortened, cwd sanitized): self-updating CLI in its versioned dir",
-      "expect_level": 3
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:8): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"bash\" exe=\"/usr/bin/bash\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:8): argc=2 a0=\"bash\" a1=\"/tmp/x.sh\" type=CWD msg=audit(1791431721.264:8): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:8): item=0 name=\"/usr/bin/bash\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:8): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:8): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "906213",
-      "note": "synthesized: script run through bash from /tmp (execve audit rule enabled)",
-      "expect_level": 10
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:9): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"ld-linux-x86-64\" exe=\"/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:9): argc=2 a0=\"/lib64/ld-linux-x86-64.so.2\" a1=\"/tmp/tool\" type=CWD msg=audit(1791431721.264:9): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:9): item=0 name=\"/lib64/ld-linux-x86-64.so.2\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:9): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:9): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "906213",
-      "note": "3.5: dynamic loader running a file from /tmp, ld.so(8) direct invocation",
-      "expect_level": 10
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:10): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=1000 uid=1000 gid=0 euid=1000 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"sh\" exe=\"/usr/bin/dash\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:10): argc=2 a0=\"sh\" a1=\"/run/user/1000/x.sh\" type=CWD msg=audit(1791431721.264:10): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:10): item=0 name=\"/usr/bin/dash\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:10): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:10): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "906213",
-      "note": "3.5: script run from the per-login tmpfs /run/user/<uid>",
-      "expect_level": 10
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:11): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"python3\" exe=\"/usr/bin/python3.12\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:11): argc=2 a0=\"python3\" a1=\"/home/alice/report.py\" type=CWD msg=audit(1791431721.264:11): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:11): item=0 name=\"/usr/bin/python3.12\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:11): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:11): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "none",
-      "note": "near miss of 906213: interpreter on a home directory script"
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:12): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"ldd\" exe=\"/usr/bin/bash\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:12): argc=2 a0=\"/usr/bin/ldd\" a1=\"/tmp/tool\" type=CWD msg=audit(1791431721.264:12): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:12): item=0 name=\"/usr/bin/bash\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:12): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:12): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "none",
-      "note": "near miss of 906213: ldd is not a loader invocation of the file"
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:13): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"tool.sh\" exe=\"/usr/bin/dash\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:13): argc=2 a0=\"/bin/sh\" a1=\"/tmp/tool.sh\" type=CWD msg=audit(1791431721.264:13): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:13): item=0 name=\"/tmp/tool.sh\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:13): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:13): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "906211",
-      "note": "near miss of 906213: a shebang script trips the /tmp watch, stays 906211",
-      "expect_level": 12
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:14): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"tool\" exe=\"/root/tool\" subj=unconfined key=\"jt_portable_exec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:14): argc=1 a0=\"/root/tool\" type=CWD msg=audit(1791431721.264:14): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:14): item=0 name=\"/root/tool\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:14): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:14): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "906212",
-      "note": "frequency: six runs from /root in one session",
-      "expect_level": 12,
-      "repeat": 6
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:15): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"tool.py\" exe=\"/usr/bin/python3.12\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:15): argc=2 a0=\"/usr/bin/python3\" a1=\"/tmp/tool.py\" type=CWD msg=audit(1791431721.264:15): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:15): item=0 name=\"/tmp/tool.py\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:15): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:15): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "906211",
-      "note": "3.5: python-shebang script run from /tmp; built-in 92600 (level 0, exe contains python) used to take it to 92601 L6",
-      "expect_level": 12
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:16): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"python3\" exe=\"/usr/bin/python3.12\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:16): argc=2 a0=\"python3\" a1=\"/tmp/x.py\" type=CWD msg=audit(1791431721.264:16): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:16): item=0 name=\"/usr/bin/python3.12\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:16): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:16): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "906213",
-      "note": "3.5: python3 /tmp/x.py with the interpreter execve rule; was 92601 L6",
-      "expect_level": 10
-    },
-    {
-      "log": "type=SYSCALL msg=audit(1791431721.264:17): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"python3\" exe=\"/usr/bin/python3.12\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:17): argc=2 a0=\"python3\" a1=\"x.py\" type=CWD msg=audit(1791431721.264:17): cwd=\"/tmp\" type=PATH msg=audit(1791431721.264:17): item=0 name=\"/usr/bin/python3.12\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:17): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:17): proctitle=2F746D70",
-      "location": "/var/log/audit/audit.log",
-      "expect_rule": "92601",
-      "note": "near miss of 906213: a relative script name with cwd /tmp is left to the built-in 92601 (906213 reads absolute paths)",
-      "expect_level": 6
-    },
-    {
-      "fim": {
-        "perm": "rwxr-xr-x",
-        "size": 48128,
-        "path": "/tmp/setup-1/tool"
-      },
-      "expect_rule": "906202",
-      "note": "executable added under /tmp",
-      "expect_level": 10
-    },
-    {
-      "fim": {
-        "perm": "rwxr-xr-x",
-        "size": 808712,
-        "path": "/tmp/containerd-mount2467738562/bin/busybox"
-      },
-      "expect_rule": "none",
-      "note": "3.5: real path shape from a Docker host, containerd temporary layer mount (906239)"
-    },
-    {
-      "fim": {
-        "perm": "rwxr-xr-x",
-        "size": 649832,
-        "path": "/tmp/containerd-mount3406771976/lib/ld-musl-x86_64.so.1"
-      },
-      "expect_rule": "none",
-      "note": "3.5: real path shape, library in a containerd layer mount"
-    },
-    {
-      "fim": {
-        "perm": "rwxr-xr-x",
-        "size": 808712,
-        "path": "/tmp/containerd-x/bin/busybox"
-      },
-      "expect_rule": "906202",
-      "note": "near miss of 906239: not the containerd mkdtemp shape",
-      "expect_level": 10
-    },
-    {
-      "fim": {
-        "perm": "rwxr-xr-x",
-        "size": 236,
-        "path": "/tmp/tmp6wo2kfvl/bin/pip"
-      },
-      "expect_rule": "906238",
-      "note": "real dev1 shape: venv entry point, 236 bytes",
-      "expect_level": 3
-    },
-    {
-      "fim": {
-        "perm": "rwxr-xr-x",
-        "size": 5242880,
-        "path": "/tmp/tmp6wo2kfvl/bin/pip"
-      },
-      "expect_rule": "906202",
-      "note": "near miss of 906238: a real program under the pip name",
-      "expect_level": 10
-    },
-    {
-      "fim": {
-        "perm": "rwxrwxrwx",
-        "size": 30,
-        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "path": "/tmp/link-1/current"
-      },
-      "expect_rule": "none",
-      "note": "symlink: empty-content hash (906232)"
-    },
-    {
-      "fim": {
-        "perm": "rwxr-xr-x",
-        "size": 4096,
-        "path": "/tmp/pytest-of-root/pytest-9/t0/bin/tool"
-      },
-      "expect_rule": "none",
-      "note": "build/test toolchain scratch dir (906234)"
-    },
-    {
-      "fim": {
-        "type": "modified",
-        "changed": [
-          "permission"
-        ],
-        "perm": "rwxr-xr-x",
-        "path": "/home/alice/tool"
-      },
-      "expect_rule": "906201",
-      "note": "a file in a home directory made executable",
-      "expect_level": 8
-    },
-    {
-      "fim": {
-        "perm": "rwxrwxrwx",
-        "size": 90000,
-        "path": "/dev/shm/payload"
-      },
-      "expect_rule": "906203",
-      "note": "executable-mode file on a memory filesystem",
-      "expect_level": 6
-    },
-    {
-      "fim": {
-        "perm": "rwxrwxrwx",
-        "size": 32,
-        "path": "/dev/shm/sem.app_lock"
-      },
-      "expect_rule": "none",
-      "note": "POSIX semaphore (906224)"
-    },
-    {
-      "fim": {
-        "perm": "rwxr-xr-x",
-        "size": 90000000,
-        "path": "/home/alice/Downloads/app.AppImage"
-      },
-      "expect_rule": "906204",
-      "note": "AppImage in a home directory",
-      "expect_level": 8
-    },
-    {
-      "fim": {
-        "perm": "rwxr-xr-x",
-        "size": 1200,
-        "path": "/tmp/certs/server.pem"
-      },
-      "expect_rule": "none",
-      "note": "certificate with the execute bit (906221)"
-    },
-    {
-      "fim": {
-        "perm": "rwxr-xr-x",
-        "size": 2048,
-        "path": "/tmp/x1/dropper.sh"
-      },
-      "expect_rule": "906214",
-      "expect_level": 12,
-      "note": "3.6 (was jt-zimbra 100809): executable script in /tmp"
-    },
-    {
-      "fim": {
-        "perm": "rw-r--r--",
-        "size": 2048,
-        "path": "/tmp/x1/notes.py"
-      },
-      "expect_rule": "554",
-      "note": "3.6: the same kind of file without the execute bit reaches neither 906202 nor 906214, only the built-in 554",
-      "expect_level": 5
-    },
-    {
-      "fim": {
-        "perm": "rwxrwxrwx",
-        "size": 4096,
-        "path": "/dev/shm/.x/agent.elf"
-      },
-      "expect_rule": "906214",
-      "expect_level": 12,
-      "note": "3.6: executable binary on a memory filesystem, child of 906203"
-    },
-    {
-      "fim": {
-        "perm": "rwxr-xr-x",
-        "size": 2048,
-        "path": "/tmp/pytest-of-ci/pytest-3/run.sh"
-      },
-      "expect_rule": "none",
-      "note": "3.6: build scratch exclusion of 906202 reaches 906214 too (as 100809 it did not)"
-    },
-    {
-      "fim": {
-        "perm": "rw-r--r--",
-        "size": 9000,
-        "path": "/tmp/upload/cmd.jsp"
-      },
-      "expect_rule": "906215",
-      "expect_level": 12,
-      "note": "3.6 (was jt-zimbra 100807): JSP in /tmp, no execute bit needed"
-    },
-    {
-      "fim": {
-        "perm": "rw-r--r--",
-        "size": 90000,
-        "path": "/var/tmp/gradle-worker/lib.jar"
-      },
-      "expect_rule": "none",
-      "note": "3.6: the build scratch exclusion 906234 also covers 906215 (a Gradle worker directory)"
+ "pack": "jt-portable-detect",
+ "note": "Windows rules cannot be replayed by wazuh-logtest (eventchannel); they are tested by tests/test_portable_detect_windows.py and test_web_ui.py. Here: auditd (logtest) and Linux FIM (syscheck queue).",
+ "cases": [
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:1): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"jt-portable-tes\" exe=\"/tmp/jt-portable-test\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:1): argc=1 a0=\"/tmp/jt-portable-test\" type=CWD msg=audit(1791431721.264:1): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:1): item=0 name=\"/tmp/jt-portable-test\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:1): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:1): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "906211",
+   "note": "synthesized from a real log4 record: direct ELF execution under /tmp (the setup verify step)",
+   "expect_level": 12
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:2): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"fc-list\" exe=\"/usr/bin/dash\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:2): argc=3 a0=\"/bin/sh\" a1=\"/tmp/pytest-of-root/pytest-87/test_an_older_build_is_not_mis0/bin/fc-list\" a2=\":lang=zh\" type=CWD msg=audit(1791431721.264:2): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:2): item=0 name=\"/tmp/pytest-of-root/pytest-87/test_an_older_build_is_not_mis0/bin/fc-list\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:2): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:2): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "906237",
+   "note": "real log4 record (cwd sanitized): test fixture run from pytest temp dir, near miss of 906211",
+   "expect_level": 3
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:3): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"xserver-xorg.co\" exe=\"/usr/bin/perl\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:3): argc=3 a0=\"/usr/bin/perl\" a1=\"-w\" a2=\"/tmp/xserver-xorg.config.Ab12Cd\" type=CWD msg=audit(1791431721.264:3): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:3): item=0 name=\"/tmp/xserver-xorg.config.Ab12Cd\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:3): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:3): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "906236",
+   "note": "synthesized: debconf config script run by dpkg-preconfigure",
+   "expect_level": 3
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:4): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"rpm-tmp.Xy12\" exe=\"/usr/bin/bash\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:4): argc=2 a0=\"/bin/sh\" a1=\"/var/tmp/rpm-tmp.Xy12ab\" type=CWD msg=audit(1791431721.264:4): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:4): item=0 name=\"/var/tmp/rpm-tmp.Xy12ab\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:4): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:4): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "none",
+   "note": "synthesized: RPM scriptlet (906231, level 0)"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:5): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"python3\" exe=\"/usr/bin/python3.12\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:5): argc=2 a0=\"/bin/sh\" a1=\"/tmp/ansible-tmp-1791431721.2-1234/AnsiballZ_setup.py\" type=CWD msg=audit(1791431721.264:5): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:5): item=0 name=\"/tmp/ansible-tmp-1791431721.2-1234/AnsiballZ_setup.py\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:5): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:5): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "none",
+   "note": "synthesized: Ansible module staging dir (906230, level 0)"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:6): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"tool\" exe=\"/root/tool\" subj=unconfined key=\"jt_portable_exec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:6): argc=2 a0=\"/root/tool\" a1=\"--version\" type=CWD msg=audit(1791431721.264:6): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:6): item=0 name=\"/root/tool\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:6): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:6): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "906210",
+   "note": "synthesized: program run from /root",
+   "expect_level": 10
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:7): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"2.1.280\" exe=\"/root/.local/share/claude/versions/2.1.280\" subj=unconfined key=\"jt_portable_exec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:7): argc=5 a0=\"ugrep\" a1=\"-G\" a2=\"-n\" a3=\"retry\" a4=\"web/static/js/app.js\" type=CWD msg=audit(1791431721.264:7): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:7): item=0 name=\"/root/.local/share/claude/versions/2.1.280\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:7): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:7): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "906235",
+   "note": "real log4 record (args shortened, cwd sanitized): self-updating CLI in its versioned dir",
+   "expect_level": 3
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:8): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"bash\" exe=\"/usr/bin/bash\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:8): argc=2 a0=\"bash\" a1=\"/tmp/x.sh\" type=CWD msg=audit(1791431721.264:8): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:8): item=0 name=\"/usr/bin/bash\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:8): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:8): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "906213",
+   "note": "synthesized: script run through bash from /tmp (execve audit rule enabled)",
+   "expect_level": 10
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:9): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"ld-linux-x86-64\" exe=\"/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:9): argc=2 a0=\"/lib64/ld-linux-x86-64.so.2\" a1=\"/tmp/tool\" type=CWD msg=audit(1791431721.264:9): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:9): item=0 name=\"/lib64/ld-linux-x86-64.so.2\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:9): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:9): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "906213",
+   "note": "3.5: dynamic loader running a file from /tmp, ld.so(8) direct invocation",
+   "expect_level": 10
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:10): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=1000 uid=1000 gid=0 euid=1000 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"sh\" exe=\"/usr/bin/dash\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:10): argc=2 a0=\"sh\" a1=\"/run/user/1000/x.sh\" type=CWD msg=audit(1791431721.264:10): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:10): item=0 name=\"/usr/bin/dash\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:10): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:10): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "906213",
+   "note": "3.5: script run from the per-login tmpfs /run/user/<uid>",
+   "expect_level": 10
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:11): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"python3\" exe=\"/usr/bin/python3.12\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:11): argc=2 a0=\"python3\" a1=\"/home/alice/report.py\" type=CWD msg=audit(1791431721.264:11): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:11): item=0 name=\"/usr/bin/python3.12\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:11): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:11): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "none",
+   "note": "near miss of 906213: interpreter on a home directory script"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:12): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"ldd\" exe=\"/usr/bin/bash\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:12): argc=2 a0=\"/usr/bin/ldd\" a1=\"/tmp/tool\" type=CWD msg=audit(1791431721.264:12): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:12): item=0 name=\"/usr/bin/bash\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:12): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:12): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "none",
+   "note": "near miss of 906213: ldd is not a loader invocation of the file"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:13): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"tool.sh\" exe=\"/usr/bin/dash\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:13): argc=2 a0=\"/bin/sh\" a1=\"/tmp/tool.sh\" type=CWD msg=audit(1791431721.264:13): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:13): item=0 name=\"/tmp/tool.sh\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:13): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:13): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "906211",
+   "note": "near miss of 906213: a shebang script trips the /tmp watch, stays 906211",
+   "expect_level": 12
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:14): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"tool\" exe=\"/root/tool\" subj=unconfined key=\"jt_portable_exec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:14): argc=1 a0=\"/root/tool\" type=CWD msg=audit(1791431721.264:14): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:14): item=0 name=\"/root/tool\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:14): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:14): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "906212",
+   "note": "frequency: six runs from /root in one session",
+   "expect_level": 12,
+   "repeat": 6
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:15): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"tool.py\" exe=\"/usr/bin/python3.12\" subj=unconfined key=\"jt_portable_tmpexec\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:15): argc=2 a0=\"/usr/bin/python3\" a1=\"/tmp/tool.py\" type=CWD msg=audit(1791431721.264:15): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:15): item=0 name=\"/tmp/tool.py\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:15): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:15): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "906211",
+   "note": "3.5: python-shebang script run from /tmp; built-in 92600 (level 0, exe contains python) used to take it to 92601 L6",
+   "expect_level": 12
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:16): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"python3\" exe=\"/usr/bin/python3.12\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:16): argc=2 a0=\"python3\" a1=\"/tmp/x.py\" type=CWD msg=audit(1791431721.264:16): cwd=\"/opt/app\" type=PATH msg=audit(1791431721.264:16): item=0 name=\"/usr/bin/python3.12\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:16): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:16): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "906213",
+   "note": "3.5: python3 /tmp/x.py with the interpreter execve rule; was 92601 L6",
+   "expect_level": 10
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1791431721.264:17): arch=c000003e syscall=59 success=yes exit=0 a0=5652b88d43c0 a1=5652b88d10e0 a2=5652b88d0840 a3=1b6 items=2 ppid=2035181 pid=2035182 auid=0 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=45 comm=\"python3\" exe=\"/usr/bin/python3.12\" subj=unconfined key=\"jt_portable_interp\"ARCH=x86_64 SYSCALL=execve AUID=\"root\" UID=\"root\" GID=\"root\" EUID=\"root\" SUID=\"root\" FSUID=\"root\" EGID=\"root\" SGID=\"root\" FSGID=\"root\" type=EXECVE msg=audit(1791431721.264:17): argc=2 a0=\"python3\" a1=\"x.py\" type=CWD msg=audit(1791431721.264:17): cwd=\"/tmp\" type=PATH msg=audit(1791431721.264:17): item=0 name=\"/usr/bin/python3.12\" inode=1319898 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PATH msg=audit(1791431721.264:17): item=1 name=\"/lib64/ld-linux-x86-64.so.2\" inode=264203 dev=fd:00 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"root\" type=PROCTITLE msg=audit(1791431721.264:17): proctitle=2F746D70",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "92601",
+   "note": "near miss of 906213: a relative script name with cwd /tmp is left to the built-in 92601 (906213 reads absolute paths)",
+   "expect_level": 6
+  },
+  {
+   "fim": {
+    "perm": "rwxr-xr-x",
+    "size": 48128,
+    "path": "/tmp/setup-1/tool"
+   },
+   "expect_rule": "906202",
+   "note": "executable added under /tmp",
+   "expect_level": 10
+  },
+  {
+   "fim": {
+    "perm": "rwxr-xr-x",
+    "size": 808712,
+    "path": "/tmp/containerd-mount2467738562/bin/busybox"
+   },
+   "expect_rule": "none",
+   "note": "3.5: real path shape from a Docker host, containerd temporary layer mount (906239)"
+  },
+  {
+   "fim": {
+    "perm": "rwxr-xr-x",
+    "size": 649832,
+    "path": "/tmp/containerd-mount3406771976/lib/ld-musl-x86_64.so.1"
+   },
+   "expect_rule": "none",
+   "note": "3.5: real path shape, library in a containerd layer mount"
+  },
+  {
+   "fim": {
+    "perm": "rwxr-xr-x",
+    "size": 808712,
+    "path": "/tmp/containerd-x/bin/busybox"
+   },
+   "expect_rule": "906202",
+   "note": "near miss of 906239: not the containerd mkdtemp shape",
+   "expect_level": 10
+  },
+  {
+   "fim": {
+    "perm": "rwxr-xr-x",
+    "size": 236,
+    "path": "/tmp/tmp6wo2kfvl/bin/pip"
+   },
+   "expect_rule": "906238",
+   "note": "real dev1 shape: venv entry point, 236 bytes",
+   "expect_level": 3
+  },
+  {
+   "fim": {
+    "perm": "rwxr-xr-x",
+    "size": 5242880,
+    "path": "/tmp/tmp6wo2kfvl/bin/pip"
+   },
+   "expect_rule": "906202",
+   "note": "near miss of 906238: a real program under the pip name",
+   "expect_level": 10
+  },
+  {
+   "fim": {
+    "perm": "rwxrwxrwx",
+    "size": 30,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "path": "/tmp/link-1/current"
+   },
+   "expect_rule": "none",
+   "note": "symlink: empty-content hash (906232)"
+  },
+  {
+   "fim": {
+    "perm": "rwxr-xr-x",
+    "size": 4096,
+    "path": "/tmp/pytest-of-root/pytest-9/t0/bin/tool"
+   },
+   "expect_rule": "none",
+   "note": "build/test toolchain scratch dir (906234)"
+  },
+  {
+   "fim": {
+    "type": "modified",
+    "changed": [
+     "permission"
+    ],
+    "perm": "rwxr-xr-x",
+    "path": "/home/alice/tool"
+   },
+   "expect_rule": "906201",
+   "note": "a file in a home directory made executable",
+   "expect_level": 8
+  },
+  {
+   "fim": {
+    "perm": "rwxrwxrwx",
+    "size": 90000,
+    "path": "/dev/shm/payload"
+   },
+   "expect_rule": "906203",
+   "note": "executable-mode file on a memory filesystem",
+   "expect_level": 6
+  },
+  {
+   "fim": {
+    "perm": "rwxrwxrwx",
+    "size": 32,
+    "path": "/dev/shm/sem.app_lock"
+   },
+   "expect_rule": "none",
+   "note": "POSIX semaphore (906224)"
+  },
+  {
+   "fim": {
+    "perm": "rwxr-xr-x",
+    "size": 90000000,
+    "path": "/home/alice/Downloads/app.AppImage"
+   },
+   "expect_rule": "906204",
+   "note": "AppImage in a home directory",
+   "expect_level": 8
+  },
+  {
+   "fim": {
+    "perm": "rwxr-xr-x",
+    "size": 1200,
+    "path": "/tmp/certs/server.pem"
+   },
+   "expect_rule": "none",
+   "note": "certificate with the execute bit (906221)"
+  },
+  {
+   "fim": {
+    "perm": "rwxr-xr-x",
+    "size": 2048,
+    "path": "/tmp/x1/dropper.sh"
+   },
+   "expect_rule": "906214",
+   "expect_level": 12,
+   "note": "3.6 (was jt-zimbra 100809): executable script in /tmp"
+  },
+  {
+   "fim": {
+    "perm": "rw-r--r--",
+    "size": 2048,
+    "path": "/tmp/x1/notes.py"
+   },
+   "expect_rule": "554",
+   "note": "3.6: the same kind of file without the execute bit reaches neither 906202 nor 906214, only the built-in 554",
+   "expect_level": 5
+  },
+  {
+   "fim": {
+    "perm": "rwxrwxrwx",
+    "size": 4096,
+    "path": "/dev/shm/.x/agent.elf"
+   },
+   "expect_rule": "906214",
+   "expect_level": 12,
+   "note": "3.6: executable binary on a memory filesystem, child of 906203"
+  },
+  {
+   "fim": {
+    "perm": "rwxr-xr-x",
+    "size": 2048,
+    "path": "/tmp/pytest-of-ci/pytest-3/run.sh"
+   },
+   "expect_rule": "none",
+   "note": "3.6: build scratch exclusion of 906202 reaches 906214 too (as 100809 it did not)"
+  },
+  {
+   "fim": {
+    "perm": "rw-r--r--",
+    "size": 9000,
+    "path": "/tmp/upload/cmd.jsp"
+   },
+   "expect_rule": "906215",
+   "expect_level": 12,
+   "note": "3.6 (was jt-zimbra 100807): JSP in /tmp, no execute bit needed"
+  },
+  {
+   "fim": {
+    "perm": "rw-r--r--",
+    "size": 90000,
+    "path": "/var/tmp/gradle-worker/lib.jar"
+   },
+   "expect_rule": "none",
+   "note": "3.6: the build scratch exclusion 906234 also covers 906215 (a Gradle worker directory)"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\Downloads\\t.exe",
+     "ParentImage": "cmd.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\Downloads\\t.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "t.exe"
     }
-  ]
+   },
+   "expect_rule": "906100",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 6
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\Downloads\\t.exe",
+     "ParentImage": "C:\\Windows\\explorer.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\Downloads\\t.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "t.exe"
+    }
+   },
+   "expect_rule": "906106",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 9
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\AppData\\Local\\Temp\\Temp1_t.zip\\t.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\AppData\\Local\\Temp\\Temp1_t.zip\\t.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "t.exe"
+    }
+   },
+   "expect_rule": "906170",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 10
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\AppData\\Local\\Temp\\Rar$EXa12.3\\t.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\AppData\\Local\\Temp\\Rar$EXa12.3\\t.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "t.exe"
+    }
+   },
+   "expect_rule": "906170",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 10
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\AppData\\Local\\Temp\\abc\\t.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\AppData\\Local\\Temp\\abc\\t.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "t.exe"
+    }
+   },
+   "expect_rule": "906102",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 10
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\Tools\\nc.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\Tools\\nc.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "nc.exe"
+    }
+   },
+   "expect_rule": "906171",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 5
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\proj\\target\\debug\\a.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\proj\\target\\debug\\a.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "a.exe"
+    }
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 61603; 906172 is level 0 (compiler output in a project directory), so no alert"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\.cargo\\bin\\rustup.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\.cargo\\bin\\rustup.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "rustup.exe"
+    }
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 61603"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\Downloads\\a.exe",
+     "ParentImage": "x",
+     "OriginalFileName": "AnyDesk.exe",
+     "Product": "AnyDesk",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\Downloads\\a.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   },
+   "expect_rule": "906175",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 12
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\Downloads\\a.exe",
+     "ParentImage": "x",
+     "OriginalFileName": "WinSCP.exe",
+     "Product": "AnyDesk",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\Downloads\\a.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   },
+   "expect_rule": "906144",
+   "note": "unit-test case via the real decoder: parent 61603; 3.6.2: the level 12 rule is tried first, 906144 lowers it",
+   "expect_level": 3
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\Downloads\\ngrok.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\Downloads\\ngrok.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "ngrok.exe"
+    }
+   },
+   "expect_rule": "906176",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 12
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Windows\\SystemTemp\\x\\t.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Windows\\SystemTemp\\x\\t.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "t.exe"
+    }
+   },
+   "expect_rule": "906104",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 10
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\OneDrive - Corp\\Desktop\\t.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\OneDrive - Corp\\Desktop\\t.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "t.exe"
+    }
+   },
+   "expect_rule": "906100",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 6
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "15",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\Downloads\\x.zip:Zone.Identifier",
+     "Contents": "ZoneId=3",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "Image": "C:\\Windows\\System32\\cmd.exe",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906122",
+   "note": "unit-test case via the real decoder: parent 61617",
+   "expect_level": 7
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "15",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\WinGet\\x.exe:Zone.Identifier",
+     "Contents": "ZoneId=3",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "Image": "C:\\Windows\\System32\\cmd.exe",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 61617; 906123 is level 0 (WinGet staging), so no alert"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "15",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\Downloads\\x.exe",
+     "Contents": "",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "Image": "C:\\Windows\\System32\\cmd.exe",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 61617"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "Image": "C:\\Windows\\System32\\OpenSSH\\sftp-server.exe",
+     "TargetFilename": "C:\\Users\\user\\Downloads\\x.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906124",
+   "note": "unit-test case via the real decoder: parent 61613",
+   "expect_level": 5
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+     "TargetFilename": "C:\\Users\\user\\Downloads\\x.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "92203",
+   "note": "unit-test case via the real decoder: parent 61613; the pack does not act, the built-in rule does",
+   "expect_level": 6
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\cfg.json",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "Image": "C:\\Windows\\System32\\cmd.exe",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 92213; 906167 is level 0 (92213 matched an extension as a substring), so no alert"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\drop.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "Image": "C:\\Windows\\System32\\cmd.exe",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "92213",
+   "note": "unit-test case via the real decoder: parent 92213; the pack does not act, the built-in rule does",
+   "expect_level": 15
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\nsd36D2.tmp\\System.dll",
+     "Image": "setup.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906125",
+   "note": "unit-test case via the real decoder: parent 92213",
+   "expect_level": 3
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\b0rvrt0j.dll",
+     "Image": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906126",
+   "note": "unit-test case via the real decoder: parent 92213",
+   "expect_level": 6
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\b0rvrt0j.dll",
+     "Image": "evil.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "92213",
+   "note": "unit-test case via the real decoder: parent 92213; the pack does not act, the built-in rule does",
+   "expect_level": 15
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "29",
+    "data": {
+     "Image": "explorer.exe",
+     "TargetFilename": "C:\\Users\\user\\Downloads\\test.pdf",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906183",
+   "note": "unit-test case via the real decoder: parent 61600",
+   "expect_level": 10
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "29",
+    "data": {
+     "Image": "C:\\Windows\\System32\\OpenSSH\\sftp-server.exe",
+     "TargetFilename": "C:\\Users\\user\\Downloads\\x.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906181",
+   "note": "unit-test case via the real decoder: parent 61600",
+   "expect_level": 10
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "29",
+    "data": {
+     "Image": "explorer.exe",
+     "TargetFilename": "E:\\x.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906182",
+   "note": "unit-test case via the real decoder: parent 61600",
+   "expect_level": 8
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "29",
+    "data": {
+     "Image": "chrome.exe",
+     "TargetFilename": "C:\\Users\\user\\Downloads\\Unconfirmed 1.crdownload",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906180",
+   "note": "unit-test case via the real decoder: parent 61600",
+   "expect_level": 1
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Windows\\SystemTemp\\C9C5A7A4-31BF-4DA8-B329-278BC1738C43\\MpSigStub.exe",
+     "IntegrityLevel": "System",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "CommandLine": "\"C:\\Windows\\SystemTemp\\C9C5A7A4-31BF-4DA8-B329-278BC1738C43\\MpSigStub.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "MpSigStub.exe"
+    }
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 61603; 906168 is level 0 (Defender update staging), so no alert"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Windows\\Temp\\C9C5A7A4-31BF-4DA8-B329-278BC1738C43MpCommU\\mpam-d.exe",
+     "IntegrityLevel": "System",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "CommandLine": "\"C:\\Windows\\Temp\\C9C5A7A4-31BF-4DA8-B329-278BC1738C43MpCommU\\mpam-d.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "mpam-d.exe"
+    }
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 61603; 906168 is level 0 (Defender update staging), so no alert"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Windows\\Temp\\C9C5A7A4-31BF-4DA8-B329-278BC1738C43\\MpSigStub.exe",
+     "IntegrityLevel": "Medium",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "CommandLine": "\"C:\\Windows\\Temp\\C9C5A7A4-31BF-4DA8-B329-278BC1738C43\\MpSigStub.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "MpSigStub.exe"
+    }
+   },
+   "expect_rule": "906104",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 10
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Windows\\System32\\spool\\drivers\\color\\t.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Windows\\System32\\spool\\drivers\\color\\t.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "t.exe"
+    }
+   },
+   "expect_rule": "906174",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 12
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Windows\\Tasks\\t.exe",
+     "ParentImage": "x",
+     "OriginalFileName": "PuTTY",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Windows\\Tasks\\t.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   },
+   "expect_rule": "906174",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 12
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Windows\\Tasks\\ngrok.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Windows\\Tasks\\ngrok.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "ngrok.exe"
+    }
+   },
+   "expect_rule": "906176",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 12
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Windows\\System32\\whoami.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Windows\\System32\\whoami.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "whoami.exe"
+    }
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 61603"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Tools\\putty.exe",
+     "ParentImage": "x",
+     "OriginalFileName": "PuTTY",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Tools\\putty.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   },
+   "expect_rule": "906177",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 5
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "D:\\Data\\tool.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"D:\\Data\\tool.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "tool.exe"
+    }
+   },
+   "expect_rule": "906177",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 5
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\tool.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\tool.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "tool.exe"
+    }
+   },
+   "expect_rule": "906177",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 5
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Tools\\ngrok.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Tools\\ngrok.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "ngrok.exe"
+    }
+   },
+   "expect_rule": "906176",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 12
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Program Files\\App\\app.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Program Files\\App\\app.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "app.exe"
+    }
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 61603"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Windows.old\\x.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Windows.old\\x.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "x.exe"
+    }
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 61603"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\$Recycle.Bin\\S-1-5-21-1\\$R1A2B3C.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\$Recycle.Bin\\S-1-5-21-1\\$R1A2B3C.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "$R1A2B3C.exe"
+    }
+   },
+   "expect_rule": "906178",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 10
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "E:\\$Recycle.Bin\\S-1-5-21-1\\$R1A2B3C.exe",
+     "ParentImage": "x",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"E:\\$Recycle.Bin\\S-1-5-21-1\\$R1A2B3C.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "$R1A2B3C.exe"
+    }
+   },
+   "expect_rule": "906178",
+   "note": "unit-test case via the real decoder: parent 61603",
+   "expect_level": 10
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\JtwmRoot\\jtwm-rt.exe",
+     "ParentImage": "WmiPrvSE.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\JtwmRoot\\jtwm-rt.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "jtwm-rt.exe"
+    }
+   },
+   "expect_rule": "906177",
+   "note": "unit-test case via the real decoder: parent 92069",
+   "expect_level": 5
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Windows\\tracing\\t.exe",
+     "ParentImage": "WmiPrvSE.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Windows\\tracing\\t.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "t.exe"
+    }
+   },
+   "expect_rule": "906174",
+   "note": "unit-test case via the real decoder: parent 92069",
+   "expect_level": 12
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\AppData\\Local\\Temp\\abc\\t.exe",
+     "ParentImage": "WmiPrvSE.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\AppData\\Local\\Temp\\abc\\t.exe\"",
+     "Hashes": "SHA256=0000000000000000000000000000000000000000000000000000000000000000",
+     "OriginalFileName": "t.exe"
+    }
+   },
+   "expect_rule": "906102",
+   "note": "unit-test case via the real decoder: parent 92069",
+   "expect_level": 10
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\nso5.tmp\\System.dll",
+     "Image": "setup.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906125",
+   "note": "unit-test case via the real decoder: parent 92213",
+   "expect_level": 3
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\nsk1F2C.tmp\\nsDialogs.dll",
+     "Image": "setup.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906125",
+   "note": "unit-test case via the real decoder: parent 92213",
+   "expect_level": 3
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\nsk12345.tmp\\System.dll",
+     "Image": "setup.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "92213",
+   "note": "unit-test case via the real decoder: parent 92213; the pack does not act, the built-in rule does",
+   "expect_level": 15
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\5vcfss1u\\5vcfss1u.dll",
+     "Image": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906126",
+   "note": "unit-test case via the real decoder: parent 92213",
+   "expect_level": 6
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\abcdefgh\\12345678.dll",
+     "Image": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "92213",
+   "note": "unit-test case via the real decoder: parent 92213; the pack does not act, the built-in rule does",
+   "expect_level": 15
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Windows\\SystemTemp\\h02vqsci\\h02vqsci.cmdline",
+     "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906129",
+   "note": "unit-test case via the real decoder: parent 92205",
+   "expect_level": 6
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Windows\\SystemTemp\\h02vqsci\\h02vqsci.dll",
+     "Image": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906129",
+   "note": "unit-test case via the real decoder: parent 92217",
+   "expect_level": 6
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Windows\\SystemTemp\\h02vqsci\\h02vqsci.dll",
+     "Image": "evil.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "92217",
+   "note": "unit-test case via the real decoder: parent 92217; the pack does not act, the built-in rule does",
+   "expect_level": 6
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\repo\\static\\js\\csrf.js",
+     "Image": "C:\\Program Files\\Git\\mingw64\\bin\\git.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906127",
+   "note": "unit-test case via the real decoder: parent 92213",
+   "expect_level": 3
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\repo\\package.json",
+     "Image": "C:\\Program Files\\Git\\mingw64\\bin\\git.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 92213; 906167 is level 0 (92213 matched an extension as a substring), so no alert"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\deploy_1.ps1",
+     "Image": "C:\\Windows\\System32\\OpenSSH\\sftp-server.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "906128",
+   "note": "unit-test case via the real decoder: parent 92213",
+   "expect_level": 10
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "11",
+    "data": {
+     "TargetFilename": "C:\\Users\\user\\AppData\\Local\\Temp\\notes.txt",
+     "Image": "C:\\Windows\\System32\\OpenSSH\\sftp-server.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user"
+    }
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 92213; 906167 is level 0 (92213 matched an extension as a substring), so no alert"
+  },
+  {
+   "win": {
+    "event_id": "100",
+    "provider": "jt-channel-watchdog",
+    "guid": "",
+    "channel": "Application",
+    "level": "3",
+    "keywords": "0x80000000000000",
+    "task": "0",
+    "data": {}
+   },
+   "expect_rule": "906190",
+   "note": "unit-test case via the real decoder: parent 60601",
+   "expect_level": 3
+  },
+  {
+   "win": {
+    "event_id": "100",
+    "provider": "SomeApp",
+    "guid": "",
+    "channel": "Application",
+    "level": "3",
+    "keywords": "0x80000000000000",
+    "task": "0",
+    "data": {}
+   },
+   "expect_rule": "none",
+   "note": "unit-test case via the real decoder: parent 60601"
+  },
+  {
+   "win": {
+    "event_id": "101",
+    "provider": "jt-channel-watchdog",
+    "guid": "",
+    "channel": "Application",
+    "level": "2",
+    "keywords": "0x80000000000000",
+    "task": "0",
+    "data": {}
+   },
+   "expect_rule": "906191",
+   "note": "unit-test case via the real decoder: parent 60602",
+   "expect_level": 9
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\Downloads\\ngrok.exe",
+     "ParentImage": "C:\\Windows\\explorer.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\Downloads\\ngrok.exe\"",
+     "Hashes": "SHA256=00",
+     "OriginalFileName": "-"
+    }
+   },
+   "expect_rule": "906176",
+   "expect_level": 12,
+   "note": "3.6.2 regression: a Go binary without version info (Sysmon OriginalFileName '-', which Wazuh drops) - 3.6.1 stopped at 906106 L9"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\Downloads\\frpc.exe",
+     "ParentImage": "C:\\Windows\\explorer.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "frpc -c frpc.toml",
+     "Hashes": "SHA256=00",
+     "OriginalFileName": "-"
+    }
+   },
+   "expect_rule": "906176",
+   "expect_level": 12,
+   "note": "frp client without version info"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\Downloads\\svc.exe",
+     "ParentImage": "C:\\Windows\\explorer.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "svc.exe client 203.0.113.5:443 R:socks",
+     "Hashes": "SHA256=00",
+     "OriginalFileName": "-"
+    }
+   },
+   "expect_rule": "906152",
+   "expect_level": 12,
+   "note": "renamed chisel (no version info) recognised by its command line"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\Downloads\\todesk.exe",
+     "ParentImage": "C:\\Windows\\explorer.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\Downloads\\todesk.exe\"",
+     "Hashes": "SHA256=00",
+     "OriginalFileName": "-"
+    }
+   },
+   "expect_rule": "906179",
+   "expect_level": 12,
+   "note": "remote access tool by file name, no version info"
+  },
+  {
+   "win": {
+    "sysmon": true,
+    "event_id": "1",
+    "data": {
+     "Image": "C:\\Users\\user\\Downloads\\a.exe",
+     "ParentImage": "C:\\Windows\\explorer.exe",
+     "UtcTime": "2026-11-21 00:00:00.000",
+     "ProcessGuid": "{f7867fdb-0000-0000-0000-000000000001}",
+     "ProcessId": "4242",
+     "User": "WIN-SANDBOX\\user",
+     "IntegrityLevel": "Medium",
+     "CommandLine": "\"C:\\Users\\user\\Downloads\\a.exe\"",
+     "Hashes": "SHA256=00",
+     "OriginalFileName": "WinSCP.exe",
+     "Product": "AnyDesk"
+    }
+   },
+   "expect_rule": "906144",
+   "expect_level": 3,
+   "note": "approved by OriginalFileName: lowered after the level 12 rule"
+  }
+ ]
 }
