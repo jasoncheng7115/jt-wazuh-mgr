@@ -1090,5 +1090,58 @@ class TestRemoteCommands163(unittest.TestCase):
         self.assertEqual(local, remote, 'change 133712 and 133716 together')
 
 
+class TestInventory13(unittest.TestCase):
+    """inventory 1.3: Antigravity CLI and agents that work without an audit line."""
+
+    def agent(self):
+        return {'id': '021', 'name': 'build7', 'ip': '10.0.5.7', 'groups': ['default', 'ai-agent']}
+
+    def data(self, procs):
+        return {'packages': [], 'processes': procs, 'ports': [], 'hook': True}
+
+    def claude(self, start, cpu, pid=1227):
+        return {'pid': pid, 'name': 'claude', 'cmd': '/root/.local/bin/claude', 'argvs': '--resume x',
+                'euser': 'root', 'start_time': start, 'utime': cpu, 'stime': 0}
+
+    def test_antigravity_cli_is_reported_as_unsupported(self):
+        d = self.data([{'pid': 9, 'name': 'agy', 'cmd': '/home/u/.local/bin/agy', 'argvs': '-i', 'euser': 'u',
+                        'start_time': 1, 'utime': 0, 'stime': 0}])
+        f = inv.findings(self.agent(), d)
+        self.assertEqual([v['event'] for v in f.values()], ['unsupported'])
+        self.assertEqual(list(f.values())[0]['tool'], 'antigravity-cli')
+        self.assertEqual(inv.findings(self.agent(), self.data([{'pid': 9, 'name': 'agyx', 'cmd': '/usr/bin/agyx',
+                                                                 'euser': 'u', 'start_time': 1}])), {})
+
+    def run_twice(self, prev_cpu, now_cpu, last_seen, since, start=1_700_000_000, prev_start=None):
+        prev_t, now = 1_800_000_000, 1_800_021_600
+        cpu_prev = {'021:1227': [prev_start or start, prev_cpu, prev_t]}
+        cpu_now = {}
+        seen = {'build7|claude-code': last_seen} if last_seen else {}
+        f = inv.findings(self.agent(), self.data([self.claude(start, now_cpu)]), seen, now, since, cpu_prev, cpu_now)
+        self.assertEqual(cpu_now['021:1227'], [start, now_cpu, now])
+        return [v for v in f.values() if v['event'] == 'busy_silent']
+
+    def test_busy_without_audit_lines(self):
+        hit = self.run_twice(1000, 1000 + 61 * 100, last_seen=0, since=1_799_000_000)
+        self.assertEqual(len(hit), 1)
+        self.assertIn('61 CPU seconds', hit[0]['evidence'][0])
+        self.assertIn('last audit line: none seen', hit[0]['evidence'][0])
+
+    def test_not_busy_or_audited_or_new_or_uncovered(self):
+        self.assertEqual(self.run_twice(1000, 1000 + 30 * 100, 0, 1_799_000_000), [])          # idle
+        self.assertEqual(self.run_twice(1000, 99999, 1_800_000_100, 1_799_000_000), [])        # audited since
+        self.assertEqual(self.run_twice(1000, 99999, 0, 1_799_000_000, prev_start=1), [])      # another process
+        self.assertEqual(self.run_twice(1000, 99999, 0, 1_800_000_500), [])                    # alerts not read for it
+
+    def test_cursor_and_hookless_hosts_are_not_judged(self):
+        d = self.data([dict(self.claude(1, 99999), name='cursor', cmd='/usr/bin/cursor')])
+        f = inv.findings(self.agent(), d, {}, 1_800_021_600, 1_799_000_000,
+                         {'021:1227': [1, 0, 1_800_000_000]}, {})
+        self.assertFalse([v for v in f.values() if v['event'] == 'busy_silent'])
+        d = self.data([self.claude(1, 99999)]); d['hook'] = False
+        f = inv.findings(self.agent(), d, {}, 1_800_021_600, 1_799_000_000, {'021:1227': [1, 0, 1_800_000_000]}, {})
+        self.assertEqual(sorted(v['event'] for v in f.values()), ['hook_missing'])
+
+
 if __name__ == '__main__':
     unittest.main()

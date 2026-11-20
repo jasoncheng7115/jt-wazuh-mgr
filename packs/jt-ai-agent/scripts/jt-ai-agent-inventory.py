@@ -20,6 +20,14 @@ Findings:
                 /usr/local/lib/jt-ai-agent/jt-ai-agent-hook.py
   no_hook       an agent that has no hook mechanism at all (Aider), so it cannot
                 be audited this way
+  unsupported   (1.3) an agent jt-ai-agent cannot audit: Antigravity CLI (agy), which took
+                over Gemini CLI for individual users in 2026 and has only user and project
+                hooks (no administrator setting a user cannot turn off)
+  busy_silent   (1.3) the host is in the group and has the hook, an agent process kept
+                working (its CPU time grew by BUSY_SECONDS or more since the previous run)
+                and this node had no audit line from that agent on that host in that time:
+                a session started before the hook was installed, or the hook is off for it.
+                Unlike "silent" this covers long-running sessions.
   model_server  a local model server is running
   model_exposed a local model server listens on a non-loopback address; Ollama and
                 llama.cpp's server have no authentication by default
@@ -56,7 +64,7 @@ import struct
 import sys
 import time
 
-VERSION = '1.2'
+VERSION = '1.3'
 PROG = 'jt-ai-agent-inventory'
 LOCATION = 'jt-ai-agent-inventory'
 GROUP = 'ai-agent'
@@ -85,6 +93,15 @@ CODING_AGENTS = {
 NO_HOOK = {
     'aider': ({'aider-chat', 'aider'}, r'(?:^|/)aider(?:\s|$)'),
 }
+# 1.3: hooks, but only in the user's and the project's settings (~/.gemini/config/hooks.json,
+# .agents/hooks.json): the audit cannot be enforced, so it is reported, not hooked
+UNSUPPORTED = {
+    'antigravity-cli': ({'antigravity', 'antigravity-cli'}, r'(?:^|/)agy(?:\.exe)?(?:\s|$)'),
+}
+# 1.3: CPU seconds a coding agent must use between two runs, with no audit line from it,
+# to count as working unaudited (syscollector reports utime/stime in clock ticks)
+BUSY_SECONDS = 60
+CLOCK_TICKS = 100
 MODEL_SERVERS = {
     'ollama': ({'ollama'}, r'(?:^|/)ollama(?:\s|$)'),
     'llama.cpp': ({'llama.cpp', 'llama-cpp'}, r'(?:^|/)llama-server(?:\s|$)'),
@@ -98,9 +115,9 @@ EXCLUDE = {'llama.cpp': r'/ollama/'}
 CONTAINER_UID = 100000
 # SQL prefilter (LIKE); the exact matching is done here
 PKG_LIKE = ('claude', 'codex', 'opencode', 'gemini', 'cursor', 'copilot', 'aider', 'ollama', 'llama',
-            'vllm', 'lm studio', 'lm-studio', 'localai')
+            'vllm', 'lm studio', 'lm-studio', 'localai', 'antigravity')
 PROC_LIKE = ('claude', 'codex', 'opencode', 'gemini', 'cursor', 'copilot', 'aider', 'ollama', 'llama-server',
-             'vllm', 'lms', 'local-ai')
+             'vllm', 'lms', 'local-ai', 'agy')
 
 
 def log(msg):
@@ -179,7 +196,7 @@ def collect(wdb, agent):
     data = {'packages': [], 'processes': [], 'ports': [], 'hook': None}
     data['packages'] = wdb_query(wdb, "agent %03d sql SELECT name, version, format FROM sys_programs WHERE %s"
                                  % (aid, likes('name', PKG_LIKE)))
-    data['processes'] = wdb_query(wdb, "agent %03d sql SELECT pid, name, cmd, argvs, euser, start_time FROM sys_processes "
+    data['processes'] = wdb_query(wdb, "agent %03d sql SELECT pid, name, cmd, argvs, euser, start_time, utime, stime FROM sys_processes "
                                   "WHERE %s OR %s OR %s" % (aid, likes('name', PROC_LIKE), likes('cmd', PROC_LIKE),
                                                             likes('argvs', PROC_LIKE)))
     data['ports'] = wdb_query(wdb, "agent %03d sql SELECT protocol, local_ip, local_port, state, pid, process "
@@ -219,7 +236,7 @@ def match_tools(table, data):
     for tool, (pkgs, proc) in table.items():
         rx = re.compile(proc, re.I)
         skip = re.compile(EXCLUDE[tool]) if tool in EXCLUDE else None
-        ev, pids, starts = [], set(), []
+        ev, pids, starts, procs = [], set(), [], []
         for p in data['packages']:
             name = str(p.get('name') or '').strip()
             # Windows installs show as "Cursor (User)"; the rest are exact package names
@@ -240,10 +257,12 @@ def match_tools(table, data):
                 try:
                     if not re.search(r'\bserve\b', text):  # a long-running server can sit idle
                         starts.append(int(p.get('start_time')))
+                        procs.append((str(pid), int(p.get('start_time')),
+                                      int(p.get('utime') or 0) + int(p.get('stime') or 0)))
                 except (TypeError, ValueError):
                     pass
         if ev:
-            found[tool] = {'evidence': sorted(set(ev))[:5], 'pids': pids, 'starts': starts}
+            found[tool] = {'evidence': sorted(set(ev))[:5], 'pids': pids, 'starts': starts, 'procs': procs}
     return found
 
 
@@ -265,8 +284,34 @@ def exposed_ports(data, pids, tool):
     return sorted(set(out))[:5]
 
 
-def findings(agent, data, seen=None, now=None, since=None):
+BUSY_TOOLS = ('claude-code', 'codex', 'gemini', 'opencode', 'copilot')   # the Cursor app uses CPU as an editor
+
+
+def busy_unaudited(agent, tool, procs, seen, now, since, cpu_prev, cpu_now):
+    """1.3: processes of a hooked agent that kept working with no audit line from it.
+    cpu_prev / cpu_now: {"<agent id>:<pid>": [start time, CPU ticks, time of the run]}."""
+    out = []
+    last = seen.get('%s|%s' % (agent['name'], tool), 0) if seen is not None else 0
+    for pid, start, cpu in procs:
+        key = '%s:%s' % (agent['id'], pid)
+        cpu_now[key] = [start, cpu, now]
+        prev = cpu_prev.get(key)
+        # the same process (same start time), a previous run whose interval the alerts were
+        # read for without gaps, enough work since, and nothing heard from the agent in it
+        if not prev or prev[0] != start or seen is None or since is None or prev[2] < since:
+            continue
+        if cpu - prev[1] >= BUSY_SECONDS * CLOCK_TICKS and last < prev[2]:
+            out.append('pid %s, started %s, %d CPU seconds since %s, last audit line: %s' % (
+                pid, time.strftime('%Y-%m-%d %H:%M', time.localtime(start)), (cpu - prev[1]) // CLOCK_TICKS,
+                time.strftime('%Y-%m-%d %H:%M', time.localtime(prev[2])),
+                time.strftime('%Y-%m-%d %H:%M', time.localtime(last)) if last else 'none seen'))
+    return out
+
+
+def findings(agent, data, seen=None, now=None, since=None, cpu_prev=None, cpu_now=None):
     out = {}
+    cpu_prev = cpu_prev if cpu_prev is not None else {}
+    cpu_now = cpu_now if cpu_now is not None else {}
     audited = GROUP in agent['groups']
     for tool, f in match_tools(CODING_AGENTS, data).items():
         if not audited:
@@ -286,8 +331,16 @@ def findings(agent, data, seen=None, now=None, since=None):
                     time.strftime('%Y-%m-%d %H:%M', time.localtime(max(quiet))),
                     time.strftime('%Y-%m-%d %H:%M', time.localtime(last)) if last else 'none seen'))
                 out['%s:%s:silent' % (agent['id'], tool)] = {'event': 'silent', 'tool': tool, 'evidence': ev}
+        if audited and data['hook'] is not False and tool in BUSY_TOOLS:
+            busy = busy_unaudited(agent, tool, f.get('procs', []), seen, now, since, cpu_prev, cpu_now)
+            if busy:
+                out['%s:%s:busy_silent' % (agent['id'], tool)] = {'event': 'busy_silent', 'tool': tool,
+                                                                  'evidence': busy[:3]}
     for tool, f in match_tools(NO_HOOK, data).items():
         out['%s:%s:no_hook' % (agent['id'], tool)] = {'event': 'no_hook', 'tool': tool, 'evidence': f['evidence']}
+    for tool, f in match_tools(UNSUPPORTED, data).items():
+        out['%s:%s:unsupported' % (agent['id'], tool)] = {'event': 'unsupported', 'tool': tool,
+                                                          'evidence': f['evidence']}
     for tool, f in match_tools(MODEL_SERVERS, data).items():
         ports = exposed_ports(data, f['pids'], tool)
         if ports:
@@ -493,6 +546,7 @@ def main(argv=None):
         log('cannot read alerts.json: %s' % exc)
         alerts_pos, since = state.get('alerts'), None
     found, scanned, errors = {}, set(), 0
+    cpu_prev, cpu_now = state.get('cpu') or {}, {}
     for agent in agents:
         try:
             data = collect(wdb, agent)
@@ -501,7 +555,7 @@ def main(argv=None):
             log('agent %s: %s' % (agent['id'], exc))
             continue
         scanned.add(agent['id'])
-        found.update(findings(agent, data, seen, now, since))
+        found.update(findings(agent, data, seen, now, since, cpu_prev, cpu_now))
     if args.list:
         for key, f in sorted(found.items()):
             print('%s %-22s %-13s %-12s %s %s' % (f['agent_id'], f['agent_name'][:22], f['event'], f['tool'],
@@ -517,8 +571,11 @@ def main(argv=None):
             log('cannot write to the analysisd queue: %s' % exc)
             return 2
     if not args.dry_run:
+        # CPU readings of agents not scanned this time (disconnected) are kept for the next run
+        cpu = {k: v for k, v in cpu_prev.items() if k.split(':', 1)[0] not in scanned}
+        cpu.update(cpu_now)
         save_state(state_path, {'version': VERSION, 'findings': new_state, 'run': now, 'seen': seen,
-                                'alerts': alerts_pos})
+                                'alerts': alerts_pos, 'cpu': cpu})
     log('%d agents, %d scanned, %d findings, %d events, %d errors'
         % (len(agents), len(scanned), len(found), len(events), errors))
     return 0

@@ -2,7 +2,7 @@
   "id": "jt-ai-agent",
   "name": "AI Coding Agent Audit",
   "name_zh": "AI 程式代理稽核",
-  "version": "1.6.4",
+  "version": "1.7",
   "summary": "An audit trail of what AI coding agents (Claude Code, Codex, opencode, Gemini CLI, Cursor and GitHub Copilot) do on a host: every shell command, file change, web fetch, MCP call, subagent and session, recorded by a hook (managed hooks or system settings for each agent; opencode: a plugin) before it runs (Cursor: right after), with secrets in command lines replaced by ***. Graded rules for destructive commands (locally and over SSH), reading private keys and credential files, download-and-run, an agent changing its own permissions and hooks, sessions with all permission prompts off, and tampering with the audit itself. An inventory script finds AI coding agents on hosts the audit does not cover and local model servers (Ollama, llama.cpp, vLLM) listening on the network.",
   "summary_zh": "AI 程式代理（Claude Code、Codex、opencode、Gemini CLI、Cursor、GitHub Copilot）在主機上做了什麼的稽核記錄：每一個 shell 指令、檔案變更、網頁讀取、MCP 呼叫、子代理與工作階段，都在執行前由 hook 記下（各代理用受管理的 hooks 或系統設定，opencode 用外掛；Cursor 是執行後立即記下），指令裡的密碼與 token 先換成 ***。分級規則涵蓋：破壞性指令（本機與經 SSH）、讀取私鑰與帳密檔、下載後直接執行、代理修改自己的權限與 hook、關閉所有權限確認的工作階段，以及竄改稽核本身。盤點腳本會找出稽核沒有涵蓋的主機上的 AI 程式代理，以及在網路上開放的本機模型服務（Ollama、llama.cpp、vLLM）。",
   "rule_id_range": "133700-133799",
@@ -38,7 +38,8 @@
     "1.6.1: both hooks read the JT_AI_AGENT_LOG, JT_AI_AGENT_PROMPT_LOG and JT_AI_AGENT_CONFIG variables only when they are not the installed copy (/usr/local/lib/jt-ai-agent, C:\\Program Files\\jt-ai-agent) that the agents' managed settings run: the hook runs as the user, who could otherwise turn prompt recording off or send the audit to a file of their own without anything being logged. The Windows hook and installer take the ProgramData and Program Files folders from Windows, not from the environment variables of the same names. Fields that come from the user's environment by nature (the user before sudo, the SSH source address) are only as trustworthy as that environment. The macOS step for prompts names the newsyslog file.",
     "1.6.2 (Windows, BETA): the installer takes -Agents (only the named agents) and -Prompts (the prompt setting where the manager does not deliver one); jt-ai-agent-uninstall.ps1 and jt-ai-agent-check.ps1 added. VS Code's GitHub Copilot uses the same runtime and hook format as Copilot CLI and loads the machine-wide policy hooks in C:\\ProgramData\\GitHub\\Copilot\\policy.d, which, as GitHub documents, a user cannot turn off with disableAllHooks; hooks in VS Code are a preview feature and this has not yet been run in VS Code itself. VS Code's enterprise policies ChatAllowManagedHooksOnly and ChatApprovedAccountOrganizations go with it. Visual Studio (not VS Code) and JetBrains are not documented to support Copilot hooks.",
     "1.6.3: the hook also records what ssh runs on the other host (jt_ai.remote_cmd, secrets removed), and rule 133716 (a destructive command sent to another host, L12) requires the destructive pattern there: on \"ssh host 'systemctl start x'; shred -u key\" the shred runs here and stays 133712 (L10). A hook older than 1.6.3 sends no remote_cmd, so its remote destructive commands show as 133712 until the hook is updated.",
-    "1.6.4: shred counts as destructive (133712, 133716) only on a device (/dev/sdb, /dev/nvme0n1; not /dev/null, /dev/zero or files in /dev/shm). shred -u of a file is a secure delete, which careful agents do with keys and samples they no longer need."
+    "1.6.4: shred counts as destructive (133712, 133716) only on a device (/dev/sdb, /dev/nvme0n1; not /dev/null, /dev/zero or files in /dev/shm). shred -u of a file is a secure delete, which careful agents do with keys and samples they no longer need.",
+    "1.7 (inventory 1.3): rule 133785 (L8): an agent process that kept working (a minute or more of CPU time between two inventory runs) while no audit line came from that agent on that host. It finds sessions started before the hook was installed (an agent reads its managed settings only at start-up) or whose hook is off, which \"silent\" (133776, the first 24 hours) does not; one was found running unaudited for 18 days. Rule 133784 (L5): Antigravity CLI (agy), which took over Gemini CLI for individual users in 2026 and has hooks only in the user's and the project's settings, so jt-ai-agent cannot enforce them. Cursor's app is not judged by CPU (it is an editor)."
   ],
   "notes_zh": [
     "記錄的內容：誰（作業系統帳號、工作階段 ID、子代理）、在哪裡（主機、工作目錄、權限模式）、做了什麼（工具；shell 指令記錄指令內容，最多 2,000 字元；檔案工具記錄路徑；網頁工具記錄網址）。不記錄檔案內容、指令輸出與提示詞。",
@@ -64,7 +65,8 @@
     "1.6.1：兩個 hook 只有在不是正式安裝的那份（/usr/local/lib/jt-ai-agent、C:\\Program Files\\jt-ai-agent，也就是各代理的受管理設定所執行的）時，才讀 JT_AI_AGENT_LOG、JT_AI_AGENT_PROMPT_LOG、JT_AI_AGENT_CONFIG：hook 以使用者身分執行，否則使用者可以自己設定這些變數，讓提示記錄失效或把稽核記錄寫到別處，而且不會留下任何記錄。Windows 的 hook 與安裝程式改向 Windows 查詢 ProgramData 與 Program Files 的位置，不再讀同名的環境變數。本來就取自使用者環境的欄位（sudo 前的帳號、SSH 來源位址），可信度只和那個環境一樣。macOS 的提示步驟寫明 newsyslog 設定檔。",
     "1.6.2（Windows，BETA）：安裝程式新增 -Agents（只設定指定的代理）與 -Prompts（在 manager 沒有派送設定的主機上直接設定提示記錄）；新增 jt-ai-agent-uninstall.ps1 與 jt-ai-agent-check.ps1。VS Code 的 GitHub Copilot 與 Copilot CLI 共用同一套執行環境與 hook 格式，會載入全系統的政策 hook（C:\\ProgramData\\GitHub\\Copilot\\policy.d），依 GitHub 文件，使用者不能用 disableAllHooks 關掉這一層；VS Code 的 hook 仍是預覽功能，尚未在 VS Code 本身實測。可搭配 VS Code 的企業政策 ChatAllowManagedHooksOnly 與 ChatApprovedAccountOrganizations。Visual Studio（不是 VS Code）與 JetBrains 的 Copilot 官方文件沒有支援 hook。",
     "1.6.3：hook 另外記下 ssh 送到遠端執行的那段指令（jt_ai.remote_cmd，已遮蔽密碼），規則 133716（把破壞性指令送到其他主機，L12）改為只看那一段：像 \"ssh host 'systemctl start x'; shred -u key\" 裡的 shred 是在本機執行，維持 133712（L10）。1.6.3 之前的 hook 不會送 remote_cmd，在 hook 更新前，送到遠端的破壞性指令只會是 133712。",
-    "1.6.4：shred 只有對裝置（/dev/sdb、/dev/nvme0n1；不含 /dev/null、/dev/zero 與 /dev/shm 裡的檔案）才算破壞性指令（133712、133716）。對檔案 shred -u 是安全刪除，謹慎的代理處理用完的金鑰與樣本時常這樣做。"
+    "1.6.4：shred 只有對裝置（/dev/sdb、/dev/nvme0n1；不含 /dev/null、/dev/zero 與 /dev/shm 裡的檔案）才算破壞性指令（133712、133716）。對檔案 shred -u 是安全刪除，謹慎的代理處理用完的金鑰與樣本時常這樣做。",
+    "1.7（盤點 1.3）：規則 133785（L8）：AI 代理程序一直在工作（兩次盤點之間用了一分鐘以上 CPU），這段時間這台主機的這種代理卻沒有任何稽核記錄。用來找出比 hook 早啟動的工作階段（代理只在啟動時讀管理者設定）或 hook 被關掉的，133776（silent，只看啟動後 24 小時）抓不到這種；實際找到過一個跑了 18 天未受稽核的工作階段。規則 133784（L5）：Antigravity CLI（agy），2026 年起取代個人使用者的 Gemini CLI，hook 只能設在使用者與專案層級，jt-ai-agent 無法強制，所以只回報。Cursor 程式是編輯器，不以 CPU 判斷。"
   ],
   "files": [
     {
@@ -77,7 +79,7 @@
       "type": "rule",
       "name": "zz-133700-jt_ai_agent_rules.xml",
       "dest": "etc/rules/zz-133700-jt_ai_agent_rules.xml",
-      "sha256": "0a97373e59fab33f2bf0ae879202e132c044b43c62f18f3c97fcb6a65bfe2d45"
+      "sha256": "ea378ba1307401253c2b67d386c37d844639b798a097d8eca09173d02b7f6359"
     }
   ],
   "setup": [
@@ -319,7 +321,7 @@
     {
       "name": "jt-ai-agent-inventory.py",
       "dest": "etc/jt-packs/bin/jt-ai-agent-inventory.py",
-      "sha256": "ba527ae71517325d2241751a1f6a357497331507c6f5cbadfa81fec427008aa2",
+      "sha256": "4e200b8b0d388e02e2623042cacdee7a662e86e3772f1e36e1416e9fcbb357cf",
       "cron": "23 */6 * * *",
       "args": "--wazuh-path {wazuh_path}",
       "description": "Finds AI coding agents on hosts outside the ai-agent group, hosts in the group without the hook, and local model servers listening on the network, from the inventory syscollector keeps on this node"

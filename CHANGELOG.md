@@ -4,6 +4,10 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.38.7 (2026-11-20)
+
+- jt-ai-agent 1.7 (inventory 1.3): rule 133785 (L8) finds an AI agent process that keeps working (a minute or more of CPU time between two inventory runs) while no audit line comes from it, such as a session started before the hook was installed (an agent reads its managed settings only at start-up); one had been running unaudited for 18 days. Rule 133784 (L5) reports Antigravity CLI (agy), which took over Gemini CLI for individual users in 2026 and has only user and project hooks, which cannot be enforced.
+
 ## v1.38.6 (2026-11-20)
 
 - jt-web 1.2.1: rule 133030 (a vulnerability scanner) looks for the tool's name in the user agent only (the field after the status, sizes and referer). It matched any quoted field, so a WebDAV upload of a blog page named "...-openvas-9.html" read as a scanner.
