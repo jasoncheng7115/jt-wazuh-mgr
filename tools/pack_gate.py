@@ -251,6 +251,13 @@ def fresh(events):
     close(token)
     return got
 def _judge_one(case, got):
+    c = case.get('expect_by_clock')
+    if c:   # the manager's own clock, as <time> / <weekday> rules see it
+        import time as _t
+        lt = _t.localtime()
+        k = 'offhours' if (lt.tm_hour >= 20 or lt.tm_hour < 7) and 'offhours' in c else \
+            'weekend' if lt.tm_wday >= 5 and 'weekend' in c else 'day'
+        case = dict(case, expect_rule=str(c[k][0]), expect_level=c[k][1])
     want, wl = str(case['expect_rule']), case.get('expect_level')
     ok = got[1] == 0 if want == 'none' else (got[0] == want and (wl is None or got[1] == wl))
     return ok and all(t in (got[2] or '') for t in case.get('expect_in_description', []))
@@ -286,7 +293,7 @@ for path in sorted(glob.glob(cdir + '/*.json')):
     data = json.load(open(path))
     token = None
     for i, case in enumerate(data['cases'] + data.get('sequences', []), 1):
-        if 'fim' in case:
+        if 'fim' in case or 'win' in case:
             continue
         ev = events_of(case)
         if len(ev) > 1:
@@ -476,6 +483,8 @@ def judge_pack(name, pack, data, got, fim, state):
             # what an older ruleset gives instead (a compatibility twin, say);
             # it already accounts for every pack being installed
             case = dict(case, with_all_packs={k: v for k, v in older.items() if k != 'wazuh_below'})
+        if case.get('expect_by_clock'):
+            case = sb.clock_expect(case, *sb.container_clock(name))
         if 'fim' in case:
             if not fim:
                 continue
@@ -484,6 +493,15 @@ def judge_pack(name, pack, data, got, fim, state):
             if not judge(case, g):
                 time.sleep(3)          # under load an alert can be late; one retry
                 g = (sb.fim_case(name, spec, str(case['expect_rule']) != 'none') or [('none', 0, '')])[-1]
+        elif 'win' in case:
+            if not fim:
+                continue
+            specs = [dict(case['win'], **b) for b in case.get('before', [])] + \
+                [case['win']] * int(case.get('repeat', 1))
+            g = (sb.win_case(name, specs, str(case['expect_rule']) != 'none', case.get('isolate')) or [('none', 0, '')])[-1]
+            if not judge(case, g):
+                time.sleep(3)
+                g = (sb.win_case(name, specs, str(case['expect_rule']) != 'none', case.get('isolate')) or [('none', 0, '')])[-1]
         else:
             g = got.get((pack, i), ('missing', 0, ''))
             if not judge(case, g) and state['fallback_left'] > 0:
@@ -503,7 +521,7 @@ def judge_pack(name, pack, data, got, fim, state):
         else:
             res['failures'].append({'i': i, 'want': [str(case['expect_rule']), case.get('expect_level')],
                                     'got': list(g), 'note': (case.get('note') or '')[:160],
-                                    'kind': 'fim' if 'fim' in case else 'log'})
+                                    'kind': 'fim' if 'fim' in case else 'win' if 'win' in case else 'log'})
     return res
 
 

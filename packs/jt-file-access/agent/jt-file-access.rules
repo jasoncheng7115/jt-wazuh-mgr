@@ -1,0 +1,29 @@
+## jt-file-access - auditd watches on confidential folders
+##
+## Manager rules 133800-133815 read the two keys set here:
+##   jt_file_read   every open for reading (who read which file, with which program)
+##   jt_file_write  writes, creates, deletes, renames and permission changes
+##
+## Edit the paths below to the folders that hold confidential documents, then:
+##
+##     cp jt-file-access.rules /etc/audit/rules.d/
+##     augenrules --load
+##     auditctl -l | grep jt_file
+##
+## A -w watch on a folder covers everything under it. Each open of a watched file is one
+## audit record, so watch the confidential folders only: not /home, not a whole data disk,
+## not a folder that a backup or indexing job reads every night (or list that job's binary
+## in the manager's etc/lists/jt-file-access-quiet).
+##
+## Samba and NFS: file servers read and write on behalf of their clients, so the records
+## name the server process (smbd, nfsd) and, for Samba, the client's account as uid.
+## NFS server writes run in the kernel and are not attributed to a user.
+##
+## If /etc/audit/rules.d/ ends with an immutable flag (-e 2), keep this file before it:
+## rules loaded after -e 2 are refused until the next reboot.
+##
+## Removing these watches (auditctl -W / -D) raises rule 133840.
+
+## Example folders: replace with your own, one pair of lines per folder.
+-w /srv/confidential -p r -k jt_file_read
+-w /srv/confidential -p wa -k jt_file_write

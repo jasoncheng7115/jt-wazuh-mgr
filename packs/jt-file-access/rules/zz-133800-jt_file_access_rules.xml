@@ -1,0 +1,432 @@
+<!--
+  jt-file-access: who read, changed or deleted confidential files.
+
+  File integrity monitoring only records changes. Reading needs the operating system's own audit:
+    Linux    auditd watches on the confidential folders with the keys jt_file_read (-p r) and
+             jt_file_write (-p wa); the template is agent/jt-file-access.rules.
+    Windows  "Audit File System" plus a SACL on the confidential folders; the Security channel
+             must pass events 4663 (access), 4656 (failed open) and 4907 (SACL changed).
+  Only the folders that carry those audit settings are tracked: the rules treat every audited
+  file access as an access to confidential data.
+
+  Every successful access is a level 3 alert so that "who opened this file" can be answered in
+  the dashboard. Higher levels: off-hours and weekend access, reading with a network transfer
+  tool or an archiver, many reads or deletes by one account in two minutes, permission changes,
+  refused opens, and the audit settings themselves being removed.
+
+  Level 0 rules (quiet lists, Windows system accounts) apply to this pack's events only: the
+  Linux ones require this pack's audit keys, the Windows ones event 4663, which no built-in rule
+  handles. For 4656 and 4907, which built-in rules do alert on, system accounts are moved back
+  to the built-in level by a child rule instead of being silenced.
+
+  Times (off hours 20:00-07:00, weekends) are the manager's local time; a site can change them
+  with an overwrite="yes" copy of 133805/133806 and 133827/133828.
+-->
+<group name="jt_file_access,">
+
+  <!-- ================================================================ Linux (auditd) -->
+
+  <!-- Dedicated backup, antivirus or indexing programs listed by full path; general tools
+       (rsync, tar, cp) do not belong here, as the same binary is what an exfiltration uses. -->
+  <rule id="133802" level="0">
+    <if_sid>80700,92600</if_sid>
+    <field name="audit.key">^jt_file_read$|^jt_file_write$</field>
+    <list field="audit.exe" lookup="match_key">etc/lists/jt-file-access-quiet</list>
+    <description>jt-file-access: audited file access by a program in the quiet list: $(audit.exe)</description>
+  </rule>
+
+  <rule id="133800" level="3">
+    <if_sid>80700,92600</if_sid>
+    <field name="audit.key">^jt_file_read$</field>
+    <field name="audit.success">^yes$</field>
+    <description>[INFO] Confidential file read: $(audit.file.name) (cwd $(audit.cwd)) by $(audit.exe), uid $(audit.uid), login uid $(audit.auid)</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+    <group>jt_file_read,</group>
+  </rule>
+
+  <rule id="133801" level="5">
+    <if_sid>80700,92600</if_sid>
+    <field name="audit.key">^jt_file_read$|^jt_file_write$</field>
+    <field name="audit.success">^no$</field>
+    <description>[NOTICE] Access to a confidential file refused: $(audit.file.name) (cwd $(audit.cwd)) by $(audit.exe), uid $(audit.uid), login uid $(audit.auid)</description>
+    <mitre>
+      <id>T1083</id>
+    </mitre>
+    <group>jt_file_denied,</group>
+  </rule>
+
+  <rule id="133815" level="10" frequency="10" timeframe="120" ignore="300">
+    <if_matched_sid>133801</if_matched_sid>
+    <same_field>audit.auid</same_field>
+    <same_location />
+    <description>[WARN] Ten or more refused accesses to confidential files in 2 minutes by login uid $(audit.auid) ($(audit.exe)): someone is trying files they may not open</description>
+    <mitre>
+      <id>T1083</id>
+    </mitre>
+    <group>jt_file_denied,</group>
+  </rule>
+
+  <!-- a read-only open has one PATH record; for a folder the decoder files it as audit.directory.* -->
+  <rule id="133809" level="2">
+    <if_sid>133800</if_sid>
+    <field name="audit.directory.mode">^040</field>
+    <description>jt-file-access: confidential folder listed: $(audit.directory.name) by $(audit.exe), uid $(audit.uid)</description>
+  </rule>
+
+  <rule id="133803" level="12">
+    <if_sid>133800</if_sid>
+    <field name="audit.exe" type="pcre2">/(?:curl|wget|nc|ncat|netcat|socat|rclone|smbclient|ftp|lftp|tftp|aws|gsutil|azcopy|s3cmd|mc)$</field>
+    <description>[HIGH] Confidential file read by a network transfer tool: $(audit.file.name) (cwd $(audit.cwd)) by $(audit.exe), uid $(audit.uid), login uid $(audit.auid)</description>
+    <mitre>
+      <id>T1048</id>
+    </mitre>
+    <group>jt_file_read,jt_file_exfil,</group>
+  </rule>
+
+  <!-- scp and rsync run on the server side of a remote copy too (scp -f, rsync - -server), and
+       sftp-server is what serves an SFTP download (WinSCP, FileZilla) -->
+  <rule id="133814" level="10">
+    <if_sid>133800</if_sid>
+    <field name="audit.exe" type="pcre2">/(?:scp|sftp|sftp-server|rsync)$</field>
+    <description>[WARN] Confidential file copied with an SSH or rsync transfer: $(audit.file.name) (cwd $(audit.cwd)) by $(audit.exe), uid $(audit.uid), login uid $(audit.auid)</description>
+    <mitre>
+      <id>T1048</id>
+    </mitre>
+    <group>jt_file_read,jt_file_exfil,</group>
+  </rule>
+
+  <rule id="133804" level="8">
+    <if_sid>133800</if_sid>
+    <field name="audit.exe" type="pcre2">/(?:tar|zip|7z|7za|7zz|gzip|pigz|bzip2|xz|zstd|rar)$</field>
+    <description>[NOTICE] Confidential file packed into an archive: $(audit.file.name) (cwd $(audit.cwd)) by $(audit.exe), uid $(audit.uid), login uid $(audit.auid)</description>
+    <mitre>
+      <id>T1560.001</id>
+    </mitre>
+    <group>jt_file_read,</group>
+  </rule>
+
+  <rule id="133805" level="7">
+    <if_sid>133800</if_sid>
+    <field name="audit.file.mode">^0100</field>
+    <time>8 pm - 7 am</time>
+    <description>[NOTICE] Confidential file read out of hours: $(audit.file.name) (cwd $(audit.cwd)) by $(audit.exe), uid $(audit.uid), login uid $(audit.auid)</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+    <group>jt_file_read,jt_file_offhours,</group>
+  </rule>
+
+  <rule id="133806" level="7">
+    <if_sid>133800</if_sid>
+    <field name="audit.file.mode">^0100</field>
+    <weekday>weekends</weekday>
+    <description>[NOTICE] Confidential file read at the weekend: $(audit.file.name) (cwd $(audit.cwd)) by $(audit.exe), uid $(audit.uid), login uid $(audit.auid)</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+    <group>jt_file_read,jt_file_offhours,</group>
+  </rule>
+
+  <rule id="133807" level="10" frequency="40" timeframe="120" ignore="600">
+    <if_matched_sid>133800</if_matched_sid>
+    <same_field>audit.auid</same_field>
+    <same_location />
+    <description>[WARN] Forty or more confidential files read in 2 minutes by login uid $(audit.auid) ($(audit.exe)): bulk copy or collection</description>
+    <mitre>
+      <id>T1119</id>
+    </mitre>
+    <group>jt_file_read,jt_file_bulk,</group>
+  </rule>
+
+  <rule id="133808" level="12" frequency="20" timeframe="120" ignore="600">
+    <if_matched_sid>133805</if_matched_sid>
+    <same_field>audit.auid</same_field>
+    <same_location />
+    <description>[HIGH] Twenty or more confidential files read out of hours in 2 minutes by login uid $(audit.auid) ($(audit.exe)): bulk copy at night</description>
+    <mitre>
+      <id>T1119</id>
+    </mitre>
+    <group>jt_file_read,jt_file_bulk,</group>
+  </rule>
+
+  <rule id="133816" level="12" frequency="20" timeframe="120" ignore="600">
+    <if_matched_sid>133806</if_matched_sid>
+    <same_field>audit.auid</same_field>
+    <same_location />
+    <description>[HIGH] Twenty or more confidential files read at the weekend in 2 minutes by login uid $(audit.auid) ($(audit.exe)): bulk copy at the weekend</description>
+    <mitre>
+      <id>T1119</id>
+    </mitre>
+    <group>jt_file_read,jt_file_bulk,</group>
+  </rule>
+
+  <rule id="133810" level="3">
+    <if_sid>80700,92600</if_sid>
+    <field name="audit.key">^jt_file_write$</field>
+    <field name="audit.success">^yes$</field>
+    <description>[INFO] Confidential file written or created: $(audit.file.name) (cwd $(audit.cwd)) by $(audit.exe), uid $(audit.uid), login uid $(audit.auid)</description>
+    <group>jt_file_write,</group>
+  </rule>
+
+  <rule id="133812" level="8">
+    <if_sid>133810</if_sid>
+    <regex type="pcre2">SYSCALL=(?:chmod|fchmod|fchmodat2?|chown|fchown|lchown|fchownat|l?setxattr|fsetxattr|l?removexattr|fremovexattr) |arch=c000003e syscall=(?:90|91|92|93|94|188|189|190|197|198|199|260|268|452) </regex>
+    <description>[NOTICE] Permissions or owner of a confidential file changed: $(audit.file.name) (cwd $(audit.cwd)) by $(audit.exe), uid $(audit.uid), login uid $(audit.auid)</description>
+    <mitre>
+      <id>T1222.002</id>
+    </mitre>
+    <group>jt_file_write,jt_file_perm,</group>
+  </rule>
+
+  <!-- the PATH record of an unlink or a rename away carries nametype=DELETE on every architecture -->
+  <rule id="133811" level="7">
+    <if_sid>133810</if_sid>
+    <match>nametype=DELETE</match>
+    <description>[NOTICE] Confidential file deleted or moved away: $(audit.file.name) by $(audit.exe), uid $(audit.uid), login uid $(audit.auid)</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+    <group>jt_file_write,jt_file_delete,</group>
+  </rule>
+
+  <rule id="133813" level="12" frequency="20" timeframe="120" ignore="600">
+    <if_matched_sid>133811</if_matched_sid>
+    <same_field>audit.auid</same_field>
+    <same_location />
+    <description>[HIGH] Twenty or more confidential files deleted in 2 minutes by login uid $(audit.auid) ($(audit.exe)): mass deletion</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+    <group>jt_file_write,jt_file_delete,jt_file_bulk,</group>
+  </rule>
+
+  <!-- auditctl -W / -D, or a rules file reload without the watches -->
+  <rule id="133840" level="10">
+    <if_sid>80705</if_sid>
+    <field name="audit.key">^jt_file_read$|^jt_file_write$</field>
+    <match>op=remove_rule|op=del_rule</match>
+    <description>[WARN] Audit watch on confidential files removed (key $(audit.key)): file access is no longer recorded</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>jt_file_audit_off,</group>
+  </rule>
+
+  <!-- ================================================================ Windows (4663 / 4656 / 4907) -->
+
+  <!-- Windows itself (servicing, Defender, indexing) opens audited files as SYSTEM, LOCAL SERVICE,
+       NETWORK SERVICE or the computer account: tens of thousands of events a day on a host whose
+       system folders carry a SACL. Human access is what this pack tracks. -->
+  <rule id="133834" level="0">
+    <if_sid>60103</if_sid>
+    <field name="win.system.eventID">^4663$</field>
+    <field name="win.eventdata.subjectUserSid">^S-1-5-18$|^S-1-5-19$|^S-1-5-20$</field>
+    <description>jt-file-access: audited file access by a Windows system account</description>
+  </rule>
+
+  <rule id="133835" level="0">
+    <if_sid>60103</if_sid>
+    <field name="win.system.eventID">^4663$</field>
+    <field name="win.eventdata.subjectUserName">\$$</field>
+    <description>jt-file-access: audited file access by a computer account</description>
+  </rule>
+
+  <rule id="133836" level="0">
+    <if_sid>60103</if_sid>
+    <field name="win.system.eventID">^4663$</field>
+    <list field="win.eventdata.subjectUserName" lookup="match_key">etc/lists/jt-file-access-quiet-accounts</list>
+    <description>jt-file-access: audited file access by an account in the quiet list: $(win.eventdata.subjectUserName)</description>
+  </rule>
+
+  <!-- 4663 access masks (hex): 0x1 ReadData, 0x2 WriteData, 0x4 AppendData, 0x10000 DELETE,
+       0x40000 WRITE_DAC, 0x80000 WRITE_OWNER; one event can carry several bits -->
+  <rule id="133820" level="3">
+    <if_sid>60103</if_sid>
+    <field name="win.system.eventID">^4663$</field>
+    <field name="win.eventdata.objectType">^File$</field>
+    <field name="win.eventdata.accessMask" type="pcre2">(?i)^0x[0-9a-f]*[13579bdf]$</field>
+    <description>[INFO] Confidential file read: $(win.eventdata.objectName) by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) with $(win.eventdata.processName)</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+    <group>jt_file_read,</group>
+  </rule>
+
+  <rule id="133821" level="3">
+    <if_sid>60103</if_sid>
+    <field name="win.system.eventID">^4663$</field>
+    <field name="win.eventdata.objectType">^File$</field>
+    <field name="win.eventdata.accessMask" type="pcre2">(?i)^0x[0-9a-f]*[246ace]$</field>
+    <description>[INFO] Confidential file written: $(win.eventdata.objectName) by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) with $(win.eventdata.processName)</description>
+    <group>jt_file_write,</group>
+  </rule>
+
+  <rule id="133822" level="7">
+    <if_sid>60103</if_sid>
+    <field name="win.system.eventID">^4663$</field>
+    <field name="win.eventdata.objectType">^File$</field>
+    <field name="win.eventdata.accessMask" type="pcre2">(?i)^0x[0-9a-f]*[13579bdf][0-9a-f]{4}$</field>
+    <description>[NOTICE] Confidential file deleted: $(win.eventdata.objectName) by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) with $(win.eventdata.processName)</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+    <group>jt_file_write,jt_file_delete,</group>
+  </rule>
+
+  <rule id="133823" level="8">
+    <if_sid>60103</if_sid>
+    <field name="win.system.eventID">^4663$</field>
+    <field name="win.eventdata.objectType">^File$</field>
+    <field name="win.eventdata.accessMask" type="pcre2">(?i)^0x[0-9a-f]*[4-9a-f][0-9a-f]{4}$</field>
+    <description>[NOTICE] Permissions or owner of a confidential file changed: $(win.eventdata.objectName) by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) with $(win.eventdata.processName)</description>
+    <mitre>
+      <id>T1222.001</id>
+    </mitre>
+    <group>jt_file_write,jt_file_perm,</group>
+  </rule>
+
+  <rule id="133824" level="12">
+    <if_sid>133820</if_sid>
+    <field name="win.eventdata.processName" type="pcre2">(?i)\\(?:curl|wget|rclone|ftp|tftp|ncat|nc|nc64|socat|aws|gsutil|azcopy|certutil|bitsadmin)\.exe$</field>
+    <description>[HIGH] Confidential file read by a network transfer tool: $(win.eventdata.objectName) by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) with $(win.eventdata.processName)</description>
+    <mitre>
+      <id>T1048</id>
+    </mitre>
+    <group>jt_file_read,jt_file_exfil,</group>
+  </rule>
+
+  <rule id="133825" level="10">
+    <if_sid>133820</if_sid>
+    <field name="win.eventdata.processName" type="pcre2">(?i)\\(?:scp|sftp|pscp|psftp|winscp|filezilla|robocopy|rsync)\.exe$</field>
+    <description>[WARN] Confidential file copied with a file transfer tool: $(win.eventdata.objectName) by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) with $(win.eventdata.processName)</description>
+    <mitre>
+      <id>T1048</id>
+    </mitre>
+    <group>jt_file_read,jt_file_exfil,</group>
+  </rule>
+
+  <rule id="133826" level="8">
+    <if_sid>133820</if_sid>
+    <field name="win.eventdata.processName" type="pcre2">(?i)\\(?:7z|7za|7zg|7zfm|winrar|rar|bandizip|peazip|winzip(?:32|64)?|tar)\.exe$</field>
+    <description>[NOTICE] Confidential file packed into an archive: $(win.eventdata.objectName) by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) with $(win.eventdata.processName)</description>
+    <mitre>
+      <id>T1560.001</id>
+    </mitre>
+    <group>jt_file_read,</group>
+  </rule>
+
+  <rule id="133827" level="7">
+    <if_sid>133820</if_sid>
+    <time>8 pm - 7 am</time>
+    <description>[NOTICE] Confidential file read out of hours: $(win.eventdata.objectName) by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) with $(win.eventdata.processName)</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+    <group>jt_file_read,jt_file_offhours,</group>
+  </rule>
+
+  <rule id="133828" level="7">
+    <if_sid>133820</if_sid>
+    <weekday>weekends</weekday>
+    <description>[NOTICE] Confidential file read at the weekend: $(win.eventdata.objectName) by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) with $(win.eventdata.processName)</description>
+    <mitre>
+      <id>T1005</id>
+    </mitre>
+    <group>jt_file_read,jt_file_offhours,</group>
+  </rule>
+
+  <rule id="133829" level="10" frequency="40" timeframe="120" ignore="600">
+    <if_matched_sid>133820</if_matched_sid>
+    <same_field>win.eventdata.subjectUserName</same_field>
+    <same_location />
+    <description>[WARN] Forty or more confidential files read in 2 minutes by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) ($(win.eventdata.processName)): bulk copy or collection</description>
+    <mitre>
+      <id>T1119</id>
+    </mitre>
+    <group>jt_file_read,jt_file_bulk,</group>
+  </rule>
+
+  <rule id="133830" level="12" frequency="20" timeframe="120" ignore="600">
+    <if_matched_sid>133827</if_matched_sid>
+    <same_field>win.eventdata.subjectUserName</same_field>
+    <same_location />
+    <description>[HIGH] Twenty or more confidential files read out of hours in 2 minutes by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) ($(win.eventdata.processName)): bulk copy at night</description>
+    <mitre>
+      <id>T1119</id>
+    </mitre>
+    <group>jt_file_read,jt_file_bulk,</group>
+  </rule>
+
+  <rule id="133838" level="12" frequency="20" timeframe="120" ignore="600">
+    <if_matched_sid>133828</if_matched_sid>
+    <same_field>win.eventdata.subjectUserName</same_field>
+    <same_location />
+    <description>[HIGH] Twenty or more confidential files read at the weekend in 2 minutes by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) ($(win.eventdata.processName)): bulk copy at the weekend</description>
+    <mitre>
+      <id>T1119</id>
+    </mitre>
+    <group>jt_file_read,jt_file_bulk,</group>
+  </rule>
+
+  <rule id="133831" level="12" frequency="20" timeframe="120" ignore="600">
+    <if_matched_sid>133822</if_matched_sid>
+    <same_field>win.eventdata.subjectUserName</same_field>
+    <same_location />
+    <description>[HIGH] Twenty or more confidential files deleted in 2 minutes by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) ($(win.eventdata.processName)): mass deletion</description>
+    <mitre>
+      <id>T1485</id>
+    </mitre>
+    <group>jt_file_write,jt_file_delete,jt_file_bulk,</group>
+  </rule>
+
+  <!-- a refused open is 4656 with Audit Failure (built-in 60104, level 5) -->
+  <rule id="133832" level="6">
+    <if_sid>60104</if_sid>
+    <field name="win.system.eventID">^4656$</field>
+    <field name="win.eventdata.objectType">^File$</field>
+    <description>[NOTICE] Access to a confidential file refused: $(win.eventdata.objectName) for $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) with $(win.eventdata.processName)</description>
+    <mitre>
+      <id>T1083</id>
+    </mitre>
+    <group>jt_file_denied,</group>
+  </rule>
+
+  <rule id="133837" level="5">
+    <if_sid>133832</if_sid>
+    <field name="win.eventdata.subjectUserSid" type="pcre2">^S-1-5-(?:18|19|20)$</field>
+    <description>Windows audit failure event: $(win.eventdata.objectName) refused to a system account</description>
+  </rule>
+
+  <rule id="133833" level="10" frequency="10" timeframe="120" ignore="300">
+    <if_matched_sid>133832</if_matched_sid>
+    <same_field>win.eventdata.subjectUserName</same_field>
+    <same_location />
+    <description>[WARN] Ten or more refused accesses to confidential files in 2 minutes by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName): someone is trying files they may not open</description>
+    <mitre>
+      <id>T1083</id>
+    </mitre>
+    <group>jt_file_denied,</group>
+  </rule>
+
+  <!-- 4907: auditing settings (SACL) on an object changed; built-in 60112 says level 8 -->
+  <rule id="133841" level="10">
+    <if_sid>60112</if_sid>
+    <field name="win.system.eventID">^4907$</field>
+    <field name="win.eventdata.objectType">^File$</field>
+    <description>[WARN] Audit settings (SACL) of a file or folder changed: $(win.eventdata.objectName) by $(win.eventdata.subjectDomainName)\$(win.eventdata.subjectUserName) with $(win.eventdata.processName): access to it may no longer be recorded</description>
+    <mitre>
+      <id>T1562.002</id>
+    </mitre>
+    <group>jt_file_audit_off,</group>
+  </rule>
+
+  <!-- Windows Update rewrites SACLs of system files as SYSTEM / TrustedInstaller -->
+  <rule id="133842" level="8">
+    <if_sid>133841</if_sid>
+    <field name="win.eventdata.subjectUserSid" type="pcre2">^S-1-5-(?:18|19|20)$|^S-1-5-80-</field>
+    <description>Windows Audit Policy changed: SACL of $(win.eventdata.objectName) changed by a system account</description>
+  </rule>
+
+</group>

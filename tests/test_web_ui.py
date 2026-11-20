@@ -3886,6 +3886,8 @@ class TestShippedPacks(unittest.TestCase):
             listed = sorted(l.strip() for l in fh if l.strip())
         actual = []
         for dirpath, _, names in os.walk(self.packs_dir):
+            if '__pycache__' in dirpath.split(os.sep):
+                continue        # left by tests that import pack scripts; never published
             for n in names:
                 if n == 'INDEX':
                     continue

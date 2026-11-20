@@ -46,10 +46,28 @@ The sandbox logs alerts from level 1, so a quiet level-1/2 rule can be named;
 "none" means no alert at all (the event ended at level 0 or matched nothing).
 "before" lines of a fim case go into the same live analysisd first (for a
 correlation such as "updater started, then the binary changed").
+
+Windows eventchannel events cannot be replayed by wazuh-logtest either (it
+decodes them as plain JSON). A case with "win" is sent the way an agent sends
+it: queue type f, the event as XML, decoded by analysisd's own
+windows_eventchannel decoder (one backslash in the XML becomes two in
+win.eventdata, as on a real agent):
+    {"win": {"event_id": "4663", "channel": "Security",
+             "provider": "Microsoft-Windows-Security-Auditing",
+             "failure": false, "data": {"SubjectUserName": "alice", ...}},
+     "repeat": 1, "isolate": false, "expect_rule": "133820", "expect_level": 3}
+"before" entries are merged over "win" and sent first. analysisd is live, so
+frequency counters and ignore windows outlast a case: "isolate": true appends
+a random suffix to SubjectUserName for that run.
+
+expect_by_clock ({"day": [rule, level], "offhours": [...], "weekend": [...]})
+is for rules with <time> / <weekday>: the expectation is chosen from the
+manager container's clock (off hours 20:00-07:00 before weekends).
 """
 
 import json
 import os
+import random
 import re
 import subprocess
 import sys
@@ -331,6 +349,95 @@ def fim_case(name, spec, expect_alert):
         return []
 
 
+# Runs inside the container: Windows eventchannel events into analysisd's queue, then the
+# alert for the last one (or nothing). wazuh-logtest cannot replay these (it decodes them as
+# plain JSON); the agent sends the event's XML with queue type 'f', and analysisd's own
+# windows_eventchannel decoder builds win.system / win.eventdata from it, as in production
+# (one backslash in the XML becomes two in win.eventdata, the same as on a real agent).
+WIN_EVENT = r'''
+import json, socket, sys, time, random
+from xml.sax.saxutils import escape
+specs, wait = json.loads(sys.argv[1]), float(sys.argv[2])
+alerts = "/var/ossec/logs/alerts/alerts.json"
+with open(alerts) as fh:
+    start = fh.seek(0, 2)
+SUCCESS, FAILURE = "0x8020000000000000", "0x8010000000000000"
+def xml(spec, rid):
+    data = "".join("<Data Name='%s'>%s</Data>" % (k, escape(str(v))) for k, v in (spec.get("data") or {}).items())
+    kw = spec.get("keywords") or (FAILURE if spec.get("failure") else SUCCESS)
+    return ("<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'><System>"
+            "<Provider Name='%s' Guid='{54849625-5478-4994-a5ba-3e3b0328c30d}'/><EventID>%s</EventID><Version>1</Version>"
+            "<Level>0</Level><Task>12800</Task><Opcode>0</Opcode><Keywords>%s</Keywords>"
+            "<TimeCreated SystemTime='2026-11-21T00:00:00.0000000Z'/><EventRecordID>%d</EventRecordID><Correlation/>"
+            "<Execution ProcessID='4' ThreadID='8'/><Channel>%s</Channel><Computer>%s</Computer><Security/></System>"
+            "<EventData>%s</EventData></Event>") % (
+        escape(spec.get("provider", "Microsoft-Windows-Security-Auditing")), spec.get("event_id", "4663"), kw, rid,
+        escape(spec.get("channel", "Security")), escape(spec.get("computer", "win-sandbox")), data)
+s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+s.connect("/var/ossec/queue/sockets/queue")
+base = random.randint(10 ** 8, 9 * 10 ** 8)
+for i, spec in enumerate(specs):
+    msg = {"Message": spec.get("message", "jt-sandbox event"), "Event": xml(spec, base + i)}
+    s.send(("f:EventChannel:" + json.dumps(msg)).encode())
+    time.sleep(0.05)
+last = str(base + len(specs) - 1)
+end = time.time() + wait
+while time.time() < end:
+    time.sleep(0.5)
+    with open(alerts) as fh:
+        fh.seek(start)
+        for line in fh:
+            try:
+                a = json.loads(line)
+            except ValueError:
+                continue
+            if (((a.get("data") or {}).get("win") or {}).get("system") or {}).get("eventRecordID") == last:
+                r = a.get("rule", {})
+                print(json.dumps([str(r.get("id")), int(r.get("level", 0)), r.get("description", "")]))
+                sys.exit(0)
+print(json.dumps(["none", 0, ""]))
+'''
+
+
+def win_case(name, specs, expect_alert, isolate=False):
+    # analysisd is live: frequency counters and ignore windows outlast a case (and a run).
+    # "isolate": true gives the case's account a fresh name each run, so it counts alone.
+    if isolate:
+        tag = '-%06x' % random.randrange(16 ** 6)
+        specs = [dict(s, data=dict(s.get('data') or {}, SubjectUserName=(s.get('data') or {}).get('SubjectUserName', 'user') + tag))
+                 for s in specs]
+    wait = '15' if expect_alert else '4'
+    r = run(['docker', 'exec', name, OSSEC + '/framework/python/bin/python3', '-c', WIN_EVENT,
+             json.dumps(specs), wait], check=False)
+    try:
+        return [tuple(json.loads(r.stdout.strip().splitlines()[-1]))]
+    except (ValueError, IndexError):
+        sys.stderr.write(r.stderr[-500:])
+        return []
+
+
+# A case whose outcome depends on the manager's clock (<time>, <weekday> rules) gives
+# "expect_by_clock": {"day": [rule, level], "offhours": [...], "weekend": [...]}.
+# Off hours are 20:00-07:00 and take precedence over the weekend, as in the rules.
+def clock_expect(case, hour, isoweekday):
+    c = case.get('expect_by_clock')
+    if not c:
+        return case
+    if (hour >= 20 or hour < 7) and 'offhours' in c:
+        pick = c['offhours']
+    elif isoweekday >= 6 and 'weekend' in c:
+        pick = c['weekend']
+    else:
+        pick = c['day']
+    return dict(case, expect_rule=str(pick[0]), expect_level=pick[1])
+
+
+def container_clock(name):
+    r = run(['docker', 'exec', name, 'date', '+%H %u'], check=False)
+    h, d = r.stdout.split()
+    return int(h), int(d)
+
+
 def test(pack):
     name = name_of(pack)
     with open(os.path.join(ROOT, 'tests', 'pack_cases', pack + '.json'), encoding='utf-8') as fh:
@@ -343,6 +450,10 @@ def test(pack):
         if 'fim' in case:
             spec = dict(case['fim'], before=before) if before else case['fim']
             results = fim_case(name, spec, str(case['expect_rule']) != 'none')
+        elif 'win' in case:
+            # "before": earlier Windows events (dicts like "win"); "repeat": send "win" N times
+            specs = [dict(case['win'], **b) for b in before] + [case['win']] * int(case.get('repeat', 1))
+            results = win_case(name, specs, str(case['expect_rule']) != 'none', case.get('isolate'))
         elif any(isinstance(b, dict) for b in before):
             default = case.get('location') or 'jt-sandbox'
             events = [(b.get('location') or default, b['log']) if isinstance(b, dict) else (default, b)
@@ -353,6 +464,8 @@ def test(pack):
             lines = list(before) + [case['log']] * int(case.get('repeat', 1))
             results = logtest(name, lines, case.get('location'))
         got = results[-1] if results else ('none', 0, '')
+        if case.get('expect_by_clock'):
+            case = clock_expect(case, *container_clock(name))
         got_rule, got_level, desc = got[:3]
         decoded = got[3] if len(got) > 3 else None
         want_rule, want_level = str(case['expect_rule']), case.get('expect_level')

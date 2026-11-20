@@ -449,7 +449,8 @@ def check_index():
     actual = sorted(
         os.path.relpath(p, ROOT)
         for p in glob.glob(os.path.join(ROOT, 'packs', '**', '*'), recursive=True)
-        if os.path.isfile(p) and os.path.basename(p) != 'INDEX')
+        if os.path.isfile(p) and os.path.basename(p) != 'INDEX'
+        and '__pycache__' not in p.split(os.sep))   # left by the unit tests, never published
     if listed != actual:
         missing = set(actual) - set(listed)
         extra = set(listed) - set(actual)

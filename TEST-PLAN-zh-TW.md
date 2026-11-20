@@ -229,8 +229,14 @@ Sysmon 事件 29 的規則還需要真實事件，因為 `wazuh-logtest` 是把�
 而這些事件根本不經過解碼器。
 
 4.14 的 `wazuh-logtest` 完全無法重放 Windows eventchannel 事件：不論給什麼 `log_format` 與 location，
-它都把 JSON 解成一般的 `json`，任何 Windows 規則都不會被評估。因此 Windows 規則鏈在自動化測試中，
-以和 analysisd 解碼結果完全相同的值（每個分隔符兩個反斜線）驗證，再到主機上以真實事件確認。
+它都把 JSON 解成一般的 `json`，任何 Windows 規則都不會被評估。1.39.0 起沙箱改用 agent 送出的方式重放：
+帶 `"win"` 的案例以佇列類型 `f` 加上事件 XML 送進容器的 analysisd 佇列，由 analysisd 自己的
+`windows_eventchannel` 解碼器產生 `win.system`／`win.eventdata`（已用真實 Windows 11 主機匯出的事件 XML 驗證）。
+較早的 Windows 規則鏈另有自動化測試，以和 analysisd 解碼結果完全相同的值（每個分隔符兩個反斜線）驗證，
+再到主機上以真實事件確認。含 `<time>`／`<weekday>` 的規則用 `expect_by_clock`，依容器時鐘選擇預期結果。
+`tools/win_replay.py` 用同樣方式重放 manager 自己的 Windows 事件（alerts.json 或 archives），可載入該 manager
+規則集的複本再加上待測套件，列出每一筆判定不同的事件：重放一週真實 Sysmon 事件（2,086 筆），除了頻率規則與
+之後改過的規則，其餘全部與正式機相同。
 
 套件進到 Manager 之前，先用 `tools/pack_sandbox.py` 在拋棄式的 Wazuh manager 容器裡跑過（`up`、`install`、
 `test`、`down`；需要 docker 與 `wazuh/wazuh-manager` 映像）。`install` 遇到 `wazuh-analysisd -t` 的任何錯誤或

@@ -259,9 +259,20 @@ log line through the decoders and those events never pass through one.
 
 `wazuh-logtest` on 4.14 cannot replay a Windows eventchannel event at all: it
 decodes the JSON as plain `json`, so no Windows rule is ever reached, whatever
-`log_format` and location are given. The Windows chains are therefore checked
-in the suite, against values shaped exactly as analysisd decodes them (two
-backslashes per separator), and on a host with a real event.
+`log_format` and location are given. Since 1.39.0 the sandbox replays them the
+way an agent sends them instead: a case with `"win"` goes to the container's
+analysisd queue as queue type `f` with the event's XML, and analysisd's own
+`windows_eventchannel` decoder builds `win.system` / `win.eventdata` from it
+(verified with event XML exported from a real Windows 11 host). Older Windows
+chains are also checked in the suite, against values shaped exactly as
+analysisd decodes them (two backslashes per separator), and on a host with a
+real event. Rules with `<time>` / `<weekday>` give `expect_by_clock`; the
+expectation is chosen from the container's clock.
+`tools/win_replay.py` replays a manager's own Windows events (its alerts.json or
+archives) the same way, optionally on a copy of that manager's ruleset plus
+candidate packs, and lists every event whose verdict differs: on a week of real
+Sysmon events (2,086) it reproduced production for all but frequency rules and
+a rule changed since.
 
 Before a pack goes near a manager, `tools/pack_sandbox.py` runs it in a
 throwaway Wazuh manager container (`up`, `install`, `test`, `down`; it needs

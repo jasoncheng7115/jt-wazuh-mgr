@@ -1,0 +1,160 @@
+{
+  "id": "jt-file-access",
+  "name": "Confidential File Access Trail",
+  "name_zh": "機密檔案存取軌跡",
+  "version": "1.0",
+  "summary": "Who read, changed or deleted the files in your confidential folders, with which program and when: Linux auditd watches and Windows object access auditing (4663). Escalates out-of-hours and weekend access, reading with network transfer tools or archivers, bulk reads and deletes by one account, permission changes, refused opens, and removal of the audit settings. Quiet until a folder is given audit settings.",
+  "summary_zh": "誰在什麼時候、用什麼程式讀取、修改或刪除了機密資料夾裡的檔案：Linux 用 auditd 監看、Windows 用物件存取稽核（4663）。下班時間與週末存取、用網路傳輸工具或壓縮程式讀取、同一帳號短時間大量讀取或刪除、權限變更、存取被拒，以及稽核設定被移除時提高等級。資料夾設定稽核之前不會有任何告警。",
+  "rule_id_range": "133800-133899",
+  "author": "Jason Tools",
+  "license": "AGPL-3.0-or-later",
+  "requires": {
+    "wazuh": ">=4.8"
+  },
+  "tested_with": [
+    "4.14.10"
+  ],
+  "notes": [
+    "File integrity monitoring records changes, never reads. Reads come from the operating system's audit: auditd watches with the keys jt_file_read and jt_file_write on Linux, a SACL plus the File System audit subcategory on Windows. Only folders that carry those settings are tracked; every audited access is treated as an access to confidential data, so give audit settings to the confidential folders only.",
+    "Every successful access is a level 3 alert, so that \"who opened this file\" can be answered in the dashboard. Out of hours (20:00-07:00 manager time) and weekends are level 7; reading with a network transfer tool (curl, wget, rclone, nc, smbclient, aws, azcopy, certutil, bitsadmin...) level 12; SSH, SFTP, rsync or robocopy copies level 10; archivers level 8; 40 reads by one account in two minutes level 10, 20 out of hours level 12; deletion level 7, 20 deletions in two minutes level 12; permission or owner changes level 8; refused opens level 5 (Windows 6), ten in two minutes level 10; removal of the auditd watches or a changed SACL level 10.",
+    "Windows: accesses by SYSTEM, LOCAL SERVICE, NETWORK SERVICE and computer accounts are not alerted. Windows servicing, Defender and indexing open audited files under these accounts tens of thousands of times a day. Backup or antivirus software running as SYSTEM is therefore quiet too; a backup service account can be listed in etc/lists/jt-file-access-quiet-accounts. On Linux, dedicated backup or indexing binaries can be listed by full path in etc/lists/jt-file-access-quiet. Do not list general tools such as rsync or tar: an exfiltration uses the same binaries.",
+    "Linux records name the program and the numeric uid and login uid (auid, the account before sudo). File names can be relative; the working directory is in the alert. File servers act for their clients: Samba records show smbd with the client's uid; NFS server I/O happens in the kernel and is not attributed to a user.",
+    "Windows records name the account, the program and the full path. The Wazuh default agent configuration excludes 4656 and 4663 from the Security channel, so out of the box the manager sees nothing; agent/jt-file-access-sacl.ps1 sets up a folder and reports whether the agent's query lets the events through.",
+    "Access logs about named people are personal data: decide who may search them and for how long they are kept, and tell staff that confidential folders are audited.",
+    "The sandbox tests replay Windows events through the manager's own eventchannel decoder (queue type f with the event XML, as an agent sends it), so the Windows rules are tested like the Linux ones."
+  ],
+  "notes_zh": [
+    "檔案完整性監控只記錄變更，不記錄讀取。讀取要靠作業系統的稽核：Linux 用 auditd 監看（key 為 jt_file_read、jt_file_write），Windows 用 SACL 加上「檔案系統」稽核子類別。只有設了稽核的資料夾會被追蹤，而且每一筆稽核到的存取都視為存取機密資料，所以只替機密資料夾設稽核。",
+    "每一次成功的存取都是 level 3 告警，才能在看板上查「誰開過這個檔案」。下班時間（manager 時間 20:00-07:00）與週末 level 7；用網路傳輸工具讀取（curl、wget、rclone、nc、smbclient、aws、azcopy、certutil、bitsadmin 等）level 12；SSH、SFTP、rsync、robocopy 複製 level 10；壓縮程式 level 8；同一帳號兩分鐘內讀取 40 個 level 10，下班時間 20 個 level 12；刪除 level 7，兩分鐘內刪除 20 個 level 12；權限或擁有者變更 level 8；存取被拒 level 5（Windows 為 6），兩分鐘內 10 次 level 10；auditd 監看被移除或 SACL 被改 level 10。",
+    "Windows：SYSTEM、LOCAL SERVICE、NETWORK SERVICE 與電腦帳號的存取不告警。Windows 更新、Defender、索引服務每天以這些帳號開啟稽核中的檔案數萬次。因此以 SYSTEM 執行的備份或防毒軟體也不會告警；備份服務帳號可以列入 etc/lists/jt-file-access-quiet-accounts。Linux 上專用的備份或索引程式可以用完整路徑列入 etc/lists/jt-file-access-quiet。不要列 rsync、tar 這類通用工具：資料外洩用的也是同樣的程式。",
+    "Linux 的記錄有程式、數字 uid 與登入 uid（auid，sudo 之前的帳號）。檔名可能是相對路徑，工作目錄會寫在告警裡。檔案伺服器是代替用戶端存取：Samba 的記錄是 smbd 加上用戶端帳號的 uid；NFS 伺服器的讀寫在核心裡進行，無法對應到使用者。",
+    "Windows 的記錄有帳號、程式與完整路徑。Wazuh 預設的 agent 設定會把 4656、4663 從 Security 通道排除，所以裝好後 manager 什麼都看不到；agent/jt-file-access-sacl.ps1 會設定資料夾，並檢查 agent 的查詢是否讓這些事件通過。",
+    "記錄具名人員的存取屬於個人資料：要決定誰能查詢、保存多久，並告知員工機密資料夾受到稽核。",
+    "沙箱測試經由 manager 自己的 eventchannel 解碼器重放 Windows 事件（佇列類型 f 加上事件 XML，與 agent 送出的格式相同），所以 Windows 規則與 Linux 規則一樣有實際測試。"
+  ],
+  "files": [
+    {
+      "type": "rule",
+      "name": "zz-133800-jt_file_access_rules.xml",
+      "dest": "etc/rules/zz-133800-jt_file_access_rules.xml",
+      "sha256": "af3fe9b591d35bf3cc47cd761506da6eadcb65335ee8fbee83ddf111875573eb"
+    },
+    {
+      "type": "list",
+      "name": "jt-file-access-quiet",
+      "dest": "etc/lists/jt-file-access-quiet",
+      "declare": true,
+      "keep": true,
+      "sha256": "2abd1c76cc856bbc6ab035f0497ee15f8cc8f23b413707a5f743d63ae8ab2927"
+    },
+    {
+      "type": "list",
+      "name": "jt-file-access-quiet-accounts",
+      "dest": "etc/lists/jt-file-access-quiet-accounts",
+      "declare": true,
+      "keep": true,
+      "sha256": "73c14b56358ca0074e471efa85aeed237b459752afc040a67e00aaa45d35ad93"
+    }
+  ],
+  "agent_group": {
+    "name": "file-access",
+    "config": "agent.conf",
+    "files": [
+      "jt-file-access.rules",
+      "jt-file-access-sacl.ps1"
+    ],
+    "description": "Reads the Linux audit log for the confidential-folder watches, and carries the auditd rule template and the Windows SACL setup script"
+  },
+  "setup": [
+    {
+      "platform": "manager",
+      "required": true,
+      "title": "Install the pack and reload the ruleset",
+      "title_zh": "安裝套件並重新載入規則集",
+      "body": "1. Install the pack from this page.\n2. On the Rules tab, press Reload Ruleset. It reloads every cluster node; the cluster copies rule files to the workers but does not reload them. Windows agents are usually processed on a worker.\n3. In a cluster, declare the two lists on every worker too (the cluster copies list files, not ossec.conf): add <list>etc/lists/jt-file-access-quiet</list> and <list>etc/lists/jt-file-access-quiet-accounts</list> to the worker's <ruleset> and reload.",
+      "body_zh": "1. 在本頁安裝套件。\n2. 到「規則」分頁按「重新載入規則集」，所有叢集節點都會重新載入；叢集會把規則檔複製到 worker，但不會替它們重新載入。Windows agent 通常由 worker 處理。\n3. 叢集環境要在每個 worker 也宣告這兩份清單（叢集只複製清單檔、不複製 ossec.conf）：在 worker 的 <ruleset> 加上 <list>etc/lists/jt-file-access-quiet</list> 與 <list>etc/lists/jt-file-access-quiet-accounts</list>，再重新載入。",
+      "verify": "/var/ossec/bin/wazuh-analysisd -t on each node prints no error or warning.",
+      "verify_zh": "在每個節點執行 /var/ossec/bin/wazuh-analysisd -t，沒有任何錯誤或警告。"
+    },
+    {
+      "platform": "linux",
+      "required": false,
+      "title": "Linux: watch the confidential folders with auditd",
+      "title_zh": "Linux：以 auditd 監看機密資料夾",
+      "body": "1. Install auditd if it is missing (apt install auditd / dnf install audit).\n2. Add the host to the file-access group so the agent reads /var/log/audit/audit.log, and restart its agent. The group also delivers the rule template to /var/ossec/etc/shared/jt-file-access.rules.\n3. Copy the template, put your confidential folders in it (one -p r and one -p wa line per folder), and load it. Watch the confidential folders only: each open of a watched file is one audit record.",
+      "body_zh": "1. 若尚未安裝 auditd 請先安裝（apt install auditd／dnf install audit）。\n2. 把主機加入 file-access 群組讓 agent 讀取 /var/log/audit/audit.log，並重啟 agent。群組也會把規則範本放到 /var/ossec/etc/shared/jt-file-access.rules。\n3. 複製範本、填入你的機密資料夾（每個資料夾一行 -p r、一行 -p wa）並載入。只監看機密資料夾：每開一次受監看的檔案就是一筆稽核記錄。",
+      "file": "agent/jt-file-access.rules",
+      "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g file-access\n/var/ossec/bin/agent_control -R -u <agent_id>\n# on the host:\ncp /var/ossec/etc/shared/jt-file-access.rules /etc/audit/rules.d/\nvi /etc/audit/rules.d/jt-file-access.rules   # your folders\naugenrules --load\nauditctl -l | grep jt_file",
+      "verify": "auditctl -l lists two jt_file lines per folder. Then cat a file in a watched folder: rule 133800 (level 3) names the file, the program (/usr/bin/cat) and your login uid within a minute.",
+      "verify_zh": "auditctl -l 每個資料夾列出兩行 jt_file。接著用 cat 讀取受監看資料夾裡的檔案：一分鐘內應出現規則 133800（level 3），內容有檔名、程式（/usr/bin/cat）與你的登入 uid。"
+    },
+    {
+      "platform": "windows",
+      "required": false,
+      "title": "Windows: audit the confidential folders (as administrator on the file server)",
+      "title_zh": "Windows：替機密資料夾開啟稽核（在檔案伺服器上以系統管理員執行）",
+      "body": "1. Add the host to the file-access group: it delivers jt-file-access-sacl.ps1 to the agent's shared folder.\n2. For each confidential folder run the script below. It enables the File System audit subcategory (success and failure), adds an audit rule for Everyone (read, write, delete, permission changes; inherited) and checks the agent's Security channel query.\n3. If the script warns that 4663, 4656 or 4907 are excluded, remove those event IDs from the <query> of the Security <localfile> in the agent's ossec.conf (the Wazuh default excludes 4656 and 4663) and restart the agent. Where the Security channel is configured in an agent group instead, change it there.\n4. In a domain the same settings can come from Group Policy (Advanced Audit Policy > Object Access > Audit File System, and the folder's Auditing tab).\n-Remove takes the audit rule off a folder again.",
+      "body_zh": "1. 把主機加入 file-access 群組：群組會把 jt-file-access-sacl.ps1 放到 agent 的 shared 資料夾。\n2. 每個機密資料夾執行一次下方的腳本。它會開啟「檔案系統」稽核子類別（成功與失敗）、替資料夾加上 Everyone 的稽核規則（讀取、寫入、刪除、權限變更，往下繼承），並檢查 agent 的 Security 通道查詢。\n3. 若腳本警告 4663、4656 或 4907 被排除，請到 agent 的 ossec.conf，把這些事件 ID 從 Security <localfile> 的 <query> 拿掉（Wazuh 預設排除 4656 與 4663），再重啟 agent。若 Security 通道是在 agent 群組裡設定的，就改群組那份。\n4. 在網域中也可以用群組原則設定（進階稽核原則 > 物件存取 > 稽核檔案系統，以及資料夾的「稽核」頁籤）。\n加上 -Remove 會把資料夾的稽核規則拿掉。",
+      "file": "agent/jt-file-access-sacl.ps1",
+      "code": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\\Program Files (x86)\\ossec-agent\\shared\\jt-file-access-sacl.ps1\" -Path \"D:\\Confidential\"",
+      "verify": "As an ordinary user, open a file in the folder: rule 133820 (level 3) names the file, the account and the program within a minute. Accesses by SYSTEM are not alerted.",
+      "verify_zh": "以一般使用者開啟資料夾裡的檔案：一分鐘內應出現規則 133820（level 3），內容有檔名、帳號與程式。SYSTEM 的存取不會告警。"
+    },
+    {
+      "platform": "manager",
+      "required": false,
+      "title": "Optional: quiet lists for backup and indexing jobs",
+      "title_zh": "選用：替備份與索引排程設定安靜清單",
+      "body": "A backup or indexing job that reads every confidential file each night raises the bulk-read alert. List it:\n- Linux: the job's binary by full path in etc/lists/jt-file-access-quiet (for example /opt/backup/bin/agent:backup). Not rsync, tar or cp: an exfiltration uses the same binaries.\n- Windows: the job's service account in etc/lists/jt-file-access-quiet-accounts (for example svc-backup:backup). Jobs running as SYSTEM are quiet already.\nThe lists are site data: pack updates never replace them. Edit them on the master; the cluster copies them to the workers. Reload the ruleset afterwards.",
+      "body_zh": "每晚把所有機密檔案讀一遍的備份或索引排程會觸發大量讀取告警。把它列入清單：\n- Linux：在 etc/lists/jt-file-access-quiet 以完整路徑列出該程式（例如 /opt/backup/bin/agent:backup）。不要列 rsync、tar、cp：資料外洩用的也是同樣的程式。\n- Windows：在 etc/lists/jt-file-access-quiet-accounts 列出該排程的服務帳號（例如 svc-backup:backup）。以 SYSTEM 執行的排程本來就不會告警。\n這兩份清單是站台資料，更新套件時不會被取代。在 master 上編輯，叢集會複製到 worker。改完要重新載入規則集。",
+      "verify": "After the next run of the job there is no 133807 / 133829 for its account.",
+      "verify_zh": "排程下一次執行後，它的帳號不再出現 133807／133829。"
+    }
+  ],
+  "dashboard": {
+    "fields": [
+      {
+        "field": "data.audit.file.name",
+        "title": "Linux: file",
+        "title_zh": "Linux：檔案"
+      },
+      {
+        "field": "data.audit.exe",
+        "title": "Linux: program",
+        "title_zh": "Linux：程式",
+        "chart": "bar"
+      },
+      {
+        "field": "data.audit.auid",
+        "title": "Linux: login uid",
+        "title_zh": "Linux：登入 uid",
+        "chart": "bar"
+      },
+      {
+        "field": "data.win.eventdata.objectName",
+        "title": "Windows: file",
+        "title_zh": "Windows：檔案"
+      },
+      {
+        "field": "data.win.eventdata.subjectUserName",
+        "title": "Windows: account",
+        "title_zh": "Windows：帳號",
+        "chart": "bar"
+      },
+      {
+        "field": "data.win.eventdata.processName",
+        "title": "Windows: program",
+        "title_zh": "Windows：程式",
+        "chart": "bar"
+      }
+    ],
+    "columns": [
+      "data.audit.file.name",
+      "data.audit.exe",
+      "data.audit.auid",
+      "data.win.eventdata.objectName",
+      "data.win.eventdata.subjectUserName",
+      "data.win.eventdata.processName"
+    ]
+  }
+}

@@ -257,8 +257,15 @@ ignore が syscheck の理解する構文だけを使っている。ルールが
 
 4.14 の `wazuh-logtest` は Windows の eventchannel イベントをまったく再生できません。`log_format` や
 location に何を与えても JSON を通常の `json` としてデコードし、Windows のルールには一切到達しません。
-そのため Windows のルール連鎖は、analysisd のデコード結果と同じ形の値（区切りごとにバックスラッシュ 2 つ）で
-自動テストにより確認し、さらにホスト上の実イベントで確認します。
+1.39.0 からサンドボックスはエージェントと同じ方法で再生します：`"win"` を持つケースは、キュー種別 `f` と
+イベントの XML としてコンテナの analysisd のキューに送られ、analysisd 自身の `windows_eventchannel` デコーダーが
+`win.system`／`win.eventdata` を作ります（実際の Windows 11 ホストから書き出したイベント XML で確認済み）。
+以前からの Windows のルール連鎖は、analysisd のデコード結果と同じ形の値（区切りごとにバックスラッシュ 2 つ）で
+自動テストにより確認し、さらにホスト上の実イベントで確認します。`<time>`／`<weekday>` を使うルールは
+`expect_by_clock` を使い、コンテナの時計で期待値を選びます。
+`tools/win_replay.py` はマネージャー自身の Windows イベント（alerts.json やアーカイブ）を同じ方法で再生し、
+そのマネージャーのルールセットの複製に候補パックを加えることもでき、判定が異なるイベントをすべて示します。
+実際の Sysmon イベント 1 週間分（2,086 件）では、頻度ルールとその後変更されたルールを除き本番と一致しました。
 
 パックをマネージャーに入れる前に、`tools/pack_sandbox.py` で使い捨ての Wazuh マネージャーのコンテナに入れて
 確認します（`up`、`install`、`test`、`down`。docker と `wazuh/wazuh-manager` イメージが必要）。`install` は

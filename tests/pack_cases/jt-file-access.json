@@ -1,0 +1,924 @@
+{
+ "pack": "jt-file-access",
+ "note": "Linux: auditd records shaped like real ones (log4 openat records, CWD and PATH as the agent groups them). Windows: events sent as the agent sends them (queue type f, event XML) and decoded by the manager's windows_eventchannel decoder; field shapes from real 4663 events of a Windows 11 host.",
+ "sandbox_lists": {
+  "jt-file-access-quiet": "/opt/backup/bin/agent:backup\n",
+  "jt-file-access-quiet-accounts": "svc-backup:backup\n"
+ },
+ "cases": [
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720001): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"cat\" exe=\"/usr/bin/cat\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720001): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720001): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720001): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133800",
+   "expect_level": 3,
+   "note": "read with a relative name; the alert carries the cwd",
+   "expect_by_clock": {
+    "day": [
+     "133800",
+     3
+    ],
+    "offhours": [
+     "133805",
+     7
+    ],
+    "weekend": [
+     "133806",
+     7
+    ]
+   },
+   "expect_in_description": [
+    "salary-2026.xlsx",
+    "/srv/confidential/hr",
+    "/usr/bin/cat"
+   ]
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720002): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"python3.12\" exe=\"/usr/bin/python3.12\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720002): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720002): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720002): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133800",
+   "expect_level": 3,
+   "note": "read by python: the built-in level 0 sibling 92600 must not swallow it",
+   "expect_by_clock": {
+    "day": [
+     "133800",
+     3
+    ],
+    "offhours": [
+     "133805",
+     7
+    ],
+    "weekend": [
+     "133806",
+     7
+    ]
+   }
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720003): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"ls\" exe=\"/usr/bin/ls\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720003): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720003): item=0 name=\"/srv/confidential/hr\" inode=1049209 dev=fd:00 mode=040750 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720003): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133809",
+   "expect_level": 2,
+   "note": "listing the folder itself is level 2, not a file read"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720004): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"curl\" exe=\"/usr/bin/curl\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720004): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720004): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720004): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133803",
+   "expect_level": 12,
+   "note": "curl reads a confidential file: upload"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720005): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"rclone\" exe=\"/usr/bin/rclone\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720005): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720005): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720005): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133803",
+   "expect_level": 12,
+   "note": "rclone"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720006): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"sftp-server\" exe=\"/usr/lib/openssh/sftp-server\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720006): cwd=\"/home/alice\" type=PATH msg=audit(1795189222.368:1720006): item=0 name=\"/srv/confidential/hr/salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720006): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133814",
+   "expect_level": 10,
+   "note": "downloaded over SFTP (WinSCP, FileZilla)"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720007): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"rsync\" exe=\"/usr/bin/rsync\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720007): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720007): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720007): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133814",
+   "expect_level": 10,
+   "note": "rsync copy"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720008): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"tar\" exe=\"/usr/bin/tar\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720008): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720008): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720008): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133804",
+   "expect_level": 8,
+   "note": "packed with tar"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720009): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"7zz\" exe=\"/usr/bin/7zz\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720009): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720009): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720009): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133804",
+   "expect_level": 8,
+   "note": "packed with 7-Zip"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720010): arch=c000003e syscall=257 success=no exit=-13 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"cat\" exe=\"/usr/bin/cat\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720010): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720010): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720010): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133801",
+   "expect_level": 5,
+   "note": "permission denied (exit -13)"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720011): arch=c000003e syscall=257 success=no exit=-13 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"vim.basic\" exe=\"/usr/bin/vim.basic\" subj=unconfined key=\"jt_file_write\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720011): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720011): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720011): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133801",
+   "expect_level": 5,
+   "note": "refused write"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720012): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"vim.basic\" exe=\"/usr/bin/vim.basic\" subj=unconfined key=\"jt_file_write\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720012): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720012): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720012): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133810",
+   "expect_level": 3,
+   "note": "written (opened for writing)"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720013): arch=c000003e syscall=263 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=2 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"rm\" exe=\"/usr/bin/rm\" subj=unconfined key=\"jt_file_write\"ARCH=x86_64 SYSCALL=unlinkat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720013): cwd=\"/home/alice\" type=PATH msg=audit(1795189222.368:1720013): item=0 name=\"/srv/confidential/hr/\" inode=1048577 dev=fd:00 mode=040750 ouid=0 ogid=1002 rdev=00:00 nametype=PARENT cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PATH msg=audit(1795189222.368:1720013): item=1 name=\"/srv/confidential/hr/salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=DELETE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720013): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133811",
+   "expect_level": 7,
+   "note": "deleted: PATH nametype=DELETE",
+   "expect_in_description": [
+    "/srv/confidential/hr/salary-2026.xlsx",
+    "/usr/bin/rm"
+   ]
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720014): arch=c000003e syscall=316 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=2 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"mv\" exe=\"/usr/bin/mv\" subj=unconfined key=\"jt_file_write\"ARCH=x86_64 SYSCALL=renameat2 AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720014): cwd=\"/home/alice\" type=PATH msg=audit(1795189222.368:1720014): item=0 name=\"/srv/confidential/hr/\" inode=1048577 dev=fd:00 mode=040750 ouid=0 ogid=1002 rdev=00:00 nametype=PARENT cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PATH msg=audit(1795189222.368:1720014): item=1 name=\"/srv/confidential/hr/salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=DELETE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720014): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133811",
+   "expect_level": 7,
+   "note": "moved away (rename shows DELETE for the old name)"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720015): arch=c000003e syscall=268 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"chmod\" exe=\"/usr/bin/chmod\" subj=unconfined key=\"jt_file_write\"ARCH=x86_64 SYSCALL=fchmodat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720015): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720015): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720015): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133812",
+   "expect_level": 8,
+   "note": "chmod"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720016): arch=c000003e syscall=260 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"chown\" exe=\"/usr/bin/chown\" subj=unconfined key=\"jt_file_write\"ARCH=x86_64 SYSCALL=fchownat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720016): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720016): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720016): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133812",
+   "expect_level": 8,
+   "note": "chown"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720017): arch=c000003e syscall=188 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"setfacl\" exe=\"/usr/bin/setfacl\" subj=unconfined key=\"jt_file_write\"ARCH=x86_64 SYSCALL=setxattr AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720017): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720017): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720017): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133812",
+   "expect_level": 8,
+   "note": "setfacl writes an xattr"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720018): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"agent\" exe=\"/opt/backup/bin/agent\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720018): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720018): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720018): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "backup agent in the quiet list"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720019): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"agent\" exe=\"/opt/backup/bin/agent\" subj=unconfined key=\"jt_file_write\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720019): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720019): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720019): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "quiet list covers writes too"
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720020): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"cat\" exe=\"/usr/bin/cat\" subj=unconfined key=\"other_read_key\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720020): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720020): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720020): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "someone else's audit key: not this pack"
+  },
+  {
+   "log": "type=CONFIG_CHANGE msg=audit(1795189300.001:1720100): auid=1001 ses=12 subj=unconfined op=remove_rule key=\"jt_file_read\" list=4 res=1AUID=\"alice\"",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133840",
+   "expect_level": 10,
+   "note": "auditctl -W of a confidential watch"
+  },
+  {
+   "log": "type=CONFIG_CHANGE msg=audit(1795189300.002:1720101): auid=0 ses=12 subj=unconfined op=add_rule key=\"jt_file_read\" list=4 res=1AUID=\"root\"",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "80705",
+   "expect_level": 3,
+   "note": "adding the watch is the built-in configuration change"
+  },
+  {
+   "log": "type=CONFIG_CHANGE msg=audit(1795189300.003:1720102): auid=0 ses=12 subj=unconfined op=remove_rule key=\"other\" list=4 res=1AUID=\"root\"",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "80705",
+   "expect_level": 3,
+   "note": "another key removed: built-in level"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133820",
+   "expect_level": 3,
+   "note": "Excel opens a confidential file (ReadData)",
+   "expect_by_clock": {
+    "day": [
+     "133820",
+     3
+    ],
+    "offhours": [
+     "133827",
+     7
+    ],
+    "weekend": [
+     "133828",
+     7
+    ]
+   },
+   "expect_in_description": [
+    "D:\\\\Confidential\\\\HR\\\\salary-2026.xlsx",
+    "CORP",
+    "alice",
+    "EXCEL.EXE"
+   ]
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4417 %%4418",
+     "AccessMask": "0x6",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133821",
+   "expect_level": 3,
+   "note": "WriteData + AppendData"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%1537",
+     "AccessMask": "0x10000",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\explorer.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133822",
+   "expect_level": 7,
+   "note": "DELETE"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%1539",
+     "AccessMask": "0x40000",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\System32\\icacls.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133823",
+   "expect_level": 8,
+   "note": "WRITE_DAC"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x80000",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\System32\\takeown.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133823",
+   "expect_level": 8,
+   "note": "WRITE_OWNER"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\System32\\curl.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133824",
+   "expect_level": 12,
+   "note": "curl.exe reads it: upload"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Users\\alice\\Downloads\\rclone.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133824",
+   "expect_level": 12,
+   "note": "rclone.exe"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\System32\\certutil.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133824",
+   "expect_level": 12,
+   "note": "certutil (encode / upload)"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Program Files (x86)\\WinSCP\\WinSCP.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133825",
+   "expect_level": 10,
+   "note": "WinSCP"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\System32\\Robocopy.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133825",
+   "expect_level": 10,
+   "note": "robocopy (to a USB drive or a share)"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Program Files\\7-Zip\\7zG.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133826",
+   "expect_level": 8,
+   "note": "7-Zip"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Program Files\\WinRAR\\WinRAR.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133826",
+   "expect_level": 8,
+   "note": "WinRAR"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-18",
+     "SubjectUserName": "WIN11-PRO-1$",
+     "SubjectDomainName": "WORKGROUP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\WinSxS\\amd64_microsoft-windows-servicingstack\\TiWorker.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "Windows servicing as SYSTEM (real noise: 34,000 a day on a test host)"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-19",
+     "SubjectUserName": "LOCAL SERVICE",
+     "SubjectDomainName": "NT AUTHORITY",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "LOCAL SERVICE"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1201",
+     "SubjectUserName": "FILESRV2$",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "another computer's account over the network"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1300",
+     "SubjectUserName": "svc-backup",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "backup account in the quiet list"
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "Key",
+     "ObjectName": "\\REGISTRY\\MACHINE\\SOFTWARE\\X",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "none",
+   "expect_level": 0,
+   "note": "registry key access is not a file"
+  },
+  {
+   "win": {
+    "event_id": "4656",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE",
+     "ResourceAttributes": "-"
+    },
+    "failure": true
+   },
+   "expect_rule": "133832",
+   "expect_level": 6,
+   "note": "refused open (4656, audit failure)"
+  },
+  {
+   "win": {
+    "event_id": "4656",
+    "data": {
+     "SubjectUserSid": "S-1-5-18",
+     "SubjectUserName": "WIN11-PRO-1$",
+     "SubjectDomainName": "WORKGROUP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE",
+     "ResourceAttributes": "-"
+    },
+    "failure": true
+   },
+   "expect_rule": "133837",
+   "expect_level": 5,
+   "note": "refused to SYSTEM: back to the built-in level 5"
+  },
+  {
+   "win": {
+    "event_id": "4907",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential",
+     "HandleId": "0x1c4",
+     "OldSd": "S:AI(AU;OICISAFA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)",
+     "NewSd": "S:AI",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\explorer.exe"
+    }
+   },
+   "expect_rule": "133841",
+   "expect_level": 10,
+   "note": "SACL removed from the confidential folder"
+  },
+  {
+   "win": {
+    "event_id": "4907",
+    "data": {
+     "SubjectUserSid": "S-1-5-18",
+     "SubjectUserName": "WIN11-PRO-1$",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential",
+     "HandleId": "0x1c4",
+     "OldSd": "S:AI(AU;OICISAFA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)",
+     "NewSd": "S:AI",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\explorer.exe"
+    }
+   },
+   "expect_rule": "133842",
+   "expect_level": 8,
+   "note": "SACL rewritten as SYSTEM (Windows Update): stays at the built-in level 8"
+  },
+  {
+   "win": {
+    "event_id": "4907",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "Key",
+     "ObjectName": "\\REGISTRY\\MACHINE\\SYSTEM\\X",
+     "HandleId": "0x1c4",
+     "OldSd": "S:AI(AU;OICISAFA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)",
+     "NewSd": "S:AI",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\explorer.exe"
+    }
+   },
+   "expect_rule": "60112",
+   "expect_level": 8,
+   "note": "registry SACL: built-in rule untouched"
+  }
+ ],
+ "sequences": [
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720021): arch=c000003e syscall=257 success=no exit=-13 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"cat\" exe=\"/usr/bin/cat\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720021): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720021): item=0 name=\"salary-2026.xlsx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720021): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133815",
+   "expect_level": 10,
+   "note": "ten refused opens in a row",
+   "repeat": 10
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720022): arch=c000003e syscall=263 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=2 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"rm\" exe=\"/usr/bin/rm\" subj=unconfined key=\"jt_file_write\"ARCH=x86_64 SYSCALL=unlinkat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720022): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720022): item=0 name=\"/srv/confidential/hr/\" inode=1048577 dev=fd:00 mode=040750 ouid=0 ogid=1002 rdev=00:00 nametype=PARENT cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PATH msg=audit(1795189222.368:1720022): item=1 name=\"/srv/confidential/hr/x.docx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=DELETE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720022): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133813",
+   "expect_level": 12,
+   "note": "twenty deletions in a row",
+   "repeat": 20
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720023): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"cp\" exe=\"/usr/bin/cp\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720023): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720023): item=0 name=\"q3-plan.pptx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720023): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133800",
+   "expect_level": 3,
+   "note": "twenty reads: bulk only out of hours or at the weekend",
+   "repeat": 20,
+   "expect_by_clock": {
+    "day": [
+     "133800",
+     3
+    ],
+    "offhours": [
+     "133808",
+     12
+    ],
+    "weekend": [
+     "133816",
+     12
+    ]
+   }
+  },
+  {
+   "log": "type=SYSCALL msg=audit(1795189222.368:1720024): arch=c000003e syscall=257 success=yes exit=3 a0=ffffff9c a1=7ffd1c a2=0 a3=0 items=1 ppid=2201 pid=2302 auid=1001 uid=1001 gid=1001 euid=1001 suid=1001 fsuid=1001 egid=1001 sgid=1001 fsgid=1001 tty=pts1 ses=12 comm=\"cp\" exe=\"/usr/bin/cp\" subj=unconfined key=\"jt_file_read\"ARCH=x86_64 SYSCALL=openat AUID=\"alice\" UID=\"alice\" GID=\"alice\" EUID=\"alice\" SUID=\"alice\" FSUID=\"alice\" EGID=\"alice\" SGID=\"alice\" FSGID=\"alice\" type=CWD msg=audit(1795189222.368:1720024): cwd=\"/srv/confidential/hr\" type=PATH msg=audit(1795189222.368:1720024): item=0 name=\"q3-plan.pptx\" inode=1049209 dev=fd:00 mode=0100640 ouid=0 ogid=1002 rdev=00:00 nametype=NORMAL cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID=\"root\" OGID=\"hr\" type=PROCTITLE msg=audit(1795189222.368:1720024): proctitle=636174",
+   "location": "/var/log/audit/audit.log",
+   "expect_rule": "133807",
+   "expect_level": 10,
+   "note": "forty reads in a row by one login uid (out of hours / weekend the 20-read rule fires again: wazuh-logtest does not apply ignore=)",
+   "repeat": 40,
+   "expect_by_clock": {
+    "day": [
+     "133807",
+     10
+    ],
+    "offhours": [
+     "133808",
+     12
+    ],
+    "weekend": [
+     "133816",
+     12
+    ]
+   }
+  },
+  {
+   "win": {
+    "event_id": "4656",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE",
+     "ResourceAttributes": "-"
+    },
+    "failure": true
+   },
+   "expect_rule": "133833",
+   "expect_level": 10,
+   "note": "ten refused opens",
+   "repeat": 10,
+   "isolate": true
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%1537",
+     "AccessMask": "0x10000",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\explorer.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133831",
+   "expect_level": 12,
+   "note": "twenty deletions",
+   "repeat": 20,
+   "isolate": true
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\explorer.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133820",
+   "expect_level": 3,
+   "note": "twenty reads: bulk only out of hours or at the weekend",
+   "repeat": 20,
+   "expect_by_clock": {
+    "day": [
+     "133820",
+     3
+    ],
+    "offhours": [
+     "133830",
+     12
+    ],
+    "weekend": [
+     "133838",
+     12
+    ]
+   },
+   "isolate": true
+  },
+  {
+   "win": {
+    "event_id": "4663",
+    "data": {
+     "SubjectUserSid": "S-1-5-21-1111-2222-3333-1104",
+     "SubjectUserName": "alice",
+     "SubjectDomainName": "CORP",
+     "SubjectLogonId": "0x5a3f1",
+     "ObjectServer": "Security",
+     "ObjectType": "File",
+     "ObjectName": "D:\\Confidential\\HR\\salary-2026.xlsx",
+     "HandleId": "0x1c4",
+     "AccessList": "%%4416",
+     "AccessMask": "0x1",
+     "ProcessId": "0x2a0c",
+     "ProcessName": "C:\\Windows\\explorer.exe",
+     "ResourceAttributes": "-"
+    }
+   },
+   "expect_rule": "133829",
+   "expect_level": 10,
+   "note": "forty reads by one account (copy of a folder)",
+   "repeat": 40,
+   "expect_by_clock": {
+    "day": [
+     "133829",
+     10
+    ],
+    "offhours": [
+     "133827",
+     7
+    ],
+    "weekend": [
+     "133828",
+     7
+    ]
+   },
+   "isolate": true
+  }
+ ]
+}

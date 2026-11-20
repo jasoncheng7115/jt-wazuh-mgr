@@ -4,6 +4,11 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.39.0（2026-11-21）
+
+- 新套件 **jt-file-access 1.0**（規則 133800-133899）：誰在什麼時候、用什麼程式讀取、修改或刪除了機密資料夾裡的檔案。Linux 用 auditd 監看（範本 `agent/jt-file-access.rules`，key 為 `jt_file_read`／`jt_file_write`）；Windows 用物件存取稽核（4663、4656、4907），`agent/jt-file-access-sacl.ps1` 會設定資料夾的 SACL 與「檔案系統」稽核子類別，並檢查 agent 是否讓這些事件通過（Wazuh 預設排除 4656 與 4663）。每次存取都是 level 3 告警；下班時間與週末 level 7；網路傳輸工具 level 12；SSH、SFTP、rsync、robocopy 複製 level 10；壓縮程式 level 8；大量讀取（兩分鐘 40 個，下班時間或週末 20 個）level 10／12；大量刪除 level 12；權限變更 level 8；存取被拒與連續被拒；稽核監看被移除或 SACL 被改 level 10。Windows 系統帳號與電腦帳號不告警（測試主機上光是 Windows 更新一天就開啟稽核中的檔案三萬四千次）；備份排程可列入安靜清單。
+- 沙箱與發版關卡：Windows eventchannel 事件改用 agent 送出的方式重放（佇列類型 `f` 加上事件 XML，由 manager 自己的 `windows_eventchannel` 解碼器解碼），Windows 規則因此有真正的沙箱案例（`"win"`）；已用 Windows 11 主機匯出的事件 XML 驗證。含 `<time>`／`<weekday>` 的規則用 `expect_by_clock`，使用頻率規則的 Windows 案例用 `isolate`。新工具 `tools/win_replay.py` 以 manager 規則集的複本加上待測套件，重放該 manager 自己的 Windows 事件（alerts.json 或 archives），列出每一筆判定改變的事件；一週真實 Sysmon 事件（2,086 筆）除了頻率規則與一條之後改過的規則都與正式機相同，加上 jt-file-access 後沒有任何一筆改變。
+
 ## v1.38.7（2026-11-20）
 
 - jt-ai-agent 1.7（盤點 1.3）：規則 133785（L8）找出一直在工作（兩次盤點之間用了一分鐘以上 CPU）、卻沒有任何稽核記錄的 AI 代理程序，例如比 hook 早啟動的工作階段（代理只在啟動時讀管理者設定）；實際找到過一個跑了 18 天未受稽核的。規則 133784（L5）回報 Antigravity CLI（agy）：2026 年起取代個人使用者的 Gemini CLI，hook 只有使用者與專案層級，無法強制。
