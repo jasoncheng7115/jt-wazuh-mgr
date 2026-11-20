@@ -56,9 +56,13 @@ win.eventdata, as on a real agent):
              "provider": "Microsoft-Windows-Security-Auditing",
              "failure": false, "data": {"SubjectUserName": "alice", ...}},
      "repeat": 1, "isolate": false, "expect_rule": "133820", "expect_level": 3}
-"before" entries are merged over "win" and sent first. analysisd is live, so
-frequency counters and ignore windows outlast a case: "isolate": true appends
-a random suffix to SubjectUserName for that run.
+"before" entries are merged over "win" and sent first; "agent": ["001", "win-a"]
+in a spec makes it that agent's event (for <different_location />). analysisd
+is live, so frequency counters and ignore windows outlast a case: "isolate":
+true appends a random suffix to SubjectUserName and moves a 10.x IpAddress to a
+random 10.x.y network for that run. "expect_any": true accepts the expected rule
+from any event of the sequence (analysisd's threads do not keep the order, so
+which event of a cross-host frequency sequence fires can shift).
 
 expect_by_clock ({"day": [rule, level], "offhours": [...], "weekend": [...]})
 is for rules with <time> / <weekday>: the expectation is chosen from the
@@ -385,12 +389,18 @@ s.connect("/var/ossec/queue/sockets/queue")
 base = random.randint(10 ** 8, 9 * 10 ** 8)
 for i, spec in enumerate(specs):
     msg = {"Message": spec.get("message", "jt-sandbox event"), "Event": xml(spec, base + i)}
-    s.send(("f:EventChannel:" + json.dumps(msg)).encode())
-    time.sleep(0.05)
+    # "agent": [id, name] makes it that agent's event (only while no agent is registered,
+    # as in a fresh sandbox), for rules with <different_location /> or per-agent counting
+    loc = "[%s] (%s) any->EventChannel" % tuple(spec["agent"]) if spec.get("agent") else "EventChannel"
+    s.send(("f:%s:%s" % (loc, json.dumps(msg))).encode())
+    time.sleep(0.1)
 last = str(base + len(specs) - 1)
+ours = set(str(base + i) for i in range(len(specs)))
 end = time.time() + wait
 while time.time() < end:
     time.sleep(0.5)
+    seen = []          # every rule the case's events raised: analysisd runs several threads,
+    found = None       # so which event of a frequency sequence fires is not fixed (expect_any)
     with open(alerts) as fh:
         fh.seek(start)
         for line in fh:
@@ -398,11 +408,16 @@ while time.time() < end:
                 a = json.loads(line)
             except ValueError:
                 continue
-            if (((a.get("data") or {}).get("win") or {}).get("system") or {}).get("eventRecordID") == last:
+            rid = (((a.get("data") or {}).get("win") or {}).get("system") or {}).get("eventRecordID")
+            if rid in ours:
                 r = a.get("rule", {})
-                print(json.dumps([str(r.get("id")), int(r.get("level", 0)), r.get("description", "")]))
-                sys.exit(0)
-print(json.dumps(["none", 0, ""]))
+                seen.append([str(r.get("id")), int(r.get("level", 0)), r.get("description", "")])
+                if rid == last:
+                    found = seen[-1]
+    if found:
+        print(json.dumps(found + [seen]))
+        sys.exit(0)
+print(json.dumps(["none", 0, "", seen]))
 '''
 
 
@@ -411,8 +426,14 @@ def win_case(name, specs, expect_alert, isolate=False):
     # "isolate": true gives the case's account a fresh name each run, so it counts alone.
     if isolate:
         tag = '-%06x' % random.randrange(16 ** 6)
-        specs = [dict(s, data=dict(s.get('data') or {}, SubjectUserName=(s.get('data') or {}).get('SubjectUserName', 'user') + tag))
-                 for s in specs]
+        net = '10.%d.%d.' % (random.randrange(1, 255), random.randrange(1, 255))
+        def fresh(s):
+            data = dict(s.get('data') or {})
+            data['SubjectUserName'] = data.get('SubjectUserName', 'user') + tag
+            if str(data.get('IpAddress', '')).startswith('10.'):      # same_field on the address
+                data['IpAddress'] = net + data['IpAddress'].rsplit('.', 1)[1]
+            return dict(s, data=data)
+        specs = [fresh(s) for s in specs]
     wait = '15' if expect_alert else '4'
     r = run(['docker', 'exec', name, OSSEC + '/framework/python/bin/python3', '-c', WIN_EVENT,
              json.dumps(specs), wait], check=False)
@@ -461,6 +482,11 @@ def test(pack):
             # "before": earlier Windows events (dicts like "win"); "repeat": send "win" N times
             specs = [dict(case['win'], **b) for b in before] + [case['win']] * int(case.get('repeat', 1))
             results = win_case(name, specs, str(case['expect_rule']) != 'none', case.get('isolate'))
+            if case.get('expect_any') and results:
+                # "expect_any": the expected rule from any event of the sequence counts
+                hit = [s for s in results[-1][3] if s[0] == str(case['expect_rule'])]
+                if hit:
+                    results = [tuple(hit[0])]
         elif any(isinstance(b, dict) for b in before):
             default = case.get('location') or 'jt-sandbox'
             events = [(b.get('location') or default, b['log']) if isinstance(b, dict) else (default, b)

@@ -4,6 +4,12 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.39.2（2026-11-21）
+
+- 所有套件的每一條 Windows 規則都有經由 manager 自己的 eventchannel 解碼器的沙箱案例：jt-ioc（Sysmon 3 進出、DNS、UDP、高信心清單、清單位址的登入）、jt-account-guard（內部位址在多台主機 Windows 登入失敗的 132716／132717，從來沒有測過）、jt-malware-hash（Sysmon 1、6、7、15、23、29、易受攻擊的驅動程式，以及主機的四種雜湊格式清單沒有的情形）、jt-php（PHP 啟動 shell）。
+- 沙箱：`"win"` 案例可以指定 agent（`"agent": ["001", "win-a"]`），模擬多台 Windows 主機來測 `<different_location />` 規則；`"expect_any"` 接受序列中任何一筆事件觸發預期的規則（analysisd 的執行緒不保證順序）；`isolate` 也會換掉 10.x 的來源位址。
+- 同時發現：在開發本工具的站台上，jt-malware-hash 的 Windows 規則從來不可能比對到。清單的 key 必須是主機 Sysmon `Hashes` 欄位的格式（`sysmon_hashes`），站台沒有設定，而主機計算四種雜湊、不需金鑰的來源多半只有 SHA256。套件的部署說明本來就有寫；要修得由站台決定（Sysmon 的 HashAlgorithms）。
+
 ## v1.39.1（2026-11-21）
 
 - **jt-portable-detect 3.6.2**：沒有版本資訊的穿隧工具從來沒有以 level 12 告警過。規則 906176（以檔名辨識 ngrok、frp、chisel、cloudflared、ligolo 等）、906179（以檔名辨識遠端控制工具）與 906152（以命令列辨識改名的穿隧工具）用 OriginalFileName 的 `not_match_key` 排除核准的工具，而清單條件遇到不存在的欄位永遠不成立。沒有版本資訊的程式，Sysmon 的 OriginalFileName 是 `-`，Wazuh 視同沒有這個欄位；這類工具大多是沒有版本資訊的 Go 執行檔，所以只停在位置規則（906100／906106，level 6／9）。這六條規則不再讀核准清單，新的 906144／906145 事後把核准的工具降到 level 3。這是用 manager 自己的解碼器重放 Sysmon 事件時發現的；jt-portable-detect 現在有 65 個 Windows 沙箱案例，一週真實 Sysmon 事件的判定與修改前相同。

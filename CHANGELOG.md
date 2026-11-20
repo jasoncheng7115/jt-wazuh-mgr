@@ -4,6 +4,12 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.39.2 (2026-11-21)
+
+- Every Windows rule in the packs now has sandbox cases through the manager's own eventchannel decoder: jt-ioc (Sysmon 3 in and out, DNS, UDP, the high-confidence lists, logons from listed addresses), jt-account-guard (an internal address failing Windows logons on several hosts, 132716 / 132717, never tested before), jt-malware-hash (Sysmon 1, 6, 7, 15, 23, 29, a vulnerable driver, and a host whose four-hash format the list does not carry), jt-php (PHP started a shell).
+- Sandbox: a `"win"` case can name an agent (`"agent": ["001", "win-a"]`), which makes several simulated Windows hosts for `<different_location />` rules; `"expect_any"` accepts the expected rule from any event of a sequence (analysisd's threads do not keep their order); `isolate` also moves a 10.x source address.
+- Found while doing so: on the site this was developed on, jt-malware-hash's Windows rules have never been able to match. The list keys must have the shape of the hosts' Sysmon `Hashes` field (`sysmon_hashes`); it was not set, and the hosts compute four hashes while the keyless feeds mostly publish SHA256 only. Documented in the pack's setup; the fix is a site decision (Sysmon HashAlgorithms).
+
 ## v1.39.1 (2026-11-21)
 
 - **jt-portable-detect 3.6.2**: tunnelling tools without version information were never reported at level 12. Rules 906176 (ngrok, frp, chisel, cloudflared, ligolo... by file name), 906179 (remote access tools by file name) and 906152 (renamed tunnels by command line) excluded approved tools with `not_match_key` on OriginalFileName, and a list condition on a missing field never matches. Sysmon writes OriginalFileName as `-` for a program without version information, which Wazuh treats as no field, and most of these tools are Go binaries without version information, so they stopped at the location rule (906100 / 906106, level 6 / 9). The six rules no longer read the approved list; new 906144 / 906145 lower an approved tool to level 3 afterwards. Found by replaying Sysmon events through the manager's own decoder; jt-portable-detect now has 65 Windows sandbox cases, and a week of real Sysmon events gives the same verdicts as before.

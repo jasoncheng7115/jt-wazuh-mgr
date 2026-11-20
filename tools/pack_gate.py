@@ -498,10 +498,17 @@ def judge_pack(name, pack, data, got, fim, state):
                 continue
             specs = [dict(case['win'], **b) for b in case.get('before', [])] + \
                 [case['win']] * int(case.get('repeat', 1))
-            g = (sb.win_case(name, specs, str(case['expect_rule']) != 'none', case.get('isolate')) or [('none', 0, '')])[-1]
+            def run_win():
+                r = sb.win_case(name, specs, str(case['expect_rule']) != 'none', case.get('isolate')) or [('none', 0, '', [])]
+                if case.get('expect_any'):
+                    hit = [s for s in (r[-1][3] if len(r[-1]) > 3 else []) if s[0] == str(case['expect_rule'])]
+                    if hit:
+                        return tuple(hit[0])
+                return tuple(r[-1][:3])
+            g = run_win()
             if not judge(case, g):
                 time.sleep(3)
-                g = (sb.win_case(name, specs, str(case['expect_rule']) != 'none', case.get('isolate')) or [('none', 0, '')])[-1]
+                g = run_win()
         else:
             g = got.get((pack, i), ('missing', 0, ''))
             if not judge(case, g) and state['fallback_left'] > 0:
