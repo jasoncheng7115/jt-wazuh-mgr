@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.39.3（2026-11-21）
+
+- ウイルス対策ソフトによるリポジトリ内ファイルの隔離：Windows Defender がテストのログ行にあるマイナーのコマンドラインを理由に `tests/pack_cases/jt-docker.json` を PotentialRisk.PUA/BAT.BitCoinMin と判定しました。ケースファイルでは行を `"log_b64"` で書けるようになり（`"before"` も可）、pack_sandbox とリリースゲートがデコードします。マイナーのコマンドライン、リバースシェル、シャドウコピー削除の 4 行はこの形式で保存し、平文で再び現れるとテストが失敗します。
+
 ## v1.39.2（2026-11-21）
 
 - パックのすべての Windows ルールに、マネージャー自身の eventchannel デコーダーを通るサンドボックスケースができました：jt-ioc（Sysmon 3 の受信・送信、DNS、UDP、高信頼リスト、リスト掲載アドレスからのログオン）、jt-account-guard（内部アドレスが複数ホストで Windows ログオンに失敗する 132716／132717、これまで未テスト）、jt-malware-hash（Sysmon 1、6、7、15、23、29、脆弱なドライバー、ホストの 4 ハッシュ形式がリストにない場合）、jt-php（PHP がシェルを起動）。

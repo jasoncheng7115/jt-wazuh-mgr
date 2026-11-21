@@ -26,6 +26,8 @@ case that names a built-in rule or field older rulesets lack; pack_gate.py
 skips it on older managers. on_older (optional, {"wazuh_below": "4.14",
 "expect_rule", "expect_level"}) is the result an older manager gives instead,
 for instance a compatibility twin of a rule; pack_gate.py judges by it there.
+"log_b64" (optional) replaces "log" with the line in base64, for attack text
+that antivirus scanners would quarantine the case file for (also in "before").
 expect_fields (optional, {"field": "value" or null}) checks logtest's decoded fields; null
 means the field must not be decoded.
 expect_rule "none" means no rule above level 0 may match. repeat sends the
@@ -466,12 +468,26 @@ def container_clock(name):
     return int(h), int(d)
 
 
+def decode_case(case):
+    """"log_b64" holds a line in base64: attack text that antivirus scanners quarantine
+    (miner command lines, reverse shells, shadow copy deletion) stays out of the file
+    in plain text. Decoded here, before anything reads "log"."""
+    import base64
+    c = dict(case)
+    if 'log_b64' in c:
+        c['log'] = base64.b64decode(c.pop('log_b64')).decode('utf-8')
+    if c.get('before'):
+        c['before'] = [dict(b, log=base64.b64decode(b['log_b64']).decode('utf-8'))
+                       if isinstance(b, dict) and 'log_b64' in b else b for b in c['before']]
+    return c
+
+
 def test(pack):
     name = name_of(pack)
     with open(os.path.join(ROOT, 'tests', 'pack_cases', pack + '.json'), encoding='utf-8') as fh:
         data = json.load(fh)
     # "sequences" are cases whose "before" lines run first in the same session.
-    cases = data['cases'] + data.get('sequences', [])
+    cases = [decode_case(c) for c in data['cases'] + data.get('sequences', [])]
     failed = 0
     for i, case in enumerate(cases, 1):
         before = case.get('before', [])

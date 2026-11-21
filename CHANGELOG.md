@@ -4,6 +4,10 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.39.3 (2026-11-21)
+
+- Antivirus quarantine of the repository: Windows Defender flagged `tests/pack_cases/jt-docker.json` as PotentialRisk.PUA/BAT.BitCoinMin for a miner command line in a test log line. Case files may now give a line as `"log_b64"` (also in `"before"`), decoded by pack_sandbox and the release gate; the four lines with a miner command line, reverse shells and shadow copy deletion are stored that way, and a test fails if such text appears in plain text again.
+
 ## v1.39.2 (2026-11-21)
 
 - Every Windows rule in the packs now has sandbox cases through the manager's own eventchannel decoder: jt-ioc (Sysmon 3 in and out, DNS, UDP, the high-confidence lists, logons from listed addresses), jt-account-guard (an internal address failing Windows logons on several hosts, 132716 / 132717, never tested before), jt-malware-hash (Sysmon 1, 6, 7, 15, 23, 29, a vulnerable driver, and a host whose four-hash format the list does not carry), jt-php (PHP started a shell).

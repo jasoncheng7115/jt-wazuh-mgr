@@ -293,6 +293,13 @@ for path in sorted(glob.glob(cdir + '/*.json')):
     data = json.load(open(path))
     token = None
     for i, case in enumerate(data['cases'] + data.get('sequences', []), 1):
+        if 'log_b64' in case or any(isinstance(b, dict) and 'log_b64' in b for b in case.get('before', [])):
+            import base64      # pack_sandbox.decode_case: kept out of the file in plain text
+            case = dict(case)
+            if 'log_b64' in case:
+                case['log'] = base64.b64decode(case.pop('log_b64')).decode('utf-8')
+            case['before'] = [dict(b, log=base64.b64decode(b['log_b64']).decode('utf-8'))
+                              if isinstance(b, dict) and 'log_b64' in b else b for b in case.get('before', [])]
         if 'fim' in case or 'win' in case:
             continue
         ev = events_of(case)
@@ -351,6 +358,8 @@ def load_cases(only):
             continue
         with open(path, encoding='utf-8') as fh:
             data = json.load(fh)
+        data['cases'] = [sb.decode_case(c) for c in data['cases']]
+        data['sequences'] = [sb.decode_case(c) for c in data.get('sequences', [])]
         out[pack] = data
     return out
 

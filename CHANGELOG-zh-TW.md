@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.39.3（2026-11-21）
+
+- 防毒軟體隔離 repo 內的檔案：Windows Defender 因為測試記錄行裡的挖礦程式命令列，把 `tests/pack_cases/jt-docker.json` 判為 PotentialRisk.PUA/BAT.BitCoinMin。案例檔現在可以用 `"log_b64"` 給記錄行（`"before"` 也可以），由 pack_sandbox 與發版關卡解碼；挖礦命令列、反向 shell、刪除陰影複本這四行改用這種方式存放，若再以明文出現，測試會失敗。
+
 ## v1.39.2（2026-11-21）
 
 - 所有套件的每一條 Windows 規則都有經由 manager 自己的 eventchannel 解碼器的沙箱案例：jt-ioc（Sysmon 3 進出、DNS、UDP、高信心清單、清單位址的登入）、jt-account-guard（內部位址在多台主機 Windows 登入失敗的 132716／132717，從來沒有測過）、jt-malware-hash（Sysmon 1、6、7、15、23、29、易受攻擊的驅動程式，以及主機的四種雜湊格式清單沒有的情形）、jt-php（PHP 啟動 shell）。
