@@ -4,6 +4,10 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.39.4 (2026-11-21)
+
+- Avast (macOS) still quarantined `tests/pack_cases/jt-docker.json`: ten more test lines are stored as `"log_b64"` — download-and-run command lines (`curl … | sh`, a base64-decoded script piped to a shell, `wget` then run from /tmp), container escapes (`nsenter` into PID 1, mounting the host disk and `chroot`), and miner image and domain names, in jt-docker, jt-ai-agent and jt-adguard. The guard test covers these too.
+
 ## v1.39.3 (2026-11-21)
 
 - Antivirus quarantine of the repository: Windows Defender flagged `tests/pack_cases/jt-docker.json` as PotentialRisk.PUA/BAT.BitCoinMin for a miner command line in a test log line. Case files may now give a line as `"log_b64"` (also in `"before"`), decoded by pack_sandbox and the release gate; the four lines with a miner command line, reverse shells and shadow copy deletion are stored that way, and a test fails if such text appears in plain text again.

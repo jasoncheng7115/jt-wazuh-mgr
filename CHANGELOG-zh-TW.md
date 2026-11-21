@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.39.4（2026-11-21）
+
+- macOS 上的 Avast 仍會隔離 `tests/pack_cases/jt-docker.json`：再把十行測試記錄改用 `"log_b64"` 存放，包括下載後直接執行的命令列（`curl … | sh`、base64 解碼後交給 shell、`wget` 下載後從 /tmp 執行）、容器逃逸（`nsenter` 進 PID 1、掛載主機磁碟再 `chroot`），以及挖礦映像與網域名稱，分布在 jt-docker、jt-ai-agent、jt-adguard。防護測試也涵蓋這些字串。
+
 ## v1.39.3（2026-11-21）
 
 - 防毒軟體隔離 repo 內的檔案：Windows Defender 因為測試記錄行裡的挖礦程式命令列，把 `tests/pack_cases/jt-docker.json` 判為 PotentialRisk.PUA/BAT.BitCoinMin。案例檔現在可以用 `"log_b64"` 給記錄行（`"before"` 也可以），由 pack_sandbox 與發版關卡解碼；挖礦命令列、反向 shell、刪除陰影複本這四行改用這種方式存放，若再以明文出現，測試會失敗。

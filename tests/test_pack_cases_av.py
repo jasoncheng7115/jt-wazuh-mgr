@@ -18,7 +18,7 @@ sys.dont_write_bytecode = True
 import pack_sandbox as sb    # noqa: E402
 
 BAIT = re.compile('|'.join(base64.b64decode(p).decode() for p in (   # base64 so this file is not a bait too
-    'eG1yaWcgLW8=',
+    'eG1yaWc=',
     'c3RyYXR1bVwrdGNwOi8v',
     'LS1kb25hdGUtbGV2ZWw=',
     'YmFzaCAtaSA+JiAvZGV2L3RjcA==',
@@ -26,6 +26,12 @@ BAIT = re.compile('|'.join(base64.b64decode(p).decode() for p in (   # base64 so
     'c2VrdXJsc2E6Og==',
     'aW52b2tlLW1pbWlrYXR6',
     'WDVPIVAlQEFQ',
+    'KGN1cmx8d2dldClcc1teIl17MCw4MH1cfFxzKihiYSk/c2hcYg==',
+    'YmFzZTY0IC1kXHMqXHxccyooYmEpP3No',
+    'Y2htb2QgXCt4IC90bXAvXFMrICYmIC90bXAv',
+    'bnNlbnRlciAtLXRhcmdldCAx',
+    'Y2hyb290IC9tbnQ=',
+    'bmMoYXQpPyAtZSA=',
 )), re.I)
 
 

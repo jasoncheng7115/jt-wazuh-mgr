@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.39.4（2026-11-21）
+
+- macOS の Avast がまだ `tests/pack_cases/jt-docker.json` を隔離していたため、さらに 10 行のテストログを `"log_b64"` で保存しました。ダウンロードして実行するコマンドライン（`curl … | sh`、base64 でデコードしたスクリプトをシェルへ渡すもの、`wget` で取得して /tmp から実行するもの）、コンテナエスケープ（PID 1 への `nsenter`、ホストのディスクをマウントして `chroot`）、マイナーのイメージ名とドメイン名で、jt-docker、jt-ai-agent、jt-adguard にあります。ガードテストもこれらを対象にしました。
+
 ## v1.39.3（2026-11-21）
 
 - ウイルス対策ソフトによるリポジトリ内ファイルの隔離：Windows Defender がテストのログ行にあるマイナーのコマンドラインを理由に `tests/pack_cases/jt-docker.json` を PotentialRisk.PUA/BAT.BitCoinMin と判定しました。ケースファイルでは行を `"log_b64"` で書けるようになり（`"before"` も可）、pack_sandbox とリリースゲートがデコードします。マイナーのコマンドライン、リバースシェル、シャドウコピー削除の 4 行はこの形式で保存し、平文で再び現れるとテストが失敗します。
