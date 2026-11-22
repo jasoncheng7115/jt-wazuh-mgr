@@ -60,6 +60,14 @@
     <group>yara_suspicious_name,</group>
   </rule>
 
+  <!-- 1.1: the weekly rules update (jt-yara-update) failed; the previous rules stay in place -->
+  <rule id="133412" level="7">
+    <if_sid>133410</if_sid>
+    <field name="yara.message" type="pcre2">^rules update failed: </field>
+    <description>YARA: $(yara.message) (the previous rules stay in use)</description>
+    <group>yara_update,</group>
+  </rule>
+
   <!-- jt-yara-quarantine.sh moved (or refused / failed to move) a matched file. -->
   <rule id="133420" level="10">
     <if_sid>133400</if_sid>
@@ -101,6 +109,14 @@
       <id>T1562.001</id>
     </mitre>
     <group>yara_status,yara_broken,</group>
+  </rule>
+
+  <!-- 1.1: the weekly rules update installed a new release -->
+  <rule id="133434" level="3">
+    <if_sid>133400</if_sid>
+    <field name="yara.level">^UPDATE$</field>
+    <description>YARA rules updated to $(yara.rules_name) ($(yara.message))</description>
+    <group>yara_update,</group>
   </rule>
 
   <!-- ===================================== the manager's check (jt-yara-inventory.py) -->
@@ -154,7 +170,7 @@
 
   <rule id="133450" level="10">
     <if_sid>553</if_sid>
-    <field name="file" type="pcre2">^(?:/usr/local/bin/yr|/usr/local/sbin/jt-yara-status|/etc/cron\.d/jt-yara-status|/var/ossec/active-response/bin/jt-yara(?:-quarantine)?\.sh|/var/ossec/etc/yara/rules\.yarc)$</field>
+    <field name="file" type="pcre2">^(?:/usr/local/bin/yr|/usr/local/sbin/jt-yara-(?:status|update)|/etc/cron\.d/jt-yara-(?:status|update)|/var/ossec/active-response/bin/jt-yara(?:-quarantine)?\.sh|/var/ossec/etc/yara/rules\.yarc)$</field>
     <description>YARA scanner removed: $(file) deleted, files on this host are no longer scanned</description>
     <mitre>
       <id>T1562.001</id>

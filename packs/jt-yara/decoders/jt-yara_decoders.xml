@@ -5,6 +5,7 @@
     wazuh-yara: INFO - Scan result: <rule> <file>
     wazuh-yara: ERROR - <message>
     wazuh-yara: QUARANTINE - <message>
+    wazuh-yara: UPDATE - rules <name> installed (<n> rules, was <old name>)
     wazuh-yara: STATUS - state=ok yr=1.22.1 rules=<sha256 prefix> rules_name=<name> rules_age=<days>
                          scans=<n> errors=<n> hits=<n> quarantine=yes|no problem=<text or ->
   Rules 133400-133499; 133400 accepts these lines only from active-responses.log.
@@ -40,4 +41,11 @@
   <prematch type="pcre2">STATUS - state=</prematch>
   <regex type="pcre2">^wazuh-yara: (STATUS) - state=(\w+) yr=(\S+) rules=(\S+) rules_name=(\S+) rules_age=(\S+) scans=(\d+) errors=(\d+) hits=(\d+) quarantine=(yes|no) problem=(.*)$</regex>
   <order>yara.level,yara.state,yara.yr,yara.rules,yara.rules_name,yara.rules_age,yara.scans,yara.errors,yara.hits,yara.quarantine,yara.problem</order>
+</decoder>
+
+<decoder name="jt-yara-update">
+  <parent>jt-yara</parent>
+  <prematch type="pcre2">UPDATE - </prematch>
+  <regex type="pcre2">^wazuh-yara: (UPDATE) - rules (\S+) installed \((.+)\)$</regex>
+  <order>yara.level,yara.rules_name,yara.message</order>
 </decoder>

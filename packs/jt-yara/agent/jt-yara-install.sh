@@ -1,18 +1,21 @@
 #!/bin/bash
-# jt-yara 1.0 - install or update the YARA-X scanner on a Wazuh agent (Linux, as root).
+# jt-yara 1.1 - install or update the YARA-X scanner on a Wazuh agent (Linux, as root).
 #
 #   jt-yara-install.sh [--yr PATH] [--rules FILE.yar [--rules-name NAME]]
-#                      [--scan-path /prefix/ ...] [--no-quarantine] [--restart]
+#                      [--scan-path /prefix/ ...] [--no-quarantine] [--no-auto-update] [--restart]
 #
 #   --yr PATH          a YARA-X CLI binary to install as /usr/local/bin/yr (official release
 #                      from github.com/VirusTotal/yara-x; a CPU without AVX2 needs a build for
 #                      x86-64-v2). Without it an existing /usr/local/bin/yr is kept.
 #   --rules FILE       YARA source to compile into /var/ossec/etc/yara/rules.yarc together with
 #                      the pipeline test rule (YARA-Forge core: yara-rules-core.yar). Without it
-#                      existing compiled rules are kept.
+#                      existing compiled rules are kept; with neither, the latest YARA-Forge core
+#                      release is fetched (jt-yara-update, checked against its published digest).
 #   --rules-name NAME  recorded for the status line (default: the file name and its date)
 #   --scan-path P      also scan files under this prefix (repeatable; kept in scan-paths.local)
 #   --no-quarantine    scan only: matches are reported, nothing is moved (development hosts)
+#   --no-auto-update   no weekly rules update (a host without Internet access: update it with
+#                      jt-yara-update --zip FILE)
 #   --restart          restart the agent if the active response is new (see below)
 #
 # The files come from the same directory as this script: the agent group "yara" delivers them
@@ -29,7 +32,7 @@ OSSEC=/var/ossec
 AR=$OSSEC/active-response/bin
 ETC=$OSSEC/etc/yara
 YR=/usr/local/bin/yr
-NEW_YR= RULES_SRC= RULES_NAME= QUARANTINE=yes RESTART=no PATHS=()
+NEW_YR= RULES_SRC= RULES_NAME= QUARANTINE=yes RESTART=no AUTO_UPDATE=yes PATHS=()
 
 die() { echo "jt-yara-install: $*" >&2; exit 1; }
 while [ $# -gt 0 ]; do
@@ -39,6 +42,7 @@ while [ $# -gt 0 ]; do
         --rules-name) RULES_NAME=${2:?}; shift 2 ;;
         --scan-path) PATHS+=("${2:?}"); shift 2 ;;
         --no-quarantine) QUARANTINE=no; shift ;;
+        --no-auto-update) AUTO_UPDATE=no; shift ;;
         --restart) RESTART=yes; shift ;;
         -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
         *) die "unknown option $1" ;;
@@ -46,7 +50,7 @@ while [ $# -gt 0 ]; do
 done
 [ "$(id -u)" = 0 ] || die "run as root"
 [ -d "$AR" ] || die "no Wazuh agent at $OSSEC"
-for f in jt-yara.sh jt-yara-quarantine.sh jt-yara-status.sh jt-test.yar; do
+for f in jt-yara.sh jt-yara-quarantine.sh jt-yara-status.sh jt-yara-update.sh jt-test.yar; do
     [ -r "$SRC/$f" ] || die "$SRC/$f missing (put the host in the agent group yara, or copy the pack's agent/ files here)"
 done
 
@@ -73,6 +77,11 @@ if [ -n "$RULES_SRC" ]; then
     mv -f "$ETC/rules.yarc.new" "$ETC/rules.yarc"
     printf '%s\n' "${RULES_NAME:-$(basename "$RULES_SRC" .yar)-$(date -r "$RULES_SRC" +%Y%m%d)}" > "$ETC/rules.name"
 fi
+install -o root -g root -m 0750 "$SRC/jt-yara-update.sh" /usr/local/sbin/jt-yara-update
+if [ ! -r "$ETC/rules.yarc" ]; then
+    echo "no rules given: fetching the latest YARA-Forge core release"
+    /usr/local/sbin/jt-yara-update --min-age-days 0 --force || die "no compiled rules: give the YARA source with --rules, or let this host reach github.com"
+fi
 [ -r "$ETC/rules.yarc" ] || die "no compiled rules: give the YARA source with --rules"
 
 # 3. scan paths of this site
@@ -94,6 +103,12 @@ install -o root -g root -m 0750 "$SRC/jt-yara-status.sh" /usr/local/sbin/jt-yara
 m=$(( $(hostname | cksum | cut -d' ' -f1) % 60 ))
 printf 'SHELL=/bin/sh\nPATH=/usr/sbin:/usr/bin:/sbin:/bin\n%d 4 * * * root /usr/local/sbin/jt-yara-status\n' "$m" > /etc/cron.d/jt-yara-status.new
 chmod 0644 /etc/cron.d/jt-yara-status.new && mv -f /etc/cron.d/jt-yara-status.new /etc/cron.d/jt-yara-status
+if [ "$AUTO_UPDATE" = yes ]; then
+    printf 'SHELL=/bin/sh\nPATH=/usr/sbin:/usr/bin:/sbin:/bin\n%d 5 * * 0 root /usr/local/sbin/jt-yara-update\n' "$m" > /etc/cron.d/jt-yara-update.new
+    chmod 0644 /etc/cron.d/jt-yara-update.new && mv -f /etc/cron.d/jt-yara-update.new /etc/cron.d/jt-yara-update
+else
+    rm -f /etc/cron.d/jt-yara-update
+fi
 
 # 5. the first status line now, so the manager knows this host
 /usr/local/sbin/jt-yara-status
@@ -106,4 +121,4 @@ if [ "$first" = yes ]; then
         echo "NOTE: restart the agent (systemctl restart wazuh-agent): its active response daemon only sees scripts present when it starts"
     fi
 fi
-echo "jt-yara installed (quarantine: $QUARANTINE)"
+echo "jt-yara installed (quarantine: $QUARANTINE, weekly rules update: $AUTO_UPDATE)"

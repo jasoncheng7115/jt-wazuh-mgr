@@ -1,5 +1,5 @@
 #!/bin/bash
-# jt-yara 1.0 - daily status line for the manager (rules 133430-133433).
+# jt-yara 1.1 - daily status line for the manager (rules 133430-133433).
 #
 # Run by /etc/cron.d/jt-yara-status (installed by jt-yara-install.sh) and once at
 # install time. Writes one line to active-responses.log, which the agent sends:

@@ -100,4 +100,30 @@ tail -1 $LOG | grep -q 'quarantine=no' && ok "status says quarantine=no" || bad 
 bash /var/ossec/etc/shared/jt-yara-install.sh --scan-path 'relative/' >/tmp/o 2>&1 && bad "bad --scan-path accepted" || ok "bad --scan-path refused"
 grep -c '^/srv/app/$' /var/ossec/etc/yara/scan-paths.local | grep -qx 1 && ok "scan path kept once" || bad "scan path duplicated"
 
+# 9. weekly rules update (offline: --zip), keeps the old rules when the new ones are bad
+[ -f /etc/cron.d/jt-yara-update ] && ok "weekly update scheduled" || bad "update schedule"
+mkdir -p /tmp/z/packages/core
+{ cat /tmp/rules.yar; printf 'rule JT_E2E_Second {\n  strings:\n    $m = "JT-E2E-SECOND-77aa"\n  condition:\n    $m\n}\n'; } > /tmp/z/packages/core/yara-rules-core.yar
+(cd /tmp/z && python3 -c 'import zipfile;z=zipfile.ZipFile("/tmp/good.zip","w");z.write("packages/core/yara-rules-core.yar")')
+before=$(sha256sum /var/ossec/etc/yara/rules.yarc | cut -c1-12)
+/usr/local/sbin/jt-yara-update --zip /tmp/good.zip --tag 20991231 >/tmp/o 2>&1 && ok "update from a zip" || { bad "update"; cat /tmp/o; }
+grep -q 'UPDATE - rules yara-forge-core-20991231 installed (2 rules, was e2e-rules)' $LOG && ok "update line" || { bad "update line"; tail -3 $LOG; }
+[ "$(cat /var/ossec/etc/yara/rules.name)" = yara-forge-core-20991231 ] && ok "rules.name updated" || bad "rules.name"
+[ "$(sha256sum /var/ossec/etc/yara/rules.yarc | cut -c1-12)" != "$before" ] && ok "compiled rules replaced" || bad "rules not replaced"
+echo 'JT-E2E-SECOND-77aa' > /var/www/html/second.php; ar /var/www/html/second.php
+tail -1 $LOG | grep -q 'Scan result: JT_E2E_Second' && ok "the new rules scan" || { bad "new rules"; tail -1 $LOG; }
+tail -2 $LOG | grep -q 'STATUS - state=ok .*rules_name=yara-forge-core-20991231 rules_age=0' && ok "status after update" || bad "status after update"
+# a release that does not compile: error line, previous rules kept
+echo 'rule broken {' > /tmp/z/packages/core/yara-rules-core.yar
+(cd /tmp/z && python3 -c 'import zipfile;z=zipfile.ZipFile("/tmp/bad.zip","w");z.write("packages/core/yara-rules-core.yar")')
+keep=$(sha256sum /var/ossec/etc/yara/rules.yarc | cut -c1-12)
+/usr/local/sbin/jt-yara-update --zip /tmp/bad.zip --tag 20991232 >/dev/null 2>&1 && bad "a broken release installed" || ok "a broken release refused"
+tail -1 $LOG | grep -q 'ERROR - rules update failed: yara-forge-core-20991232 does not compile' && ok "update failure logged" || { bad "failure line"; tail -1 $LOG; }
+[ "$(sha256sum /var/ossec/etc/yara/rules.yarc | cut -c1-12)" = "$keep" ] && [ "$(cat /var/ossec/etc/yara/rules.name)" = yara-forge-core-20991231 ] && ok "previous rules kept" || bad "previous rules lost"
+# a zip without the rule file
+python3 -c 'import zipfile;z=zipfile.ZipFile("/tmp/empty.zip","w");z.writestr("README","x")'
+/usr/local/sbin/jt-yara-update --zip /tmp/empty.zip >/dev/null 2>&1 && bad "an empty zip accepted" || ok "a zip without rules refused"
+bash /var/ossec/etc/shared/jt-yara-install.sh --no-auto-update --no-quarantine >/dev/null 2>&1
+[ ! -f /etc/cron.d/jt-yara-update ] && ok "--no-auto-update removes the schedule" || bad "no-auto-update"
+
 [ $fail = 0 ] && echo "ALL PASS" || echo "SOME FAILED"

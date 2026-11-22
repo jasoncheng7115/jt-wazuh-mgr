@@ -1,5 +1,5 @@
 #!/bin/bash
-# jt-yara 1.0 - Wazuh active response: quarantine a file YARA matched (rules 133401 / 133402).
+# jt-yara 1.1 - Wazuh active response: quarantine a file YARA matched (rules 133401 / 133402).
 #
 # The file is moved to /var/ossec/quarantine/<time>-<sha256 prefix>/ with mode 000,
 # next to a meta file holding the original path, owner, mode and sha256, so a

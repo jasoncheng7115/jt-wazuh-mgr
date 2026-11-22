@@ -4,6 +4,10 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.40.1 (2026-11-22)
+
+- **jt-yara 1.1**: weekly rules update on every host (`jt-yara-update`): the latest YARA-Forge release, once it is three days old, is downloaded, checked against the SHA-256 digest GitHub publishes for the asset, compiled with the test rule and installed only if it compiles and passes the self-test (133434); a failure keeps the previous rules (133412). The install fetches the latest release when no rules are given; `--no-auto-update` and `jt-yara-update --zip` for hosts without Internet access; Python is used where curl is missing. Tested end to end in a container, including a real download of the 20261115 release (5,084 rules).
+
 ## v1.40.0 (2026-11-22)
 
 - New pack **jt-yara 1.0** (rules 133400-133499): YARA-X scanning of the files that file integrity monitoring reports on web, application and temporary paths, through an active response, with quarantine on hosts that allow it (the result must name exactly the scanned path, and the quarantine rescans before it moves anything). New: every host sends a daily status line (yr version, rules and their age, scans, failures and matches, quarantine) after a self-test scan of a marker rule, so a scanner that is gone, crashes on the CPU or runs 30-day-old rules is reported (133430-133433); `jt-yara-inventory.py` on the manager reports hosts that should scan (agent group yara, or `expected` in jt-yara.conf) but never reported (133442) or stopped (133441); the group watches the scanner's own files with FIM (133450, 133451); `jt-yara-install.sh` installs or updates a host. A site's own web roots go in `scan-paths.local` instead of the script. The agent scripts are tested end to end in a Debian container.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# jt-yara 1.0 - Wazuh active response: scan the file a FIM alert names with YARA-X.
+# jt-yara 1.1 - Wazuh active response: scan the file a FIM alert names with YARA-X.
 #
 # Triggered by the FIM rules listed in the manager's <active-response> for jt-yara.
 # Only web / application / temporary paths are scanned: the built-in ones below plus
