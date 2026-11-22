@@ -48,6 +48,10 @@ Optional manifest section, all keys optional:
       "rules_by": {"field": "data.jt_ai.agent", "title": "AI agent", "title_zh": "AI 代理"},
                                                   # "Top rules" with one more column (Vega table)
       "srcip": true|false, "dstuser": true|false  # override the detection
+      "status_table": {"group": "yara_status", "title": ..., "title_zh": ...,
+                       "columns": [{"field": "data.yara.state", "title": ..., "colours": {"broken": "#BD271E"},
+                                    "number": true, "fill": true, "w": 110}, ...]}
+                                                  # latest alert of a rule group per agent (Vega table)
     }
 """
 
@@ -598,6 +602,45 @@ class Builder:
             uses_index=False)
         self.panels.append((vid, 'visualization', w, h))
 
+    def status_table(self, st):
+        """One row per agent with the fields of its latest alert in a rule group (manifest
+        dashboard.status_table, for a pack whose hosts report their own state, such as
+        jt-yara's daily status line): which hosts report, and what they said last."""
+        cols = st['columns']
+        keep = [c['field'] for c in cols] + [TIME_FIELD, 'rule.level']
+        aggs = {'s': {'filter': {'term': {'rule.groups': st['group']}}, 'aggs': {
+            'a': {'terms': {'field': 'agent.name', 'size': 500}, 'aggs': {
+                'last': {'top_hits': {'size': 1, 'sort': [{TIME_FIELD: {'order': 'desc'}}],
+                                      '_source': {'includes': keep}}}}}}}}
+        transforms = [
+            {'type': 'formula', 'as': 'agent', 'expr': 'datum.key'},
+            {'type': 'formula', 'as': 'src', 'expr': 'datum.last.hits.hits[0]._source'},
+            {'type': 'formula', 'as': 'when', 'expr': "timeFormat(toDate(datum.src.%s), '%%Y-%%m-%%d %%H:%%M')" % TIME_FIELD},
+        ]
+        columns = [{'key': 'agent', 'label': T('Agent', '代理程式'), 'w': 160, 'filter': 'agent.name'}]
+        for i, c in enumerate(cols):
+            parts = c['field'].split('.')
+            cond = ' && '.join('datum.src.' + '.'.join(parts[:k]) for k in range(1, len(parts) + 1))
+            transforms.append({'type': 'formula', 'as': 'c%d' % i,
+                               'expr': "(%s) ? '' + datum.src.%s : '-'" % (cond, c['field'])})
+            col = {'key': 'c%d' % i, 'label': bilingual(c.get('title') or c['field'], c.get('title_zh') or ''),
+                   'w': c.get('w', 110)}
+            if c.get('colours'):
+                col['colour'] = ' : '.join("datum.c%d === %s ? %s" % (i, json.dumps(k), json.dumps(v))
+                                           for k, v in sorted(c['colours'].items())) + " : '#343741'"
+            if c.get('number'):
+                col['align'], col['numeric'] = 'right', True
+            if c.get('fill'):
+                col['w'], col['tooltip'] = None, True
+            columns.append(col)
+        last = {'key': 'when', 'label': T('Last report', '最後回報'), 'w': 150}
+        if all(c.get('w') is not None for c in columns):
+            last['w'] = None
+        columns.append(last)
+        self.vega_table('status', bilingual(st.get('title') or 'Status by agent', st.get('title_zh') or ''),
+                        aggs, 'aggregations.s.a.buckets', transforms, columns, 'when', 48,
+                        int(st.get('height', 16)))
+
     def vega_rule_table(self, field, label):
         """The "Top rules" table with one more column, a field that exists only in data.*
         (manifest dashboard.rules_by): rule x value rows (the value "-" when an alert lacks
@@ -864,6 +907,10 @@ class Builder:
         self.levels()
         self.timeline()
         opts = self.m.get('dashboard') or {}
+        if opts.get('status_table'):
+            self.newrow()
+            self.status_table(opts['status_table'])
+            self.newrow()
         if opts.get('rules_by'):
             by = opts['rules_by']
             by = {'field': by} if isinstance(by, str) else by

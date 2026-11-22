@@ -1,0 +1,225 @@
+{
+ "pack": "jt-yara",
+ "note": "Lines as jt-yara.sh, jt-yara-quarantine.sh and jt-yara-status.sh write them to active-responses.log (shapes from the 2026-10/11 site deployment), events as jt-yara-inventory.py sends them, and FIM events of the scanner's own files.",
+ "cases": [
+  {
+   "log": "wazuh-yara: INFO - Scan result: Webshell_PHP_Generic /var/www/html/uploads/x.php",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "133401",
+   "note": "a YARA-Forge rule matched",
+   "expect_level": 12,
+   "expect_in_description": [
+    "Webshell_PHP_Generic",
+    "/var/www/html/uploads/x.php"
+   ]
+  },
+  {
+   "log": "wazuh-yara: INFO - Scan result: JT_Wazuh_YARA_Test /var/www/html/.jt-yara-selftest/marker.php",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "133402",
+   "note": "the pipeline self-test marker",
+   "expect_level": 5
+  },
+  {
+   "log": "wazuh-yara: ERROR - yr exit 124 on /var/www/nextcloud/apps/recognize/node_modules/lodash/chunk.js: ",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "133410",
+   "note": "a scan timed out",
+   "expect_level": 5
+  },
+  {
+   "log": "wazuh-yara: ERROR - file name with control characters: /var/www/html/x\\nWebshell /var/www/html/index.php",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "133411",
+   "note": "a file name with a newline (the forged-result trick)",
+   "expect_level": 10
+  },
+  {
+   "log": "wazuh-yara: QUARANTINE - moved /var/www/html/uploads/x.php to /var/ossec/quarantine/20261122T010000-70a595db0fc3 (Webshell_PHP_Generic, sha256 70a595db0fc3)",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "133420",
+   "note": "quarantined",
+   "expect_level": 10
+  },
+  {
+   "log": "wazuh-yara: QUARANTINE - refused /var/www/html/index.php: Webshell does not match it on a rescan",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "133420",
+   "note": "a quarantine refused on rescan",
+   "expect_level": 10
+  },
+  {
+   "log": "wazuh-yara: STATUS - state=ok yr=1.22.1 rules=8c1ddb28cf24 rules_name=yara-forge-core-20261026 rules_age=26 scans=143 errors=0 hits=0 quarantine=yes problem=-",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "133430",
+   "note": "daily status, all well",
+   "expect_level": 3,
+   "expect_in_description": [
+    "1.22.1",
+    "yara-forge-core-20261026",
+    "143 scans"
+   ],
+   "expect_fields": {
+    "yara.state": "ok",
+    "yara.rules_age": "26",
+    "yara.scans": "143",
+    "yara.quarantine": "yes",
+    "yara.problem": "-"
+   }
+  },
+  {
+   "log": "wazuh-yara: STATUS - state=stale yr=1.22.1 rules=8c1ddb28cf24 rules_name=yara-forge-core-20261026 rules_age=41 scans=12 errors=0 hits=0 quarantine=yes problem=-",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "133431",
+   "note": "rules older than 30 days",
+   "expect_level": 7
+  },
+  {
+   "log": "wazuh-yara: STATUS - state=ok yr=1.22.1 rules=8c1ddb28cf24 rules_name=yara-forge-core-20261026 rules_age=5 scans=300 errors=25 hits=0 quarantine=yes problem=-",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "133433",
+   "note": "25 failed scans since the last status",
+   "expect_level": 7
+  },
+  {
+   "log": "wazuh-yara: STATUS - state=broken yr=1.22.1 rules=8c1ddb28cf24 rules_name=yara-forge-core-20261026 rules_age=- scans=0 errors=0 hits=0 quarantine=yes problem=yr does not run (exit 132; a CPU without AVX2 needs an x86-64-v2 build); self-test: the compiled rules did not match the test marker",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "133432",
+   "note": "cannot scan: the problem text with spaces and semicolons",
+   "expect_level": 10,
+   "expect_in_description": [
+    "AVX2",
+    "self-test"
+   ],
+   "expect_fields": {
+    "yara.state": "broken"
+   }
+  },
+  {
+   "log": "wazuh-yara: STATUS - state=broken yr=1.22.1 rules=8c1ddb28cf24 rules_name=yara-forge-core-20261026 rules_age=41 scans=0 errors=30 hits=0 quarantine=yes problem=compiled rules missing at /var/ossec/etc/yara/rules.yarc",
+   "location": "/var/ossec/logs/active-responses.log",
+   "expect_rule": "133432",
+   "note": "broken wins over stale and failures",
+   "expect_level": 10
+  },
+  {
+   "log": "wazuh-yara: INFO - Scan result: Webshell_PHP_Generic /var/www/html/index.php",
+   "location": "/var/log/app/app.log",
+   "expect_rule": "none",
+   "note": "the same text in an application log: not the agent's active-responses.log, no alert and no quarantine"
+  },
+  {
+   "log": "{\"jt_yara_inv\":{\"event\":\"silent\",\"agent_id\":\"012\",\"agent_name\":\"web1\",\"hours\":40,\"last\":\"2026-11-20 04:17\",\"why\":\"agent group yara\",\"state\":\"ok\",\"change\":\"new\"}}",
+   "location": "jt-yara-inventory",
+   "expect_rule": "133441",
+   "note": "an expected host stopped reporting",
+   "expect_level": 10,
+   "expect_in_description": [
+    "web1",
+    "40 hours"
+   ]
+  },
+  {
+   "log": "{\"jt_yara_inv\":{\"event\":\"missing\",\"agent_id\":\"013\",\"agent_name\":\"mail2\",\"hours\":36,\"last\":\"never\",\"why\":\"listed in jt-yara.conf\",\"state\":\"-\",\"change\":\"new\"}}",
+   "location": "jt-yara-inventory",
+   "expect_rule": "133442",
+   "note": "an expected host never reported (not installed)",
+   "expect_level": 8,
+   "expect_in_description": [
+    "mail2",
+    "listed in jt-yara.conf"
+   ]
+  },
+  {
+   "log": "{\"jt_yara_inv\":{\"event\":\"unexpected\",\"agent_id\":\"014\",\"agent_name\":\"dev9\",\"hours\":0,\"last\":\"2026-11-22 04:17\",\"why\":\"-\",\"state\":\"ok\",\"change\":\"new\"}}",
+   "location": "jt-yara-inventory",
+   "expect_rule": "133443",
+   "note": "a host reports but is not expected",
+   "expect_level": 3
+  },
+  {
+   "log": "{\"jt_yara_inv\":{\"event\":\"back\",\"agent_name\":\"web1\",\"change\":\"gone\",\"was\":\"silent\"}}",
+   "location": "jt-yara-inventory",
+   "expect_rule": "133444",
+   "note": "reports again",
+   "expect_level": 3
+  },
+  {
+   "log": "{\"jt_yara_inv\":{\"event\":\"error\",\"detail\":\"wazuh-db: err\"}}",
+   "location": "jt-yara-inventory",
+   "expect_rule": "133449",
+   "note": "the check failed",
+   "expect_level": 5
+  },
+  {
+   "log": "{\"jt_yara_inv\":{\"event\":\"silent\",\"agent_name\":\"web1\"}}",
+   "location": "/var/log/app/events.json",
+   "expect_rule": "none",
+   "note": "the same JSON from another location is not the checker"
+  },
+  {
+   "fim": {
+    "path": "/usr/local/bin/yr",
+    "type": "deleted"
+   },
+   "expect_rule": "133450",
+   "expect_level": 10,
+   "note": "the YARA-X binary deleted"
+  },
+  {
+   "fim": {
+    "path": "/var/ossec/etc/yara/rules.yarc",
+    "type": "deleted"
+   },
+   "expect_rule": "133450",
+   "expect_level": 10,
+   "note": "the compiled rules deleted"
+  },
+  {
+   "fim": {
+    "path": "/usr/local/bin/yr",
+    "type": "modified",
+    "changed": [
+     "size",
+     "sha256"
+    ]
+   },
+   "expect_rule": "133451",
+   "expect_level": 8,
+   "note": "the binary replaced"
+  },
+  {
+   "fim": {
+    "path": "/var/ossec/active-response/bin/jt-yara.sh",
+    "type": "modified",
+    "changed": [
+     "size",
+     "sha256"
+    ]
+   },
+   "expect_rule": "133451",
+   "expect_level": 8,
+   "note": "the active response script changed"
+  },
+  {
+   "fim": {
+    "path": "/var/ossec/etc/yara/rules.yarc",
+    "type": "modified",
+    "changed": [
+     "size",
+     "sha256"
+    ]
+   },
+   "expect_rule": "550",
+   "note": "new compiled rules: an update, the built-in rule only"
+  },
+  {
+   "fim": {
+    "path": "/usr/local/bin/yrx",
+    "type": "deleted"
+   },
+   "expect_rule": "553",
+   "note": "another file in /usr/local/bin: built-in rule"
+  }
+ ]
+}

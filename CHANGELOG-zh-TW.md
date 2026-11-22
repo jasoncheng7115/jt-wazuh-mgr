@@ -4,6 +4,11 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.40.0（2026-11-22）
+
+- 新套件 **jt-yara 1.0**（規則 133400-133499）：以主動回應用 YARA-X 掃描檔案完整性監控在網站、應用程式與暫存路徑回報的檔案，允許的主機會隔離命中的檔案（結果必須正好是被掃描的路徑，隔離前會重新掃描）。新增：每台主機每天在以測試規則自我掃描後送一行狀態（yr 版本、規則與天數、掃描、失敗、命中、隔離），所以掃描器不見了、在這顆 CPU 上會當掉、或規則已經 30 天沒更新，都會被回報（133430-133433）；manager 上的 `jt-yara-inventory.py` 回報應該掃描（agent 群組 yara，或 jt-yara.conf 的 `expected`）卻從未回報（133442）或停止回報（133441）的主機；群組以 FIM 監看掃描器自己的檔案（133450、133451）；`jt-yara-install.sh` 安裝或更新一台主機。站台自己的網站目錄放在 `scan-paths.local`，不寫在腳本裡。agent 端腳本在 Debian 容器裡做端對端測試。
+- 看板：manifest 可以要求狀態表，每個 agent 一列、顯示它在某規則群組裡最新一筆告警的欄位（`dashboard.status_table`）；jt-yara 用它顯示每台主機的掃描器狀態。
+
 ## v1.39.4（2026-11-21）
 
 - macOS 上的 Avast 仍會隔離 `tests/pack_cases/jt-docker.json`：再把十行測試記錄改用 `"log_b64"` 存放，包括下載後直接執行的命令列（`curl … | sh`、base64 解碼後交給 shell、`wget` 下載後從 /tmp 執行）、容器逃逸（`nsenter` 進 PID 1、掛載主機磁碟再 `chroot`），以及挖礦映像與網域名稱，分布在 jt-docker、jt-ai-agent、jt-adguard。防護測試也涵蓋這些字串。

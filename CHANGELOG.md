@@ -4,6 +4,11 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.40.0 (2026-11-22)
+
+- New pack **jt-yara 1.0** (rules 133400-133499): YARA-X scanning of the files that file integrity monitoring reports on web, application and temporary paths, through an active response, with quarantine on hosts that allow it (the result must name exactly the scanned path, and the quarantine rescans before it moves anything). New: every host sends a daily status line (yr version, rules and their age, scans, failures and matches, quarantine) after a self-test scan of a marker rule, so a scanner that is gone, crashes on the CPU or runs 30-day-old rules is reported (133430-133433); `jt-yara-inventory.py` on the manager reports hosts that should scan (agent group yara, or `expected` in jt-yara.conf) but never reported (133442) or stopped (133441); the group watches the scanner's own files with FIM (133450, 133451); `jt-yara-install.sh` installs or updates a host. A site's own web roots go in `scan-paths.local` instead of the script. The agent scripts are tested end to end in a Debian container.
+- Dashboards: a manifest can ask for a status table, one row per agent with the fields of its latest alert in a rule group (`dashboard.status_table`); jt-yara uses it for the scanner status of every host.
+
 ## v1.39.4 (2026-11-21)
 
 - Avast (macOS) still quarantined `tests/pack_cases/jt-docker.json`: ten more test lines are stored as `"log_b64"` — download-and-run command lines (`curl … | sh`, a base64-decoded script piped to a shell, `wget` then run from /tmp), container escapes (`nsenter` into PID 1, mounting the host disk and `chroot`), and miner image and domain names, in jt-docker, jt-ai-agent and jt-adguard. The guard test covers these too.

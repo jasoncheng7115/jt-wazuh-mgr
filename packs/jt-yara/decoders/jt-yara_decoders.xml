@@ -1,0 +1,43 @@
+<!--
+  jt-yara: results of the jt-yara.sh active response (YARA-X scan of files FIM reports)
+  and the daily status line of jt-yara-status.sh. The agent writes them to
+  active-responses.log, which it already sends to the manager:
+    wazuh-yara: INFO - Scan result: <rule> <file>
+    wazuh-yara: ERROR - <message>
+    wazuh-yara: QUARANTINE - <message>
+    wazuh-yara: STATUS - state=ok yr=1.22.1 rules=<sha256 prefix> rules_name=<name> rules_age=<days>
+                         scans=<n> errors=<n> hits=<n> quarantine=yes|no problem=<text or ->
+  Rules 133400-133499; 133400 accepts these lines only from active-responses.log.
+-->
+<decoder name="jt-yara">
+  <prematch>^wazuh-yara: </prematch>
+</decoder>
+
+<decoder name="jt-yara-result">
+  <parent>jt-yara</parent>
+  <prematch type="pcre2">INFO - Scan result: </prematch>
+  <regex type="pcre2">^wazuh-yara: (INFO) - Scan result: (\S+) (.+)$</regex>
+  <order>yara.level,yara.rule,yara.file</order>
+</decoder>
+
+<decoder name="jt-yara-error">
+  <parent>jt-yara</parent>
+  <prematch type="pcre2">ERROR - </prematch>
+  <regex type="pcre2">^wazuh-yara: (ERROR) - (.+)$</regex>
+  <order>yara.level,yara.message</order>
+</decoder>
+
+<decoder name="jt-yara-quarantine">
+  <parent>jt-yara</parent>
+  <prematch type="pcre2">QUARANTINE - </prematch>
+  <regex type="pcre2">^wazuh-yara: (QUARANTINE) - (.+)$</regex>
+  <order>yara.level,yara.message</order>
+</decoder>
+
+<!-- the status line: the fields come in this order; problem is the rest of the line -->
+<decoder name="jt-yara-status">
+  <parent>jt-yara</parent>
+  <prematch type="pcre2">STATUS - state=</prematch>
+  <regex type="pcre2">^wazuh-yara: (STATUS) - state=(\w+) yr=(\S+) rules=(\S+) rules_name=(\S+) rules_age=(\S+) scans=(\d+) errors=(\d+) hits=(\d+) quarantine=(yes|no) problem=(.*)$</regex>
+  <order>yara.level,yara.state,yara.yr,yara.rules,yara.rules_name,yara.rules_age,yara.scans,yara.errors,yara.hits,yara.quarantine,yara.problem</order>
+</decoder>

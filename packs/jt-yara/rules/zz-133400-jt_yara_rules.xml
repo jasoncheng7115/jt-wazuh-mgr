@@ -1,0 +1,177 @@
+<!--
+  133400-133499 jt-yara: YARA-X scans of files that file integrity monitoring reports on
+  web, application and temporary paths, the quarantine of matches, and whether every host
+  that should scan does.
+  Decoder: decoders/jt-yara_decoders.xml. On the agents: active-response/bin/jt-yara.sh
+  (run by the jt-yara active response), jt-yara-quarantine.sh, and the daily status line of
+  /usr/local/sbin/jt-yara-status. On the manager: etc/jt-packs/bin/jt-yara-inventory.py
+  (hosts that should report and do not).
+-->
+<group name="yara,jt_yara,">
+
+  <!-- Only the agent's own active-responses.log: the decoder matches any line that starts
+       with "wazuh-yara: ", so a line of that shape in any other log (an application writing
+       user input) could otherwise raise 133401 and have a file quarantined. -->
+  <rule id="133400" level="0">
+    <decoded_as>jt-yara</decoded_as>
+    <location>active-responses.log$</location>
+    <description>YARA: scanner message</description>
+  </rule>
+
+  <!-- Any rule of the installed set matched. -->
+  <rule id="133401" level="12">
+    <if_sid>133400</if_sid>
+    <field name="yara.level">^INFO$</field>
+    <field name="yara.rule">\S</field>
+    <description>YARA: $(yara.rule) matched $(yara.file)</description>
+    <mitre>
+      <id>T1505.003</id>
+    </mitre>
+    <group>malware,yara_match,</group>
+  </rule>
+
+  <!-- The harmless marker rule jt-test.yar, used to test the pipeline end to end. -->
+  <rule id="133402" level="5">
+    <if_sid>133401</if_sid>
+    <field name="yara.rule">^JT_Wazuh_YARA_Test$</field>
+    <description>YARA: pipeline self-test marker found in $(yara.file)</description>
+    <group>yara_test,</group>
+  </rule>
+
+  <!-- The scanner could not run on one file (yr missing, rules missing, crash, timeout,
+       queue busy). -->
+  <rule id="133410" level="5">
+    <if_sid>133400</if_sid>
+    <field name="yara.level">^ERROR$</field>
+    <description>YARA: scan failed: $(yara.message)</description>
+    <group>yara_error,</group>
+  </rule>
+
+  <!-- A file or directory name with a newline or another control character under a scanned
+       path: no tool writes those, and such a name was used to forge scan results. The file
+       is still scanned (its path escaped) but never quarantined automatically. -->
+  <rule id="133411" level="10">
+    <if_sid>133410</if_sid>
+    <field name="yara.message" type="pcre2">^file name with control characters: </field>
+    <description>YARA: file name with control characters under a scanned path: $(yara.message)</description>
+    <mitre>
+      <id>T1036</id>
+    </mitre>
+    <group>yara_suspicious_name,</group>
+  </rule>
+
+  <!-- jt-yara-quarantine.sh moved (or refused / failed to move) a matched file. -->
+  <rule id="133420" level="10">
+    <if_sid>133400</if_sid>
+    <field name="yara.level">^QUARANTINE$</field>
+    <description>YARA quarantine: $(yara.message)</description>
+    <group>yara_quarantine,</group>
+  </rule>
+
+  <!-- ===================================== the daily status line of each host (1.0) -->
+
+  <rule id="133430" level="3">
+    <if_sid>133400</if_sid>
+    <field name="yara.level">^STATUS$</field>
+    <description>YARA status: yr $(yara.yr), rules $(yara.rules_name) ($(yara.rules_age) days old), $(yara.scans) scans, $(yara.errors) failures and $(yara.hits) matches since the last status, quarantine $(yara.quarantine)</description>
+    <group>yara_status,</group>
+  </rule>
+
+  <rule id="133431" level="7">
+    <if_sid>133430</if_sid>
+    <field name="yara.state">^stale$</field>
+    <description>YARA rules on this host are $(yara.rules_age) days old ($(yara.rules_name)): new malware families are not detected until they are updated</description>
+    <group>yara_status,yara_stale,</group>
+  </rule>
+
+  <!-- many failures since the last status: 20 or more (a scan queue that is always busy,
+       timeouts on large deployments, a crashing yr) -->
+  <rule id="133433" level="7">
+    <if_sid>133430</if_sid>
+    <field name="yara.errors" type="pcre2">^(?:[2-9]\d|\d{3,})$</field>
+    <description>YARA: $(yara.errors) failed scans since the last status ($(yara.scans) scans): files are going unscanned</description>
+    <group>yara_status,yara_error,</group>
+  </rule>
+
+  <rule id="133432" level="10">
+    <if_sid>133430</if_sid>
+    <field name="yara.state">^broken$</field>
+    <description>YARA cannot scan on this host: $(yara.problem)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>yara_status,yara_broken,</group>
+  </rule>
+
+  <!-- ===================================== the manager's check (jt-yara-inventory.py) -->
+
+  <rule id="133440" level="0">
+    <decoded_as>json</decoded_as>
+    <location>^jt-yara-inventory$</location>
+    <field name="jt_yara_inv.event">\.+</field>
+    <description>jt-yara: inventory event</description>
+  </rule>
+
+  <rule id="133441" level="10">
+    <if_sid>133440</if_sid>
+    <field name="jt_yara_inv.event">^silent$</field>
+    <description>YARA: $(jt_yara_inv.agent_name) should scan but has sent no status for $(jt_yara_inv.hours) hours (last: $(jt_yara_inv.last)): the scanner may be removed, broken or its schedule gone</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>yara_inventory,</group>
+  </rule>
+
+  <rule id="133442" level="8">
+    <if_sid>133440</if_sid>
+    <field name="jt_yara_inv.event">^missing$</field>
+    <description>YARA: $(jt_yara_inv.agent_name) should scan ($(jt_yara_inv.why)) but has never sent a status: YARA is not installed there</description>
+    <group>yara_inventory,</group>
+  </rule>
+
+  <rule id="133443" level="3">
+    <if_sid>133440</if_sid>
+    <field name="jt_yara_inv.event">^unexpected$</field>
+    <description>YARA: $(jt_yara_inv.agent_name) scans but is not on the list of hosts that should: add it to the agent group yara or to expected in jt-yara.conf, or it is not checked</description>
+    <group>yara_inventory,</group>
+  </rule>
+
+  <rule id="133444" level="3">
+    <if_sid>133440</if_sid>
+    <field name="jt_yara_inv.event">^back$</field>
+    <description>YARA: $(jt_yara_inv.agent_name) reports again</description>
+    <group>yara_inventory,</group>
+  </rule>
+
+  <rule id="133449" level="5">
+    <if_sid>133440</if_sid>
+    <field name="jt_yara_inv.event">^error$</field>
+    <description>jt-yara: the inventory check failed: $(jt_yara_inv.detail)</description>
+    <group>yara_inventory,</group>
+  </rule>
+
+  <!-- ===================================== the scanner's own files (FIM of the group yara) -->
+
+  <rule id="133450" level="10">
+    <if_sid>553</if_sid>
+    <field name="file" type="pcre2">^(?:/usr/local/bin/yr|/usr/local/sbin/jt-yara-status|/etc/cron\.d/jt-yara-status|/var/ossec/active-response/bin/jt-yara(?:-quarantine)?\.sh|/var/ossec/etc/yara/rules\.yarc)$</field>
+    <description>YARA scanner removed: $(file) deleted, files on this host are no longer scanned</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>yara_inventory,</group>
+  </rule>
+
+  <!-- the YARA-X binary or an active response script replaced in place (an update does this
+       too: check that it was one) -->
+  <rule id="133451" level="8">
+    <if_sid>550</if_sid>
+    <field name="file" type="pcre2">^(?:/usr/local/bin/yr|/var/ossec/active-response/bin/jt-yara(?:-quarantine)?\.sh|/usr/local/sbin/jt-yara-status)$</field>
+    <description>YARA scanner file changed: $(file) (an update, or someone tampering with the scanner)</description>
+    <mitre>
+      <id>T1562.001</id>
+    </mitre>
+    <group>yara_inventory,</group>
+  </rule>
+
+</group>

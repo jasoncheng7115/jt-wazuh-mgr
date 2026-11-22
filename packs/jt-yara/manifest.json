@@ -1,0 +1,222 @@
+{
+  "id": "jt-yara",
+  "name": "YARA-X File Scanning",
+  "name_zh": "YARA-X 檔案掃描",
+  "version": "1.0",
+  "summary": "Scans every file that file integrity monitoring reports on web, application and temporary paths with YARA-X (YARA-Forge rules) through an active response, quarantines matches on hosts that allow it, and shows which hosts scan: each sends a daily status line that also proves the engine and rules work (a self-test scan), and the manager reports hosts that should scan but never did, stopped, run rules older than 30 days or cannot scan.",
+  "summary_zh": "以主動回應用 YARA-X（YARA-Forge 規則）掃描檔案完整性監控在網站、應用程式與暫存路徑上回報的每個檔案，允許的主機會隔離命中的檔案，並看得到哪些主機在掃描：每台每天送一行狀態，其中的自我測試掃描證明引擎與規則能用；manager 端回報應該掃描卻從未回報、停止回報、規則超過 30 天或無法掃描的主機。",
+  "rule_id_range": "133400-133499",
+  "author": "Jason Tools",
+  "license": "AGPL-3.0-or-later",
+  "requires": {
+    "wazuh": ">=4.8"
+  },
+  "tested_with": [
+    "4.14.10"
+  ],
+  "notes": [
+    "Detection after the fact, not blocking: a file is scanned a few seconds after FIM reports it (realtime or whodata monitoring of the path). Paths: /var/www, /srv/www, /usr/share/nginx/html, Z-Push, Zimbra's webapps, lib/ext and zimlets-deployed, /tmp, /var/tmp, /dev/shm, plus the prefixes in /var/ossec/etc/yara/scan-paths.local on the host (install with --scan-path). The paths must be monitored by FIM in realtime or whodata mode, or nothing triggers a scan.",
+    "A match is 133401 (level 12). On hosts installed with quarantine the file is scanned again and moved to /var/ossec/quarantine/<time>-<sha256 prefix>/ with a meta file holding its path, owner and mode (133420); a sha256 in /var/ossec/etc/yara/quarantine-allow.sha256 is never moved. Results are read from yr's JSON output and must name exactly the scanned path, and the quarantine rescans before it moves anything: a file name with a newline cannot forge a result (133411 reports such names).",
+    "The daily status line (133430-133433) says the yr version, the rules and their age, the scans, failures and matches since the previous line, and whether quarantine is installed, and runs a self-test scan of the marker rule: state broken (133432, level 10) means the host cannot scan (yr missing or failing, rules missing or not matching, the active response missing), stale (133431) rules older than 30 days. jt-yara-inventory.py (hourly on every node) reports expected hosts that never reported (133442) or stopped for 36 hours (133441), and hosts that report but are not expected (133443). Expected hosts are the members of the agent group yara and the names in etc/jt-packs/jt-yara.conf.",
+    "The group yara also watches the scanner's own files with FIM: deleting yr, the rules or a script raises 133450 at once; a changed binary or script 133451.",
+    "YARA-X official Linux builds need a CPU with AVX2; older CPUs need a build for x86-64-v2 (cargo build with RUSTFLAGS=\"-C target-cpu=x86-64-v2\"). The status self-test catches a binary that crashes. Each scan loads the compiled rules (about 0.5 s and 2 s of CPU for YARA-Forge core) and scans run one at a time at the lowest CPU and I/O priority; a burst of changes (a deployment) queues, and scans waiting more than 10 minutes are skipped and counted as failures.",
+    "The pack does not download YARA-X or rules: hosts often have no Internet access, and what runs as root should be verified first. The setup steps say where to get them and how to check them."
+  ],
+  "notes_zh": [
+    "事後偵測、不是阻擋：FIM 回報後幾秒內掃描該檔案（路徑要以即時或 whodata 模式監看）。掃描路徑：/var/www、/srv/www、/usr/share/nginx/html、Z-Push、Zimbra 的 webapps、lib/ext、zimlets-deployed、/tmp、/var/tmp、/dev/shm，以及主機上 /var/ossec/etc/yara/scan-paths.local 列的前置路徑（安裝時用 --scan-path）。這些路徑一定要由 FIM 以即時或 whodata 模式監看，否則不會觸發掃描。",
+    "命中是 133401（level 12）。安裝了隔離功能的主機會重新掃描一次，再把檔案移到 /var/ossec/quarantine/<時間>-<sha256 前段>/，旁邊的 meta 檔記錄原路徑、擁有者與權限（133420）；列在 /var/ossec/etc/yara/quarantine-allow.sha256 的 sha256 不會被移走。結果讀自 yr 的 JSON 輸出，而且必須正好是被掃描的路徑，隔離前也會重新掃描：檔名含換行字元無法偽造結果（這種檔名由 133411 回報）。",
+    "每日狀態行（133430-133433）列出 yr 版本、規則與規則天數、上次以來的掃描、失敗、命中次數、是否安裝隔離，並以測試規則做一次自我測試掃描：state broken（133432，level 10）表示這台無法掃描（yr 不存在或無法執行、規則不存在或比對不到、主動回應腳本不存在），stale（133431）表示規則超過 30 天。jt-yara-inventory.py（每小時、每個節點）回報從未回報的應掃描主機（133442）、36 小時沒有回報的（133441），以及有回報卻不在清單上的（133443）。應掃描的主機＝agent 群組 yara 的成員，加上 etc/jt-packs/jt-yara.conf 列的名稱。",
+    "群組 yara 也以 FIM 監看掃描器自己的檔案：刪除 yr、規則或腳本會立即觸發 133450；執行檔或腳本被改是 133451。",
+    "YARA-X 官方 Linux 版需要支援 AVX2 的 CPU；較舊的 CPU 要用 x86-64-v2 的編譯版本（RUSTFLAGS=\"-C target-cpu=x86-64-v2\" cargo build）。狀態行的自我測試會抓到會當掉的執行檔。每次掃描都會載入編譯好的規則（YARA-Forge core 約 0.5 秒、2 秒 CPU），一次只跑一個，CPU 與 I/O 都是最低優先權；大量變更（部署）時會排隊，等超過 10 分鐘的掃描會略過並計為失敗。",
+    "套件不下載 YARA-X 或規則：主機常常沒有網路，而且以 root 執行的東西應該先驗證。部署步驟寫了去哪裡取得、怎麼檢查。"
+  ],
+  "files": [
+    {
+      "type": "rule",
+      "name": "zz-133400-jt_yara_rules.xml",
+      "dest": "etc/rules/zz-133400-jt_yara_rules.xml",
+      "sha256": "9a744d4a9f5bd7212a7734395fc7e9b2a2851d685cfda90f31ab6c3e47a53af1"
+    },
+    {
+      "type": "decoder",
+      "name": "jt-yara_decoders.xml",
+      "dest": "etc/decoders/jt-yara_decoders.xml",
+      "sha256": "9dd1a4d347e48889c44dcbfe68c5b4e881226cd314c1b418ebc5af3f7c09e4d9"
+    }
+  ],
+  "scripts": [
+    {
+      "name": "jt-yara-inventory.py",
+      "dest": "etc/jt-packs/bin/jt-yara-inventory.py",
+      "sha256": "c0e6d04f7b8702e7b4553d04d88c1223972e1ec07a2fb410b49df6435ea66d9a",
+      "cron": "41 * * * *",
+      "args": "--wazuh-path {wazuh_path}",
+      "description": "Reports hosts that should scan with YARA but never sent a status line, stopped sending it, or send it without being expected, from this node's alerts"
+    }
+  ],
+  "agent_group": {
+    "name": "yara",
+    "config": "agent.conf",
+    "files": [
+      "jt-yara-install.sh",
+      "jt-yara.sh",
+      "jt-yara-quarantine.sh",
+      "jt-yara-status.sh",
+      "jt-test.yar"
+    ],
+    "description": "Hosts that should scan with YARA: delivers the scanner's scripts and watches its files with FIM"
+  },
+  "setup": [
+    {
+      "platform": "manager",
+      "required": true,
+      "title": "Install the pack, define the active responses on every node, reload",
+      "title_zh": "安裝套件、在每個節點定義主動回應、重新載入",
+      "body": "1. Install the pack from this page. If decoders/jt-yara_decoders.xml and rules/zz-133400-jt_yara_rules.xml already exist from a hand-made deployment, the install replaces them and keeps the old files as originals.\n2. In ossec.conf of every manager node (master and workers: an agent's active response is sent by the node it is connected to) add the blocks below inside <ossec_config>, unless jt-yara and jt-yara-quarantine are already defined. Add to rules_id any of your own rules that are children of 550 or 554 for scanned paths (a child rule replaces its parent, and the response only sees the final rule).\n3. Restart the managers: active response changes need a restart, not a reload. Then press Reload Ruleset on the Rules tab.",
+      "body_zh": "1. 在本頁安裝套件。若手動部署時已有 decoders/jt-yara_decoders.xml 與 rules/zz-133400-jt_yara_rules.xml，安裝會取代它們並保留舊檔為原檔。\n2. 在每個 manager 節點（master 與 worker：agent 的主動回應由它連線的節點送出）的 ossec.conf，於 <ossec_config> 內加入下方區塊，除非 jt-yara 與 jt-yara-quarantine 已經定義。若你自己有 550 或 554 的子規則涵蓋掃描路徑，把它們的編號加進 rules_id（子規則會取代父規則，主動回應只看最後的規則）。\n3. 重啟 manager：主動回應的變更要重啟，熱重載不夠。接著到「規則」分頁按「重新載入規則集」。",
+      "code": "<command>\n  <name>jt-yara</name>\n  <executable>jt-yara.sh</executable>\n  <timeout_allowed>no</timeout_allowed>\n</command>\n<command>\n  <name>jt-yara-quarantine</name>\n  <executable>jt-yara-quarantine.sh</executable>\n  <timeout_allowed>no</timeout_allowed>\n</command>\n<active-response>\n  <disabled>no</disabled>\n  <command>jt-yara</command>\n  <location>local</location>\n  <rules_id>550,554</rules_id>\n</active-response>\n<active-response>\n  <disabled>no</disabled>\n  <command>jt-yara-quarantine</command>\n  <location>local</location>\n  <rules_id>133401,133402</rules_id>\n</active-response>",
+      "verify": "/var/ossec/bin/wazuh-analysisd -t prints no error or warning on each node, and grep -c jt-yara /var/ossec/etc/ossec.conf is at least 4.",
+      "verify_zh": "每個節點執行 /var/ossec/bin/wazuh-analysisd -t 沒有錯誤或警告，且 grep -c jt-yara /var/ossec/etc/ossec.conf 至少為 4。"
+    },
+    {
+      "platform": "manager",
+      "required": true,
+      "title": "Say which hosts should scan",
+      "title_zh": "指定哪些主機應該掃描",
+      "body": "jt-yara-inventory.py checks the hosts you expect to scan. Either add them to the agent group yara (the group also delivers the install files to /var/ossec/etc/shared/ and watches the scanner's files; adding a host restarts its agent once), or list their agent names in etc/jt-packs/jt-yara.conf on every node (no restart). Pick hosts that serve web applications or receive uploads (PHP, JSP, Node.js sites, mail servers, file servers) and their reverse proxies.\nOn a cluster also copy jt-yara-inventory.py and its schedule to every worker: the cluster does not copy scripts (commands below).",
+      "body_zh": "jt-yara-inventory.py 檢查你指定應該掃描的主機。可以把它們加入 agent 群組 yara（群組也會把安裝檔放到 /var/ossec/etc/shared/，並監看掃描器的檔案；加入時 agent 會重啟一次），或在每個節點的 etc/jt-packs/jt-yara.conf 列出 agent 名稱（不必重啟）。挑選提供網站應用程式或接收上傳的主機（PHP、JSP、Node.js 網站、郵件伺服器、檔案伺服器）及它們前面的反向代理。\n叢集環境也要把 jt-yara-inventory.py 與排程複製到每個 worker：叢集不會複製腳本（指令如下）。",
+      "code": "/var/ossec/bin/agent_groups -a -i <agent_id> -g yara\nprintf 'expected = web1, mail1, files1\\n' > /var/ossec/etc/jt-packs/jt-yara.conf\nchown root:wazuh /var/ossec/etc/jt-packs/jt-yara.conf; chmod 640 /var/ossec/etc/jt-packs/jt-yara.conf\n# every worker:\nscp -p /var/ossec/etc/jt-packs/bin/jt-yara-inventory.py <worker>:/var/ossec/etc/jt-packs/bin/\nscp -p /etc/cron.d/jt-jt-yara <worker>:/etc/cron.d/\n# and, if you wrote one, the list: scp -p /var/ossec/etc/jt-packs/jt-yara.conf <worker>:/var/ossec/etc/jt-packs/",
+      "verify": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-yara-inventory.py --wazuh-path /var/ossec --list lists the expected hosts; after 36 hours a host that never reported raises 133442.",
+      "verify_zh": "/usr/bin/python3 /var/ossec/etc/jt-packs/bin/jt-yara-inventory.py --wazuh-path /var/ossec --list 列出應掃描的主機；36 小時後，從未回報的主機會觸發 133442。"
+    },
+    {
+      "platform": "linux",
+      "required": true,
+      "title": "On each host: install YARA-X, the rules and the scripts (as root)",
+      "title_zh": "在每台主機：安裝 YARA-X、規則與腳本（以 root）",
+      "body": "1. YARA-X CLI: download the Linux release from https://github.com/VirusTotal/yara-x/releases and check it against the checksum published there. On a CPU without AVX2 (grep -c avx2 /proc/cpuinfo prints 0) the official build crashes: build one for x86-64-v2 on another machine.\n2. Rules: the YARA-Forge core set (https://github.com/YARAHQ/yara-forge/releases, yara-forge-rules-core.zip, file packages/core/yara-rules-core.yar). The extended and full sets find more and also report more false positives on web servers.\n3. Run the install script from the group's shared folder (or from the pack's agent/ files copied to the host). --scan-path adds a site's own web roots; --no-quarantine for hosts where nothing may be moved (development machines); --restart restarts the agent after the first install, which the active response needs.",
+      "body_zh": "1. YARA-X CLI：從 https://github.com/VirusTotal/yara-x/releases 下載 Linux 版，並以該頁公布的檢查碼核對。CPU 不支援 AVX2（grep -c avx2 /proc/cpuinfo 為 0）時官方版會當掉，要在別台機器編譯 x86-64-v2 版本。\n2. 規則：YARA-Forge core（https://github.com/YARAHQ/yara-forge/releases，yara-forge-rules-core.zip 裡的 packages/core/yara-rules-core.yar）。extended 與 full 找得更多，但在網站伺服器上誤報也更多。\n3. 從群組的 shared 資料夾（或把套件 agent/ 的檔案複製到主機上）執行安裝腳本。--scan-path 加入站台自己的網站目錄；--no-quarantine 用在不能移動任何檔案的主機（開發機）；--restart 在第一次安裝後重啟 agent，主動回應需要這一步。",
+      "file": "agent/jt-yara-install.sh",
+      "code": "bash /var/ossec/etc/shared/jt-yara-install.sh --yr ./yr --rules ./yara-rules-core.yar --rules-name yara-forge-core-<date> --restart\n# development host: add --no-quarantine; extra web root: --scan-path /srv/app/",
+      "verify": "echo 'JT-WAZUH-YARA-TEST-7f3a9c' > /var/www/jt-yara-test.php (a path FIM watches in realtime): within a minute 133402 (level 5), then 133420 when the host quarantines. The status line 133430 arrives right after the install and daily after that.",
+      "verify_zh": "echo 'JT-WAZUH-YARA-TEST-7f3a9c' > /var/www/jt-yara-test.php（FIM 即時監看的路徑）：一分鐘內出現 133402（level 5），會隔離的主機接著出現 133420。安裝後立即、之後每天會收到狀態行 133430。"
+    },
+    {
+      "platform": "manager",
+      "required": false,
+      "title": "Import the dashboard",
+      "title_zh": "匯入看板",
+      "body": "The dashboard shows one row per host with its latest status (state, yr, rules and their age, scans, failures, matches, quarantine, last report), the matches, quarantines, failures and hosts that do not report. Use Import all dashboards on the Rule packs tab, or the Dashboard section of this pack. Set the time range to 7 days or more: the status line comes once a day.",
+      "body_zh": "看板每台主機一列顯示最新狀態（狀態、yr、規則與天數、掃描、失敗、命中、隔離、最後回報），以及命中、隔離、失敗與沒有回報的主機。在「規則套件」分頁用「匯入所有看板」，或本套件的「看板」區塊。時間範圍請設 7 天以上：狀態行每天一次。",
+      "verify": "The status table lists every host that has reported.",
+      "verify_zh": "狀態表列出所有回報過的主機。"
+    }
+  ],
+  "dashboard": {
+    "status_table": {
+      "group": "yara_status",
+      "title": "Scanner status by host (latest status line)",
+      "title_zh": "各主機掃描器狀態（最新狀態行）",
+      "columns": [
+        {
+          "field": "data.yara.state",
+          "title": "State",
+          "title_zh": "狀態",
+          "w": 80,
+          "colours": {
+            "broken": "#BD271E",
+            "stale": "#B9790B"
+          }
+        },
+        {
+          "field": "data.yara.yr",
+          "title": "yr",
+          "w": 70,
+          "title_zh": "yr"
+        },
+        {
+          "field": "data.yara.rules_name",
+          "title": "Rules",
+          "title_zh": "規則",
+          "w": 190
+        },
+        {
+          "field": "data.yara.rules_age",
+          "title": "Rules age (days)",
+          "title_zh": "規則天數",
+          "w": 90,
+          "number": true
+        },
+        {
+          "field": "data.yara.scans",
+          "title": "Scans",
+          "title_zh": "掃描",
+          "w": 70,
+          "number": true
+        },
+        {
+          "field": "data.yara.errors",
+          "title": "Failures",
+          "title_zh": "失敗",
+          "w": 70,
+          "number": true
+        },
+        {
+          "field": "data.yara.hits",
+          "title": "Matches",
+          "title_zh": "命中",
+          "w": 70,
+          "number": true
+        },
+        {
+          "field": "data.yara.quarantine",
+          "title": "Quarantine",
+          "title_zh": "隔離",
+          "w": 80
+        },
+        {
+          "field": "data.yara.problem",
+          "title": "Problem",
+          "title_zh": "問題",
+          "fill": true
+        }
+      ]
+    },
+    "fields": [
+      {
+        "field": "data.yara.rule",
+        "title": "Matched YARA rules",
+        "title_zh": "命中的 YARA 規則",
+        "chart": "bar"
+      },
+      {
+        "field": "data.jt_yara_inv.event",
+        "title": "Inventory findings",
+        "title_zh": "盤點結果",
+        "chart": "pie"
+      },
+      {
+        "field": "data.jt_yara_inv.agent_name",
+        "title": "Hosts that should scan and do not report",
+        "title_zh": "應掃描卻未回報的主機"
+      },
+      {
+        "field": "data.yara.file",
+        "title": "Matched files",
+        "title_zh": "命中的檔案"
+      },
+      {
+        "field": "data.yara.message",
+        "title": "Failures and quarantines",
+        "title_zh": "失敗與隔離"
+      }
+    ],
+    "columns": [
+      "data.yara.rule",
+      "data.yara.file",
+      "data.yara.message",
+      "data.yara.state",
+      "data.jt_yara_inv.agent_name"
+    ]
+  }
+}

@@ -384,7 +384,7 @@ class TestPackDashboards(unittest.TestCase):
                         self.assertTrue(o['attributes']['title'].startswith(m['id'] + ' · '))
 
     def test_the_optional_manifest_section_is_well_formed(self):
-        allowed = {'fields', 'columns', 'srcip', 'dstuser', 'rules_by'}
+        allowed = {'fields', 'columns', 'srcip', 'dstuser', 'rules_by', 'status_table'}
         for m, _, objects in self.packs:
             opts = m.get('dashboard')
             if opts is None:
@@ -400,6 +400,19 @@ class TestPackDashboards(unittest.TestCase):
                         self.assertTrue(item.get('title_zh'), 'a title needs title_zh too')
                 for c in opts.get('columns', []):
                     self.builder.field_kind(c, self.fields)
+                st = opts.get('status_table')
+                if st is not None:
+                    self.assertTrue(set(st) <= {'group', 'title', 'title_zh', 'columns', 'height'})
+                    self.assertTrue(re.fullmatch(r'[a-z0-9_]+', st['group']))
+                    self.assertTrue(st['columns'])
+                    self.assertLessEqual(sum(1 for c in st['columns'] if c.get('fill')), 1)
+                    for c in st['columns']:
+                        self.assertTrue(set(c) <= {'field', 'title', 'title_zh', 'w', 'number', 'fill', 'colours'}, c)
+                        self.builder.field_kind(c['field'], self.fields)
+                        if 'title' in c:
+                            self.assertTrue(c.get('title_zh'), 'a title needs title_zh too')
+                    panel = next(o for o in objects if o['id'] == 'jt-pack-%s-status' % m['id'])
+                    self.assertIn(st['group'], panel['attributes']['visState'])
                 by = opts.get('rules_by')
                 if by is not None:
                     by = {'field': by} if isinstance(by, str) else by
