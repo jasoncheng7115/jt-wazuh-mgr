@@ -4,6 +4,10 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.40.2 (2026-11-22)
+
+- **jt-yara 1.1.1**: the agent group yara reads active-responses.log itself, and jt-yara-install.sh warns when the agent does not read it. A domain controller whose ossec.conf lacked that file installed and scanned normally, but nothing it wrote reached the manager; the inventory showed it as never reporting.
+
 ## v1.40.1 (2026-11-22)
 
 - **jt-yara 1.1**: weekly rules update on every host (`jt-yara-update`): the latest YARA-Forge release, once it is three days old, is downloaded, checked against the SHA-256 digest GitHub publishes for the asset, compiled with the test rule and installed only if it compiles and passes the self-test (133434); a failure keeps the previous rules (133412). The install fetches the latest release when no rules are given; `--no-auto-update` and `jt-yara-update --zip` for hosts without Internet access; Python is used where curl is missing. Tested end to end in a container, including a real download of the 20261115 release (5,084 rules).

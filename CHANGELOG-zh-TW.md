@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.40.2（2026-11-22）
+
+- **jt-yara 1.1.1**：agent 群組 yara 自己讀取 active-responses.log，jt-yara-install.sh 在 agent 沒有讀這個檔時會警告。曾有一台網域控制站的 ossec.conf 少了這個檔，安裝與掃描都正常，但寫出的內容從未送到 manager；盤點顯示它從未回報。
+
 ## v1.40.1（2026-11-22）
 
 - **jt-yara 1.1**：每台主機每週更新規則（`jt-yara-update`）：YARA-Forge 最新發行發布滿三天後才下載，以 GitHub 為該檔公布的 SHA-256 核對，連同測試規則編譯，能編譯且通過自我測試才換上（133434）；失敗時保留原規則（133412）。沒有給規則時安裝會抓最新發行；無法連外的主機用 `--no-auto-update` 與 `jt-yara-update --zip`；沒有 curl 時改用 Python。已在容器端對端測試，包括實際下載 20261115 發行（5,084 條規則）。

@@ -13,6 +13,7 @@ groupadd -r wazuh 2>/dev/null
 mkdir -p /var/ossec/active-response/bin /var/ossec/etc /var/ossec/logs /var/ossec/var /var/ossec/tmp /var/ossec/etc/shared /etc/cron.d
 touch $LOG
 cp /pack/* /var/ossec/etc/shared/
+mv /var/ossec/etc/shared/agent.conf /tmp/group-agent.conf     # first as a host outside the group
 # a harmless rule standing in for YARA-Forge: it matches only a marker string
 cat > /tmp/rules.yar <<'R'
 rule JT_E2E_Fake_Webshell {
@@ -28,6 +29,7 @@ bash /var/ossec/etc/shared/jt-yara-install.sh --rules /tmp/rules.yar >/tmp/o 2>&
 bash /var/ossec/etc/shared/jt-yara-install.sh --yr /yr --rules /tmp/rules.yar --rules-name e2e-rules --scan-path /srv/app/ >/tmp/o 2>&1 \
     && ok "install" || { bad "install"; cat /tmp/o; }
 grep -q 'restart the agent' /tmp/o && ok "first install asks for an agent restart" || bad "restart note"
+grep -q 'does not read /var/ossec/logs/active-responses.log' /tmp/o && ok "warns when the agent does not read active-responses.log" || bad "collection warning"
 [ -x /usr/local/bin/yr ] && [ -r /var/ossec/etc/yara/rules.yarc ] && [ -x /var/ossec/active-response/bin/jt-yara.sh ] \
     && [ -x /var/ossec/active-response/bin/jt-yara-quarantine.sh ] && [ -f /etc/cron.d/jt-yara-status ] && ok "files in place" || bad "files in place"
 [ "$(stat -c %G /var/ossec/active-response/bin/jt-yara.sh)" = wazuh ] && ok "scripts owned by group wazuh" || bad "group"
@@ -93,7 +95,9 @@ touch -d '40 days ago' /var/ossec/etc/yara/rules.yarc; /usr/local/sbin/jt-yara-s
 tail -1 $LOG | grep -q 'state=stale .*rules_age=40 ' && ok "old rules are stale" || { bad "stale"; tail -1 $LOG; }
 
 # 8. scan-only install removes the quarantine; a second install changes nothing else and asks no restart
+cp /tmp/group-agent.conf /var/ossec/etc/shared/agent.conf    # now in the group yara
 bash /var/ossec/etc/shared/jt-yara-install.sh --no-quarantine >/tmp/o 2>&1 && ok "update to scan only" || { bad "scan-only"; cat /tmp/o; }
+grep -q 'does not read' /tmp/o && bad "warned although the group reads the log" || ok "no warning once the group reads the log"
 [ ! -e /var/ossec/active-response/bin/jt-yara-quarantine.sh ] && ok "quarantine removed" || bad "quarantine still there"
 grep -q 'restart the agent' /tmp/o && bad "an update asked for a restart" || ok "an update needs no restart"
 tail -1 $LOG | grep -q 'quarantine=no' && ok "status says quarantine=no" || bad "quarantine=no"

@@ -2,7 +2,7 @@
   "id": "jt-yara",
   "name": "YARA-X File Scanning",
   "name_zh": "YARA-X 檔案掃描",
-  "version": "1.1",
+  "version": "1.1.1",
   "summary": "Scans every file that file integrity monitoring reports on web, application and temporary paths with YARA-X (YARA-Forge rules) through an active response, quarantines matches on hosts that allow it, and shows which hosts scan: each sends a daily status line that also proves the engine and rules work (a self-test scan), and the manager reports hosts that should scan but never did, stopped, run rules older than 30 days or cannot scan.",
   "summary_zh": "以主動回應用 YARA-X（YARA-Forge 規則）掃描檔案完整性監控在網站、應用程式與暫存路徑上回報的每個檔案，允許的主機會隔離命中的檔案，並看得到哪些主機在掃描：每台每天送一行狀態，其中的自我測試掃描證明引擎與規則能用；manager 端回報應該掃描卻從未回報、停止回報、規則超過 30 天或無法掃描的主機。",
   "rule_id_range": "133400-133499",
@@ -21,7 +21,8 @@
     "The group yara also watches the scanner's own files with FIM: deleting yr, the rules or a script raises 133450 at once; a changed binary or script 133451.",
     "YARA-X official Linux builds need a CPU with AVX2; older CPUs need a build for x86-64-v2 (cargo build with RUSTFLAGS=\"-C target-cpu=x86-64-v2\"). The status self-test catches a binary that crashes. Each scan loads the compiled rules (about 0.5 s and 2 s of CPU for YARA-Forge core) and scans run one at a time at the lowest CPU and I/O priority; a burst of changes (a deployment) queues, and scans waiting more than 10 minutes are skipped and counted as failures.",
     "The pack does not download YARA-X or rules: hosts often have no Internet access, and what runs as root should be verified first. The setup steps say where to get them and how to check them.",
-    "1.1: weekly rules update on every host (jt-yara-update, scheduled Sunday 05:xx by the install script): it reads the latest YARA-Forge release, waits until it is 3 days old, downloads the rule set's zip, checks it against the SHA-256 digest GitHub publishes for the asset, compiles it with the test rule and replaces the rules only when the new set compiles and passes the self-test (133434, level 3); a failure keeps the previous rules (133412, level 7). Hosts without Internet access: install with --no-auto-update and run jt-yara-update --zip FILE. With neither --rules nor existing rules, the install fetches the latest release. curl is used when present, Python otherwise; both honour https_proxy."
+    "1.1: weekly rules update on every host (jt-yara-update, scheduled Sunday 05:xx by the install script): it reads the latest YARA-Forge release, waits until it is 3 days old, downloads the rule set's zip, checks it against the SHA-256 digest GitHub publishes for the asset, compiles it with the test rule and replaces the rules only when the new set compiles and passes the self-test (133434, level 3); a failure keeps the previous rules (133412, level 7). Hosts without Internet access: install with --no-auto-update and run jt-yara-update --zip FILE. With neither --rules nor existing rules, the install fetches the latest release. curl is used when present, Python otherwise; both honour https_proxy.",
+    "1.1.1: the group yara reads active-responses.log itself, and the install warns when the agent does not read it: a host whose ossec.conf lacked that <localfile> installed and scanned, but its results and status lines never reached the manager (it showed as never reporting)."
   ],
   "notes_zh": [
     "事後偵測、不是阻擋：FIM 回報後幾秒內掃描該檔案（路徑要以即時或 whodata 模式監看）。掃描路徑：/var/www、/srv/www、/usr/share/nginx/html、Z-Push、Zimbra 的 webapps、lib/ext、zimlets-deployed、/tmp、/var/tmp、/dev/shm，以及主機上 /var/ossec/etc/yara/scan-paths.local 列的前置路徑（安裝時用 --scan-path）。這些路徑一定要由 FIM 以即時或 whodata 模式監看，否則不會觸發掃描。",
@@ -30,7 +31,8 @@
     "群組 yara 也以 FIM 監看掃描器自己的檔案：刪除 yr、規則或腳本會立即觸發 133450；執行檔或腳本被改是 133451。",
     "YARA-X 官方 Linux 版需要支援 AVX2 的 CPU；較舊的 CPU 要用 x86-64-v2 的編譯版本（RUSTFLAGS=\"-C target-cpu=x86-64-v2\" cargo build）。狀態行的自我測試會抓到會當掉的執行檔。每次掃描都會載入編譯好的規則（YARA-Forge core 約 0.5 秒、2 秒 CPU），一次只跑一個，CPU 與 I/O 都是最低優先權；大量變更（部署）時會排隊，等超過 10 分鐘的掃描會略過並計為失敗。",
     "套件不下載 YARA-X 或規則：主機常常沒有網路，而且以 root 執行的東西應該先驗證。部署步驟寫了去哪裡取得、怎麼檢查。",
-    "1.1：每台主機每週更新規則（jt-yara-update，安裝腳本排在週日 05:xx）：讀 YARA-Forge 最新發行，等發布滿 3 天，下載該規則組的 zip，以 GitHub 為該檔公布的 SHA-256 核對，連同測試規則編譯，新規則能編譯且通過自我測試才取代（133434，level 3）；失敗時保留原規則（133412，level 7）。無法連外的主機：安裝時加 --no-auto-update，改用 jt-yara-update --zip 檔案。沒有給 --rules 也沒有既有規則時，安裝會自動抓最新發行。有 curl 用 curl，否則用 Python；兩者都會使用 https_proxy。"
+    "1.1：每台主機每週更新規則（jt-yara-update，安裝腳本排在週日 05:xx）：讀 YARA-Forge 最新發行，等發布滿 3 天，下載該規則組的 zip，以 GitHub 為該檔公布的 SHA-256 核對，連同測試規則編譯，新規則能編譯且通過自我測試才取代（133434，level 3）；失敗時保留原規則（133412，level 7）。無法連外的主機：安裝時加 --no-auto-update，改用 jt-yara-update --zip 檔案。沒有給 --rules 也沒有既有規則時，安裝會自動抓最新發行。有 curl 用 curl，否則用 Python；兩者都會使用 https_proxy。",
+    "1.1.1：群組 yara 自己讀 active-responses.log，安裝時若 agent 沒有讀這個檔會警告：曾有主機的 ossec.conf 少了這個 <localfile>，安裝與掃描都正常，但結果與狀態行從未送到 manager（顯示為從未回報）。"
   ],
   "files": [
     {

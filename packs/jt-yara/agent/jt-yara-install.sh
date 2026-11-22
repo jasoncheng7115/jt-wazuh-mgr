@@ -1,5 +1,5 @@
 #!/bin/bash
-# jt-yara 1.1 - install or update the YARA-X scanner on a Wazuh agent (Linux, as root).
+# jt-yara 1.1.1 - install or update the YARA-X scanner on a Wazuh agent (Linux, as root).
 #
 #   jt-yara-install.sh [--yr PATH] [--rules FILE.yar [--rules-name NAME]]
 #                      [--scan-path /prefix/ ...] [--no-quarantine] [--no-auto-update] [--restart]
@@ -110,7 +110,14 @@ else
     rm -f /etc/cron.d/jt-yara-update
 fi
 
-# 5. the first status line now, so the manager knows this host
+# 5. the agent must read active-responses.log, or nothing reaches the manager
+if ! grep -qs 'active-responses.log' "$OSSEC/etc/ossec.conf" "$OSSEC/etc/shared/agent.conf"; then
+    echo "WARNING: this agent does not read $OSSEC/logs/active-responses.log: scan results and status lines"
+    echo "         will not reach the manager. Put the host in the agent group yara (its configuration reads"
+    echo "         it), or add a <localfile> for it (log_format syslog) to ossec.conf and restart the agent."
+fi
+
+# 6. the first status line now, so the manager knows this host
 /usr/local/sbin/jt-yara-status
 tail -1 $OSSEC/logs/active-responses.log
 
