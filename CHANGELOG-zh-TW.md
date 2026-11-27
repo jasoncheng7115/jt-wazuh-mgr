@@ -4,6 +4,10 @@
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.40.3（2026-11-27）
+
+- **jt-portable-detect 3.6.3**：channel watchdog 可能讓 Wazuh agent 停著不再啟動。agent 結束所需時間比 `Restart-Service` 等待的久時（某台 Windows 11 開機後約 40 秒），重啟在 agent 已經停止之後才拋出錯誤；之後每次執行都看不到 agent 程序就直接結束，主機就一直沒有 agent，直到有人發現（曾經長達九天）。現在會等舊的 agent 結束再啟動、啟動失敗會重試，而且只要發現服務設為自動啟動卻停著，就把它啟動（新規則 906192，level 10）。要刻意停用 agent，請把服務改成手動或停用。已經裝了 watchdog 的主機要把新檔覆蓋到本機副本（新的部署步驟）。
+
 ## v1.40.2（2026-11-22）
 
 - **jt-yara 1.1.1**：agent 群組 yara 自己讀取 active-responses.log，jt-yara-install.sh 在 agent 沒有讀這個檔時會警告。曾有一台網域控制站的 ossec.conf 少了這個檔，安裝與掃描都正常，但寫出的內容從未送到 manager；盤點顯示它從未回報。

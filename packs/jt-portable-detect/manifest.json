@@ -2,7 +2,7 @@
   "id": "jt-portable-detect",
   "name": "Portable Executable Detection",
   "name_zh": "可攜式程式偵測",
-  "version": "3.6.2",
+  "version": "3.6.3",
   "summary": "Detects portable/no-install executables being dropped and run on Windows, Linux and macOS.",
   "summary_zh": "偵測免安裝執行檔在 Windows、Linux、macOS 上的落地與執行。",
   "rule_id_range": "906100-906299",
@@ -31,7 +31,8 @@
     "3.5.1：906235（瀏覽器自動化執行環境與自我更新 CLI 在自己版本目錄中執行，level 3）改從 audit 原始記錄讀 exe=\"...\"，不再用 audit.exe。4.14 之前的 auditd 解碼器會在第一個點把 audit.exe 截斷（/root/），這條規則從不成立，這些程式停在 906210（level 10）。exe 由核心寫入；含引號的參數會被 auditd 轉成十六進位，無法偽造這段文字。",
     "3.6：規則 906214（/tmp、/var/tmp、/dev/shm 中具執行權限的 sh、py、pl、elf、bin，L12，是 906202 與 906203 的子規則，所以那兩條的排除都適用）與 906215（同位置的 jsp、jspx、class、jar、war，L12），原本是 jt-zimbra 的 100809 與 100807，對所有 agent 生效。只裝本套件時，/tmp 中可執行的腳本從 906202 的 L10 變成 L12。",
     "3.6.1：只改規則檔中文註解的用語，規則沒有變動。",
-    "3.6.2：穿隧、遠端控制與雙用途工具的規則（906176、906179、906152、906175、906154、906155）原本以 not_match_key 排除核准的工具，但欄位不存在時 not_match_key 不成立。沒有版本資訊的程式，Sysmon 的 OriginalFileName 是「-」，Wazuh 視同沒有這個欄位，所以 ngrok、frp、chisel 等沒有版本資訊的 Go 執行檔從來到不了 906176、906179、906152，只停在位置規則（906100／906106，level 6／9）。現在這些規則不看核准清單，核准的工具由 906144／906145 事後降到 level 3。這是在沙箱用 manager 自己的 eventchannel 解碼器重放 Sysmon 事件時發現的；Windows 規則鏈從此有真正的沙箱案例。"
+    "3.6.2：穿隧、遠端控制與雙用途工具的規則（906176、906179、906152、906175、906154、906155）原本以 not_match_key 排除核准的工具，但欄位不存在時 not_match_key 不成立。沒有版本資訊的程式，Sysmon 的 OriginalFileName 是「-」，Wazuh 視同沒有這個欄位，所以 ngrok、frp、chisel 等沒有版本資訊的 Go 執行檔從來到不了 906176、906179、906152，只停在位置規則（906100／906106，level 6／9）。現在這些規則不看核准清單，核准的工具由 906144／906145 事後降到 level 3。這是在沙箱用 manager 自己的 eventchannel 解碼器重放 Sysmon 事件時發現的；Windows 規則鏈從此有真正的沙箱案例。",
+    "Windows：3.6.2 以前，channel watchdog 可能讓 agent 停著不再啟動：agent 結束得比 Restart-Service 等待的時間久時，重啟在 agent 已經停止後失敗，之後每次執行都看不到 agent 程序而什麼也不做（曾有主機因此好幾天沒有 agent）。3.6.3 起會等 agent 結束再啟動、啟動失敗會重試，而且只要發現服務設為自動啟動卻停著，就把它啟動並回報規則 906192（level 10）。要刻意停用 agent，請把服務改成手動或停用。"
   ],
   "author": "Jason Tools",
   "license": "AGPL-3.0-or-later",
@@ -43,7 +44,7 @@
       "type": "rule",
       "name": "zz-906100-jt_portable_rules.xml",
       "dest": "etc/rules/zz-906100-jt_portable_rules.xml",
-      "sha256": "d66d09c5239d65f4070df5e09a975fd1c063b67c84f65e0618b07b97598e1218"
+      "sha256": "7123ccbfa49e77443cf0dbdebc67852646a6ad7ab5382060d99186198c6bb6cf"
     },
     {
       "type": "rule",
@@ -93,7 +94,8 @@
     "3.5.1: 906235 (browser automation runtimes and self-updating CLIs in their own versioned directory, level 3) reads exe=\"...\" from the raw audit record instead of audit.exe. Before 4.14 the auditd decoder cut audit.exe at the first dot (/root/), so the rule never applied and those programs stayed at 906210 (level 10). The kernel writes exe; an argument containing a quote is hex-encoded by auditd, so it cannot fake the text.",
     "3.6: rules 906214 (an executable sh, py, pl, elf or bin file in /tmp, /var/tmp or /dev/shm, L12, a child of 906202 and 906203 so their exclusions apply) and 906215 (jsp, jspx, class, jar or war there, L12), until now 100809 and 100807 in jt-zimbra, which applied them to every agent. With this pack alone, an executable script in /tmp now reports at L12 instead of 906202's L10.",
     "3.6.1: wording in the rule file's Chinese comments only; no rule changed.",
-    "3.6.2: the tunnelling, remote access and dual-use rules (906176, 906179, 906152, 906175, 906154, 906155) excluded approved tools with not_match_key, which fails when the field is missing. A program without version information has OriginalFileName \"-\" in Sysmon, which Wazuh treats as no field, so ngrok, frp, chisel and other Go binaries without version information never reached 906176, 906179 or 906152 and stopped at the location rule (906100 / 906106, level 6 / 9). The rules no longer read the approved list; 906144 / 906145 lower an approved tool to level 3 afterwards. Found by replaying Sysmon events through the manager's own eventchannel decoder in the sandbox; the Windows rule chains now have real sandbox cases."
+    "3.6.2: the tunnelling, remote access and dual-use rules (906176, 906179, 906152, 906175, 906154, 906155) excluded approved tools with not_match_key, which fails when the field is missing. A program without version information has OriginalFileName \"-\" in Sysmon, which Wazuh treats as no field, so ngrok, frp, chisel and other Go binaries without version information never reached 906176, 906179 or 906152 and stopped at the location rule (906100 / 906106, level 6 / 9). The rules no longer read the approved list; 906144 / 906145 lower an approved tool to level 3 afterwards. Found by replaying Sysmon events through the manager's own eventchannel decoder in the sandbox; the Windows rule chains now have real sandbox cases.",
+    "Windows: up to 3.6.2 the channel watchdog could leave the agent stopped: when the agent took longer to exit than Restart-Service waits, the restart failed after the agent had stopped, and every later run saw no agent process and did nothing (a host went days without an agent). From 3.6.3 it waits for the agent to exit, retries the start, and also starts the agent whenever it finds the service stopped while set to start automatically (rule 906192, level 10). To stop the agent on purpose, set the service to Manual or Disabled."
   ],
   "agent_group": {
     "name": "portable-detect",
@@ -161,6 +163,19 @@
       "verify": "Get-ScheduledTaskInfo -TaskPath '\\jt-wazuh-mgr\\' -TaskName channel-watchdog shows LastTaskResult 0 within 15 minutes. After the next reboot, rule 906190 (level 3) appears a few minutes after the agent connects.",
       "verify_zh": "15 分鐘內 Get-ScheduledTaskInfo -TaskPath '\\jt-wazuh-mgr\\' -TaskName channel-watchdog 的 LastTaskResult 應為 0。下次重新開機後，agent 連上幾分鐘內會出現規則 906190（level 3）。",
       "since": "3.2"
+    },
+    {
+      "platform": "windows",
+      "required": false,
+      "title": "Update the local copy of the channel watchdog",
+      "title_zh": "更新本機的 channel watchdog 副本",
+      "body": "Only where the watchdog is already installed. The scheduled task runs a local copy, so a pack update does not reach it on its own. Version 3.6.3 fixes a restart that could leave the agent stopped. In an elevated PowerShell, copy the new file over the local one (code below).",
+      "body_zh": "只限已經裝了 watchdog 的主機。排程執行的是本機副本，套件更新不會自動換掉它。3.6.3 修正了重啟時可能讓 agent 停著的問題。在系統管理員身分的 PowerShell 執行下方程式碼，用新檔覆蓋本機副本。",
+      "file": "agent/jt-channel-watchdog.ps1",
+      "code": "Copy-Item \"${env:ProgramFiles(x86)}\\ossec-agent\\shared\\jt-channel-watchdog.ps1\" \"$env:ProgramFiles\\jt-wazuh-mgr\\\" -Force",
+      "verify": "Get-FileHash \"$env:ProgramFiles\\jt-wazuh-mgr\\jt-channel-watchdog.ps1\" matches the file in the agent's shared directory, and the file mentions rule 906192.",
+      "verify_zh": "Get-FileHash \"$env:ProgramFiles\\jt-wazuh-mgr\\jt-channel-watchdog.ps1\" 與 agent shared 目錄裡的檔案相同，且檔案內提到規則 906192。",
+      "since": "3.6.3"
     },
     {
       "platform": "windows",

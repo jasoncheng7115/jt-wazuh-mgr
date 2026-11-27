@@ -4,6 +4,10 @@ All notable changes to **jt-wazuh-mgr** are documented here.
 
 [English](CHANGELOG.md) | [繁體中文](CHANGELOG-zh-TW.md) | [日本語](CHANGELOG-ja.md)
 
+## v1.40.3 (2026-11-27)
+
+- **jt-portable-detect 3.6.3**: the channel watchdog could leave the Wazuh agent stopped. When the agent took longer to exit than `Restart-Service` waits (about 40 s on a Windows 11 host after boot), the restart threw after the agent had already stopped, and every later run saw no agent process and exited, so the host stayed without an agent until someone noticed (once for nine days). The watchdog now waits for the old agent to exit and retries the start, and starts the agent whenever it finds the service stopped while set to start automatically (new rule 906192, level 10). To stop the agent on purpose, set the service to Manual or Disabled. Hosts that already run the watchdog need the new file copied over their local copy (new deployment step).
+
 ## v1.40.2 (2026-11-22)
 
 - **jt-yara 1.1.1**: the agent group yara reads active-responses.log itself, and jt-yara-install.sh warns when the agent does not read it. A domain controller whose ossec.conf lacked that file installed and scanned normally, but nothing it wrote reached the manager; the inventory showed it as never reporting.
